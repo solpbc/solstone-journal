@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{LockError, LockOptions, hold_lock};
 use solstone_core_speaker_id::labels::{
-    LabelsError, patch_labels, write_full_labels, write_full_labels_checked, write_stub_labels,
-    write_stub_labels_checked,
+    LabelsError, patch_labels, read_labels_for_patch, write_full_labels, write_full_labels_checked,
+    write_stub_labels, write_stub_labels_checked,
 };
 
 const FULL: &[u8] = b"{\n  \"unknown_top\": {\n    \"preserve\": \"yes\"\n  },\n  \"labels\": [\n    {\n      \"sentence_id\": 1,\n      \"speaker\": \"Jos\\u00e9 \\ud83d\\ude3a\",\n      \"confidence\": \"medium\",\n      \"method\": \"acoustic\",\n      \"owner_margin_declined\": true,\n      \"unknown_row\": \"kept\"\n    },\n    {\n      \"sentence_id\": 2,\n      \"speaker\": null,\n      \"confidence\": \"low\",\n      \"method\": \"context\",\n      \"unknown_row\": \"also_kept\"\n    }\n  ],\n  \"owner_centroid_last_refreshed_at\": \"2026-08-08T00:00:00Z\",\n  \"voiceprint_versions\": {\n    \"jos\\u00e9\": 2\n  },\n  \"candidate_evidence\": [\n    {\n      \"name\": \"Jos\\u00e9 \\ud83d\\ude3a\"\n    }\n  ],\n  \"candidate_evidence_gaps\": [\n    {\n      \"source\": \"screen\",\n      \"reason\": \"Caf\\u00e9 \\ud83e\\uddea\"\n    }\n  ]\n}\n";
@@ -38,6 +38,71 @@ fn labels_path(segment: &Path) -> PathBuf {
 
 fn corrections_path(segment: &Path) -> PathBuf {
     segment.join("talents").join("speaker_corrections.json")
+}
+
+#[test]
+fn patch_refuses_damaged_current_labels_and_preserves_bytes() {
+    let segment = temporary_segment("patch-damaged");
+    let path = labels_path(&segment);
+    let patches = [(
+        1,
+        serde_json::json!({"speaker":"owner"})
+            .as_object()
+            .unwrap()
+            .clone(),
+    )];
+    for bytes in ["{", "[]", "{\"labels\":{}}", "{\"labels\":[false]}"] {
+        fs::write(&path, b"{\"labels\":[]}").expect("valid preflight state");
+        assert!(read_labels_for_patch(&segment).unwrap().is_empty());
+        fs::write(&path, bytes).expect("seed");
+        assert!(
+            matches!(
+                patch_labels(&segment, &patches, true),
+                Err(LabelsError::MalformedCurrentLabels(_))
+            ),
+            "{bytes}"
+        );
+        assert_eq!(fs::read(&path).expect("preserved"), bytes.as_bytes());
+    }
+    fs::remove_file(&path).expect("remove fixture");
+    fs::create_dir(&path).expect("unreadable labels entry");
+    assert!(matches!(
+        patch_labels(&segment, &patches, true),
+        Err(LabelsError::Io(_))
+    ));
+    assert!(path.is_dir());
+    fs::remove_dir_all(segment).expect("cleanup");
+}
+
+#[test]
+fn patch_preserves_unknown_metadata_and_existing_rows() {
+    let segment = temporary_segment("patch-metadata");
+    let path = labels_path(&segment);
+    assert!(read_labels_for_patch(&segment).unwrap().is_empty());
+    fs::write(&path, br#"{"unknown_top":{"keep":true},"labels":[{"sentence_id":9,"speaker":"guest","unknown_row":7},{"extension":"sidless"}]}"#).unwrap();
+    patch_labels(
+        &segment,
+        &[(
+            1,
+            serde_json::json!({"speaker":"owner"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )],
+        true,
+    )
+    .unwrap();
+    let result: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(result["unknown_top"], serde_json::json!({"keep":true}));
+    assert_eq!(
+        result["labels"][1],
+        serde_json::json!({"sentence_id":9,"speaker":"guest","unknown_row":7})
+    );
+    assert_eq!(
+        result["labels"][2],
+        serde_json::json!({"extension":"sidless"})
+    );
+    fs::remove_dir_all(segment).unwrap();
 }
 
 #[test]

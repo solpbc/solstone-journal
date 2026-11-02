@@ -449,6 +449,138 @@ async fn naming_a_voice_writes_the_person_into_every_unnamed_sentence_of_it() {
 }
 
 #[tokio::test]
+async fn first_owner_assignment_creates_labels_from_real_sentence() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.segment(json!({"labels":[]}));
+    let segment = journal
+        .0
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(SEGMENT);
+    fs::remove_dir_all(segment.join("talents")).expect("fresh transcript has no labels");
+    let mut assign = request();
+    assign["speaker"] = json!("owner");
+    let (status, body) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/assign-attribution",
+        assign.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "assigned");
+    let labels: Value = serde_json::from_slice(
+        &fs::read(segment.join("talents/speaker_labels.json")).expect("labels"),
+    )
+    .expect("valid labels");
+    assert_eq!(labels["labels"][0]["speaker"], "owner");
+    assert_eq!(labels["labels"][0]["method"], "user_assigned");
+    let corrections = solstone_core_speaker_id::corrections::read_corrections(&segment).unwrap();
+    assert_eq!(corrections.len(), 1);
+    assert_eq!(corrections[0]["sentence_id"], 1);
+    assert_eq!(corrections[0]["corrected_speaker"], "owner");
+    let voiceprints =
+        solstone_core_entity::load_entity_voiceprints_file(&journal.0, "owner").unwrap();
+    assert_eq!(voiceprints.rows, 1);
+    assert_eq!(voiceprints.embeddings, unit(1.0, 0.0));
+    assert!(has_voiceprint_metadata(
+        &journal.0, "owner", DAY, STREAM, SEGMENT, "named"
+    ));
+    let (status, body) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/assign-attribution",
+        assign,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "already_assigned");
+}
+
+#[tokio::test]
+async fn first_assignment_refuses_damaged_labels_without_training() {
+    for bytes in ["{", "[]", "{\"labels\":{}}", "{\"labels\":[false]}"] {
+        let journal = Journal::new();
+        journal.entity("owner", true);
+        journal.segment(json!({"labels":[]}));
+        let path = journal
+            .0
+            .join("chronicle")
+            .join(DAY)
+            .join(STREAM)
+            .join(SEGMENT)
+            .join("talents/speaker_labels.json");
+        fs::write(&path, bytes).expect("damaged fixture");
+        let before = content_snapshot(&journal.0);
+        let mut assign = request();
+        assign["speaker"] = json!("owner");
+        let (status, body) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/assign-attribution",
+            assign,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{bytes}: {body}");
+        assert_eq!(body["reason_code"], "speaker_review_unavailable");
+        assert_eq!(content_snapshot(&journal.0), before, "{bytes}");
+    }
+}
+
+#[tokio::test]
+async fn first_assignment_keeps_entity_sentence_embedding_and_contamination_gates() {
+    for case in ["entity", "sentence", "embedding", "contamination"] {
+        let journal = Journal::new();
+        journal.entity("owner", true);
+        journal.entity("guest", false);
+        journal.segment(json!({"labels":[]}));
+        let segment = journal
+            .0
+            .join("chronicle")
+            .join(DAY)
+            .join(STREAM)
+            .join(SEGMENT);
+        fs::remove_dir_all(segment.join("talents")).unwrap();
+        let mut assign = request();
+        assign["speaker"] = json!("owner");
+        let expected = match case {
+            "entity" => {
+                assign["speaker"] = json!("missing");
+                StatusCode::NOT_FOUND
+            }
+            "sentence" => {
+                assign["sentence_id"] = json!(2);
+                StatusCode::NOT_FOUND
+            }
+            "embedding" => {
+                fs::remove_file(segment.join("audio.npz")).unwrap();
+                StatusCode::NOT_FOUND
+            }
+            "contamination" => {
+                assign["speaker"] = json!("guest");
+                StatusCode::CONFLICT
+            }
+            _ => unreachable!(),
+        };
+        let before = content_snapshot(&journal.0);
+        let (status, body) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/assign-attribution",
+            assign,
+        )
+        .await;
+        assert_eq!(status, expected, "{case}: {body}");
+        let reason = match case {
+            "entity" => "speaker_not_found",
+            "sentence" | "embedding" => "speaker_sentence_missing",
+            "contamination" => "speaker_owner_centroid_required",
+            _ => unreachable!(),
+        };
+        assert_eq!(body["reason_code"], reason, "{case}: {body}");
+        assert_eq!(content_snapshot(&journal.0), before, "{case}");
+    }
+}
+
+#[tokio::test]
 async fn owner_target_successfully_exercises_all_four_routes() {
     let journal = Journal::new();
     journal.entity("owner", true);

@@ -2722,6 +2722,7 @@ dependencies = [
  "solstone-core-sense",
  "solstone-core-settings-web",
  "solstone-core-sol-link",
+ "solstone-core-speaker-id",
  "solstone-core-speaker-resolve",
  "solstone-core-speakers",
  "solstone-core-spl",

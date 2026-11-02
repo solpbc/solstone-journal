@@ -13,7 +13,9 @@ use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use solstone_core_speaker_id::transcript::{TranscriptError, read_transcript_rows};
 use thiserror::Error;
 
-use crate::candidate_tracker::{ClusterInput, trim_solo_cluster_indices};
+use crate::candidate_tracker::{
+    CandidateTracker, CandidateTrackerError, ClusterInput, trim_solo_cluster_indices,
+};
 use crate::segment_catalog::catalog_day;
 
 #[derive(Debug, Error)]
@@ -29,6 +31,39 @@ pub enum TranscribedClusterLoad {
     Clusters(Vec<ClusterInput>),
     NoClusters,
     Unreadable,
+}
+
+#[derive(Debug, Error)]
+pub enum TranscribedClusterFeedError {
+    #[error(transparent)]
+    Load(#[from] TranscribedClusterError),
+    #[error("completed transcript or embeddings could not be read")]
+    Unreadable,
+    #[error(transparent)]
+    Pool(#[from] CandidateTrackerError),
+}
+
+/// Feed completed transcript evidence through the candidate pool's admission rules.
+/// The caller retains custody and cancellation authority through publication.
+pub fn feed_transcribed_clusters(
+    journal: &Path,
+    transcript_path: &Path,
+    embeddings_path: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), TranscribedClusterFeedError> {
+    checkpoint().map_err(CandidateTrackerError::Cancelled)?;
+    let inputs = match load_transcribed_cluster_inputs(journal, transcript_path, embeddings_path)? {
+        TranscribedClusterLoad::Clusters(inputs) => inputs,
+        TranscribedClusterLoad::NoClusters => return Ok(()),
+        TranscribedClusterLoad::Unreadable => return Err(TranscribedClusterFeedError::Unreadable),
+    };
+    CandidateTracker::new(journal).add_transcribed_clusters_with_lock_options(
+        &inputs,
+        solstone_core_journal_io::LockOptions::default(),
+        solstone_core_journal_io::LockOptions::default(),
+        checkpoint,
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

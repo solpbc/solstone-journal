@@ -68,9 +68,9 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         Ok(lock) => lock,
         Err(error) => return write_error(error.to_string(), true),
     };
-    let labels = match labels(&segment) {
-        Some(value) => value,
-        None => return review_unavailable(),
+    let labels = match solstone_core_speaker_id::labels::read_labels_for_patch(&segment) {
+        Ok(value) => value,
+        Err(_) => return review_unavailable(),
     };
     let current = label(&labels, fields.sentence_id);
     if let Err(response) = entity_allowed(&root.0, &fields.speaker) {

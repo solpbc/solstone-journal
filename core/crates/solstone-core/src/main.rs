@@ -1211,47 +1211,18 @@ fn feed_transcribed_files(journal: &Path, files: &[solstone_core_transcribe::Tra
         if file.outcome != solstone_core_transcribe::TranscribeOutcome::Transcribed {
             continue;
         }
-        let cluster_inputs = match solstone_core_speaker_resolve::transcribed_clusters::load_transcribed_cluster_inputs(
-            journal,
-            &file.transcript_path,
-            &file.embeddings_path,
-        ) {
-            Ok(solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::Clusters(inputs)) => inputs,
-            Ok(solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::NoClusters)
-            | Ok(solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterLoad::Unreadable) => {
-                continue;
-            }
-            Err(_err) => {
-                log::warn!("speaker candidate pool left unchanged because the transcribed source could not be read");
-                continue;
-            }
-        };
-        if cluster_inputs.is_empty() {
-            continue;
-        }
-        let mut tracker =
-            solstone_core_speaker_resolve::candidate_tracker::CandidateTracker::new(journal);
-        if let Err(err) = tracker.add_transcribed_clusters(&cluster_inputs) {
-            match err {
-                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Lock(
-                    solstone_core_journal_io::LockError::Timeout(_),
-                ) => {
-                    log::warn!("speaker candidate pool left unchanged because the pool lock timed out");
-                }
-                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::CentroidWidth => {
-                    log::warn!("speaker candidate pool left unchanged because the centroid width differs");
-                }
-                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Write(_) => {
-                    log::warn!("speaker candidate pool left unchanged because the pool could not be written");
-                }
-                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Read(_)
-                | solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Lock(_) => {
-                    log::warn!("speaker candidate pool left unchanged because the pool could not be read");
-                }
-                solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Cancelled(_) => {
-                    log::warn!("speaker candidate pool left unchanged because the write was stopped");
-                }
-            }
+        if let Err(error) =
+            solstone_core_speaker_resolve::transcribed_clusters::feed_transcribed_clusters(
+                journal,
+                &file.transcript_path,
+                &file.embeddings_path,
+                &|| Ok(()),
+            )
+        {
+            log::warn!(
+                "speaker candidate pool feed failed for {}: {error}",
+                file.transcript_path.display()
+            );
         }
     }
 }

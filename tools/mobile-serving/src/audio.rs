@@ -68,6 +68,49 @@ struct State {
 }
 
 impl State {
+    fn feed_completed_transcription(
+        &self,
+        generation: u64,
+        root: &Path,
+        input: &Path,
+        result: &solstone_core_transcribe::TranscribeFile,
+        cancelled: &dyn Fn() -> bool,
+    ) -> bool {
+        if cancelled() {
+            return false;
+        }
+        if result.outcome != TranscribeOutcome::Transcribed {
+            return true;
+        }
+        let checkpoint = || {
+            if cancelled() {
+                Err("audio processing stopped".to_owned())
+            } else {
+                Ok(())
+            }
+        };
+        if let Err(error) =
+            solstone_core_speaker_resolve::transcribed_clusters::feed_transcribed_clusters(
+                root,
+                &result.transcript_path,
+                &result.embeddings_path,
+                &checkpoint,
+            )
+        {
+            if matches!(error,
+                solstone_core_speaker_resolve::transcribed_clusters::TranscribedClusterFeedError::Pool(
+                    solstone_core_speaker_resolve::candidate_tracker::CandidateTrackerError::Cancelled(_)))
+                || cancelled()
+            {
+                return false;
+            }
+            let error = format!("speaker candidate feed failed: {error}");
+            self.input_failed(generation, input, &error);
+            log::warn!("{}: {error}", input.display());
+        }
+        true
+    }
+
     fn input_failed(&self, generation: u64, input: &Path, error: &str) {
         // Private qualification/status evidence, bounded and process-local.
         // A later input can replace the headline without erasing this attempt.
@@ -345,6 +388,13 @@ impl AudioWorker {
         }
         match result {
             Ok(result) => {
+                if !self
+                    .state
+                    .feed_completed_transcription(generation, root, input, &result, &cancel)
+                {
+                    self.state.status.lock().unwrap()["state"] = json!("cancelled");
+                    return Ok(false);
+                }
                 *self.state.status.lock().unwrap() = json!({
                     "state":"ready",
                     "last":{"input":input,"outcome":format!("{:?}",result.outcome),
@@ -545,6 +595,10 @@ fn run(
                             "model_load_ms": asr.load_ms.get(),
                         }));
                         journal_mobile_audio::install_embedded_ced();
+                        let cancel = || {
+                            state.cancelled(generation)
+                                || authority.revalidate_canonical_binding().is_err()
+                        };
                         let result = process_embedded(
                             &input,
                             root,
@@ -553,10 +607,7 @@ fn run(
                             &asr,
                             EmbeddedControl {
                                 observation: state.observation.as_ref(),
-                                cancelled: &|| {
-                                    state.cancelled(generation)
-                                        || authority.revalidate_canonical_binding().is_err()
-                                },
+                                cancelled: &cancel,
                                 owner_original_deleted: &|| {},
                                 service_io: &|phase| {
                                     let mut status = state.status.lock().unwrap();
@@ -576,6 +627,14 @@ fn run(
                             Err(_) => state.cancelled(generation),
                         };
                         if cancelled {
+                            state.status.lock().unwrap()["state"] = json!("cancelled");
+                            break;
+                        }
+                        if let Ok(result) = &result
+                            && !state.feed_completed_transcription(
+                                generation, root, &input, result, &cancel,
+                            )
+                        {
                             state.status.lock().unwrap()["state"] = json!("cancelled");
                             break;
                         }
@@ -668,6 +727,166 @@ mod tests {
     };
     use solstone_core_transcribe::TranscribeError;
     use std::fs::File;
+
+    fn completion_state() -> State {
+        State {
+            observation: None,
+            stop: AtomicBool::new(false),
+            cancel: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
+            external_cancelled: Arc::new(|| false),
+            status: Mutex::new(json!({"state":"ready"})),
+            recent_failures: Mutex::new(VecDeque::new()),
+            wake: Condvar::new(),
+        }
+    }
+
+    fn completed_mobile_transcript(
+        root: &Path,
+        key: &str,
+    ) -> solstone_core_transcribe::TranscribeFile {
+        let audio = setup_fixture_audio(
+            root,
+            "20261012",
+            "device_audio",
+            key,
+            "audio.wav",
+            b"synthetic",
+        );
+        let payload = audio.with_extension("f32");
+        let mut embedding = vec![0.0_f32; 256];
+        embedding[0] = 1.0;
+        let bytes: Vec<_> = embedding
+            .iter()
+            .cycle()
+            .take(3 * 256)
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        std::fs::write(&payload, bytes).unwrap();
+        let result = solstone_core_transcribe::TranscribeFile {
+            outcome: TranscribeOutcome::Transcribed,
+            transcript_path: audio.with_extension("jsonl"),
+            embeddings_path: audio.with_extension("npz"),
+        };
+        let request = json!({
+            "schema":"solstone-speaker-transcript-write-request-v1",
+            "output":{"jsonl_path":result.transcript_path,"npz_path":result.embeddings_path,"redo":true},
+            "base_time_us_of_day":0,"source":"audio",
+            "statements":[
+                {"id":10,"start_offset_us":0,"text":"one"},
+                {"id":20,"start_offset_us":1_000_000,"text":"two"},
+                {"id":30,"start_offset_us":2_000_000,"text":"three"}
+            ],
+            "header":{"raw":"audio.wav","model":"fixture","device":"cpu","compute_type":"int8"},
+            "embeddings":{"payload_path":payload,"payload_format":"raw-f32le-row-major-v1",
+                "dtype":"float32-le","shape":[3,256],"byte_count":3*256*4,
+                "statement_ids":[10,20,30],"durations_s":[1.0,1.0,1.0],"encoder":"fixture"}
+        });
+        solstone_core_speaker_id::writer::write_request(&serde_json::to_vec(&request).unwrap())
+            .unwrap();
+        // Match embedded mobile output: single-voice evidence, no integer speaker labels.
+        std::fs::write(&result.transcript_path, concat!(
+            "{\"raw\":\"audio.wav\",\"speaker_evidence\":\"single\",\"speaker_evidence_version\":\"windowed-slots-v1\",\"speaker_evidence_multi_fraction\":0.0}\n",
+            "{\"sentence_id\":10,\"text\":\"one\"}\n",
+            "{\"sentence_id\":20,\"text\":\"two\"}\n",
+            "{\"sentence_id\":30,\"text\":\"three\"}\n"
+        )).unwrap();
+        result
+    }
+
+    #[test]
+    fn mobile_completion_feeds_exact_members_once_and_excludes_other_outcomes() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = completion_state();
+        let result = completed_mobile_transcript(temp.path(), "120000_3");
+        let input = result.transcript_path.with_extension("wav");
+        assert!(state.feed_completed_transcription(0, temp.path(), &input, &result, &|| false));
+        let candidates =
+            solstone_core_speaker_resolve::candidate_tracker::CandidateTracker::new(temp.path())
+                .candidates();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].n_intervals, 3);
+        assert_eq!(candidates[0].n_segments, 1);
+        assert_eq!(
+            candidates[0].source_segments,
+            vec![json!({
+                "day":"20261012","stream_layout":"named","stream":"device_audio",
+                "segment_key":"120000_3","source":"audio","cluster_label":-1,"sentence_ids":[10,20,30]
+            })]
+        );
+        let pool = temp.path().join("awareness/speaker_candidates.json");
+        let before = std::fs::read(&pool).unwrap();
+        assert!(state.feed_completed_transcription(0, temp.path(), &input, &result, &|| false));
+        let mut next = completed_mobile_transcript(temp.path(), "120010_3");
+        for outcome in [
+            TranscribeOutcome::Preserved,
+            TranscribeOutcome::Skipped,
+            TranscribeOutcome::Failed,
+        ] {
+            next.outcome = outcome;
+            assert!(state.feed_completed_transcription(0, temp.path(), &input, &next, &|| false));
+        }
+        assert_eq!(std::fs::read(pool).unwrap(), before);
+    }
+
+    #[test]
+    fn mobile_completion_checks_cancellation_at_pool_publication() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = completion_state();
+        let result = completed_mobile_transcript(temp.path(), "120000_3");
+        let input = result.transcript_path.with_extension("wav");
+        assert!(!state.feed_completed_transcription(0, temp.path(), &input, &result, &|| true));
+        let checks = Cell::new(0);
+        assert!(
+            !state.feed_completed_transcription(0, temp.path(), &input, &result, &|| {
+                checks.set(checks.get() + 1);
+                checks.get() == 3
+            })
+        );
+        assert_eq!(checks.get(), 3);
+        assert!(
+            !temp
+                .path()
+                .join("awareness/speaker_candidates.json")
+                .exists()
+        );
+        assert!(
+            state.snapshot()["recent_failures"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn mobile_completion_retains_feed_failure_after_later_success() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = completion_state();
+        let result = completed_mobile_transcript(temp.path(), "120000_3");
+        let input = result.transcript_path.with_extension("wav");
+        let transcript = std::fs::read(&result.transcript_path).unwrap();
+        std::fs::remove_file(&result.embeddings_path).unwrap();
+        assert!(state.feed_completed_transcription(0, temp.path(), &input, &result, &|| false));
+        let good = completed_mobile_transcript(temp.path(), "120010_3");
+        assert!(state.feed_completed_transcription(
+            0,
+            temp.path(),
+            &good.transcript_path.with_extension("wav"),
+            &good,
+            &|| false
+        ));
+        *state.status.lock().unwrap() = json!({"state":"ready","last":{"outcome":"Transcribed"}});
+        let status = state.snapshot();
+        assert_eq!(status["recent_failures"].as_array().unwrap().len(), 1);
+        assert_eq!(status["recent_failures"][0]["input"], json!(input));
+        assert!(
+            status["recent_failures"][0]["error"]
+                .as_str()
+                .unwrap()
+                .contains("speaker candidate feed failed")
+        );
+        assert_eq!(std::fs::read(result.transcript_path).unwrap(), transcript);
+    }
 
     fn setup_fixture_audio(
         root: &Path,

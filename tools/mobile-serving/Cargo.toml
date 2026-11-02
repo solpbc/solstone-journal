@@ -10,7 +10,7 @@ publish = false
 [features]
 full-tests = ["solstone-core-backup-web/full-tests", "solstone-core-journal-io/test-hooks"]
 audio-native = ["audio", "journal-mobile-audio/native"]
-audio = ["dep:journal-mobile-audio", "dep:sha2", "dep:solstone-core-transcribe"]
+audio = ["dep:journal-mobile-audio", "dep:sha2", "dep:solstone-core-transcribe", "dep:solstone-core-speaker-resolve"]
 processing = [
     "dep:sha2",
     "dep:solstone-core-sense",
@@ -96,6 +96,7 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["api-24"
 ort = { version = "=2.0.0-rc.12", default-features = false, features = ["load-dynamic"] }
 
 [dev-dependencies]
+solstone-core-speaker-id = { path = "../../core/crates/solstone-core-speaker-id" }
 solstone-core-convey-http = { path = "../../core/crates/solstone-core-convey-http" }
 solstone-core-sol-link = { path = "../../core/crates/solstone-core-sol-link" }
 solstone-core-callosum = { path = "../../core/crates/solstone-core-callosum", features = ["test-hooks"] }

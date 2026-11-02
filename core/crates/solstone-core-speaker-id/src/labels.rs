@@ -301,6 +301,15 @@ pub fn write_stub_labels_checked(
     write_labels_bound(&path, &parent, Value::Object(result), &admitted)
 }
 
+/// Read labels for assignment, permitting a genuinely absent first labels file.
+/// The mutation revalidates the same structure under its own lock.
+pub fn read_labels_for_patch(segment_dir: &Path) -> Result<Vec<Value>, LabelsError> {
+    Ok(read_patch_base(&labels_path(segment_dir))?
+        .remove("labels")
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default())
+}
+
 /// Apply sentence-ID-addressed label patches to a segment's labels.
 pub fn patch_labels(
     segment_dir: &Path,
@@ -310,7 +319,7 @@ pub fn patch_labels(
     let path = labels_path(segment_dir);
     let _lock = hold_lock(&path, LockOptions::default()).map_err(LabelsError::Lock)?;
 
-    let mut base = read_current_labels(&path).unwrap_or_default();
+    let mut base = read_patch_base(&path)?;
     let mut labels = base
         .get("labels")
         .and_then(Value::as_array)
@@ -657,6 +666,37 @@ fn read_current_labels(path: &Path) -> Option<Map<String, Value>> {
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .and_then(|value| value.as_object().cloned())
+}
+
+fn read_patch_base(path: &Path) -> Result<Map<String, Value>, LabelsError> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // A dangling link is an existing unreadable entry, not first teaching.
+            if matches!(fs::symlink_metadata(path), Err(ref metadata_error)
+                if metadata_error.kind() == std::io::ErrorKind::NotFound)
+            {
+                return Ok(Map::new());
+            }
+            return Err(LabelsError::Io(error));
+        }
+        Err(error) => return Err(LabelsError::Io(error)),
+    };
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| LabelsError::MalformedCurrentLabels(error.to_string()))?;
+    let base = value
+        .as_object()
+        .ok_or_else(|| LabelsError::MalformedCurrentLabels("expected an object".to_owned()))?;
+    let labels = base
+        .get("labels")
+        .and_then(Value::as_array)
+        .ok_or_else(|| LabelsError::MalformedCurrentLabels("expected a labels array".to_owned()))?;
+    if labels.iter().any(|label| !label.is_object()) {
+        return Err(LabelsError::MalformedCurrentLabels(
+            "expected label objects".to_owned(),
+        ));
+    }
+    Ok(base.clone())
 }
 
 fn corrections_by_sentence(
