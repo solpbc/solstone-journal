@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: on macos and linux, other accounts on this computer can no longer open your journal's folder or read what's in it, when your journal is on a drive that keeps folders private.
+- on linux, when your computer's clock jumps, as on a virtual machine whose clock is set right when it wakes from sleep, your journal no longer stops responding until you restart it.
 - your journal no longer shows a card each time a file can't be processed. a file it has stopped retrying is still listed under set-aside work on the health page, with a try again button.
 - `solstone call transcripts scan` now lists audio that runs until midnight. a day with audio up to midnight could list no transcripts, or only the stretches before its last one, even though `solstone call transcripts read` still showed every line.
 - when your journal had only you down as a speaker, like a talk you sat in on, it no longer puts your name on other voices' lines. your name goes on a line only when your journal recognizes your voice, or when you labeled the line yourself.

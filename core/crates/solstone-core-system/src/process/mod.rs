@@ -31,6 +31,7 @@ pub use common::CensusRow;
 pub(crate) use common::TerminationEvidence;
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) use common::hosted_admission_test_fault;
+pub(crate) use common::parse_linux_boot_id;
 #[cfg(not(windows))]
 pub(crate) use common::require_managed_process_capability;
 #[cfg(windows)]

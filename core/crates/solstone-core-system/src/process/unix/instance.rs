@@ -165,7 +165,13 @@ fn parse_boot_time(stat: &str) -> Option<u64> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64, uid: u32) -> InspectResult {
+fn inspect_from_linux_stat(
+    stat: &str,
+    btime: u64,
+    clk_tck: u64,
+    boot: Option<u128>,
+    uid: u32,
+) -> InspectResult {
     let Some(parsed) = parse_linux_stat(stat) else {
         return InspectResult::Unverifiable;
     };
@@ -175,7 +181,7 @@ fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64, uid: u32) -> In
     InspectResult::Present {
         instance: ProcessInstance {
             pid: parsed.pid,
-            birth: ProcessBirth::linux(parsed.start_ticks, btime, clk_tck),
+            birth: ProcessBirth::linux(parsed.start_ticks, btime, clk_tck).on_linux_boot(boot),
         },
         uid,
         execution: parsed.execution,
@@ -235,12 +241,20 @@ fn classify_uid_read(result: std::io::Result<String>) -> UidRead {
     }
 }
 
+/// `btime` moves with every wall-clock step; the boot it belongs to does not.
+/// A process never outlives its boot, so the boot is read once.
 #[cfg(target_os = "linux")]
-fn linux_boot_clock() -> Option<(u64, u64)> {
+fn linux_boot_clock() -> Option<(u64, u64, Option<u128>)> {
+    static BOOT: std::sync::OnceLock<Option<u128>> = std::sync::OnceLock::new();
     let btime = parse_boot_time(&std::fs::read_to_string("/proc/stat").ok()?)?;
     let ticks = sysconf(SysconfVar::CLK_TCK).ok()??;
     let ticks = u64::try_from(ticks).ok().filter(|value| *value > 0)?;
-    Some((btime, ticks))
+    let boot = *BOOT.get_or_init(|| {
+        std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+            .ok()
+            .and_then(|text| super::super::parse_linux_boot_id(&text))
+    });
+    Some((btime, ticks, boot))
 }
 
 #[cfg(target_os = "linux")]
@@ -252,7 +266,7 @@ fn inspect_linux(pid: u32) -> InspectResult {
         }
         Err(_) => return InspectResult::Unverifiable,
     };
-    let Some((btime, clk_tck)) = linux_boot_clock() else {
+    let Some((btime, clk_tck, boot)) = linux_boot_clock() else {
         return InspectResult::Unverifiable;
     };
     let uid = match linux_uid(pid) {
@@ -265,12 +279,12 @@ fn inspect_linux(pid: u32) -> InspectResult {
         // `warmup_reports_ready_exited_and_timeout_without_wall_clock_waits`.
         UidRead::Gone | UidRead::Unreadable => return InspectResult::Unverifiable,
     };
-    inspect_from_linux_stat(&stat, btime, clk_tck, uid)
+    inspect_from_linux_stat(&stat, btime, clk_tck, boot, uid)
 }
 
 #[cfg(target_os = "linux")]
 fn census_linux() -> InstanceCensus {
-    let Some((btime, clk_tck)) = linux_boot_clock() else {
+    let Some((btime, clk_tck, boot)) = linux_boot_clock() else {
         return InstanceCensus::Incomplete(Vec::new());
     };
     let Ok(entries) = std::fs::read_dir("/proc") else {
@@ -304,7 +318,7 @@ fn census_linux() -> InstanceCensus {
                         continue;
                     }
                 };
-                match inspect_from_linux_stat(&stat, btime, clk_tck, uid) {
+                match inspect_from_linux_stat(&stat, btime, clk_tck, boot, uid) {
                     InspectResult::Unverifiable => {
                         complete = false;
                     }
@@ -981,7 +995,7 @@ mod tests {
     #[test]
     fn case1_well_formed_linux_stat_is_present_running() {
         let stat = linux_stat(42, 'S', 1, 42, 1234);
-        match inspect_from_linux_stat(&stat, 1_000, 100, 501) {
+        match inspect_from_linux_stat(&stat, 1_000, 100, None, 501) {
             InspectResult::Present {
                 instance,
                 uid,
@@ -1003,14 +1017,14 @@ mod tests {
     #[test]
     fn case2_linux_stopped_state_is_present_stopped() {
         let stat = linux_stat(9, 'T', 1, 9, 50);
-        match inspect_from_linux_stat(&stat, 1_000, 100, 501) {
+        match inspect_from_linux_stat(&stat, 1_000, 100, None, 501) {
             InspectResult::Present { execution, .. } => {
                 assert_eq!(execution, ExecutionState::Stopped);
             }
             other => panic!("expected Present, got {other:?}"),
         }
         let lowercase = linux_stat(9, 't', 1, 9, 50);
-        match inspect_from_linux_stat(&lowercase, 1_000, 100, 501) {
+        match inspect_from_linux_stat(&lowercase, 1_000, 100, None, 501) {
             InspectResult::Present { execution, .. } => {
                 assert_eq!(execution, ExecutionState::Stopped);
             }
@@ -1045,11 +1059,11 @@ mod tests {
     #[test]
     fn case5_malformed_linux_stat_is_unverifiable() {
         assert_eq!(
-            inspect_from_linux_stat("no-close-paren 1 2 3", 1_000, 100, 501),
+            inspect_from_linux_stat("no-close-paren 1 2 3", 1_000, 100, None, 501),
             InspectResult::Unverifiable
         );
         assert_eq!(
-            inspect_from_linux_stat("1 (comm) S 1 1", 1_000, 100, 501),
+            inspect_from_linux_stat("1 (comm) S 1 1", 1_000, 100, None, 501),
             InspectResult::Unverifiable
         );
         assert!(parse_linux_stat("1 (comm").is_none());
@@ -1119,7 +1133,7 @@ mod tests {
     fn case6_zombie_linux_stat_is_absent() {
         let stat = linux_stat(4, 'Z', 1, 4, 9);
         assert_eq!(
-            inspect_from_linux_stat(&stat, 1_000, 100, 501),
+            inspect_from_linux_stat(&stat, 1_000, 100, None, 501),
             InspectResult::Absent
         );
     }

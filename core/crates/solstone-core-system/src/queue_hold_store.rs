@@ -219,7 +219,12 @@ pub fn parse_scope_dir_name(dir_name: &str) -> Option<ParsedScope> {
     if parts.len() == 3 {
         let boot_id_hex = parts[0].strip_prefix("b-")?.to_owned();
         let pid = parts[1].strip_prefix("p-")?.parse::<u32>().ok()?;
-        let birth = parse_process_birth(parts[2])?;
+        // The birth token keeps `btime`, which a wall-clock step moves; the
+        // scope's boot identity is what binds a Linux supervisor to its boot.
+        let boot = hex_decode(&boot_id_hex)
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .and_then(|text| crate::process::parse_linux_boot_id(&text));
+        let birth = parse_process_birth(parts[2])?.on_linux_boot(boot);
         Some(ParsedScope {
             boot_id_hex: Some(boot_id_hex),
             supervisor: ProcessInstance { pid, birth },
@@ -569,6 +574,23 @@ mod tests {
             snapshot_unavailable: false,
             held: true,
         }
+    }
+
+    #[test]
+    fn a_scope_keeps_its_live_linux_supervisor_across_a_wall_clock_step() {
+        const BOOT_ID: &str = "8b9f3c1e-77a2-4d0b-9e61-2f4c05aad317";
+        let boot = crate::process::parse_linux_boot_id(BOOT_ID);
+        let at_dispatch = ProcessInstance {
+            pid: 42,
+            birth: ProcessBirth::linux(4_200, 1_700_000_000, 100).on_linux_boot(boot),
+        };
+        let after_step = ProcessInstance {
+            pid: 42,
+            birth: ProcessBirth::linux(4_200, 1_700_024_480, 100).on_linux_boot(boot),
+        };
+        let parsed = parse_scope_dir_name(&format_scope_dir_name(Some(BOOT_ID), &at_dispatch))
+            .expect("parsed scope");
+        assert_eq!(parsed.supervisor, after_step);
     }
 
     #[test]

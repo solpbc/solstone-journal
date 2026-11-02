@@ -30,6 +30,14 @@ pub struct ProcessInstance {
 /// microsecond-level `proc_bsdinfo` on macOS, and creation FILETIME on Windows.
 /// [`ProcessBirth::epoch_seconds`] is a lossy supervisor start-time value; exact
 /// identity and verdict comparisons never use it or a tolerance.
+///
+/// ⚠ On Linux the boot is identified by the kernel's `boot_id`, not by
+/// `/proc/stat`'s `btime`. `btime` is the wall clock minus the time since boot,
+/// so any wall-clock step (NTP stepping a VM that slept, `date -s`) moves it
+/// for every live process at once. Comparing it made the supervisor read as
+/// exited after a step, which sealed admissions and refused every restart.
+/// `btime` is kept only for [`ProcessBirth::epoch_seconds`] and for records
+/// written before `boot_id` was recorded.
 #[derive(Debug, Clone, Copy)]
 pub struct ProcessBirth {
     inner: ProcessBirthInner,
@@ -42,6 +50,7 @@ enum ProcessBirthInner {
         start_ticks: u64,
         btime: u64,
         clk_tck: u64,
+        boot: Option<u128>,
     },
     #[allow(dead_code)]
     Macos {
@@ -61,14 +70,22 @@ impl PartialEq for ProcessBirth {
                 ProcessBirthInner::Linux {
                     start_ticks: left_ticks,
                     btime: left_btime,
+                    boot: left_boot,
                     ..
                 },
                 ProcessBirthInner::Linux {
                     start_ticks: right_ticks,
                     btime: right_btime,
+                    boot: right_boot,
                     ..
                 },
-            ) => left_ticks == right_ticks && left_btime == right_btime,
+            ) => {
+                left_ticks == right_ticks
+                    && match (left_boot, right_boot) {
+                        (Some(left), Some(right)) => left == right,
+                        _ => left_btime == right_btime,
+                    }
+            }
             (
                 ProcessBirthInner::Macos { epoch_micros: left },
                 ProcessBirthInner::Macos {
@@ -93,6 +110,8 @@ enum ProcessBirthWire {
         start_ticks: u64,
         btime: u64,
         clk_tck: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boot_id: Option<String>,
     },
     Macos {
         epoch_micros: i64,
@@ -114,10 +133,12 @@ impl Serialize for ProcessBirth {
                 start_ticks,
                 btime,
                 clk_tck,
+                boot,
             } => ProcessBirthWire::Linux {
                 start_ticks,
                 btime,
                 clk_tck,
+                boot_id: boot.map(|boot| format!("{boot:032x}")),
             },
             ProcessBirthInner::Macos { epoch_micros } => ProcessBirthWire::Macos { epoch_micros },
             ProcessBirthInner::Windows { filetime } => ProcessBirthWire::Windows { filetime },
@@ -137,10 +158,17 @@ impl<'de> Deserialize<'de> for ProcessBirth {
                 start_ticks,
                 btime,
                 clk_tck,
+                boot_id,
             } => ProcessBirthInner::Linux {
                 start_ticks,
                 btime,
                 clk_tck,
+                boot: match boot_id {
+                    None => None,
+                    Some(text) => Some(parse_linux_boot_id(&text).ok_or_else(|| {
+                        serde::de::Error::custom("linux process birth has a malformed boot_id")
+                    })?),
+                },
             },
             ProcessBirthWire::Macos { epoch_micros } => ProcessBirthInner::Macos { epoch_micros },
             ProcessBirthWire::Windows { filetime } => ProcessBirthInner::Windows { filetime },
@@ -157,6 +185,7 @@ impl ProcessBirth {
                 start_ticks,
                 btime,
                 clk_tck,
+                ..
             } => Some(btime as f64 + start_ticks as f64 / clk_tck as f64),
             ProcessBirthInner::Macos { epoch_micros } => Some(epoch_micros as f64 / 1_000_000.0),
             ProcessBirthInner::Windows { filetime } => {
@@ -173,7 +202,30 @@ impl ProcessBirth {
                 start_ticks,
                 btime,
                 clk_tck,
+                boot: None,
             },
+        }
+    }
+
+    /// The same Linux birth, bound to the boot it was observed on. A Linux
+    /// birth that carries a boot compares by it rather than by `btime`.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) fn on_linux_boot(self, boot: Option<u128>) -> Self {
+        match self.inner {
+            ProcessBirthInner::Linux {
+                start_ticks,
+                btime,
+                clk_tck,
+                ..
+            } => Self {
+                inner: ProcessBirthInner::Linux {
+                    start_ticks,
+                    btime,
+                    clk_tck,
+                    boot,
+                },
+            },
+            _ => self,
         }
     }
 
@@ -203,6 +255,7 @@ impl ProcessBirth {
                 start_ticks,
                 btime,
                 clk_tck,
+                ..
             } => Some((start_ticks, btime, clk_tck)),
             _ => None,
         }
@@ -224,6 +277,16 @@ impl ProcessBirth {
     pub fn is_verifiable(&self) -> bool {
         !matches!(self.inner, ProcessBirthInner::Unknown)
     }
+}
+
+/// Parse the kernel's `/proc/sys/kernel/random/boot_id` (a UUID, with or
+/// without dashes) into the boot token a Linux birth carries.
+pub(crate) fn parse_linux_boot_id(text: &str) -> Option<u128> {
+    let hex: String = text.trim().chars().filter(|c| *c != '-').collect();
+    if hex.len() != 32 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u128::from_str_radix(&hex, 16).ok()
 }
 
 /// Convert the Windows FILETIME epoch (1601-01-01) to Unix epoch seconds.
@@ -248,6 +311,72 @@ mod tests {
         fn census(&self) -> InstanceCensus {
             InstanceCensus::Incomplete(Vec::new())
         }
+    }
+
+    const BOOT: u128 = 0x8b9f_3c1e_77a2_4d0b_9e61_2f4c_05aa_d317;
+    const OTHER_BOOT: u128 = 0x1d2e_3f40_5162_4738_8a9b_acbd_cedf_e0f1;
+    /// The 6.8 hour step a sleeping VM took when its clock was corrected.
+    const STEP_SECONDS: u64 = 24_480;
+
+    #[test]
+    fn a_wall_clock_step_keeps_a_linux_birth_on_the_same_boot() {
+        let before = ProcessBirth::linux(4_200, 1_700_000_000, 100).on_linux_boot(Some(BOOT));
+        let after =
+            ProcessBirth::linux(4_200, 1_700_000_000 + STEP_SECONDS, 100).on_linux_boot(Some(BOOT));
+        assert_eq!(before, after);
+
+        let next_boot =
+            ProcessBirth::linux(4_200, 1_700_000_000, 100).on_linux_boot(Some(OTHER_BOOT));
+        assert_ne!(before, next_boot);
+        let other_process =
+            ProcessBirth::linux(4_201, 1_700_000_000, 100).on_linux_boot(Some(BOOT));
+        assert_ne!(before, other_process);
+    }
+
+    #[test]
+    fn a_linux_birth_without_a_boot_still_compares_by_btime() {
+        let recorded = ProcessBirth::linux(4_200, 1_700_000_000, 100);
+        let live = ProcessBirth::linux(4_200, 1_700_000_000, 100).on_linux_boot(Some(BOOT));
+        assert_eq!(recorded, live);
+        let stepped =
+            ProcessBirth::linux(4_200, 1_700_000_000 + STEP_SECONDS, 100).on_linux_boot(Some(BOOT));
+        assert_ne!(recorded, stepped);
+    }
+
+    #[test]
+    fn linux_birth_wire_carries_the_boot_and_reads_records_without_one() {
+        let legacy = r#"{"kind":"linux","start_ticks":4200,"btime":1700000000,"clk_tck":100}"#;
+        let decoded: ProcessBirth = serde_json::from_str(legacy).expect("legacy linux birth");
+        assert_eq!(serde_json::to_string(&decoded).expect("serialize"), legacy);
+
+        let bound = ProcessBirth::linux(4_200, 1_700_000_000, 100).on_linux_boot(Some(BOOT));
+        let json = serde_json::to_string(&bound).expect("serialize");
+        assert!(
+            json.contains(r#""boot_id":"8b9f3c1e77a24d0b9e612f4c05aad317""#),
+            "{json}"
+        );
+        let round: ProcessBirth = serde_json::from_str(&json).expect("round trip");
+        let stepped =
+            ProcessBirth::linux(4_200, 1_700_000_000 + STEP_SECONDS, 100).on_linux_boot(Some(BOOT));
+        assert_eq!(round, stepped);
+
+        let malformed =
+            r#"{"kind":"linux","start_ticks":1,"btime":1,"clk_tck":100,"boot_id":"not-a-boot"}"#;
+        assert!(serde_json::from_str::<ProcessBirth>(malformed).is_err());
+    }
+
+    #[test]
+    fn linux_boot_id_parses_the_kernel_uuid() {
+        assert_eq!(
+            parse_linux_boot_id("8b9f3c1e-77a2-4d0b-9e61-2f4c05aad317\n"),
+            Some(BOOT)
+        );
+        assert_eq!(
+            parse_linux_boot_id("8b9f3c1e77a24d0b9e612f4c05aad317"),
+            Some(BOOT)
+        );
+        assert_eq!(parse_linux_boot_id("my-boot-id"), None);
+        assert_eq!(parse_linux_boot_id(""), None);
     }
 
     #[test]

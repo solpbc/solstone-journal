@@ -198,7 +198,7 @@ Let your human know: **open http://localhost:5015/init in a browser on the journ
 
 `solstone journal doctor` reports whether the transcription runtime, the native speaker-analysis helper, and the models they need are ready.
 
-The linux local model provider picks its own GPU backend. On RTX 30, 40 and 50 series NVIDIA GPUs with a CUDA 13 driver it runs natively on CUDA, and the runtime downloads from `updates.solstone.app` as a checksum-pinned artifact. Every other hardware GPU uses Vulkan. CPU and software Vulkan devices are rejected rather than falling back silently. Transcription runs on the CPU runtime when the GPU cannot hold both it and the model.
+The linux local model provider picks its own GPU backend. On RTX 30, 40 and 50 series NVIDIA GPUs with a CUDA 13 driver it runs natively on CUDA, and the runtime downloads from `updates.solstone.app` as a checksum-pinned artifact. Every other hardware GPU uses Vulkan. CPU and software Vulkan devices are rejected rather than falling back silently. Transcription runs on the CPU runtime when the GPU cannot hold both it and the model. Local transcription on linux also needs about 4 GB of free RAM when it runs; with less free, the journal won't choose local transcription on its own.
 
 If the service fails to start, check `solstone journal service logs`.
 

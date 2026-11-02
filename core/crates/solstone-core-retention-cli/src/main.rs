@@ -1239,6 +1239,8 @@ solstone-retention — the retention executor
   remove-marked   --journal P --today YYYY-MM-DD --now ISO [--policy JSON] --mark ID [--mark ...]
   decline         --journal P --mark ID
 
+recover finishes removals an interrupted run left staged. It never restores anything.
+--did is the identity each tombstone records as the remover. The journal passes `owner`.
 --force executes the sweep. Use it only with the owner's express consent.
 Always prints one JSON object. Exit 0 all removed, 2 usage, 3 something refused, \
 4 run halted.

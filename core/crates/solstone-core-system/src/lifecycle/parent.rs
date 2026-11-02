@@ -207,6 +207,35 @@ mod tests {
     }
 
     #[test]
+    fn a_wall_clock_step_does_not_read_as_parent_loss() {
+        // A VM that slept woke 6.8 hours behind and NTP stepped it forward.
+        // `/proc/stat`'s btime moved with it; the supervisor did not exit.
+        const BOOT: u128 = 0x8b9f_3c1e_77a2_4d0b_9e61_2f4c_05aa_d317;
+        let admitted = ProcessInstance {
+            pid: 42,
+            birth: ProcessBirth::linux(4_200, 1_700_000_000, 100).on_linux_boot(Some(BOOT)),
+        };
+        let after_step = ProcessInstance {
+            pid: 42,
+            birth: ProcessBirth::linux(4_200, 1_700_024_480, 100).on_linux_boot(Some(BOOT)),
+        };
+        let watch = ParentWatch {
+            declared: DeclaredParent::from_instance(admitted),
+        };
+        let source = Source {
+            self_result: InspectResult::Absent,
+            parent_result: InspectResult::Present {
+                instance: after_step,
+                uid: 501,
+                execution: ExecutionState::Running,
+                ppid: Some(1),
+                pgid: None,
+            },
+        };
+        assert_eq!(watch.check(&source), ParentWatchStatus::Live);
+    }
+
+    #[test]
     fn parent_admission_requires_the_direct_birth_bound_parent() {
         let expected = instance(42, 10);
         let source = Source {
