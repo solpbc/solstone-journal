@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- your journal no longer shows a card each time a file can't be processed. a file it has stopped retrying is still listed under set-aside work on the health page, with a try again button.
 - your journal no longer sends a blank notification when screen descriptions can't run. for a refused or missing key, a ChatGPT sign-in or account, or confidential processing that's no longer active for your journal, it now says what to fix, and the card in your journal opens the thinking page. other holdups send nothing, and the work is retried on its own.
 - new recordings can now contribute to voice discovery on android and ios, and you can start teaching a voice before any speakers in that recording have been named.
 - search now catches up with your journal faster, most on journals with years in them.

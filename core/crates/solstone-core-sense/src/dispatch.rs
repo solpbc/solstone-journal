@@ -1628,13 +1628,6 @@ fn run_job(
         Some(code) => {
             let stopped = state.lock().expect("sense state").stopping;
             if !stopped {
-                notify_failure(
-                    outbound,
-                    &job.item.handler,
-                    &file,
-                    &process.log_path(),
-                    "Error",
-                );
                 state
                     .lock()
                     .expect("sense state")
@@ -1656,13 +1649,6 @@ fn run_job(
             {
                 reason = format!("{reason}; {detail}");
             }
-            notify_failure(
-                outbound,
-                &job.item.handler,
-                &file,
-                &process.log_path(),
-                "Timeout",
-            );
             state.lock().expect("sense state").health.failure(&reason);
             worker_context.tally.failure();
             reason
@@ -1813,56 +1799,6 @@ fn termination_detail(handler: &str, error: TerminationError) -> Option<String> 
             eprintln!("sense: managed termination failed handler={handler}: {error}");
             None
         }
-    }
-}
-
-fn notify_failure(
-    outbound: &mpsc::Sender<Outbound>,
-    handler: &str,
-    file: &Path,
-    log: &Path,
-    suffix: &str,
-) {
-    let fields = Map::from_iter([
-        (
-            String::from("message"),
-            json!(format!(
-                "{} {} for {}",
-                capitalize(handler),
-                suffix.to_lowercase(),
-                file.file_name()
-                    .and_then(|v| v.to_str())
-                    .unwrap_or_default()
-            )),
-        ),
-        (
-            String::from("title"),
-            json!(format!("{} {suffix}", capitalize(handler))),
-        ),
-        (String::from("icon"), json!(icon(handler))),
-        (String::from("app"), json!("sense")),
-        (
-            String::from("action"),
-            json!(format!("/app/health?log={}", log.display())),
-        ),
-    ]);
-    let _ = outbound.send(Outbound {
-        tract: "notification",
-        event: "show",
-        fields,
-    });
-}
-fn capitalize(value: &str) -> String {
-    let mut chars = value.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().collect::<String>() + chars.as_str()
-    })
-}
-fn icon(handler: &str) -> &'static str {
-    match handler {
-        "transcribe" => "mic-vocal",
-        "describe" => "eye",
-        _ => "bot",
     }
 }
 

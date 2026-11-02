@@ -79,6 +79,29 @@ async fn next_event(
     .expect("event")
 }
 
+/// Waits for an event, failing if a notification card arrives first: a failed
+/// or timed-out file is recorded on its segment, not announced per file.
+async fn next_event_rejecting_cards(
+    peer: &mut CallosumSocketConnection,
+    tract: &str,
+    event: &str,
+) -> solstone_core_callosum::CallosumEnvelope {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let message = peer.next_message().await.expect("peer");
+            assert!(
+                !(message.tract == "notification" && message.event == "show"),
+                "a per-file failure card was sent"
+            );
+            if message.tract == tract && message.event == event {
+                break message;
+            }
+        }
+    })
+    .await
+    .expect("event")
+}
+
 async fn no_second_observed_for(peer: &mut CallosumSocketConnection, segment: &str) {
     assert!(
         tokio::time::timeout(Duration::from_millis(350), async {
@@ -575,7 +598,7 @@ async fn child_receives_only_supported_segment_environment_from_observing_event(
 }
 
 #[tokio::test]
-async fn failure_keeps_notification_path_and_observed_error() {
+async fn failure_records_observed_error_without_a_card() {
     let root = tempfile::tempdir().expect("journal");
     std::fs::create_dir_all(root.path().join("config")).expect("config");
     std::fs::write(
@@ -595,20 +618,7 @@ async fn failure_keeps_notification_path_and_observed_error() {
     .await;
     wait_for_clients(&server).await;
     assert!(peer.emit("observe", "observing", observing(&["fail.flac"])));
-    let notification = next_event(&mut peer, "notification", "show").await;
-    assert!(
-        notification.extra["message"]
-            .as_str()
-            .expect("message")
-            .contains("fail.flac")
-    );
-    assert!(
-        notification.extra["action"]
-            .as_str()
-            .expect("action")
-            .contains("log=")
-    );
-    let observed = next_event(&mut peer, "observe", "observed").await;
+    let observed = next_event_rejecting_cards(&mut peer, "observe", "observed").await;
     assert_eq!(observed.extra["error"], true);
     assert!(
         observed.extra["errors"][0]
@@ -710,7 +720,7 @@ async fn shutdown_promptly_terminates_within_cap_without_notification() {
 }
 
 #[tokio::test]
-async fn watchdog_timeout_during_shutdown_still_notifies() {
+async fn watchdog_timeout_records_error_without_a_card_when_shutdown_follows() {
     let root = tempfile::tempdir().expect("journal");
     std::fs::create_dir_all(root.path().join("config")).expect("config");
     std::fs::write(
@@ -731,22 +741,19 @@ async fn watchdog_timeout_during_shutdown_still_notifies() {
     wait_for_clients(&server).await;
     assert!(peer.emit("observe", "observing", observing(&["sleep.flac"])));
     let _ = next_event(&mut peer, "observe", "detected").await;
-    tokio::time::sleep(Duration::from_millis(1050)).await;
+    // The one-second cap runs from the handler's launch, which a loaded host
+    // can delay; stopping before it would end the handler as a shutdown.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
     let _ = stop.send(());
-    let notification = next_event(&mut peer, "notification", "show").await;
-    assert!(
-        notification.extra["message"]
-            .as_str()
-            .expect("message")
-            .contains("sleep.flac")
-    );
-    let observed = next_event(&mut peer, "observe", "observed").await;
+    let observed = next_event_rejecting_cards(&mut peer, "observe", "observed").await;
     assert_eq!(observed.extra["error"], true);
     assert!(
         observed.extra["errors"][0]
             .as_str()
             .expect("error")
-            .contains("watchdog_timeout")
+            .contains("watchdog_timeout"),
+        "{:?}",
+        observed.extra["errors"]
     );
     server.stop().await;
 }

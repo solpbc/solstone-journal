@@ -3116,6 +3116,13 @@ mod tests {
         assert_eq!(work.history.owed, 0);
         assert_eq!(work.history.segments_set_aside, 1);
         assert!(work.history.daily_units_set_aside > 0);
+        // The given-up file is listed as set-aside work with its own retry.
+        let listed = |report: &WorkInventory| {
+            report.holds.iter().any(|hold| {
+                hold.segment.as_deref() == Some("120000_60") && hold.retry_unit.is_some()
+            })
+        };
+        assert!(listed(&report));
         let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 13).unwrap();
         let mut history_day = work.history;
         history_day.segments_owed = report.bands[4].segments_owed;
@@ -3174,6 +3181,38 @@ mod tests {
         assert_eq!(work.history.segments_set_aside, 0);
         assert_eq!(work.history.set_aside, 0);
         assert!(work.history.owed > 0);
+        // Once the file is processed, it leaves the list.
+        std::fs::write(
+            directory.join("audio.jsonl"),
+            format!(
+                "{}\n",
+                serde_json::json!({
+                    "raw":"audio.wav", "_solstone_processing": {
+                        "schema":"solstone.processing.v1", "handler":"transcribe",
+                        "state":"analyzed", "reason_code":"ok"
+                    }
+                })
+            ),
+        )
+        .unwrap();
+        let mut report = WorkInventory::default();
+        inspect_day(
+            root.path(),
+            day,
+            &queue,
+            None,
+            DaySources {
+                imports: &[],
+                archive_coordinates: &BTreeSet::new(),
+                roots: None,
+                ask: Default::default(),
+            },
+            policy,
+            &mut report,
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert!(!listed(&report));
     }
 
     #[cfg(feature = "full-tests")]
