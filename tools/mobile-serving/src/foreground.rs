@@ -1601,6 +1601,7 @@ pub struct ForegroundProcessingHost {
     running: RunningUses,
     stop: Arc<AtomicBool>,
     cancelled: Checkpoint,
+    request_stop: Arc<tokio::sync::Notify>,
     failed: Arc<AtomicBool>,
     generator: HostGenerator,
     imports: ImportFactorySlot,
@@ -1608,6 +1609,18 @@ pub struct ForegroundProcessingHost {
     worker: CallableQueueWorker,
     #[cfg(feature = "audio")]
     audio_state: Arc<Mutex<Option<AudioConfig>>>,
+}
+
+// One stored permit covers Stop racing the next receive registration.
+async fn next_request_event(
+    stop: &tokio::sync::Notify,
+    receive: impl std::future::Future<Output = Option<solstone_core_callosum::CallosumReceiveEvent>>,
+) -> Option<solstone_core_callosum::CallosumReceiveEvent> {
+    tokio::select! {
+        biased;
+        () = stop.notified() => None,
+        event = receive => event,
+    }
 }
 
 impl ForegroundProcessingHost {
@@ -1948,16 +1961,19 @@ impl ForegroundProcessingHost {
                 ))
             });
             let failed = Arc::new(AtomicBool::new(false));
+            let request_stop = Arc::new(tokio::sync::Notify::new());
             let cancelled: Checkpoint = {
                 let stop = Arc::clone(&stop);
                 let failed = Arc::clone(&failed);
                 let root = Arc::clone(&root);
+                let request_stop = Arc::clone(&request_stop);
                 Arc::new(move || {
                     if failed.load(Ordering::Acquire)
                         || external()
                         || root.revalidate_canonical_binding().is_err()
                     {
                         stop.store(true, Ordering::Release);
+                        request_stop.notify_one();
                     }
                     stop.load(Ordering::Acquire)
                 })
@@ -2199,6 +2215,7 @@ impl ForegroundProcessingHost {
                 running,
                 stop,
                 cancelled,
+                request_stop,
                 failed,
                 generator,
                 imports,
@@ -2497,6 +2514,7 @@ impl ForegroundProcessingHost {
         let journal = self.journal.clone();
         let queue = Arc::clone(&self.queue);
         let cancelled = Arc::clone(&self.cancelled);
+        let request_stop = Arc::clone(&self.request_stop);
         let marker = self.generation;
         let (registered, registration) = std::sync::mpsc::sync_channel(1);
         let requests = std::thread::Builder::new()
@@ -2515,14 +2533,14 @@ impl ForegroundProcessingHost {
                     let mut serial = 0_u64;
                     let mut registered = Some(registered);
                     while !cancelled() {
-                        tokio::select! {
-                            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
-                            event = connection.next_event() => {
+                        match next_request_event(&request_stop, connection.next_event()).await {
+                            None => break,
+                            Some(event) => {
                                 let envelope = match event {
-                                    Some(solstone_core_callosum::CallosumReceiveEvent::Continuity {
+                                    solstone_core_callosum::CallosumReceiveEvent::Continuity {
                                         phase: solstone_core_callosum::CallosumConnectionPhase::Connected,
                                         ..
-                                    }) => {
+                                    } => {
                                         connection.emit(
                                             "supervisor",
                                             "subscriber-ready",
@@ -2533,14 +2551,13 @@ impl ForegroundProcessingHost {
                                         );
                                         continue;
                                     }
-                                    Some(solstone_core_callosum::CallosumReceiveEvent::Continuity { .. }) => {
+                                    solstone_core_callosum::CallosumReceiveEvent::Continuity { .. } => {
                                         continue;
                                     }
-                                    Some(solstone_core_callosum::CallosumReceiveEvent::Envelope {
+                                    solstone_core_callosum::CallosumReceiveEvent::Envelope {
                                         envelope,
                                         ..
-                                    }) => envelope,
-                                    None => break,
+                                    } => envelope,
                                 };
                                 if envelope.tract == "supervisor"
                                     && envelope.event == "subscriber-ready"
@@ -2812,6 +2829,7 @@ impl ForegroundProcessingHost {
     }
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
+        self.request_stop.notify_one();
         if let Ok(mut owner) = OWNER_QUEUE.lock()
             && owner
                 .as_ref()
@@ -3071,6 +3089,118 @@ mod tests {
         )
         .unwrap();
         (temp, payload)
+    }
+
+    #[test]
+    fn request_wait_keeps_early_stop_wakes_pending_receive_and_ends_on_close() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let stop = tokio::sync::Notify::new();
+            stop.notify_one();
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_secs(1),
+                    next_request_event(&stop, std::future::pending())
+                )
+                .await
+                .unwrap()
+                .is_none()
+            );
+
+            let mut waiting = Box::pin(next_request_event(&stop, std::future::pending()));
+            let pending = std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(waiting.as_mut().poll(cx).is_pending())
+            })
+            .await;
+            assert!(pending);
+            stop.notify_one();
+            assert!(
+                tokio::time::timeout(Duration::from_secs(1), waiting)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+
+            let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+            drop(sender);
+            assert!(
+                tokio::time::timeout(
+                    Duration::from_secs(1),
+                    next_request_event(&stop, receiver.recv())
+                )
+                .await
+                .unwrap()
+                .is_none()
+            );
+
+            stop.notify_one();
+            let event = solstone_core_callosum::CallosumReceiveEvent::Continuity {
+                generation: 1,
+                epoch: 1,
+                phase: solstone_core_callosum::CallosumConnectionPhase::Connected,
+            };
+            assert!(
+                next_request_event(&stop, std::future::ready(Some(event)))
+                    .await
+                    .is_none()
+            );
+        });
+    }
+
+    #[test]
+    fn idle_request_subscriber_joins_on_owner_stop_and_failed_checkpoint() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        for checkpoint_failure in [false, true] {
+            let (temp, payload) = setup_test_journal();
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            let bus = runtime
+                .block_on(solstone_core_callosum::CallosumSocketServer::bind(
+                    temp.path().join("health/callosum.sock"),
+                ))
+                .unwrap();
+            let host = ForegroundProcessingHost::open_with_executor(
+                temp.path(),
+                &payload,
+                ScheduleNow::in_zone(Utc::now(), chrono_tz::UTC),
+                Arc::new(StubGenerateExecutor),
+                backup_deps(temp.path()),
+            )
+            .unwrap();
+            host.stop_discovery_for_test();
+            // No Sense or schedule worker can supply the wake in this test.
+            host.spawn_request_subscription().unwrap();
+            if checkpoint_failure {
+                host.failed.store(true, Ordering::Release);
+                assert!((host.cancelled)());
+            } else {
+                host.request_stop();
+            }
+            let request = host.request_handle.lock().unwrap().take().unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !request.is_finished() {
+                assert!(Instant::now() < deadline, "idle subscriber did not wake");
+                std::thread::park_timeout(Duration::from_millis(10));
+            }
+            request.join().unwrap();
+            let shutdown = host.shutdown();
+            if checkpoint_failure {
+                assert!(shutdown.is_err(), "a failed checkpoint stays a failure");
+                // All real workers have joined. Clear only the injected failure
+                // so this test releases the retained owner for the next case.
+                host.failed.store(false, Ordering::Release);
+                host.shutdown().unwrap();
+            } else {
+                shutdown.unwrap();
+            }
+            runtime.block_on(bus.stop());
+        }
     }
 
     #[test]
