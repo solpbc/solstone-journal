@@ -351,7 +351,7 @@ pub(crate) fn apply_result_cancellable(
     }
     let shown = segments
         .iter()
-        .any(|segment| has_screen_input(journal, day, segment, stream));
+        .any(|segment| has_visual_files(journal, day, segment, stream));
     // With no speech in the activity and a screen in it, nobody was heard: an
     // attendee's name came from the screen, like the tiles of a call recorded
     // without its audio. The role stands; only the source says so.
@@ -812,23 +812,8 @@ fn meeting_detected(
         .unwrap_or(false)
 }
 
-/// Whether a segment holds screen input: a screen or terminal recording.
-fn has_screen_input(
-    journal: &std::path::Path,
-    day: &str,
-    segment: &str,
-    stream: Option<&str>,
-) -> bool {
-    find_segment_dir(journal, day, segment, stream)
-        .and_then(|directory| fs::read_dir(directory).ok())
-        .is_some_and(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .any(|name| name.ends_with("screen.jsonl"))
-        })
-}
-
+/// Whether a segment holds something the owner saw: a screen or terminal
+/// recording, browser pages, desktop activity or protected video.
 fn has_visual_files(
     journal: &std::path::Path,
     day: &str,
@@ -2527,6 +2512,28 @@ mod tests {
                 ("Cifka", "visible", "screen"),
                 ("Suda", "visible", "screen")
             ])
+        );
+    }
+
+    #[test]
+    fn names_a_browser_only_activity_showed_are_visible() {
+        // #404, 10-31 follow-up: a person a shop is named after, listed as mentioned
+        // on an activity whose only input was the browser.
+        let root = tempfile::tempdir().unwrap();
+        write_participation_fixture(root.path(), json!({}), json!({}));
+        fs::write(
+            root.path()
+                .join(format!("chronicle/{DAY}/{SEGMENT}/browser_pages.jsonl")),
+            "{}\n",
+        )
+        .unwrap();
+        write_sense_entities(root.path(), false, json!([]));
+        assert_eq!(
+            apply_all(
+                root.path(),
+                json!([row("Mara Quinn", "mentioned", "screen")])
+            ),
+            owned(&[("Mara Quinn", "visible", "screen")])
         );
     }
 
