@@ -2814,7 +2814,9 @@ fn activity_saved_details_stay_one_fetchable_entry_per_activity() {
         }
         for old in &before {
             match fetch(&root, old, 64 * 1024) {
-                IndexedEntry::Found(text) => assert_eq!(text, after[old.1 as usize].2),
+                IndexedEntry::Found(text) | IndexedEntry::Reindexed(text) => {
+                    assert_eq!(text, after[old.1 as usize].2)
+                }
                 IndexedEntry::NotFound => {}
                 IndexedEntry::TooLarge => panic!("a fetchable entry became too large"),
             }
@@ -3746,4 +3748,112 @@ fn possible_name_rows_return_only_through_an_admission_that_runs_inside_the_quer
     assert_eq!(counts.counts.total, 1);
     drop(owner_index);
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// The row ids a search would have named for `rel`, read the way a test may.
+fn indexed_rows(root: &Path, rel: &str) -> Vec<(i64, String, i64)> {
+    let conn = read_only(root);
+    let mut statement = conn
+        .prepare(
+            "SELECT s.rowid, s.path, c.idx FROM chunk_sources AS s \
+             CROSS JOIN chunks AS c ON c.rowid = s.rowid \
+             WHERE s.path LIKE '%' || ?1 ORDER BY s.rowid",
+        )
+        .unwrap();
+    statement
+        .query_map([rel], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+fn reindex(root: &Path, rel: &str, text: &str) {
+    write_rel(root, rel, text);
+    solstone_core_indexer_store::scan::rescan_file(root, &root.join(rel)).expect("re-index file");
+}
+
+#[test]
+fn an_entry_opened_after_its_file_was_indexed_again_reads_and_says_so() {
+    use crate::IndexedEntry;
+    let note = "chronicle/20260107/talents/note.md";
+    let other = "chronicle/20260107/talents/other.md";
+
+    // Another file indexed between the search and the re-index moves the rows.
+    let root = temp_root("entry-reindexed-moved");
+    write_rel(&root, note, "# Note\n\nfirst kestrel words\n");
+    scan_journal(&root, true).expect("first scan");
+    let (searched, path, idx) = indexed_rows(&root, "talents/note.md")[0].clone();
+    reindex(&root, other, "# Other\n\nunrelated words\n");
+    reindex(&root, note, "# Note\n\nsecond kestrel words\n");
+    let now = indexed_rows(&root, "talents/note.md");
+    assert!(now.iter().all(|(row, _, _)| *row != searched), "rows moved");
+    let read = crate::read_indexed_entry(&root, QueryBoundary::Owner, &path, idx, searched, 16384)
+        .unwrap();
+    let IndexedEntry::Reindexed(content) = read else {
+        panic!("expected the re-indexed entry, got {read:?}");
+    };
+    assert!(content.contains("second kestrel"));
+
+    // A lookup that is not ready falls back to today's answer: gone.
+    let writable = Connection::open(db_path(&root)).unwrap();
+    writable
+        .execute("UPDATE chunk_source_readiness SET ready = 0", [])
+        .unwrap();
+    drop(writable);
+    assert_eq!(
+        crate::read_indexed_entry(&root, QueryBoundary::Owner, &path, idx, searched, 16384)
+            .unwrap(),
+        IndexedEntry::NotFound
+    );
+    fs::remove_dir_all(&root).unwrap();
+
+    // With nothing written in between, the re-index can hand back the same row
+    // ids. The entry still reads, with its new text, and nothing here can tell
+    // that it changed.
+    let root = temp_root("entry-reindexed-same-rows");
+    write_rel(&root, note, "# Note\n\nfirst kestrel words\n");
+    scan_journal(&root, true).expect("first scan");
+    let (searched, path, idx) = indexed_rows(&root, "talents/note.md")[0].clone();
+    reindex(&root, note, "# Note\n\nsecond kestrel words\n");
+    let read = crate::read_indexed_entry(&root, QueryBoundary::Owner, &path, idx, searched, 16384)
+        .unwrap();
+    assert!(
+        read.content()
+            .is_some_and(|text| text.contains("second kestrel")),
+        "{read:?}"
+    );
+    if indexed_rows(&root, "talents/note.md")[0].0 == searched {
+        assert!(matches!(read, IndexedEntry::Found(_)));
+    } else {
+        assert!(matches!(read, IndexedEntry::Reindexed(_)));
+    }
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn finding_a_reindexed_entry_never_reads_all_of_chunks() {
+    let (root, connection) = seeded_root("entry-reindexed-plan");
+    drop(connection);
+    let conn = read_only(&root);
+    let whole_scan = |sql: &str| {
+        let mut plan = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("explain");
+        let unbound = vec![rusqlite::types::Value::Null; plan.parameter_count()];
+        plan.query_map(rusqlite::params_from_iter(unbound), |row| {
+            row.get::<_, String>(3)
+        })
+        .expect("plan")
+        .map(Result::unwrap)
+        .any(|step| step.contains("chunks VIRTUAL TABLE") && step.ends_with("INDEX 0:"))
+    };
+    // Control: matching `path` on `chunks` is the whole-index read.
+    assert!(whole_scan("SELECT 1 FROM chunks WHERE path = ?"));
+    assert!(!whole_scan(crate::execute::REINDEXED_ROWS));
+    let (clause, _) = crate::execute::entry_row_predicate(&QueryBoundary::Owner, "p", 0);
+    assert!(!whole_scan(&format!(
+        "SELECT 1 FROM chunks WHERE {clause} LIMIT 1"
+    )));
+    drop(conn);
+    fs::remove_dir_all(root).unwrap();
 }

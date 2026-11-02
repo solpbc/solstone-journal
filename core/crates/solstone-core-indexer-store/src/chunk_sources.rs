@@ -102,6 +102,12 @@ pub(crate) fn chunk_path_lookup_ready(conn: &Connection) -> Result<bool, StoreEr
     Ok(ready == Some(1))
 }
 
+/// For a reader: whether the path lookup may be trusted on this connection.
+/// One that cannot be read is not ready.
+pub fn path_lookup_ready(conn: &Connection) -> bool {
+    chunk_path_lookup_ready(conn).unwrap_or(false)
+}
+
 pub(crate) fn require_chunk_path_lookup(conn: &Connection) -> Result<(), StoreError> {
     if chunk_path_lookup_ready(conn)? {
         Ok(())

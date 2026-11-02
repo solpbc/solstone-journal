@@ -33,6 +33,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - search now catches up with your journal faster, most on journals with years in them.
 - when you give someone in your journal a new name, alias or email, or a new person joins it, the days that already mentioned them now show the connection, newest days first. this used to wait for a weekly pass that a long journal could run out of time to finish, so on years of history those connections often never appeared.
 - `solstone journal indexer status` now shows the same queued updates, waiting removals and last search check as the health page. before, it could say search was up to date while updates were waiting.
+- opening a search result after its file was indexed again now shows what's indexed there today, with a note that it may not match the result, instead of saying it's no longer indexed. agents reading your journal get the same note.
 - the entities page and the more page are easier to read at night: their text now sits on a panel, not directly on the night sky.
 - home now sits centered beside the side rail instead of off to the left.
 - fixed a failure when picking a folder to import in the android development app.

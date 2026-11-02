@@ -762,12 +762,147 @@ fn open_index_reader(
 #[derive(Debug, PartialEq)]
 pub enum IndexedEntry {
     Found(String),
+    /// The file was indexed again after the search that named this entry, so
+    /// the search's row is gone. This is what the index now holds at the same
+    /// path and chunk index; its text, or which entry sits there, may differ.
+    Reindexed(String),
     TooLarge,
     NotFound,
 }
 
+impl IndexedEntry {
+    /// The text, whether the search's own row held it or a later index of the
+    /// same file did.
+    #[must_use]
+    pub fn content(&self) -> Option<&str> {
+        match self {
+            Self::Found(content) | Self::Reindexed(content) => Some(content),
+            Self::TooLarge | Self::NotFound => None,
+        }
+    }
+}
+
+/// Where a search result's entry is now.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntryLocation {
+    /// The search's row still holds this path and chunk index.
+    AsSearched,
+    /// The file was indexed again since the search; this row now holds the
+    /// same path and chunk index.
+    Reindexed(i64),
+    /// Neither: the entry is gone, hidden from this boundary, or the path
+    /// lookup that would find a re-indexed row is not ready.
+    Gone,
+}
+
+/// The boundary-filtered predicate for one row of `path` at `idx`, and its
+/// parameters after the leading row id.
+pub(crate) fn entry_row_predicate(
+    boundary: &QueryBoundary,
+    path: &str,
+    idx: i64,
+) -> (String, Vec<Value>) {
+    let mut plan = SqlPlan {
+        where_clause: visible_rows("chunks.rowid=? AND chunks.path=? AND chunks.idx=?"),
+        params: Vec::new(),
+        has_live_match_expression: false,
+    };
+    if let QueryBoundary::Connection(connection_boundary) = boundary {
+        append_connection_prefilter(&mut plan, connection_boundary);
+    }
+    let mut values = vec![Value::Text(path.to_string()), Value::Integer(idx)];
+    values.extend(plan.params.into_iter().map(Value::Text));
+    (plan.where_clause, values)
+}
+
+fn entry_row_exists(
+    reader: &QueryConnection,
+    boundary: &QueryBoundary,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+) -> Result<bool, IndexAccessError> {
+    let (clause, rest) = entry_row_predicate(boundary, path, idx);
+    let mut values = vec![Value::Integer(row_id)];
+    values.extend(rest);
+    reader
+        .connection
+        .query_row(
+            &format!("SELECT 1 FROM chunks WHERE {clause} LIMIT 1"),
+            params_from_iter(values.iter()),
+            |_| Ok(()),
+        )
+        .optional()
+        .map(|found| found.is_some())
+        .map_err(|error| reader.classify(error))
+}
+
+/// CROSS JOIN keeps `chunk_sources` outermost, so `chunks` is only ever probed
+/// by row id.
+pub(crate) const REINDEXED_ROWS: &str = "SELECT c.rowid FROM chunk_sources AS s \
+    CROSS JOIN chunks AS c ON c.rowid = s.rowid \
+    WHERE s.path = ?1 AND c.path = ?1 AND c.idx = ?2 AND c.rowid != ?3 ORDER BY c.rowid";
+
+/// Rows of `path` at `idx` other than `row_id`, found through the path lookup
+/// rather than by matching `path` on `chunks`, which reads the whole index.
+/// A lookup that is not ready, or cannot be read, finds none: the caller then
+/// reports the entry gone, as before the lookup existed.
+fn reindexed_rows(reader: &QueryConnection, path: &str, idx: i64, row_id: i64) -> Vec<i64> {
+    if !solstone_core_indexer_store::chunk_sources::path_lookup_ready(&reader.connection) {
+        return Vec::new();
+    }
+    let rows = reader
+        .connection
+        .prepare(REINDEXED_ROWS)
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![path, idx, row_id], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()
+        });
+    rows.unwrap_or_default()
+}
+
+fn locate_entry(
+    reader: &QueryConnection,
+    boundary: &QueryBoundary,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+) -> Result<EntryLocation, IndexAccessError> {
+    if entry_row_exists(reader, boundary, path, idx, row_id)? {
+        return Ok(EntryLocation::AsSearched);
+    }
+    for candidate in reindexed_rows(reader, path, idx, row_id) {
+        if entry_row_exists(reader, boundary, path, idx, candidate)? {
+            return Ok(EntryLocation::Reindexed(candidate));
+        }
+    }
+    Ok(EntryLocation::Gone)
+}
+
+/// Where the entry a search named by `path`, `idx` and `row_id` is now, inside
+/// `boundary`. Read-only. An absent or empty index has nothing: `Gone`.
+pub fn locate_indexed_entry(
+    journal: &Path,
+    boundary: QueryBoundary,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+) -> Result<EntryLocation, IndexAccessError> {
+    let reader = match open_index_reader(journal, &boundary) {
+        Ok(reader) => reader,
+        Err(IndexAccessError::Absent { .. } | IndexAccessError::Empty { .. }) => {
+            return Ok(EntryLocation::Gone);
+        }
+        Err(error) => return Err(error),
+    };
+    locate_entry(&reader, &boundary, path, idx, row_id)
+}
+
 /// Read a result without modifying the index or opening its source file.
 /// The path and chunk index guard against a row id reused by a later index build.
+/// When the file was indexed again after the search, the row at the same path
+/// and chunk index is returned as [`IndexedEntry::Reindexed`].
 pub fn read_indexed_entry(
     journal: &Path,
     boundary: QueryBoundary,
@@ -785,51 +920,17 @@ pub fn read_indexed_entry(
         }
         Err(error) => return Err(error),
     };
-    if matches!(&boundary, QueryBoundary::Owner) {
-        let found: Option<(i64, Option<String>)> = reader
-            .connection
-            .query_row(
-                &format!(
-                    "SELECT length(CAST(content AS BLOB)),
-                    CASE WHEN length(CAST(content AS BLOB)) <= ?4 THEN content ELSE NULL END
-             FROM chunks WHERE {} LIMIT 1",
-                    visible_rows("rowid=?1 AND path=?2 AND idx=?3")
-                ),
-                params![
-                    row_id,
-                    path,
-                    idx,
-                    i64::try_from(max_bytes).unwrap_or(i64::MAX)
-                ],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(|error| reader.classify(error))?;
-        return Ok(match found {
-            None => IndexedEntry::NotFound,
-            Some((_, Some(content))) => IndexedEntry::Found(content),
-            Some(_) => IndexedEntry::TooLarge,
-        });
-    }
-    let mut clause = visible_rows("rowid=? AND path=? AND idx=?");
-    let mut classification_values = Vec::new();
-    if let QueryBoundary::Connection(connection_boundary) = &boundary {
-        let mut plan = SqlPlan {
-            where_clause: clause,
-            params: Vec::new(),
-            has_live_match_expression: false,
-        };
-        append_connection_prefilter(&mut plan, connection_boundary);
-        clause = plan.where_clause;
-        classification_values = plan.params;
-    }
+    let (row_id, reindexed) = match locate_entry(&reader, &boundary, path, idx, row_id)? {
+        EntryLocation::AsSearched => (row_id, false),
+        EntryLocation::Reindexed(row_id) => (row_id, true),
+        EntryLocation::Gone => return Ok(IndexedEntry::NotFound),
+    };
+    let (clause, rest) = entry_row_predicate(&boundary, path, idx);
     let mut values = vec![
         Value::Integer(i64::try_from(max_bytes).unwrap_or(i64::MAX)),
         Value::Integer(row_id),
-        Value::Text(path.to_string()),
-        Value::Integer(idx),
     ];
-    values.extend(classification_values.into_iter().map(Value::Text));
+    values.extend(rest);
     let found: Option<(i64, Option<String>)> = reader
         .connection
         .query_row(
@@ -843,9 +944,13 @@ pub fn read_indexed_entry(
         )
         .optional()
         .map_err(|error| reader.classify(error))?;
+    let owner = matches!(&boundary, QueryBoundary::Owner);
     Ok(match found {
         None => IndexedEntry::NotFound,
+        Some((_, Some(content))) if reindexed => IndexedEntry::Reindexed(content),
         Some((_, Some(content))) => IndexedEntry::Found(content),
+        // An agent is not told the size of an entry it cannot read.
+        Some(_) if owner => IndexedEntry::TooLarge,
         Some(_) => IndexedEntry::NotFound,
     })
 }

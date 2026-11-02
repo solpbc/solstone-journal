@@ -777,3 +777,40 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
     assert_eq!(hit4["agent"], "flow");
     assert!(hit4.get("week_url").is_none());
 }
+
+#[tokio::test]
+async fn a_result_opened_after_its_file_was_indexed_again_reads_and_is_marked() {
+    let fixture = Fixture::new("reindexed-entry");
+    write(
+        &fixture.root.join("config/journal.json"),
+        r#"{"setup":{"completed_at":1}}"#,
+    );
+    let note = fixture.root.join("chronicle/20260731/talents/note.md");
+    write(&note, "# Note\n\nthe kestrel launch\n");
+    solstone_core_indexer_store::scan::scan_journal(&fixture.root, true).expect("scan");
+    let result =
+        response_json(request(&fixture.root, "/app/search/api/search?q=kestrel").await).await;
+    let hit = &result["days"][0]["results"][0];
+    let query = format!(
+        "/app/search/api/entry?path={}&idx={}&entry_id={}",
+        hit["path"].as_str().unwrap(),
+        hit["idx"],
+        hit["entry_id"]
+    );
+    let other = fixture.root.join("chronicle/20260731/talents/other.md");
+    write(&other, "# Other\n\nunrelated\n");
+    solstone_core_indexer_store::scan::rescan_file(&fixture.root, &other).expect("index other");
+    write(&note, "# Note\n\nthe kestrel review\n");
+    solstone_core_indexer_store::scan::rescan_file(&fixture.root, &note).expect("index again");
+
+    let response = request(&fixture.root, &query).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let entry = response_json(response).await;
+    assert!(
+        entry["content"]
+            .as_str()
+            .unwrap()
+            .contains("kestrel review")
+    );
+    assert_eq!(entry["reindexed_since_search"], json!(true));
+}

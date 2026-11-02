@@ -8178,10 +8178,12 @@ fn activity_changes_stay_out_until_the_file_is_indexed_again() {
             .unwrap()
             .contains("firststoryneedle")
     );
-    assert_eq!(
-        probe(&journal, "fetch", json!({"reference": reference})),
-        Err(McpProbeError::Unavailable)
-    );
+    // The reference from before the repair names rows the repair replaced.
+    // The file's bytes and the record still match its proof, so it reads the
+    // same activity, marked as indexed again since that search.
+    let earlier = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
+    assert_eq!(earlier["text"], repaired_fetch["text"]);
+    assert_eq!(earlier["reindexed_since_search"], true);
 
     let conn = rusqlite::Connection::open(&index_path).unwrap();
     conn.execute(

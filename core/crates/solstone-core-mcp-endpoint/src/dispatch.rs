@@ -13,9 +13,9 @@ use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
-    ConnectionStartAfter, IndexedEntry, OwnMemoryOpenError, QueryBoundary,
-    indexed_path_has_later_chunk, memory_row_matches_original, open_own_memory_index,
-    read_indexed_entry, read_indexed_path_entries, read_own_memory_row,
+    ConnectionStartAfter, EntryLocation, OwnMemoryOpenError, QueryBoundary,
+    indexed_path_has_later_chunk, locate_indexed_entry, memory_row_matches_original,
+    open_own_memory_index, read_indexed_entry, read_indexed_path_entries, read_own_memory_row,
     search_connection_with_possible_names,
 };
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
@@ -1657,16 +1657,27 @@ fn resolve_search_cursor(
     {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     }
-    let IndexedEntry::Found(content) = read_indexed_entry(
+    // A cursor names its anchor by row id; a re-index since moves it. The
+    // fingerprint below still decides whether it is the same text.
+    let row_id = current_row_id(
+        journal_root,
+        boundary,
+        &cursor.path,
+        cursor.idx,
+        cursor.row_id,
+    )?
+    .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?
+    .0;
+    let entry = read_indexed_entry(
         journal_root,
         QueryBoundary::Connection(boundary.clone()),
         &cursor.path,
         cursor.idx,
-        cursor.row_id,
+        row_id,
         MAX_INDEXED_ENTRY_BYTES,
     )
-    .map_err(index_error)?
-    else {
+    .map_err(index_error)?;
+    let Some(content) = entry.content().map(str::to_owned) else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
     match activity_cursor_proof_matches(
@@ -1674,7 +1685,7 @@ fn resolve_search_cursor(
         boundary,
         &cursor.path,
         cursor.idx,
-        cursor.row_id,
+        row_id,
         &content,
         cursor.activity_proof.as_deref().unwrap_or(""),
         MAX_INDEXED_ENTRY_BYTES,
@@ -1695,6 +1706,33 @@ fn resolve_search_cursor(
         path: cursor.path,
         idx: cursor.idx,
     })
+}
+
+/// The row that holds `path` at `idx` for this boundary now, and whether it
+/// differs from the one the search named because the file was indexed again.
+/// `None` when neither holds it.
+fn current_row_id(
+    journal_root: &Path,
+    boundary: &ConnectionBoundary,
+    path: &str,
+    idx: i64,
+    row_id: i64,
+) -> Result<Option<(i64, bool)>, DispatchError> {
+    Ok(
+        match locate_indexed_entry(
+            journal_root,
+            QueryBoundary::Connection(boundary.clone()),
+            path,
+            idx,
+            row_id,
+        )
+        .map_err(index_error)?
+        {
+            EntryLocation::AsSearched => Some((row_id, false)),
+            EntryLocation::Reindexed(row_id) => Some((row_id, true)),
+            EntryLocation::Gone => None,
+        },
+    )
 }
 
 /// How a markdown fetch represents an indexed chunk.
@@ -1849,12 +1887,22 @@ fn fetch(
                 // Screen text is written literal when it is recorded.
                 return Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]));
             }
-            let (text, hidden, record) = match admit_activity(
+            // The file may have been indexed again since the search; read the
+            // row that holds this path and chunk index now, and say so.
+            let (row_id, reindexed) = current_row_id(
                 journal_root,
                 &boundary,
                 &entry.path,
                 entry.idx,
                 entry.row_id,
+            )?
+            .unwrap_or((entry.row_id, false));
+            let (text, hidden, record) = match admit_activity(
+                journal_root,
+                &boundary,
+                &entry.path,
+                entry.idx,
+                row_id,
                 None,
                 entry.activity_proof.as_deref(),
                 true,
@@ -1943,6 +1991,9 @@ fn fetch(
                 json!({"title": entry_title(&entry.day), "date": entry.day, "text": text});
             if let Some(hidden) = hidden {
                 value["hidden"] = Value::Bool(hidden);
+            }
+            if reindexed {
+                value["reindexed_since_search"] = Value::Bool(true);
             }
             if entry.stream.starts_with("agent-memory-") {
                 let origin = memory_hit_origin(journal_root, &entry.path, &entry.stream)

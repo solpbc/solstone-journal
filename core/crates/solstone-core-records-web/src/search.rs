@@ -351,6 +351,11 @@ async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Re
         Ok(Ok(IndexedEntry::Found(content))) => {
             axum::Json(json!({"content": content})).into_response()
         }
+        // The file was indexed again after the search. What sits at the same
+        // place now is served, marked so it is not taken for the search's text.
+        Ok(Ok(IndexedEntry::Reindexed(content))) => {
+            axum::Json(json!({"content": content, "reindexed_since_search": true})).into_response()
+        }
         Ok(Ok(IndexedEntry::TooLarge)) => invalid_value("this entry is too long to display here."),
         Ok(Ok(IndexedEntry::NotFound)) => {
             file_not_found("this entry is no longer indexed. search again to refresh the results.")

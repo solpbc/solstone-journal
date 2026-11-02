@@ -503,3 +503,44 @@ fn without_the_entities_category_no_label_hit_count_or_cursor_trace_remains() {
     let (_, again) = journal.first_line();
     assert_eq!(again, line("ask Fryer (possible name: Friar) to call anna"));
 }
+
+#[test]
+fn fetch_reads_an_entry_whose_file_was_indexed_again_and_says_so() {
+    let journal = Journal::new();
+    journal.segment("090000_300", Some("brief about the kestrel launch"));
+    journal.index();
+    journal.grant(whole());
+    let found = journal.search("kestrel", 5, None);
+    let reference = found["results"][0]["reference"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let rescan = |key: &str, brief: &str| {
+        let path = journal.segment_dir(key).join("talents/brief.md");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, format!("{brief}\n")).unwrap();
+        solstone_core_indexer_store::scan::rescan_file(journal.path(), &path).unwrap();
+    };
+    // Another file indexed in between, then this one again: its rows move.
+    rescan("091000_300", "brief about something else");
+    rescan("090000_300", "brief about the kestrel review");
+
+    let fetched = journal
+        .probe("fetch", json!({"reference": reference}))
+        .unwrap();
+    assert!(
+        fetched["text"].as_str().unwrap().contains("kestrel review"),
+        "{fetched}"
+    );
+    assert_eq!(fetched["reindexed_since_search"], json!(true));
+
+    // A reference from a search made now carries no such mark.
+    let fresh = journal.search("kestrel", 5, None);
+    let fresh = journal
+        .probe(
+            "fetch",
+            json!({"reference": fresh["results"][0]["reference"]}),
+        )
+        .unwrap();
+    assert_eq!(fresh["reindexed_since_search"], Value::Null);
+}

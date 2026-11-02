@@ -121,7 +121,7 @@
     content.hidden=false;button.setAttribute('aria-expanded','true');button.textContent='close entry';
     if(content.dataset.loaded)return;
     content.textContent='loading entry…';
-    try{const data=await window.apiJson('/app/search/api/entry?'+new URLSearchParams({path,idx:String(hit.idx),entry_id:String(hit.entry_id)}));if(!root.isConnected)return;content.replaceChildren(node('span','search-meta','as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';}
+    try{const data=await window.apiJson('/app/search/api/entry?'+new URLSearchParams({path,idx:String(hit.idx),entry_id:String(hit.entry_id)}));if(!root.isConnected)return;content.replaceChildren(node('span','search-meta',data.reindexed_since_search?'this file was indexed again after your search, so this may not match the result':'as last indexed'),document.createTextNode(data.content));content.dataset.loaded='true';}
     catch(error){if(!root.isConnected)return;content.textContent="couldn't open this entry. "+String(error.serverMessage||error.message||'try again.');if(error.rawDetail)content.textContent+=' '+String(error.rawDetail);}
    });actions.append(button);card.append(actions,content);
   }else{
