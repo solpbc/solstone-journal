@@ -80,7 +80,7 @@ fn consent_matches(consent: &serde_json::Value, filesystem_type: &str, root: &Pa
 
 fn volume(root: &Path) -> io::Result<(String, bool)> {
     let stats = nix::sys::statfs::statfs(root).map_err(io::Error::from)?;
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
         Ok((
             stats.filesystem_type_name().to_owned(),
@@ -89,7 +89,7 @@ fn volume(root: &Path) -> io::Result<(String, bool)> {
                 .contains(nix::mount::MntFlags::MNT_IGNORE_OWNERSHIP),
         ))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     {
         Ok((format!("0x{:x}", stats.filesystem_type().0), false))
     }
