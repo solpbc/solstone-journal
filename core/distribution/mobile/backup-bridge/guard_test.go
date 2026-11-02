@@ -13,6 +13,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/restic/restic/internal/backend"
+	"github.com/restic/restic/internal/repository"
 )
 
 type readerBackend struct {
@@ -89,9 +90,11 @@ func TestTruncatedEncryptedMetadataNeverReachesDecryptor(t *testing.T) {
 }
 
 func TestRefusalResultDecoderSizeExceeded(t *testing.T) {
-	result := refusalResult(errors.Join(errors.New("decode index"), zstd.ErrDecoderSizeExceeded), DiagRepoCorrupt)
-	if result.status != StatusCapExceeded || result.diagnostic != DiagCapExceeded {
-		t.Fatalf("decoder cap must be reported as cap refusal, got status=%d diagnostic=%q", result.status, result.diagnostic)
+	for _, err := range []error{zstd.ErrDecoderSizeExceeded, repository.ErrMobileIndexBudgetExceeded} {
+		result := refusalResult(errors.Join(errors.New("decode index"), err), DiagRepoCorrupt)
+		if result.status != StatusCapExceeded || result.diagnostic != DiagCapExceeded {
+			t.Fatalf("decoder cap must be reported as cap refusal, got status=%d diagnostic=%q", result.status, result.diagnostic)
+		}
 	}
 }
 

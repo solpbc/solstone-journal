@@ -9,12 +9,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/restic/restic/internal/backend"
+	"github.com/restic/restic/internal/crypto"
+	"github.com/restic/restic/internal/repository"
+	"github.com/restic/restic/internal/restic"
 )
 
 // Controlled construction is private to tests. Production C admission installs
@@ -162,6 +169,45 @@ func TestS3OperationsEncryptedRoundTripThroughOwnedWorker(t *testing.T) {
 	if first.status != StatusOk || !validS3ID(first.snapshotID) {
 		t.Fatal("original snapshot failed", first.status, first.diagnostic)
 	}
+	// Exercise incremental growth beyond the former eight-index census through
+	// the real owned Snapshot worker, retaining encrypted content addressing.
+	indexBackend := s3TestBackend(t, cfg, peer)
+	indexRepo, err := repository.New(guardedBackend{indexBackend}, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := safeScanKey(context.Background(), indexRepo, string(daily)); err != nil {
+		t.Fatal(err)
+	}
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer encoder.Close()
+	addIndex := func(plain []byte) restic.ID {
+		t.Helper()
+		encoded := encoder.EncodeAll(plain, []byte{2})
+		nonce := crypto.NewRandomNonce()
+		ciphertext := indexRepo.Key().Seal(append([]byte(nil), nonce...), nonce, encoded, nil)
+		id := restic.Hash(ciphertext)
+		if err := indexBackend.Save(context.Background(), backend.Handle{Type: backend.IndexFile, Name: id.String()}, backend.NewByteReader(ciphertext, nil)); err != nil {
+			t.Fatal("authenticated index fixture", err)
+		}
+		return id
+	}
+	for i := 0; i < 8; i++ {
+		// A fresh nonce gives even empty indexes unique content-addressed IDs.
+		addIndex([]byte(`{"packs":[]}`))
+	}
+	indexCount, indexBytes := 0, int64(0)
+	if err := indexRepo.List(context.Background(), restic.IndexFile, func(_ restic.ID, size int64) error {
+		indexCount++
+		indexBytes += size
+		return nil
+	}); err != nil || indexCount != 9 {
+		t.Fatalf("nine-index fixture: count=%d bytes=%d error=%v", indexCount, indexBytes, err)
+	}
+	t.Logf("owned Snapshot input: %d authenticated indexes, %d stored bytes", indexCount, indexBytes)
 	if os.WriteFile(filepath.Join(source, "journal.txt"), changedBytes, 0640) != nil || os.WriteFile(filepath.Join(source, "second.txt"), []byte("second owned fixture"), 0600) != nil {
 		t.Fatal("fixture update failed")
 	}
@@ -224,5 +270,39 @@ func TestS3OperationsEncryptedRoundTripThroughOwnedWorker(t *testing.T) {
 	owner := s3OwnerTestOpen(t, state, cfg)
 	if owner.record.Active != nil || owner.record.Complete == nil || len(owner.record.Passwords) < 2 {
 		t.Fatal("terminal recovery custody missing")
+	}
+	s3OwnerTestClose(t, owner)
+
+	// Small encrypted objects may expand near the per-object decode limit.
+	// Nine individually admissible frames must exceed the shared 64MiB work
+	// budget, and the real worker must refuse rather than use a partial index.
+	padded := append([]byte(`{"packs":[]}`), bytes.Repeat([]byte(" "), maxIndexBytes-1024)...)
+	var paddedID restic.ID
+	for i := 0; i < 9; i++ {
+		paddedID = addIndex(padded)
+	}
+	probeRepo, err := repository.New(guardedBackend{indexBackend}, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := safeScanKey(context.Background(), probeRepo, string(daily)); err != nil {
+		t.Fatal(err)
+	}
+	// Repeated reads are charged too, not just distinct IDs or a single list.
+	for i := 0; i < 9; i++ {
+		_, err := probeRepo.LoadUnpacked(context.Background(), restic.IndexFile, paddedID)
+		if i < 8 && err != nil || i == 8 && !errors.Is(err, repository.ErrMobileIndexBudgetExceeded) {
+			t.Fatalf("repository lifetime decoded budget at read %d: %v", i+1, err)
+		}
+	}
+	if _, err := probeRepo.LoadUnpacked(context.Background(), restic.IndexFile, restic.ID{}); !errors.Is(err, repository.ErrMobileIndexBudgetExceeded) {
+		t.Fatalf("exhausted repository tried another metadata read: %v", err)
+	}
+	refused := call(OpSnapshot, daily, "", "")
+	if refused.status != StatusCapExceeded || refused.diagnostic != DiagCapExceeded || refused.snapshotID != "" {
+		t.Fatalf("partial indexes reached Snapshot: status=%d diagnostic=%q snapshot=%q", refused.status, refused.diagnostic, refused.snapshotID)
+	}
+	if got, err := os.ReadFile(filepath.Join(source, "journal.txt")); err != nil || !bytes.Equal(got, changedBytes) {
+		t.Fatal("cap refusal changed the original")
 	}
 }

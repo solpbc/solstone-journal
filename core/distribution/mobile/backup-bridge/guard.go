@@ -13,6 +13,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/restic/restic/internal/backend"
 	"github.com/restic/restic/internal/crypto"
+	"github.com/restic/restic/internal/repository"
 )
 
 const (
@@ -21,13 +22,15 @@ const (
 	maxSnapshotBytes      = 16 * 1024 * 1024
 	maxIndexBytes         = 8 * 1024 * 1024
 	maxPackListCount      = 65536
-	maxIndexListCount     = 8
-	maxIndexListBytes     = 64 * 1024 * 1024
-	maxSnapshotListBytes  = 256 * 1024 * 1024
-	maxLockListCount      = 64
-	maxLockListBytes      = 4 * 1024 * 1024
-	maxKDFMemory          = 128 * 1024 * 1024
-	maxKDFWork            = 1 << 24
+	// Allow incremental indexes up to the snapshot census, independently of
+	// stored/decoded byte budgets and the fixed two-loader memory bound.
+	maxIndexListCount    = maxSnapshotCount
+	maxIndexListBytes    = 64 * 1024 * 1024
+	maxSnapshotListBytes = 256 * 1024 * 1024
+	maxLockListCount     = 64
+	maxLockListBytes     = 4 * 1024 * 1024
+	maxKDFMemory         = 128 * 1024 * 1024
+	maxKDFWork           = 1 << 24
 )
 
 var errResourceLimit = errors.New("repository resource limit exceeded")
@@ -143,7 +146,7 @@ func (guard guardedBackend) Load(ctx context.Context, handle backend.Handle, len
 }
 
 func refusalResult(err error, diagnostic string) bridgeResult {
-	if errors.Is(err, errResourceLimit) || errors.Is(err, zstd.ErrDecoderSizeExceeded) {
+	if errors.Is(err, errResourceLimit) || errors.Is(err, zstd.ErrDecoderSizeExceeded) || errors.Is(err, repository.ErrMobileIndexBudgetExceeded) {
 		return bridgeResult{status: StatusCapExceeded, diagnostic: DiagCapExceeded}
 	}
 	return bridgeResult{status: StatusFailed, diagnostic: diagnostic}

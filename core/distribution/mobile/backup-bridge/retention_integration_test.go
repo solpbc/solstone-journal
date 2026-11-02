@@ -9,13 +9,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/restic/restic/internal/crypto"
 	"github.com/restic/restic/internal/data"
 	"github.com/restic/restic/internal/repository"
 	"github.com/restic/restic/internal/restic"
@@ -27,14 +27,33 @@ type retainedSnapshot struct {
 }
 
 func TestIntegrationRetentionIndexCapRefusesBeforeMutation(t *testing.T) {
-	repo, source, password, _ := retentionRepository(t, false)
-	for i := 0; i < 3; i++ {
-		replaceSource(t, source, map[string][]byte{"extra.txt": []byte(fmt.Sprintf("extra-%d", i))})
-		result, err := executeSnapshot(context.Background(), bridgeRequest{
-			operation: OpSnapshot, password: []byte(password), repoPath: repo, sourcePath: source,
-		}, func() {})
-		if err != nil || result.status != StatusOk {
-			t.Fatalf("extra snapshot: %+v %v", result, err)
+	repo, _, password, _ := retentionRepository(t, false)
+	root, err := os.OpenRoot(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	be, err := newRootBackend(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := repository.New(guardedBackend{be}, repository.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := safeScanKey(context.Background(), fixture, password); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := os.ReadDir(filepath.Join(repo, "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Populate the actual count boundary without thousands of full snapshots.
+	for i := len(initial); i <= maxIndexListCount; i++ {
+		nonce := crypto.NewRandomNonce()
+		ciphertext := fixture.Key().Seal(append([]byte(nil), nonce...), nonce, []byte(`{"packs":[]}`), nil)
+		if err := os.WriteFile(filepath.Join(repo, "index", restic.Hash(ciphertext).String()), ciphertext, 0600); err != nil {
+			t.Fatal(err)
 		}
 	}
 	indexes, err := os.ReadDir(filepath.Join(repo, "index"))

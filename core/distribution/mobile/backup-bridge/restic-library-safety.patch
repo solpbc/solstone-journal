@@ -39,7 +39,47 @@
  					Type: blob.Type,
 --- a/internal/repository/repository.go
 +++ b/internal/repository/repository.go
-@@ -196,6 +196,9 @@
+@@ -29,6 +29,13 @@
+ const DefaultPackSize = 16 * 1024 * 1024
+ const MaxPackSize = 128 * 1024 * 1024
+ 
++// ErrMobileIndexBudgetExceeded refuses cumulative decoded index work before
++// the JSON decoder or master index can retain it. The budget belongs to one
++// Repository and includes repeat reads; it is never reset by incremental loads.
++var ErrMobileIndexBudgetExceeded = errors.New("mobile decoded index budget exceeded")
++
++const maxMobileIndexLoadBytes = 64 * 1024 * 1024
++
+ // Repository is used to access a repository in a backend.
+ type Repository struct {
+ 	be    backend.Backend
+@@ -52,6 +59,10 @@
+ 	allocDec sync.Once
+ 	enc      *zstd.Encoder
+ 	dec      *zstd.Decoder
++
++	indexLoadMu     sync.Mutex
++	indexLoadBytes  int
++	indexLoadFailed bool
+ }
+ 
+ // internalRepository allows using SaveUnpacked and RemoveUnpacked with all FileTypes
+@@ -187,6 +198,14 @@
+ func (r *Repository) LoadUnpacked(ctx context.Context, t restic.FileType, id restic.ID) ([]byte, error) {
+ 	debug.Log("load %v with id %v", t, id)
+ 
++	if t == restic.IndexFile {
++		r.indexLoadMu.Lock()
++		failed := r.indexLoadFailed
++		r.indexLoadMu.Unlock()
++		if failed {
++			return nil, ErrMobileIndexBudgetExceeded
++		}
++	}
+ 	if t == restic.ConfigFile {
+ 		id = restic.ID{}
+ 	}
+@@ -196,13 +215,29 @@
  		return nil, err
  	}
  
@@ -49,7 +89,30 @@
  	nonce, ciphertext := buf[:r.key.NonceSize()], buf[r.key.NonceSize():]
  	plaintext, err := r.key.Open(ciphertext[:0], nonce, ciphertext, nil)
  	if err != nil {
-@@ -357,9 +360,8 @@
+ 		return nil, err
+ 	}
+ 	if t != restic.ConfigFile {
+-		return r.decompressUnpacked(plaintext)
++		plaintext, err = r.decompressUnpacked(plaintext)
++		if err != nil {
++			return nil, err
++		}
++	}
++	if t == restic.IndexFile {
++		r.indexLoadMu.Lock()
++		if r.indexLoadFailed || len(plaintext) > maxMobileIndexLoadBytes-r.indexLoadBytes {
++			r.indexLoadFailed = true
++			r.indexLoadMu.Unlock()
++			return nil, ErrMobileIndexBudgetExceeded
++		}
++		r.indexLoadBytes += len(plaintext)
++		r.indexLoadMu.Unlock()
+ 	}
+ 
+ 	return plaintext, nil
+@@ -355,11 +390,10 @@
+ func (r *Repository) getZstdDecoder() *zstd.Decoder {
+ 	r.allocDec.Do(func() {
  		opts := []zstd.DOption{
 -			// Use all available cores.
 -			zstd.WithDecoderConcurrency(0),
@@ -63,3 +126,26 @@
  		}
  
  		dec, err := zstd.NewReader(nil, opts...)
+--- a/internal/repository/index/index_parallel.go
++++ b/internal/repository/index/index_parallel.go
+@@ -2,7 +2,6 @@
+ 
+ import (
+ 	"context"
+-	"runtime"
+ 	"sync"
+ 
+ 	"github.com/restic/restic/internal/restic"
+@@ -14,9 +13,9 @@
+ func ForAllIndexes(ctx context.Context, lister restic.Lister, repo restic.LoaderUnpacked,
+ 	fn func(id restic.ID, index *Index, err error) error) error {
+ 
+-	// decoding an index can take quite some time such that this can be both CPU- or IO-bound
+-	// as the whole index is kept in memory anyways, a few workers too much don't matter
+-	workerCount := repo.Connections() + uint(runtime.GOMAXPROCS(0))
++	// Mobile metadata must not multiply temporary decode/JSON allocations by
++	// the host CPU count. Retained decoded bytes have a separate repository budget.
++	const workerCount = 2
+ 
+ 	var m sync.Mutex
+ 	return restic.ParallelList(ctx, lister, restic.IndexFile, workerCount, func(ctx context.Context, id restic.ID, _ int64) error {
