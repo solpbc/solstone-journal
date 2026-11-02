@@ -154,6 +154,13 @@ and remote-network boundary, not a defense against malware already running as th
 **Defaults:** `app` → "system", `icon` → "mailbox", `title` → "Notification" (applied by `AppServices.notifications.show()`)
 **Purpose:** Forward Callosum events directly to the browser notification UI — any service can trigger an in-app notification card by emitting to this tract
 
+### `owner_notice` - Owner notices, once per episode
+**Source:** producers that positively know a fact the owner should hear about: device pairing and first agent grant (`solstone-core-convey-shell` `network.rs`, `solstone-core-mcp-endpoint` `oauth/token.rs`), turned-away uploads (`solstone-core-ingest` `rejection_notice.rs`), low disk (`solstone-core` `supervisor/disk_space.rs`), and persistent backup failure (`solstone-core-backup-runtime` `owner_notice.rs`)
+**Events:** `raise`, `clear`
+**Key fields:** `key` (string, stable episode id `<family>:<id>`; the family becomes the push kind), `title` (string), `message` (string), `action` (string, `/app/` path only)
+**Consumer:** the push subscriber in `solstone-core-convey-shell` (`owner_notices.rs`), with the episode record in `solstone-core-push` (`owner_notice.rs`, `health/owner-notices.json`)
+**Purpose:** Announce the current truth, re-announcing on each observation. A `raise` that starts an episode pushes once to push-enabled devices and shows a `notification` card keyed `owner_notice:<key>`; repeats show nothing. A `clear` ends the episode, and pushes and shows only when it carries a `title`. Lines from separate one-shot senders can arrive out of order, so producers stay level-triggered.
+
 ### `navigate` - Browser navigation control
 **Source:** `solstone journal navigate` (`solstone-core-journal-cli`)
 **Events:** `request`
