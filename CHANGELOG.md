@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 - browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
 - when backup keeps failing with your current backup settings, several attempts in a row over at least two days, your journal now sends one notification that says why and opens the backup page. it sends one more when an attempt works again, and pausing backup ends it quietly.
+- your journal now tells you when a newly paired device or a newly connected agent can reach it: one notification to the devices where you turned notifications on, and a card in your journal that opens the page where you can unpair or disconnect it. an agent is announced the first time it connects, not each time it pairs again.
 
 ### Changed
 

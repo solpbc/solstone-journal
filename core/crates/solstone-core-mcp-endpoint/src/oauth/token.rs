@@ -82,7 +82,10 @@ fn authorization_code(
         code_verifier,
         &oauth.binding(),
     ) {
-        Ok(tokens) => token_response(tokens),
+        Ok(tokens) => {
+            announce_agent_access(oauth, client_id);
+            token_response(tokens)
+        }
         Err(
             OAuthStoreError::InvalidToken
             | OAuthStoreError::CodeExpired
@@ -94,6 +97,50 @@ fn authorization_code(
             "token request is unavailable",
         )),
     }
+}
+
+/// Tell the owner an agent can now reach the journal, once per client.
+///
+/// A redeemed authorization code is the moment an agent's access begins; a
+/// refresh or a reconnect never reaches here. The notice is keyed by the
+/// client id, so the same agent pairing again, as it must when its access
+/// lapses, is not announced again. Best effort: the grant stands either way.
+fn announce_agent_access(oauth: &OAuthRuntime, client_id: &str) {
+    let name = oauth.store.list_clients().ok().and_then(|clients| {
+        clients
+            .into_iter()
+            .find(|client| client.client_id == client_id)
+            .and_then(|client| client.client_name)
+    });
+    let line = format!("{}\n", agent_access_notice(client_id, name.as_deref()));
+    let _ = solstone_core_callosum::CallosumOneShotSender::new(
+        oauth.journal_root.join("health/callosum.sock"),
+        std::time::Duration::from_secs(2),
+    )
+    .send_line(&line);
+}
+
+fn agent_access_notice(client_id: &str, name: Option<&str>) -> serde_json::Value {
+    let title = match name.and_then(notice_name) {
+        Some(name) => format!("\"{name}\" can now reach your journal"),
+        None => "a new agent can now reach your journal".to_owned(),
+    };
+    serde_json::json!({
+        "tract": "owner_notice",
+        "event": "raise",
+        "key": format!("access:agent:{client_id}"),
+        "title": title,
+        "message": "if you connected it, there's nothing to do. if not, disconnect it on the agents page",
+        "action": "/app/agents",
+    })
+}
+
+/// An agent names itself, so a name too long or odd to read as a name is
+/// left out of the notice rather than shown as if the journal said it.
+fn notice_name(name: &str) -> Option<&str> {
+    let name = name.trim();
+    (!name.is_empty() && name.chars().count() <= 48 && !name.chars().any(char::is_control))
+        .then_some(name)
 }
 
 fn refresh_token(
@@ -373,6 +420,24 @@ mod tests {
     }
 
     #[test]
+    fn a_new_agent_notice_is_keyed_by_client_and_names_it_only_when_readable() {
+        let named = super::agent_access_notice(CIMD_URL, Some("Example Agent"));
+        assert_eq!(named["tract"], "owner_notice");
+        assert_eq!(named["event"], "raise");
+        assert_eq!(named["key"], format!("access:agent:{CIMD_URL}"));
+        assert_eq!(named["action"], "/app/agents");
+        assert!(named["title"].as_str().unwrap().contains("Example Agent"));
+        let unnamed = super::agent_access_notice(CIMD_URL, None);
+        for words in [&unnamed["title"], &unnamed["message"]] {
+            assert!(!words.as_str().unwrap().contains("client.example"));
+        }
+        let long = "x".repeat(49);
+        for name in ["", " ", "two\nlines", long.as_str()] {
+            assert_eq!(super::agent_access_notice(CIMD_URL, Some(name)), unnamed);
+        }
+    }
+
+    #[test]
     fn unsupported_grant_type_is_rejected() {
         let journal = journal_root();
         let oauth = runtime(&journal);
@@ -575,5 +640,122 @@ mod tests {
             .complete_pairing(&transaction, &pairing.code, &oauth.binding())
             .unwrap()
             .code
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod notice_tests {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sha2::{Digest, Sha256};
+    use solstone_core_callosum::test_fixture::OneShotListener;
+
+    use crate::http1::{HttpMethod, HttpRequest};
+    use crate::oauth::OAuthRuntime;
+
+    const CIMD_URL: &str = "https://client.example/cimd.json";
+    const OTHER_URL: &str = "https://other.example/cimd.json";
+    const ORIGIN: &str = "https://mcp.test";
+    const REDIRECT: &str = "http://127.0.0.1/callback";
+    const VERIFIER: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+
+    fn issue_code(oauth: &OAuthRuntime, client_id: &str) -> String {
+        let client = oauth
+            .store
+            .register_client(
+                client_id,
+                vec![REDIRECT.to_owned()],
+                Some("Example Agent".to_owned()),
+                "198.51.100.10",
+            )
+            .unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(VERIFIER.as_bytes()));
+        let transaction = oauth
+            .store
+            .create_transaction(
+                &client.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                ORIGIN,
+                &challenge,
+                "S256",
+                None,
+                "198.51.100.10",
+            )
+            .unwrap();
+        oauth
+            .store
+            .complete_pairing(&transaction, &pairing.code, &oauth.binding())
+            .unwrap()
+            .code
+    }
+
+    fn post(oauth: &OAuthRuntime, body: String) -> serde_json::Value {
+        let response = super::token(
+            &HttpRequest::from_test_parts(HttpMethod::Post, Vec::new(), body.into_bytes()),
+            oauth,
+        );
+        serde_json::from_slice(&response.body).unwrap()
+    }
+
+    fn redeem(oauth: &OAuthRuntime, code: &str, client_id: &str) -> serde_json::Value {
+        post(
+            oauth,
+            format!(
+                "grant_type=authorization_code&code={code}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={client_id}&resource=https://mcp.test/mcp"
+            ),
+        )
+    }
+
+    #[test]
+    fn only_a_redeemed_code_announces_an_agent_and_by_its_client() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-mcp-token-notice-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let listener = OneShotListener::bind(journal.path().join("health/callosum.sock"));
+        let oauth = OAuthRuntime::new(journal.path(), ORIGIN.to_owned());
+
+        let first = redeem(&oauth, &issue_code(&oauth, CIMD_URL), CIMD_URL);
+        let refresh = first["refresh_token"].as_str().unwrap();
+        let refreshed = post(
+            &oauth,
+            format!("grant_type=refresh_token&refresh_token={refresh}&client_id={CIMD_URL}"),
+        );
+        assert!(refreshed["access_token"].is_string(), "{refreshed}");
+        let refused = redeem(&oauth, "not-a-code", CIMD_URL);
+        assert_eq!(refused["error"], "invalid_grant");
+        let again = redeem(&oauth, &issue_code(&oauth, CIMD_URL), CIMD_URL);
+        assert!(again["access_token"].is_string(), "{again}");
+        let other = redeem(&oauth, &issue_code(&oauth, OTHER_URL), OTHER_URL);
+        assert!(other["access_token"].is_string(), "{other}");
+
+        // A refresh and a refused code send nothing. Pairing the same client
+        // again repeats its key, which the owner-notice record keeps quiet.
+        let notices = listener.finish(3);
+        let keys = notices
+            .iter()
+            .map(|notice| notice["key"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            [
+                format!("access:agent:{CIMD_URL}"),
+                format!("access:agent:{CIMD_URL}"),
+                format!("access:agent:{OTHER_URL}"),
+            ]
+        );
+        for notice in &notices {
+            assert_eq!(notice["tract"], "owner_notice");
+            assert_eq!(notice["event"], "raise");
+            assert!(notice["title"].as_str().unwrap().contains("Example Agent"));
+            let words = format!("{}{}", notice["title"], notice["message"]);
+            for secret in [first["access_token"].as_str().unwrap(), refresh] {
+                assert!(!words.contains(secret));
+            }
+        }
     }
 }

@@ -829,6 +829,39 @@ fn emit_pair_complete(journal_root: &std::path::Path, fingerprint: &str) {
     if sender.send_line(&line).is_err() {
         log::debug!("paired-device Callosum pair-complete notification unavailable");
     }
+    let notice = format!(
+        "{}\n",
+        device_access_notice(&entry.fingerprint, &entry.display_label())
+    );
+    if sender.send_line(&notice).is_err() {
+        log::debug!("paired-device owner notice unavailable");
+    }
+}
+
+/// The owner notice for a device that can now reach the journal. Every
+/// pairing issues a new certificate, so its client id is new and the notice
+/// is one-shot: a device unpaired and paired again is announced again.
+fn device_access_notice(cid: &str, label: &str) -> Value {
+    let title = match notice_name(label) {
+        Some(label) => format!("\"{label}\" can now reach your journal"),
+        None => "a new device can now reach your journal".to_owned(),
+    };
+    json!({
+        "tract": "owner_notice",
+        "event": "raise",
+        "key": format!("access:device:{cid}"),
+        "title": title,
+        "message": "if you paired it, there's nothing to do. if not, unpair it on the network page",
+        "action": "/app/network",
+    })
+}
+
+/// A device names itself, so a name too long or odd to read as a name is
+/// left out of the notice rather than shown as if the journal said it.
+fn notice_name(label: &str) -> Option<&str> {
+    let label = label.trim();
+    (!label.is_empty() && label.chars().count() <= 48 && !label.chars().any(char::is_control))
+        .then_some(label)
 }
 
 pub(crate) fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> bool {
@@ -2594,6 +2627,50 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&registry_path).expect("read"),
             initial_registry
+        );
+    }
+
+    fn notice_envelope(notice: Value) -> CallosumEnvelope {
+        serde_json::from_value(notice).expect("owner notice is a Callosum envelope")
+    }
+
+    #[test]
+    fn a_paired_device_notifies_once_and_a_new_pairing_notifies_again() {
+        let journal = TempDir::new();
+        let now = time::OffsetDateTime::UNIX_EPOCH;
+        let first = notice_envelope(device_access_notice("sha256:aaaa", "phone"));
+        let card = crate::owner_notices::handle(journal.path(), "", &first, now)
+            .expect("a new device shows once");
+        assert_eq!(card["key"], "owner_notice:access:device:sha256:aaaa");
+        assert_eq!(card["action"], "/app/network");
+        assert!(card["title"].as_str().expect("title").contains("phone"));
+        for words in [&card["title"], &card["message"]] {
+            assert!(!words.as_str().expect("words").contains("sha256"));
+        }
+        assert!(
+            crate::owner_notices::handle(journal.path(), "", &first, now).is_none(),
+            "the same pairing announced again stays quiet"
+        );
+        let again = notice_envelope(device_access_notice("sha256:bbbb", "phone"));
+        assert!(
+            crate::owner_notices::handle(journal.path(), "", &again, now).is_some(),
+            "a pairing that issued a new certificate is new access"
+        );
+    }
+
+    #[test]
+    fn a_device_name_that_cannot_read_as_a_name_is_left_out() {
+        let unnamed = device_access_notice("sha256:aaaa", "");
+        for label in ["   ", "line\nbreak", &"x".repeat(49)] {
+            let notice = device_access_notice("sha256:aaaa", label);
+            assert_eq!(notice, unnamed, "{label:?}");
+        }
+        let named = device_access_notice("sha256:aaaa", &"x".repeat(48));
+        assert!(
+            named["title"]
+                .as_str()
+                .expect("title")
+                .contains(&"x".repeat(48))
         );
     }
 }

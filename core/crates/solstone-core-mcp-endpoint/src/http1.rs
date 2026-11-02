@@ -49,7 +49,7 @@ impl HttpRequest {
         &self.headers
     }
 
-    #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg(test)]
     pub(crate) fn from_test_parts(
         method: HttpMethod,
         headers: Vec<(String, String)>,

@@ -681,7 +681,7 @@ async fn loopback_status(address: SocketAddr) -> std::io::Result<u16> {
 
 async fn collect_callosum_events(
     listener: tokio::net::UnixListener,
-    expected_event: &str,
+    expected_events: &'static [&'static str],
     expected_count: usize,
 ) -> Vec<serde_json::Value> {
     let mut events = Vec::with_capacity(expected_count);
@@ -704,7 +704,10 @@ async fn collect_callosum_events(
                 let message = message
                     .expect("Callosum read task")
                     .expect("Callosum read task completes");
-                if message["event"] == expected_event {
+                if expected_events
+                    .iter()
+                    .any(|expected| message["event"] == *expected)
+                {
                     events.push(message);
                 }
             }
@@ -4339,7 +4342,11 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     std::fs::create_dir(&health).expect("health directory");
     let socket = health.join("callosum.sock");
     let listener = tokio::net::UnixListener::bind(&socket).expect("Callosum listener");
-    let notices = tokio::spawn(collect_callosum_events(listener, "pair_complete", 2));
+    let notices = tokio::spawn(collect_callosum_events(
+        listener,
+        &["pair_complete", "raise"],
+        4,
+    ));
     let handle = serve(options(
         &fixture,
         pairing_router(&fixture, pairing_snapshot()),
@@ -4485,7 +4492,39 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     assert_eq!(entries[1].display_label(), "collision (2)");
     assert_eq!(entries[1].label_ordinal, 2);
     assert_eq!(entries[0].fingerprint, first_pair.fingerprint);
-    let notices = notices.await.expect("notice task");
+    let (notices, access): (Vec<_>, Vec<_>) = notices
+        .await
+        .expect("notice task")
+        .into_iter()
+        .partition(|message| message["event"] == "pair_complete");
+    // Each successful ceremony, and only those, tells the owner a device can
+    // now reach the journal, under the new client id it was issued.
+    let mut access_keys = access
+        .iter()
+        .map(|notice| {
+            assert_eq!(notice["tract"], "owner_notice");
+            assert_eq!(notice["action"], "/app/network");
+            assert!(
+                notice["title"]
+                    .as_str()
+                    .expect("title")
+                    .contains("collision"),
+                "the notice names the device by its label"
+            );
+            for words in [&notice["title"], &notice["message"]] {
+                let words = words.as_str().expect("owner words");
+                assert!(!words.contains("sha256"), "{words}");
+            }
+            notice["key"].as_str().expect("key").to_owned()
+        })
+        .collect::<Vec<_>>();
+    access_keys.sort();
+    let mut expected_keys = entries
+        .iter()
+        .map(|entry| format!("access:device:{}", entry.fingerprint))
+        .collect::<Vec<_>>();
+    expected_keys.sort();
+    assert_eq!(access_keys, expected_keys);
     assert_eq!(notices.len(), 2);
     assert_eq!(notices[0]["tract"], "link");
     assert_eq!(notices[0]["event"], "pair_complete");
@@ -5289,7 +5328,7 @@ async fn ac21_handshake_touches_native_devices_ledger_and_emits_callosum() {
     std::fs::create_dir(&health).expect("health directory");
     let socket = health.join("callosum.sock");
     let listener = tokio::net::UnixListener::bind(&socket).expect("Callosum listener");
-    let received = tokio::spawn(collect_callosum_events(listener, "last_seen", 1));
+    let received = tokio::spawn(collect_callosum_events(listener, &["last_seen"], 1));
     let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
         .await
         .expect("serve");
