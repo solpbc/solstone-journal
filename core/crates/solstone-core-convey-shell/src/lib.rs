@@ -138,6 +138,8 @@ mod network_status;
 #[cfg(feature = "host")]
 mod network_writes;
 #[cfg(feature = "host")]
+mod owner_notices;
+#[cfg(feature = "host")]
 mod pair_window_manager;
 #[cfg(feature = "host")]
 mod paired_device;
@@ -191,7 +193,6 @@ mod thinking_install;
 mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
 mod thinking_sol_reads_contract;
-#[cfg(feature = "host")]
 mod weekly_heads_up;
 #[cfg(feature = "host")]
 mod windows_firewall;

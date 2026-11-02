@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Weekly heads-up background subscriber in convey-shell.
+//! Push background subscriber in convey-shell: the weekly heads-up, and owner
+//! notices (`crate::owner_notices`), which share its connection and lifecycle.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -157,6 +158,25 @@ pub(crate) async fn subscribe_weekly_heads_up_until_stopped(
                     }).await {
                         log::warn!("weekly heads-up reconnect scan: {error}");
                         return;
+                    }
+                    continue;
+                }
+                if envelope.tract == crate::owner_notices::TRACT {
+                    let journal = journal_root.clone();
+                    let portal = portal_base.clone();
+                    match run_pass(Arc::clone(&root), stop.clone(), Arc::clone(&active), move || {
+                        crate::owner_notices::handle(&journal, &portal, &envelope, OffsetDateTime::now_utc())
+                    }).await {
+                        Ok(Some(Some(card))) => {
+                            if let Some(connection) = connection.as_ref() {
+                                connection.emit("notification", "show", card);
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            log::warn!("owner notice: {error}");
+                            return;
+                        }
                     }
                     continue;
                 }

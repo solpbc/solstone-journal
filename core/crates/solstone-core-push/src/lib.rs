@@ -13,6 +13,7 @@ mod capability;
 mod endpoint;
 pub mod envelope;
 mod model;
+pub mod owner_notice;
 mod relay;
 mod router;
 mod store;

@@ -604,3 +604,70 @@ async fn map_recovery_joins_admitted_pass_rebuilds_unchanged_source_and_stops_wh
     resume_after_whole_journal_restore(root.path());
     drop(bridge);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn owner_notices_push_and_show_once_per_episode_and_once_on_clear() {
+    let (root, portal, receiver, server) = weekly_fixture().await;
+    let socket = root.path().join("health").join("callosum.sock");
+    #[cfg(windows)]
+    let _namespace = solstone_core_callosum::test_fixture::WindowsPipeNamespace::register(&socket);
+    let bus = solstone_core_callosum::CallosumSocketServer::bind(&socket)
+        .await
+        .unwrap();
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let task = tokio::spawn(weekly_heads_up::subscribe_weekly_heads_up_until_stopped(
+        Arc::new(solstone_core_journal_io::JournalRoot::open(root.path()).unwrap()),
+        portal,
+        stopped,
+        Arc::new(|| true),
+    ));
+    let mut observer = solstone_core_callosum::CallosumSocketConnection::new(
+        socket.clone(),
+        serde_json::Map::new(),
+    );
+    observer.start();
+    until(|| bus.client_count() > 1).await;
+    // Let both clients finish their subscription before the first send.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let sender =
+        solstone_core_callosum::CallosumOneShotSender::new(&socket, Duration::from_secs(2));
+    let raise = json!({"tract":"owner_notice","event":"raise","key":"disk_low:journal",
+        "title":"synthetic start","message":"synthetic body","action":"/app/health"});
+    let clear = json!({"tract":"owner_notice","event":"clear","key":"disk_low:journal",
+        "title":"synthetic end"});
+    for line in [&raise, &raise, &clear, &clear] {
+        sender.send_line(&format!("{line}\n")).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let mut cards = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let Some(event) = observer.next_event().await else {
+                break;
+            };
+            if let solstone_core_callosum::CallosumReceiveEvent::Envelope { envelope, .. } = event
+                && envelope.tract == "notification"
+                && envelope.event == "show"
+            {
+                cards.push(
+                    envelope.extra["title"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_owned(),
+                );
+            }
+        }
+    })
+    .await;
+    assert_eq!(cards, ["synthetic start", "synthetic end"]);
+    until(|| receiver.count.load(Ordering::Acquire) == 2).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        receiver.count.load(Ordering::Acquire),
+        2,
+        "one push per edge"
+    );
+    stop.send_replace(true);
+    task.await.unwrap();
+    server.abort();
+}
