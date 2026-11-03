@@ -219,13 +219,23 @@ struct OwnerTerminal {
 impl OwnerTerminal {
     fn open() -> Option<Self> {
         #[cfg(windows)]
-        let (input, output) = (
-            std::fs::File::open("CONIN$").ok()?,
-            std::fs::OpenOptions::new()
-                .write(true)
-                .open("CONOUT$")
-                .ok()?,
-        );
+        let (input, output) = {
+            use std::io::IsTerminal as _;
+            // A hidden console still opens CONIN$, and the read then blocks forever.
+            if !(std::io::stdin().is_terminal()
+                || std::io::stdout().is_terminal()
+                || std::io::stderr().is_terminal())
+            {
+                return None;
+            }
+            (
+                std::fs::File::open("CONIN$").ok()?,
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open("CONOUT$")
+                    .ok()?,
+            )
+        };
         #[cfg(not(windows))]
         let (input, output) = {
             let terminal = std::fs::OpenOptions::new()
@@ -246,6 +256,8 @@ impl OwnerTerminal {
 impl LinkJoinTerminal for OwnerTerminal {
     fn write_text(&mut self, text: &str) {
         use std::io::Write as _;
+        #[cfg(windows)]
+        let text = &write_console_wide(&self.output, text);
         let _ = self.output.write_all(text.as_bytes());
         let _ = self.output.flush();
     }
@@ -260,6 +272,36 @@ impl LinkJoinTerminal for OwnerTerminal {
             _ => None,
         }
     }
+}
+
+/// A console reads bytes in its own code page, so the mark's middot only shows
+/// as written through the wide-character call. Returns whatever it couldn't write.
+#[cfg(all(feature = "client", windows))]
+#[allow(unsafe_code)]
+fn write_console_wide(output: &std::fs::File, text: &str) -> String {
+    use std::os::windows::io::AsRawHandle as _;
+    let wide: Vec<u16> = text.encode_utf16().collect();
+    let mut done = 0;
+    while done < wide.len() {
+        let rest = &wide[done..];
+        let mut written = 0u32;
+        // SAFETY: the handle is the open CONOUT$ file, and the length never
+        // exceeds `rest`, which outlives the call.
+        let ok = unsafe {
+            windows_sys::Win32::System::Console::WriteConsoleW(
+                output.as_raw_handle(),
+                rest.as_ptr(),
+                u32::try_from(rest.len()).unwrap_or(u32::MAX),
+                &mut written,
+                std::ptr::null(),
+            )
+        };
+        if ok == 0 || written == 0 {
+            break;
+        }
+        done += written as usize;
+    }
+    String::from_utf16_lossy(&wide[done..])
 }
 
 #[cfg(feature = "client")]

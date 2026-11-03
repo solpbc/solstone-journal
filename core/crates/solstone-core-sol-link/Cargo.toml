@@ -88,6 +88,7 @@ windows-sys = { workspace = true, features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
     "Win32_Networking_WinSock",
+    "Win32_System_Console",
 ] }
 
 [dev-dependencies]
@@ -116,7 +117,8 @@ name = "sol_link_publish_crash"
 required-features = ["host", "test-hooks"]
 
 # Interface enumeration requires one audited unsafe syscall boundary per
-# platform -- `getifaddrs` on Unix, `GetAdaptersAddresses` on Windows. Keep the
+# platform -- `getifaddrs` on Unix, `GetAdaptersAddresses` on Windows -- and
+# `WriteConsoleW` writes the pairing question to a Windows console. Keep the
 # exception local to those functions instead of relaxing the workspace-wide
 # hard forbid.
 [lints.rust]

@@ -1118,6 +1118,11 @@ fn observer_spl_root(env: &BTreeMap<String, String>) -> Result<PathBuf, String> 
             || {
                 env.get("HOME")
                     .filter(|value| !value.is_empty())
+                    // A Windows console sets USERPROFILE, not HOME.
+                    .or_else(|| {
+                        env.get("USERPROFILE")
+                            .filter(|value| cfg!(windows) && !value.is_empty())
+                    })
                     .map(|home| PathBuf::from(home).join(".config"))
             },
             |xdg| Some(PathBuf::from(xdg)),
