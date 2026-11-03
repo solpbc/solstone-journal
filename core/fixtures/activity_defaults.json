@@ -74,6 +74,10 @@
     },
     {
       "always_on": false,
+      "id": "media"
+    },
+    {
+      "always_on": false,
       "id": "gaming"
     },
     {

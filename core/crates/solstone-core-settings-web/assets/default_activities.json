@@ -141,10 +141,18 @@
   {
     "id": "video",
     "name": "Video",
-    "description": "Watching videos and streaming content",
+    "description": "Watching videos and streaming content on screen",
     "emoji": "🎬",
     "icon": "clapperboard",
     "instructions": "Levels: high=actively watching, medium=video playing while doing something else, low=video paused or minimized. Detect via: video player UI, streaming sites, playback controls."
+  },
+  {
+    "id": "media",
+    "name": "Media",
+    "description": "Watching or listening to shows, podcasts and recordings",
+    "emoji": "📺",
+    "icon": "tv",
+    "instructions": "Levels: high=media is most of what was heard, medium=media playing while something else happens, low=media faintly in the background. Detect via: a show, film, podcast, broadcast, audiobook or recording heard with no screen showing it."
   },
   {
     "id": "gaming",

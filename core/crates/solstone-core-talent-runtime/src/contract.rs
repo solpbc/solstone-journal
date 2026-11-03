@@ -586,7 +586,7 @@ mod tests {
                 .iter()
                 .filter(|config| crate::activity_contract::matches_activity(&config.metadata, kind))
                 .count();
-            let parked = matches!(*kind, "video" | "music" | "gaming" | "idle");
+            let parked = matches!(*kind, "video" | "media" | "music" | "gaming" | "idle");
             assert_eq!(owners, usize::from(!parked), "{kind}");
         }
         // Story talents list only kinds a segment activity can carry.

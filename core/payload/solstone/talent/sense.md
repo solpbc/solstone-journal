@@ -38,7 +38,7 @@ Classify based on whether meaningful human activity occurred:
 - **idle**: Near-zero content — fewer than 3 transcript lines AND fewer than 3 distinct screen frames. Static screen with no user activity, silence, or system noise only.
 
 ### content_type
-First decide whose voices the transcript holds. Speech can come from a show, film, podcast, video or broadcast playing nearby rather than from people present. Signs of media: acted or scripted dialogue, characters calling each other by names that belong to a story, plot and drama (quests, crimes, battles, romance), narration, a host's introduction or sign-off, ads, theme songs, polished delivery from many voices. Signs of people present: everyday logistics, food, children, errands, plans for the day, reactions to each other and to the room. When most of the speech is media, the activity is `video` (or `music` for songs), never `meeting` or `social`, and the media's speakers are not participants. People talking about a show, film, game or ride, planning to watch one, or reacting to one are a conversation: only the media's own voices are media. A recorded announcement in the background does not make a conversation media.
+First decide whose voices the transcript holds. Speech can come from a show, film, podcast, video or broadcast playing nearby rather than from people present. Signs of media: acted or scripted dialogue, characters calling each other by names that belong to a story, plot and drama (quests, crimes, battles, romance), narration, a host's introduction or sign-off, ads, theme songs, polished delivery from many voices. Signs of people present: everyday logistics, food, children, errands, plans for the day, reactions to each other and to the room. When most of the speech is media, the activity is `media` (`video` when the screen shows it playing in front of the owner, `music` for songs), never `meeting` or `social`, and the media's speakers are not participants. People talking about a show, film, game or ride, planning to watch one, or reacting to one are a conversation: only the media's own voices are media. A recorded announcement in the background does not make a conversation media.
 
 The dominant activity type observed:
 - **meeting**: A call or a sit-down meeting in which at least one other participant is named, conferences with turn-taking. A conversation in which no one is named is `social`, never `meeting`. A show, film, podcast, video or broadcast playing nearby is never a meeting, even when its characters or hosts name each other
@@ -49,14 +49,15 @@ The dominant activity type observed:
 - **ai_conversation**: Conversations with AI assistants (ChatGPT, Claude, Gemini)
 - **writing**: Documents, notes, long-form writing
 - **reading**: Focused reading of documents, PDFs, books
-- **video**: Watching video or streaming content in front of the owner (a video playing in a background tab is not `video`), including a show, film, podcast, video or broadcast playing nearby whose voices make up most of the speech, even when people present remark on it
+- **video**: Watching a video, show or stream that the screen shows playing in front of the owner (a video playing in a background tab is not `video`). Without screen content showing it, a show or video heard nearby is `media`
+- **media**: A show, film, podcast, broadcast, audiobook or other recording heard with no screen showing it play, whose voices make up most of the speech, even when people present remark on it, and an imported audio recording of one. When people present talk with each other while it plays, their conversation is the activity. Songs are `music`, and a video the screen shows is `video`
 - **gaming**: Playing games
 - **social**: Social media browsing and interaction; casual conversation in person, small talk, talk during an errand. Voices from a show, film, podcast, video or broadcast playing nearby are not a conversation. When people present talk with each other while media plays in the background, their conversation is the activity
 - **planning**: Scheduling, calendar management, agenda setting
 - **productivity**: Spreadsheets, slides, task management
 - **terminal**: Command line / shell sessions
 - **design**: Design tools, image editing
-- **music**: Music listening
+- **music**: Listening to music: songs from a speaker, a screen or a recording, or a live performance
 - **idle**: No meaningful activity
 
 ### activity_summary

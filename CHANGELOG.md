@@ -14,6 +14,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- a show, podcast or other recording playing near you, with nothing on your screen showing it, is now a media activity instead of video, and so is one you import as an audio file. imported recordings are no longer summarized as something you watched, and a show playing nearby is a little less often mistaken for a conversation. activities already in your journal keep their type unless your journal processes those recordings again.
+
 ### Fixed
 
 - fixed another android permission error when downloading a journal archive.
