@@ -955,6 +955,45 @@ fn normalization_forms_compile_to_equivalent_fts_queries() {
 }
 
 #[test]
+fn a_number_finds_every_way_it_was_written() {
+    let connection = test_db();
+    let stored = [
+        "budget 1200 yen",
+        "budget 1,200 dollars",
+        "budget 1.200 euro",
+        "paid $1,200 rent",
+        "budget 1.5 percent",
+    ];
+    for content in stored {
+        connection
+            .execute("INSERT INTO chunks(content) VALUES (?)", params![content])
+            .expect("insert chunk");
+    }
+    let found = |query: &str| -> BTreeSet<String> {
+        let compiled = compile_query(query, reference_date());
+        let mut statement = connection
+            .prepare("SELECT content FROM chunks WHERE chunks MATCH ?")
+            .expect("prepare");
+        statement
+            .query_map(params![expression(&compiled.outcome)], |row| row.get(0))
+            .expect("MATCH query succeeds")
+            .map(|row| row.expect("row"))
+            .collect()
+    };
+    let every_form: BTreeSet<String> = stored[..4].iter().map(|s| s.to_string()).collect();
+    for query in ["1200", "1,200", "1.200", "$1200", "$1,200"] {
+        assert_eq!(found(query), every_form, "{query}");
+    }
+    let budget: BTreeSet<String> = stored[..3].iter().map(|s| s.to_string()).collect();
+    assert_eq!(found("budget 1200"), budget);
+    assert_eq!(
+        found("1.5"),
+        BTreeSet::from(["budget 1.5 percent".to_string()])
+    );
+    assert_eq!(found("\"1200\""), BTreeSet::from([stored[0].to_string()]));
+}
+
+#[test]
 fn malformed_operators_become_fts_literals() {
     let connection = test_db();
     for query in ["AND", "NOT alpha"] {

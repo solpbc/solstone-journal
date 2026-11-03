@@ -53,7 +53,12 @@ pub(super) fn compile_expression(text: &str) -> Option<String> {
         } else if !output.is_empty() {
             output.push(' ');
         }
-        output.push_str(&quote_atom(atom));
+        match number_spellings(atom) {
+            Some((plain, grouped)) => {
+                output.push_str(&format!("(\"{plain}\" OR \"{grouped}\")"));
+            }
+            None => output.push_str(&quote_atom(atom)),
+        }
         previous_was_term = true;
         has_term = true;
     }
@@ -166,6 +171,43 @@ fn operand(atom: &Atom) -> bool {
 
 fn is_indexable(text: &str) -> bool {
     text.chars().any(char::is_alphanumeric)
+}
+
+/// The two spellings of a whole number of four or more digits.
+///
+/// The index tokenizer splits `1,200` and `1.200` into `1` and `200`, while
+/// `1200` stays one token, so a search typed one way never finds the other.
+/// Searching both spellings finds every form without reindexing. Returns the
+/// plain digits and the space-grouped phrase (`1200`, `1 200`).
+fn number_spellings(atom: &Atom) -> Option<(String, String)> {
+    if atom.quoted || atom.text.ends_with('*') {
+        return None;
+    }
+    let core = atom.text.trim_matches(|c: char| !c.is_alphanumeric());
+    let groups: Vec<&str> = core.split([',', '.']).collect();
+    let plain = if groups.len() == 1 {
+        core.to_string()
+    } else {
+        let well_grouped =
+            (1..=3).contains(&groups[0].len()) && groups[1..].iter().all(|group| group.len() == 3);
+        if !well_grouped {
+            return None;
+        }
+        groups.concat()
+    };
+    if plain.len() < 4 || !plain.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let lead = match plain.len() % 3 {
+        0 => 3,
+        lead => lead,
+    };
+    let mut grouped = plain[..lead].to_string();
+    for start in (lead..plain.len()).step_by(3) {
+        grouped.push(' ');
+        grouped.push_str(&plain[start..start + 3]);
+    }
+    Some((plain, grouped))
 }
 
 fn quote_atom(atom: &Atom) -> String {
