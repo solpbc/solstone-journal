@@ -27,11 +27,10 @@ use crate::model::{
     device_token_is_valid, mask_target, sanitize_reason,
 };
 use crate::relay::{RelayFault, RelayTransport, UreqRelay};
-use crate::store::{PushRegistry, PushStoreError, StoredDevice, parse_registered_at};
+use crate::store::{PushRegistry, PushStoreError, StoredDevice};
 
 const REGISTER_BODY_LIMIT: usize = 1024 * 1024;
 const DISPATCH_BATCH_SIZE: usize = 16;
-const RECIPIENT_EXPIRY_DAYS: i64 = 30;
 
 #[derive(Clone)]
 struct PushState {
@@ -288,25 +287,6 @@ pub(crate) fn deliver_notification(
         _ => {}
     }
 
-    let cutoff = now - time::Duration::days(RECIPIENT_EXPIRY_DAYS);
-    let mut recent_devices = Vec::new();
-    for device in loaded_devices {
-        match &device {
-            StoredDevice::Ios { registered_at, .. }
-            | StoredDevice::Android { registered_at, .. } => {
-                if let Some(reg_time) = parse_registered_at(registered_at)
-                    && reg_time >= cutoff
-                {
-                    recent_devices.push(device);
-                }
-            }
-        }
-    }
-
-    if recent_devices.is_empty() {
-        return DeliveryOutcome::Refused(Refused::NoRecipient);
-    }
-
     let authorized_cids: HashSet<String> = match read_state {
         AuthorizedClientsRead::Present(clients) => {
             clients.into_iter().map(|c| c.fingerprint).collect()
@@ -317,7 +297,7 @@ pub(crate) fn deliver_notification(
     let mut to_dispatch_ios = Vec::new();
     let mut to_dispatch_android = Vec::new();
 
-    for device in recent_devices {
+    for device in loaded_devices {
         match device {
             StoredDevice::Ios {
                 cid,
@@ -2918,7 +2898,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn push_test_filters_devices_older_than_30_days() {
+    async fn push_test_reaches_a_paired_phone_however_long_since_it_registered() {
         let root = root();
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
@@ -2936,13 +2916,11 @@ mod tests {
         .await;
         assert_eq!(s1, StatusCode::CREATED);
 
-        let t31 = t0 + time::Duration::days(31);
-        set_test_clock(Some(t31));
+        set_test_clock(Some(t0 + time::Duration::days(400)));
 
         let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(body["reason_code"], "feature_unavailable");
-        assert_eq!(body["detail"], "no devices to reach");
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["items"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -2993,7 +2971,7 @@ mod tests {
             Some(basis(cid_a)),
         )
         .await;
-        // A 31d ago
+        // A 31d ago: a long-registered phone is still a recipient
         set_test_clock(Some(t_now - time::Duration::days(31)));
         call(
             &app_reg,
@@ -3049,14 +3027,15 @@ mod tests {
         let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
         assert_eq!(status, StatusCode::OK);
         let items = body["items"].as_array().unwrap();
-        // Sent set: A-now, A-29d, A-future, O, P -> 5 items
-        assert_eq!(items.len(), 5);
+        // Sent set: A-now, A-29d, A-31d, A-future, O, P -> 6 items
+        assert_eq!(items.len(), 6);
         let targets: Vec<&str> = items
             .iter()
             .map(|i| i["target"].as_str().unwrap())
             .collect();
         assert!(targets.contains(&"...0001"));
         assert!(targets.contains(&"...0002"));
+        assert!(targets.contains(&"...0003"));
         assert!(targets.contains(&"...0004"));
         assert!(targets.contains(&"...0005"));
         assert!(targets.contains(&"...0006"));
@@ -3904,7 +3883,6 @@ mod tests {
 
     #[tokio::test]
     async fn vapid_key_endpoint_lifecycle_and_permissions() {
-        // Keep the stored September 24 devices inside their 30-day lifetime.
         set_test_clock(Some(
             OffsetDateTime::parse(
                 "2026-09-24T00:00:00Z",
@@ -4161,7 +4139,6 @@ mod tests {
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
-        // Keep the stored September 24 devices inside their 30-day lifetime.
         set_test_clock(Some(
             OffsetDateTime::parse(
                 "2026-09-24T00:00:00Z",
@@ -4213,7 +4190,6 @@ mod tests {
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
         let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
-        // Keep the stored September 24 devices inside their 30-day lifetime.
         set_test_clock(Some(
             OffsetDateTime::parse(
                 "2026-09-24T00:00:00Z",

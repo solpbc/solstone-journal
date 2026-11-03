@@ -17,6 +17,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - fixed another android permission error when downloading a journal archive.
+- notifications no longer stop reaching a phone that hasn't connected to your journal for 30 days.
+- when everything indexed so far is dated after today, a search by you or your agents now finds no matches, rather than saying there's nothing indexed yet.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
 - the journal on iphone keeps its folder permissions private when opening a new or existing journal.

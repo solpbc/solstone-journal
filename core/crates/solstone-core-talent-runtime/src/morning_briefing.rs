@@ -1068,13 +1068,15 @@ mod tests {
         let facet = root.path().join("facets/work");
         fs::create_dir_all(facet.join("activities")).unwrap();
         fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
-        let records = (0..1200)
+        // Long titles and no stories overflow the floor from a few hundred records
+        // while the fit, which re-measures the prompt per record it drops, drops few.
+        let long_title = "a long activity title ".repeat(10);
+        let records = (0..300)
             .map(|i| {
                 json!({
                     "id": format!("20261019_activity_{i:04}"),
-                    "title": format!("Activity {i}"),
+                    "title": format!("Activity {i} {long_title}"),
                     "start": "09:00",
-                    "story": {"body": "a short story about what happened in this activity"},
                 })
                 .to_string()
             })
@@ -1103,12 +1105,13 @@ mod tests {
         let metadata: Value =
             serde_json::from_str(prepared.config["briefing_metadata"].as_str().unwrap()).unwrap();
         let gaps = metadata["gaps"].as_array().unwrap();
-        assert!(
-            gaps.iter().any(|gap| gap
-                .as_str()
-                .is_some_and(|gap| gap.starts_with(ACTIVITIES_OMITTED))),
-            "{gaps:?}"
-        );
+        let omitted = gaps
+            .iter()
+            .filter_map(Value::as_str)
+            .find_map(|gap| gap.strip_prefix(ACTIVITIES_OMITTED))
+            .and_then(|count| count.trim_end_matches('.').parse::<usize>().ok())
+            .unwrap_or_else(|| panic!("{gaps:?}"));
+        assert!(omitted >= 10, "omits enough to show the count: {gaps:?}");
         assert!(
             gaps.len() < 10,
             "omissions are counted, not listed: {gaps:?}"

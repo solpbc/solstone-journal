@@ -22,7 +22,7 @@ import yaml
 
 PACKAGE = "solpbc.Journal"
 PACK_ID = "SolstoneJournal"
-SCHEMA = "1.12.0"
+SCHEMA = "1.28.0"
 UPSTREAM = "microsoft/winget-pkgs"
 ORIGIN = "https://updates.solstone.app/solstone-journal/release/windows"
 DIRECTORY = Path(__file__).resolve().parents[1] / "packaging" / "winget"

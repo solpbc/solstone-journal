@@ -1353,10 +1353,12 @@ impl QueryConnection {
                 path: self.path.clone(),
             });
         }
+        // A row dated after today is held back, not missing: an index holding only
+        // those has nothing to return yet, which is zero results and not an empty index.
         let found: Option<i64> = self
             .connection
             .query_row(
-                &format!("SELECT 1 FROM chunks WHERE {} LIMIT 1", visible_rows("1=1")),
+                &format!("SELECT 1 FROM chunks WHERE NOT ({AUTHORED_CHAT_PATH_PREDICATE}) LIMIT 1"),
                 [],
                 |row| row.get(0),
             )
