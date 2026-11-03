@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `solstone journal importer --facet` now files an audio or text file under the facet you name, so a connection limited to that facet can read its transcript and activities if you've let it see those. a muted or missing facet, or an import `--facet` does not apply to, is refused before anything is imported.
 - fixed another android permission error when downloading a journal archive.
 - notifications no longer stop reaching a phone that hasn't connected to your journal for 30 days.
 - when everything indexed so far is dated after today, a search by you or your agents now finds no matches, rather than saying there's nothing indexed yet.

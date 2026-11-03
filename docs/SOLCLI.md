@@ -46,6 +46,8 @@ work. `--dry-run` stages the source and shows that preview without starting
 processing. On the computer running your journal,
 `solstone journal importer FILE --dry-run` reads the source and destination
 without creating journal recordings. Both previews accept `--json`.
+`solstone journal importer FILE --facet NAME` files one audio or text file under
+that facet, and refuses a muted or missing facet or any other kind of import.
 `solstone import FILE --json` keeps its final JSON on stdout and prints the
 size notice to stderr before starting. The import page also shows
 thinking progress after recordings have been saved, with a link to health for

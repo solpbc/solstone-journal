@@ -682,10 +682,31 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             return rendered(failure("", &format!("{error}\n"), 1));
         }
     }
+    if let Some(facet) = options.facet.as_deref()
+        && let Err(error) = require_enabled_facet(facet, journal_path)
+    {
+        return rendered(failure("", &format!("{error}\n"), 1));
+    }
     let outcome = match resolve(options_ref(&options, media), journal_path) {
         Ok(outcome) => outcome,
         Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
     };
+    if options.facet.is_some()
+        && matches!(
+            outcome,
+            ResolutionOutcome::RouteAppleHealth
+                | ResolutionOutcome::Resolved {
+                    source: ResolvedSource::Registry(_),
+                    ..
+                }
+        )
+    {
+        return rendered(failure(
+            "",
+            "--facet only applies to an audio file or a plain text file, so nothing was imported; import this one without it\n",
+            1,
+        ));
+    }
     match outcome {
         ResolutionOutcome::RouteAppleHealth => {
             if dispatch.embedded() {
@@ -792,6 +813,20 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             }
         }
     }
+}
+
+/// An import filed under a facet the journal would not route to would land somewhere the
+/// owner did not choose, so it never starts.
+fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), String> {
+    let inventory = solstone_core_facets::observe_declared_facet_inventory(journal)
+        .map_err(|error| format!("could not read your facets, so nothing was imported: {error}"))?;
+    if inventory.enabled.iter().any(|enabled| enabled == facet) {
+        return Ok(());
+    }
+    Err(format!(
+        "\"{facet}\" is not one of your unmuted facets, so nothing was imported. your unmuted facets: {}",
+        inventory.enabled.join(", ")
+    ))
 }
 
 /// An owner's `--timestamp` may name the instant itself, with its offset, which is the only
@@ -2260,6 +2295,9 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     }
     if options.archive_identity.is_some() && options.audio_archive.is_none() {
         return Err("--archive-identity is only valid with --audio-archive".to_owned());
+    }
+    if options.facet.is_some() && (options.audio_archive.is_some() || options.sync.is_some()) {
+        return Err("--facet is only valid when importing one audio or text file".to_owned());
     }
     if let Some(audio_archive) = options.audio_archive {
         if !positionals.is_empty() {

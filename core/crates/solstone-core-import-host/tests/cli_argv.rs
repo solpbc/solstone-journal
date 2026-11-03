@@ -142,6 +142,107 @@ fn unknown_attached_option_is_rejected() {
     assert!(result.stderr.contains("usage: solstone journal importer"));
 }
 
+fn journal_with_facets() -> tempfile::TempDir {
+    let journal = tempfile::tempdir().unwrap();
+    for (slug, declaration) in [
+        ("desk-a", r#"{"title":"Desk A"}"#),
+        ("old", r#"{"title":"Old","muted":true}"#),
+    ] {
+        let directory = journal.path().join("facets").join(slug);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("facet.json"), declaration).unwrap();
+    }
+    journal
+}
+
+fn run_facet_import(journal: &Path, args: &[&str]) -> CliRun {
+    run_at(
+        journal,
+        args,
+        |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+        || false,
+    )
+}
+
+#[test]
+fn an_import_refuses_a_facet_that_is_not_enabled_and_writes_nothing() {
+    let journal = journal_with_facets();
+    let note = journal.path().join("note.md");
+    fs::write(&note, "a short imported note").unwrap();
+    for facet in ["typo", "old", ""] {
+        for extra in [&[][..], &["--dry-run"][..]] {
+            let mut args = vec![
+                "--timestamp",
+                "20260818_062652",
+                "--facet",
+                facet,
+                note.to_str().unwrap(),
+            ];
+            args.extend_from_slice(extra);
+            let result = run_facet_import(journal.path(), &args);
+            assert_eq!(result.exit_code, 1, "{facet}: {}", result.stdout);
+            assert!(result.stderr.contains("desk-a"), "{}", result.stderr);
+            assert!(!journal.path().join("chronicle").exists(), "{facet}");
+            assert!(!journal.path().join("imports").exists(), "{facet}");
+        }
+    }
+}
+
+#[test]
+fn a_facet_never_goes_quietly_unused() {
+    let journal = journal_with_facets();
+    let calendar = journal.path().join("calendar.ics");
+    fs::write(&calendar, "BEGIN:VCALENDAR\nEND:VCALENDAR\n").unwrap();
+    let registry = run_facet_import(
+        journal.path(),
+        &[
+            "--facet",
+            "desk-a",
+            "--source",
+            "ics",
+            calendar.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(registry.exit_code, 1, "{}", registry.stdout);
+    assert!(!journal.path().join("imports").exists());
+    for args in [
+        &["--facet", "desk-a", "--sync", "audio"][..],
+        &["--facet", "desk-a", "--audio-archive", "archive.zip"][..],
+    ] {
+        assert_eq!(
+            run_facet_import(journal.path(), args).exit_code,
+            2,
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn a_text_import_files_an_enabled_facet_in_its_transcript() {
+    let journal = journal_with_facets();
+    let note = journal.path().join("note.md");
+    fs::write(&note, "a short imported note").unwrap();
+    let result = run_facet_import(
+        journal.path(),
+        &[
+            "--timestamp",
+            "20260818_062652",
+            "--facet",
+            "desk-a",
+            note.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(result.exit_code, 0, "stderr={}", result.stderr);
+    let transcript = fs::read_to_string(
+        journal
+            .path()
+            .join("chronicle/20260818/import.text/062652_300/conversation_transcript.jsonl"),
+    )
+    .unwrap();
+    let header: Value = serde_json::from_str(transcript.lines().next().unwrap()).unwrap();
+    assert_eq!(header["imported"]["facet"], "desk-a");
+}
+
 #[test]
 fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
     let journal = tempfile::tempdir().unwrap();

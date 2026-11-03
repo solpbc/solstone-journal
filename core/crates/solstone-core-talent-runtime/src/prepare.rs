@@ -214,6 +214,9 @@ pub fn prepare(
             );
         }
     }
+    let import_facet = (name == "sense")
+        .then(|| crate::import_facet::chosen(&entry_sources, &context.journal))
+        .flatten();
     if composed
         .get("day")
         .and_then(Value::as_str)
@@ -247,7 +250,10 @@ pub fn prepare(
         });
         let prompt_context =
             crate::prompt_context::build(&context.journal, &composed, binding.as_ref());
-        let focused_facet = composed.get("facet").and_then(Value::as_str);
+        let focused_facet = composed
+            .get("facet")
+            .and_then(Value::as_str)
+            .or(import_facet.as_deref());
         let instruction = solstone_core_talent_cli::compose_talent_instruction(
             &config,
             &context.journal,
@@ -308,6 +314,9 @@ pub fn prepare(
             crate::story::SOURCE_BODY_KEY.to_owned(),
             Value::String(body),
         );
+    }
+    if let Some(facet) = &import_facet {
+        crate::import_facet::narrow_schema(&mut composed, facet);
     }
     let participation_floor = if composed
         .get("sources")
@@ -1153,6 +1162,145 @@ mod tests {
             normalized["details"] = json!("");
             normalized["playback"] = json!(false);
             assert_eq!(render_shipped_talent(talent, normalized), plain, "{talent}");
+        }
+    }
+
+    /// The shipped Sense prompt and schema over one transcript in a journal with
+    /// `desk-a` and `home` enabled.
+    fn prepare_shipped_sense(stream: &str, file: &str, header: Value) -> PreparedTalent {
+        let root = tempfile::tempdir().expect("root");
+        let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
+        let talent_root = root.path().join("talent");
+        let journal = root.path().join("journal");
+        let segment = journal
+            .join("chronicle/20260101")
+            .join(stream)
+            .join("090000_300");
+        for directory in [
+            talent_root.clone(),
+            root.path().join("apps"),
+            journal.join("config"),
+            segment.clone(),
+        ] {
+            fs::create_dir_all(directory).expect("fixture directory");
+        }
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"preferred":"Soleil"},"providers":{"active":{"provider":"none"}}}"#,
+        )
+        .expect("journal config");
+        for (slug, title) in [("desk-a", "Desk Alpha"), ("home", "Home Things")] {
+            let directory = journal.join("facets").join(slug);
+            fs::create_dir_all(&directory).expect("facet directory");
+            fs::write(
+                directory.join("facet.json"),
+                json!({"title":title,"description":title}).to_string(),
+            )
+            .expect("facet");
+        }
+        let mut transcript = header.to_string() + "\n";
+        for text in ["Let's ship it.", "The release is ready.", "Tag it now."] {
+            transcript += &(json!({"start":"00:00:01","text":text}).to_string() + "\n");
+        }
+        fs::write(segment.join(file), transcript).expect("transcript");
+        for name in ["sense.md", "sense.schema.json"] {
+            fs::copy(payload.join("talent").join(name), talent_root.join(name))
+                .expect("talent copy");
+        }
+        prepare(
+            json!({"name":"sense","day":"20260101","segment":"090000_300","stream":stream})
+                .as_object()
+                .expect("request object")
+                .clone(),
+            &RuntimePaths {
+                talent_root,
+                apps_root: root.path().join("apps"),
+                templates_dir: payload.join("think/templates"),
+            },
+            &ExecutionContext { journal },
+            PrepareMode::Preview,
+        )
+        .expect("prepare")
+    }
+
+    fn sense_facet_choices(prepared: &PreparedTalent) -> (Value, Value, Value) {
+        let schema = &prepared.config["json_schema"]["properties"]["facets"];
+        (
+            schema["items"]["properties"]["facet"]["enum"].clone(),
+            schema["items"]["properties"]["level"]["enum"].clone(),
+            schema["maxItems"].clone(),
+        )
+    }
+
+    #[test]
+    fn an_import_facet_is_the_only_facet_sense_can_answer_with() {
+        for (stream, file, header) in [
+            (
+                "import.audio",
+                "imported_audio.jsonl",
+                json!({"raw":"imported_audio.m4a","backend":"parakeet","duration":27.78,"import_id":"20260101_090000","stream":"import.audio","facet":"desk-a"}),
+            ),
+            (
+                "import.text",
+                "conversation_transcript.jsonl",
+                json!({"imported":{"id":"20260101_090000","facet":"desk-a"},"raw":"../../../imports/20260101_090000/note.md","untimed":true,"topics":"lease terms","setting":"workplace"}),
+            ),
+        ] {
+            let prepared = prepare_shipped_sense(stream, file, header);
+            assert_eq!(
+                sense_facet_choices(&prepared),
+                (json!(["desk-a"]), json!(["high"]), json!(1)),
+                "{stream}"
+            );
+            let instruction = prepared.config["user_instruction"].as_str().unwrap();
+            assert!(
+                instruction.contains("Desk Alpha"),
+                "{stream}: {instruction}"
+            );
+            assert!(
+                !instruction.contains("Home Things"),
+                "{stream}: {instruction}"
+            );
+        }
+    }
+
+    #[test]
+    fn sense_keeps_every_facet_without_a_declared_import_facet() {
+        for (stream, file, header) in [
+            ("default", "audio.jsonl", json!({"raw":"audio.flac"})),
+            // A facet in a header that no import wrote is not the owner's choice.
+            (
+                "default",
+                "audio.jsonl",
+                json!({"raw":"audio.flac","facet":"desk-a"}),
+            ),
+            (
+                "import.audio",
+                "imported_audio.jsonl",
+                json!({"raw":"imported_audio.m4a","import_id":"20260101_090000","stream":"import.audio"}),
+            ),
+            // Deleted or renamed since the import: it routes like any other segment.
+            (
+                "import.text",
+                "conversation_transcript.jsonl",
+                json!({"imported":{"id":"20260101_090000","facet":"gone"},"raw":"../../../imports/20260101_090000/note.md"}),
+            ),
+        ] {
+            let prepared = prepare_shipped_sense(stream, file, header);
+            assert_eq!(
+                sense_facet_choices(&prepared),
+                (
+                    json!(["desk-a", "home"]),
+                    json!(["high", "medium", "low"]),
+                    json!(16)
+                ),
+                "{stream}"
+            );
+            let instruction = prepared.config["user_instruction"].as_str().unwrap();
+            assert!(
+                instruction.contains("Home Things"),
+                "{stream}: {instruction}"
+            );
         }
     }
 
