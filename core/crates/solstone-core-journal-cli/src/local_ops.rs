@@ -123,7 +123,7 @@ fn indexer(args: &[OsString]) -> Outcome {
                     };
                     options.budget = std::time::Duration::from_secs(seconds);
                 }
-                Some("--help" | "-h") => return success("Usage: solstone journal indexer drain [--force] [--budget-seconds N] [--json]\napply queued search updates. --force includes delayed retries.\n".into()),
+                Some("--help" | "-h") => return success("Usage: solstone journal indexer drain [--force] [--budget-seconds N] [--json]\napply queued search updates. --force includes delayed retries.\n--budget-seconds stops the drain after N seconds. a whole-journal update does not start with under 300 seconds left and stays queued.\n".into()),
                 _ => return usage("indexer drain", "unexpected argument"),
             }
         }
