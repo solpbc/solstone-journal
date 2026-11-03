@@ -5,6 +5,7 @@
 
 use std::env;
 use std::fs;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -13,6 +14,7 @@ use crate::{TranscribeError, backend::KNOWN_BACKENDS};
 
 const SUPERVISOR_MESSAGE: &str =
     "journal isn't running. start it with 'solstone journal up' and retry.";
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 const SUPPORTED_AUDIO_FORMATS: [&str; 6] = [".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"];
 
@@ -140,18 +142,26 @@ where
     Err(CliError::SupervisorUnavailable)
 }
 
-/// True only when the recorded local Convey port accepts a 200 ms TCP connection.
+/// Check this journal over its desktop endpoint, or the recorded TCP port elsewhere.
 pub(crate) fn is_solstone_up(journal_path: &Path) -> bool {
-    let Some(port) = read_convey_port(journal_path) else {
-        return false;
-    };
-    TcpStream::connect_timeout(
-        &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-        SUPERVISOR_TIMEOUT,
-    )
-    .is_ok()
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        solstone_core_local_endpoint::journal_is_up(journal_path)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let Some(port) = read_convey_port(journal_path) else {
+            return false;
+        };
+        TcpStream::connect_timeout(
+            &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+            SUPERVISOR_TIMEOUT,
+        )
+        .is_ok()
+    }
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn read_convey_port(journal_path: &Path) -> Option<u16> {
     fs::read_to_string(journal_path.join("health/convey.port"))
         .ok()?

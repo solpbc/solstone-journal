@@ -57,6 +57,7 @@
     .then(r => r.json())
     .then(info => {
       state.localHost = info.hostname;
+      state.localProgramsAvailable = info.local_tcp_programs === true;
       state.hostCapabilities = info.host_capabilities || null;
       brainSnapshot = info.brain || brainSnapshot;
       updateObserve();
@@ -591,7 +592,30 @@
     }
   }
 
+  async function loadLocalPrograms() {
+    const section = document.getElementById('localPrograms');
+    if (!section) return;
+    await healthInfoReady;
+    if (!state.localProgramsAvailable) { section.hidden = true; return; }
+    try {
+      const data = await window.apiJson('/app/health/api/local-programs');
+      const host = section.querySelector('[data-local-programs]');
+      host.replaceChildren();
+      for (const item of data.items) {
+        const row = document.createElement('p');
+        row.textContent = `${item.program} · ${item.count} requests · ${new Date(item.last_seen * 1000).toLocaleString()}`;
+        host.appendChild(row);
+      }
+      if (!data.items.length) host.textContent = 'none since this journal started.';
+      section.hidden = false;
+    } catch (_) {
+      section.querySelector('[data-local-programs]').textContent = 'this list could not be read. try again shortly.';
+      section.hidden = false;
+    }
+  }
+
   function refreshStatusReads() {
+    loadLocalPrograms();
     loadRegisteredClients();
     loadBackupStatus();
     loadSpeechSetup();
@@ -4050,6 +4074,7 @@
     // this independent read. Later reads share the existing visible-tab cycle.
     const backupReady = new Promise(resolve => requestAnimationFrame(() => resolve(loadBackupStatus())));
     requestAnimationFrame(() => loadSpeechSetup());
+    requestAnimationFrame(() => loadLocalPrograms());
     window.addEventListener('hashchange', focusBackupDetails);
     const initialReady = Promise.all([healthInfoReady, registeredClientsReady, loadHealthState()]);
     initialReady.then(() => {

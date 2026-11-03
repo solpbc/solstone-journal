@@ -5,6 +5,7 @@
 
 use axum::{
     Json, Router,
+    extract::Extension,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -82,7 +83,10 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
             "/app/health/api/log",
             get(move |query| logs::get(log_root.clone(), query)),
         )
-        .route("/app/health/api/info", get(move || info(info_root.clone())))
+        .route(
+            "/app/health/api/info",
+            get(move |basis| info(info_root.clone(), basis)),
+        )
         .route(
             "/app/health/api/speech-setup",
             get(move || speech_setup(speech_root.clone(), speech_clock.clone())),
@@ -234,10 +238,15 @@ fn errors_today_label(count: usize, ok: bool) -> &'static str {
         "errors today"
     }
 }
-async fn info(root: PathBuf) -> Response {
+async fn info(
+    root: PathBuf,
+    basis: Option<Extension<solstone_core_convey_http::identity::AccessBasis>>,
+) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthInfo, move || {
         Json(
             json!({"hostname":host::hostname(),"brain":brain::snapshot(&root),
+            "local_tcp_programs": cfg!(any(target_os = "linux", target_os = "macos"))
+                && matches!(basis, Some(Extension(solstone_core_convey_http::identity::AccessBasis::Localhost))),
             "host_capabilities": solstone_core_system::owner_host::capabilities()}),
         )
         .into_response()

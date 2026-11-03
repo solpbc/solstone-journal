@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- health now shows which programs reach your journal over local tcp.
+
 ### Added
 
 - the agents app now shows what each agent has saved, newest first, and you can delete any of it there. a search result for a memory opens it there too.

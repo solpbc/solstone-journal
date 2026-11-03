@@ -33,3 +33,6 @@ path = "tests/segment_supervisor_loopback.rs"
 [features]
 full-tests = []
 test-hooks = []
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+solstone-core-local-endpoint.workspace = true

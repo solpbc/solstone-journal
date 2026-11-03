@@ -1,0 +1,27 @@
+[package]
+name = "solstone-core-local-endpoint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[lints.rust]
+unsafe_code = "deny"
+
+[features]
+full-tests = []
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+nix.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+socket2.workspace = true
+toml_edit.workspace = true
+ureq.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+tempfile = "3.24.0"

@@ -987,6 +987,8 @@ fn terminate_rejected_hosted_child(
 
 fn spawn_command(request: CommandLaunchRequest) -> io::Result<Child> {
     let mut command = Command::new(request.program);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    solstone_core_local_endpoint::prepare_child(&mut command, &request.environment);
     command.args(request.arguments).envs(request.environment);
     if let Some(current_dir) = request.current_dir {
         command.current_dir(current_dir);

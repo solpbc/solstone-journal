@@ -150,7 +150,10 @@ fn run_about(args: &[OsString]) -> ExitCode {
         Ok(port) => port,
         Err(output) => return render_output(output),
     };
-    render_output(about_output(&UreqHttpTransport::new(port)))
+    render_output(about_output(&UreqHttpTransport::for_environment(
+        port,
+        env.contains_key(SOLSTONE_CONVEY_PORT_ENV),
+    )))
 }
 
 fn about_request(path: &str) -> solstone_core_sol_client::transport::ApiRequest {
@@ -453,7 +456,12 @@ fn run_top_level_link_with_env(
         command_args,
         stdin_provider,
         env,
-        &|port| Box::new(UreqHttpTransport::new(port)),
+        &|port| {
+            Box::new(UreqHttpTransport::for_environment(
+                port,
+                env.contains_key(SOLSTONE_CONVEY_PORT_ENV),
+            ))
+        },
         link_join_pairing_seam(),
         link_serve_runner(),
     )
@@ -579,7 +587,10 @@ fn run_dispatched_with_env(
     env: &BTreeMap<String, String>,
 ) -> ExitCode {
     run_dispatched_with_runtime(all_args, command_args, stdin_provider, env, &|port| {
-        Box::new(UreqHttpTransport::new(port))
+        Box::new(UreqHttpTransport::for_environment(
+            port,
+            env.contains_key(SOLSTONE_CONVEY_PORT_ENV),
+        ))
     })
 }
 

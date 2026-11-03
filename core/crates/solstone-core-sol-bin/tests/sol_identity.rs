@@ -82,7 +82,9 @@ fn run_sol(args: &[&str], path: &Path, journal: Option<&Path>) -> Output {
         .args(args)
         .env("PATH", path)
         .env_remove("HOME")
-        .env_remove("SOLSTONE_JOURNAL");
+        .env_remove("SOLSTONE_JOURNAL")
+        .env("SOLSTONE_JOURNAL_SOCKET", "")
+        .env("SOLSTONE_CONVEY_PORT", "1");
     if let Some(journal) = journal {
         command.env("SOLSTONE_JOURNAL", journal);
     }
@@ -200,7 +202,7 @@ fn fixture_retired_sol_invocations_are_unsupported_without_spawning() {
 }
 
 #[test]
-fn status_never_reads_the_journal_local_port_file() {
+fn status_ignores_journal_local_state_when_no_runtime_socket_is_selected() {
     let temp = TempDir::new("sol-status");
     let (path, sentinel) = poison_path(&temp);
     let journal = temp.path.join("journal");
@@ -357,4 +359,34 @@ fn a_moved_journal_command_points_at_solstone_journal() {
             .starts_with("'think' moved to 'solstone journal think'; run that instead.\n")
     );
     assert_sentinel_untouched(&sentinel);
+}
+
+#[cfg(all(feature = "full-tests", any(target_os = "linux", target_os = "macos")))]
+#[test]
+fn status_reads_the_selected_runtime_socket_without_reading_journal_local_state() {
+    use std::io::{Read, Write};
+    let temp = TempDir::new("sol-status-socket");
+    let socket = temp.path.join("journal.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0; 4096];
+        let len = stream.read(&mut buffer).unwrap();
+        let request = String::from_utf8_lossy(&buffer[..len]).into_owned();
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+        request
+    });
+    let output = Command::new(bin())
+        .arg("status")
+        .env_remove("SOLSTONE_CONVEY_PORT")
+        .env("SOLSTONE_JOURNAL_SOCKET", &socket)
+        .env("SOLSTONE_JOURNAL", temp.path.join("absent-journal"))
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("unreachable"));
+    let request = server.join().unwrap();
+    assert!(
+        request.starts_with("GET /app/network/api/status "),
+        "{request}"
+    );
 }

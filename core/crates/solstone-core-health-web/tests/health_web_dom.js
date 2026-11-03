@@ -2004,6 +2004,41 @@ test('empty speech details disappear and resolved setup keeps focus in processin
   assert.strictEqual(env.doc.activeElement, env.doc.getElementById('brainHealthStatus'));
 });
 
+
+test('local TCP programs render untrusted product names as text and replace stale rows', async () => {
+  const { doc, context } = createEnvironment();
+  const section = doc.createElement('section'); section.id = 'localPrograms';
+  const rows = doc.createElement('div'); rows.setAttribute('data-local-programs', '');
+  section.appendChild(rows); doc.body.appendChild(section);
+  context.healthInfoReady = Promise.resolve(); context.state.localProgramsAvailable = true;
+  const product = '<img src=x onerror=bad()>';
+  context.window.apiJson = async () => ({ items: [{ program: product, count: 12, last_seen: 1 }] });
+  vm.runInContext(sourceBlock(loadHealthSource(), 'async function loadLocalPrograms()', 'function refreshStatusReads()'), context);
+  await vm.runInContext('loadLocalPrograms()', context);
+  assert.strictEqual(section.hidden, false);
+  assert.strictEqual(rows.children.length, 1);
+  assert.ok(rows.children[0].textContent.includes(product));
+  context.window.apiJson = async () => ({ items: [] });
+  await vm.runInContext('loadLocalPrograms()', context);
+  assert.strictEqual(rows.children.length, 0);
+});
+
+test('local TCP programs do not request unavailable transports and surface read failures', async () => {
+  const { doc, context } = createEnvironment();
+  const section = doc.createElement('section'); section.id = 'localPrograms';
+  const rows = doc.createElement('div'); rows.setAttribute('data-local-programs', '');
+  section.appendChild(rows); doc.body.appendChild(section);
+  context.healthInfoReady = Promise.resolve(); context.state.localProgramsAvailable = false;
+  let requests = 0; context.window.apiJson = async () => { requests += 1; throw new Error('offline'); };
+  vm.runInContext(sourceBlock(loadHealthSource(), 'async function loadLocalPrograms()', 'function refreshStatusReads()'), context);
+  await vm.runInContext('loadLocalPrograms()', context);
+  assert.strictEqual(requests, 0); assert.strictEqual(section.hidden, true);
+  context.state.localProgramsAvailable = true;
+  await vm.runInContext('loadLocalPrograms()', context);
+  assert.strictEqual(requests, 1); assert.strictEqual(section.hidden, false);
+  assert.ok(rows.textContent.length > 0);
+});
+
 async function runAsyncCases() {
   for (const runCase of asyncCases) await runCase();
   console.log('DOM CASES: ' + cases + ' passed');

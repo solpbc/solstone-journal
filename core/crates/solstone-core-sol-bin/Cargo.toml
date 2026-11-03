@@ -10,6 +10,9 @@ publish = false
 name = "solstone-core-sol"
 path = "src/main.rs"
 
+[features]
+full-tests = []
+
 [dependencies]
 solstone-core-sol = { workspace = true }
 

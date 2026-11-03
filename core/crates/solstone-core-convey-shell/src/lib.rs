@@ -77,6 +77,9 @@
 //! app uses that same bare-path redirect; the slashed form is the native
 //! shell entry point.
 
+#[cfg(all(feature = "host", any(target_os = "linux", target_os = "macos")))]
+mod local_endpoint;
+
 #[cfg(feature = "host")]
 use std::path::Path as FsPath;
 use std::path::PathBuf;
@@ -266,6 +269,8 @@ pub struct ConveyServeHandle {
     door_outcome: DoorOutcome,
     door: Arc<door::DoorLifecycle>,
     loopback_task: tokio::task::JoinHandle<()>,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    owner_socket: Option<local_endpoint::OwnerSocket>,
     link_health_task: tokio::task::JoinHandle<()>,
     weekly_heads_up_task: tokio::task::JoinHandle<()>,
     local_network_task: tokio::task::JoinHandle<()>,
@@ -289,6 +294,10 @@ impl ConveyServeHandle {
     }
     pub fn shutdown(&self) {
         self.loopback_task.abort();
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(socket) = &self.owner_socket {
+            socket.shutdown();
+        }
         self.door.shutdown();
         self.link_health_task.abort();
         self.weekly_heads_up_task.abort();
@@ -943,7 +952,7 @@ pub async fn bind_with_authorization(
         push_portal,
     ));
     let door = Arc::new(door::DoorLifecycle::new(door::DoorStartOptions {
-        journal_root: options.journal_root,
+        journal_root: options.journal_root.clone(),
         port: options.door_port,
         network_ipv4: None,
         handshake_timeout: options.handshake_timeout,
@@ -965,6 +974,39 @@ pub async fn bind_with_authorization(
             door.clone(),
             door::open_after_finalize,
         ));
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let (loopback_router, owner_socket) = {
+        let programs = local_endpoint::TcpPrograms::default();
+        let socket_path = solstone_core_local_endpoint::socket_for_journal(&options.journal_root)
+            .unwrap_or_else(|error| {
+                log::warn!("journal socket path unavailable; keeping TCP access: {error}");
+                None
+            });
+        let record = local_endpoint::runtime_record(
+            &options.journal_root,
+            loopback_ipv4.port(),
+            socket_path.as_deref(),
+        );
+        let live_record = Arc::new(std::sync::Mutex::new(record.clone()));
+        let router = loopback_router.merge(local_endpoint::routes(
+            programs.clone(),
+            live_record.clone(),
+        ));
+        let socket = local_endpoint::start(&options.journal_root, &record, router.clone());
+        if socket.is_none() {
+            live_record
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .socket_path = PathBuf::new();
+        }
+        (
+            router.layer(axum::middleware::from_fn_with_state(
+                programs,
+                local_endpoint::count_tcp,
+            )),
+            socket,
+        )
+    };
     let loopback_task =
         tokio::spawn(async move { serve_loopback(listeners, loopback_router).await });
     let _ = door.ensure_started().await;
@@ -977,6 +1019,8 @@ pub async fn bind_with_authorization(
         door_outcome,
         door,
         loopback_task,
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        owner_socket,
         link_health_task,
         weekly_heads_up_task,
         local_network_task,
@@ -1236,6 +1280,19 @@ fn run_convey_bound(
         artifact_cleanup?;
         return Ok(());
     }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        runtime.block_on(async {
+            tokio::select! {
+                _ = wait_for_hosted_termination_signal() => {},
+                _ = tokio::signal::ctrl_c() => {},
+            }
+        });
+        handle.shutdown();
+        remove_port_file(&journal_root)?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     runtime.block_on(handle.await_forever())
 }
 

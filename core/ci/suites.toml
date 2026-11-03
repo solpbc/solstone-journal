@@ -1439,8 +1439,10 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-sol-client"
@@ -5643,3 +5645,15 @@ requires = ["onnx-runtime"]
 
 [[suites.windows.tests]]
 name = "preinitialized_other_runtime_is_refused_before_inference"
+
+[[package_suites]]
+id = "package::solstone-core-local-endpoint"
+package = "solstone-core-local-endpoint"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+features = ["full-tests"]

@@ -2116,6 +2116,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-local-endpoint"
+version = "2.0.66"
+dependencies = [
+ "libc",
+ "nix 0.30.1",
+ "serde",
+ "serde_json",
+ "socket2",
+ "toml_edit",
+ "ureq",
+]
+
+[[package]]
 name = "solstone-core-memory-original"
 version = "2.0.66"
 dependencies = [
@@ -2184,6 +2197,7 @@ dependencies = [
  "sha2",
  "solstone-core-format",
  "solstone-core-journal-io",
+ "solstone-core-local-endpoint",
  "solstone-core-processing-record",
  "unicode-normalization",
 ]
@@ -2338,6 +2352,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-local-endpoint",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
  "thiserror 2.0.21",
@@ -2403,6 +2418,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-local-endpoint",
  "solstone-core-observe-audio",
  "solstone-core-processing-record",
  "solstone-core-retention",

@@ -43,3 +43,20 @@ See [INSTALL.md](../INSTALL.md).
 
 Owner cloud keys live in `config/journal.json` under `env`. Do not commit
 keys. There is no required `.env` file for the native journal.
+
+## Desktop local HTTP endpoint
+
+On macOS and Linux, the configured journal serves an owner-only pathname socket
+beside its existing TCP listener. The default is the account temporary directory
+plus `solstone/journal.sock` on macOS, and the OS account home directory plus
+`.local/run/solstone/journal.sock` on Linux. `SOLSTONE_JOURNAL_SOCKET` selects an
+explicit socket and its sibling `journal.json` runtime record. Give each journal
+its own directory when overriding this path. New directories use mode `0700`; an
+existing directory must already have that mode. Other journal roots run TCP-only
+unless they have an explicit socket override.
+
+An explicit `SOLSTONE_CONVEY_PORT` selects TCP. Otherwise the CLI prefers an
+existing socket owned by its OS account, then falls back to `localhost:5015`.
+It reads no journal-local files. An empty socket override selects TCP-only for
+internal children. Internal callers use their own journal's published endpoint.
+Windows and embedded mobile hosts keep their existing transport.

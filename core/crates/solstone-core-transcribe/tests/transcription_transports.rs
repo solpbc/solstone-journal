@@ -3,6 +3,8 @@
 
 //! Socket, interrupted-I/O, and child-process transport contracts.
 
+#![cfg(feature = "full-tests")]
+
 use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -476,7 +478,26 @@ fn recorded_convey_marks_solstone_up_when_listener_ready() {
         "convey.port",
         listener.local_addr().unwrap().port(),
     );
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let server = {
+        let listener = listener.try_clone().unwrap();
+        let root = fs::canonicalize(temporary.path()).unwrap();
+        thread::spawn(move || {
+            let mut stream = accept_with_deadline(&listener);
+            let request = read_parakeet_request(stream.try_clone().unwrap());
+            assert_eq!(request.path, "/_solstone/local-runtime");
+            let body = serde_json::json!({
+                "generation":"current", "pid":1, "process_start_time":1,
+                "journal_root":root, "tcp_port":listener.local_addr().unwrap().port(),
+                "socket_path":""
+            })
+            .to_string();
+            write_response(&mut stream, 200, &body);
+        })
+    };
     assert!(recorded_convey_is_up(temporary.path()));
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    server.join().unwrap();
     drop(listener);
 }
 

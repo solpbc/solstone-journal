@@ -4713,6 +4713,13 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
             sink: inner.options.process_sink.clone(),
             environment: {
                 let mut environment = inner.options.child_environment.clone();
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                {
+                    environment.remove(std::ffi::OsStr::new("SOLSTONE_CONVEY_PORT"));
+                    environment.extend(solstone_core_local_endpoint::internal_environment(
+                        &inner.options.journal_root,
+                    ));
+                }
                 if is_analysis_command(&dispatch.submission.command) {
                     environment.insert(
                         WORK_PRIORITY_ENV.into(),

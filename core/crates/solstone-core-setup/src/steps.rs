@@ -270,7 +270,16 @@ impl ProcessCommandRunner {
         // Setup never writes a payload to a child. Leaving stdin inherited
         // stalls the first child that reads it through to EOF (`solstone call`
         // does) whenever the caller holds a non-TTY stdin open.
-        let mut child = Command::new(&request.program)
+        let mut command = Command::new(&request.program);
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if request
+            .env
+            .iter()
+            .any(|(key, _)| key == solstone_core_local_endpoint::SOCKET_ENV)
+        {
+            command.env_remove("SOLSTONE_CONVEY_PORT");
+        }
+        let mut child = command
             .args(&request.args)
             .envs(request.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::null())
@@ -2455,7 +2464,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
             ],
             timeout_seconds: Some(context.args.step_timeout_seconds.max(0) as u64),
             idle_timeout_seconds: None,
-            env: Vec::new(),
+            env: brain_endpoint_environment(context),
         })
         .map_err(|message| StepExecutionError::Unhandled { message })?;
     if output.exit_code == 0 && !output.timed_out {
@@ -2488,6 +2497,39 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
             fix_hint: LOCAL_INSTALL_HINT.into(),
         },
     ))
+}
+
+fn brain_endpoint_environment(context: &SetupContext<'_>) -> Vec<(String, String)> {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        if let Ok(Some(path)) =
+            solstone_core_local_endpoint::socket_for_journal(&context.journal_path)
+            && solstone_core_local_endpoint::owned_socket(&path)
+            && solstone_core_local_endpoint::ping(
+                Some(&path),
+                context.args.port,
+                &context.journal_path,
+                None,
+            )
+        {
+            return vec![(
+                solstone_core_local_endpoint::SOCKET_ENV.into(),
+                path.to_string_lossy().into_owned(),
+            )];
+        }
+        vec![
+            (
+                solstone_core_local_endpoint::SOCKET_ENV.into(),
+                String::new(),
+            ),
+            ("SOLSTONE_CONVEY_PORT".into(), context.args.port.to_string()),
+        ]
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = context;
+        Vec::new()
+    }
 }
 
 #[cfg(not(windows))]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(feature = "full-tests")]
 #![allow(clippy::disallowed_methods, clippy::disallowed_types)]
 
 use std::fs;
@@ -59,7 +60,41 @@ fn recorded_convey_listener_marks_solstone_up() {
         temporary.path(),
         &listener.local_addr().unwrap().port().to_string(),
     );
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let server = {
+        let listener = listener.try_clone().unwrap();
+        let root = fs::canonicalize(temporary.path()).unwrap();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                let mut chunk = [0; 4096];
+                let n = stream.read(&mut chunk).unwrap();
+                assert!(n > 0 && request.len() + n <= 16384);
+                request.extend_from_slice(&chunk[..n]);
+            }
+            assert!(request.starts_with(b"GET /_solstone/local-runtime "));
+            let body = serde_json::json!({
+                "generation":"current", "pid":1, "process_start_time":1,
+                "journal_root":root, "tcp_port":listener.local_addr().unwrap().port(),
+                "socket_path":""
+            })
+            .to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        })
+    };
     assert!(is_solstone_up(temporary.path()));
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    server.join().unwrap();
 }
 
 #[test]

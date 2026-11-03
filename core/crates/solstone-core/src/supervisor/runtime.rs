@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io::Write;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -70,6 +71,7 @@ const APP_FIXTURE_CONVEY_ARGV_ENV: &str = "SOLSTONE_SUPERVISOR_APP_CONVEY_ARGV";
 const SENSE_GENERATION_HOLDER_ENV: &str = "SOLSTONE_SUPERVISOR_SENSE_GENERATION_HOLDER";
 const CONVEY_READY_WINDOW: Duration = Duration::from_secs(60);
 const CONVEY_READY_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 const CONVEY_READY_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 const FIXTURE_CONVEY_READY_WINDOW: Duration = Duration::from_secs(3);
 const FIXTURE_CONVEY_READY_INTERVAL: Duration = Duration::from_millis(20);
@@ -716,6 +718,7 @@ pub(crate) struct ManagedAppProcess {
     pub backoff: Option<BackoffState>,
     /// Generation claimed from `health/direct-door.json` when this Convey child spawned.
     pub direct_door_generation: Option<u64>,
+    pub local_generation: Option<String>,
 }
 
 impl ManagedAppProcess {
@@ -747,6 +750,7 @@ impl ManagedAppProcess {
             fast_fixture_timing,
             backoff: None,
             direct_door_generation: None,
+            local_generation: None,
         }
     }
 
@@ -1329,7 +1333,7 @@ fn resolve_available_port() -> std::io::Result<u16> {
 }
 
 trait ConveyReadinessProbe: Send + Sync {
-    fn is_ready(&self, journal: &Path, convey_argv: &[String]) -> bool;
+    fn is_ready(&self, journal: &Path, convey_argv: &[String], generation: Option<&str>) -> bool;
     fn wait_window(&self) -> Duration;
     fn poll_interval(&self) -> Duration;
 }
@@ -1337,18 +1341,45 @@ trait ConveyReadinessProbe: Send + Sync {
 struct TcpConveyReadinessProbe;
 
 impl ConveyReadinessProbe for TcpConveyReadinessProbe {
-    fn is_ready(&self, journal: &Path, _: &[String]) -> bool {
-        let Some(port) = std::fs::read_to_string(journal.join("health/convey.port"))
-            .ok()
-            .and_then(|text| text.trim().parse::<u16>().ok())
-        else {
-            return false;
-        };
-        TcpStream::connect_timeout(
-            &SocketAddr::from(([127, 0, 0, 1], port)),
-            CONVEY_READY_CONNECT_TIMEOUT,
-        )
-        .is_ok()
+    fn is_ready(&self, journal: &Path, argv: &[String], generation: Option<&str>) -> bool {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            let Some(port) = argv.last().and_then(|arg| arg.parse::<u16>().ok()) else {
+                return false;
+            };
+            let Some(generation) = generation else {
+                return false;
+            };
+            let root = std::fs::canonicalize(journal).unwrap_or_else(|_| journal.to_owned());
+            if let Ok(Some(socket)) = solstone_core_local_endpoint::socket_for_journal(journal)
+                && solstone_core_local_endpoint::ping(Some(&socket), port, &root, Some(generation))
+            {
+                return true;
+            }
+            // TCP-only children still use this file. Do not release them until
+            // Convey has replaced any previous start's port, then prove the
+            // responding process is the generation we launched.
+            let recorded_port = std::fs::read_to_string(journal.join("health/convey.port"))
+                .ok()
+                .and_then(|text| text.trim().parse::<u16>().ok());
+            recorded_port == Some(port)
+                && solstone_core_local_endpoint::ping(None, port, &root, Some(generation))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        {
+            let _ = (argv, generation);
+            let Some(port) = std::fs::read_to_string(journal.join("health/convey.port"))
+                .ok()
+                .and_then(|text| text.trim().parse::<u16>().ok())
+            else {
+                return false;
+            };
+            TcpStream::connect_timeout(
+                &SocketAddr::from(([127, 0, 0, 1], port)),
+                CONVEY_READY_CONNECT_TIMEOUT,
+            )
+            .is_ok()
+        }
     }
 
     fn wait_window(&self) -> Duration {
@@ -1365,7 +1396,7 @@ struct FixtureConveyReadinessProbe {
 }
 
 impl ConveyReadinessProbe for FixtureConveyReadinessProbe {
-    fn is_ready(&self, _: &Path, convey_argv: &[String]) -> bool {
+    fn is_ready(&self, _: &Path, convey_argv: &[String], _: Option<&str>) -> bool {
         ready_sleep_marker_path(convey_argv).is_some_and(|path| Path::new(path).exists())
     }
 
@@ -1645,11 +1676,37 @@ pub(crate) fn spawn_app_process(
     )]);
     #[cfg(windows)]
     let mut environment = BTreeMap::new();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let socket =
+            solstone_core_local_endpoint::socket_for_journal(journal).unwrap_or_else(|error| {
+                log::warn!("journal socket path unavailable: {error}");
+                None
+            });
+        environment.insert(
+            solstone_core_local_endpoint::SOCKET_ENV.into(),
+            socket.map_or_else(OsString::new, |path| path.into_os_string()),
+        );
+        if app.service == AppService::Convey {
+            let generation = solstone_core_local_endpoint::fresh_generation();
+            environment.insert(
+                solstone_core_local_endpoint::GENERATION_ENV.into(),
+                generation.clone().into(),
+            );
+            app.local_generation = Some(generation);
+        }
+    }
     // Convey's transcript reprocessing and discovery helpers must borrow the
     // supervisor generation just as the resident Sense service does.
     let needs_generation = matches!(app.service, AppService::Sense | AppService::Convey);
     if needs_generation {
         environment.extend(sense_child_environment.environment.clone());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if app.service != AppService::Convey {
+        environment.remove(std::ffi::OsStr::new("SOLSTONE_CONVEY_PORT"));
+        environment.extend(solstone_core_local_endpoint::internal_environment(journal));
     }
 
     #[cfg(unix)]
@@ -1773,7 +1830,7 @@ async fn wait_for_convey_ready(
             );
             return Ok(false);
         }
-        if probe.is_ready(journal, &app.argv) {
+        if probe.is_ready(journal, &app.argv, app.local_generation.as_deref()) {
             return Ok(true);
         }
         if last_heartbeat.elapsed() >= heartbeat_interval {
@@ -2141,6 +2198,30 @@ pub(crate) async fn boot_and_tick(
                 .await);
             }
         }
+    };
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let sense_child_environment = {
+        let mut context = sense_child_environment;
+        let socket =
+            solstone_core_local_endpoint::socket_for_journal(&journal).unwrap_or_else(|error| {
+                log::warn!("journal socket path unavailable: {error}");
+                None
+            });
+        context.environment.insert(
+            solstone_core_local_endpoint::SOCKET_ENV.into(),
+            socket.map_or_else(OsString::new, |p| p.into_os_string()),
+        );
+        context.environment.insert(
+            solstone_core_local_endpoint::INTERNAL_ROOT_ENV.into(),
+            std::fs::canonicalize(&journal)
+                .unwrap_or_else(|_| journal.clone())
+                .into_os_string(),
+        );
+        context.environment.insert(
+            solstone_core_local_endpoint::INTERNAL_PORT_ENV.into(),
+            convey_port.to_string().into(),
+        );
+        context
     };
     let app_processes = app_processes(
         &options,

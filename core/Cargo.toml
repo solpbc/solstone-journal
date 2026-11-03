@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/solstone-core-local-endpoint",
     "crates/solstone-core-about",
     "crates/solstone-core",
     "crates/solstone-core-repository-contracts",
@@ -156,6 +157,7 @@ license = "AGPL-3.0-only"
 unsafe_code = "forbid"
 
 [workspace.dependencies]
+solstone-core-local-endpoint = { path = "crates/solstone-core-local-endpoint" }
 solstone-core-about = { path = "crates/solstone-core-about" }
 # Windows journal installer callbacks; no automatic apply or owner runtime dependency.
 # Before changing this pin, review the RUSTSEC-2024-0388 compatibility exception in deny.toml.

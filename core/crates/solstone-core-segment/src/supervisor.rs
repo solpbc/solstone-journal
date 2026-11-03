@@ -5,13 +5,16 @@
 
 use std::env;
 use std::fs;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 use std::time::Duration;
 
 /// Interactive refusal text shared with the Python command contract.
 pub const SUPERVISOR_MESSAGE: &str =
     "journal isn't running. start it with 'solstone journal up' and retry.";
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 const SUPERVISOR_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// The two unavailable-supervisor outcomes the CLI boundary distinguishes.
@@ -51,16 +54,23 @@ where
     Err(SupervisorRefusal::Unavailable)
 }
 
-/// True only when the recorded local Convey port accepts a 200 ms TCP connection.
+/// Check this journal over its desktop endpoint, or the recorded TCP port elsewhere.
 pub fn is_solstone_up(journal: &Path) -> bool {
-    let Some(port) = read_convey_port(journal) else {
-        return false;
-    };
-    TcpStream::connect_timeout(
-        &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-        SUPERVISOR_TIMEOUT,
-    )
-    .is_ok()
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        solstone_core_local_endpoint::journal_is_up(journal)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let Some(port) = read_convey_port(journal) else {
+            return false;
+        };
+        TcpStream::connect_timeout(
+            &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+            SUPERVISOR_TIMEOUT,
+        )
+        .is_ok()
+    }
 }
 
 /// Read the locally recorded Convey port.

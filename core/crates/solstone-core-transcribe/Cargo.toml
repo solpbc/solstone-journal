@@ -80,3 +80,6 @@ windows-sys.workspace = true
 solstone-core-distribution.workspace = true
 solstone-core-installation-identity.workspace = true
 solstone-core-journal.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+solstone-core-local-endpoint.workspace = true

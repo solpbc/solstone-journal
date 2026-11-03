@@ -4227,6 +4227,7 @@ dependencies = [
  "solstone-core-journal-stats-cli",
  "solstone-core-linked-share",
  "solstone-core-local",
+ "solstone-core-local-endpoint",
  "solstone-core-location",
  "solstone-core-maintenance",
  "solstone-core-mcp-endpoint",
@@ -4717,6 +4718,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-local-endpoint",
  "solstone-core-map-web",
  "solstone-core-mcp-endpoint",
  "solstone-core-npy",
@@ -5704,6 +5706,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-local-endpoint"
+version = "2.0.66"
+dependencies = [
+ "libc",
+ "nix 0.30.1",
+ "serde",
+ "serde_json",
+ "socket2",
+ "tempfile",
+ "toml_edit",
+ "ureq",
+]
+
+[[package]]
 name = "solstone-core-location"
 version = "2.0.66"
 dependencies = [
@@ -6134,6 +6150,7 @@ dependencies = [
  "socket2",
  "solstone-core-format",
  "solstone-core-journal-io",
+ "solstone-core-local-endpoint",
  "solstone-core-processing-record",
  "unicode-normalization",
 ]
@@ -6252,6 +6269,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-local-endpoint",
  "solstone-core-service-unit",
  "solstone-core-skill-state",
  "solstone-core-system",
@@ -6312,6 +6330,7 @@ dependencies = [
  "serde_json",
  "solstone-core-format",
  "solstone-core-journal-io",
+ "solstone-core-local-endpoint",
  "spl-core",
  "ureq",
  "windows-sys 0.61.2",
@@ -6598,6 +6617,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-local-endpoint",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
  "tempfile",
@@ -6853,6 +6873,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-local-endpoint",
  "solstone-core-observe-audio",
  "solstone-core-processing-record",
  "solstone-core-retention",

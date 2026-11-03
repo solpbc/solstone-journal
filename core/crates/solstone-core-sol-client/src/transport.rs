@@ -223,6 +223,62 @@ impl UreqHttpTransport {
         }
     }
 
+    /// Prefer the account socket unless a TCP port was explicitly selected.
+    #[must_use]
+    pub fn for_environment(port: i64, explicit_port: bool) -> Self {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if !explicit_port {
+            use solstone_core_local_endpoint as endpoint;
+            let internal_root = std::env::var_os(endpoint::INTERNAL_ROOT_ENV);
+            if let Ok(Some(path)) = endpoint::socket_path()
+                && endpoint::owned_socket(&path)
+                && internal_root.as_ref().is_none_or(|root| {
+                    endpoint::socket_belongs_to_journal(&path, std::path::Path::new(root))
+                })
+            {
+                return Self::with_unix_socket(&path);
+            }
+            if internal_root.is_some()
+                && let Ok(value) = std::env::var(endpoint::INTERNAL_PORT_ENV)
+                && let Ok(own_port) = value.parse::<i64>()
+            {
+                return Self::new(own_port);
+            }
+        }
+        let _ = explicit_port;
+        Self::new(port)
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[must_use]
+    pub fn with_unix_socket(path: &std::path::Path) -> Self {
+        let make_agent = |policy: TimeoutPolicy| {
+            let spec = policy.spec();
+            let config = ureq::Agent::config_builder()
+                .user_agent(concat!("solstone/", env!("CARGO_PKG_VERSION")))
+                .http_status_as_error(false)
+                .proxy(None)
+                .max_redirects(0)
+                .timeout_connect(Some(spec.connect))
+                .timeout_recv_response(spec.read)
+                .timeout_recv_body(spec.read)
+                .timeout_global(spec.total)
+                .build();
+            ureq::Agent::with_parts(
+                config,
+                solstone_core_local_endpoint::transport::UnixConnector(path.to_owned()),
+                ureq::unversioned::resolver::DefaultResolver::default(),
+            )
+        };
+        Self {
+            base_url: "http://localhost".into(),
+            api_agent: make_agent(TimeoutPolicy::Api),
+            upload_agent: make_agent(TimeoutPolicy::Upload),
+            sse_agent: make_agent(TimeoutPolicy::SseOpen),
+            boundary_generator: Arc::new(SystemBoundaryGenerator),
+        }
+    }
+
     fn agent(&self, policy: TimeoutPolicy) -> &ureq::Agent {
         match policy {
             TimeoutPolicy::Api => &self.api_agent,
@@ -384,7 +440,10 @@ impl HttpTransport for UreqHttpTransport {
 
 fn agent_for(policy: TimeoutPolicy) -> ureq::Agent {
     let spec = policy.spec();
-    let config = ureq::Agent::config_builder()
+    let config = ureq::Agent::config_builder();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let config = config.user_agent(concat!("solstone/", env!("CARGO_PKG_VERSION")));
+    let config = config
         .http_status_as_error(false)
         .timeout_connect(Some(spec.connect))
         .timeout_recv_response(spec.read)

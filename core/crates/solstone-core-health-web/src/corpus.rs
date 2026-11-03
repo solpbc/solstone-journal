@@ -292,6 +292,9 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             assert!(actual["host_capabilities"][capability].is_boolean());
                         }
                         actual.as_object_mut().unwrap().remove("host_capabilities");
+                        // Corpus requests carry no local connection identity.
+                        assert_eq!(actual["local_tcp_programs"], false);
+                        actual.as_object_mut().unwrap().remove("local_tcp_programs");
                     }
                     for pattern in case["normalized"]
                         .as_array()

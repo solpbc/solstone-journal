@@ -119,6 +119,8 @@ impl ManagedProcess {
         let writer = Arc::new(Mutex::new(writer));
 
         let mut command = Command::new(&cmd[0]);
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        solstone_core_local_endpoint::prepare_child(&mut command, &options.environment);
         command
             .args(&cmd[1..])
             .envs(&options.environment)
