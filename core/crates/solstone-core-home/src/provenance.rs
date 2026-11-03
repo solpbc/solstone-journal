@@ -498,6 +498,17 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
     }
 }
 
+/// What tells two agents apart for the owner: the start of the key its stream
+/// is named for. An agent's own name is self-chosen, so it can't do this job.
+fn agent_short_key(stream: &str) -> Option<&str> {
+    let key = stream.strip_prefix("agent-memory-")?;
+    let short = key.get(..4)?;
+    short
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit())
+        .then_some(short)
+}
+
 pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<String, String>> {
     if table.status == LabelTableStatus::Failed {
         return None;
@@ -506,7 +517,13 @@ pub fn rendered_stream_labels(table: &StreamLabelTable) -> Option<BTreeMap<Strin
     let mut result = BTreeMap::new();
     for row in &table.rows {
         let parenthetical = compute_parenthetical(row, &table.rows);
-        let rendered = provenance_label(&row.part, parenthetical);
+        let mut rendered = provenance_label(&row.part, parenthetical);
+        if row.part == ProvenancePart::Agent
+            && let Some(key) = agent_short_key(&row.name)
+        {
+            rendered.push_str(" · ");
+            rendered.push_str(key);
+        }
         result.insert(row.name.clone(), rendered);
     }
 
@@ -1159,6 +1176,27 @@ mod tests {
             compute_parenthetical(&table_same.rows[1], &table_same.rows),
             None
         );
+    }
+
+    #[test]
+    fn owner_label_shows_an_agents_short_key_and_an_agents_own_label_does_not() {
+        let row = |name: &str| StreamLabelRow {
+            name: name.to_owned(),
+            part: ProvenancePart::Agent,
+            created_at: 1,
+        };
+        let table = StreamLabelTable {
+            status: LabelTableStatus::Complete,
+            rows: vec![row("agent-memory-a3f29c41"), row("agent-memory-0d7b1111")],
+        };
+        let owner = rendered_stream_labels(&table).unwrap();
+        assert_ne!(
+            owner["agent-memory-a3f29c41"],
+            owner["agent-memory-0d7b1111"]
+        );
+        assert!(owner["agent-memory-a3f29c41"].contains("a3f2"));
+        let agent = agent_stream_labels(&table);
+        assert!(!agent["agent-memory-a3f29c41"].contains("a3f2"));
     }
 
     #[test]

@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- the agents app now shows what each agent has saved, newest first, and you can delete any of it there. a search result for a memory opens it there too.
+- each agent now shows a short id beside its name, so two agents with the same name are easy to tell apart.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 

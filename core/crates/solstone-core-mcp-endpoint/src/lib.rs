@@ -48,6 +48,7 @@ mod memory;
 mod memory_recall;
 mod memory_tools;
 mod oauth;
+mod owner_memories;
 mod owner_state;
 mod owner_web;
 mod permissions;

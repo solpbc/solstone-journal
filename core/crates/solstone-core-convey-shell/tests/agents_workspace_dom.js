@@ -41,7 +41,7 @@ function connection(kind, id, name, doorName) {
 
 // `journal` is what the watch endpoint answers: the open code and the agents paired in the browser.
 // A test changes it between ticks to play out what happens at the journal while the dialog is open.
-async function boot(state, {enable = null, pairingResponse, journal = null, activity = null, capable = false, capability = false} = {}) {
+async function boot(state, {enable = null, pairingResponse, journal = null, activity = null, capable = false, capability = false, memories = null, deleteStates = null, hash = ''} = {}) {
   const calls = [];
   const opened = [];
   const popups = [];
@@ -86,6 +86,9 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
   };
   const location = {
     origin: 'http://127.0.0.1:8080',
+    hash,
+    pathname: '/app/agents/',
+    search: '',
     assigned: null,
     set href(v) { this.assigned = v; },
     assign(v) { this.assigned = v; },
@@ -124,6 +127,18 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
       if (url === '/app/agents/api/byo/dns-check') return {verdict: 'admitted', addresses: ['203.0.113.10'], diagnostics: []};
       if (url === '/app/agents/api/byo/outside-check') return {code: 'outside_ok'};
       if (url === '/app/agents/api/solstone-me/account/replace' || url === '/app/agents/api/solstone-me/account/notice/dismiss') return {changed: true};
+      if (url === '/app/agents/api/memories') return memories ? {agents: memories.agents, complete: true} : {agents: [], complete: true};
+      if (url.startsWith('/app/agents/api/memories/')) {
+        if (memories?.failPage) throw new Error('unavailable');
+        const source = url.slice('/app/agents/api/memories/'.length).split('?')[0];
+        const pages = memories?.pages?.[source] || [{memories: [], next: null, complete: true}];
+        const before = new URL(url, 'http://journal').searchParams.get('before_segment');
+        const page = before ? pages.find(item => item.after === before) : pages[0];
+        return JSON.parse(JSON.stringify(page));
+      }
+      if (url.startsWith('/app/transcripts/api/segment/') && method === 'DELETE') return {success: true, pending: 'p1', ttl_seconds: 10};
+      if (url.startsWith('/app/transcripts/api/delete-status/')) return {state: deleteStates?.shift() || 'pending'};
+      if (url.startsWith('/app/transcripts/api/cancel-delete/')) return {success: true};
       if (url.startsWith('/app/agents/api/activity')) return activity ? JSON.parse(JSON.stringify(activity)) : {entries: [], counts: {}, examination_complete: true};
       if (url === '/app/agents/api/enable') return {operation: method === 'POST' ? (enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}) : (enable || null)};
       throw new Error(`unexpected request ${method} ${url}`);
@@ -1069,6 +1084,127 @@ async function test(name, body) {
     fields['byo-hostname'].value = '';
     await click({action: 'byo-save'});
     assert(notifications.some(n => n.title === 'agents' && typeof n.message === 'string' && n.message.length > 0 && n.body === undefined));
+  });
+
+  await test('an agent\'s memories: reach one, read it, delete it, cancel it', async () => {
+    const source = 'a3f2'.padEnd(64, '0');
+    const earlierSource = '7c1e'.padEnd(64, '0');
+    const stream = `agent-memory-${source}`;
+    const memory = (segment, content, extra = {}) => ({day: '20261103', stream, segment, created_at: '2026-11-03T16:42:00Z', content, ...extra});
+    const claude = {...connection('oauth', 'g1', 'Claude', 'local'), memory_source: source};
+    const twin = {...connection('oauth', 'g2', 'Claude', 'relay'), memory_source: 'b'.repeat(64)};
+    const rows = [memory('094200_1', 'short answers please'), memory('081500_1', '<b>not markup</b>'), memory('071500_1', 'third'), memory('061500_1', 'fourth')];
+    const memories = () => ({
+      agents: [{source, count: 4, latest_at: '2026-11-03T16:42:00Z', label: 'Claude'}, {source: earlierSource, count: 2, latest_at: '2026-10-02T16:42:00Z', label: 'Older Claude'}],
+      pages: {[source]: [{memories: rows, next: null, complete: true}], [earlierSource]: [{memories: [memory('101500_1', 'kept from before', {stream: `agent-memory-${earlierSource}`})], next: null, complete: true}]},
+    });
+    const state = () => baseState({...door({listening: true}), connections: [claude, twin]});
+
+    // Two agents with one name read differently, and a past agent keeps a row.
+    const {view: list, click: clickList} = await boot(state(), {memories: memories()});
+    has(list, ' · a3f2');
+    has(list, ' · bbbb');
+    has(list, 'class="mems"');
+    has(list, 'data-memories="' + earlierSource + '"');
+    await clickList({memories: earlierSource});
+    has(list, 'kept from before');
+    has(list, 'data-memory-delete');
+    lacks(list, 'data-save-permission');
+
+    // The agent's page shows the latest three and the way to the rest; the text is never markup.
+    const {view, click, calls, tick} = await boot(state(), {memories: memories(), deleteStates: ['deleted']});
+    await click({connection: 'oauth:g1'});
+    has(view, 'short answers please');
+    has(view, '&lt;b&gt;not markup&lt;/b&gt;');
+    lacks(view, '<b>not markup</b>');
+    lacks(view, 'fourth');
+    has(view, 'data-memories="' + source + '"');
+    await click({memories: source});
+    has(view, 'fourth');
+
+    // Delete goes through the one segment delete, holds for its window, and the row leaves when it finishes.
+    const place = `20261103/${stream}/094200_1`;
+    await click({memoryDelete: place});
+    has(view, 'aria-label="delete this memory"');
+    assert(!calls.some(call => call.method === 'DELETE'), 'nothing is deleted before the owner confirms');
+    await click({memoryConfirm: '1'});
+    assert(calls.some(call => call.method === 'DELETE' && call.url === `/app/transcripts/api/segment/20261103/${stream}/094200_1`), 'the delete names the memory\'s segment');
+    has(view, `data-memory-cancel="${place}"`);
+    has(view, 'short answers please');
+    await tick();
+    await tick();
+    lacks(view, 'short answers please');
+    has(view, '&lt;b&gt;not markup&lt;/b&gt;');
+  });
+
+  await test('an agent\'s memories: cancel keeps it, trouble says so, a link finds it', async () => {
+    const source = 'a3f2'.padEnd(64, '0');
+    const stream = `agent-memory-${source}`;
+    const memory = (segment, content, extra = {}) => ({day: '20261103', stream, segment, created_at: '2026-11-03T16:42:00Z', content, ...extra});
+    const claude = {...connection('oauth', 'g1', 'Claude', 'local'), memory_source: source};
+    const state = () => baseState({...door({listening: true}), connections: [claude]});
+    const agents = [{source, count: 3, latest_at: '2026-11-03T16:42:00Z', label: 'Claude'}];
+    const page = {memories: [memory('094200_1', 'keep me'), {day: '20261103', stream, segment: '081500_1', unreadable: true}], next: {day: '20261103', segment: '081500_1'}, complete: true};
+    const older = {after: '081500_1', memories: [memory('071500_1', 'found further back')], next: null, complete: true};
+    const place = `20261103/${stream}/094200_1`;
+
+    // Cancel inside the window keeps the memory.
+    const {view, click, calls} = await boot(state(), {memories: {agents, pages: {[source]: [page, older]}}});
+    await click({memories: source});
+    has(view, 'data-memories-partial');
+    has(view, 'mem bad');
+    has(view, `data-memory-delete="20261103/${stream}/081500_1"`);
+    has(view, 'data-memories-older');
+    await click({memoryDelete: place});
+    await click({memoryConfirm: '1'});
+    await click({memoryCancel: place});
+    assert(calls.some(call => call.method === 'POST' && call.url === '/app/transcripts/api/cancel-delete/p1'), 'cancel reaches the journal');
+    lacks(view, 'data-memory-cancel');
+    has(view, 'keep me');
+
+    // A page that can't be read says so and offers another try.
+    const {view: failed, click: clickFailed} = await boot(state(), {memories: {agents, failPage: true}});
+    await clickFailed({connection: 'oauth:g1'});
+    has(failed, 'data-memories-failed');
+    has(failed, `data-memories-retry="${source}"`);
+
+    // A link reads on until it reaches its memory, and a stale link says the memory is gone.
+    const {view: linked} = await boot(state(), {memories: {agents, pages: {[source]: [page, older]}}, hash: `#memories/${source}/20261103/071500_1`});
+    await settle();
+    has(linked, 'found further back');
+    has(linked, 'mem here');
+    const {view: stale} = await boot(state(), {memories: {agents, pages: {[source]: [page, older]}}, hash: `#memories/${source}/20261103/000000_1`});
+    await settle();
+    has(stale, 'data-memory-gone');
+
+    // A link into a read that failed never claims the memory is gone.
+    const {view: unread} = await boot(state(), {memories: {agents, failPage: true}, hash: `#memories/${source}/20261103/071500_1`});
+    await settle();
+    has(unread, 'data-memories-failed');
+    lacks(unread, 'data-memory-gone');
+    lacks(unread, 'data-memories-none');
+
+    // A read that came back incomplete and empty doesn't say the agent saved nothing.
+    const partial = {[source]: [{memories: [], next: null, complete: false}]};
+    const {view: thin, click: clickThin} = await boot(state(), {memories: {agents, pages: partial}});
+    await clickThin({memories: source});
+    has(thin, 'data-memories-partial');
+    lacks(thin, 'data-memories-none');
+
+    // An activity entry that released a memory links to that memory, not to a day that doesn't list it.
+    const recalled = {entries: [{day: '20261103', segment: 's', timestamp: '2026-11-03T16:42:00Z', connection: claude.key, agent_identity: 'Claude', tool: 'recall_memory', request: {arguments: {}}, outcome: 'served', result: {targets: [`20261103/${stream}/094200_1/note.txt`]}}], counts: {served: 1}, examination_complete: true};
+    const entry = await boot(state(), {memories: {agents}, activity: recalled});
+    await entry.click({route: 'activity'});
+    await entry.click({activityIndex: '0'});
+    has(entry.view, `/app/agents/#memories/${source}/20261103/094200_1`);
+
+    // Only a paired agent is told about pairing again.
+    const key = {...connection('bearer', 'k1', 'Script', null), memory_source: 'c'.repeat(64)};
+    const paired = await boot(baseState({...door({listening: true}), connections: [claude, key]}), {memories: {agents: []}});
+    await paired.click({connection: 'oauth:g1'});
+    has(paired.view, 'pairing again');
+    await paired.click({connection: 'bearer:k1'});
+    lacks(paired.view, 'pairing again');
   });
 
   console.log(`DOM CASES: ${cases} passed`);

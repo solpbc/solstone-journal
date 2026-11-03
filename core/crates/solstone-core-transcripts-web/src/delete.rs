@@ -861,6 +861,75 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[tokio::test]
+    async fn an_agent_memory_can_be_deleted_from_the_web_route() {
+        let root = TempDir::new().expect("journal");
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        let stream = format!("agent-memory-{}", "a3f2".repeat(16));
+        for segment in ["094200_1", "094300_2"] {
+            for (name, contents) in [
+                ("note.txt", b"a saved memory".as_slice()),
+                ("origin.json", b"{}".as_slice()),
+                ("ready.json", b"{}".as_slice()),
+                ("stream.json", b"{}".as_slice()),
+            ] {
+                write(
+                    root.path(),
+                    &format!("chronicle/20261103/{stream}/{segment}/{name}"),
+                    contents,
+                );
+            }
+        }
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 11, 3, 12, 0, 0).unwrap()),
+            shell,
+            Duration::ZERO,
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri(format!(
+                        "/app/transcripts/api/segment/20261103/{stream}/094200_1"
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("delete response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let accepted: Value = serde_json::from_slice(&bytes).unwrap();
+        let pending = accepted["pending"].as_str().expect("pending id");
+
+        let status = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/app/transcripts/api/delete-status/{pending}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("status response");
+        let bytes = to_bytes(status.into_body(), usize::MAX).await.unwrap();
+        let status: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status["state"], "deleted");
+
+        let chronicle = root.path().join("chronicle/20261103").join(&stream);
+        let deleted = chronicle.join("094200_1");
+        for name in ["note.txt", "origin.json", "ready.json", "stream.json"] {
+            assert!(!deleted.join(name).exists(), "{name} stayed behind");
+        }
+        assert!(deleted.join(TOMBSTONE_NAME).is_file());
+        assert!(chronicle.join("094300_2/note.txt").is_file());
+    }
+
+    #[tokio::test]
     async fn zero_window_delete_drops_the_target_from_search_and_keeps_the_sibling() {
         let root = TempDir::new().expect("journal");
         setup_acceptance_journal(root.path());

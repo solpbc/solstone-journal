@@ -23,6 +23,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_format::agent_memory::SourceKey;
 use solstone_core_journal_config::{
     McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
 };
@@ -65,7 +66,15 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
             "/app/agents/api/solstone-me/account/notice/dismiss",
             post(dismiss_sme_account_notice),
         )
-        .route("/app/agents/api/activity", get(activity));
+        .route("/app/agents/api/activity", get(activity))
+        .route(
+            "/app/agents/api/memories",
+            get(crate::owner_memories::summary),
+        )
+        .route(
+            "/app/agents/api/memories/{source}",
+            get(crate::owner_memories::page),
+        );
     with_byo_routes(router)
         .route_layer(middleware::from_fn(admit_owner))
         .layer(Extension(journal))
@@ -111,7 +120,7 @@ async fn admit_owner(request: Request<Body>, next: Next) -> Response {
     next.run(request).await
 }
 
-fn refusal(code: &'static str, detail: impl ToString, status: StatusCode) -> Response {
+pub(crate) fn refusal(code: &'static str, detail: impl ToString, status: StatusCode) -> Response {
     (
         status,
         Json(json!({
@@ -177,6 +186,7 @@ pub(crate) fn state_value_with_iface(
         let activity = activity_by_connection.get(&key);
         connections.push(json!({
             "kind": "bearer", "id": token.id, "key": key, "name": token.label,
+            "memory_source": SourceKey::from_verified_id(&key).component(),
             "auth_method": "bearer token", "created_at": token.created_at,
             "permission": by_key.get(&key),
             "door": Value::Null,
@@ -191,6 +201,7 @@ pub(crate) fn state_value_with_iface(
         let door = grant_door(grant.resource.as_deref());
         connections.push(json!({
             "kind": "oauth", "id": grant.id, "key": key,
+            "memory_source": SourceKey::from_verified_id(&key).component(),
             "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
             "client_id": grant.client_id, "auth_method": "OAuth",
             "created_at": grant.created_at, "access_expires_at": grant.access_expires_at,

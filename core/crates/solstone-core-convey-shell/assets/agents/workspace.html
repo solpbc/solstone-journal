@@ -34,6 +34,10 @@
   .agents .watch{display:flex;align-items:center;gap:.55em;margin:10px 0 0;font-size:.86rem}.agents .sdot.pulse{animation:agents-pulse 1.6s ease-in-out infinite}@keyframes agents-pulse{50%{opacity:.35}}@media(prefers-reduced-motion:reduce){.agents .sdot.pulse{animation:none}}
   .agents .first{margin-top:14px}.agents .first .ag-row{cursor:default}.agents .first .ag-row:hover{background:none}.agents .first time{font-size:.8rem;color:var(--muted);white-space:nowrap}.agents .first .none{padding:16px}.agents .first .none p{margin:0;font-size:.88rem;color:var(--muted)}
   @media(max-width:700px){.agents .seg3{grid-template-columns:1fr}}
+  .agents .key{font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}.agents h1 .key{font-family:var(--font-body);font-size:.5em;margin-left:.2em}.agents .ag-row small.mems{color:var(--ink)}.agents .later{margin-top:22px}
+  .agents .day{font-size:.84rem;font-weight:600;color:var(--muted);margin:20px 0 8px}.agents .day:first-of-type{margin-top:14px}.agents .peek{margin-top:10px}.agents .peek .mem{padding:11px 0}
+  .agents .mem{display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-top:1px solid var(--hairline)}.agents .mem:first-child{border-top:0}.agents .mem .m{flex:1;min-width:0}.agents .mem-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;font-size:.95rem}.agents .mem-text.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.agents .mem small{display:block;color:var(--muted);font-size:.8rem;margin-top:5px}.agents .mem .more{appearance:none;background:none;border:0;padding:0;margin:0 0 0 8px;font:inherit;color:var(--orange-text-aa);font-weight:600;cursor:pointer}.agents .mem.going{background:var(--warn-wash)}.agents .mem.going .mem-text,.agents .mem.bad .mem-text{color:var(--muted)}.agents .mem.here{box-shadow:inset 3px 0 0 var(--orange);background:var(--cream-bright)}.agents .quote.mem-quote{white-space:pre-wrap}
+  @media(max-width:640px){.agents .mem{flex-wrap:wrap}.agents .mem .m{flex-basis:100%}.agents .mem .btn{margin-left:auto;min-height:44px;min-width:44px}}
   @media(max-width:640px){.agents h1{font-size:2rem}.agents .activity-row time{flex-basis:100%}.agents .seg2{grid-template-columns:1fr}.agents .lane-row{grid-template-columns:1fr;gap:4px}}
 </style>
 
@@ -72,6 +76,12 @@
   let byoRelayCheck = null;
   let byoDnsResult = null;
   let byoOutsideResult = null;
+  // What each agent saved: counts for every agent, and the pages opened so far.
+  let memorySummary = null;
+  const memoryPages = new Map();
+  const memoryHolds = new Map();
+  const memoryOpen = new Set();
+  let memoryToDelete = null;
 
   async function api(path, options) { return window.apiJson(path, options); }
   function jsonOptions(method, body) { return {method, headers:{'content-type':'application/json'}, body:JSON.stringify(body)}; }
@@ -105,7 +115,7 @@
   }
   function pending() { return Boolean(enableOp && (enableOp.phase === 'waiting' || enableOp.phase === 'starting')); }
   function usesConsentFlow() { return !state.owner_state?.address || state.owner_state?.status === 'not_accepted'; }
-  function frame(title, lead, body) { return `<h1>${esc(title)}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${body}`; }
+  function frame(title, lead, body, titleMark = '') { return `<h1>${esc(title)}${titleMark}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${body}`; }
   function errorPage(message) { view.innerHTML = frame('agents could not open.', `<span class="error notice">${esc(message)}</span>`, `<button class="btn" data-action="reload">try again</button>`); }
   function laneChip(connection) {
     if (connection.kind !== 'oauth') return '';
@@ -460,11 +470,12 @@
   function segment(id, name, desc, disclosure, cls, [tagCls, tagText]) {
     return `<button class="seg${lane === id ? ' is' : ''}${id === 'own' && !hasDoor() ? ' soon' : ''}" role="radio" aria-checked="${lane === id}" data-lane="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${name}</span><span class="tag ${tagCls}">${tagText}</span></span><span class="segdesc">${desc}</span><span class="${cls}">${disclosure}</span></button>`;
   }
-  function agentsList() {
+  function agentsList() { return `${connectedAgents()}${earlierAgents()}`; }
+  function connectedAgents() {
     const rows = state.connections;
     const head = `<div class="sh"><h2>your agents</h2>${rows.length ? '<button class="btn primary" data-action="connect">connect an agent</button>' : ''}</div>`;
     if (!rows.length) return `<section class="section">${head}<div class="list empty"><h3>no agents connected yet</h3><p>connect one to let it search and read your journal, within what you choose.</p><button class="btn primary" data-action="connect">connect an agent</button></div></section>`;
-    return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${laneChip(connection)}</strong><small>${connection.kind === 'bearer' ? 'a key you created · ' : ''}${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection)}</small><small>${esc(permissionLine(connection.permission))}</small></span><span aria-hidden="true">›</span></button>`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">recent activity →</a> what your agents asked, and what they got. recorded in your journal.</p></section>`;
+    return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${keyMark(connection.memory_source)}${laneChip(connection)}</strong><small>${connection.kind === 'bearer' ? 'a key you created · ' : ''}${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection)}</small><small>${esc(permissionLine(connection.permission))}</small>${memoryCountLine(connection.memory_source)}</span><span aria-hidden="true">›</span></button>`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">recent activity →</a> what your agents asked, and what they got. recorded in your journal.</p></section>`;
   }
   function home() {
     const [tone, sentence] = statusLine();
@@ -622,6 +633,7 @@
     return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="${openPairingKind}">${close}${choice}${step1}${step2}${step3}<p class="meta">didn't expect that page? close it. nothing connects until you enter the code.</p></article></div>`;
   }
   function confirmDialog(kind) {
+    if (kind === 'memory-delete') return deleteMemoryDialog();
     if (kind === 'lan-off') {
       const own = ownState() === 'on', me = meState() === 'on' || meState() === 'renewal';
       const keep = own && me ? ' agents on this device, and through solstone.me, keep working.' : own ? ' agents on this device keep working.' : me ? ' agents through solstone.me keep working.' : '';
@@ -641,7 +653,207 @@
 
 
   function connectionPage(connection) {
-    return frame(connection.name, `${laneChip(connection)}${connectionAccessCopy(connection)}`, `<a class="back" href="#" data-route="home">← agents</a><section class="card pad"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p><p>every connected agent can save and recall its own agent memories. these choices control other journal reads.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section><section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity stays in your journal. to reconnect, pair again.</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`);
+    return frame(connection.name, `${laneChip(connection)}${connectionAccessCopy(connection)}`, `<a class="back" href="#" data-route="home">← agents</a>${memoriesCard(connection)}<section class="card pad section"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p><p>every connected agent can save and recall its own agent memories. these choices control other journal reads.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section><section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity and its memories stay in your journal.${connection.kind === 'bearer' ? '' : ' pairing again connects it as a new agent. it can\'t recall these memories, but can find them in search if what it may see covers them.'}</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`, keyMark(connection.memory_source));
+  }
+
+  // ---- what an agent saved -----------------------------------------------------------------------
+  // An agent's name is its own choice. The short key is what tells two agents apart.
+  function keyMark(source) { return source ? `<span class="key" title="agent-memory-${esc(source)}"> · ${esc(String(source).slice(0, 4))}</span>` : ''; }
+  function memorySummaryFor(source) { return (memorySummary?.agents || []).find(agent => agent.source === source) || null; }
+  function connectionFor(source) { return (state?.connections || []).find(connection => connection.memory_source === source) || null; }
+  function memoryAgentName(source) { return connectionFor(source)?.name || memorySummaryFor(source)?.label || 'an earlier agent'; }
+  function memoriesWord(count) { return `${count} ${count === 1 ? 'memory' : 'memories'}`; }
+  function memoryCountLine(source) {
+    const count = memorySummaryFor(source)?.count || 0;
+    return count ? `<small class="mems">${esc(memoriesWord(count))}</small>` : '';
+  }
+  // An agent that is no longer connected has no row above, so its memories would have no page.
+  function earlierAgents() {
+    const earlier = (memorySummary?.agents || []).filter(agent => agent.count > 0 && !connectionFor(agent.source));
+    if (!earlier.length) return '';
+    earlier.sort((a, b) => String(b.latest_at || '').localeCompare(String(a.latest_at || '')));
+    return `<section class="section later"><div class="sh"><h2>earlier agents</h2></div><div class="list">${earlier.map(agent => `<button class="ag-row" data-memories="${esc(agent.source)}"><span class="m"><strong>${esc(agent.label || 'an earlier agent')}${keyMark(agent.source)}</strong><small>no longer connected · ${esc(memoriesWord(agent.count))}${agent.latest_at ? ` · latest ${esc(formatMemoryInstant(agent.latest_at, {month: 'short', day: 'numeric', year: 'numeric'}))}` : ''}</small></span><span aria-hidden="true">›</span></button>`).join('')}</div></section>`;
+  }
+  function memoryPlace(memory) { return `${memory.day}/${memory.stream}/${memory.segment}`; }
+  function formatMemoryInstant(ts, options) {
+    if (window.JournalClock?.formatInstant) return window.JournalClock.formatInstant(ts, options);
+    return new Date(ts).toLocaleString([], options);
+  }
+  const MEMORY_TIME = {hour: 'numeric', minute: '2-digit'};
+  const MEMORY_STAMP = {month: 'short', day: 'numeric', year: 'numeric', ...MEMORY_TIME};
+  function formatMemoryDay(day) {
+    const date = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(4, 6)) - 1, Number(day.slice(6, 8))));
+    const sameYear = day.slice(0, 4) === String(new Date().getFullYear());
+    return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC', ...(sameYear ? {} : { year: 'numeric' }) });
+  }
+  function holdSeconds(hold) { return Math.max(0, Math.ceil((hold.until - Date.now()) / 1000)); }
+  function memoryRow(memory, {stamp = false} = {}) {
+    const place = memoryPlace(memory);
+    const hold = memoryHolds.get(place);
+    const here = route.target && route.target.day === memory.day && route.target.segment === memory.segment;
+    const text = memory.unreadable ? "this memory couldn't be read." : String(memory.content || '');
+    const long = !memory.unreadable && (text.length > 240 || text.split('\n').length > 3);
+    const clamped = long && !memoryOpen.has(place);
+    const when = memory.created_at ? formatMemoryInstant(memory.created_at, stamp ? MEMORY_STAMP : MEMORY_TIME) : formatMemoryDay(memory.day);
+    const line = hold ? `<span data-memory-left="${esc(place)}">deleting in ${holdSeconds(hold)}s</span>` : `${esc(when)}${clamped ? `<button class="more" data-memory-open="${esc(place)}">show all</button>` : ''}`;
+    const action = hold ? `<button class="btn sm" data-memory-cancel="${esc(place)}">cancel</button>` : `<button class="btn sm" data-memory-delete="${esc(place)}">delete</button>`;
+    return `<div class="mem${hold ? ' going' : ''}${memory.unreadable ? ' bad' : ''}${here ? ' here' : ''}"><div class="m"><p class="mem-text${clamped ? ' clamp' : ''}">${esc(text)}</p><small>${line}</small></div>${action}</div>`;
+  }
+  function memoriesTrouble(page) {
+    if (page?.failed) return `<div class="notice" data-memories-failed><p>your journal couldn't read these memories.</p><div class="button-row"><button class="btn sm" data-memories-retry="${esc(route.source || '')}">try again</button></div></div>`;
+    if (page && (page.complete === false || page.memories.some(memory => memory.unreadable))) return `<div class="notice" data-memories-partial><p>${page.memories.some(memory => !memory.unreadable) ? "your journal couldn't read all of these. the others are below." : "your journal couldn't read these memories."}</p></div>`;
+    return '';
+  }
+  function noMemoriesLine(connection) { return `no memories in your journal from this ${connection.kind === 'bearer' ? 'key' : 'pairing'}.`; }
+  function memoriesCard(connection) {
+    const source = connection.memory_source;
+    if (!source) return '';
+    const page = memoryPages.get(source);
+    const count = memorySummaryFor(source)?.count || 0;
+    const rows = (page?.memories || []).slice(0, 3);
+    const more = count > rows.length || page?.next;
+    const see = rows.length && more ? `<button class="btn" data-memories="${esc(source)}">see all${count ? ` ${count}` : ''}</button>` : '';
+    const head = `<div class="section-head"><h2>its memories</h2>${see}</div>`;
+    if (page?.failed) return `<section class="card pad" data-memories-failed>${head}<p>your journal couldn't read its memories.</p><div class="button-row"><button class="btn" data-memories-retry="${esc(source)}">try again</button></div></section>`;
+    if (!rows.length) return `<section class="card pad">${head}${page?.complete === false ? memoriesTrouble(page) : `<p data-memories-none>${noMemoriesLine(connection)}</p>`}</section>`;
+    return `<section class="card pad">${head}<div class="peek">${rows.map(memory => memoryRow(memory, {stamp: true})).join('')}</div></section>`;
+  }
+  function memoriesPage() {
+    const source = route.source;
+    const connection = connectionFor(source);
+    const name = memoryAgentName(source);
+    const page = memoryPages.get(source);
+    const back = connection ? `<a class="back" href="#" data-connection="${esc(connection.kind)}:${esc(connection.id)}">← ${esc(connection.name)}${keyMark(source)}</a>` : '<a class="back" href="#" data-route="home">← agents</a>';
+    const lead = connection ? `what ${esc(name)} saved, in its own words. your journal keeps these as written and doesn't check them.` : `${esc(name)}${keyMark(source)} is no longer connected. its memories stay in your journal until you delete them. your journal doesn't check them.`;
+    const memories = page?.memories || [];
+    const readWhole = page && !page.failed && page.complete !== false;
+    const gone = readWhole && route.target && !memories.some(memory => memory.day === route.target.day && memory.segment === route.target.segment);
+    const groups = [];
+    for (const memory of memories) {
+      const last = groups[groups.length - 1];
+      if (last?.day === memory.day) last.memories.push(memory);
+      else groups.push({day: memory.day, memories: [memory]});
+    }
+    const list = groups.map(group => `<h3 class="day">${esc(formatMemoryDay(group.day))}</h3><div class="list">${group.memories.map(memory => memoryRow(memory)).join('')}</div>`).join('');
+    const none = readWhole && !memories.length ? `<p data-memories-none>${connection ? noMemoriesLine(connection) : 'none of its memories are left in your journal.'}</p>` : '';
+    const older = page?.next ? '<div class="button-row"><button class="btn" data-memories-older="1">show older</button></div>' : '';
+    return frame(`${name}'s memories`, lead, `${back}${gone ? `<div class="notice" data-memory-gone><p>that memory isn't in your journal anymore.</p></div>` : ''}${memoriesTrouble(page)}${none}${list}${older}`);
+  }
+  async function loadMemories(source, {more = false} = {}) {
+    const existing = memoryPages.get(source);
+    const cursor = more && existing?.next ? `?${new URLSearchParams({before_day: existing.next.day, before_segment: existing.next.segment})}` : '';
+    try {
+      const page = await api(`/app/agents/api/memories/${encodeURIComponent(source)}${cursor}`);
+      memoryPages.set(source, {memories: more ? [...(existing?.memories || []), ...page.memories] : page.memories, next: page.next, complete: page.complete});
+    } catch (_) {
+      memoryPages.set(source, {memories: existing?.memories || [], next: null, complete: false, failed: true});
+    }
+  }
+  async function loadMemorySummary() {
+    try { memorySummary = await api('/app/agents/api/memories'); }
+    catch (_) { memorySummary = null; }
+  }
+  async function openMemories(source, target = null) {
+    route = {name: 'memories', source, target};
+    await loadMemories(source);
+    // A link to one memory reads on until it reaches that memory or runs out.
+    while (target && memoryPages.get(source)?.next && !memoryPages.get(source).memories.some(memory => memory.day === target.day && memory.segment === target.segment)) await loadMemories(source, {more: true});
+    render();
+    view.querySelector?.('.mem.here')?.scrollIntoView?.({block: 'center'});
+  }
+  async function openConnection(connection) {
+    route = {name: 'connection', connection};
+    if (connection?.memory_source) await loadMemories(connection.memory_source);
+    render();
+  }
+  // A search hit or an activity entry can link straight to one memory.
+  async function openMemoryFromAddress() {
+    const found = String(window.location?.hash || '').match(/^#memories\/([0-9a-f]{64})(?:\/(\d{8})\/(\d{6}_\d+))?$/);
+    if (!found) return;
+    window.history?.replaceState?.(null, '', `${window.location.pathname || ''}${window.location.search || ''}`);
+    await openMemories(found[1], found[2] ? {day: found[2], segment: found[3]} : null);
+  }
+  function memoryAt(place) {
+    for (const page of memoryPages.values()) {
+      const memory = page.memories.find(item => memoryPlace(item) === place);
+      if (memory) return memory;
+    }
+    return null;
+  }
+  function sourceOf(memory) { return String(memory.stream).replace('agent-memory-', ''); }
+  function deleteMemoryDialog() {
+    const memory = memoryToDelete;
+    const source = sourceOf(memory);
+    const when = memory.created_at ? formatMemoryInstant(memory.created_at, MEMORY_STAMP) : formatMemoryDay(memory.day);
+    const text = memory.unreadable ? "this memory couldn't be read." : memory.content;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="delete this memory"><h2>delete this memory?</h2><p class="meta">${esc(memoryAgentName(source))}${keyMark(source)} · ${esc(when)}</p><p class="quote mem-quote">${esc(text)}</p><p>you'll have about 10 seconds to cancel after confirming.</p><p>summaries made from it elsewhere in your journal aren't deleted and may still mention it. anything an agent already read stays with it.</p><div class="button-row"><button class="btn" data-close-modal>cancel</button><button class="btn danger" data-memory-confirm="1">delete memory</button></div></article></div>`;
+  }
+  async function deleteMemory(memory) {
+    const place = memoryPlace(memory);
+    try {
+      const accepted = await api(`/app/transcripts/api/segment/${encodeURIComponent(memory.day)}/${encodeURIComponent(memory.stream)}/${encodeURIComponent(memory.segment)}`, ownerOptions('DELETE'));
+      const seconds = typeof accepted.ttl_seconds === 'number' ? accepted.ttl_seconds : 10;
+      const hold = {pending: accepted.pending, until: Date.now() + seconds * 1000};
+      memoryHolds.set(place, hold);
+      render();
+      tickMemoryHold(place, hold);
+      setTimeout(() => watchMemoryDelete(memory, place, hold, 0), seconds * 1000 + 500);
+    } catch (error) {
+      // No answer at all can mean the journal took the delete and the reply was lost.
+      notify(error?.status ? "your journal couldn't start that delete, so nothing was deleted." : "your journal didn't answer, so the delete may still go ahead. check back to see whether it did.");
+      render();
+    }
+  }
+  function tickMemoryHold(place, hold) {
+    if (memoryHolds.get(place) !== hold) return;
+    const left = [...(view.querySelectorAll?.('[data-memory-left]') || [])].find(node => node.dataset?.memoryLeft === place);
+    if (left) left.textContent = `deleting in ${holdSeconds(hold)}s`;
+    if (holdSeconds(hold) > 0) setTimeout(() => tickMemoryHold(place, hold), 1000);
+  }
+  async function settleMemoryDelete(memory, place, removed) {
+    memoryHolds.delete(place);
+    const source = sourceOf(memory);
+    if (removed) {
+      const page = memoryPages.get(source);
+      if (page) page.memories = page.memories.filter(item => memoryPlace(item) !== place);
+    } else {
+      await loadMemories(source);
+    }
+    await loadMemorySummary();
+    render();
+  }
+  // The delete runs after its cancel window, so its first answer only says it was accepted.
+  async function watchMemoryDelete(memory, place, hold, attempt) {
+    if (memoryHolds.get(place) !== hold) return;
+    let status = null;
+    let unknown = false;
+    try { status = await api(`/app/transcripts/api/delete-status/${encodeURIComponent(hold.pending)}`); }
+    catch (error) { unknown = error?.status === 404; }
+    if (memoryHolds.get(place) !== hold) return;
+    if (status?.state === 'deleted') { await settleMemoryDelete(memory, place, true); notify('memory deleted.'); return; }
+    if (status?.state === 'cancelled') { await settleMemoryDelete(memory, place, false); return; }
+    if (status?.state === 'not_deleted' || status?.state === 'incomplete') {
+      notify(status.state === 'incomplete' ? 'that memory was only partly deleted. some of it may already be gone.' : "that memory wasn't deleted. it's still in your journal.");
+      await settleMemoryDelete(memory, place, false);
+      return;
+    }
+    if (unknown || attempt >= 20) {
+      notify(unknown ? 'your journal has no record of this delete. check whether the memory is still here.' : 'your journal still holds this delete, even across a restart. check back later to see whether it went through.');
+      await settleMemoryDelete(memory, place, false);
+      return;
+    }
+    setTimeout(() => watchMemoryDelete(memory, place, hold, attempt + 1), 1000);
+  }
+  async function cancelMemoryDelete(place) {
+    const hold = memoryHolds.get(place);
+    if (!hold) return;
+    try {
+      await api(`/app/transcripts/api/cancel-delete/${encodeURIComponent(hold.pending)}`, ownerOptions('POST'));
+      memoryHolds.delete(place);
+      render();
+    } catch (_) {
+      notify("couldn't cancel that delete.");
+    }
   }
 
 
@@ -667,6 +879,8 @@
       if (coordinate.startsWith('entity:')) return `/app/entities/?entity=${encodeURIComponent(coordinate.slice(7))}`;
       if (coordinate.startsWith('facet:')) return `/app/settings/?facet=${encodeURIComponent(coordinate.slice(6))}`;
       if (coordinate.startsWith('week:')) return `/app/home/week/${encodeURIComponent(coordinate.slice(5))}`;
+      const memory = coordinate.match(/^(?:chronicle\/)?(\d{8})\/agent-memory-([0-9a-f]{64})\/([^/]+)\/note\.txt$/);
+      if (memory) return `/app/agents/#memories/${memory[2]}/${memory[1]}/${encodeURIComponent(memory[3])}`;
       const day = coordinate.match(/^(\d{8})\//)?.[1];
       if (day) return `/app/transcripts/${encodeURIComponent(day)}`;
       return '/app/search/';
@@ -754,6 +968,7 @@
     const scrolled = view.querySelector?.('.modal-card')?.scrollTop || 0;
     if (route.name === 'connection') view.innerHTML = connectionPage(route.connection);
     else if (route.name === 'activity') view.innerHTML = activityPage();
+    else if (route.name === 'memories') view.innerHTML = memoriesPage();
     else view.innerHTML = home();
     if (dialog === 'connect') view.insertAdjacentHTML('beforeend', connectDialog());
     else if (dialog) view.insertAdjacentHTML('beforeend', confirmDialog(dialog));
@@ -807,6 +1022,7 @@
     if (!quiet || !state) view.innerHTML = '<p class="lead">loading agents…</p>';
     try {
       state = await api('/app/agents/api/state');
+      if (!quiet || !memorySummary) await loadMemorySummary();
       if (state?.byo?.hostname && !byoCommands) {
         loadByoCommands();
       }
@@ -877,9 +1093,16 @@
     if (target.dataset.way) { connectWay = target.dataset.way; pairingCode = null; stopWatch(); render(); return; }
     if (target.dataset.agent) { agentChoice = target.dataset.agent; render(); return; }
     if (target.dataset.moveByo) { const moving = (state.connections || []).find(c => String(c.id) === target.dataset.moveByo); const kind = Object.keys(AGENT_NAMES).find(k => AGENT_NAMES[k].toLowerCase() === String(moving?.name || '').toLowerCase()); stopWatch(); dialog = 'connect'; connectWay = 'byo'; agentChoice = kind || null; pairingCode = null; render(); return; }
-    if (target.dataset.route) { event.preventDefault(); if (target.dataset.route === 'activity') await loadActivity(); else { route = {name: target.dataset.route}; render(); } return; }
+    if (target.dataset.route) { event.preventDefault(); if (target.dataset.route === 'activity') await loadActivity(); else { route = {name: target.dataset.route}; if (route.name === 'home') await loadMemorySummary(); render(); } return; }
+    if (target.dataset.memories) { await openMemories(target.dataset.memories); return; }
+    if (target.dataset.memoriesRetry !== undefined) { const source = target.dataset.memoriesRetry || route.connection?.memory_source; if (source) await loadMemories(source); render(); return; }
+    if (target.dataset.memoriesOlder) { await loadMemories(route.source, {more: true}); render(); return; }
+    if (target.dataset.memoryOpen) { memoryOpen.add(target.dataset.memoryOpen); render(); return; }
+    if (target.dataset.memoryDelete) { memoryToDelete = memoryAt(target.dataset.memoryDelete); if (memoryToDelete) { dialog = 'memory-delete'; render(); } return; }
+    if (target.dataset.memoryConfirm) { const memory = memoryToDelete; memoryToDelete = null; dialog = null; await deleteMemory(memory); return; }
+    if (target.dataset.memoryCancel) { await cancelMemoryDelete(target.dataset.memoryCancel); return; }
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
-    if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route = {name:'connection', connection: state.connections.find(item => item.kind === kind && item.id === id)}; render(); return; }
+    if (target.dataset.connection) { event.preventDefault(); const [kind,id] = target.dataset.connection.split(':'); await openConnection(state.connections.find(item => item.kind === kind && item.id === id)); return; }
     if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; return; }
     if (target.dataset.activityIndex) {
       const entry = activity.entries[Number(target.dataset.activityIndex)];
@@ -917,11 +1140,12 @@
       else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
       else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
       else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
-      else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm('disconnect this agent? what it already read stays with it. its activity stays in your journal.')) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
+      else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm(`${kind === 'bearer' ? 'revoke this key?' : 'disconnect this agent?'} what it already read stays with it. its activity and its memories stay in your journal.`)) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
       else if (target.dataset.rename) { const name = prompt('name this key', route.connection.name); if (name) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(target.dataset.rename)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }
     } catch (error) { notify(error.message || 'that change did not finish'); }
   });
-  reload();
+  reload().then(openMemoryFromAddress);
+  window.addEventListener?.('hashchange', openMemoryFromAddress);
   window.setInterval(() => {
     if (route.name !== 'home' || dialog) return;
     if (lane === 'byo' && state?.byo?.hostname && state?.byo?.account_uri && !byoReady()) {

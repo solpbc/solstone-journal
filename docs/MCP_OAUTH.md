@@ -233,6 +233,8 @@ A bearer token's durable id and an OAuth consent identify separate sources.
 Renaming a connection or refreshing OAuth access preserves its source. Replacing
 a bearer token or authorizing a new OAuth consent creates a new source. Ordinary
 read-grant changes do not revoke own recall; revoking the credential does.
+The owner reads and deletes each source's memories in the agents app, including
+memories from a source whose connection has gone.
 New originals use the owner's journal day. A retry retains its reserved day even
 if the timezone changes.
 

@@ -47,6 +47,10 @@
    return b.day.localeCompare(a.day);
   });
  }
+ function memoryPath(path){
+  const found=/^(?:chronicle\/)?(\d{8})\/agent-memory-([0-9a-f]{64})\/([^/]+)\/note\.txt$/.exec(path);
+  return found?{day:found[1],source:found[2],segment:found[3]}:null;
+ }
  function sourceLink(hit){
   const path=String(hit.path||'');
   if(path.startsWith('entity_search:'))return '/app/entities/#'+encodeURIComponent(path.slice('entity_search:'.length));
@@ -54,6 +58,8 @@
   if(screen)return '/app/transcripts/'+screen[1]+'?stream='+encodeURIComponent(screen[2])+'#'+encodeURIComponent(screen[3]);
   const segment=/^(?:chronicle\/)?(\d{8})\/(?:(?<stream>[^/]+)\/)?([^/]+)\/(?:audio|screen|[^/]+_(?:audio|screen))\.jsonl/.exec(path);
   if(segment)return '/app/transcripts/'+segment[1]+(segment.groups.stream?'?stream='+encodeURIComponent(segment.groups.stream):'')+'#'+encodeURIComponent(segment[3]);
+  const memory=memoryPath(path);
+  if(memory)return '/app/agents/#memories/'+memory.source+'/'+memory.day+'/'+encodeURIComponent(memory.segment);
   const location=/^(?:chronicle\/)?(\d{8})\/location\.md$/.exec(path);
   if(location)return '/app/map/'+location[1];
   return null;
@@ -62,6 +68,7 @@
   const path=String(hit.path||'');
   if(path.startsWith('entity_search:'))return 'open entity';
   if(/(?:^|\/)location\.md$/.test(path))return 'open on the map';
+  if(memoryPath(path))return 'open in agents';
   return 'open transcript';
  }
  function excerpt(value){
@@ -83,7 +90,9 @@
   const card=node('article','search-result');const meta=node('div','search-meta');
   const recordTime=Number.isFinite(hit.ts)&&hit.ts>0?window.JournalFormat.time(hit.ts):'';
   const rawStream=String(hit.stream||'').trim();
-  const streamLabel=rawStream&&window.JournalFormat?window.JournalFormat.stream(rawStream):'';
+  const memorySource=memoryPath(String(hit.path||''));
+  // A memory names the agent that saved it. The name is the agent's own choice; the key tells two apart.
+  const streamLabel=memorySource&&hit.creation_label?String(hit.creation_label)+' · '+memorySource.source.slice(0,4):rawStream&&window.JournalFormat?window.JournalFormat.stream(rawStream):'';
   // Don't say the type twice: drop the agent label when the stream label
   // already says it, as its what word ("Audio" beside an audio label) or as
   // an import ("Imported" beside an imported label).
