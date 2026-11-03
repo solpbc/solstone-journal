@@ -345,6 +345,33 @@ fn empty_and_undated_indexes_have_distinct_states() {
 }
 
 #[test]
+fn an_index_holding_only_later_days_answers_zero_results_not_empty() {
+    let (root, connection) = seeded_root("only-later-days");
+    insert(
+        &connection,
+        "needle listed far ahead",
+        "notes/ahead.md",
+        "99990101",
+        "work",
+        "note",
+        "planner",
+        0,
+    );
+    drop(connection);
+
+    let response = search(&root, &request("needle"), reference_date()).expect("search");
+    assert!(response.results.is_empty());
+    let counts = search_counts(&root, &request("needle"), reference_date()).expect("counts");
+    assert_eq!(counts.total, 0);
+    assert_eq!(agents(&root).expect("agents"), Vec::<String>::new());
+    assert_eq!(
+        coverage(&root).expect("coverage").state,
+        CoverageState::NoDatedChunks
+    );
+    fs::remove_dir_all(root).expect("cleanup only-later-days index");
+}
+
+#[test]
 fn indexed_entity_ids_are_distinct_and_exclude_detected_rows() {
     let root = temp_root("indexed-entity-ids");
     write_rel(
