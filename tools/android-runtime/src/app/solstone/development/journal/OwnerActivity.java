@@ -28,6 +28,17 @@ public final class OwnerActivity extends ServingActivity {
     boolean restarting;
     boolean runtimeUp;
     LinearLayout layout,bar,barActions;
+    FrameLayout display;
+    Button quietScreen;
+    boolean resumed,dimmed,dashboardReady;
+    float previousBrightness;
+    final Runnable dimAfterIdle=()->{
+        WindowInsets insets=display.getRootWindowInsets();
+        if (web.onCheckIsTextEditor() || insets != null && insets.isVisible(WindowInsets.Type.ime())) {
+            resetDimTimer();return;
+        }
+        setDimmed(true);
+    };
     final java.util.concurrent.atomic.AtomicBoolean checking=new java.util.concurrent.atomic.AtomicBoolean();
     ConnectivityManager connectivity;
     ConnectivityManager.NetworkCallback networkCallback;
@@ -211,6 +222,14 @@ public final class OwnerActivity extends ServingActivity {
             }
         });
         web.setWebViewClient(new WebViewClient() {
+            public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon) {
+                dashboardReady=false; setDimmed(false); resetDimTimer();
+            }
+            public void onPageFinished(WebView view,String url) {
+                String current=view.getUrl();
+                dashboardReady=current != null && current.startsWith(OwnerOrigin.ORIGIN+"/app/");
+                renderBar();
+            }
             public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
                 try { OwnerOrigin.admit(request.getUrl().toString()); return !request.isForMainFrame(); }
                 catch(Exception external) {
@@ -235,7 +254,18 @@ public final class OwnerActivity extends ServingActivity {
             }
         });
         layout.addView(web,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,0,1));
-        setContentView(layout);
+        display=new FrameLayout(this);
+        display.addView(layout,new FrameLayout.LayoutParams(-1,-1));
+        quietScreen=new Button(this);
+        quietScreen.setAllCaps(false);
+        quietScreen.setText("your journal is running\ntap to wake");
+        quietScreen.setTextSize(18);
+        quietScreen.setTextColor(android.graphics.Color.WHITE);
+        quietScreen.setBackgroundColor(android.graphics.Color.BLACK);
+        quietScreen.setVisibility(View.GONE);
+        quietScreen.setOnClickListener(v->setDimmed(false));
+        display.addView(quietScreen,new FrameLayout.LayoutParams(-1,-1));
+        setContentView(display);
         // A saved choice is intent, not evidence that the process owner drained.
         runState=ownerStopped ? "stopunknown" : "starting";
         renderBar();
@@ -274,6 +304,7 @@ public final class OwnerActivity extends ServingActivity {
                     text="wifi changed · restart so your devices can reach it";
                     action("restart",()->stopJournal(true),false);
                 }
+                if (canDim()) action("dim",()->setDimmed(true),false);
                 stopAction();
                 break;
             case "stopping": text="stopping your journal…\nfinishing current work · keep this app open";break;
@@ -303,10 +334,68 @@ public final class OwnerActivity extends ServingActivity {
         }
         if (!reason.isEmpty()) text+="\n"+reason;
         if (stopChoiceUnsaved) text+="\ncouldn't save stop · keep this app open";
-        if ("stopping".equals(runState) || "stopunknown".equals(runState) || "stopfailed".equals(runState))
+        status.setText(text);
+        updateDisplay();
+    }
+    boolean canDim() {
+        String wifi=wifiAddress();
+        return resumed && hasWindowFocus() && !destroyed && !ownerStopped && dashboardReady
+            && "running".equals(runState) && reason.isEmpty() && !"127.0.0.1".equals(wifi)
+            && boundAddress.equals(wifi+":7657");
+    }
+    void resetDimTimer() {
+        ui.removeCallbacks(dimAfterIdle);
+        android.view.accessibility.AccessibilityManager accessibility=
+            (android.view.accessibility.AccessibilityManager)getSystemService(ACCESSIBILITY_SERVICE);
+        if (!dimmed && canDim() && !accessibility.isTouchExplorationEnabled()) ui.postDelayed(dimAfterIdle,60000);
+    }
+    void setDimmed(boolean value) {
+        if (value && !canDim()) return;
+        if (value == dimmed) return;
+        dimmed=value;
+        WindowManager.LayoutParams attributes=getWindow().getAttributes();
+        if (value) {
+            previousBrightness=attributes.screenBrightness;
+            attributes.screenBrightness=0.05f;
+            ((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
+                .hideSoftInputFromWindow(web.getWindowToken(),0);
+            web.onPause();
+        } else {
+            attributes.screenBrightness=previousBrightness;
+            web.onResume();
+        }
+        getWindow().setAttributes(attributes);
+        layout.setVisibility(value ? View.INVISIBLE : View.VISIBLE);
+        quietScreen.setVisibility(value ? View.VISIBLE : View.GONE);
+        if (value) quietScreen.requestFocus();
+        else if (resumed && !destroyed && !ownerStopped) refreshStatus();
+        resetDimTimer();
+    }
+    void updateDisplay() {
+        if (dimmed && !canDim()) setDimmed(false);
+        boolean draining="stopping".equals(runState) || "stopunknown".equals(runState) || "stopfailed".equals(runState);
+        if (resumed && hasWindowFocus() && !destroyed && (draining || "running".equals(runState) && !ownerStopped))
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        status.setText(text);
+        resetDimTimer();
+    }
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (dimmed) {
+            // Consume the whole wake gesture; it must never activate a control underneath.
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) quietScreen.performClick();
+            return true;
+        }
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) ui.removeCallbacks(dimAfterIdle);
+        if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) resetDimTimer();
+        return super.dispatchTouchEvent(event);
+    }
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (!dimmed) resetDimTimer();
+        return super.dispatchKeyEvent(event);
+    }
+    public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (status != null) renderBar();
     }
     void refreshStatus() {
         if (destroyed || worker == null || !checking.compareAndSet(false,true)) return;
@@ -317,8 +406,8 @@ public final class OwnerActivity extends ServingActivity {
             finally { checking.set(false); }
         });
     }
-    protected void onResume() { super.onResume(); setupBrowser.resume(); if(status != null) { renderBar();refreshStatus(); } }
-    protected void onPause() { setupBrowser.pause(); super.onPause(); }
+    protected void onResume() { super.onResume(); resumed=true;web.onResume(); setupBrowser.resume(); if(status != null) { renderBar();refreshStatus(); } }
+    protected void onPause() { resumed=false;setDimmed(false);web.onPause();updateDisplay();setupBrowser.pause(); super.onPause(); }
     void openExternal(String value) {
         try {
             java.net.URI uri=java.net.URI.create(value);
@@ -388,7 +477,7 @@ public final class OwnerActivity extends ServingActivity {
             closePage();
             transport=new OwnerTransport(this); pageToken=UUID.randomUUID().toString();
             runState="running";reason="";renderBar();
-            web.loadUrl(OwnerOrigin.ORIGIN+"/init");
+            web.loadUrl(OwnerOrigin.ORIGIN+"/");
         });
     }
     void connectionLost(WorkerConnection lost) {
@@ -970,6 +1059,8 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     protected void onDestroy() {
+        resumed=false;setDimmed(false);ui.removeCallbacks(dimAfterIdle);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         storageRecovery.changed();
         setupBrowser.close();
         if (connectivity != null && networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
@@ -977,6 +1068,7 @@ public final class OwnerActivity extends ServingActivity {
         super.onDestroy();
     }
     public void onBackPressed() {
+        if (dimmed) { setDimmed(false);return; }
         if (web.canGoBack()) web.goBack(); else super.onBackPressed();
     }
 }
