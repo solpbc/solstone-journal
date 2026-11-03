@@ -1666,9 +1666,12 @@ fn router_with_roots(
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
         .merge(solstone_core_health_web::routes(journal_root.clone()))
         .merge(solstone_core_profile_web::routes(journal_root.clone()))
-        .merge(solstone_core_stats_web::routes(
+        .merge(solstone_core_stats_web::routes_with_talent_roots(
             journal_root.clone(),
             solstone_core_stats_web::Clock::real(),
+            payload_roots
+                .as_ref()
+                .map(|roots| roots.config_directories()),
         ))
         .merge(solstone_core_home_web::routes_with_backup_deps(
             backup_deps.clone(),
@@ -1890,6 +1893,61 @@ mod tests {
 
     use super::router;
     use crate::registry::APP_REGISTRY;
+
+    #[tokio::test]
+    async fn embedded_stats_uses_validated_payload_generators_and_owner_overrides() {
+        let journal = tempfile::TempDir::new().unwrap();
+        let payload = tempfile::TempDir::new().unwrap();
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000},"talent_overrides":{"talent.system.disabled":{"disabled":true}}}"#,
+        )
+        .unwrap();
+        fs::write(journal.path().join("stats.json"), br#"{"fixture":42}"#).unwrap();
+        for anchor in [
+            "solstone/talent/journal/contract/bundle.json",
+            "solstone/think/contract/layout.json",
+            "solstone/think/templates/segment_preamble.md",
+        ] {
+            let path = payload.path().join(anchor);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "{}").unwrap();
+        }
+        for relative in [
+            "solstone/talent/fixture.md",
+            "solstone/talent/disabled.md",
+            "solstone/apps/fixtureapp/talent/day.md",
+        ] {
+            let path = payload.path().join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(
+                path,
+                "{\n\"type\":\"generate\",\"max_output_tokens\":512,\"output\":\"md\"\n}\nfixture",
+            )
+            .unwrap();
+        }
+        let response =
+            super::router_with_payload_root(journal.path().to_path_buf(), payload.path())
+                .unwrap()
+                .oneshot(
+                    Request::get("/app/stats/api/stats")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap())
+                .unwrap();
+        assert_eq!(body["stats"]["fixture"], 42);
+        let generators = body["generators"].as_object().unwrap();
+        assert_eq!(generators.len(), 2);
+        assert!(generators.contains_key("fixture"));
+        assert!(generators.contains_key("fixtureapp:day"));
+        assert!(!generators.contains_key("disabled"));
+    }
 
     #[cfg(feature = "host")]
     #[tokio::test]

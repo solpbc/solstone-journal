@@ -16,6 +16,16 @@ mod tokens;
 pub use clock::Clock;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
+    routes_with_talent_roots(journal_root, clock, None)
+}
+
+/// Use the native host's validated talent/apps directories when supplied.
+/// Desktop callers without an embedded payload retain executable discovery.
+pub fn routes_with_talent_roots(
+    journal_root: PathBuf,
+    clock: Clock,
+    talent_roots: Option<(PathBuf, PathBuf)>,
+) -> Router {
     let stats_root = journal_root.clone();
     let stats_clock = clock.clone();
     let usage_root = journal_root.clone();
@@ -29,7 +39,13 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
         .route("/app/stats/background", get(assets::background))
         .route(
             "/app/stats/api/stats",
-            get(move || stats_data(stats_root.clone(), stats_clock.clone())),
+            get(move || {
+                stats_data(
+                    stats_root.clone(),
+                    stats_clock.clone(),
+                    talent_roots.clone(),
+                )
+            }),
         )
         .route(
             "/app/stats/api/usage",
@@ -138,7 +154,11 @@ async fn month_stats(root: PathBuf, month: String) -> axum::response::Response {
     .await
 }
 
-async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
+async fn stats_data(
+    root: PathBuf,
+    clock: Clock,
+    talent_roots: Option<(PathBuf, PathBuf)>,
+) -> axum::response::Response {
     spawn_blocking_response(OwnerReadRole::StatsData, move || {
         let utc_now = clock.now();
         let mut response = json!({"stats":{}});
@@ -241,10 +261,15 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
         if cfg!(target_os = "macos") {
             response["admin_terminal"] = json!(true);
         }
-        let Some(package_root) = std::env::current_exe().ok().and_then(|executable| {
-            executable
-                .parent()
-                .and_then(solstone_core_journal::resolve_installation_root_from_executable_dir)
+        let Some((talent_root, apps_root)) = talent_roots.or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|executable| {
+                    executable.parent().and_then(
+                        solstone_core_journal::resolve_installation_root_from_executable_dir,
+                    )
+                })
+                .map(|root| (root.join("solstone/talent"), root.join("solstone/apps")))
         }) else {
             return api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -253,8 +278,6 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
                 "Failed to read stats data",
             );
         };
-        let talent_root = package_root.join("solstone/talent");
-        let apps_root = package_root.join("solstone/apps");
         let overrides = solstone_core_talent_config::read_talent_overrides(&root)
             .ok()
             .flatten();

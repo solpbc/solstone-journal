@@ -85,6 +85,10 @@ impl TalentRoots {
         }
     }
 
+    pub(crate) fn config_directories(&self) -> (PathBuf, PathBuf) {
+        (self.talent_root.clone(), self.apps_root.clone())
+    }
+
     #[cfg(test)]
     fn explicit(talent_root: PathBuf, apps_root: PathBuf, templates_dir: PathBuf) -> Self {
         Self {

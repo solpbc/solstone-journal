@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed the stats page failing to open when your journal runs on android or ios.
 - reduced unnecessary background work while the journal on a phone is idle.
 - new recordings can now contribute to voice discovery on android and ios, and you can start teaching a voice before any speakers in that recording have been named.
 - fixed a failure when picking a folder to import in the android development app.
