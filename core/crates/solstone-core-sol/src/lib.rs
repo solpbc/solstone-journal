@@ -1365,8 +1365,9 @@ mod tests {
     }
 
     fn write_link_serve_bundle(config: &Path, label: &str) -> LinkServeBundle {
-        const CERT: &str = "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n";
-        const JID: &str = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
+        // A P-256 self-signed CA whose journal id is the bundle's below.
+        const CERT: &str = "-----BEGIN CERTIFICATE-----\nMIIBizCCATGgAwIBAgIUaAtxcLWxD/p1oqh/9Aocs3XqohIwCgYIKoZIzj0EAwIw\nGjEYMBYGA1UEAwwPam91cm5hbCB0ZXN0IENBMCAXDTI2MTEwMzIwMzA1N1oYDzIx\nMjYxMDEwMjAzMDU3WjAaMRgwFgYDVQQDDA9qb3VybmFsIHRlc3QgQ0EwWTATBgcq\nhkjOPQIBBggqhkjOPQMBBwNCAASjAUrtvHhXImO9uNkYvS23BVGgrfiDjKIIX6dy\n9ypRVytQTOr22rJTMz1Ho3UL3CCPgI3vE++74Td1ksv4VEtFo1MwUTAdBgNVHQ4E\nFgQUtHl+/hoa8sO3oNNBye16XSzrmIswHwYDVR0jBBgwFoAUtHl+/hoa8sO3oNNB\nye16XSzrmIswDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiEAt5nD\nKg4ulCZR5pf3n3o6UrGnMyeC7zSwY9nxImwYzYwCIAIRhpaTkFcdo8xh+WZbnRf3\nKsepBLM5i/VJXfBt8/L/\n-----END CERTIFICATE-----\n";
+        const JID: &str = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
 
         let bundle_dir = config.join("solstone-observer").join("spl").join(label);
         fs::create_dir_all(&bundle_dir).expect("create link serve bundle directory");

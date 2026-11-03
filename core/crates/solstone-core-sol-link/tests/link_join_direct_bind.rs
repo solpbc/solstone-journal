@@ -14,7 +14,10 @@ use rcgen::{
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use solstone_core_sol_client::command::CommandOutput;
-use solstone_core_sol_client::seam::{ScriptedHttpTransport, ScriptedLinkJoinPairingSeam};
+use solstone_core_sol_client::seam::{
+    LinkJoinCredential, LinkJoinDirectRequest, LinkJoinPairingError, LinkJoinPairingSeam,
+    LinkJoinRelayRequest, LinkJoinTerminal, ScriptedHttpTransport, ScriptedLinkJoinPairingSeam,
+};
 use solstone_core_sol_client_cli::{LinkDispatch, LinkDispatchSeams, dispatch_sol_link_with_seams};
 use solstone_core_sol_link::SplLinkJoinPairingSeam;
 use spl_core::frame::{FLAG_CLOSE, FLAG_DATA, Frame, FrameDecoder};
@@ -362,7 +365,81 @@ fn a_stored_id_that_is_not_its_cas_is_held_and_asked_with_the_cas_mark() {
     door.runtime.shutdown_background();
 }
 
-fn confirm_at_terminal(config: &Path, seam: &ScriptedLinkJoinPairingSeam) -> CommandOutput {
+/// A scripted terminal in front of the real check of a stored chain.
+struct TerminalOnSplCheck(ScriptedLinkJoinPairingSeam);
+
+impl LinkJoinPairingSeam for TerminalOnSplCheck {
+    fn pair_direct(
+        &self,
+        request: LinkJoinDirectRequest,
+    ) -> Result<LinkJoinCredential, LinkJoinPairingError> {
+        self.0.pair_direct(request)
+    }
+
+    fn pair_relay(
+        &self,
+        request: LinkJoinRelayRequest,
+    ) -> Result<LinkJoinCredential, LinkJoinPairingError> {
+        self.0.pair_relay(request)
+    }
+
+    fn open_terminal(&self) -> Option<Box<dyn LinkJoinTerminal>> {
+        self.0.open_terminal()
+    }
+
+    fn retire(&self, credential: &LinkJoinCredential) {
+        self.0.retire(credential);
+    }
+
+    fn pinned_ca_jid(&self, ca_chain_pem: &[String]) -> Option<String> {
+        SplLinkJoinPairingSeam.pinned_ca_jid(ca_chain_pem)
+    }
+}
+
+/// `link serve` through the real runner's check of the chain. Only called where the
+/// hold stops it, so no carrier starts.
+fn serve_with_real_check(config: &Path) -> CommandOutput {
+    let env = BTreeMap::from([
+        ("XDG_CONFIG_HOME".to_string(), config.display().to_string()),
+        ("HOME".to_string(), config.display().to_string()),
+    ]);
+    let args = ["link", "serve", "--label", "laptop"].map(str::to_owned);
+    let transport = ScriptedHttpTransport::new(vec![]);
+    let runner = solstone_core_sol_link::SplLinkServeRunner;
+    let seams = LinkDispatchSeams {
+        transport: &transport,
+        clock: None,
+        files: None,
+        link_pairing: None,
+        link_serve: Some(&runner),
+        link_status_probe: None,
+    };
+    let LinkDispatch::Resident { handler, args } =
+        dispatch_sol_link_with_seams(&args, &env, "", seams)
+    else {
+        panic!("link serve is resident");
+    };
+    let refused = handler(solstone_core_sol_client::command::CommandContext {
+        args: &args,
+        env: &env,
+        stdin: "",
+        transport: &transport,
+        clock: None,
+        files: None,
+        build_identity: None,
+        client_item_ids: None,
+        notification_sink: None,
+        link_pairing: None,
+        link_serve: Some(&runner),
+        link_status_probe: None,
+    });
+    match refused {
+        Err(output) => output,
+        Ok(_) => panic!("the hold should have stopped serve"),
+    }
+}
+
+fn confirm_at_terminal(config: &Path, seam: &dyn LinkJoinPairingSeam) -> CommandOutput {
     let env = BTreeMap::from([
         ("XDG_CONFIG_HOME".to_string(), config.display().to_string()),
         ("HOME".to_string(), config.display().to_string()),
@@ -421,28 +498,83 @@ fn the_terminal_is_asked_about_the_cas_mark_and_no_tears_the_link_down() {
     door.runtime.shutdown_background();
 }
 
+/// Chains that can't show what a link pins are held and name no mark: a head that
+/// won't parse, and a copy of the owner's key under someone else's signature.
 #[test]
-fn a_stored_link_with_no_readable_ca_carries_on() {
-    let genuine = journal();
-    let jid = genuine.jid.clone();
-    let (word1, word2) = words_of(&jid);
-    let temp = tempfile::tempdir().expect("temp dir");
-    let door = open_door(genuine, &jid);
-    let joined = join(temp.path(), &door.link, &format!("{word1} {word2}"));
-    assert_eq!(joined.exit, 0, "{}{}", joined.stdout, joined.stderr);
-    store_other_id(temp.path(), &journal().jid);
-    std::fs::write(
-        bundle_in(temp.path()).join("chain.pem"),
-        "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
-    )
-    .expect("chain.pem");
+fn a_stored_link_with_no_readable_ca_is_held_and_shows_no_mark_from_its_id() {
+    let forger = journal();
+    let owner_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("owner key");
+    let owner = CertificateParams::new(Vec::<String>::new())
+        .expect("params")
+        .self_signed(&owner_key)
+        .expect("owner CA");
+    let owner_spki = spl_core::ca::extract_spki_der(owner.der()).expect("SPKI");
+    let owner_jid = spl_core::relay_window::jid_from_spki(&owner_spki).expect("id");
+    let (owner1, owner2) = words_of(&owner_jid);
+    let copied = CertificateParams::new(Vec::<String>::new())
+        .expect("params")
+        .signed_by(&owner_key, &forger.cert, &forger.key)
+        .expect("copied key");
 
-    assert_eq!(
-        serve_refusal(temp.path()).expect("no serve seam here").exit,
-        1
-    );
-    assert_eq!(confirm(temp.path(), "any words").exit, 0);
-    door.runtime.shutdown_background();
+    for (name, chain) in [
+        (
+            "unreadable",
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n".to_string(),
+        ),
+        ("copied-key", copied.pem()),
+    ] {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let paired = journal();
+        let paired_jid = paired.jid.clone();
+        let (word1, word2) = words_of(&paired_jid);
+        let door = open_door(paired, &paired_jid);
+        let joined = join(temp.path(), &door.link, &format!("{word1} {word2}"));
+        assert_eq!(joined.exit, 0, "{}{}", joined.stdout, joined.stderr);
+        store_other_id(temp.path(), &owner_jid);
+        std::fs::write(bundle_in(temp.path()).join("chain.pem"), &chain).expect("chain.pem");
+
+        // Serve stops at the real runner's check of the chain.
+        let held = serve_with_real_check(temp.path());
+        assert_eq!(held.exit, 5, "{name}: {}{}", held.stdout, held.stderr);
+
+        // Words from the claimed id can't confirm it, and it stays.
+        let answered = confirm(temp.path(), &format!("{owner1} {owner2}"));
+        assert_eq!(
+            answered.exit, 5,
+            "{name}: {}{}",
+            answered.stdout, answered.stderr
+        );
+        assert!(bundle_in(temp.path()).exists(), "{name}");
+
+        // At the terminal it's the couldn't-verify question, with no mark from the id.
+        let seam = TerminalOnSplCheck(
+            ScriptedLinkJoinPairingSeam::new(vec![]).with_terminal(&["continue"]),
+        );
+        assert_eq!(confirm_at_terminal(temp.path(), &seam).exit, 0, "{name}");
+        let shown = seam.0.terminal_shown();
+        assert!(
+            !shown.contains(&format!("{owner1}\u{b7}{owner2}")),
+            "{name}: {shown}"
+        );
+
+        // Going on is remembered.
+        assert_eq!(confirm(temp.path(), "any words").exit, 0, "{name}");
+
+        // Cancelling instead takes the link away.
+        let peer_path = bundle_in(temp.path()).join("peer.json");
+        store_other_id(temp.path(), &owner_jid);
+        let mut peer: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&peer_path).expect("peer")).expect("peer json");
+        peer.as_object_mut()
+            .expect("object")
+            .remove("unverified_ca_accepted");
+        std::fs::write(&peer_path, peer.to_string()).expect("peer");
+        let seam =
+            TerminalOnSplCheck(ScriptedLinkJoinPairingSeam::new(vec![]).with_terminal(&["cancel"]));
+        assert_eq!(confirm_at_terminal(temp.path(), &seam).exit, 1, "{name}");
+        assert!(!bundle_in(temp.path()).exists(), "{name}");
+        door.runtime.shutdown_background();
+    }
 }
 
 #[test]

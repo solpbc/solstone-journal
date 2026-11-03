@@ -180,6 +180,10 @@ impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
         retire_refused_pairing(credential);
     }
 
+    fn pinned_ca_jid(&self, ca_chain_pem: &[String]) -> Option<String> {
+        stored_chain_ca_jid(ca_chain_pem)
+    }
+
     fn pair_relay(
         &self,
         request: LinkJoinRelayRequest,
@@ -192,6 +196,15 @@ impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
         }
         Ok(cred)
     }
+}
+
+/// A link pins the certificate leading its stored chain, so that's the one whose
+/// own signature has to hold before its id means anything.
+#[cfg(feature = "client")]
+pub(crate) fn stored_chain_ca_jid(ca_chain_pem: &[String]) -> Option<String> {
+    let head = tls::parse_certs(ca_chain_pem.first()?).ok()?;
+    let pin = spl_core::ca::sha256(head.first()?.as_ref())[..16].to_vec();
+    tls::pinned_ca_jid(ca_chain_pem, &pin)
 }
 
 /// The terminal this process belongs to, which stays the owner's even when

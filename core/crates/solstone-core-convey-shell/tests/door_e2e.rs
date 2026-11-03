@@ -4106,6 +4106,12 @@ async fn relay_pair_window_round_trip_delivers_the_complete_pair_response() {
         )
         .await
         .expect("the shipped relay pair-dial client completes the bridge and ceremony");
+        assert_eq!(
+            spl_transport::tls::pinned_ca_jid(&credential.ca_chain_pem, &credential.ca_fp_prefix)
+                .as_deref(),
+            Some(credential.instance_id.as_str()),
+            "a real journal's stored pairing reads its id from the CA it pins"
+        );
         let (_, certificate) =
             parse_x509_pem(credential.client_cert_pem.as_bytes()).expect("issued client PEM");
         let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));
@@ -4250,6 +4256,12 @@ async fn minted_pair_link_drives_the_shipped_client_and_reconnects_as_its_finger
         spl_transport::pairing::pair_from_link(link, "paired phone", &serde_json::Map::new())
             .await
             .expect("shipped pairing client completes ceremony");
+    assert_eq!(
+        spl_transport::tls::pinned_ca_jid(&credential.ca_chain_pem, &credential.ca_fp_prefix)
+            .as_deref(),
+        Some(credential.instance_id.as_str()),
+        "a real journal's stored pairing reads its id from the CA it pins"
+    );
     let (_, certificate) =
         parse_x509_pem(credential.client_cert_pem.as_bytes()).expect("credential cert");
     let fingerprint = format!("sha256:{}", spl_core::ca::sha256_hex(&certificate.contents));

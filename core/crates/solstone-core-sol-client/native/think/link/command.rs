@@ -50,6 +50,8 @@ const MARK_USAGE: &str =
 const MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired, and nothing it has kept went to that journal through this link. check the words, get a fresh pairing link from your journal and run solstone link join again.";
 const MARK_UNVERIFIABLE: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. this computer isn't paired, and nothing it has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join in a terminal to decide for yourself.";
 const HELD: &str = "waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do.";
+const UNVERIFIED_KEY: &str = "unverified_ca_accepted";
+const MARK_UNVERIFIABLE_CONFIRM: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do. run solstone link confirm in a terminal to decide for yourself.";
 const CONFIRM_RUN_LINE: &str = "when you're ready, run: solstone link confirm";
 const CONFIRM_DONE: &str = "your journal's mark is already confirmed. nothing to do.";
 const CONFIRM_NO_TERMINAL: &str = "solstone link confirm can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
@@ -195,7 +197,9 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
                     format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"),
                     1,
                 )),
-                MarkAnswer::Stopped => Err(CommandOutput::failure(format!("{CANCEL}\n"), 1)),
+                MarkAnswer::Cancelled | MarkAnswer::WalkedAway => {
+                    Err(CommandOutput::failure(format!("{CANCEL}\n"), 1))
+                }
             }
         }
         None => answer_from_words(
@@ -286,8 +290,10 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
 enum MarkAnswer {
     Yes,
     No,
-    /// Cancelled at the question, or nobody left at the terminal to answer.
-    Stopped,
+    /// Cancelled at the couldn't-verify question.
+    Cancelled,
+    /// Nobody left at the terminal to answer.
+    WalkedAway,
 }
 
 /// Ask on the owner's terminal.
@@ -314,7 +320,7 @@ fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> MarkAns
     };
     loop {
         let Some(line) = terminal.read_answer() else {
-            return MarkAnswer::Stopped;
+            return MarkAnswer::WalkedAway;
         };
         let answer = line.trim().to_ascii_lowercase();
         if go_ahead.contains(&answer.as_str()) {
@@ -324,7 +330,7 @@ fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> MarkAns
             return if spec.is_some() {
                 MarkAnswer::No
             } else {
-                MarkAnswer::Stopped
+                MarkAnswer::Cancelled
             };
         }
         terminal.write_text(&format!("{ask}\n"));
@@ -360,18 +366,20 @@ fn mark_words(value: &str) -> Vec<&str> {
         .collect()
 }
 
-/// The journal id of the CA a link bundle pins, which is the first in its chain,
-/// when that certificate can be read.
-fn bundle_ca_jid(bundle: &LinkServeBundle) -> Option<String> {
-    let der = crate::link_credentials::pem_cert_der(bundle.ca_chain_pem.first()?)?;
-    let spki = spl_core::ca::extract_spki_der(&der).ok()?;
-    spl_core::relay_window::jid_from_spki(&spki).ok()
+/// A link waits for the owner if its stored id isn't the CA it pins, or if no such
+/// CA can be read and the owner hasn't said to go on without one.
+fn bundle_is_held(selection: &ServeBundleSelection, ca_jid: Option<&str>) -> bool {
+    match ca_jid {
+        Some(jid) => jid != selection.bundle.instance_id,
+        None => !unverified_link_accepted(&selection.bundle_dir),
+    }
 }
 
-/// A link whose stored id isn't its own CA's waits for the owner. One with no
-/// readable CA can't be judged and carries on.
-fn bundle_is_held(bundle: &LinkServeBundle) -> bool {
-    bundle_ca_jid(bundle).is_some_and(|jid| jid != bundle.instance_id)
+fn unverified_link_accepted(bundle_dir: &Path) -> bool {
+    fs::read_to_string(bundle_dir.join("peer.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .is_some_and(|peer| peer.get(UNVERIFIED_KEY) == Some(&Value::Bool(true)))
 }
 
 fn held_lines(label: &str) -> String {
@@ -407,18 +415,21 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
             return CommandOutput::failure(format!("solstone link confirm: error: {error}\n"), 1);
         }
     };
-    let Some(jid) = bundle_ca_jid(&selection.bundle).filter(|_| bundle_is_held(&selection.bundle))
-    else {
+    let ca_jid = seam.pinned_ca_jid(&selection.bundle.ca_chain_pem);
+    if !bundle_is_held(&selection, ca_jid.as_deref()) {
         return CommandOutput::success(format!("{CONFIRM_DONE}\n"));
-    };
+    }
 
     let answer = if let Some(mark) = parsed.mark.as_deref() {
-        answer_from_words(mark, &jid).inspect_err(|_| retire_bundle(seam, &selection))
+        let Some(jid) = ca_jid.as_deref() else {
+            return CommandOutput::failure(format!("{MARK_UNVERIFIABLE_CONFIRM}\n"), 5);
+        };
+        answer_from_words(mark, jid).inspect_err(|_| retire_bundle(seam, &selection))
     } else {
         let Some(mut terminal) = seam.open_terminal() else {
             return CommandOutput::failure(format!("{CONFIRM_NO_TERMINAL}\n"), 1);
         };
-        match answer_at_terminal(terminal.as_mut(), &jid) {
+        match answer_at_terminal(terminal.as_mut(), ca_jid.as_deref().unwrap_or_default()) {
             MarkAnswer::Yes => Ok(()),
             MarkAnswer::No => {
                 retire_bundle(seam, &selection);
@@ -427,7 +438,11 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
                     1,
                 ))
             }
-            MarkAnswer::Stopped => {
+            MarkAnswer::Cancelled => {
+                retire_bundle(seam, &selection);
+                Err(CommandOutput::failure(format!("{CANCEL}\n"), 1))
+            }
+            MarkAnswer::WalkedAway => {
                 return CommandOutput::failure(held_lines(&selection.label), 5);
             }
         }
@@ -438,7 +453,7 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
             Err(error) => CommandOutput::failure(format!("{error}\n"), 1),
         };
     }
-    match store_confirmed_id(&selection.bundle_dir, &jid) {
+    match store_link_answer(&selection.bundle_dir, ca_jid.as_deref()) {
         Ok(()) => CommandOutput::success(format!("{PAIRED}\n")),
         Err(error) => CommandOutput::failure(format!("{error}\n"), 1),
     }
@@ -474,29 +489,44 @@ fn retire_bundle(seam: &dyn crate::seam::LinkJoinPairingSeam, selection: &ServeB
     });
 }
 
-/// The owner said this mark is their journal's, so the id the link stores
-/// becomes the one that mark came from.
-fn store_confirmed_id(bundle_dir: &Path, jid: &str) -> io::Result<()> {
-    for (name, pointer) in [
-        ("peer.json", "/instance_id"),
-        ("relay_access.json", "/identity/instance_id"),
-    ] {
-        let path = bundle_dir.join(name);
-        let text = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error),
-        };
-        let mut value: Value = serde_json::from_str(&text).map_err(io::Error::other)?;
-        let Some(slot) = value.pointer_mut(pointer) else {
-            continue;
-        };
-        *slot = Value::String(jid.to_owned());
-        let staged = bundle_dir.join(format!(".{name}.confirm"));
-        write_private_file(&staged, json_pretty_ascii(&value).as_bytes())?;
-        fs::rename(&staged, &path)?;
-    }
-    Ok(())
+/// The owner went ahead: the id the link stores becomes the CA's, or, with no CA
+/// to read, the link notes that they went on without one.
+fn store_link_answer(bundle_dir: &Path, ca_jid: Option<&str>) -> io::Result<()> {
+    let Some(jid) = ca_jid else {
+        return rewrite_bundle_json(bundle_dir, "peer.json", |peer| {
+            if let Some(fields) = peer.as_object_mut() {
+                fields.insert(UNVERIFIED_KEY.to_owned(), Value::Bool(true));
+            }
+        });
+    };
+    rewrite_bundle_json(bundle_dir, "peer.json", |peer| {
+        if let Some(slot) = peer.pointer_mut("/instance_id") {
+            *slot = Value::String(jid.to_owned());
+        }
+    })?;
+    rewrite_bundle_json(bundle_dir, "relay_access.json", |record| {
+        if let Some(slot) = record.pointer_mut("/identity/instance_id") {
+            *slot = Value::String(jid.to_owned());
+        }
+    })
+}
+
+fn rewrite_bundle_json(
+    bundle_dir: &Path,
+    name: &str,
+    edit: impl FnOnce(&mut Value),
+) -> io::Result<()> {
+    let path = bundle_dir.join(name);
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let mut value: Value = serde_json::from_str(&text).map_err(io::Error::other)?;
+    edit(&mut value);
+    let staged = bundle_dir.join(format!(".{name}.confirm"));
+    write_private_file(&staged, json_pretty_ascii(&value).as_bytes())?;
+    fs::rename(&staged, &path)
 }
 
 pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, CommandOutput> {
@@ -525,7 +555,11 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         Ok(selection) => selection,
         Err(error) => return Err(CommandOutput::failure(format!("{error}\n"), 1)),
     };
-    if bundle_is_held(&selection.bundle) {
+    let ca_jid = match ctx.link_serve {
+        Some(runner) => runner.pinned_ca_jid(&selection.bundle.ca_chain_pem),
+        None => crate::seam::head_ca_jid(&selection.bundle.ca_chain_pem),
+    };
+    if bundle_is_held(&selection, ca_jid.as_deref()) {
         return Err(CommandOutput::failure(held_lines(&selection.label), 5));
     }
     let policy = if parsed.direct {
@@ -559,14 +593,16 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
             1,
         ));
     };
-    let words = match mark_words_from_jid(&selection.bundle.instance_id) {
-        Ok(words) if !words.is_empty() => words,
-        _ => {
+    // The mark comes from the CA this link pins. With none to read, it names none.
+    let words = match ca_jid.as_deref().map(mark_words_from_jid) {
+        Some(Ok(words)) if !words.is_empty() => words,
+        Some(_) => {
             return Err(CommandOutput::failure(
                 "this link bundle has no journal id, so it can't be named. re-run solstone link join.\n",
                 1,
             ));
         }
+        None => "your journal".to_string(),
     };
     let request = LinkServeRequest {
         label: selection.label.clone(),
@@ -686,14 +722,15 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}{unpaired_note}",
         selection.label, state_str, version_str
     );
-    if bundle_is_held(&selection.bundle) {
+    let ca_jid = crate::seam::head_ca_jid(&selection.bundle.ca_chain_pem);
+    if bundle_is_held(&selection, ca_jid.as_deref()) {
         output.push_str(&held_lines(&selection.label));
     }
     if let Some(snap) = &live_status {
         for sighting in &snap.unknown_journals {
             output.push_str(&format_sighting_block(
                 sighting,
-                &selection.bundle.instance_id,
+                ca_jid.as_deref().unwrap_or_default(),
             ));
         }
     }
@@ -1878,8 +1915,9 @@ mod tests {
         include_str!("../../../../../fixtures/native-sol/link-join/peer_non_ascii_peer.json");
     const NESTED_ENDPOINTS_JSON: &str =
         include_str!("../../../../../fixtures/native-sol/link-join/nested_endpoints_peer.json");
-    const SERVE_BUNDLE_CERT: &str =
-        "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n";
+    // A P-256 self-signed CA, so a bundle holding it has a readable pin. Its journal
+    // id is 32eb4572-27d1-8392-baa2-6e4ea0b1c953.
+    const SERVE_BUNDLE_CERT: &str = "-----BEGIN CERTIFICATE-----\nMIIBizCCATGgAwIBAgIUaAtxcLWxD/p1oqh/9Aocs3XqohIwCgYIKoZIzj0EAwIw\nGjEYMBYGA1UEAwwPam91cm5hbCB0ZXN0IENBMCAXDTI2MTEwMzIwMzA1N1oYDzIx\nMjYxMDEwMjAzMDU3WjAaMRgwFgYDVQQDDA9qb3VybmFsIHRlc3QgQ0EwWTATBgcq\nhkjOPQIBBggqhkjOPQMBBwNCAASjAUrtvHhXImO9uNkYvS23BVGgrfiDjKIIX6dy\n9ypRVytQTOr22rJTMz1Ho3UL3CCPgI3vE++74Td1ksv4VEtFo1MwUTAdBgNVHQ4E\nFgQUtHl+/hoa8sO3oNNBye16XSzrmIswHwYDVR0jBBgwFoAUtHl+/hoa8sO3oNNB\nye16XSzrmIswDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiEAt5nD\nKg4ulCZR5pf3n3o6UrGnMyeC7zSwY9nxImwYzYwCIAIRhpaTkFcdo8xh+WZbnRf3\nKsepBLM5i/VJXfBt8/L/\n-----END CERTIFICATE-----\n";
 
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
     #[cfg(unix)]
@@ -2049,7 +2087,7 @@ mod tests {
         fs::write(
             bundle_dir.join("peer.json"),
             json!({
-                "instance_id": "f30ed159-ef46-8e9c-913f-e49f0fe7d201",
+                "instance_id": "32eb4572-27d1-8392-baa2-6e4ea0b1c953",
                 "home_label": "Home",
                 "paired_at": "2026-07-26T00:00:00Z",
                 "local_endpoints": local_endpoints.clone(),
@@ -2062,7 +2100,7 @@ mod tests {
             client_cert_pem: CERT.to_string(),
             ca_chain_pem: vec![CERT.to_string()],
             home_attestation: "attestation.jwt".to_string(),
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             home_label: "Home".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
@@ -2342,7 +2380,7 @@ mod tests {
             Ok(resident) => resident,
             Err(output) => panic!("explicit bundle failed before resident: {output:?}"),
         };
-        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
+        let words = mark_words_from_jid("32eb4572-27d1-8392-baa2-6e4ea0b1c953").unwrap();
         assert_eq!(
             explicit.startup(),
             format!("forwarding 127.0.0.1:5016 -> {words} via direct or relay\n")
@@ -2408,7 +2446,7 @@ mod tests {
             Ok(resident) => resident,
             Err(output) => panic!("port 0 must enter resident serve: {output:?}"),
         };
-        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
+        let words = mark_words_from_jid("32eb4572-27d1-8392-baa2-6e4ea0b1c953").unwrap();
         assert_eq!(
             resident.startup(),
             format!("forwarding 127.0.0.1:54321 -> {words} via direct or relay\n")
@@ -2462,7 +2500,7 @@ mod tests {
             Err(output) => panic!("direct serve failed before resident: {output:?}"),
         };
 
-        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
+        let words = mark_words_from_jid("32eb4572-27d1-8392-baa2-6e4ea0b1c953").unwrap();
         assert_eq!(
             resident.startup(),
             format!("forwarding 127.0.0.1:6001 -> {words} via direct connection\n")
@@ -2506,7 +2544,7 @@ mod tests {
             Err(output) => panic!("relay-only serve failed before resident: {output:?}"),
         };
 
-        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
+        let words = mark_words_from_jid("32eb4572-27d1-8392-baa2-6e4ea0b1c953").unwrap();
         assert_eq!(
             resident.startup(),
             format!("forwarding 127.0.0.1:6002 -> {words} via relay only\n")
@@ -2565,7 +2603,7 @@ mod tests {
             Err(output) => panic!("relay-only serve failed before resident: {output:?}"),
         };
 
-        let words = mark_words_from_jid("f30ed159-ef46-8e9c-913f-e49f0fe7d201").unwrap();
+        let words = mark_words_from_jid("32eb4572-27d1-8392-baa2-6e4ea0b1c953").unwrap();
         assert_eq!(
             resident.startup(),
             format!("forwarding 127.0.0.1:6003 -> {words} via relay only\n")
@@ -2825,7 +2863,7 @@ mod tests {
         seam.assert_done();
     }
 
-    const GATE_JID: &str = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+    const GATE_JID: &str = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
 
     struct GateRun {
         output: CommandOutput,
@@ -3417,7 +3455,7 @@ mod tests {
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
         let meta = LinkJournalMetadata {
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
@@ -3495,7 +3533,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3545,7 +3583,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: false,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3597,7 +3635,7 @@ mod tests {
             next_retry_at: None,
             journal_version: None,
             journal_version_fresh: false,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3646,7 +3684,7 @@ mod tests {
         .expect("write");
 
         let meta = LinkJournalMetadata {
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
@@ -3741,7 +3779,7 @@ mod tests {
         .expect("write");
 
         let meta = LinkJournalMetadata {
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             journal_version: "2026.07.26".to_string(),
@@ -3770,7 +3808,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: "different-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3825,7 +3863,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: "rogue-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -3869,7 +3907,7 @@ mod tests {
         .expect("write");
 
         let meta = LinkJournalMetadata {
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
             journal_version: "2026.06.01".to_string(),
@@ -3894,7 +3932,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.06.01".to_string()),
             journal_version_fresh: true,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
             persist_uncertain: false,
@@ -3947,7 +3985,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("\x1b[31m2026.07.26\x1b[0m\x00\x07".to_string()),
             journal_version_fresh: true,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
@@ -4040,7 +4078,7 @@ mod tests {
             next_retry_at: None,
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
-            instance_id: "f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string(),
+            instance_id: "32eb4572-27d1-8392-baa2-6e4ea0b1c953".to_string(),
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: true,
@@ -4139,7 +4177,7 @@ mod tests {
         let temp = temp_dir("status-unknown-addr-jid");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let local_id = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
         serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
@@ -4198,7 +4236,7 @@ mod tests {
         let temp = temp_dir("status-unknown-relay");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let local_id = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
         serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
@@ -4257,7 +4295,7 @@ mod tests {
         let temp = temp_dir("status-unknown-no-jid");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let local_id = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
         serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
@@ -4315,7 +4353,7 @@ mod tests {
         let temp = temp_dir("status-unknown-invalid-jid");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let local_id = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
         serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
@@ -4373,6 +4411,18 @@ mod tests {
         let env = base_env(&config, &temp.join("home"));
         // "home-instance" is not a UUID, so mark_from_jid will fail
         serve_bundle_with_instance_id(&config, "alpha", json!([]), "home-instance");
+        // No CA to read, and the owner went on without one: no mark from its id.
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        fs::write(
+            bundle_dir.join("chain.pem"),
+            "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n",
+        )
+        .expect("chain");
+        let mut peer: Value =
+            serde_json::from_str(&fs::read_to_string(bundle_dir.join("peer.json")).expect("peer"))
+                .expect("peer json");
+        peer[UNVERIFIED_KEY] = Value::Bool(true);
+        fs::write(bundle_dir.join("peer.json"), peer.to_string()).expect("peer");
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
         let runtime = LinkServeRuntimeRecord { port: 5015 };
@@ -4399,7 +4449,10 @@ mod tests {
             journal_version: Some("2026.07.26".to_string()),
             journal_version_fresh: true,
             instance_id: "home-instance".to_string(),
-            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            ca_fp_prefix: ca_fp_prefix_hex(&[
+                "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n".to_string(),
+            ])
+            .expect("prefix"),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
             unknown_journals: vec![crate::seam::UnknownJournalSighting {
@@ -4429,7 +4482,7 @@ mod tests {
         let temp = temp_dir("status-unknown-multi-order");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let local_id = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
         serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
@@ -4500,7 +4553,7 @@ mod tests {
         let temp = temp_dir("status-unknown-states");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let local_id = "32eb4572-27d1-8392-baa2-6e4ea0b1c953";
         serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
 
         let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");

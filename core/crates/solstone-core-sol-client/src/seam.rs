@@ -157,6 +157,16 @@ pub struct LinkJoinCredential {
     pub endpoints: Vec<LinkServeEndpoint>,
 }
 
+/// The journal id of the certificate leading a stored chain, which is what a link
+/// pins on every dial. This reads the certificate without checking its signature,
+/// which the transport seams below add.
+#[must_use]
+pub fn head_ca_jid(ca_chain_pem: &[String]) -> Option<String> {
+    let der = crate::link_credentials::pem_cert_der(ca_chain_pem.first()?)?;
+    let spki = spl_core::ca::extract_spki_der(&der).ok()?;
+    spl_core::relay_window::jid_from_spki(&spki).ok()
+}
+
 /// The owner's terminal, for the one question pairing asks.
 pub trait LinkJoinTerminal {
     fn write_text(&mut self, text: &str);
@@ -183,6 +193,11 @@ pub trait LinkJoinPairingSeam: Send + Sync {
 
     /// Best effort: remove the journal's record of a pairing the owner refused.
     fn retire(&self, _credential: &LinkJoinCredential) {}
+
+    /// The journal id of the CA a stored chain pins, when it can be read.
+    fn pinned_ca_jid(&self, ca_chain_pem: &[String]) -> Option<String> {
+        head_ca_jid(ca_chain_pem)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -353,6 +368,11 @@ pub trait LinkServeSession: Send {
 pub trait LinkServeRunner: Send + Sync {
     fn start(&self, request: LinkServeRequest)
     -> Result<Box<dyn LinkServeSession>, LinkServeError>;
+
+    /// The journal id of the CA a stored chain pins, when it can be read.
+    fn pinned_ca_jid(&self, ca_chain_pem: &[String]) -> Option<String> {
+        head_ca_jid(ca_chain_pem)
+    }
 }
 
 pub trait FileProvider {

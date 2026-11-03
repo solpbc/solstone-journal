@@ -54,6 +54,10 @@ pub enum WireRelayAccessResponse {
 pub struct SplLinkServeRunner;
 
 impl LinkServeRunner for SplLinkServeRunner {
+    fn pinned_ca_jid(&self, ca_chain_pem: &[String]) -> Option<String> {
+        crate::stored_chain_ca_jid(ca_chain_pem)
+    }
+
     fn start(
         &self,
         request: LinkServeRequest,
