@@ -13,6 +13,23 @@ import Testing
 @MainActor
 @Suite("JournalWindowModel")
 struct JournalWindowModelTests {
+    @Test func aDifferentJournalCannotSupplyTheMarkOrHomeDoor() async throws {
+        let fixture = try makeConfiguredFixture()
+        defer { fixture.clear() }
+        let counter = IdentityCounter(read: .mark(.uiTestSample))
+        let model = JournalWindowModel(
+            config: fixture.config, supervisor: try makeSupervisor(),
+            checkLocalAccess: { throw LocalHTTPError.wrongJournal },
+            fetchIdentity: { _ in await counter.fetch() }
+        )
+        await model.fetchIdentityIfNeeded()
+        #expect(await counter.count == 0)
+        #expect(model.markPresentation == .unavailable)
+        #expect(model.devicesModel.markPresentation == .unavailable)
+        #expect(model.homeOffer == .runState)
+        #expect(model.localAccessFailure != nil)
+    }
+
     @Test func windowOpenWaitsForReadinessAndThenShowsTheMarkInBothPanes() async throws {
         let fixture = try makeConfiguredFixture()
         defer { fixture.clear() }

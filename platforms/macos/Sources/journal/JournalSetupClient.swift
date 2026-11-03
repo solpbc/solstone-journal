@@ -234,10 +234,13 @@ struct JournalSetupClient: JournalSetupClienting, Sendable {
     static let timeout: TimeInterval = 5
 
     private let baseURL: String
+    private let dataLoader: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
     private let session: URLSession
     private let redirectDelegate: SetupNoRedirectDelegate?
 
-    init(baseURL: String = "http://127.0.0.1:5015", session: URLSession? = nil) {
+    init(baseURL: String = "http://127.0.0.1:5015", session: URLSession? = nil,
+         dataLoader: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil) {
+        self.dataLoader = dataLoader
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if let session {
             self.session = session
@@ -291,7 +294,10 @@ struct JournalSetupClient: JournalSetupClienting, Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            if let dataLoader { (data, response) = try await dataLoader(request) }
+            else { (data, response) = try await session.data(for: request) }
+        } catch let error as LocalHTTPError {
+            throw error
         } catch {
             throw JournalSetupClientError.transport(error.localizedDescription)
         }

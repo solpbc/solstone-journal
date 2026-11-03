@@ -58,7 +58,7 @@ public final class NativeJournalRuntimeMaterializer: RuntimeMaterializing, @unch
         return MaterializedRuntime(
             key: "journal-\(version)-\(build)",
             layout: layout,
-            environment: nativeEnvironment()
+            environment: try nativeEnvironment()
         )
     }
 
@@ -75,9 +75,15 @@ public final class NativeJournalRuntimeMaterializer: RuntimeMaterializing, @unch
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func nativeEnvironment() -> [String: String] {
-        baseEnvironment.filter { key, _ in
+    private func nativeEnvironment() throws -> [String: String] {
+        var environment = baseEnvironment.filter { key, _ in
             !key.hasPrefix("UV_") && key != "PYTHONHOME" && key != "PYTHONPATH"
         }
+        // A saved GUI folder may differ from the CLI's configured journal. Explicitly
+        // select the account socket; app requests check its live root before use.
+        if environment["SOLSTONE_JOURNAL_SOCKET"] == nil {
+            environment["SOLSTONE_JOURNAL_SOCKET"] = try JournalLocalEndpoint.socketPath(environment: environment)
+        }
+        return environment
     }
 }

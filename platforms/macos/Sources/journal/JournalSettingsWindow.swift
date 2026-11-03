@@ -157,6 +157,9 @@ struct JournalSettingsWindow: View {
                     }
                     .accessibilityIdentifier(AXID.Journal.Home.start)
                 case .runState:
+                    if let message = model.localAccessFailure ?? model.supervisor.blockedReason {
+                        Text(message).font(.callout)
+                    }
                     Button {
                         model.selectedPane = .runState
                     } label: {
@@ -204,7 +207,7 @@ struct JournalSettingsWindow: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 statusLine(model.runDisplay.label, systemImage: "circle.fill")
-                if model.runDisplay == .blocked, let blockedReason = model.supervisor.blockedReason {
+                if let blockedReason = model.localAccessFailure ?? (model.runDisplay == .blocked ? model.supervisor.blockedReason : nil) {
                     Text(blockedReason)
                         .foregroundStyle(.secondary)
                 }
@@ -282,7 +285,7 @@ struct JournalSettingsWindow: View {
             )
 
             Button {
-                openURL(URL(string: "http://127.0.0.1:5015/app/backup")!)
+                model.openBackup(using: { openURL($0) })
             } label: {
                 Label("open backup", systemImage: "arrow.up.right.square")
             }

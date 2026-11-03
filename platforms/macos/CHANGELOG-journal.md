@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- on shared macs, the journal app checks that it is showing your journal. your mark stays in your own dock, and older custom icons are removed from the journal app shared by everyone on the mac.
+
 - your journal's mark now has the same colors and layout on this mac as in your journal's network app: darker words, its own colors around each icon. when your journal's mark can't be read, it shows as unavailable.
 
 ## [2.0.66 (build 115)] - 2026-11-02

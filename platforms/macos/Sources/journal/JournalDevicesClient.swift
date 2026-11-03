@@ -156,12 +156,15 @@ struct JournalDevicesClient: Sendable, JournalDevicesClientProtocol {
     }
 
     private let baseURL: String
+    private let dataLoader: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
     private let session: URLSession
 
     init(
         baseURL: String = "http://127.0.0.1:5015",
-        sessionConfiguration: URLSessionConfiguration? = nil
+        sessionConfiguration: URLSessionConfiguration? = nil,
+        dataLoader: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil
     ) {
+        self.dataLoader = dataLoader
         self.baseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let config = sessionConfiguration ?? .default
         self.session = URLSession(configuration: config)
@@ -236,7 +239,10 @@ struct JournalDevicesClient: Sendable, JournalDevicesClientProtocol {
         as responseType: Response.Type
     ) async throws -> Response {
         do {
-            let (data, response) = try await session.data(for: request)
+            let data: Data
+            let response: URLResponse
+            if let dataLoader { (data, response) = try await dataLoader(request) }
+            else { (data, response) = try await session.data(for: request) }
             return try decodeResponse(data: data, response: response, expectedPath: expectedPath, as: responseType)
         } catch is CancellationError {
             throw CancellationError()

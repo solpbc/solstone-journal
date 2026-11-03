@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 import AppKit
+import Foundation
 import JournalMarkKit
 import JournalRuntime
 import os
@@ -27,27 +28,38 @@ final class JournalAppModel {
 
     init(
         config: JournalAppConfig = JournalAppConfig(),
-        supervisor: JournalSupervisor = JournalSupervisor()
+        supervisor: JournalSupervisor? = nil
     ) {
+        let supervisor = supervisor ?? JournalSupervisor(portAvailable: { JournalLocalHTTPClient.portAvailable(5015) })
+        let local = JournalLocalHTTPClient(root: { await MainActor.run { config.resolvedJournalRoot } })
+        let loader: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { try await local.data(for: $0) }
         self.config = config
         self.supervisor = supervisor
-        let iconManager = JournalIconManager(config: config, bundlePath: Bundle.main.bundlePath)
+        let iconManager = JournalIconManager(bundlePath: Bundle.main.bundlePath)
         self.iconManager = iconManager
-        let windowModel = JournalWindowModel(config: config, supervisor: supervisor)
+        let windowModel = JournalWindowModel(
+            config: config, supervisor: supervisor, dataLoader: loader,
+            checkLocalAccess: { _ = try await local.browserURL(path: "/") },
+            browserURL: { try await local.browserURL(path: $0) }
+        )
         windowModel.onIdentityMark = { [weak iconManager] mark in
             iconManager?.handleIdentityMark(mark)
         }
         self.windowModel = windowModel
         self.firstRunModel = JournalFirstRunModel(
             config: config,
+            initClient: JournalInitClient(dataLoader: loader),
             startSupervisor: { [supervisor] root in
                 await supervisor.start(journalRoot: root)
             },
+            browserURL: { try await local.browserURL(path: $0) },
             windowModel: windowModel,
             supervisorIsLive: { [supervisor] root in
                 supervisor.state == .running
                     && supervisor.activeJournalRoot?.standardizedFileURL.path == root.standardizedFileURL.path
-            }
+            },
+            setupClient: JournalSetupClient(dataLoader: loader),
+            identity: JournalIdentityResolver(fetcher: JournalIdentityFetcher(dataLoader: loader))
         )
     }
 

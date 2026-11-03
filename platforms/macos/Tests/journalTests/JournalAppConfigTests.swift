@@ -10,7 +10,6 @@ import Testing
 @MainActor
 @Suite("JournalAppConfig")
 struct JournalAppConfigTests {
-    private static let cachedMarkKey = "journalIconCachedMarkJSON"
 
     @Test func launchAtLoginDefaultsOnAndRegisters() async {
         let fixture = makeDefaults()
@@ -151,45 +150,6 @@ struct JournalAppConfigTests {
         #expect(disabled == .failed)
         #expect(fixture.defaults.bool(forKey: "launchAtLoginEnabled") == false)
         #expect(unregistering.unregisterCalls == 1)
-    }
-
-    @Test func cachedIconMarkJSONRoundTripsValidatedMark() throws {
-        let fixture = makeDefaults()
-        defer { fixture.clear() }
-        let config = JournalAppConfig(defaults: fixture.defaults, loginItemManager: FakeLoginItemManager())
-
-        config.setCachedIconMark(.uiTestSample)
-
-        #expect(config.cachedIconMark() == .uiTestSample)
-    }
-
-    @Test func cachedIconMarkFailsClosedForGarbageOrInvalidJSON() throws {
-        let fixture = makeDefaults()
-        defer { fixture.clear() }
-        let config = JournalAppConfig(defaults: fixture.defaults, loginItemManager: FakeLoginItemManager())
-
-        fixture.defaults.set(Data([0x00, 0x01]), forKey: Self.cachedMarkKey)
-        #expect(config.cachedIconMark() == nil)
-
-        let invalid = JournalMark(
-            icon1: JournalMark.uiTestSample.icon1,
-            icon2: JournalMark.uiTestSample.icon2,
-            words: ["only-one-word"]
-        )
-        fixture.defaults.set(try JSONEncoder().encode(invalid), forKey: Self.cachedMarkKey)
-        #expect(config.cachedIconMark() == nil)
-    }
-
-    @Test func appliedAtLeastOncePersistsIndependentlyOfCachedMark() {
-        let fixture = makeDefaults()
-        defer { fixture.clear() }
-        let config = JournalAppConfig(defaults: fixture.defaults, loginItemManager: FakeLoginItemManager())
-
-        config.iconMarkAppliedAtLeastOnce = true
-        let reloaded = JournalAppConfig(defaults: fixture.defaults, loginItemManager: FakeLoginItemManager())
-
-        #expect(reloaded.iconMarkAppliedAtLeastOnce)
-        #expect(reloaded.cachedIconMark() == nil)
     }
 
     private func makeDefaults() -> DefaultsFixture {

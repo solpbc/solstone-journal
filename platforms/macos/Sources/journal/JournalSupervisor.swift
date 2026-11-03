@@ -30,6 +30,7 @@ final class JournalSupervisor {
     private let runner: any SupervisedChildRunning
     private let readinessGate: any JournalReadinessChecking
     private let markerURL: URL
+    private let portAvailable: (@Sendable () -> Bool)?
     private let port: Int
     private let readinessTimeout: Duration
     private let receiptContextFactory: () -> JournalRuntimeEntryReceiptContext
@@ -51,6 +52,7 @@ final class JournalSupervisor {
         readinessGate: any JournalReadinessChecking = JournalReadinessGate(),
         markerURL: URL = ExpectedExitMarker.markerURL(for: ExpectedExitMarker.journalMarkerDiscriminator),
         port: Int = 5015,
+        portAvailable: (@Sendable () -> Bool)? = nil,
         readinessTimeout: Duration = .seconds(120),
         receiptContextFactory: @escaping () -> JournalRuntimeEntryReceiptContext = {
             JournalRuntimeEntryReceiptLaunch.begin(provenanceBundle: .module)
@@ -69,6 +71,7 @@ final class JournalSupervisor {
         }, gate: gate)
         self.readinessGate = readinessGate
         self.markerURL = markerURL
+        self.portAvailable = portAvailable
         self.port = port
         self.readinessTimeout = readinessTimeout
         self.receiptContextFactory = receiptContextFactory
@@ -125,6 +128,12 @@ final class JournalSupervisor {
         }
 
         do {
+            if let portAvailable, !portAvailable() {
+                let diagnostic = JournalDiagnostic(commandLabel: "journal local port", outputExcerpt: JournalLocalHTTPClient.portInUse)
+                state = .blocked(diagnostic)
+                blockedReason = JournalLocalHTTPClient.portInUse
+                return false
+            }
             state = .starting
             try await runner.start(
                 runtime: runtime,

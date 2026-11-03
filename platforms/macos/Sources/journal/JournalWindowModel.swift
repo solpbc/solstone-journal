@@ -147,6 +147,8 @@ final class JournalWindowModel {
 
     @ObservationIgnored private let config: JournalAppConfig
     let supervisor: JournalSupervisor
+    @ObservationIgnored private let checkLocalAccess: (@Sendable () async throws -> Void)?
+    @ObservationIgnored private let browserURL: (@Sendable (String) async throws -> URL)?
     @ObservationIgnored private let baseURL: String
     @ObservationIgnored private let fetchIdentity: IdentityFetch
     @ObservationIgnored private let identityRetryPause: IdentityRetryPause
@@ -163,6 +165,7 @@ final class JournalWindowModel {
     let devicesModel: JournalDevicesModel
 
     var selectedPane: JournalPane = .home
+    var localAccessFailure: String?
     var identityRead: JournalIdentityRead?
     var diskUsageBytes: Int64?
     var healthDisplay: JournalHealthDisplay = .unknown
@@ -178,6 +181,9 @@ final class JournalWindowModel {
         supervisor: JournalSupervisor,
         baseURL: String = "http://127.0.0.1:5015",
         identitySession: URLSession = .shared,
+        dataLoader: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
+        checkLocalAccess: (@Sendable () async throws -> Void)? = nil,
+        browserURL: (@Sendable (String) async throws -> URL)? = nil,
         fetchIdentity: IdentityFetch? = nil,
         identityRetryPause: @escaping IdentityRetryPause = { try await Task.sleep(for: .milliseconds(500)) },
         fetchDiskUsage: DiskUsageFetch? = nil,
@@ -194,8 +200,10 @@ final class JournalWindowModel {
         now: @escaping NowProvider = { Date() },
         diskCacheDuration: TimeInterval = 30
     ) {
-        let defaultIdentityFetcher = JournalIdentityFetcher(session: identitySession)
+        let defaultIdentityFetcher = JournalIdentityFetcher(session: identitySession, dataLoader: dataLoader)
         let trimmedBaseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        self.checkLocalAccess = checkLocalAccess
+        self.browserURL = browserURL
         self.config = config
         self.supervisor = supervisor
         self.baseURL = trimmedBaseURL
@@ -217,7 +225,7 @@ final class JournalWindowModel {
         self.now = now
         self.diskCacheDuration = diskCacheDuration
         self.onIdentityMark = onIdentityMark
-        self.devicesModel = devicesModel ?? JournalDevicesModel(client: JournalDevicesClient(baseURL: trimmedBaseURL))
+        self.devicesModel = devicesModel ?? JournalDevicesModel(client: JournalDevicesClient(baseURL: trimmedBaseURL, dataLoader: dataLoader))
         self.devicesModel.markPresentation = markPresentation
     }
 
@@ -256,6 +264,7 @@ final class JournalWindowModel {
 
     var markPresentation: JournalMarkPresentation {
         guard isConfigured else { return .generic }
+        guard localAccessFailure == nil else { return .unavailable }
         guard let identityRead else { return .loading }
         switch identityRead {
         case .mark(let mark): return .mark(mark)
@@ -285,6 +294,7 @@ final class JournalWindowModel {
 
     var homeOffer: JournalHomeOffer {
         guard isConfigured else { return .unconfigured }
+        guard localAccessFailure == nil else { return .runState }
         switch runDisplay {
         case .running:
             return .door
@@ -297,8 +307,23 @@ final class JournalWindowModel {
         }
     }
 
-    func openJournal(using openURL: @MainActor (URL) -> Bool) {
-        guard let url = URL(string: baseURL + "/") else {
+    func openJournal(using openURL: @escaping @MainActor (URL) -> Bool) {
+        openBrowser(path: "/", using: openURL)
+    }
+
+    func openBackup(using openURL: @escaping @MainActor (URL) -> Bool) {
+        openBrowser(path: "/app/backup", using: openURL)
+    }
+
+    private func openBrowser(path: String, using openURL: @escaping @MainActor (URL) -> Bool) {
+        if let browserURL {
+            Task { @MainActor in
+                do { _ = openURL(try await browserURL(path)) }
+                catch { localAccessFailure = error.localizedDescription; identityRead = .unavailable }
+            }
+            return
+        }
+        guard let url = URL(string: baseURL + path) else {
             Logger.journalApp.error("failed to form journal URL from \(self.baseURL, privacy: .public)")
             return
         }
@@ -352,6 +377,15 @@ final class JournalWindowModel {
     }
 
     func fetchIdentityIfNeeded() async {
+        if let checkLocalAccess {
+            do { try await checkLocalAccess(); localAccessFailure = nil }
+            catch {
+                localAccessFailure = error.localizedDescription
+                identityRead = .unavailable
+                devicesModel.markPresentation = .unavailable
+                return
+            }
+        }
         guard !identityFetchCompleted else { return }
         while let identityFetchTask {
             await identityFetchTask.value

@@ -60,6 +60,7 @@ final class JournalFirstRunModel {
     @ObservationIgnored private let handoffStore: any JournalHandoffStoring
     @ObservationIgnored private let journalFileReader: any OnDiskJournalFileReading
     @ObservationIgnored private let discoveryQualificationTimeout: TimeInterval
+    @ObservationIgnored private let browserURL: (@Sendable (String) async throws -> URL)?
     @ObservationIgnored private let initPageURL: URL
     @ObservationIgnored private let openURL: URLOpener
     @ObservationIgnored private let browserPollInterval: Duration
@@ -177,6 +178,7 @@ final class JournalFirstRunModel {
         journalFileReader: any OnDiskJournalFileReading = LiveOnDiskJournalFileReader(),
         discoveryQualificationTimeout: TimeInterval = 1.0,
         initPageURL: URL = JournalFirstRunModel.defaultInitPageURL,
+        browserURL: (@Sendable (String) async throws -> URL)? = nil,
         openURL: @escaping URLOpener = { NSWorkspace.shared.open($0) },
         browserPollInterval: Duration = .seconds(2),
         windowModel: JournalWindowModel? = nil,
@@ -215,6 +217,7 @@ final class JournalFirstRunModel {
         self.handoffStore = handoffStore
         self.journalFileReader = journalFileReader
         self.discoveryQualificationTimeout = discoveryQualificationTimeout
+        self.browserURL = browserURL
         self.initPageURL = initPageURL
         self.openURL = openURL
         self.browserPollInterval = browserPollInterval
@@ -587,6 +590,13 @@ final class JournalFirstRunModel {
     }
 
     private func openInitPage() {
+        if let browserURL {
+            Task { @MainActor in
+                do { _ = openURL(try await browserURL("/init")) }
+                catch { errorMessage = error.localizedDescription }
+            }
+            return
+        }
         if !openURL(initPageURL) {
             Logger.journalApp.error("failed to open \(self.initPageURL.absoluteString, privacy: .public) in the browser")
         }
@@ -892,7 +902,10 @@ final class JournalFirstRunModel {
         guard config.journalRoot?.standardizedFileURL.path == root.path else { return }
         guard await ensureSupervisor(root), stillCurrent(captured) else { return }
         var opened = false
-        if let windowModel {
+        if let browserURL {
+            do { opened = openURL(try await browserURL("/")) }
+            catch { errorMessage = error.localizedDescription; return }
+        } else if let windowModel {
             windowModel.openJournal(using: { url in
                 opened = self.openURL(url)
                 return opened
@@ -1595,6 +1608,13 @@ final class JournalFirstRunModel {
     }
 
     private func handleStateError(_ error: Error) async {
+        if let accessError = error as? LocalHTTPError {
+            setupState = nil
+            errorMessage = accessError.localizedDescription
+            route = .ritual(.setupProgress)
+            stopRefresh()
+            return
+        }
         guard let clientError = error as? JournalSetupClientError,
               case .server(let envelope) = clientError else {
             return

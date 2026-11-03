@@ -9,23 +9,18 @@ import os
 
 @MainActor
 protocol JournalIconApplying {
-    func apply(_ image: NSImage, toBundleAt path: String) -> Bool
     func clearCustomIcon(atBundleAt path: String) -> Bool
     func setDockImage(_ image: NSImage?)
 }
 
 @MainActor
 struct NSWorkspaceIconApplier: JournalIconApplying {
-    func apply(_ image: NSImage, toBundleAt path: String) -> Bool {
-        NSWorkspace.shared.setIcon(image, forFile: path, options: [])
-    }
-
     func clearCustomIcon(atBundleAt path: String) -> Bool {
         NSWorkspace.shared.setIcon(nil, forFile: path, options: [])
     }
 
     func setDockImage(_ image: NSImage?) {
-        NSApp.applicationIconImage = image
+        NSApp?.applicationIconImage = image ?? JournalIconCompositor.appIcon(spec: nil)
     }
 }
 
@@ -74,26 +69,17 @@ struct JournalLoggerIconLog: JournalIconLogging {
 
 @MainActor
 final class JournalIconManager {
-    private enum Work: Sendable {
-        case owner(JournalMark)
-        case reassert
-    }
-
-    private let config: JournalAppConfig
     private let applier: any JournalIconApplying
     private let inspector: any JournalBundleIconInspecting
     private let logger: any JournalIconLogging
     private let bundlePath: String
-    private var inFlight: Task<Void, Never>?
 
     init(
-        config: JournalAppConfig,
         applier: any JournalIconApplying = NSWorkspaceIconApplier(),
         inspector: any JournalBundleIconInspecting = FinderInfoBundleIconInspector(),
         logger: any JournalIconLogging = JournalLoggerIconLog(),
         bundlePath: String = Bundle.main.bundlePath
     ) {
-        self.config = config
         self.applier = applier
         self.inspector = inspector
         self.logger = logger
@@ -105,65 +91,19 @@ final class JournalIconManager {
     }
 
     func reassertOnLaunch() {
-        enqueue(.reassert)
+        // Older versions published an owner's mark on this shared bundle. Remove it
+        // before any identity read; cached per-account marks may have come from TCP.
+        if inspector.hasCustomIcon(atBundleAt: bundlePath), !applier.clearCustomIcon(atBundleAt: bundlePath) {
+            logger.notice("the journal app's old custom icon could not be cleared. reinstall the journal app to remove it.")
+        }
+        applier.setDockImage(nil)
     }
 
     func handleIdentityMark(_ mark: JournalMark) {
-        guard config.cachedIconMark() == nil else { return }
-        enqueue(.owner(mark))
-    }
-
-    private func enqueue(_ work: Work) {
-        guard inFlight == nil else { return }
-        inFlight = Task { @MainActor [weak self] in
-            guard let self else { return }
-            defer { self.inFlight = nil }
-            self.perform(work)
-        }
-    }
-
-    private func perform(_ work: Work) {
-        switch work {
-        case .owner(let mark):
-            applyOwner(mark)
-        case .reassert:
-            reassertNow()
-        }
-    }
-
-    private func reassertNow() {
-        guard !inspector.hasCustomIcon(atBundleAt: bundlePath),
-              let cached = config.cachedIconMark() else {
-            return
-        }
-        applyOwner(cached)
-    }
-
-    private func applyOwner(_ mark: JournalMark) {
         guard let validated = JournalMark.validate(mark) else {
-            fallbackToGeneric(reason: "journal icon mark failed validation")
+            applier.setDockImage(nil)
             return
         }
-
-        config.setCachedIconMark(validated)
-        guard JournalIconCompositor.tile(spec: validated, side: 512).kind == .owner else {
-            fallbackToGeneric(reason: "journal icon compositor rendered generic")
-            return
-        }
-
-        let image = JournalIconCompositor.appIcon(spec: validated)
-        guard applier.apply(image, toBundleAt: bundlePath) else {
-            fallbackToGeneric(reason: "journal icon setIcon returned false")
-            return
-        }
-
-        applier.setDockImage(image)
-        config.iconMarkAppliedAtLeastOnce = true
-    }
-
-    private func fallbackToGeneric(reason: String) {
-        logger.notice("journal icon fallback to generic: \(reason)")
-        _ = applier.clearCustomIcon(atBundleAt: bundlePath)
-        applier.setDockImage(nil)
+        applier.setDockImage(JournalIconCompositor.appIcon(spec: validated))
     }
 }
