@@ -61,6 +61,7 @@ class LinkBridge:
         relay_url: str | None,
         convey_port: int | None,
         startup_timeout: float,
+        mark_words: str | None = None,
     ) -> None:
         if solstone_bin is None:
             self._solstone_bin = str(
@@ -81,6 +82,7 @@ class LinkBridge:
                 "solstone_bin must be an absolute path; omit it for the source-built default"
             )
         self._pair_code = pair_code
+        self._mark_words = mark_words
         self._state_dir = state_dir
         if carrier not in {"direct", "relay"}:
             raise LinkProcessError("carrier must be direct or relay")
@@ -670,6 +672,8 @@ class LinkBridge:
             "--label",
             self._label,
         ]
+        if self._mark_words is not None:
+            command += ["--mark", self._mark_words]
         try:
             result = subprocess.run(
                 command,
@@ -685,7 +689,7 @@ class LinkBridge:
             ) from error
         if result.returncode != 0:
             raise LinkProcessError(
-                f"solstone link join exited {result.returncode}; inspect the journal pairing window"
+                f"solstone link join exited {result.returncode}; check --mark, then inspect the journal pairing window"
             )
         self._validate_bundle()
 

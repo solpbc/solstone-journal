@@ -92,6 +92,7 @@ windows-sys = { workspace = true, features = [
 
 [dev-dependencies]
 rcgen = { workspace = true }
+solstone-core-sol-client-cli = { workspace = true }
 tempfile = "3.24.0"
 tower = { workspace = true }
 
@@ -102,6 +103,9 @@ required-features = ["host"]
 [[test]]
 name = "device_door_tls"
 required-features = ["host"]
+
+[[test]]
+name = "link_join_direct_bind"
 
 [[test]]
 name = "sol_link_serving"

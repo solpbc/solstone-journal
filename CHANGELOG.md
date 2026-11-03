@@ -19,10 +19,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `solstone link join` now asks whether the mark matches your journal before it saves anything. at a terminal you answer yes or no. in a script, give the mark's two words with `--mark`. with neither, it stops and says what to do, and your pairing link isn't used up.
 - a show, podcast or other recording playing near you, with nothing on your screen showing it, is now a media activity instead of video, and so is one you import as an audio file. imported recordings are no longer summarized as something you watched, and a show playing nearby is a little less often mistaken for a conversation. activities already in your journal keep their type unless your journal processes those recordings again.
 
 ### Fixed
 
+- this is a security fix. someone who got you to use a pairing link they had swapped could link this computer to something that isn't your journal, while `solstone link join` printed your own journal's mark. what this computer then sent through `solstone link serve` would have gone to them. `solstone link join` now refuses a link when what answers claims to be a different journal from the one the link points to, before it asks you anything or saves anything.
 - on linux, journals on FAT or exFAT drives, common on USB sticks and external drives, can now start and save entries after you accept the storage warning. agents can still connect using your other routes, but not directly on the same computer.
 - a story no longer swaps words from a recording for a possible name when those words are already solstone or sol pbc, or the name of someone or something else in your facets. your transcript and search are unchanged.
 - from this update on, an activity's list of people and things keeps every name from each part of it, not only the last few minutes. stories, your agents and the daily briefing read that list.

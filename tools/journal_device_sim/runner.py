@@ -95,6 +95,7 @@ class SimulatorConfig:
     evidence_path: Path
     bridge_url: str | None = None
     pair_code: str | None = None
+    mark_words: str | None = None
     paired: bool = False
     solstone_bin: str | None = None
     relay_url: str | None = None
@@ -2482,6 +2483,7 @@ class Simulator:
                 bridge = LinkBridge(
                     solstone_bin=self.config.solstone_bin,
                     pair_code=self.config.pair_code,
+                    mark_words=self.config.mark_words,
                     state_dir=self.config.state_dir,
                     carrier=self.config.carrier,
                     relay_url=self.config.relay_url,

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{Error, ErrorKind, Result as IoResult};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -151,6 +151,18 @@ pub struct LinkJoinCredential {
     pub relay_origin: Option<String>,
     pub relay_device_token: Option<String>,
     pub relay_device_token_expires_at: Option<i64>,
+    /// The pin and addresses this credential paired through, kept only so a
+    /// refused pairing can retire itself. Neither reaches the saved bundle.
+    pub ca_fp_prefix: Vec<u8>,
+    pub endpoints: Vec<LinkServeEndpoint>,
+}
+
+/// The owner's terminal, for the one question pairing asks.
+pub trait LinkJoinTerminal {
+    fn write_text(&mut self, text: &str);
+
+    /// The next line the owner typed, or `None` once nobody is there to answer.
+    fn read_answer(&mut self) -> Option<String>;
 }
 
 pub trait LinkJoinPairingSeam: Send + Sync {
@@ -163,6 +175,14 @@ pub trait LinkJoinPairingSeam: Send + Sync {
         &self,
         request: LinkJoinRelayRequest,
     ) -> Result<LinkJoinCredential, LinkJoinPairingError>;
+
+    /// The owner's terminal, if this process has one.
+    fn open_terminal(&self) -> Option<Box<dyn LinkJoinTerminal>> {
+        None
+    }
+
+    /// Best effort: remove the journal's record of a pairing the owner refused.
+    fn retire(&self, _credential: &LinkJoinCredential) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -447,6 +467,34 @@ pub struct RecordedLinkServeCall {
 pub struct ScriptedLinkJoinPairingSeam {
     calls: Mutex<VecDeque<ExpectedLinkJoinPairingCall>>,
     recorded: Mutex<Vec<RecordedLinkJoinPairingCall>>,
+    terminal: Option<Arc<ScriptedLinkJoinTerminalState>>,
+    retired: Mutex<Vec<String>>,
+}
+
+#[derive(Debug, Default)]
+struct ScriptedLinkJoinTerminalState {
+    answers: Mutex<VecDeque<String>>,
+    shown: Mutex<String>,
+}
+
+struct ScriptedLinkJoinTerminal(Arc<ScriptedLinkJoinTerminalState>);
+
+impl LinkJoinTerminal for ScriptedLinkJoinTerminal {
+    fn write_text(&mut self, text: &str) {
+        self.0
+            .shown
+            .lock()
+            .expect("scripted terminal lock")
+            .push_str(text);
+    }
+
+    fn read_answer(&mut self) -> Option<String> {
+        self.0
+            .answers
+            .lock()
+            .expect("scripted terminal lock")
+            .pop_front()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -467,7 +515,37 @@ impl ScriptedLinkJoinPairingSeam {
         Self {
             calls: Mutex::new(calls.into()),
             recorded: Mutex::new(Vec::new()),
+            terminal: None,
+            retired: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Give this seam a terminal that types these answers, then walks away.
+    #[must_use]
+    pub fn with_terminal(mut self, answers: &[&str]) -> Self {
+        self.terminal = Some(Arc::new(ScriptedLinkJoinTerminalState {
+            answers: Mutex::new(answers.iter().map(|answer| (*answer).to_owned()).collect()),
+            shown: Mutex::new(String::new()),
+        }));
+        self
+    }
+
+    /// Everything shown on the scripted terminal so far.
+    #[must_use]
+    pub fn terminal_shown(&self) -> String {
+        self.terminal.as_ref().map_or_else(String::new, |terminal| {
+            terminal
+                .shown
+                .lock()
+                .expect("scripted terminal lock")
+                .clone()
+        })
+    }
+
+    /// The journal ids of the pairings retired so far.
+    #[must_use]
+    pub fn retired(&self) -> Vec<String> {
+        self.retired.lock().expect("retired lock").clone()
     }
 
     pub fn assert_done(&self) {
@@ -578,6 +656,19 @@ impl NotificationSink for RecordingNotificationSink {
 }
 
 impl LinkJoinPairingSeam for ScriptedLinkJoinPairingSeam {
+    fn open_terminal(&self) -> Option<Box<dyn LinkJoinTerminal>> {
+        self.terminal.as_ref().map(|terminal| {
+            Box::new(ScriptedLinkJoinTerminal(Arc::clone(terminal))) as Box<dyn LinkJoinTerminal>
+        })
+    }
+
+    fn retire(&self, credential: &LinkJoinCredential) {
+        self.retired
+            .lock()
+            .expect("retired lock")
+            .push(credential.instance_id.clone());
+    }
+
     fn pair_direct(
         &self,
         request: LinkJoinDirectRequest,

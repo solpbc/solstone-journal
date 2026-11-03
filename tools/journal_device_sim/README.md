@@ -26,9 +26,14 @@ python3 -m tools.journal_device_sim run \
   --profile smoke \
   --carrier direct \
   --pair-code 'PAIR-LINK-URL' \
+  --mark 'WORD WORD' \
   --convey-port JOURNAL_CONVEY_PORT \
   --journal-root /path/to/disposable/journal
 ```
+
+`--mark` carries the two words of the disposable journal's mark, because
+`solstone link join` won't pair unless they're confirmed. Without it, and with no
+terminal to ask on, the join refuses before it spends the link.
 
 The simulator stores native credentials under the run's private state
 directory, starts `solstone link serve --port 0 --direct`, reads the assigned
@@ -74,6 +79,7 @@ state directory for both phases:
 ```bash
 python3 -m tools.journal_device_sim pair \
   --pair-code 'PAIR-LINK-URL' \
+  --mark 'WORD WORD' \
   --state-dir scratch/journal-device-sim/relay-proof \
   --convey-port JOURNAL_CONVEY_PORT
 

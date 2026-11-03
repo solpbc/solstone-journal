@@ -17,6 +17,7 @@ params = [
   { name = "code", kind = "option", type = "text", required = true, nargs = 1, multiple = false, options = ["--code"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "as_role", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--as"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "label", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--label"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "mark", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--mark"], secondary = [], hidden = false, is_flag = false, count = false },
 ]
 
 [[entries]]

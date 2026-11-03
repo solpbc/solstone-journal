@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 9b0fda7f2c57b8d5d11c4788f7800cc017f9610318e3276c5f8fa3ccc75c2957
+// authority-source-sha256: 246b7fd80ae38c8a979585665aad30ebd61806bac895fd16f7419c7b58a30b6b
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -1952,7 +1952,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "top-level",
         help: "join a solstone with a short code or pair link",
         authority_path: "core/native-sol/think/native/link/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"home\",\"nargs\":1,\"options\":[\"--home\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"code\",\"nargs\":1,\"options\":[\"--code\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"as_role\",\"nargs\":1,\"options\":[\"--as\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"label\",\"nargs\":1,\"options\":[\"--label\"],\"required\":false,\"secondary\":[],\"type\":\"text\"}]",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"home\",\"nargs\":1,\"options\":[\"--home\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"code\",\"nargs\":1,\"options\":[\"--code\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"as_role\",\"nargs\":1,\"options\":[\"--as\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"label\",\"nargs\":1,\"options\":[\"--label\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"mark\",\"nargs\":1,\"options\":[\"--mark\"],\"required\":false,\"secondary\":[],\"type\":\"text\"}]",
         entry_type: "top-level-link",
         operation_id: "link.join",
         method: None,

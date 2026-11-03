@@ -432,6 +432,48 @@ class LinkBridgeTests(unittest.TestCase):
             self.assertEqual(native["path"], str(launcher))
             self.assertEqual(native["selection_mode"], "source-build-default")
 
+    def test_mark_words_reach_the_native_join(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            argv_log = root / "join-argv.json"
+            launcher = root / "solstone"
+            launcher.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env python3
+                    import json
+                    import pathlib
+                    import sys
+
+                    if sys.argv[1:] == ["--help"]:
+                        print("solstone - your journal, from the command line")
+                        raise SystemExit(0)
+                    if sys.argv[1:] == ["--version"]:
+                        print("solstone-test 3.1.4")
+                        raise SystemExit(0)
+                    if sys.argv[1:3] == ["link", "join"]:
+                        pathlib.Path({str(argv_log)!r}).write_text(json.dumps(sys.argv[1:]))
+                        raise SystemExit(9)
+                    """
+                ),
+                encoding="utf-8",
+            )
+            launcher.chmod(0o700)
+            bridge = LinkBridge(
+                solstone_bin=str(launcher),
+                pair_code="pair-code",
+                mark_words="bramble quokka",
+                state_dir=root / "state",
+                carrier="direct",
+                relay_url=None,
+                convey_port=None,
+                startup_timeout=2,
+            )
+            with self.assertRaises(LinkProcessError):
+                bridge.ensure_paired()
+            argv = json.loads(argv_log.read_text(encoding="utf-8"))
+            self.assertEqual(argv[argv.index("--mark") + 1], "bramble quokka")
+
     def test_impostor_cli_is_refused_before_join_or_serve(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use solstone_core_sol_client::seam::{
     LinkJoinCredential, LinkJoinDirectRequest, LinkJoinPairingError, LinkJoinPairingErrorKind,
     LinkJoinPairingSeam, LinkJoinRelayControlEndpoint, LinkJoinRelayErrorKind,
-    LinkJoinRelayRequest,
+    LinkJoinRelayRequest, LinkJoinTerminal, LinkServeEndpoint,
 };
 use spl_transport::credential::Credential;
 use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
@@ -172,6 +172,14 @@ impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
         pair_direct_with_spl_seam(request, Arc::new(direct_seam::SplDirectPairingSeam))
     }
 
+    fn open_terminal(&self) -> Option<Box<dyn LinkJoinTerminal>> {
+        OwnerTerminal::open().map(|terminal| Box::new(terminal) as Box<dyn LinkJoinTerminal>)
+    }
+
+    fn retire(&self, credential: &LinkJoinCredential) {
+        retire_refused_pairing(credential);
+    }
+
     fn pair_relay(
         &self,
         request: LinkJoinRelayRequest,
@@ -184,6 +192,130 @@ impl LinkJoinPairingSeam for SplLinkJoinPairingSeam {
         }
         Ok(cred)
     }
+}
+
+/// The terminal this process belongs to, which stays the owner's even when
+/// stdin and stdout are redirected.
+#[cfg(feature = "client")]
+struct OwnerTerminal {
+    input: std::io::BufReader<std::fs::File>,
+    output: std::fs::File,
+}
+
+#[cfg(feature = "client")]
+impl OwnerTerminal {
+    fn open() -> Option<Self> {
+        #[cfg(windows)]
+        let (input, output) = (
+            std::fs::File::open("CONIN$").ok()?,
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open("CONOUT$")
+                .ok()?,
+        );
+        #[cfg(not(windows))]
+        let (input, output) = {
+            let terminal = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tty")
+                .ok()?;
+            (terminal.try_clone().ok()?, terminal)
+        };
+        Some(Self {
+            input: std::io::BufReader::new(input),
+            output,
+        })
+    }
+}
+
+#[cfg(feature = "client")]
+impl LinkJoinTerminal for OwnerTerminal {
+    fn write_text(&mut self, text: &str) {
+        use std::io::Write as _;
+        let _ = self.output.write_all(text.as_bytes());
+        let _ = self.output.flush();
+    }
+
+    fn read_answer(&mut self) -> Option<String> {
+        use std::io::BufRead as _;
+        let mut line = Vec::new();
+        match self.input.read_until(b'\n', &mut line) {
+            Ok(count) if count > 0 && line.last() == Some(&b'\n') => {
+                Some(String::from_utf8_lossy(&line).into_owned())
+            }
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "client")]
+const RETIRE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Best effort: the credential is about to be dropped, so all this tidies is
+/// the row the refused device left in the journal's list.
+#[cfg(feature = "client")]
+fn retire_refused_pairing(credential: &LinkJoinCredential) {
+    let Ok(certs) = tls::parse_certs(&credential.client_cert_pem) else {
+        return;
+    };
+    let Some(leaf) = certs.first() else {
+        return;
+    };
+    let path = format!(
+        "/app/network/api/clients/sha256:{}",
+        spl_core::ca::sha256_hex(leaf.as_ref())
+    );
+    let relay = credential.relay_origin.is_some() && credential.relay_device_token.is_some();
+    let transport_credential = Credential {
+        client_key_pem: credential.client_key_pem.clone(),
+        client_cert_pem: credential.client_cert_pem.clone(),
+        ca_chain_pem: credential.ca_chain_pem.clone(),
+        ca_fp_prefix: credential.ca_fp_prefix.clone(),
+        instance_id: credential.instance_id.clone(),
+        home_label: credential.home_label.clone(),
+        // A relay pairing's advertised addresses may be out of reach, and they
+        // shouldn't use up the deadline.
+        endpoints: if relay {
+            Vec::new()
+        } else {
+            credential
+                .endpoints
+                .iter()
+                .map(|endpoint| spl_transport::credential::EndpointAddr {
+                    host: endpoint.host.clone(),
+                    port: endpoint.port,
+                })
+                .collect()
+        },
+        home_attestation: credential.home_attestation.clone(),
+        local_endpoints: None,
+        relay_origin: credential.relay_origin.clone(),
+        device_token: credential.relay_device_token.clone(),
+        device_token_expires_at: credential.relay_device_token_expires_at,
+    };
+    let client = if relay {
+        spl_transport::TransportClient::new_relay_only(transport_credential, None)
+    } else {
+        spl_transport::TransportClient::new(transport_credential, None)
+    };
+    let Ok(client) = client else {
+        return;
+    };
+    let _ = block_on_transport(async {
+        let _ = tokio::time::timeout(
+            RETIRE_TIMEOUT,
+            client.request(
+                "DELETE",
+                &path,
+                &[],
+                &[],
+                spl_transport::RequestOptions::default(),
+            ),
+        )
+        .await;
+        Ok(())
+    });
 }
 
 #[cfg(feature = "client")]
@@ -226,6 +358,15 @@ fn link_credential_from_spl(
         relay_origin: credential.relay_origin,
         relay_device_token: credential.device_token,
         relay_device_token_expires_at: credential.device_token_expires_at,
+        ca_fp_prefix: credential.ca_fp_prefix,
+        endpoints: credential
+            .endpoints
+            .into_iter()
+            .map(|endpoint| LinkServeEndpoint {
+                host: endpoint.host,
+                port: endpoint.port,
+            })
+            .collect(),
     })
 }
 
@@ -448,7 +589,10 @@ mod tests {
         spl_core::PairResponse {
             client_cert: client_cert.pem(),
             ca_chain: vec![ca.certificate().pem()],
-            instance_id: "receiver-instance".to_string(),
+            instance_id: spl_core::relay_window::jid_from_spki(
+                &spl_core::ca::extract_spki_der(ca.certificate().der()).expect("CA SPKI"),
+            )
+            .expect("CA JID"),
             home_label: "Home".to_string(),
             fingerprint: format!("sha256:{}", spl_core::ca::sha256_hex(client_cert.der())),
             home_attestation: Some("header.payload.signature".to_string()),
@@ -503,7 +647,13 @@ mod tests {
         let credential =
             pair_direct_with_spl_seam(request, seam.clone()).expect("direct credential");
 
-        assert_eq!(credential.instance_id, "receiver-instance");
+        assert_eq!(
+            credential.instance_id,
+            spl_core::relay_window::jid_from_spki(
+                &spl_core::ca::extract_spki_der(ca.certificate().der()).expect("CA SPKI"),
+            )
+            .expect("CA JID")
+        );
         assert_eq!(
             credential.home_attestation.as_deref(),
             Some("header.payload.signature")

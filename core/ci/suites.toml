@@ -4493,6 +4493,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-sol-link::link_join_direct_bind"
+package = "solstone-core-sol-link"
+target = "link_join_direct_bind"
+set = "component"
+areas = ["trust"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-sol-link::device_door_identity"
 package = "solstone-core-sol-link"
 target = "device_door_identity"

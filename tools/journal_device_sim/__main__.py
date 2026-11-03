@@ -54,6 +54,10 @@ def _parser() -> argparse.ArgumentParser:
         "pair", help="store an isolated native credential bundle for a later run"
     )
     pair.add_argument("--pair-code", required=True)
+    pair.add_argument(
+        "--mark",
+        help="the two words of the disposable journal's mark; pairing has no terminal to ask on",
+    )
     pair.add_argument("--state-dir", type=Path, required=True)
     pair.add_argument(
         "--solstone-bin",
@@ -82,6 +86,10 @@ def _parser() -> argparse.ArgumentParser:
         "--paired",
         action="store_true",
         help="use the credential bundle already stored under state-dir",
+    )
+    run.add_argument(
+        "--mark",
+        help="the two words of the disposable journal's mark; pairing has no terminal to ask on",
     )
     run.add_argument(
         "--solstone-bin",
@@ -183,6 +191,7 @@ def _pair(args: argparse.Namespace) -> int:
     bridge = LinkBridge(
         solstone_bin=args.solstone_bin,
         pair_code=args.pair_code,
+        mark_words=args.mark,
         state_dir=state_dir,
         carrier="direct",
         relay_url=None,
@@ -215,6 +224,7 @@ def _run(args: argparse.Namespace) -> int:
             evidence_path=evidence_path,
             bridge_url=args.bridge_url,
             pair_code=args.pair_code,
+            mark_words=args.mark,
             paired=args.paired,
             solstone_bin=args.solstone_bin,
             relay_url=args.relay_url,

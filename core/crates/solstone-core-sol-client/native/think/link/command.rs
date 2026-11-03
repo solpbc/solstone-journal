@@ -20,17 +20,35 @@ use crate::resident::ResidentCommand;
 use crate::seam::{
     LinkJoinCredential, LinkJoinDirectRequest, LinkJoinPairTarget, LinkJoinPairingError,
     LinkJoinPairingErrorKind, LinkJoinRelayControlEndpoint, LinkJoinRelayErrorKind,
-    LinkJoinRelayRequest, LinkJournalMetadata, LinkServeBundle, LinkServeCarrierPolicy,
-    LinkServeEndpoint, LinkServeError, LinkServeErrorKind, LinkServeRequest,
-    LinkServeRuntimeRecord, LinkServeStatusSnapshot, LinkServeTransportErrorKind,
+    LinkJoinRelayRequest, LinkJoinTerminal, LinkJournalMetadata, LinkServeBundle,
+    LinkServeCarrierPolicy, LinkServeEndpoint, LinkServeError, LinkServeErrorKind,
+    LinkServeRequest, LinkServeRuntimeRecord, LinkServeStatusSnapshot, LinkServeTransportErrorKind,
 };
 
-const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n";
-const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL]\n";
+const HELP: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL] [--mark MARK]\n\noptions:\n  -h, --help     show this help message and exit\n  --home HOME    Receiver base URL\n  --code CODE    pair-link URL\n  --as AS_ROLE   Optional tag to join as\n  --label LABEL  Local credentials label (defaults to this machine's hostname)\n  --mark MARK    the two words of the mark your journal's network app shows.\n                 needed when there's no terminal to ask you on.\n";
+const USAGE: &str = "usage: solstone link join [-h] [--home HOME] --code CODE [--as AS_ROLE]\n                     [--label LABEL] [--mark MARK]\n";
 const SERVE_HELP: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n\noptions:\n  -h, --help            show this help message and exit\n  --label LABEL         Link bundle label\n  --port PORT           Loopback port to serve on (default: 5015)\n  --relay-url RELAY_URL\n                        Override the relay URL\n  --direct              Direct only: reach the journal through a direct\n                        connection, never the relay. use when your journal is\n                        reachable directly (same network/vpn) to avoid relay\n                        dependency.\n  --relay-only          Relay only: reach the journal through the relay,\n                        never a direct connection. use when direct connections\n                        must not be attempted, even if your journal is reachable\n                        locally.\n";
 const SERVE_USAGE: &str = "usage: solstone link serve [-h] [--label LABEL] [--port PORT]\n                      [--relay-url RELAY_URL] [--direct | --relay-only]\n";
 const STATUS_HELP: &str = "usage: solstone link status [-h] [--label LABEL]\n\nShow link status and observed remote journal version.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n";
 const STATUS_USAGE: &str = "usage: solstone link status [-h] [--label LABEL]\n";
+const MARK_STEP: &str = "one more step: check your journal's mark.";
+const MARK_PREFIX: &str = "  your journal's mark: ";
+const MARK_UNAVAILABLE: &str = "  your journal's mark: unavailable right now";
+const MARK_SUBTEXT: &str =
+    "your journal shows this same mark in its network app. it should match, exactly.";
+const ASK_IDENTIFIED: &str = "does this match your journal? type yes or no:";
+const COULDNT_VERIFY: &str = "couldn't verify.";
+const BODY_UNAVAILABLE: &str = "this computer couldn't work out your journal's mark, so there's nothing to compare. continue only if you're sure the link came from your journal.";
+const ASK_UNAVAILABLE: &str = "type continue to pair anyway, or cancel to stop:";
+const PAIRED: &str = "paired.";
+const NOT_PAIRED: &str = "not paired.";
+const MISMATCH_BODY: &str = "you said this mark doesn't match the one your journal shows, so this computer isn't paired, and nothing it has kept went to that journal through this link. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run solstone link join again, or email support@solstone.app and we'll help.";
+const CANCEL: &str = "pairing cancelled. nothing this computer has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join again when you're ready.";
+const JOIN_NO_TERMINAL: &str = "solstone link join can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
+const MARK_USAGE: &str =
+    "give the two words of your journal's mark, like --mark \"bramble quokka\".";
+const MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired, and nothing it has kept went to that journal through this link. check the words, get a fresh pairing link from your journal and run solstone link join again.";
+const MARK_UNVERIFIABLE: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. this computer isn't paired, and nothing it has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join in a terminal to decide for yourself.";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
@@ -79,6 +97,15 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
         return CommandOutput::failure("Link pairing seam is unavailable.\n", 1);
     };
 
+    if parsed.mark_repeated {
+        return CommandOutput::failure(format!("{MARK_USAGE}\n"), 2);
+    }
+    if let Some(mark) = &parsed.mark
+        && mark_words(mark).len() != 2
+    {
+        return CommandOutput::failure(format!("{MARK_USAGE}\n"), 2);
+    }
+
     let pair_request = match parse_pair_request(
         parsed
             .code
@@ -103,6 +130,16 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
             bundle_dir
         }
         Err(error) => return CommandOutput::failure(format!("{error}\n"), 1),
+    };
+
+    // Before the request goes out, so a refusal here doesn't spend the link.
+    let terminal = if parsed.mark.is_some() {
+        None
+    } else {
+        let Some(terminal) = seam.open_terminal() else {
+            return CommandOutput::failure(format!("{JOIN_NO_TERMINAL}\n"), 1);
+        };
+        Some(terminal)
     };
 
     let credential = match pair_request {
@@ -141,6 +178,19 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     };
     if json_compact_ascii(&local_endpoints).len() > LOCAL_ENDPOINTS_MAX_BYTES {
         return CommandOutput::failure("Pair response local_endpoints is too large.\n", 1);
+    }
+
+    // Nothing is written until the owner has confirmed the journal's mark.
+    let confirmed = match terminal {
+        Some(mut terminal) => answer_at_terminal(terminal.as_mut(), &credential.instance_id),
+        None => answer_from_words(
+            parsed.mark.as_deref().expect("mark or terminal present"),
+            &credential.instance_id,
+        ),
+    };
+    if let Err(refused) = confirmed {
+        seam.retire(&credential);
+        return refused;
     }
 
     let chain_pem = join_chain(&credential.ca_chain_pem);
@@ -215,18 +265,78 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     let _ = fs::remove_file(bundle_dir.join("journal_metadata.json"));
     let _ = fs::remove_file(bundle_dir.join("serve_runtime.json"));
 
-    let mark_line = match crate::mark_text::mark_from_jid(&credential.instance_id) {
-        Ok(mark) => format!(
-            "journal mark: {}\n",
-            format_spoken_mark(&mark.to_render_spec())
-        ),
-        Err(_) => format!("{}\n", crate::mark_text::MARK_UNAVAILABLE_LINE),
-    };
+    CommandOutput::success(format!("{PAIRED}\ncredentials: {}\n", bundle_dir.display()))
+}
 
-    CommandOutput::success(format!(
-        "Linked {label}.\nCredentials: {}\n{mark_line}",
-        bundle_dir.display()
+/// Ask on the owner's terminal. The outcome to print if they don't go ahead.
+fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> Result<(), CommandOutput> {
+    let spec = crate::mark_text::mark_from_jid(jid)
+        .ok()
+        .map(|mark| mark.to_render_spec());
+    let ask = if let Some(spec) = &spec {
+        let spoken = format_spoken_mark(spec);
+        terminal.write_text(&format!(
+            "{MARK_STEP}\n\n{MARK_PREFIX}{spoken}\n\n{MARK_SUBTEXT}\n{ASK_IDENTIFIED}\n"
+        ));
+        ASK_IDENTIFIED
+    } else {
+        terminal.write_text(&format!(
+            "{MARK_STEP}\n\n{MARK_UNAVAILABLE}\n\n{COULDNT_VERIFY}\n{BODY_UNAVAILABLE}\n{ASK_UNAVAILABLE}\n"
+        ));
+        ASK_UNAVAILABLE
+    };
+    let (go_ahead, stop): (&[&str], &[&str]) = if spec.is_some() {
+        (&["yes", "y"], &["no", "n"])
+    } else {
+        (&["continue"], &["cancel"])
+    };
+    loop {
+        // A closed terminal leaves nothing saved, so this ends the way cancelling does.
+        let Some(line) = terminal.read_answer() else {
+            return Err(CommandOutput::failure(format!("{CANCEL}\n"), 1));
+        };
+        let answer = line.trim().to_ascii_lowercase();
+        if go_ahead.contains(&answer.as_str()) {
+            return Ok(());
+        }
+        if stop.contains(&answer.as_str()) {
+            return Err(if spec.is_some() {
+                CommandOutput::failure(format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"), 1)
+            } else {
+                CommandOutput::failure(format!("{CANCEL}\n"), 1)
+            });
+        }
+        terminal.write_text(&format!("{ask}\n"));
+    }
+}
+
+/// Compare the scripted `--mark` words, already checked to be two, to the mark.
+fn answer_from_words(words: &str, jid: &str) -> Result<(), CommandOutput> {
+    let Ok(mark) = crate::mark_text::mark_from_jid(jid) else {
+        return Err(CommandOutput::failure(
+            format!("{COULDNT_VERIFY}\n{MARK_UNVERIFIABLE}\n"),
+            1,
+        ));
+    };
+    let spec = mark.to_render_spec();
+    let given = mark_words(words);
+    if given.len() == 2
+        && given[0].eq_ignore_ascii_case(&spec.words[0])
+        && given[1].eq_ignore_ascii_case(&spec.words[1])
+    {
+        return Ok(());
+    }
+    Err(CommandOutput::failure(
+        format!("{NOT_PAIRED}\n{MARK_MISMATCH}\n"),
+        1,
     ))
+}
+
+fn mark_words(value: &str) -> Vec<&str> {
+    value
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '\u{b7}')
+        .filter(|piece| !piece.is_empty())
+        .collect()
 }
 
 pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, CommandOutput> {
@@ -482,6 +592,8 @@ struct ParsedArgs {
     code: Option<String>,
     as_role: Option<String>,
     label: Option<String>,
+    mark: Option<String>,
+    mark_repeated: bool,
     help: bool,
     unknown: Option<String>,
 }
@@ -602,6 +714,19 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         } else if token == "--label" {
             index += 1;
             parsed.label = Some(take_value(args, index, "--label")?.to_string());
+        } else if let Some(value) = token.strip_prefix("--mark=") {
+            parsed.mark_repeated |= parsed.mark.is_some();
+            parsed.mark = Some(value.to_string());
+        } else if token == "--mark" {
+            index += 1;
+            parsed.mark_repeated |= parsed.mark.is_some();
+            // A missing or flag-shaped value gets the mark's own usage line.
+            parsed.mark = Some(
+                args.get(index)
+                    .filter(|value| !value.starts_with('-'))
+                    .cloned()
+                    .unwrap_or_default(),
+            );
         } else if parsed.unknown.is_none() {
             parsed.unknown = Some(token.clone());
         }
@@ -1668,6 +1793,12 @@ mod tests {
         })
     }
 
+    /// The owner goes ahead on whichever question the credential raises; these
+    /// fixtures' id derives no mark, so the question is `continue`.
+    fn answering_seam(calls: Vec<ExpectedLinkJoinPairingCall>) -> ScriptedLinkJoinPairingSeam {
+        ScriptedLinkJoinPairingSeam::new(calls).with_terminal(&["continue"])
+    }
+
     fn credential(local_endpoints: Value) -> LinkJoinCredential {
         LinkJoinCredential {
             client_key_pem: "PRIVATE\n".to_string(),
@@ -1681,6 +1812,8 @@ mod tests {
             relay_origin: None,
             relay_device_token: None,
             relay_device_token_expires_at: None,
+            ca_fp_prefix: vec![0x22; 16],
+            endpoints: Vec::new(),
         }
     }
 
@@ -1873,14 +2006,14 @@ mod tests {
     }
 
     #[test]
-    fn help_is_python_byte_exact() {
+    fn help_prints_every_join_option() {
         let env = BTreeMap::new();
         let root = temp_dir("help-root");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let seam = answering_seam(vec![]);
         let clock = FakeClock::at_unix(0);
         let output = run(&["--help"], &env, &root, &seam, &clock);
         assert_eq!(output, CommandOutput::success(HELP));
-        assert_eq!(HELP.len(), 354);
+        assert_eq!(HELP.len(), 509);
         seam.assert_done();
     }
 
@@ -2347,7 +2480,7 @@ mod tests {
     fn missing_code_exits_like_argparse() {
         let env = BTreeMap::new();
         let root = temp_dir("missing-code-root");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let seam = answering_seam(vec![]);
         let clock = FakeClock::at_unix(0);
         let output = run(&[], &env, &root, &seam, &clock);
         assert_eq!(
@@ -2364,7 +2497,7 @@ mod tests {
     fn invalid_role_and_label_fail_before_pairing() {
         let env = BTreeMap::new();
         let root = temp_dir("invalid-root");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let seam = answering_seam(vec![]);
         let clock = FakeClock::at_unix(0);
         let role = run(
             &["--code", &direct_pair_link(), "--as", "bad"],
@@ -2398,7 +2531,7 @@ mod tests {
         let root = temp.join("journal");
         let existing = config.join("solstone-observer").join("spl").join("laptop");
         fs::create_dir_all(&existing).expect("existing bundle");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let seam = answering_seam(vec![]);
         let clock = FakeClock::at_unix(0);
 
         let output = run(
@@ -2425,7 +2558,7 @@ mod tests {
         let root = temp.join("journal");
         let existing = config.join("solstone-observer").join("spl").join("laptop");
         fs::create_dir_all(&existing).expect("existing bundle");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let seam = answering_seam(vec![]);
         let clock = FakeClock::at_unix(0);
 
         let output = run(
@@ -2451,7 +2584,7 @@ mod tests {
         let env = base_env(&config, &temp.join("home"));
         let root = temp.join("journal");
         let expected = expected_direct_request("laptop");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+        let seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
             expected,
             result: Ok(credential(Value::Null)),
         }]);
@@ -2468,11 +2601,7 @@ mod tests {
         let bundle = config.join("solstone-observer").join("spl").join("laptop");
         assert_eq!(
             output.stdout,
-            format!(
-                "Linked laptop.\nCredentials: {}\n{}\n",
-                bundle.display(),
-                crate::mark_text::MARK_UNAVAILABLE_LINE
-            )
+            format!("{PAIRED}\ncredentials: {}\n", bundle.display())
         );
         assert_eq!(output.exit, 0);
         assert_eq!(
@@ -2491,42 +2620,174 @@ mod tests {
         seam.assert_done();
     }
 
-    #[test]
-    fn observer_success_prints_paired_journal_mark() {
-        let temp = temp_dir("observer-success-mark");
+    const GATE_JID: &str = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+
+    struct GateRun {
+        output: CommandOutput,
+        bundle: PathBuf,
+    }
+
+    fn gate_run(seam: &ScriptedLinkJoinPairingSeam, extra: &[&str]) -> GateRun {
+        let temp = temp_dir("join-gate");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
-        let root = temp.join("journal");
-        let expected = expected_direct_request("laptop");
-        let instance_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
-        let mut paired_credential = credential(Value::Null);
-        paired_credential.instance_id = instance_id.to_string();
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
-            expected,
-            result: Ok(paired_credential),
-        }]);
         let clock = FakeClock::at_unix(0);
+        let code = direct_pair_link();
+        let mut args = vec!["--code", code.as_str(), "--label", "laptop"];
+        args.extend_from_slice(extra);
+        let output = run(&args, &env, &temp.join("journal"), seam, &clock);
+        GateRun {
+            output,
+            bundle: config.join("solstone-observer").join("spl").join("laptop"),
+        }
+    }
 
-        let output = run(
-            &["--code", &direct_pair_link(), "--label", "laptop"],
-            &env,
-            &root,
-            &seam,
-            &clock,
-        );
+    fn pairing_calls(instance_id: &str) -> Vec<ExpectedLinkJoinPairingCall> {
+        let mut paired = credential(Value::Null);
+        paired.instance_id = instance_id.to_string();
+        vec![ExpectedLinkJoinPairingCall::Direct {
+            expected: expected_direct_request("laptop"),
+            result: Ok(paired),
+        }]
+    }
 
-        let bundle = config.join("solstone-observer").join("spl").join("laptop");
-        let mark = crate::mark_text::mark_from_jid(instance_id).expect("mark");
-        let spoken = format_spoken_mark(&mark.to_render_spec());
+    fn gate_words() -> Vec<String> {
+        crate::mark_text::mark_from_jid(GATE_JID)
+            .expect("mark")
+            .to_render_spec()
+            .words
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn yes_at_the_terminal_shows_the_mark_then_writes_the_bundle() {
+        let seam = ScriptedLinkJoinPairingSeam::new(pairing_calls(GATE_JID))
+            .with_terminal(&["maybe", "", " YES "]);
+        let run = gate_run(&seam, &[]);
+        assert_eq!(run.output.exit, 0);
         assert_eq!(
-            output.stdout,
-            format!(
-                "Linked laptop.\nCredentials: {}\njournal mark: {spoken}\n",
-                bundle.display()
-            )
+            run.output.stdout,
+            format!("{PAIRED}\ncredentials: {}\n", run.bundle.display())
         );
-        assert_eq!(output.exit, 0);
+        assert_bundle_files_exist(&run.bundle);
+        let shown = seam.terminal_shown();
+        let spec = crate::mark_text::mark_from_jid(GATE_JID)
+            .expect("mark")
+            .to_render_spec();
+        assert!(shown.contains(&format_spoken_mark(&spec)));
+        assert_eq!(shown.matches(ASK_IDENTIFIED).count(), 3);
+        assert!(seam.retired().is_empty());
         seam.assert_done();
+    }
+
+    #[test]
+    fn no_at_the_terminal_writes_nothing_and_retires_the_pairing() {
+        for answer in ["no", "n"] {
+            let seam =
+                ScriptedLinkJoinPairingSeam::new(pairing_calls(GATE_JID)).with_terminal(&[answer]);
+            let run = gate_run(&seam, &[]);
+            assert_eq!(run.output.exit, 1);
+            assert_eq!(
+                run.output.stderr,
+                format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n")
+            );
+            assert!(!path_lexists(&run.bundle));
+            assert_eq!(seam.retired(), vec![GATE_JID.to_string()]);
+            seam.assert_done();
+        }
+    }
+
+    #[test]
+    fn walking_away_from_the_terminal_writes_nothing() {
+        let seam = ScriptedLinkJoinPairingSeam::new(pairing_calls(GATE_JID)).with_terminal(&[]);
+        let run = gate_run(&seam, &[]);
+        assert_eq!(run.output.exit, 1);
+        assert_eq!(run.output.stderr, format!("{CANCEL}\n"));
+        assert!(!path_lexists(&run.bundle));
+        assert_eq!(seam.retired(), vec![GATE_JID.to_string()]);
+    }
+
+    #[test]
+    fn a_mark_that_cannot_be_worked_out_takes_whole_word_answers() {
+        let seam = ScriptedLinkJoinPairingSeam::new(pairing_calls("receiver-instance"))
+            .with_terminal(&["yes", "c", "cancel"]);
+        let run = gate_run(&seam, &[]);
+        assert_eq!(run.output.exit, 1);
+        assert_eq!(run.output.stderr, format!("{CANCEL}\n"));
+        assert!(!path_lexists(&run.bundle));
+        let shown = seam.terminal_shown();
+        assert!(shown.contains(MARK_UNAVAILABLE));
+        assert_eq!(shown.matches(ASK_UNAVAILABLE).count(), 3);
+    }
+
+    #[test]
+    fn no_terminal_and_no_mark_refuses_before_the_link_is_spent() {
+        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let run = gate_run(&seam, &[]);
+        assert_eq!(run.output.exit, 1);
+        assert_eq!(run.output.stderr, format!("{JOIN_NO_TERMINAL}\n"));
+        assert!(!path_lexists(&run.bundle));
+        assert!(seam.recorded().is_empty());
+    }
+
+    #[test]
+    fn mark_words_that_match_write_the_bundle_without_a_terminal() {
+        let words = gate_words();
+        for given in [
+            format!("{} {}", words[0], words[1]),
+            format!("{}\u{b7}{}", words[0].to_uppercase(), words[1]),
+        ] {
+            let seam = ScriptedLinkJoinPairingSeam::new(pairing_calls(GATE_JID));
+            let run = gate_run(&seam, &["--mark", &given]);
+            assert_eq!(run.output.exit, 0, "{}", run.output.stderr);
+            assert_bundle_files_exist(&run.bundle);
+            assert!(seam.retired().is_empty());
+            seam.assert_done();
+        }
+    }
+
+    #[test]
+    fn wrong_mark_words_write_nothing_and_retire_the_pairing() {
+        let seam = ScriptedLinkJoinPairingSeam::new(pairing_calls(GATE_JID));
+        let run = gate_run(&seam, &["--mark", "wrong words"]);
+        assert_eq!(run.output.exit, 1);
+        assert_eq!(
+            run.output.stderr,
+            format!("{NOT_PAIRED}\n{MARK_MISMATCH}\n")
+        );
+        assert!(!path_lexists(&run.bundle));
+        assert_eq!(seam.retired(), vec![GATE_JID.to_string()]);
+    }
+
+    #[test]
+    fn mark_words_cannot_vouch_for_a_mark_that_cannot_be_worked_out() {
+        let seam = ScriptedLinkJoinPairingSeam::new(pairing_calls("receiver-instance"));
+        let run = gate_run(&seam, &["--mark", "any words"]);
+        assert_eq!(run.output.exit, 1);
+        assert_eq!(
+            run.output.stderr,
+            format!("{COULDNT_VERIFY}\n{MARK_UNVERIFIABLE}\n")
+        );
+        assert!(!path_lexists(&run.bundle));
+        assert_eq!(seam.retired(), vec!["receiver-instance".to_string()]);
+    }
+
+    #[test]
+    fn malformed_mark_is_a_usage_error_before_the_link_is_spent() {
+        for extra in [
+            &["--mark", "one"][..],
+            &["--mark", "three whole words"][..],
+            &["--mark"][..],
+            &["--mark", "a b", "--mark", "c d"][..],
+        ] {
+            let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+            let run = gate_run(&seam, extra);
+            assert_eq!(run.output.exit, 2);
+            assert_eq!(run.output.stderr, format!("{MARK_USAGE}\n"));
+            assert!(seam.recorded().is_empty());
+        }
     }
 
     #[cfg(unix)]
@@ -2589,7 +2850,7 @@ mod tests {
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
         let root = temp.join("journal");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let seam = answering_seam(vec![]);
         let clock = FakeClock::at_unix(0);
 
         let output = run(
@@ -2615,11 +2876,10 @@ mod tests {
         let env = base_env(&config, &temp.join("home"));
         let root = temp.join("journal");
         let bundle = config.join("solstone-observer").join("spl").join("laptop");
-        let first_seam =
-            ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
-                expected: expected_direct_request("laptop"),
-                result: Ok(credential(Value::Null)),
-            }]);
+        let first_seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
+            expected: expected_direct_request("laptop"),
+            result: Ok(credential(Value::Null)),
+        }]);
         let first_clock = FakeClock::at_unix(0);
         let first = run(
             &["--code", &direct_pair_link(), "--label", "laptop"],
@@ -2632,7 +2892,7 @@ mod tests {
         first_seam.assert_done();
         let before = bundle_hashes(&bundle);
 
-        let second_seam = ScriptedLinkJoinPairingSeam::new(vec![]);
+        let second_seam = answering_seam(vec![]);
         let second_clock = FakeClock::at_unix(60);
         let second = run(
             &["--code", &direct_pair_link(), "--label", "laptop"],
@@ -2654,7 +2914,7 @@ mod tests {
         let env = base_env(&config, &temp.join("home"));
         let root = temp.join("journal");
         let bundle = config.join("solstone-observer").join("spl").join("laptop");
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+        let seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
             expected: expected_direct_request("laptop"),
             result: Ok(credential(json!({"ip": "10.0.0.2"}))),
         }]);
@@ -2685,7 +2945,7 @@ mod tests {
         let root = temp.join("journal");
         let bundle = config.join("solstone-observer").join("spl").join("laptop");
         let endpoints = Value::Array(vec![Value::String("x".repeat(LOCAL_ENDPOINTS_MAX_BYTES))]);
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+        let seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
             expected: expected_direct_request("laptop"),
             result: Ok(credential(endpoints)),
         }]);
@@ -2717,7 +2977,7 @@ mod tests {
         let bundle = config.join("solstone-observer").join("spl").join("laptop");
         let mut returned = credential(Value::Array(Vec::new()));
         returned.home_attestation = None;
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+        let seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
             expected: expected_direct_request("laptop"),
             result: Ok(returned),
         }]);
@@ -3529,7 +3789,7 @@ mod tests {
         let root = temp.join("journal");
         let bundle_dir = config.join("solstone-observer").join("spl").join("laptop");
 
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+        let seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
             expected: expected_direct_request("laptop"),
             result: Ok(credential(Value::Array(Vec::new()))),
         }]);
@@ -3615,7 +3875,7 @@ mod tests {
         cred.relay_device_token = Some("mock_token_abc".to_string());
         cred.relay_device_token_expires_at = Some(2000000000);
 
-        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+        let seam = answering_seam(vec![ExpectedLinkJoinPairingCall::Direct {
             expected: expected_direct_request("laptop"),
             result: Ok(cred),
         }]);
