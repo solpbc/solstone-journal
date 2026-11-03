@@ -13,12 +13,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - each agent now shows a short id beside its name, so two agents with the same name are easy to tell apart.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
+- you can pause any agent from its page and resume it later. it keeps its memories and what it may see.
+- if you set an agent up again, you can connect it again from its page, or from the earlier agents list, and it keeps its memories.
+- activity now names each agent by its name and short id.
 
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
 ### Changed
 
+- an agent you paired with your journal now stays connected while it's in use. after 30 days unused it pauses instead of disconnecting, and you resume it from its page in the agents app, which also shows whether it tried to reach your journal while paused.
 - `solstone link join` now asks whether the mark matches your journal before it saves anything. at a terminal you answer yes or no. in a script, give the mark's two words with `--mark`. with neither, it stops and says what to do, and your pairing link isn't used up.
 - a show, podcast or other recording playing near you, with nothing on your screen showing it, is now a media activity instead of video, and so is one you import as an audio file. imported recordings are no longer summarized as something you watched, and a show playing nearby is a little less often mistaken for a conversation. activities already in your journal keep their type unless your journal processes those recordings again.
 

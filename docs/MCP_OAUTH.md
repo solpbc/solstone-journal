@@ -139,14 +139,23 @@ does not come back on restart.
 - `POST /token`: `authorization_code` and `refresh_token`
 
 PKCE S256 is mandatory. Lifetimes: authorization code 5 minutes, access
-token 1 hour, refresh grant 30 days from initial token issuance. Refresh tokens rotate on use;
-rotation does not extend that grant deadline. Pair again after it expires.
-Static bearer keys have no timed expiry and remain valid until revoked.
+token 1 hour. Refresh tokens rotate on use, and each successful refresh keeps
+the grant live for 30 days from then. A grant with no refresh for 30 days
+pauses instead of ending: it stays paired and its refresh token still rotates,
+but every tool call returns an error that says the connection is paused, and a
+refresh does not move a paused grant's deadline. Only the owner ends a pause, by
+resuming the connection in the agents app or by making a pairing code for that
+agent that the agent then pairs with, and either one starts a fresh 30 days. The owner can
+pause any connection the same way, static bearer keys included. A refresh
+answered `invalid_grant` means this credential no longer works; pair again. Static bearer keys have no timed expiry and remain
+valid until revoked.
 Presenting one of the
 grant's last 16 rotated-out refresh tokens revokes the grant; an older one is
 refused and the grant stays. One exception: the immediately previous token,
 presented again within 30 seconds of the rotation that replaced it, gets back
 the pair that rotation issued.
+
+Accepted residuals:
 
 - Abandoned grants still count toward the 16-client and 1024-grant caps. A new pairing gets today's quota error until the owner disconnects one.
 - A stolen refresh credential stays refreshable while paused and serves nothing until resume.
