@@ -1219,7 +1219,16 @@ async fn run_lan_door_loop_at_root(
                     address_states.clear();
                     server_config_cell.store(Arc::new(None));
                     current_fingerprint = None;
-                    write_lan_state_at_root(&state, false, Some("disabled"), None, None);
+                    state.publish_lan_disabled(
+                        &LanDoorState {
+                            listening: false,
+                            observed_at: Utc::now(),
+                            reason: Some("disabled".to_owned()),
+                            fingerprint: None,
+                            addresses: None,
+                        },
+                        run.rewrite_interval,
+                    );
                     return Ok(());
                 }
                 LocalDoorConfig::On => {}
@@ -2941,6 +2950,9 @@ mod full_tests {
             let mut run = LanDoorRun::production();
             run.port = port;
             run.config_interval = Duration::from_millis(20);
+            // Keep the unchanged-disabled heartbeat within this accelerated
+            // fixture's wait bound, including missing -> explicit off.
+            run.rewrite_interval = Duration::from_millis(100);
             run.bind_admitted = test_admit_loopback_bind;
             run.peer_admitted = test_admit_loopback_peer;
             // Production classification excludes loopback before bind admission.

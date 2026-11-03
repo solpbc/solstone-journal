@@ -1556,22 +1556,8 @@ pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
         }
         _ => (None, false, 0),
     };
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
-    loop {
-        if let Some(current) = crate::byo_door::read_byo_door_state(&journal)
-            && current.observed_at >= requested_at
-            && (
-                current.hostname.clone(),
-                current.enabled,
-                current.generation,
-            ) == expected
-        {
-            return state(Extension(journal)).await;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    if wait_for_byo_cutover_confirmation(&journal, requested_at, &expected).await {
+        return state(Extension(journal)).await;
     }
 
     // The door did not confirm. That is safe to report only if nothing
@@ -1621,6 +1607,32 @@ pub(crate) async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     current_state.observed_at = Utc::now();
     crate::byo_door::write_byo_door_state(&journal, &current_state);
     state(Extension(journal)).await
+}
+
+#[cfg(any(
+    all(test, feature = "full-tests"),
+    windows,
+    target_os = "ios",
+    target_os = "android"
+))]
+pub(crate) async fn wait_for_byo_cutover_confirmation(
+    journal: &std::path::Path,
+    requested_at: chrono::DateTime<Utc>,
+    expected: &(Option<String>, bool, u64),
+) -> bool {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if let Some(current) = crate::byo_door::read_byo_door_state(journal)
+            && current.observed_at >= requested_at
+            && (current.hostname, current.enabled, current.generation) == *expected
+        {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 #[cfg(all(unix, not(any(target_os = "ios", target_os = "android"))))]
