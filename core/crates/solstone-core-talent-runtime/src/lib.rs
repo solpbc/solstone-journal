@@ -93,6 +93,8 @@ pub struct PreparedTalent {
     /// Preparation made the Story packet the input because the whole request
     /// would not fit the floor window: it is the input on every backend.
     pub(crate) story_input_fitted: bool,
+    /// A long document's reading, for a window too small for all of it.
+    pub(crate) document_reading: Option<documents::FloorReading>,
     /// Set only by a stage's prompt override; a request cannot supply it.
     pub(crate) framed_request: Option<FramedRequest>,
 }
@@ -109,6 +111,7 @@ impl PreparedTalent {
             story_messages: None,
             story_input_used: false,
             story_input_fitted: false,
+            document_reading: None,
             framed_request: None,
         }
     }
@@ -1192,6 +1195,19 @@ pub(crate) fn record_input_budget(prepared: &mut PreparedTalent, budget: Option<
             }
         }
     }
+    // The reading replaced whole pages before any fitting, so a result from it
+    // says so even when the reading itself fit.
+    if budget
+        .and_then(|budget| budget.get("used_overflow_text"))
+        .and_then(Value::as_bool)
+        == Some(true)
+        && let Some(reading) = &prepared.document_reading
+    {
+        prepared
+            .config
+            .insert(INPUT_BUDGET_KEY.to_owned(), reading.input_budget());
+        return;
+    }
     let clipped = budget.map(|budget| budget.get("clipped").and_then(Value::as_bool));
     if let (Some(budget), Some(Some(true))) = (budget, clipped) {
         prepared
@@ -1747,7 +1763,13 @@ fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest,
             .story_input
             .as_ref()
             .filter(|_| !prepared.story_input_fitted)
-            .map(|candidate| candidate.model_transcript().to_owned()),
+            .map(|candidate| candidate.model_transcript().to_owned())
+            .or_else(|| {
+                prepared
+                    .document_reading
+                    .as_ref()
+                    .map(|reading| reading.text.clone())
+            }),
         system_instruction,
         temperature: prepared
             .config

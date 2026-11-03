@@ -178,6 +178,10 @@ The entries are then fitted to a budget fixed by design: the floor window's inpu
 
 Sense and Screen read a browser segment as what was in front of the owner. A page the browser marks as not in front of a focused window (a background tab, or a window behind another app) contributes no text: what such a page shows by itself, such as a live clock, a video's captions or an ad, is not what the owner read. Those pages are listed once per state, after the pages that were in front, under "Open, not in front of a focused window"; when no page in front sent anything, the reading says so first. Pausing the solstone app does not change what counts as in front, and pages from earlier extension versions, which carry no tab state, read as before. Work and Conversation read a browser activity through those reports, so a background page reaches them as the open-page list, not its text. The transcript viewer and agents see every page in full, each with its `context:` line.
 
+## Documents
+
+An imported document reads whole whenever the window holds it with the talent's whole reply. Past that, Documents and Sense read a smaller version the Generate boundary selects ([GENERATE.md](GENERATE.md) § `overflow_text`), so a larger window still reads every page. It is built for the floor window whatever the document's size: the document's header, its first pages up to half the room, where parties, dates and definitions are, its last pages up to an eighth, where signatures and schedules are, and the rest shared among the opening lines of pages spread evenly between them. A note at the top says which pages are complete. The result records what was left out as `partial_input`. Generic fitting, which keeps the newest entries, would keep only a long document's last pages.
+
 ## Architecture
 
 ```

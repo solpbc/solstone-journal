@@ -367,6 +367,11 @@ pub fn prepare(
             prepared.story_input_fitted = true;
         }
     }
+    if matches!(prepared.name.as_str(), "documents" | "sense")
+        && prepared.config.get("stream").and_then(Value::as_str) == Some("import.document")
+    {
+        prepared.document_reading = crate::documents::floor_reading(&prepared.config);
+    }
     if matches!(prepared.name.as_str(), "sense" | "screen") {
         prepared.entry_sources = entry_sources;
         let report = crate::terminal_reading::prepare(&mut prepared, context);
