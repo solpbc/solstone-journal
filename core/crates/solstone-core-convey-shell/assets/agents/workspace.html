@@ -27,6 +27,7 @@
   .agents .modal-card button[data-close-modal]{min-width:44px;min-height:44px}
   .agents .modal-card h2{font-family:var(--font-display);font-size:1.35rem;margin:0 0 4px}
   .agents .check small{display:block}
+  .agents .chip.paused{background:var(--warn-wash);border-color:transparent;color:var(--ink)}.agents .paused-card{border-left:4px solid var(--amber)}.agents .paused-card p{margin:8px 0 0}.agents .paused-card + .card{margin-top:26px}
   .agents .outcome.empty{padding:4px 8px;text-align:left}.agents .activity-row .outcome{flex:none;align-self:flex-start}
   .agents .door-lan{margin-top:16px;border-top:1px solid var(--hairline)}.agents .fp{font-size:.8rem;line-height:1.55;word-spacing:.12em;overflow-wrap:anywhere}.agents .addr-preview code{color:var(--muted)}
   .agents .seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.agents .ways{display:grid;grid-template-columns:1fr;gap:10px}.agents .byo-setup{overflow-wrap:anywhere}.agents .byo-setup .onlab{margin-top:14px}.agents .cmd-block{max-height:16rem;overflow:auto;white-space:pre;font-size:.74rem;line-height:1.35;padding:10px;border:1px solid var(--border, #e5dccb);border-radius:8px;margin:8px 0}.agents .records{width:100%;border-collapse:collapse;margin:8px 0}.agents .cmd-block code{background:none;padding:0;border:0}.agents .records td:first-child,.agents .records th:first-child{white-space:nowrap;width:3.5em}.agents .records td:last-child{white-space:nowrap;width:1%}.agents .records td,.agents .records th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border, #e5dccb);vertical-align:top;font-size:.85rem}
@@ -65,6 +66,8 @@
   let connectWay = null;
   // Which agent the owner says they are connecting, so the dialog can name its one next step.
   let agentChoice = null;
+  // The agent a code is being made for, when the owner connects an existing agent again: {agent, name, source}.
+  let againTarget = null;
   // The code the open dialog made, followed until an agent connects with it or it stops working.
   let watch = null;
   let watchTimer = null;
@@ -128,7 +131,31 @@
     const categories = read.categories.join(', ');
     return read.scope.kind === 'whole_journal' ? `${categories} across your whole journal` : `${categories} in ${read.scope.ids.length} chosen facet${read.scope.ids.length === 1 ? '' : 's'}`;
   }
-  function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? 'paired in your browser. it can read what it may see for at most 30 days after pairing, or until you disconnect it.' : 'a key you created. anyone holding it can read what it may see until you revoke it.'; }
+  function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? 'paired in your browser. it can read what it may see until you pause or disconnect it. if it goes 30 days without using your journal, it pauses until you resume it.' : 'a key you created. anyone holding it can read what it may see until you pause or revoke it.'; }
+  // A paused agent stays paired, with its memories and its choices. Nothing is served until the owner resumes it.
+  function pausedChip(connection) { return connection.paused ? '<span class="chip paused">paused</span>' : ''; }
+  function triedLine(connection) {
+    const tried = connection.paused_attempts;
+    if (!tried?.count) return '';
+    return `tried ${triedTimes(tried.count)} since, latest ${esc(formatAgentTimestamp(tried.last_at))}`;
+  }
+  function triedTimes(count) { return count === 1 ? 'once' : `${esc(count)} times`; }
+  function pausedRowLine(connection) {
+    const why = connection.paused.by === 'idle' ? 'paused after 30 days unused' : 'paused by you';
+    const tried = triedLine(connection);
+    return `<small>${why}${tried ? ` · ${tried}` : ''}</small>`;
+  }
+  function pausedCard(connection) {
+    const name = esc(connection.name);
+    const since = esc(formatMemoryInstant(connection.paused.since, {month: 'short', day: 'numeric'}));
+    const why = connection.paused.by === 'idle'
+      ? `${name} paused on ${since} because it went 30 days without using your journal.`
+      : `you paused ${name} on ${since}.`;
+    const tried = connection.paused_attempts?.count
+      ? `<p>it has tried ${triedTimes(connection.paused_attempts.count)} since then, most recently ${esc(formatAgentTimestamp(connection.paused_attempts.last_at))}. <a class="link" href="#" data-activity-connection="${esc(connection.key)}">see what it tried</a></p>${connection.paused.by === 'idle' ? `<p class="meta">if you haven't been using ${name}, disconnect it rather than resuming it.</p>` : ''}`
+      : `<p class="meta">it hasn't tried to reach your journal since.</p>`;
+    return `<section class="card pad section paused-card" data-paused="${esc(connection.paused.by)}"><h2>paused</h2><p>${why} it stays connected, with its memories and what it may see, but it can't read your journal or use its memories until you resume it.</p>${tried}<div class="button-row"><button class="btn primary" data-pause="${esc(connection.kind)}:${esc(connection.id)}" data-paused-to="false">resume ${name}</button></div></section>`;
+  }
   function formatAgentTimestamp(ts) {
     if (!ts) return '';
     if (window.JournalClock?.formatInstant) {
@@ -414,7 +441,7 @@
     const address = `<dl class="lane-row"><dt>address</dt><dd><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></dd></dl>`;
     const about = `<details><summary>about this address</summary><p class="note">eight random characters with nothing of yours in them. because the address gets a real certificate, it is written into public certificate logs. that record is permanent: it stays even if you turn solstone.me off, and it shows that an address existed, not whose.</p></details>`;
     const relay = "your journal holds its own private key. the relay passes along encrypted bytes it can't read. sol pbc sees that there was an encrypted connection.";
-    const protection = `<details data-disclosure="relay-detail"><summary>how this is protected</summary><p class="note">the relay sol pbc runs sees the network addresses on each end, when they connect, and how much passes. a published rule for your address lets only your journal get its certificate, not the relay. whoever controls the solstone.me name (today, sol pbc and Cloudflare) could change that rule, get a certificate of its own and read what your agents read. sol pbc doesn't. a new certificate would normally show in public certificate logs, but until November 30, 2026, Cloudflare also holds older certificates for every solstone.me address, and using one wouldn't show. a credential seen that way would let someone reach your journal for at most 30 days, or until you disconnect the agent; a key you created, until you revoke it.</p></details>`;
+    const protection = `<details data-disclosure="relay-detail"><summary>how this is protected</summary><p class="note">the relay sol pbc runs sees the network addresses on each end, when they connect, and how much passes. a published rule for your address lets only your journal get its certificate, not the relay. whoever controls the solstone.me name (today, sol pbc and Cloudflare) could change that rule, get a certificate of its own and read what your agents read. sol pbc doesn't. a new certificate would normally show in public certificate logs, but until November 30, 2026, Cloudflare also holds older certificates for every solstone.me address, and using one wouldn't show. a credential seen that way would let someone reach your journal until you disconnect the agent; a key you created, until you revoke it.</p></details>`;
     const portal = url => `<div class="hand"><a class="link" href="${esc(url || PORTAL)}" target="_blank" rel="noopener">manage solstone.me in the services portal →</a></div>`;
     const nextFormatted = state.owner_state?.next_attempt_at ? formatAgentTimestamp(state.owner_state.next_attempt_at) : '';
     const next = nextFormatted ? ` next check: <span data-next-attempt>${esc(nextFormatted)}</span>.` : '';
@@ -475,7 +502,7 @@
     const rows = state.connections;
     const head = `<div class="sh"><h2>your agents</h2>${rows.length ? '<button class="btn primary" data-action="connect">connect an agent</button>' : ''}</div>`;
     if (!rows.length) return `<section class="section">${head}<div class="list empty"><h3>no agents connected yet</h3><p>connect one to let it search and read your journal, within what you choose.</p><button class="btn primary" data-action="connect">connect an agent</button></div></section>`;
-    return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${keyMark(connection.memory_source)}${laneChip(connection)}</strong><small>${connection.kind === 'bearer' ? 'a key you created · ' : ''}${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection)}</small><small>${esc(permissionLine(connection.permission))}</small>${memoryCountLine(connection.memory_source)}</span><span aria-hidden="true">›</span></button>`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">recent activity →</a> what your agents asked, and what they got. recorded in your journal.</p></section>`;
+    return `<section class="section">${head}<div class="list">${rows.map(connection => `<button class="ag-row" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span class="m"><strong>${esc(connection.name)}${keyMark(connection.memory_source)}${laneChip(connection)}${pausedChip(connection)}</strong>${connection.paused ? pausedRowLine(connection) : `<small>${connection.kind === 'bearer' ? 'a key you created · ' : ''}${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection)}</small>`}<small>${esc(permissionLine(connection.permission))}</small>${memoryCountLine(connection.memory_source)}</span><span aria-hidden="true">›</span></button>`).join('')}</div><p class="foot"><a class="link" href="#" data-route="activity">recent activity →</a> what your agents asked, and what they got. recorded in your journal.</p></section>`;
   }
   function home() {
     const [tone, sentence] = statusLine();
@@ -555,7 +582,7 @@
     const rows = requests.slice(0, 5).map(entry => `<div class="ag-row" data-first-request><span class="m"><strong>used ${esc(entry.tool)}</strong>${requestSummary(entry) ? `<small>${esc(requestSummary(entry))}</small>` : ''}</span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome] || entry.outcome)}</span><time>${esc(formatAgentTime(entry.timestamp))}</time></div>`).join('');
     const list = requests.length ? rows : `<div class="none"><p><span class="sdot a pulse" aria-hidden="true"></span> nothing yet. ask ${name} something it can find in your journal, and each request shows up here as it arrives.</p></div>`;
     const more = requests.length > 5 ? `<p class="foot">and ${requests.length - 5} more.</p>` : '';
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name} is connected.</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section" data-request-list-heading>what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${name} is connected" data-connect-phase="connected" data-connection-door="${esc(connection.door)}">${close}<h2>${name}${watch.again ? `${keyMark(connection.memory_source)} is connected again.` : ' is connected.'}</h2><p class="status-line"><span class="sdot g" aria-hidden="true"></span>it connects ${doorName(connection.door)}.${watch.again && memorySummaryFor(connection.memory_source)?.count ? ` it can recall its ${esc(memoriesWord(memorySummaryFor(connection.memory_source).count))}.` : ''}</p><dl class="lane-row"><dt>it may see</dt><dd>${esc(connection.permission ? permissionLine(connection.permission) : 'checking…')}</dd></dl><h3 class="section" data-request-list-heading>what it has asked for</h3><div class="list first" aria-live="polite">${list}</div>${more}<p class="meta">your journal records each request. you can change what it may see or disconnect it at any time.</p><div class="button-row"><button class="btn" data-action="open-connection">change what it may see</button><button class="btn" data-action="open-activity">see all its activity</button><button class="btn primary" data-close-modal>done</button></div></article></div>`;
   }
   function connectDialog() {
     if (watch && (watch.phase === 'connected' || watch.phase === 'gone')) return connectedDialog();
@@ -564,7 +591,11 @@
     if (choices.length === 1) connectWay = choices[0][0];
     else if (connectWay && !choices.some(([id]) => id === connectWay)) connectWay = null;
 
-    const close = `<button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2>`;
+    const againName = againTarget ? `${esc(againTarget.name)}${keyMark(againTarget.source)}` : '';
+    const againLive = againTarget && !String(againTarget.agent).startsWith('source:');
+    const close = againTarget
+      ? `<button class="btn sm" style="float:right" data-close-modal>close</button><h2 data-again-target>connect ${againName} again</h2><p class="meta">it keeps its memories${againLive ? ' and what it may see. the one connected now stops working once this one connects' : ''}.</p>`
+      : `<button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2>`;
     if (!choices.length) {
       connectWay = null;
       return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="none">${close}<p class="meta">none of the ways an agent can reach your journal is ready right now.</p></article></div>`;
@@ -628,9 +659,9 @@
     const step2 = `<div class="mstep"><span class="n">2</span><div><p>in your agent, add your journal's address and start connecting.</p>${picks}${addresses.length ? addresses.join('') : `<p class="meta">none of the ways an agent can reach your journal is ready right now.</p>`}<p class="meta hint" data-agent-hint="${agentChoice || 'none'}">${agentHint(agentChoice, addresses.length ? firstAddress() : '')}</p>${connectWay === 'lan' ? `<p class="meta">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>` : ''}</div></div>`;
     const where = `<details><summary>certificate fingerprint</summary><p>your journal's certificate for these addresses has this SHA-256 fingerprint:</p><p><code class="fp">${esc(fingerprint())}</code></p><p>your browser shows it in the certificate's details.</p></details>`;
     const step3 = connectWay === 'lan'
-      ? `<div class="mstep"><span class="n">3</span><div><p>the browser on that device opens your journal's page. it may warn about the certificate unless you have trusted your journal's LAN CA there. choose what the agent may see, enter the code on that page and connect.</p>${fingerprint() ? where : ''}</div></div>`
-      : `<div class="mstep"><span class="n">3</span><div><p>your browser opens your journal's page.${connectWay === 'byo' ? ` check the address starts with <code>https://${esc(state?.byo?.hostname || '')}/</code>.` : connectWay === 'relay' ? ` check the address starts with <code>https://${esc(meAddress())}/</code>.` : ''} choose what the agent may see, enter the code on that page and connect.</p></div></div>`;
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="${openPairingKind}">${close}${choice}${step1}${step2}${step3}<p class="meta">didn't expect that page? close it. nothing connects until you enter the code.</p></article></div>`;
+      ? `<div class="mstep"><span class="n">3</span><div><p>the browser on that device opens your journal's page. it may warn about the certificate unless you have trusted your journal's LAN CA there. ${againTarget ? `enter the code on that page, check it names ${againName}, and connect.` : 'choose what the agent may see, enter the code on that page and connect.'}</p>${fingerprint() ? where : ''}</div></div>`
+      : `<div class="mstep"><span class="n">3</span><div><p>your browser opens your journal's page.${connectWay === 'byo' ? ` check the address starts with <code>https://${esc(state?.byo?.hostname || '')}/</code>.` : connectWay === 'relay' ? ` check the address starts with <code>https://${esc(meAddress())}/</code>.` : ''} ${againTarget ? `enter the code on that page, check it names ${againName}, and connect.` : 'choose what the agent may see, enter the code on that page and connect.'}</p></div></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="${againTarget ? 'connect an agent again' : 'connect an agent'}" data-open-pairing="${openPairingKind}">${close}${choice}${step1}${step2}${step3}<p class="meta">didn't expect that page? close it. nothing connects until you enter the code.</p></article></div>`;
   }
   function confirmDialog(kind) {
     if (kind === 'memory-delete') return deleteMemoryDialog();
@@ -653,7 +684,11 @@
 
 
   function connectionPage(connection) {
-    return frame(connection.name, `${laneChip(connection)}${connectionAccessCopy(connection)}`, `<a class="back" href="#" data-route="home">← agents</a>${memoriesCard(connection)}<section class="card pad section"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p><p>every connected agent can save and recall its own agent memories. these choices control other journal reads.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section><section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity and its memories stay in your journal.${connection.kind === 'bearer' ? '' : ' pairing again connects it as a new agent. it can\'t recall these memories, but can find them in search if what it may see covers them.'}</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`, keyMark(connection.memory_source));
+    const name = esc(connection.name);
+    const pause = connection.paused ? '' : `<section class="card pad section"><h2>pause</h2><p>${name} stays connected, with its memories and what it may see, but it can't read your journal or use its memories until you resume it.</p><div class="button-row"><button class="btn" data-pause="${esc(connection.kind)}:${esc(connection.id)}" data-paused-to="true">pause ${name}</button></div></section>`;
+    // Re-pairing is the owner's act: a code made here is for this agent, and nothing else links two pairings.
+    const again = connection.kind === 'oauth' ? `<section class="card pad section"><h2>connect it again</h2><p>set ${name} up again, or moved it to another device? connect it again from here and it stays this agent, with its memories and what it may see. the one connected now stops working once the new one connects.</p><div class="button-row"><button class="btn" data-again="${esc(connection.key)}">connect ${name} again</button></div></section>` : '';
+    return frame(connection.name, `${laneChip(connection)}${pausedChip(connection)}${connectionAccessCopy(connection)}`, `<a class="back" href="#" data-route="home">← agents</a>${connection.paused ? pausedCard(connection) : ''}${memoriesCard(connection)}<section class="card pad section"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p><p>every connected agent can save and recall its own agent memories. these choices control other journal reads.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2 data-activity-heading>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section>${pause}${again}<section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity and its memories stay in your journal.${connection.kind !== 'bearer' && memorySummaryFor(connection.memory_source)?.count ? ' to bring it back with its memories, connect it again from earlier agents.' : ''}</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`, keyMark(connection.memory_source));
   }
 
   // ---- what an agent saved -----------------------------------------------------------------------
@@ -737,7 +772,8 @@
     const list = groups.map(group => `<h3 class="day">${esc(formatMemoryDay(group.day))}</h3><div class="list">${group.memories.map(memory => memoryRow(memory)).join('')}</div>`).join('');
     const none = readWhole && !memories.length ? `<p data-memories-none>${connection ? noMemoriesLine(connection) : 'none of its memories are left in your journal.'}</p>` : '';
     const older = page?.next ? '<div class="button-row"><button class="btn" data-memories-older="1">show older</button></div>' : '';
-    return frame(`${name}'s memories`, lead, `${back}${gone ? `<div class="notice" data-memory-gone><p>that memory isn't in your journal anymore.</p></div>` : ''}${memoriesTrouble(page)}${none}${list}${older}`);
+    const again = connection ? '' : `<section class="card pad section"><h2>connect it again</h2><p>connect ${esc(name)} again from here and it can recall these memories. choose what it may see when you connect.</p><div class="button-row"><button class="btn primary" data-again="source:${esc(source)}">connect ${esc(name)} again</button></div></section>`;
+    return frame(`${name}'s memories`, lead, `${back}${again}${gone ? `<div class="notice" data-memory-gone><p>that memory isn't in your journal anymore.</p></div>` : ''}${memoriesTrouble(page)}${none}${list}${older}`);
   }
   async function loadMemories(source, {more = false} = {}) {
     const existing = memoryPages.get(source);
@@ -857,16 +893,21 @@
   }
 
 
+  // An agent is named in activity by its name and short key, never by the id its software chose.
+  function entryLine(entry) {
+    const who = entry.name ? `${esc(entry.name)}${keyMark(entry.memory_source)}` : esc(entry.agent_identity);
+    return entry.paused ? `${who} tried ${esc(entry.tool)} while paused` : `${who} used ${esc(entry.tool)}`;
+  }
   const outcomeLabel = {stored:'stored',replayed:'already stored',deleted:'original deleted',served:'served',empty:'nothing matched',refused:'refused',error:"couldn't complete",uncertain:'unknown ending'};
   function activityPage() {
     const entries = activity?.entries || [];
     const counts = activity?.counts || {};
     const atLeast = activity && !activity.examination_complete ? 'at least ' : '';
-    return frame('activity', 'what your agents asked and how each request ended. recorded in your journal. the content that was released isn\'t copied here; each entry points at it.', `<a class="back" href="#" data-route="home">← agents</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${atLeast}${counts[key] || 0}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">how it ended</label><select id="a-outcome"><option value="">any way</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">what it did</label><select id="a-tool"><option value="">any tool</option>${['save_memory','recall_memory','list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity','list_activities','get_activity_sources','get_week'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">apply</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(formatAgentTimestamp(entry.timestamp))}</time><span class="row-main"><span class="quote">${esc(entry.agent_identity)} used ${esc(entry.tool)}</span><small>${esc(entry.reason || 'open for request and result details')}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>nothing matches these filters.</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">only the first 100 matching requests are shown. these counts are minimums.</div>` : ''}`);
+    return frame('activity', 'what your agents asked and how each request ended. recorded in your journal. the content that was released isn\'t copied here; each entry points at it.', `<a class="back" href="#" data-route="home">← agents</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${atLeast}${counts[key] || 0}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">how it ended</label><select id="a-outcome"><option value="">any way</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">what it did</label><select id="a-tool"><option value="">any tool</option>${['save_memory','recall_memory','list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity','list_activities','get_activity_sources','get_week'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">apply</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(formatAgentTimestamp(entry.timestamp))}</time><span class="row-main"><span class="quote">${entryLine(entry)}</span><small>${esc(entry.reason || 'open for request and result details')}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>nothing matches these filters.</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">only the first 100 matching requests are shown. these counts are minimums.</div>` : ''}`);
   }
 
   function activityDetail(entry) {
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${esc(entry.agent_identity)} used ${esc(entry.tool)}</h2><p class="meta"><span data-request-time>${esc(formatAgentTimestamp(entry.timestamp))}</span></p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? (entry.tool === 'save_memory' ? 'the request was recorded, but its outcome was not confirmed. a memory save may already be stored.' : 'the request was recorded, but its outcome was not confirmed.') : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${entryLine(entry)}</h2><p class="meta"><span data-request-time>${esc(formatAgentTimestamp(entry.timestamp))}</span></p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? (entry.tool === 'save_memory' ? 'the request was recorded, but its outcome was not confirmed. a memory save may already be stored.' : 'the request was recorded, but its outcome was not confirmed.') : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
   }
 
   function targetLinks(entry) {
@@ -923,7 +964,7 @@
       } else {
         const open = seen.pairing;
         const ours = open && open.generation === current.generation;
-        const fresh = connections.filter(connection => connection.door === current.door && !current.known.has(connection.key))
+        const fresh = connections.filter(connection => connection.door === current.door && current.known.get(connection.key) !== (connection.paired_at || connection.created_at))
           .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
         const late = Date.parse(seen.now) >= Date.parse(current.expiresAt);
         if (ours) current.phase = open.locked ? 'locked' : 'waiting';
@@ -944,17 +985,19 @@
   }
   // The agents already paired, read before the code is made, so none of them can pass for the one it connects.
   async function pairedBefore() {
-    try { return new Set(((await api('/app/agents/api/pairing')).connections || []).map(connection => connection.key)); }
-    catch (_) { return new Set((state.connections || []).filter(connection => connection.kind === 'oauth').map(connection => connection.key)); }
+    const seen = connections => new Map(connections.map(connection => [connection.key, connection.paired_at || connection.created_at]));
+    try { return seen((await api('/app/agents/api/pairing')).connections || []); }
+    catch (_) { return seen((state.connections || []).filter(connection => connection.kind === 'oauth')); }
   }
   function startWatch(created, known) {
     stopWatch();
-    watch = {generation: created.generation, door: created.door, expiresAt: created.expires_at, known, phase: 'waiting', connection: null, requests: null};
+    watch = {generation: created.generation, door: created.door, expiresAt: created.expires_at, known, phase: 'waiting', connection: null, requests: null, again: againTarget};
     watchView = watchKey();
     pollWatch();
   }
   function closeDialog() {
     const followed = Boolean(watch);
+    againTarget = null;
     stopWatch();
     pairingCode = null;
     dialog = null;
@@ -977,7 +1020,7 @@
     const facetField = document.getElementById('facet-field');
     if (scope && facetField) { const sync = () => facetField.classList.toggle('hidden', scope.value !== 'facets'); scope.addEventListener('change', sync); sync(); }
     if (route.name === 'activity') {
-      view.querySelector('.toolbar')?.insertAdjacentHTML('afterbegin', `<div class="field"><label for="a-agent">agent</label><select id="a-agent"><option value="">all agents</option>${state.connections.map(connection => `<option value="${esc(connection.key)}">${esc(connection.name)}</option>`).join('')}</select></div><div class="field"><label for="a-from">from</label><input id="a-from" type="date"></div><div class="field"><label for="a-to">to</label><input id="a-to" type="date"></div>`);
+      view.querySelector('.toolbar')?.insertAdjacentHTML('afterbegin', `<div class="field"><label for="a-agent">agent</label><select id="a-agent"><option value="">all agents</option>${state.connections.map(connection => `<option value="${esc(connection.key)}">${esc(connection.name)}${connection.memory_source ? ` · ${esc(String(connection.memory_source).slice(0, 4))}` : ''}</option>`).join('')}</select></div><div class="field"><label for="a-from">from</label><input id="a-from" type="date"></div><div class="field"><label for="a-to">to</label><input id="a-to" type="date"></div>`);
       for (const [key, value] of Object.entries(activityFilters)) document.getElementById(`a-${key}`).value = value;
     }
     if (window.JournalClock?.placeNote) {
@@ -1116,7 +1159,9 @@
     }
     try {
       if (action === 'reload' || action === 'refresh') await reload(true);
-      else if (action === 'connect') { stopWatch(); dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
+      else if (action === 'connect') { stopWatch(); againTarget = null; dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
+      else if (target.dataset.again) { const agent = target.dataset.again; const live = (state.connections || []).find(c => c.key === agent); const source = live ? live.memory_source : agent.slice('source:'.length); againTarget = {agent, name: live ? live.name : memoryAgentName(source), source}; const kind = Object.keys(AGENT_NAMES).find(k => AGENT_NAMES[k].toLowerCase() === String(againTarget.name).toLowerCase()); stopWatch(); dialog = 'connect'; connectWay = live && connectWays().some(([id]) => id === live.door) ? live.door : null; agentChoice = kind || null; pairingCode = null; render(); }
+      else if (target.dataset.pause) { const [kind, id] = target.dataset.pause.split(':'); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/pause`, jsonOptions('PUT', {paused: target.dataset.pausedTo === 'true'})); await reload(true); const found = state.connections.find(item => item.kind === kind && item.id === id); if (found) await openConnection(found); else { route = {name: 'home'}; render(); } }
       else if (action === 'open-connection' || action === 'open-activity') { const key = watch?.connection?.key; stopWatch(); pairingCode = null; dialog = null; await reload(true); if (action === 'open-activity') await loadActivity(key); else { const found = state.connections.find(item => item.key === key); route = found ? {name: 'connection', connection: found} : {name: 'home'}; render(); } }
       else if (action === 'me-off' || action === 'own-off' || action === 'lan-off') { dialog = action; render(); }
       else if (action === 'lan-on' || action === 'lan-door-off') { await api('/app/agents/api/lan-door', jsonOptions('PUT', {enabled: action === 'lan-on'})); dialog = null; await reload(true); }
@@ -1137,7 +1182,7 @@
       else if (action === 'sme-account-replace') { await api('/app/agents/api/solstone-me/account/replace', ownerOptions('POST')); await reload(true); }
       else if (action === 'dismiss-sme-replaced') { await api('/app/agents/api/solstone-me/account/notice/dismiss', ownerOptions('POST')); await reload(true); }
       else if (action === 'dismiss-replay') { await api('/app/agents/api/replay-notices/' + encodeURIComponent(target.dataset.notice) + '/dismiss', ownerOptions('POST')); await reload(true); }
-      else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
+      else if (action === 'new-code') { if (connectWay && connectWays().some(([id]) => id === connectWay)) { const known = await pairedBefore(); const res = await api('/app/agents/api/pairing', jsonOptions('POST', againTarget ? {door: connectWay, agent: againTarget.agent} : {door: connectWay})); pairingCode = res; state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door}; stopWatch(); render(); startWatch(res, known); } }
       else if (action === 'filter-activity') { const filters = Object.fromEntries(Object.keys(activityFilters).map(key => [key, document.getElementById(`a-${key}`).value])); await applyActivityFilters(filters); }
       else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
       else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm(`${kind === 'bearer' ? 'revoke this key?' : 'disconnect this agent?'} what it already read stays with it. its activity and its memories stay in your journal.`)) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
