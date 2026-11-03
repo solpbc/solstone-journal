@@ -116,8 +116,8 @@ impl DoorStateWriter {
         }
     }
     fn publish<T: Serialize>(&self, relative: &str, state: &T) -> io::Result<()> {
-        self.namespace.revalidate()?;
         let path = Path::new(relative);
+        // directory() validates this same namespace before any child I/O.
         let parent = self
             .namespace
             .directory(path.parent().expect("fixed state parent"), true)?
@@ -376,7 +376,60 @@ mod tests {
                     serde_json::from_slice(&std::fs::read(original).unwrap()).unwrap();
                 assert_eq!(state["listening"], false);
             }
-            assert_eq!(std::fs::read_dir(slot).unwrap().count(), 0);
+            assert_eq!(std::fs::read_dir(&slot).unwrap().count(), 0);
+            std::fs::remove_dir(&slot).unwrap();
+            std::fs::rename(&retained, &slot).unwrap();
+            assert!(
+                writer
+                    .publish(
+                        "mcp-endpoint/local-door-state.json",
+                        &json!({"listening":true})
+                    )
+                    .is_err(),
+                "restoring a name must not revive a refused publisher"
+            );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn revoked_root_permissions_refuse_publication_and_latch_the_failure() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path().join("journal");
+        std::fs::create_dir(&journal).unwrap();
+        let writer = DoorStateWriter::new(Arc::new(JournalRoot::open(&journal).unwrap()));
+        writer
+            .publish(
+                "mcp-endpoint/local-door-state.json",
+                &json!({"listening":false}),
+            )
+            .unwrap();
+        let permissions = std::fs::metadata(&journal).unwrap().permissions();
+        std::fs::set_permissions(&journal, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = std::fs::read_dir(&journal).is_err();
+        let refused = writer.publish(
+            "mcp-endpoint/must-not-publish.json",
+            &json!({"listening":true}),
+        );
+        std::fs::set_permissions(&journal, permissions).unwrap();
+        if !denied {
+            log::warn!(
+                "permission refusal not exercised: process can bypass directory permissions"
+            );
+            return;
+        }
+        assert!(refused.is_err());
+        assert!(!journal.join("mcp-endpoint/must-not-publish.json").exists());
+        assert!(
+            writer
+                .publish(
+                    "mcp-endpoint/must-not-publish.json",
+                    &json!({"listening":true})
+                )
+                .is_err(),
+            "restoring permissions must not revive a refused publisher"
+        );
     }
 }
