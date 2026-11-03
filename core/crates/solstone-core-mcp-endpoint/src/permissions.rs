@@ -400,9 +400,13 @@ impl PermissionStore {
         let evaluation = match pause_status {
             Ok(true) => "hold".to_string(),
             Ok(false) => "enforce".to_string(),
+            // Unreadable agent state keeps an existing guard as it is. A connection
+            // with no record yet gets the guard, so it fails closed on downgrade;
+            // this binary never decides from the guard, so it is served as usual
+            // once the agent state reads again.
             Err(_) => match existing {
                 Some(existing) => existing.evaluation.clone(),
-                None => return Err(PermissionStoreError::AgentStateFault),
+                None => "hold".to_string(),
             },
         };
         let record = ConnectionPermissionRecord {

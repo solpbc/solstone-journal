@@ -1053,7 +1053,10 @@ impl OAuthStore {
                 };
 
                 if target_gone {
-                    store.pending[index].reconnect_to = None;
+                    // End the transaction: the refusal page says this code won't work
+                    // again, so posting the form again must not fall through to an
+                    // untargeted pairing.
+                    store.pending.remove(index);
                     return (EditPersistence::Persist, Err(OAuthStoreError::InvalidGrant));
                 }
 
@@ -1090,6 +1093,21 @@ impl OAuthStore {
             return Ok(None);
         };
         Ok(pending.reconnect_to.clone())
+    }
+
+    /// Whether the pairing code open for this door was made for an existing agent.
+    pub(crate) fn open_pairing_is_targeted(
+        &self,
+        binding: &super::RuntimeBinding,
+    ) -> Result<bool, OAuthStoreError> {
+        let store = self.read_store()?;
+        let now = current_time();
+        Ok(store.pairing.as_ref().is_some_and(|pairing| {
+            pairing.expires_at > now
+                && !pairing.locked
+                && pairing_door_matches(pairing, binding)
+                && pairing.reconnect_to.is_some()
+        }))
     }
 
     /// Classify a presented pairing code without consuming it or incrementing failures.
@@ -1449,6 +1467,9 @@ impl OAuthStore {
                         store.pending.remove(index);
                         return (EditPersistence::Persist, Err(OAuthStoreError::InvalidGrant));
                     }
+                    if store.grants.len() >= MAX_GRANTS {
+                        return (EditPersistence::Drop, Err(OAuthStoreError::Quota));
+                    }
 
                     // Earlier source Step 1:
                     let grant_id = URL_SAFE_NO_PAD.encode(id_bytes);
@@ -1518,7 +1539,11 @@ impl OAuthStore {
                     crate::agent_state::is_owner_paused_locked(&self.root, &conn_key)
                         .map_err(OAuthStoreError::from)?;
                 let eval = if is_paused_now { "hold" } else { "enforce" };
-                let perm = pending_permission.unwrap_or_else(ReadPermission::default_whole_journal);
+                // A confirmed takeover always carries the owner's choice. Without one,
+                // stop here, in an allowed state: taken over and still paused.
+                let Some(perm) = pending_permission else {
+                    return Err(OAuthStoreError::InvalidGrant);
+                };
                 crate::permissions::PermissionStore::open(&self.root)
                     .update_permission_preserving_generation(&conn_key, perm, eval)
                     .map_err(|_| OAuthStoreError::Permission)?;
@@ -3171,6 +3196,25 @@ mod tests {
             .get_permission(&format!("oauth:{grant_id}"))
             .unwrap()
             .is_some()
+    }
+
+    #[test]
+    fn a_new_pairing_connects_while_the_agent_state_is_unreadable() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        std::fs::create_dir_all(journal.path().join("mcp-endpoint")).unwrap();
+        std::fs::write(
+            journal.path().join("mcp-endpoint/agent-state.json"),
+            b"not json",
+        )
+        .unwrap();
+        let grant = whole_journal_grant(&store, &journal);
+        assert!(store.list_grants().unwrap().iter().any(|g| g.id == grant));
+        let record = PermissionStore::open(journal.path())
+            .get_permission(&format!("oauth:{grant}"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.evaluation, "hold");
     }
 
     #[test]
@@ -7419,6 +7463,32 @@ mod tests {
                     Err(OAuthStoreError::InvalidToken)
                 ));
                 assert!(oauth.store.list_replay_notices().unwrap().is_empty());
+                // Presented by the new client, so the client check passes: a carried
+                // refresh history would answer reuse here, and none is carried.
+                for old in [&old_current_token, &old_rotated_token] {
+                    assert!(matches!(
+                        oauth
+                            .store
+                            .refresh_grant(old, &client_c.client_id, &oauth.binding()),
+                        Err(OAuthStoreError::InvalidToken)
+                    ));
+                }
+                assert!(oauth.store.list_replay_notices().unwrap().is_empty());
+                // The old instance's access tokens stop verifying at once.
+                for old in [&tokens_a.access_token, &tokens_a_rot.access_token] {
+                    assert!(matches!(
+                        oauth.store.verify_access_token(old, &oauth.binding()),
+                        Err(OAuthStoreError::InvalidToken)
+                    ));
+                }
+                assert!(
+                    oauth
+                        .store
+                        .list_grants()
+                        .unwrap()
+                        .iter()
+                        .any(|g| g.id == grant_id)
+                );
 
                 // The new access token verifies on the new client's door.
                 assert!(

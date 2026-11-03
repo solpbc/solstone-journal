@@ -2852,6 +2852,34 @@ async fn set_pause(
             StatusCode::BAD_REQUEST,
         );
     };
+    let exists = if kind == "bearer" {
+        TokenStore::open(&journal)
+            .list()
+            .map(|tokens| tokens.iter().any(|token| token.id == id))
+            .map_err(|_| ())
+    } else {
+        OAuthStore::open(&journal)
+            .list_grants()
+            .map(|grants| grants.iter().any(|grant| grant.id == id))
+            .map_err(|_| ())
+    };
+    match exists {
+        Ok(true) => {}
+        Ok(false) => {
+            return refusal(
+                "connection_not_found",
+                "connection was not found",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        Err(()) => {
+            return refusal(
+                "connection_store_unavailable",
+                "could not read connections",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+    }
     let key = format!("{kind}:{id}");
     let existing_pause = match crate::agent_state::is_owner_paused(&journal, &key) {
         Ok(p) => p,
@@ -5011,8 +5039,8 @@ mod tests {
         // 7. `set_permission` while owner-paused leaves evaluation `hold` and bumps generation.
         // `clear_permission` leaves evaluation `hold` and `read` null.
         // A side-store file that is not JSON makes `set_permission` on an existing record
-        // keep that record's evaluation string and makes `set_permission` with no record
-        // return `PermissionStoreError::AgentStateFault` without creating a record.
+        // keep that record's evaluation string, and makes `set_permission` with no record
+        // create one carrying the downgrade guard, so a new connection is never refused.
         let _ = set_pause(
             Extension(journal.clone()),
             Path(("oauth".to_string(), oauth_id.clone())),
@@ -5060,25 +5088,17 @@ mod tests {
             .unwrap();
         assert_eq!(updated_fault.evaluation, eval_before_fault);
 
-        let err_fault = p_store.set_permission(
-            "oauth:nonexistent",
-            ReadPermission {
-                categories: vec!["entities".to_owned()],
-                scope: ReadScope::WholeJournal,
-            },
-        );
-        assert!(matches!(
-            err_fault,
-            Err(crate::permissions::PermissionStoreError::AgentStateFault)
-        ));
-        assert!(
-            p_store
-                .read()
-                .unwrap()
-                .permissions
-                .iter()
-                .all(|p| p.connection != "oauth:nonexistent")
-        );
+        let new_under_fault = p_store
+            .set_permission(
+                "oauth:nonexistent",
+                ReadPermission {
+                    categories: vec!["entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        assert_eq!(new_under_fault.evaluation, "hold");
+        assert_eq!(new_under_fault.generation, 1);
 
         // 8. A pairing POST with `{"door":"relay","agent":"bearer:<id>"}` is 400 and creates no pairing code.
         fs::remove_file(root.join("mcp-endpoint/agent-state.json")).unwrap();
@@ -5088,6 +5108,23 @@ mod tests {
         ));
         let bad_pairing_resp = generate_pairing(Extension(journal.clone()), bad_pairing_body).await;
         assert_eq!(bad_pairing_resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn pausing_a_connection_that_does_not_exist_is_refused_and_writes_nothing() {
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+        let journal = Arc::new(root.to_path_buf());
+        for kind in ["oauth", "bearer"] {
+            let response = set_pause(
+                Extension(journal.clone()),
+                Path((kind.to_string(), "no-such-connection".to_string())),
+                Ok(Json(json!({"paused": true}))),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        }
+        assert!(!root.join("mcp-endpoint/agent-state.json").exists());
     }
 
     #[tokio::test]

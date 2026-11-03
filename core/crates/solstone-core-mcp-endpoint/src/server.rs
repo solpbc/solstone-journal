@@ -811,7 +811,9 @@ fn post_json_rpc(
                         "paused": true,
                         "content": [{
                             "type": "text",
-                            // Told to the agent so it can tell its person.
+                            // Unlike the closed refusal, which looks the same whatever
+                            // the cause, this one says why, so the agent can tell its
+                            // person what to do. Only a fully verified credential gets it.
                             "text": "this connection is paused. the owner can resume it in their journal's agents app. nothing was read or saved."
                         }]
                     }),
@@ -4491,6 +4493,150 @@ mod unit_tests {
             RequestGuard::None,
         );
         assert!(bound_res.is_ok());
+    }
+
+    #[test]
+    fn a_paused_connection_still_gets_the_plain_401_for_any_credential_that_does_not_verify() {
+        struct ClockResetGuard;
+        impl Drop for ClockResetGuard {
+            fn drop(&mut self) {
+                crate::oauth::store::set_routine_now(None);
+            }
+        }
+        let _guard = ClockResetGuard;
+        let base_now = 1_800_000_000_i64;
+        crate::oauth::store::set_routine_now(Some(base_now));
+
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-server-test-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+        let root = journal.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            json!({"mcp_endpoint": {"byo_hostname": {
+                "hostname": "journal.example", "enabled": true, "generation": 1
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+        let relay = OAuthRuntime::new_byo(root, "journal.example", 1);
+        let binding = relay.binding();
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/c2_agent.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("C2 Agent".to_owned()),
+                &relay.source_cohort(std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let pairing = relay.store.generate_pairing_code_with_door("byo").unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-c2"));
+        let transaction = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://journal.example",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let authorization = relay
+            .store
+            .complete_pairing_with_permission(
+                &transaction,
+                &pairing.code,
+                Some(crate::permissions::ReadPermission::default_whole_journal()),
+                &binding,
+            )
+            .unwrap();
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &authorization.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-c2",
+                &binding,
+            )
+            .unwrap();
+        let token_store = TokenStore::open(root);
+        let key = token_store.create("c2-key").unwrap();
+        let bearer_id = token_store.list().unwrap()[0].id.clone();
+        for connection in [
+            format!("oauth:{}", tokens.token_id),
+            format!("bearer:{bearer_id}"),
+        ] {
+            crate::permissions::PermissionStore::open(root)
+                .set_evaluation_only(&connection, "hold")
+                .unwrap();
+            crate::agent_state::set_owner_pause(
+                root,
+                &connection,
+                crate::oauth::current_time(),
+                &crate::tokens::SystemRandomSource,
+            )
+            .unwrap();
+            assert!(
+                crate::agent_state::is_owner_paused(root, &connection)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+
+        let auth = |runtime: &OAuthRuntime, token: &str| {
+            let request = HttpRequest::from_test_parts(
+                HttpMethod::Post,
+                vec![("authorization".to_owned(), format!("Bearer {token}"))],
+                Vec::new(),
+            );
+            super::authenticate(
+                &request,
+                &token_store,
+                &runtime.store,
+                &runtime.binding(),
+                runtime.fixed_resource_origin(),
+                RequestGuard::None,
+            )
+        };
+        let assert_plain_401 =
+            |case: &str, result: Result<crate::tokens::VerifiedToken, super::HttpResponse>| {
+                let response = result
+                    .err()
+                    .unwrap_or_else(|| panic!("{case}: an unverified credential is refused"));
+                assert_eq!(response.status, 401);
+                assert!(!String::from_utf8_lossy(&response.body).contains("paused"));
+            };
+
+        // Fully verified credentials of paused connections pass authentication;
+        // the pause gate answers them after it.
+        assert!(auth(&relay, &tokens.access_token).is_ok());
+        assert!(auth(&relay, &key.token).is_ok());
+
+        // Unknown.
+        assert_plain_401("unknown", auth(&relay, "not-a-token-anyone-was-given"));
+        // Moved hostname: the owner's hostname changed, or was replaced.
+        let moved = OAuthRuntime::new_byo(root, "journal.example", 2);
+        assert_plain_401("moved hostname", auth(&moved, &tokens.access_token));
+        let replaced = OAuthRuntime::new_byo(root, "other.example", 1);
+        assert_plain_401("replaced hostname", auth(&replaced, &tokens.access_token));
+        // Expired access token.
+        crate::oauth::store::set_routine_now(Some(base_now + 3601));
+        assert_plain_401("expired", auth(&relay, &tokens.access_token));
+        crate::oauth::store::set_routine_now(Some(base_now));
+        // Revoked.
+        assert!(relay.store.revoke_grant_by_id(&tokens.token_id).unwrap());
+        assert_plain_401("revoked grant", auth(&relay, &tokens.access_token));
+        assert!(token_store.revoke_by_id(&bearer_id).unwrap());
+        assert_plain_401("revoked key", auth(&relay, &key.token));
     }
 
     #[test]

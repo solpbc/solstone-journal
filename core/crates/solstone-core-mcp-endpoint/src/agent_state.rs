@@ -82,6 +82,9 @@ pub(crate) enum AgentStateEntry {
     OwnerPause(OwnerPauseRecord),
     Attempts(AttemptsRecord),
     MemorySource(MemorySourceRecord),
+    /// An entry this binary doesn't know, kept as it was so a write here
+    /// never erases what a newer binary stored.
+    Unknown(Value),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -137,11 +140,17 @@ fn parse_store(bytes: &[u8]) -> Result<AgentStateStore, AgentStateError> {
     for item in entries_array {
         let item_obj = match item.as_object() {
             Some(o) => o,
-            None => continue,
+            None => {
+                entries.push(AgentStateEntry::Unknown(item.clone()));
+                continue;
+            }
         };
         let kind = match item_obj.get("kind").and_then(Value::as_str) {
             Some(k) => k,
-            None => continue,
+            None => {
+                entries.push(AgentStateEntry::Unknown(item.clone()));
+                continue;
+            }
         };
         match kind {
             "owner_pause" => {
@@ -205,9 +214,7 @@ fn parse_store(bytes: &[u8]) -> Result<AgentStateStore, AgentStateError> {
                     source: source.to_string(),
                 }));
             }
-            _ => {
-                // Unknown kind skipped.
-            }
+            _ => entries.push(AgentStateEntry::Unknown(item.clone())),
         }
     }
     Ok(AgentStateStore { entries })
@@ -241,6 +248,7 @@ fn serialize_store(store: &AgentStateStore) -> Value {
                     "source": r.source,
                 }));
             }
+            AgentStateEntry::Unknown(value) => entries_json.push(value.clone()),
         }
     }
     json!({
@@ -641,6 +649,16 @@ mod tests {
         let paused_after = is_owner_paused(dir.path(), "test:conn").unwrap().unwrap();
         assert_eq!(paused_after.pause_id, "0123456789abcdef0123456789abcdef");
         assert_eq!(paused_after.since, "2026-11-01T00:00:00Z");
+
+        // A write by this binary keeps the entry it doesn't know.
+        set_memory_source(dir.path(), "test:other", &"ab".repeat(32)).unwrap();
+        let written: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(
+            written["entries"]
+                .as_array()
+                .unwrap()
+                .contains(&json!({"kind": "future_kind", "foo": "bar"}))
+        );
     }
 
     #[test]

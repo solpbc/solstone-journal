@@ -163,7 +163,7 @@ Accepted residuals:
 - A guard an older binary reset stays reset until the next pause, resume, or permission save on that connection, so a second downgrade before then serves its reads.
 - A counter bump that loses the lock is a refused call that was not counted.
 - Once a takeover swap commits, a lost token response leaves the old instance dead and the new one without tokens, and the owner makes a new code.
-- Moving `mcp-endpoint/agent-state.json` aside lifts every owner pause and leaves reconnected agents recalling empty.
+- If the journal keeps reporting that it can't read its agent settings, moving `mcp-endpoint/agent-state.json` aside recovers. It lifts every owner pause and leaves reconnected agents recalling empty.
 
 ## Redirects
 

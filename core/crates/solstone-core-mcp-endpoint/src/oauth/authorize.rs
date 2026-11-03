@@ -235,17 +235,26 @@ fn finish_authorize_get(
         state,
         &oauth.source_cohort(source),
     ) {
-        Ok(transaction_id) => consent_page(
-            &client,
-            redirect_uri,
-            &transaction_id,
-            oauth,
-            ConsentStage::Code {
-                wrong_code: false,
-                incomplete: false,
-            },
-            &ConsentSelection::initial(),
-        ),
+        Ok(transaction_id) => {
+            // A code made for an existing agent asks for the code alone first, so
+            // the target is named only once the code matches.
+            let stage = match oauth.store.open_pairing_is_targeted(&oauth.binding()) {
+                Ok(true) => ConsentStage::TargetedCode { wrong_code: false },
+                Ok(false) => ConsentStage::Code {
+                    wrong_code: false,
+                    incomplete: false,
+                },
+                Err(_) => return local_error("authorization is temporarily unavailable"),
+            };
+            consent_page(
+                &client,
+                redirect_uri,
+                &transaction_id,
+                oauth,
+                stage,
+                &ConsentSelection::initial(),
+            )
+        }
         Err(OAuthStoreError::NoActivePairing) => pairing_window_closed(),
         Err(OAuthStoreError::Quota) => {
             error_redirect(redirect_uri, "temporarily_unavailable", state, &issuer)
@@ -421,7 +430,13 @@ pub(crate) fn post_authorize(
             }
         }
         CodeClassification::NoMatch => {
-            let is_reconnect = field(&pairs, "reconnect") == Some("1");
+            // While a targeted code is open, every wrong code counts toward the
+            // wrong-code limit, whichever form it came from.
+            let targeted_open = match oauth.store.open_pairing_is_targeted(&oauth.binding()) {
+                Ok(targeted) => targeted,
+                Err(_) => return local_error("authorization is temporarily unavailable"),
+            };
+            let is_reconnect = field(&pairs, "reconnect") == Some("1") || targeted_open;
             if is_reconnect {
                 match oauth
                     .store
@@ -1115,7 +1130,7 @@ fn consent_page_named(
                 ""
             };
             format!(
-                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><input type="hidden" name="reconnect" value="1"><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">continue</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
+                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><input type="hidden" name="reconnect" value="1"><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">continue</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
                 host = html_escape(return_host),
             )
         }
@@ -1125,25 +1140,26 @@ fn consent_page_named(
             memory_count,
             live_holder,
         } => {
-            let memory_line = if memory_count > 0 {
-                let noun = if memory_count == 1 {
-                    "memory."
-                } else {
-                    "memories."
-                };
-                format!("<p>it keeps its {memory_count} {noun}</p>")
-            } else {
-                String::new()
+            let agent = format!("{} · {}", html_escape(&name), html_escape(&short_key));
+            let recall = match memory_count {
+                0 => String::new(),
+                1 => " and can recall its 1 memory".to_owned(),
+                n => format!(" and can recall its {n} memories"),
             };
-            let live_line = if live_holder {
-                "<p>the one connected now stops working.</p>"
+            let stops = if live_holder {
+                " the one connected now stops working."
             } else {
                 ""
             };
+            let may_see = if live_holder {
+                format!(
+                    "<p>here's what {agent} may see now. change them here or later in the agents app.</p>"
+                )
+            } else {
+                format!("<p>choose what {agent} may see.</p>")
+            };
             format!(
-                r#"<h1>connect {name} · {key} again?</h1><p>your code matched.</p>{memory_line}{live_line}<form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{choices}<button type="submit">connect {client}</button><p class="muted">changed your mind? close this tab. nothing is connected, and this code won't work again.</p></form>"#,
-                name = html_escape(&name),
-                key = html_escape(&short_key),
+                r#"<h1>connect {agent} again?</h1><p>your code matched. you made it in your journal for this agent, so it connects as {agent} again{recall}.{stops}</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{may_see}{choices}<button type="submit">connect {agent} again</button><p class="muted">changed your mind? close this tab. nothing changes, and this code won't work again.</p></form>"#,
             )
         }
     };
@@ -2834,9 +2850,15 @@ mod tests {
             )
             .unwrap();
 
-        // Open a transaction for a new client whose CIMD name is North Client
+        // Open a transaction for a new client whose CIMD name is North Client.
+        // The first page for a targeted code asks for the code alone.
         let get = get_with(&oauth, FakeIo::ok("North Client"), &authorize_query(&[])).await;
-        let transaction_id = hidden_transaction_id(&body_text(&get));
+        let page_get = body_text(&get);
+        assert!(page_get.contains(r#"name="reconnect" value="1""#));
+        assert!(!page_get.contains(r#"name="scope""#));
+        assert!(!page_get.contains(r#"name="category""#));
+        assert!(!page_get.contains("South Agent"));
+        let transaction_id = hidden_transaction_id(&page_get);
 
         // Post the code with no scope and no category
         let body_initial = format!(
@@ -2881,9 +2903,13 @@ mod tests {
         assert!(page_confirm.contains(&format!(
             "<h1>connect South Agent · {short_hex} again?</h1>"
         )));
-        assert!(page_confirm.contains("<p>your code matched.</p>"));
-        assert!(!page_confirm.contains("it keeps its"));
-        assert!(page_confirm.contains("<p>the one connected now stops working.</p>"));
+        assert!(page_confirm.contains(&format!(
+            "<button type=\"submit\">connect South Agent · {short_hex} again</button>"
+        )));
+        assert!(!page_confirm.contains("connect North Client"));
+        assert!(!page_confirm.contains("can recall its"));
+        assert!(page_confirm.contains("stops working."));
+        assert!(page_confirm.contains(r#"name="scope""#));
     }
 
     #[tokio::test(start_paused = true)]
@@ -2980,6 +3006,37 @@ mod tests {
             "this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again."
         ));
         assert_eq!(oauth.store.list_grants().unwrap().len(), 0);
+
+        // Posting the same form again never falls through to an untargeted pairing.
+        let resp_again = post_authorize(&post_request(&body_choice), SOURCE, &oauth);
+        assert!(header(&resp_again, "Location").is_none());
+        assert_eq!(oauth.store.list_grants().unwrap().len(), 0);
+        assert!(
+            oauth
+                .store
+                .pending_authorization(&verified_tx, &oauth.binding())
+                .unwrap()
+                .is_none()
+        );
+
+        // While a targeted code is open, wrong codes count even when posted
+        // without the hidden reconnect field and without choices.
+        let _targeted = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(format!("source:{hex}")))
+            .unwrap();
+        let get_t = get_with(&oauth, FakeIo::ok("Client"), &authorize_query(&[])).await;
+        let tx_t = hidden_transaction_id(&body_text(&get_t));
+        let body_plain_wrong = format!(
+            "transaction_id={}&pairing_code=00000000",
+            query_value_encode(&tx_t),
+        );
+        for _ in 0..4 {
+            let resp = post_authorize(&post_request(&body_plain_wrong), SOURCE, &oauth);
+            assert!(body_text(&resp).contains("that code didn't match"));
+        }
+        let fifth_plain = post_authorize(&post_request(&body_plain_wrong), SOURCE, &oauth);
+        assert!(body_text(&fifth_plain).contains("too many wrong codes for this request"));
 
         // Separately, five wrong codes posted with the hidden reconnect=1 field
         // produce the existing too_many_wrong_codes response, and a sixth does not consume a new code.
