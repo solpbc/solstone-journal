@@ -66,7 +66,6 @@
       qr: findById(documentRef, 'link-pairing-qr'),
       check: findById(documentRef, 'link-pairing-check'),
       successHeading: findById(documentRef, 'link-pairing-success-heading'),
-      successSubhead: findById(documentRef, 'link-pairing-success-subhead'),
       successVerify: findById(documentRef, 'link-pairing-success-verify'),
       remove: findById(documentRef, 'link-pairing-remove'),
       removeResult: findById(documentRef, 'link-pairing-remove-result'),
@@ -245,12 +244,15 @@
       const label = ceremony.pairedDevice?.display_label?.trim()
         || ceremony.material?.device_label?.trim()
         || '';
-      const shortFingerprint = ceremony.material?.ca_fingerprint?.replace(/^sha256:/, '').slice(0, 16) || '';
       elements.successHeading.textContent = label
         ? copy('SUCCESS_HEADING').replace('{label}', label)
         : copy('SUCCESS_HEADING_UNNAMED');
-      elements.successSubhead.textContent = copy('SUCCESS_SUBHEAD').replace('{short_fp}', shortFingerprint);
-      elements.successVerify.textContent = copy(ceremony.material?.relay === true ? 'SUCCESS_VERIFY_NOTE_ANYWHERE' : 'SUCCESS_VERIFY_NOTE');
+      // The journal can't see the device's answer. On this computer only some
+      // solstone apps ask at all, so that note is conditional.
+      let verifyNote = 'SUCCESS_VERIFY_NOTE';
+      if (ceremony.sameMachine) verifyNote = 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER';
+      else if (ceremony.material?.relay === true) verifyNote = 'SUCCESS_VERIFY_NOTE_ANYWHERE';
+      elements.successVerify.textContent = copy(verifyNote);
       elements.remove.hidden = !ceremony.pairedDevice?.cid;
       elements.remove.disabled = false;
       elements.removeResult.hidden = true;

@@ -220,7 +220,7 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
             "journal mark: {}\n",
             format_spoken_mark(&mark.to_render_spec())
         ),
-        Err(_) => "journal mark: could not be shown\n".to_string(),
+        Err(_) => format!("{}\n", crate::mark_text::MARK_UNAVAILABLE_LINE),
     };
 
     CommandOutput::success(format!(
@@ -432,6 +432,9 @@ fn format_spoken_mark(spec: &spl_core::mark::MarkRenderSpec) -> String {
     crate::mark_text::spoken_mark(spec)
 }
 
+const SIGHTING_RESET_FOOTER: &str = "if you recently reset your journal, pair this device again.";
+const SIGHTING_RELAY_FOOTER: &str = "this is less certain than a direct connection.";
+
 fn format_sighting_block(
     sighting: &crate::seam::UnknownJournalSighting,
     local_instance_id: &str,
@@ -456,16 +459,12 @@ fn format_sighting_block(
             let spoken = format_spoken_mark(&mark.to_render_spec());
             format!("your journal:   {spoken}")
         }
-        Err(_) => "your journal:   could not be shown".to_string(),
+        Err(_) => crate::mark_text::MARK_UNAVAILABLE_LINE.to_string(),
     };
-    let footer = if sighting.jid.is_some() {
-        if sighting.address.is_some() {
-            "\n\nIf you recently reset this journal, pair this device again."
-        } else {
-            "\n\nA relay sighting is weaker evidence than a LAN address."
-        }
-    } else {
-        ""
+    let footer = match (&sighting.jid, &sighting.address) {
+        (None, _) => String::new(),
+        (Some(_), Some(_)) => format!("\n\n{SIGHTING_RESET_FOOTER}"),
+        (Some(_), None) => format!("\n\n{SIGHTING_RELAY_FOOTER}"),
     };
     format!("\n{header}\n\n{what_answered}\n{your_journal}{footer}\n")
 }
@@ -2470,8 +2469,9 @@ mod tests {
         assert_eq!(
             output.stdout,
             format!(
-                "Linked laptop.\nCredentials: {}\njournal mark: could not be shown\n",
-                bundle.display()
+                "Linked laptop.\nCredentials: {}\n{}\n",
+                bundle.display(),
+                crate::mark_text::MARK_UNAVAILABLE_LINE
             )
         );
         assert_eq!(output.exit, 0);
@@ -3723,7 +3723,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\n{SIGHTING_RESET_FOOTER}\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3782,7 +3782,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen through the relay:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nA relay sighting is weaker evidence than a LAN address.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen through the relay:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\n{SIGHTING_RELAY_FOOTER}\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3842,7 +3842,7 @@ mod tests {
         );
         assert_eq!(output.stdout, expected);
         assert!(!output.stdout.contains("(claimed, not verified)"));
-        assert!(!output.stdout.contains("If you recently reset this journal"));
+        assert!(!output.stdout.contains(SIGHTING_RESET_FOOTER));
     }
 
     #[test]
@@ -3896,7 +3896,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  claimed identity could not be shown (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  claimed identity could not be shown (claimed, not verified)\nyour journal:   {local_spoken}\n\n{SIGHTING_RESET_FOOTER}\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3953,7 +3953,8 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   could not be shown\n\nIf you recently reset this journal, pair this device again.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\n{unavailable}\n\n{SIGHTING_RESET_FOOTER}\n",
+            unavailable = crate::mark_text::MARK_UNAVAILABLE_LINE
         );
         assert_eq!(output.stdout, expected);
     }
@@ -4018,7 +4019,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let block1 = format!(
-            "\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\n{SIGHTING_RESET_FOOTER}\n"
         );
         let block2 = format!(
             "\nunknown journal seen through the relay:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
@@ -4091,7 +4092,7 @@ mod tests {
         };
 
         let expected_sighting = format!(
-            "unknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "unknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\n{SIGHTING_RESET_FOOTER}\n"
         );
 
         // 1. Connected state

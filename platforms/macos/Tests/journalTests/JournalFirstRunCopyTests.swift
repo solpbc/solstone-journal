@@ -34,7 +34,6 @@ struct JournalFirstRunCopyTests {
         #expect(JournalFirstRunCopy.whereYourJournalLives == "where your journal lives")
         #expect(JournalFirstRunCopy.whereYourJournalLivesDescription == "everything your journal keeps stays in this folder, on this mac.")
         #expect(JournalFirstRunCopy.journalFolder == "journal folder")
-        #expect(JournalFirstRunCopy.markPhoneCheck == "when you connect a phone or another computer, you check that the mark it shows matches this one.")
         #expect(JournalFirstRunCopy.whereDoesThinkingHappen == "where does the thinking happen?")
         #expect(JournalFirstRunCopy.whereDoesThinkingHappenDescription == "your journal stays on this mac whatever you choose. this only decides where thinking happens.")
         #expect(JournalFirstRunCopy.onThisMac == "on this mac")

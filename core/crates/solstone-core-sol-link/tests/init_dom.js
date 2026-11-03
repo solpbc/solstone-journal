@@ -2002,6 +2002,9 @@ async function runTests(manifestDir) {
     assert.strictEqual(env.doc.getElementById('setup-retry').hidden, false);
     assert.strictEqual(env.doc.getElementById('mark-error').textContent, stubCopy.mark.error);
     assert.strictEqual(env.doc.getElementById('mark-try-another').hidden, true);
+    const unavailableCard = env.doc.getElementById('journal-mark-display').querySelector('.mark-card');
+    assert.ok(unavailableCard, 'a locked mark that cannot be drawn still fills the mark slot');
+    assert.ok(unavailableCard.getAttribute('aria-label'));
   }
 
   // Rejecting cancel keeps the real active attempt visible and cancellable.

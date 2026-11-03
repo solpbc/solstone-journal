@@ -6,6 +6,11 @@
 
 use spl_core::mark::{MarkError, MarkRenderSpec};
 
+/// Said wherever the journal's mark exists but can't be read or worked out.
+pub(crate) const MARK_UNAVAILABLE_LINE: &str = "your journal's mark: unavailable right now";
+pub(crate) const NO_IDENTITY_YET_LINE: &str =
+    "your journal's identity is created when its mark is locked in during setup.";
+
 #[cfg(not(test))]
 pub(crate) use spl_core::mark::mark_from_jid;
 

@@ -336,7 +336,7 @@ struct JournalFirstRunView: View {
             )
             SetupStep(
                 headline: copy.mark.title,
-                explanations: [copy.mark.help, JournalFirstRunCopy.markPhoneCheck]
+                explanations: [copy.mark.help]
             ) {
                 SetupCard {
                     VStack(alignment: .center, spacing: 14) {

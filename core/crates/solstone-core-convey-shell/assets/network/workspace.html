@@ -290,7 +290,10 @@ systemctl --user start solstone-linux</code></div>
       </div>
       <div id="link-pairing-complete" hidden>
         <h3 id="link-pairing-success-heading" data-copy="SUCCESS_HEADING"></h3>
-        <p id="link-pairing-success-subhead" data-copy="SUCCESS_SUBHEAD"></p>
+        <section class="link-identity">
+          <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
+          <div id="link-pairing-success-mark" class="link-identity-mark"></div>
+        </section>
         <p id="link-pairing-success-verify" class="modal-warning" data-copy="SUCCESS_VERIFY_NOTE"></p>
         <p id="link-pairing-remove-result" role="status" hidden></p>
         <div class="modal-actions">
@@ -1161,6 +1164,7 @@ systemctl --user start solstone-linux</code></div>
     const containers = [
       document.getElementById('link-identity-mark'),
       document.getElementById('link-pairing-identity-mark'),
+      document.getElementById('link-pairing-success-mark'),
     ].filter(Boolean);
     for (const container of containers) {
       if (type === 'ready') renderIdentityMark(container, spec);
@@ -1199,9 +1203,10 @@ systemctl --user start solstone-linux</code></div>
     }
     // unavailable or committed without valid spec
     applyIdentityToAll('unavailable');
-    if (idDisclosure) idDisclosure.hidden = false;
+    const hasInstanceId = typeof data.instance_id === 'string' && data.instance_id !== '';
+    if (idDisclosure) idDisclosure.hidden = !hasInstanceId;
     const idValue = document.getElementById('link-identity-id-value');
-    if (idValue && typeof data.instance_id === 'string') idValue.textContent = data.instance_id;
+    if (idValue && hasInstanceId) idValue.textContent = data.instance_id;
     section.hidden = false;
   }
 

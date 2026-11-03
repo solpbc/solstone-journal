@@ -17,8 +17,8 @@ const REQUIRED_COPY_KEYS = [
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'CHECK_AGAIN_LABEL',
   'PRIVATE_LINK_NEEDS_REPAIR', 'SPL_NOT_ENROLLED_REPAIR_CTA', 'PRIVATE_LINK_DISABLE_CTA',
   'PRIVATE_LINK_RETRY_CTA',
-  'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON', 'SUCCESS_HEADING', 'SUCCESS_SUBHEAD',
-  'SUCCESS_VERIFY_NOTE', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
+  'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON', 'SUCCESS_HEADING',
+  'SUCCESS_VERIFY_NOTE', 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
   'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_REMOVE_LABEL', 'SUCCESS_REMOVED',
   'SUCCESS_REMOVE_FAIL', 'LOCAL_NETWORK_WINDOWS_ASKS_NOTE', 'PAIR_LINK_ADDRESSES_LINE', 'REACH_DEVICE_ADDRESSES_LABEL',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
@@ -28,7 +28,7 @@ const REQUIRED_COPY_KEYS = [
 
 const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
-  'PAIR_RELAY_LINE', 'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_REMOVED',
+  'PAIR_RELAY_LINE', 'SUCCESS_HEADING_UNNAMED', 'SUCCESS_VERIFY_NOTE_ANYWHERE', 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER', 'SUCCESS_REMOVED',
   'SUCCESS_REMOVE_FAIL', 'LOCAL_NETWORK_WINDOWS_ASKS_NOTE',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'PRIVATE_LINK_NEEDS_REPAIR',
   'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
@@ -413,7 +413,6 @@ function createEnvironment(manifestDir, options = {}) {
   closedButton.dataset.pairingAction = 'regenerate';
   windowClosed.appendChild(closedButton);
   const successHeading = make('link-pairing-success-heading', 'h3');
-  const successSubhead = make('link-pairing-success-subhead', 'p');
   const successVerify = make('link-pairing-success-verify', 'p');
   const removeResult = make('link-pairing-remove-result', 'p');
   removeResult.hidden = true;
@@ -422,7 +421,7 @@ function createEnvironment(manifestDir, options = {}) {
   const removeButton = make('link-pairing-remove', 'button');
   removeButton.dataset.pairingAction = 'remove';
   removeButton.hidden = true;
-  complete.append(successHeading, successSubhead, successVerify, removeResult, completeClose, removeButton);
+  complete.append(successHeading, successVerify, removeResult, completeClose, removeButton);
 
   const timerQueue = new Map();
   const intervals = new Map();
@@ -442,7 +441,6 @@ function createEnvironment(manifestDir, options = {}) {
       PAIR_PUBLIC_ADDRESS_LINE: 'public {time}',
       PAIR_RELAY_LINE: 'relay {time}',
       SUCCESS_HEADING: 'heading {label}',
-      SUCCESS_SUBHEAD: 'subhead {short_fp}',
     },
     appEvents: {
       listen(tract, callback) {
@@ -733,6 +731,69 @@ async function main() {
     assert.strictEqual(env.nodes.get('link-pairing-success-verify').textContent, 'copy-SUCCESS_VERIFY_NOTE_ANYWHERE');
   });
 
+  await testCase('a same-computer pairing completes with its own note', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ reason_code: 'local_network_closed' }, 409));
+    env.click(env.opener);
+    await settle();
+    env.fetchQueue.push(response(material({ link_addresses: ['127.0.0.1:7657'] })));
+    env.click(env.nodes.get('link-pairing-this-computer'));
+    await settle();
+    env.fetchQueue.push(response({ present: true, used: true, device: { cid: 'sha256:aa', display_label: 'solstone' } }));
+    env.emitLink();
+    await settle();
+    assert.strictEqual(env.nodes.get('link-pairing-complete').hidden, false);
+    assert.strictEqual(env.nodes.get('link-pairing-success-verify').textContent, 'copy-SUCCESS_VERIFY_NOTE_THIS_COMPUTER');
+  });
+
+  await testCase('the journal id disclosure shows only with a value to show', async () => {
+    const start = workspace.indexOf('async function loadIdentity() {');
+    const end = workspace.indexOf('function clearRefreshError', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+    for (const [body, hidden] of [
+      [{ committed: true, availability: 'unavailable', instance_id: null, mark: null }, true],
+      [{ committed: true, availability: 'unavailable', instance_id: 'jid-a', mark: null }, false],
+    ]) {
+      const disclosure = { hidden: !hidden };
+      const idValue = { textContent: '' };
+      const section = { hidden: true, querySelector: () => disclosure };
+      const context = vm.createContext({
+        document: { getElementById: (id) => ({ 'link-identity-header': section, 'link-identity-id-value': idValue })[id] || null },
+        window: { apiJson: async () => body },
+        validMarkSpec: () => false,
+        applyIdentityToAll() {},
+      });
+      vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-load-identity.js' });
+      await context.loadIdentity();
+      assert.strictEqual(disclosure.hidden, hidden);
+      assert.strictEqual(idValue.textContent, body.instance_id || '');
+    }
+  });
+
+  await testCase('the completed card has a mark slot, and the identity renderer fills it', async () => {
+    const complete = workspace.match(/<div id="link-pairing-complete"[\s\S]*?<div class="modal-actions">/);
+    assert.ok(complete && complete[0].includes('id="link-pairing-success-mark"'));
+    const start = workspace.indexOf('function applyIdentityToAll(type, spec) {');
+    const end = workspace.indexOf('async function loadIdentity()', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+    const nodes = new Map(['link-identity-mark', 'link-pairing-identity-mark', 'link-pairing-success-mark'].map((id) => [id, {}]));
+    const drawn = [];
+    const context = vm.createContext({
+      document: { getElementById: (id) => nodes.get(id) || null },
+      renderIdentityMark: (container) => drawn.push(['ready', container]),
+      renderUnavailableIdentityMark: (container) => drawn.push(['unavailable', container]),
+      renderGenericIdentityMark: (container) => drawn.push(['none', container]),
+    });
+    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-identity.js' });
+    for (const type of ['ready', 'unavailable', 'none']) {
+      drawn.length = 0;
+      context.applyIdentityToAll(type, {});
+      assert.ok(drawn.some(([kind, container]) => kind === type && container === nodes.get('link-pairing-success-mark')), type);
+    }
+  });
+
   await testCase('didn\'t do this? removes the device it just paired', async () => {
     const env = createEnvironment(manifestDir);
     env.fetchQueue.push(response(material()));
@@ -794,7 +855,7 @@ async function main() {
     await settle();
     assert.strictEqual(env.requests[1].url, '/app/network/api/pair/nonce-status?nonce=nonce-a');
     assert.strictEqual(env.nodes.get('link-pairing-complete').hidden, false);
-    assert.strictEqual(env.nodes.get('link-pairing-success-subhead').textContent, 'subhead abcdef0123456789');
+    assert.ok(!env.nodes.get('link-pairing-complete').textContent.includes('abcdef0123456789'));
   });
 
   await testCase('an unrelated link event leaves an open current nonce incomplete', async () => {

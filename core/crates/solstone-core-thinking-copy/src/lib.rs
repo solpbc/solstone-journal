@@ -1348,7 +1348,7 @@ pub fn setup_copy(facts: &SetupCatalogFacts) -> serde_json::Value {
         },
         "mark": {
             "title": "your journal mark",
-            "help": "a unique visual mark created for your journal.",
+            "help": "a unique mark for your journal. a phone or other computer you pair shows it too, so you can check it.",
             "error": "your journal mark could not be loaded. try again.",
             "permanence": "continue makes this your journal's mark for good.",
             "try_another": "try another",

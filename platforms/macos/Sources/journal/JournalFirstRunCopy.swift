@@ -40,7 +40,6 @@ enum JournalFirstRunCopy {
     static let whereYourJournalLives = "where your journal lives"
     static let whereYourJournalLivesDescription = "everything your journal keeps stays in this folder, on this mac."
     static let journalFolder = "journal folder"
-    static let markPhoneCheck = "when you connect a phone or another computer, you check that the mark it shows matches this one."
     static let whereDoesThinkingHappen = "where does the thinking happen?"
     static let whereDoesThinkingHappenDescription = "your journal stays on this mac whatever you choose. this only decides where thinking happens."
     static let onThisMac = "on this mac"
@@ -90,7 +89,6 @@ enum JournalFirstRunCopy {
         whereYourJournalLives,
         whereYourJournalLivesDescription,
         journalFolder,
-        markPhoneCheck,
         whereDoesThinkingHappen,
         whereDoesThinkingHappenDescription,
         onThisMac,

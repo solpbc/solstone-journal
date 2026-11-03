@@ -1243,6 +1243,12 @@ pass('empty geometry never enables commit');
 const catalog = JSON.parse(readFileSync(join(here, '../../solstone-core-sol-link/assets/mark_assets/glyphs.json'), 'utf8'));
 const markModule = await import('../ui/mark.js');
 if (!catalog.drum) throw new Error('catalog control missing drum');
+// A browser measures a path in an unrendered parsed document, and throws for
+// every other shape.
+DomElement.prototype.getTotalLength = function getTotalLength() {
+  if (this.localName !== 'path') throw new Error('InvalidStateError');
+  return this.getAttribute('d') ? 1 : 0;
+};
 for (const [name, svg] of Object.entries(catalog)) {
   const render = { ...validRender,
     icon1: { ...validRender.icon1, svg }, icon2: { ...validRender.icon2, svg },
@@ -1260,6 +1266,7 @@ for (const [name, svg] of Object.entries(catalog)) {
     }
   }
 }
+delete DomElement.prototype.getTotalLength;
 pass('unchanged canonical catalog keeps every drawing shape and path');
 
 paint(view({ phase: 'mark', step: 3, busy: true,
@@ -1309,7 +1316,7 @@ if ($('pane').textContent.includes('cached') || $('pane').textContent.includes('
 if (query($('pane'), '.mark-confirmed')) throw new Error('.mark-confirmed shown on neutral identity');
 pass('neutral identity does not confirm the cached mark');
 
-// 13. malformed identity does not confirm the cached mark
+// 13. a committed mark that can't be drawn, with none saved, shows unavailable
 identityPlan.push({ committed: true, instance_id: 'inst-2', mark: null });
 statusPlan.push(statusBody('running', true));
 window.journalApp.receive({ type: 'shown' });
@@ -1319,9 +1326,10 @@ if ($('pane').textContent.includes('cached') || $('pane').textContent.includes('
   throw new Error('cached words shown on malformed identity');
 }
 if (query($('pane'), '.mark-confirmed')) throw new Error('.mark-confirmed shown on malformed identity');
-pass('malformed identity does not confirm the cached mark');
+if (!query($('pane'), '.mark-chip.unavailable')) throw new Error('malformed identity with no saved mark did not show unavailable');
+pass('malformed identity with no saved mark shows unavailable');
 
-// 14. failed identity does not confirm the cached mark
+// 14. a failed read, with no mark saved, shows unavailable
 identityPlan.push({ fail: 'convey failed' });
 statusPlan.push(statusBody('running', true));
 window.journalApp.receive({ type: 'shown' });
@@ -1331,7 +1339,35 @@ if ($('pane').textContent.includes('cached') || $('pane').textContent.includes('
   throw new Error('cached words shown on failed identity');
 }
 if (query($('pane'), '.mark-confirmed')) throw new Error('.mark-confirmed shown on failed identity');
-pass('failed identity does not confirm the cached mark');
+if (!query($('pane'), '.mark-chip.unavailable')) throw new Error('failed identity with no saved mark did not show unavailable');
+if (query($('pane'), '.mark-chip.generic')) throw new Error('failed identity painted the no-identity-yet mark');
+pass('failed identity with no saved mark shows unavailable');
+
+// 14a. a failed or undrawable read keeps a saved mark
+identityPlan.push({ committed: true, instance_id: 'inst-1', mark: identityMark });
+statusPlan.push(statusBody('running', true));
+window.journalApp.receive({ type: 'shown' });
+await flush();
+for (const [name, read] of [
+  ['failed', { fail: 'convey failed' }],
+  ['undrawable', { committed: true, instance_id: 'inst-1', mark: null }],
+]) {
+  identityPlan.push(read);
+  statusPlan.push(statusBody('running', true));
+  window.journalApp.receive({ type: 'shown' });
+  await flush();
+  if (!$('pane').textContent.includes('mountain')) throw new Error(`${name} read dropped the saved mark`);
+  if (query($('pane'), '.mark-chip.unavailable')) throw new Error(`${name} read marked a saved mark unavailable`);
+}
+pass('failed or undrawable read keeps a saved mark');
+
+// 14b. no identity at all still shows the no-identity-yet mark
+identityPlan.push({ committed: false, instance_id: null, mark: null });
+statusPlan.push(statusBody('running', true));
+window.journalApp.receive({ type: 'shown' });
+await flush();
+if (!query($('pane'), '.mark-chip.generic')) throw new Error('no identity did not show the generic mark');
+pass('no identity still shows the generic mark');
 
 // 15. thinking focus survives a progress repaint
 paint(view({

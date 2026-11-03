@@ -141,7 +141,6 @@ const COPY = {
     folderTitle: 'where your journal lives',
     folderText: 'everything your journal keeps stays in this folder, on this PC.',
     folderLabel: 'journal folder',
-    markMatch: 'when you connect a phone or another computer, you check that the mark it shows matches this one.',
     thinkingTitle: 'where does the thinking happen?',
     thinkingLead: 'your journal stays on this PC whatever you choose. this only decides where thinking happens.',
     onThisPc: 'on this PC',
@@ -399,15 +398,23 @@ async function loadJournalFacts() {
       state.mark = identity.mark;
       state.markUnavailable = false;
       await applyIcon(state.mark);
+    } else if (identity?.committed === true) {
+      holdMarkAfterFailedRead();
     } else {
       state.mark = null;
       state.markUnavailable = false;
     }
   } catch {
-    state.mark = null;
-    state.markUnavailable = false;
+    holdMarkAfterFailedRead();
   }
   render();
+}
+
+// A read that failed says nothing new about the journal's identity: keep the
+// locked mark already held, and with none say so instead of "not set up yet".
+function holdMarkAfterFailedRead() {
+  if (!displayableMark(state.mark)) state.mark = null;
+  state.markUnavailable = state.mark === null;
 }
 
 let iconMark = null;
@@ -1156,8 +1163,7 @@ function renderFlow(view) {
 
     put(lead,
       el('h1', {}, document.createTextNode(markCopy.title || '')),
-      markCopy.help ? el('p', { class: 'muted' }, document.createTextNode(markCopy.help)) : null,
-      el('p', {}, document.createTextNode(COPY.setup.markMatch))
+      markCopy.help ? el('p', { class: 'muted' }, document.createTextNode(markCopy.help)) : null
     );
 
     card.classList.add('setup-card-center');

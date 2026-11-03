@@ -514,6 +514,13 @@
       return wordSpans.length === 2 && chips.length === 2;
     }
 
+    // A locked mark that can't be drawn: the identity exists and is permanent,
+    // this read just can't show it.
+    function renderUnavailableMark(display) {
+      const chip = '<div class="mark-chip" style="border-color: var(--hairline); background: var(--cream-bright);"><span style="font-size: 24px; font-weight: 700; color: var(--ink-faint);">?</span></div>';
+      display.innerHTML = `<div class="mark-card" role="img" aria-label="your journal's mark, unavailable right now"><div class="mark-chips">${chip}${chip}</div><div class="mark-words"><span>mark</span><span class="mark-sep">·</span><span>unavailable</span></div></div>`;
+    }
+
     function isValidMarkSnapshot(markObj) {
       if (!markObj || !['proposed', 'locked'].includes(markObj.state)) return false;
       const nonblank = value => typeof value === 'string' && value.trim().length > 0;
@@ -532,7 +539,9 @@
       if (!isValidMarkSnapshot(markObj) || !renderMark(markObj.render)) {
         showMarkError((setupCopy && setupCopy.mark && setupCopy.mark.error) || '');
         displayedProposalId = null;
-        document.getElementById('journal-mark-display').innerHTML = '';
+        const display = document.getElementById('journal-mark-display');
+        if (markIsLocked) renderUnavailableMark(display);
+        else display.innerHTML = '';
         const retry = document.getElementById('setup-retry');
         if (retry) retry.hidden = false;
         updateMarkButtons();

@@ -117,6 +117,50 @@ mod tests {
         }
     }
 
+    fn ok_get(path: &str, body: Value) -> ExpectedHttpCall {
+        ExpectedHttpCall::Request {
+            expected: ApiRequest {
+                method: HttpMethod::Get,
+                path: path.to_owned(),
+                params: vec![],
+                json: None,
+                headers: vec![],
+                policy: TimeoutPolicy::Api,
+            },
+            result: Ok(HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: body.to_string().into_bytes(),
+                policy: TimeoutPolicy::Api,
+            }),
+        }
+    }
+
+    #[test]
+    fn link_status_without_an_instance_id_tells_no_identity_from_a_failed_read() {
+        let no_identity_yet = crate::mark_text::NO_IDENTITY_YET_LINE;
+        let unavailable = crate::mark_text::MARK_UNAVAILABLE_LINE;
+        for (availability, shown, not_shown) in [
+            ("none", no_identity_yet, unavailable),
+            ("unavailable", unavailable, no_identity_yet),
+        ] {
+            let transport = ScriptedHttpTransport::new(vec![
+                ok_get("/app/network/api/status", json!({"instance_id": null})),
+                ok_get("/app/network/api/private-link", json!({})),
+                ok_get("/app/network/api/devices", json!({"devices": []})),
+                ok_get(
+                    "/app/network/api/identity",
+                    json!({"availability": availability}),
+                ),
+            ]);
+            let output = run(&["link", "status"], &[], &transport);
+            transport.assert_done();
+            assert_eq!(output.exit, 0, "{availability}");
+            assert!(output.stdout.contains(shown), "{availability}");
+            assert!(!output.stdout.contains(not_shown), "{availability}");
+        }
+    }
+
     fn run(path: &[&str], args: &[&str], transport: &ScriptedHttpTransport) -> CommandOutput {
         let (_, handler) = handler_for(path).expect("registered command");
         handler(CommandContext {

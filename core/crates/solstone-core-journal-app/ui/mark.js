@@ -39,9 +39,10 @@ function glyphShapes(svg) {
   const allowed = new Set(['path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse']);
   return [...doc.documentElement.children].filter(el => {
     if (!allowed.has(el.localName)) return false;
-    // Use WebView2's geometry parser before the portable fixture fallback;
-    // M/m may contain implicit line segments without another command letter.
-    if (typeof el.getTotalLength === 'function') {
+    // Use WebView2's geometry parser for paths: M/m may contain implicit line
+    // segments without another command letter. It throws for every other shape
+    // in a parsed document nothing has rendered, so those use the checks below.
+    if (el.localName === 'path' && typeof el.getTotalLength === 'function') {
       try { const length = el.getTotalLength(); return Number.isFinite(length) && length > 0; }
       catch { return false; }
     }

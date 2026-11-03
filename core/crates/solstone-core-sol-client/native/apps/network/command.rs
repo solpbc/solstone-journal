@@ -447,17 +447,14 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     {
         let mark = match crate::mark_text::mark_from_jid(instance_id) {
             Ok(mark) => mark,
-            Err(_) => return stderr("your journal's mark couldn't be read.", 1),
+            Err(_) => return stderr(crate::mark_text::MARK_UNAVAILABLE_LINE, 1),
         };
         let spec = mark.to_render_spec();
         let spoken = crate::mark_text::spoken_mark(&spec);
         lines.push(spoken);
         lines.push(format!("journal id:     {instance_id}"));
     } else {
-        lines.push(
-            "your journal's identity is created when its mark is locked in during setup."
-                .to_string(),
-        );
+        lines.push(absent_instance_id_line(ctx).to_string());
     }
     lines.push(format!(
         "Relay URL:     {}",
@@ -485,6 +482,25 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     lines
         .push("Listen-WS state: (query convey /app/network/api/status for live state)".to_string());
     stdout(lines)
+}
+
+/// The status route gives no instance id both before a mark is locked in and
+/// when the link state can't be read. The identity route tells the two apart.
+fn absent_instance_id_line(ctx: CommandContext<'_>) -> &'static str {
+    let identity = request_json(
+        ctx,
+        HttpMethod::Get,
+        "/app/network/api/identity",
+        vec![],
+        None,
+    );
+    let no_identity_yet =
+        identity.is_ok_and(|body| body.get("availability").and_then(Value::as_str) == Some("none"));
+    if no_identity_yet {
+        crate::mark_text::NO_IDENTITY_YET_LINE
+    } else {
+        crate::mark_text::MARK_UNAVAILABLE_LINE
+    }
 }
 
 #[must_use]
