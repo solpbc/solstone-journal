@@ -8,40 +8,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- the health page now says when search's daily check has run but not finished for more than two days, so you know some changes may be missing from search. a journal that was simply off or asleep doesn't count. `solstone journal indexer status` also shows how long the oldest queued update has waited.
-- your journal now lets you know when the disk it's on is running low on space, early enough to free some up, and again once there's space. the notice opens storage settings.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
-- browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from earlier versions of the solstone extension look as before.
-- when backup keeps failing with your current backup settings, several attempts in a row over at least two days, your journal now sends one notification that says why and opens the backup page. it sends one more when an attempt works again, and pausing backup ends it quietly.
-- your journal now tells you when a newly paired device or a newly connected agent can reach it: one notification to the devices where you turned notifications on, and a card in your journal that opens the page where you can unpair or disconnect it. an agent is announced only the first time you connect it, not each time it's paired again.
-- when your journal keeps turning away uploads from one of your devices because the solstone app or solstone for tmux on it is too old, or newer than your journal, it now tells you what to update, and the notice opens your devices on the health page. it tells you once more when uploads from that device are accepted again.
-
-### Changed
-
-- on linux, your journal now checks for updates once a day on its own, instead of once a minute for every open journal page. the update status it shows can be up to a day behind; `solstone update --check` checks at that moment and changes nothing.
-- your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
-- each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
-- search, agents reading your journal and connections now return nothing dated after today. a calendar event you add for a later day is found on the day it came into your journal, as before, and by its own day once that day arrives. connections no longer show upcoming dates, and an activity can't be created for a day that hasn't started. a day counts as started once it has begun anywhere in the world, so no time zone hides something that already happened.
 
 ### Fixed
 
 - reduced unnecessary background work while the journal on a phone is idle.
-- security fix: on macos and linux, other accounts on this computer can no longer open your journal's folder or read what's in it, when your journal is on a drive that keeps folders private.
-- on linux, when your computer's clock jumps, as on a virtual machine whose clock is set right when it wakes from sleep, your journal no longer stops responding until you restart it.
-- your journal no longer shows a card each time a file can't be processed. a file it has stopped retrying is still listed under set-aside work on the health page, with a try again button.
-- `solstone call transcripts scan` now lists audio that runs until midnight. a day with audio up to midnight could list no transcripts, or only the stretches before its last one, even though `solstone call transcripts read` still showed every line.
-- when your journal had only you down as a speaker, like a talk you sat in on, it no longer puts your name on other voices' lines. your name goes on a line only when your journal recognizes your voice, or when you labeled the line yourself.
-- your journal no longer sends a blank notification when screen descriptions can't run. for a refused or missing key, a ChatGPT sign-in or account, or confidential processing that's no longer active for your journal, it now says what to fix, and the card in your journal opens the thinking page. other holdups send nothing, and the work is retried on its own.
 - new recordings can now contribute to voice discovery on android and ios, and you can start teaching a voice before any speakers in that recording have been named.
-- search now catches up with your journal faster, most on journals with years in them.
-- when you give someone in your journal a new name, alias or email, or a new person joins it, the days that already mentioned them now show the connection, newest days first. this used to wait for a weekly pass that a long journal could run out of time to finish, so on years of history those connections often never appeared.
-- `solstone journal indexer status` now shows the same queued updates, waiting removals and last search check as the health page. before, it could say search was up to date while updates were waiting.
-- search now works through a long backlog newest days first, so today's changes no longer wait for the rest of it. a full rescan now starts with your newest days.
-- search no longer gives up after three failed tries at work that covers your whole journal, like sorting entries into your facets. it keeps trying every hour, and the health page shows it as failing until it works.
-- opening a search result after its file was indexed again now shows what's indexed there today, with a note that it may not match the result, instead of saying it's no longer indexed. agents reading your journal get the same note.
-- the entities page and the more page are easier to read at night: their text now sits on a panel, not directly on the night sky.
-- home now sits centered beside the side rail instead of off to the left.
 - fixed a failure when picking a folder to import in the android development app.
 - a folder you chose to import in the android or ios development app, other than an audio archive, can now be previewed and started from its import page, without choosing it again.
 - the development phone apps can now recover an explicit media offload request after a lost reply, using the request ID saved before sending it. repeating that request does not start another offload; an unknown result stays unknown.
@@ -54,8 +27,43 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.66] - 2026-11-03
+
+### Added
+
+- the health page now says when search's daily check has run but not finished for more than two days, so you know some changes may be missing from search. a journal that was simply off or asleep doesn't count. `solstone journal indexer status` also shows how long the oldest queued update has waited.
+- your journal now tells you when a newly paired device or a newly connected agent can reach it: one notification to the phones where you turned notifications on, and a card on any journal page you have open that opens the page where you can unpair or disconnect it. an agent is announced the first time it connects, not each time it reconnects or is paired again.
+- your journal now lets you know, the same way, when the disk it's on is running low on space, early enough to free some up, and again once there's space. the notice opens storage settings.
+- when backup keeps failing with your current backup settings, several attempts in a row over at least two days, your journal now tells you why, the same way. the notice opens the backup page. it tells you once more when an attempt works again, and pausing backup ends it quietly.
+- when your journal keeps turning away uploads from one of your devices because the solstone app or solstone for tmux on it is too old, or newer than your journal, it now tells you what to update, the same way. the notice opens your devices on the health page. it tells you once more when uploads from that device are accepted again.
+- browser pages in your journal now show their context: whether the tab was in front and its window focused, whether audio or video was playing, whether the solstone app was paused, how long the tab had been open, the page's language and which browser it was. agents reading your journal see the same line. pages from solstone extension versions before 0.5.0 look as before.
+
+### Changed
+
+- on linux, your journal now checks for updates once a day on its own, instead of once a minute for every open journal page. the update status it shows can be up to a day behind; `solstone update --check` checks at that moment and changes nothing.
+- with version 0.5.0 or later of the solstone extension, your journal now describes time in your browser by the pages you had in front of you. a video playing in a background tab, or a page left open behind another app, is mentioned as open rather than as something you watched or read, and what a page or video shows is now less often written as something you did.
+- each stretch's screen description now does the same: it covers the browser pages you had in front of you and lists the others as open, so what a video in a background tab says or shows is less often written in your activity stories as something you did or planned.
+- search, agents reading your journal and connections now return nothing dated after today. a calendar event you add for a later day is found on the day it came into your journal, as before, and by its own day once that day arrives. connections no longer show upcoming dates, and an activity can't be created for a day that hasn't started. a day counts as started once it has begun anywhere in the world, so no time zone hides something that already happened.
+
+### Fixed
+
+- security fix: on macos and linux, other accounts on this computer can no longer open your journal's folder or read what's in it, when your journal is on a drive that keeps folders private.
+- on linux, when your computer's clock jumps, as on a virtual machine whose clock is set right when it wakes from sleep, your journal no longer stops responding until you restart it.
+- your journal no longer shows a card each time a file can't be processed. a file it has stopped retrying is still listed under set-aside work on the health page, with a try again button.
+- `solstone call transcripts scan` now lists audio that runs until midnight. a day with audio up to midnight could list no transcripts, or only the stretches before its last one, even though `solstone call transcripts read` still showed every line.
+- when your journal had only you down as a speaker, like a talk you sat in on, it no longer puts your name on other voices' lines. from now on, your name goes on a line only when your journal recognizes your voice, or when you labeled the line yourself.
+- your journal no longer sends a blank notification when screen descriptions can't run. for a refused or missing key, a ChatGPT sign-in or account, or confidential processing that's no longer active for your journal, it now says what to fix, and the card in your journal opens the thinking page. other holdups send nothing, and the work is retried on its own.
+- search now catches up with your journal faster, most on journals with years in them.
+- when you give someone in your journal a new name, alias or email, or someone new shows up in your journal, the days that already mentioned them now show the connection, newest days first. this used to wait for a weekly pass that a long journal could run out of time to finish, so on years of history those connections often never appeared.
+- `solstone journal indexer status` now shows the same queued updates, waiting removals and last search check as the health page. before, it could say search was up to date while updates were waiting.
+- search now works through a long backlog newest days first, so today's changes no longer wait for the rest of it. a full rescan now starts with your newest days.
+- search no longer gives up after three failed tries at work that covers your whole journal, like sorting entries into your facets. it keeps trying every hour, and the health page shows it as failing until it works.
+- opening a search result after its file was indexed again now shows what's indexed there today, with a note that it may not match the result, instead of saying it's no longer indexed. agents reading your journal get the same note.
+- the entities page and the more page are easier to read at night: their text now sits on a panel, not directly on the night sky.
+- home now sits centered beside the side rail instead of off to the left.
 - in search and for agents reading your journal, a name that only appeared on a browser page, like the person a shop is named after, is now listed as on screen, not as someone mentioned. activities already in your journal keep their people as they are. thanks @dvanduzer for the report.
-- plans that older versions of your journal inferred no longer turn up in search, for agents reading your journal or in `solstone call journal search`, including plans dated years ahead. they stay in your journal's folder, and search drops them the next time it checks your journal. an old plan also no longer keeps an activity from counting as new when an agent reads your week.
+- plans that older versions of your journal inferred no longer turn up in search, for agents reading your journal or in `solstone call journal search`, including plans dated years ahead. they stay in your journal's folder, and search drops them the next time it checks your journal.
 - your pulse no longer suggests getting ready for upcoming calendar events. it isn't given your calendar.
 
 ## [2.0.65] - 2026-11-02
