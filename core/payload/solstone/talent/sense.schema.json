@@ -52,7 +52,8 @@
     },
     "entities": {
       "type": "array",
-      "maxItems": 96,
+      "maxItems": 40,
+      "x-truncate": true,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -188,6 +189,8 @@
     },
     "topics": {
       "type": "array",
+      "maxItems": 12,
+      "x-truncate": true,
       "items": {
         "type": "string"
       }

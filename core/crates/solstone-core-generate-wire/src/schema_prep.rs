@@ -50,7 +50,7 @@ const ANTHROPIC_UNSUPPORTED: &[&str] = &[
 /// `maxItems` or `maxLength` bound still raises on generate or records invalid canonical validation
 /// on advisory paths, unless an honored annotation truncates that instance path first. Google is
 /// the live case after this deliberate request-side strip: the segment chain runs on Gemini with
-/// shipped `sense.schema.json` `maxItems` bounds such as `entities: 96`. This reduced copy must
+/// shipped `sense.schema.json` `maxItems` bounds such as `speakers: 16`. This reduced copy must
 /// never replace the caller's canonical schema.
 pub fn prepare_provider_schema(schema: Option<&Value>, provider: &str) -> Option<Value> {
     let mut reduced = schema.cloned()?;

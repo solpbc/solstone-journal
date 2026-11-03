@@ -43,7 +43,7 @@ its original media where that is kept, and what matters in a segment usually
 recurs often enough to be picked up. Speech transcripts are exempt: a segment's
 transcript is small and spoken words always matter, so it is read whole.
 Terminal, browsing and every new source need a sampling step, designed with the
-source. Fitting that trims an input is a last-resort guard that records how
+source ([Terminal segments](#terminal-segments), [Browser segments](#browser-segments)). Fitting that trims an input is a last-resort guard that records how
 much it left out as `partial_input`. It is never the design.
 
 **Later talents build on segment results.** Activity, daily and cadence talents
@@ -179,6 +179,8 @@ The entries are then fitted to a budget fixed by design: the floor window's inpu
 ## Browser segments
 
 Sense and Screen read a browser segment as what was in front of the owner. A page the browser marks as not in front of a focused window (a background tab, or a window behind another app) contributes no text: what such a page shows by itself, such as a live clock, a video's captions or an ad, is not what the owner read. Those pages are listed once per state, after the pages that were in front, under "Open, not in front of a focused window"; when no page in front sent anything, the reading says so first. Pausing the solstone app does not change what counts as in front, and pages from earlier extension versions, which carry no tab state, read as before. Work and Conversation read a browser activity through those reports, so a background page reaches them as the open-page list, not its text. The transcript viewer and agents see every page in full, each with its `context:` line.
+
+A browser segment reads whole whenever the window holds it with the talent's whole reply. Past that, Sense and Screen read a smaller version the Generate boundary selects ([GENERATE.md](GENERATE.md) § `overflow_text`), so a window that holds the whole segment still reads it whole. It is built for the floor window. The app sends a new capture of every open page each period and when a page reloads, so a page's first capture stands whole and a later one adds only what is not part of a run of three lines the page already showed; cells repeat within a table or a feed ("talk", "14:20"), and dropping them alone runs one row into the next. If that fits, nothing else is left out and the result is not partial. Otherwise every page in front keeps its title, site and tab state, and the pages share one cap, so a short page stays whole. A long page shows its opening, its newest text, which is what later captures and changes added, and the start of sections spread evenly across it, with sentences before stand-alone links unless the page reads as a table or a feed, whose links are its content. A note at the top says so, a marker stands in each gap, and the result records what was left out as `partial_input`. Generic fitting, which keeps the newest entries, would lose page titles and the earlier pages. Sense's schema holds its reply to 40 entities and 12 topics, so a page that is one long list of names still leaves room to finish. A provider that cannot hold those bounds while generating keeps each list's first items (`x-truncate`), not a refusal.
 
 ## Documents
 

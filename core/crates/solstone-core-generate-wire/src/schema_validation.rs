@@ -120,6 +120,21 @@ fn walk(schema: &Value, instance: &mut Value, path: &mut Vec<String>, truncated:
         }
     }
 
+    // A provider that cannot hold `maxItems` while generating gets the list's first items, not a refusal.
+    if schema.get(SCHEMA_TRUNCATE_KEY) == Some(&Value::Bool(true))
+        && let (Some(max_items), Some(array)) = (
+            schema
+                .get("maxItems")
+                .and_then(Value::as_u64)
+                .and_then(|items| usize::try_from(items).ok()),
+            instance.as_array_mut(),
+        )
+        && array.len() > max_items
+    {
+        array.truncate(max_items);
+        truncated.push(build_json_pointer(path));
+    }
+
     if let (Some(items), Some(array)) = (
         schema.get("items").filter(|items| items.is_object()),
         instance.as_array_mut(),
@@ -296,5 +311,46 @@ mod tests {
             result.text,
             r#"{"entities":[{"operations":[{"reasoning":"fou"},{"reasoning":"fiv"}]}]}"#
         );
+    }
+
+    #[test]
+    fn a_list_over_its_truncating_bound_keeps_its_first_items_and_says_so() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "kept": {"type": "array", "maxItems": 2, "x-truncate": true, "items": {"type": "string", "maxLength": 3, "x-truncate": true}},
+                "exact": {"type": "array", "maxItems": 2, "x-truncate": true},
+                "strict": {"type": "array", "maxItems": 1},
+            },
+        });
+        let result = validate_schema_with_annotations(
+            r#"{"kept":["four","b","c"],"exact":[1,2],"strict":[1,2]}"#,
+            &schema,
+        );
+        assert_eq!(result.validation["truncated"], json!(["/kept", "/kept/0"]));
+        assert_eq!(result.validation["valid"], json!(false));
+        assert_eq!(result.validation["errors"][0]["path"], "/strict");
+        let value: Value = serde_json::from_str(&result.text).unwrap();
+        assert_eq!(value["kept"], json!(["fou", "b"]));
+        assert_eq!(value["exact"], json!([1, 2]));
+    }
+
+    #[test]
+    fn sense_lists_over_their_bounds_are_cut_on_a_provider_that_cannot_hold_them() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../payload/solstone/talent/sense.schema.json"
+        ))
+        .unwrap();
+        let topics: Vec<String> = (0..13).map(|topic| format!("topic {topic}")).collect();
+        let reply = json!({"topics": topics}).to_string();
+        let result = validate_schema_with_annotations(&reply, &schema);
+        assert_eq!(result.validation["truncated"], json!(["/topics"]));
+        for key in ["entities", "topics"] {
+            assert_eq!(
+                schema["properties"][key]["x-truncate"],
+                json!(true),
+                "{key}"
+            );
+        }
     }
 }

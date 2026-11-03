@@ -593,7 +593,8 @@ mod tests {
         );
 
         assert!(schema["properties"]["topics"].get("minItems").is_none());
-        assert!(schema["properties"]["topics"].get("maxItems").is_none());
+        assert_eq!(schema["properties"]["topics"]["maxItems"], json!(12));
+        assert_eq!(schema["properties"]["topics"]["x-truncate"], json!(true));
         assert!(schema["properties"]["quotes"].get("minItems").is_none());
         assert!(schema["properties"]["quotes"].get("maxItems").is_none());
 

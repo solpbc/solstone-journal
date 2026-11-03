@@ -744,6 +744,19 @@ pub fn produce_browser_attended_chunks(text: &str) -> ProducedChunks {
     browser::render_attended(&parse_records_for_family(Family::Browser, text))
 }
 
+/// The attended browser view fitted to `budget` tokens for a window too small for it.
+pub fn browser_attended_reading(
+    text: &str,
+    budget: u32,
+    count: &dyn Fn(&str) -> u32,
+) -> Option<browser::BrowserReading> {
+    browser::attended_reading(
+        &parse_records_for_family(Family::Browser, text),
+        budget,
+        count,
+    )
+}
+
 pub fn produce_chunks(family: Family, rel: &str, text: &str) -> ProducedChunks {
     if family == Family::ScreenText {
         return screen_text::produce_screen_text_chunks(text);

@@ -370,12 +370,16 @@ pub fn prepare(
     if matches!(prepared.name.as_str(), "documents" | "sense")
         && prepared.config.get("stream").and_then(Value::as_str) == Some("import.document")
     {
-        prepared.document_reading = crate::documents::floor_reading(&prepared.config);
+        prepared.floor_reading = crate::documents::floor_reading(&prepared.config);
     }
     if matches!(prepared.name.as_str(), "sense" | "screen") {
         prepared.entry_sources = entry_sources;
         let report = crate::terminal_reading::prepare(&mut prepared, context);
         prepared.terminal_reading = report;
+        if prepared.terminal_reading.is_none() && prepared.floor_reading.is_none() {
+            prepared.floor_reading =
+                crate::browser_reading::floor_reading(&prepared.config, &context.journal);
+        }
     }
     Ok(prepared)
 }

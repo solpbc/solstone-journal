@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::contract::GateDecision;
+use crate::floor_reading::{FloorReading, floor_budget};
 use crate::{ExecutionContext, PreparedTalent, StageError};
 
-/// Room for the request's message framing and tokenizer boundary effects
-/// between separately counted parts.
-const FRAMING_TOKENS: u32 = 256;
 /// A page's opening lines, at the least, worth showing a reader.
 const MIN_EXCERPT_TOKENS: u32 = 60;
 const PAGE_HEADING: &str = "\n## Page ";
@@ -40,42 +38,10 @@ fn gate_stream(stream: Option<&str>) -> GateDecision {
 /// where its signatures and schedules are, and the opening lines of pages
 /// spread evenly between them. A window that holds the whole document reads
 /// the whole document (docs/THINK.md § Documents).
-#[derive(Clone, Debug)]
-pub(crate) struct FloorReading {
-    pub(crate) text: String,
-    pub(crate) pages_not_whole: usize,
-    pub(crate) chars_left_out: usize,
-}
-
-impl FloorReading {
-    /// What a result read from this text records as left out.
-    pub(crate) fn input_budget(&self) -> Value {
-        json!({
-            "clipped": true,
-            "used_overflow_text": true,
-            "dropped_entries": self.pages_not_whole,
-            "dropped_chars": self.chars_left_out,
-        })
-    }
-}
-
-/// The reading for a document transcript over the floor window, or `None` when
-/// it fits with its whole reply or holds no pages to choose between.
+///
+/// `None` when it fits with its whole reply or holds no pages to choose between.
 pub(crate) fn floor_reading(config: &Map<String, Value>) -> Option<FloorReading> {
-    let max_output_tokens = config
-        .get("max_output_tokens")
-        .and_then(Value::as_u64)
-        .and_then(|tokens| u32::try_from(tokens).ok())?;
-    let preserved: u32 = ["user_instruction", "prompt"]
-        .iter()
-        .filter_map(|key| config.get(*key).and_then(Value::as_str))
-        .map(solstone_core_tokens::count)
-        .sum();
-    // The Generate boundary takes this text only when it fits with the full
-    // reply, which can be larger than the input budget's capped reservation.
-    let budget = solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS
-        .saturating_sub(max_output_tokens)
-        .saturating_sub(preserved + 2 * FRAMING_TOKENS);
+    let budget = floor_budget(config)?;
     let transcript = config.get("transcript").and_then(Value::as_str)?;
     (solstone_core_tokens::count(transcript) > budget)
         .then(|| read_to_budget(transcript, budget))
@@ -204,6 +170,7 @@ fn page_opening(page: &str, chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     const BUDGET: u32 = 20_000;
 
@@ -284,7 +251,7 @@ mod tests {
         config.insert("transcript".into(), json!(document(100, 60)));
         let reading = floor_reading(&config).expect("sampled");
         let mut prepared = PreparedTalent::new("documents".into(), config);
-        prepared.document_reading = Some(reading.clone());
+        prepared.floor_reading = Some(reading.clone());
         let request = crate::generate_request(&prepared).expect("request");
         assert_eq!(
             request.overflow_text.as_deref(),
@@ -315,9 +282,9 @@ mod tests {
         assert!(floor_reading(&config).is_none());
         config.insert("transcript".into(), json!(document(100, 60)));
         let reading = floor_reading(&config).expect("sampled");
-        assert_eq!(reading.input_budget()["clipped"], true);
+        assert_eq!(reading.input_budget().unwrap()["clipped"], true);
         assert_eq!(
-            reading.input_budget()["dropped_chars"],
+            reading.input_budget().unwrap()["dropped_chars"],
             json!(reading.chars_left_out)
         );
     }

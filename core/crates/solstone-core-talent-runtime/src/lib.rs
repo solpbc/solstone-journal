@@ -17,6 +17,7 @@ use solstone_core_system_health::{DataState, read_segment_data_state};
 
 pub mod activity_contract;
 pub mod assemble;
+mod browser_reading;
 pub mod conditional_segment;
 pub mod contract;
 mod daily_execution;
@@ -25,6 +26,7 @@ pub mod daily_prepare;
 pub mod daily_schedule;
 pub mod documents;
 pub mod entities;
+mod floor_reading;
 mod import_facet;
 pub mod morning_briefing;
 pub mod owner_actors;
@@ -93,8 +95,8 @@ pub struct PreparedTalent {
     /// Preparation made the Story packet the input because the whole request
     /// would not fit the floor window: it is the input on every backend.
     pub(crate) story_input_fitted: bool,
-    /// A long document's reading, for a window too small for all of it.
-    pub(crate) document_reading: Option<documents::FloorReading>,
+    /// A smaller text for a window too small for a long document or browser segment.
+    pub(crate) floor_reading: Option<floor_reading::FloorReading>,
     /// Set only by a stage's prompt override; a request cannot supply it.
     pub(crate) framed_request: Option<FramedRequest>,
 }
@@ -111,7 +113,7 @@ impl PreparedTalent {
             story_messages: None,
             story_input_used: false,
             story_input_fitted: false,
-            document_reading: None,
+            floor_reading: None,
             framed_request: None,
         }
     }
@@ -1195,17 +1197,34 @@ pub(crate) fn record_input_budget(prepared: &mut PreparedTalent, budget: Option<
             }
         }
     }
-    // The reading replaced whole pages before any fitting, so a result from it
-    // says so even when the reading itself fit.
+    // The reading left text out before any fitting, so a result from it says so
+    // even when the reading itself fit.
     if budget
         .and_then(|budget| budget.get("used_overflow_text"))
         .and_then(Value::as_bool)
         == Some(true)
-        && let Some(reading) = &prepared.document_reading
+        && let Some(reading) = prepared.floor_reading.as_ref().map(|r| r.input_budget())
     {
-        prepared
-            .config
-            .insert(INPUT_BUDGET_KEY.to_owned(), reading.input_budget());
+        // Fitting can still have cut the reading on a server that counts it higher.
+        let fitted = budget
+            .filter(|budget| budget.get("clipped").and_then(Value::as_bool) == Some(true))
+            .cloned();
+        match (reading, fitted) {
+            (Some(mut reading), Some(fitted)) => {
+                for key in ["dropped_entries", "dropped_chars"] {
+                    let total = reading.get(key).and_then(Value::as_u64).unwrap_or(0)
+                        + fitted.get(key).and_then(Value::as_u64).unwrap_or(0);
+                    reading[key] = json!(total);
+                }
+                prepared.config.insert(INPUT_BUDGET_KEY.to_owned(), reading);
+            }
+            (Some(reading), None) | (None, Some(reading)) => {
+                prepared.config.insert(INPUT_BUDGET_KEY.to_owned(), reading);
+            }
+            (None, None) => {
+                prepared.config.remove(INPUT_BUDGET_KEY);
+            }
+        }
         return;
     }
     let clipped = budget.map(|budget| budget.get("clipped").and_then(Value::as_bool));
@@ -1766,7 +1785,7 @@ fn native_generate_request(prepared: &PreparedTalent) -> Result<GenerateRequest,
             .map(|candidate| candidate.model_transcript().to_owned())
             .or_else(|| {
                 prepared
-                    .document_reading
+                    .floor_reading
                     .as_ref()
                     .map(|reading| reading.text.clone())
             }),
