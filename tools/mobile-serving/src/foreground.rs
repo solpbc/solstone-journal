@@ -439,6 +439,7 @@ fn resume_installed_workers(installed: &InstalledWorkers, journal: &Path) -> Res
 }
 
 struct WorkerParts {
+    root: Arc<JournalRoot>,
     journal: PathBuf,
     discovery: Arc<Mutex<Option<WorkDiscovery>>>,
     sense_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
@@ -468,6 +469,7 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
         discovery.request();
     }
     if parts.sense_handle.lock().unwrap().is_none() {
+        let root = Arc::clone(&parts.root);
         let journal = parts.journal.clone();
         let executor = Arc::clone(&parts.executor);
         let cancelled = Arc::clone(&parts.cancelled);
@@ -475,13 +477,13 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
             .name("journal-sense".into())
             .spawn(move || {
                 while !cancelled() {
-                    let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
-                        &journal,
+                    let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+                        Arc::clone(&root),
                     ) {
                         Ok(guard) => guard,
                         Err(_) => break,
                     };
-                    if let Err(error) = ForegroundProcessingHost::sense_pass(&journal, executor.clone())
+                    if let Err(error) = ForegroundProcessingHost::sense_pass(&root, executor.clone())
                     {
                         log::warn!("foreground Sense: {error}");
                     }
@@ -504,6 +506,7 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
         BEFORE_SCHEDULE_SPAWN.with(|hook| hook.take().map_or(Ok(()), |run| run()))?;
         let engine = Arc::clone(&parts.engine);
         let queue = Arc::clone(&parts.queue);
+        let root = Arc::clone(&parts.root);
         let journal = parts.journal.clone();
         let cancelled = Arc::clone(&parts.cancelled);
         let flush = Arc::clone(&parts.flush);
@@ -517,8 +520,8 @@ fn spawn_foreground_workers(parts: &WorkerParts) -> Result<(), String> {
                 let mut last_index_check = Instant::now() - Duration::from_secs(30);
                 let mut last_status = Instant::now() - STATUS_INTERVAL;
                 while !cancelled() {
-                    let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use(
-                        &journal,
+                    let restore_use = match solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+                        Arc::clone(&root),
                     ) {
                         Ok(guard) => guard,
                         Err(_) => break,
@@ -2483,6 +2486,7 @@ impl ForegroundProcessingHost {
             return Err("foreground workers already active".into());
         }
         let parts = WorkerParts {
+            root: Arc::clone(&self.root),
             journal: self.journal.clone(),
             discovery: Arc::clone(&self.discovery),
             sense_handle: Arc::clone(&self.sense_handle),
@@ -2768,11 +2772,14 @@ impl ForegroundProcessingHost {
             .native_call_active()
     }
     pub fn run_sense_pass(&self) -> Result<(), String> {
-        Self::sense_pass(&self.journal, self.executor())
+        Self::sense_pass(&self.root, self.executor())
     }
-    fn sense_pass(journal: &Path, executor: Arc<HostSenseExecutor>) -> Result<(), String> {
+    fn sense_pass(root: &Arc<JournalRoot>, executor: Arc<HostSenseExecutor>) -> Result<(), String> {
+        let journal = root.canonical_path();
         let _restore_use =
-            match solstone_core_journal_io::whole_journal_restore::begin_target_use(journal) {
+            match solstone_core_journal_io::whole_journal_restore::begin_target_use_bound(
+                Arc::clone(root),
+            ) {
                 Ok(guard) => guard,
                 Err(_) => return Ok(()),
             };
