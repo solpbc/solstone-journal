@@ -1198,13 +1198,13 @@ async function test(name, body) {
     await entry.click({activityIndex: '0'});
     has(entry.view, `/app/agents/#memories/${source}/20261103/094200_1`);
 
-    // Only a paired agent is told about pairing again.
+    // Only a paired agent can be connected again from its page.
     const key = {...connection('bearer', 'k1', 'Script', null), memory_source: 'c'.repeat(64)};
     const paired = await boot(baseState({...door({listening: true}), connections: [claude, key]}), {memories: {agents: []}});
     await paired.click({connection: 'oauth:g1'});
-    has(paired.view, 'pairing again');
+    has(paired.view, 'data-again="oauth:g1"');
     await paired.click({connection: 'bearer:k1'});
-    lacks(paired.view, 'pairing again');
+    lacks(paired.view, 'data-again=');
   });
 
   console.log(`DOM CASES: ${cases} passed`);
