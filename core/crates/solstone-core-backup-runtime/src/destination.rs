@@ -285,12 +285,12 @@ mod tests {
             ),
             (
                 &b2,
-                "Fatal: repository does not exist: unable to open config file: Stat: b2_download_file_by_name: 404: \nIs there a repository at the following location?\nb2:extro-backup-bd4a90de:nonexistent-probe-path\n",
+                "Fatal: repository does not exist: unable to open config file: Stat: b2_download_file_by_name: 404: \nIs there a repository at the following location?\nb2:solstone-backup-probe:nonexistent-probe-path\n",
                 "repo_missing",
             ),
             (
                 &destination(),
-                "Fatal: repository does not exist: unable to open config file: Stat: The specified key does not exist.\nIs there a repository at the following location?\ns3:s3.us-west-004.backblazeb2.com/extro-backup-bd4a90de/nonexistent-probe-path\n",
+                "Fatal: repository does not exist: unable to open config file: Stat: The specified key does not exist.\nIs there a repository at the following location?\ns3:s3.us-west-004.backblazeb2.com/solstone-backup-probe/nonexistent-probe-path\n",
                 "repo_missing",
             ),
         ] {
