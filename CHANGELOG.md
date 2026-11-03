@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
 - the journal on iphone keeps its folder permissions private when opening a new or existing journal.
