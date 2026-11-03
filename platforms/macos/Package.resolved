@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/solpbc/solstone-macos.git",
       "state" : {
-        "revision" : "412e59307cfbcfe404ea3f78b8f732ea8170785f"
+        "revision" : "0d34a232313d8cd199be79444ca59883ebe35cb4"
       }
     }
   ],
