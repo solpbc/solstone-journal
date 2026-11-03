@@ -14,7 +14,8 @@
 //!    but a screen input shows, becomes `screen`. The check leans toward heard:
 //!    any significant word spelled close enough, accents folded, or the name's
 //!    initials count, so a name speech recognition misspelled or shortened
-//!    stays heard. Only screen inputs count as shown. The owner's own name is
+//!    stays heard. Only what the owner saw counts as shown: screen descriptions,
+//!    browser pages, window titles and protected-video notes. The owner's own name is
 //!    left alone, because a recognized owner voice is labelled "You".
 //! 3. One entry per name, type and source: repeats the first two rules
 //!    create, or the model wrote, are dropped.
@@ -148,7 +149,7 @@ fn names_owner(owner: &JournalOwner, name: &str) -> bool {
         })
 }
 
-/// What the model read, split into screen inputs and everything else.
+/// What the model read, split into what the owner saw and everything else.
 struct Evidence {
     heard: Heard,
     shown: String,
@@ -204,7 +205,7 @@ impl Heard {
 }
 
 impl Evidence {
-    /// Shown text is every screen input, cut from the input at its rendered
+    /// Shown text is every seen input, cut from the input at its rendered
     /// range. Everything else the model read counts as heard, unsourced and
     /// unrecognized inputs included, so an input the runtime cannot classify
     /// never makes a name look unheard.
@@ -218,7 +219,7 @@ impl Evidence {
         let mut cuts = Vec::new();
         let mut shown = Vec::new();
         for source in prepared.entry_sources.iter().flatten() {
-            if !source.file.ends_with("screen.jsonl") {
+            if !solstone_core_transcripts::is_seen_input(&source.file) {
                 continue;
             }
             let range = source.rendered_range.start.saturating_add(shift)
@@ -802,6 +803,33 @@ mod tests {
         assert_eq!(
             roles(&audio, vec![with_role("Suda", "mentioned", "screen")]),
             triples(&[("Suda", "mentioned", "screen")])
+        );
+    }
+
+    #[test]
+    fn a_name_in_a_window_title_was_seen_not_heard() {
+        // #404: a shop named after a person, open in front while audio ran.
+        // The window title names her; nothing heard does.
+        let desktop = sense(
+            1,
+            1,
+            vec![
+                source("audio.jsonl", &["[10:00:01] Speaker 1: that print is nice"]),
+                source(
+                    "090000_300_desktop_activity.jsonl",
+                    &["Firefox — Mara Quinn Prints"],
+                ),
+            ],
+        );
+        assert_eq!(
+            roles(
+                &desktop,
+                vec![
+                    with_role("Mara Quinn", "mentioned", "screen"),
+                    with_role("Mara Quinn", "mentioned", "voice"),
+                ]
+            ),
+            triples(&[("Mara Quinn", "visible", "screen")])
         );
     }
 }

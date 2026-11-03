@@ -826,12 +826,7 @@ fn has_visual_files(
             entries
                 .filter_map(Result::ok)
                 .filter_map(|entry| entry.file_name().into_string().ok())
-                .any(|name| {
-                    name.ends_with("screen.jsonl")
-                        || name == "browser_pages.jsonl"
-                        || name.ends_with("_desktop_activity.jsonl")
-                        || name.ends_with("_protected_video.jsonl")
-                })
+                .any(|name| solstone_core_transcripts::is_seen_input(&name))
         })
 }
 

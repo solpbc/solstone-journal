@@ -26,6 +26,19 @@ pub(crate) enum PerceptFamily {
     DesktopActivity,
 }
 
+/// A file holding what the owner saw rather than heard: a screen description,
+/// browser pages, window titles or a protected-video note.
+pub fn is_seen_input(name: &str) -> bool {
+    [
+        PerceptFamily::Screen,
+        PerceptFamily::Browser,
+        PerceptFamily::ProtectedVideo,
+        PerceptFamily::DesktopActivity,
+    ]
+    .into_iter()
+    .any(|family| family.matches(name))
+}
+
 impl PerceptFamily {
     pub(crate) fn matches(self, name: &str) -> bool {
         match self {

@@ -26,7 +26,7 @@ mod speaker_coordinates;
 mod who_spoke;
 
 use percept_absence::PerceptFamily;
-pub use percept_absence::screen_inputs_absent;
+pub use percept_absence::{is_seen_input, screen_inputs_absent};
 pub use solstone_core_processing_record::is_transcribe_output;
 
 pub use possible_name_labels::{PossibleNameLabels, label_statement, statement_text};
