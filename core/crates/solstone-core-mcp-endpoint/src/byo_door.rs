@@ -832,7 +832,13 @@ async fn tick_byo_admission(
     };
 
     match config {
-        ByoHostnameConfigStatus::None | ByoHostnameConfigStatus::Invalid => {
+        ByoHostnameConfigStatus::None => {
+            if let Some(mut rt) = runtime.take() {
+                rt.stop(byo_dir).await;
+            }
+            state.publish_byo_disabled(&disabled_state(None, false, 0));
+        }
+        ByoHostnameConfigStatus::Invalid => {
             if let Some(mut rt) = runtime.take() {
                 rt.stop(byo_dir).await;
             }
@@ -843,7 +849,7 @@ async fn tick_byo_admission(
                 if let Some(mut rt) = runtime.take() {
                     rt.stop(byo_dir).await;
                 }
-                state.publish_byo(&disabled_state(cfg.hostname, false, cfg.generation));
+                state.publish_byo_disabled(&disabled_state(cfg.hostname, false, cfg.generation));
             } else {
                 let hostname = match cfg.hostname {
                     Some(h) => h,
@@ -1239,6 +1245,12 @@ mod full_tests {
             let journal = temporary.path().join("journal");
             let retained = temporary.path().join("retained");
             std::fs::create_dir(&journal).unwrap();
+            std::fs::create_dir(journal.join("config")).unwrap();
+            std::fs::write(
+                journal.join("config/journal.json"),
+                r#"{"mcp_endpoint":{"byo_hostname":{"hostname":"mcp.example.com","enabled":false,"generation":7}}}"#,
+            )
+            .unwrap();
             let state = Arc::new(DoorStateWriter::new(Arc::new(
                 JournalRoot::open(&journal).unwrap(),
             )));
@@ -1258,10 +1270,29 @@ mod full_tests {
                 std::fs::rename(&journal, &retained).unwrap();
                 std::fs::create_dir(&journal).unwrap();
             }
-            // Permit the maintained half-second admission tick while still live.
-            tokio::time::sleep(Duration::from_millis(700)).await;
             if !replace {
-                assert!(read_byo_door_state(&journal).unwrap().observed_at > first.observed_at);
+                // A new unchanged-disabled request just after publication still
+                // needs a fresh acknowledgment within the existing two seconds.
+                let requested_at = Utc::now();
+                assert!(first.observed_at < requested_at);
+                let expected = (Some("mcp.example.com".to_owned()), false, 7);
+                assert!(
+                    crate::owner_web::wait_for_byo_cutover_confirmation(
+                        &journal,
+                        requested_at,
+                        &expected,
+                    )
+                    .await
+                );
+                let current = read_byo_door_state(&journal).unwrap();
+                assert!(current.observed_at >= requested_at);
+                assert_eq!(
+                    (current.hostname, current.enabled, current.generation),
+                    expected
+                );
+            } else {
+                // Permit a live admission check against the replacement root.
+                tokio::time::sleep(Duration::from_millis(700)).await;
             }
             stop.send_replace(true);
             tokio::time::timeout(Duration::from_secs(5), service)
