@@ -6,10 +6,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- health now shows which programs reach your journal over local tcp.
-
 ### Added
 
+- on macos and linux, health now shows which programs reach your journal through the older local connection.
 - the agents app now shows what each agent has saved, newest first, and you can delete any of it there. a search result for a memory opens it there too.
 - each agent now shows a short id beside its name, so two agents with the same name are easy to tell apart.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.

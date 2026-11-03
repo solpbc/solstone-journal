@@ -603,7 +603,7 @@
       host.replaceChildren();
       for (const item of data.items) {
         const row = document.createElement('p');
-        row.textContent = `${item.program} · ${item.count} requests · ${new Date(item.last_seen * 1000).toLocaleString()}`;
+        row.textContent = `${item.program} · ${item.count} ${item.count === 1 ? 'request' : 'requests'} · ${new Date(item.last_seen * 1000).toLocaleString()}`;
         host.appendChild(row);
       }
       if (!data.items.length) host.textContent = 'none since this journal started.';
