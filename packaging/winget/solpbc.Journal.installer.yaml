@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.28.0.schema.json
 
 PackageIdentifier: solpbc.Journal
 PackageVersion: 2.0.66
@@ -32,4 +32,4 @@ Installers:
   InstallerSha256: 2A2E0F6E3C1D14B526114B9D8E1037AE417D479C525E2396A3152F8F2EA6EC89
   MinimumOSVersion: 10.0.22000.0
 ManifestType: installer
-ManifestVersion: 1.12.0
+ManifestVersion: 1.28.0
