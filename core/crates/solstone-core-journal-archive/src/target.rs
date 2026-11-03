@@ -6,6 +6,7 @@
 use nix::errno::Errno;
 use nix::fcntl::{AtFlags, OFlag, open, openat};
 use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
+use solstone_core_journal_io::{JournalRoot, JournalRootError};
 use std::ffi::{OsStr, OsString};
 use std::fmt::{Display, Formatter};
 use std::io::Error;
@@ -100,10 +101,17 @@ impl ExplicitArchiveOutputRequest {
 pub struct ArchiveOutputTarget {
     final_path: PathBuf,
     pub(crate) final_name: NormalComponent,
-    output: PathBuf,
-    cwd: PathBuf,
     pub(crate) parent: OwnedFd,
-    proofs: Vec<RouteProof>,
+    authority: ParentAuthority,
+}
+
+enum ParentAuthority {
+    Explicit {
+        output: PathBuf,
+        cwd: PathBuf,
+        proofs: Vec<RouteProof>,
+    },
+    Bound(JournalRoot),
 }
 
 impl ArchiveOutputTarget {
@@ -114,11 +122,46 @@ impl ArchiveOutputTarget {
 
     /// Confirm that the requested route still names the retained parent and a free final name.
     pub fn revalidate(&self) -> std::result::Result<(), ExplicitTargetError> {
-        let walked = walk_parent_route(&self.output, &self.cwd)
+        let ParentAuthority::Explicit {
+            output,
+            cwd,
+            proofs,
+        } = &self.authority
+        else {
+            let ParentAuthority::Bound(parent) = &self.authority else {
+                unreachable!()
+            };
+            parent
+                .revalidate_canonical_binding()
+                .map_err(|error| bound_parent_error(error, &self.final_path))?;
+            let retained = fstat(&self.parent).map_err(|source| {
+                target_io(
+                    "stat retained archive output parent",
+                    &self.final_path,
+                    source,
+                )
+            })?;
+            let admitted = fstat(parent).map_err(|source| {
+                target_io(
+                    "stat admitted archive output parent",
+                    &self.final_path,
+                    source,
+                )
+            })?;
+            if directory_proof(&retained).is_none()
+                || directory_proof(&retained) != directory_proof(&admitted)
+            {
+                return Err(ExplicitTargetError::TargetChanged {
+                    path: self.final_path.to_owned(),
+                });
+            }
+            return inspect_final(&self.parent, &self.final_name, &self.final_path);
+        };
+        let walked = walk_parent_route(output, cwd)
             .map_err(|error| revalidation_route_error(error, &self.final_path))?;
         if walked.final_path != self.final_path
             || walked.final_name.as_os_str() != self.final_name.as_os_str()
-            || walked.proofs != self.proofs
+            || walked.proofs != *proofs
         {
             return Err(ExplicitTargetError::TargetChanged {
                 path: self.final_path.to_owned(),
@@ -151,7 +194,7 @@ impl ArchiveOutputTarget {
     }
 }
 
-/// Failure while resolving or revalidating an explicit archive target.
+/// Failure while acquiring or revalidating an archive output target.
 #[derive(Debug)]
 pub enum ExplicitTargetError {
     /// The supplied path or cwd cannot denote an explicit archive file.
@@ -234,13 +277,58 @@ pub fn acquire_explicit_output_target(
     let target = ArchiveOutputTarget {
         final_path: walked.final_path,
         final_name: walked.final_name,
-        output: request.output.to_owned(),
-        cwd: request.cwd.to_owned(),
         parent: walked.parent,
-        proofs: walked.proofs,
+        authority: ParentAuthority::Explicit {
+            output: request.output.to_owned(),
+            cwd: request.cwd.to_owned(),
+            proofs: walked.proofs,
+        },
     };
     target.revalidate()?;
     Ok(target)
+}
+
+/// Select one free archive leaf beneath an owned, admitted readable parent.
+/// The parent retains its no-follow binding and directory-sync authority; no
+/// filesystem-root directory-listing authority is acquired by this constructor.
+pub fn acquire_bound_output_target(
+    parent: JournalRoot,
+    name: &OsStr,
+) -> Result<ArchiveOutputTarget, ExplicitTargetError> {
+    validate_output_bytes(Path::new(name))?;
+    let final_name = NormalComponent::parse(name)
+        .ok_or_else(|| invalid(Path::new(name), "archive output must be one file name"))?;
+    let final_path = parent.canonical_path().join(name);
+    parent
+        .revalidate_canonical_binding()
+        .map_err(|error| bound_parent_error(error, &final_path))?;
+    let descriptor = parent.as_fd().try_clone_to_owned().map_err(|source| {
+        target_std_io("retain admitted archive output parent", &final_path, source)
+    })?;
+    let target = ArchiveOutputTarget {
+        final_path,
+        final_name,
+        parent: descriptor,
+        authority: ParentAuthority::Bound(parent),
+    };
+    target.revalidate()?;
+    Ok(target)
+}
+
+fn bound_parent_error(error: JournalRootError, output: &Path) -> ExplicitTargetError {
+    match error {
+        JournalRootError::Changed => ExplicitTargetError::TargetChanged {
+            path: output.to_owned(),
+        },
+        JournalRootError::Io { source, .. } => {
+            target_std_io("revalidate admitted archive output parent", output, source)
+        }
+        error => target_std_io(
+            "revalidate admitted archive output parent",
+            output,
+            Error::other(error),
+        ),
+    }
 }
 
 fn walk_parent_route(output: &Path, cwd: &Path) -> Result<WalkedRoute, ExplicitTargetError> {
@@ -468,6 +556,14 @@ fn unsafe_component(parent: &Path, component: &OsStr, status: &FileStat) -> Expl
     }
 }
 
+fn target_std_io(operation: &'static str, path: &Path, source: Error) -> ExplicitTargetError {
+    ExplicitTargetError::TargetIo {
+        operation,
+        path: path.to_owned(),
+        source,
+    }
+}
+
 fn target_io(operation: &'static str, path: &Path, source: Errno) -> ExplicitTargetError {
     ExplicitTargetError::TargetIo {
         operation,
@@ -665,5 +761,124 @@ mod tests {
             target.revalidate(),
             Err(ExplicitTargetError::TargetChanged { .. })
         ));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn bound_parent_accepts_only_a_free_single_leaf() {
+        use solstone_core_journal_io::JournalRoot;
+        let temp = TempDir::new("bound-leaf");
+        for name in [
+            "",
+            ".",
+            "..",
+            "nested/out.zip",
+            "./out.zip",
+            "/out.zip",
+            "out.zip/",
+        ] {
+            let parent = JournalRoot::open_no_follow(&temp.path).unwrap();
+            assert!(
+                super::acquire_bound_output_target(parent, std::ffi::OsStr::new(name)).is_err()
+            );
+        }
+        fs::write(temp.path.join("existing.zip"), b"retained").unwrap();
+        symlink("existing.zip", temp.path.join("alias.zip")).unwrap();
+        for name in ["existing.zip", "alias.zip"] {
+            let parent = JournalRoot::open_no_follow(&temp.path).unwrap();
+            assert!(
+                super::acquire_bound_output_target(parent, std::ffi::OsStr::new(name)).is_err()
+            );
+        }
+        assert_eq!(
+            fs::read(temp.path.join("existing.zip")).unwrap(),
+            b"retained"
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn bound_parent_replacement_refuses_publication_without_residue() {
+        use solstone_core_journal_io::JournalRoot;
+        let temp = TempDir::new("bound-replaced");
+        let parent_path = temp.path.join("parent");
+        fs::create_dir(&parent_path).unwrap();
+        let target = super::acquire_bound_output_target(
+            JournalRoot::open_no_follow(&parent_path).unwrap(),
+            std::ffi::OsStr::new("out.zip"),
+        )
+        .unwrap();
+        fs::rename(&parent_path, temp.path.join("old-parent")).unwrap();
+        fs::create_dir(&parent_path).unwrap();
+        assert!(matches!(
+            target.revalidate(),
+            Err(ExplicitTargetError::TargetChanged { .. })
+        ));
+        let source_path = temp.path.join("source");
+        fs::create_dir(&source_path).unwrap();
+        let source = crate::ArchiveSource::open(&source_path).unwrap();
+        let request = crate::EncodeArchiveRequest {
+            source: &source,
+            solstone_version: "2.0.66",
+            exported_at: "2026-11-03T05:00:00Z",
+            day_window: None,
+        };
+        assert!(matches!(
+            crate::publish_archive(&target, &request),
+            Err(crate::ArchivePublicationError::Target(_))
+        ));
+        assert_eq!(fs::read_dir(&parent_path).unwrap().count(), 0);
+        assert_eq!(
+            fs::read_dir(temp.path.join("old-parent")).unwrap().count(),
+            0
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn bound_publication_is_create_only_and_cleans_failed_encoding() {
+        use solstone_core_journal_io::JournalRoot;
+        let temp = TempDir::new("bound-publication");
+        let parent_path = temp.path.join("parent");
+        let source_path = temp.path.join("source");
+        fs::create_dir(&parent_path).unwrap();
+        fs::create_dir_all(source_path.join("notes")).unwrap();
+        fs::write(source_path.join("notes/owner-note.txt"), b"retained note").unwrap();
+        let source = crate::ArchiveSource::open(&source_path).unwrap();
+        let request = crate::EncodeArchiveRequest {
+            source: &source,
+            solstone_version: "2.0.66",
+            exported_at: "2026-11-03T05:00:00Z",
+            day_window: None,
+        };
+        let target = super::acquire_bound_output_target(
+            JournalRoot::open_no_follow(&parent_path).unwrap(),
+            std::ffi::OsStr::new("out.zip"),
+        )
+        .unwrap();
+        crate::publish_archive(&target, &request).unwrap();
+        let bytes = fs::read(target.final_path()).unwrap();
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+        assert!(zip.by_name("notes/owner-note.txt").is_ok());
+        assert!(crate::publish_archive(&target, &request).is_err());
+        assert_eq!(fs::read(target.final_path()).unwrap(), bytes);
+        assert_eq!(fs::read_dir(&parent_path).unwrap().count(), 1);
+
+        let failed = super::acquire_bound_output_target(
+            JournalRoot::open_no_follow(&parent_path).unwrap(),
+            std::ffi::OsStr::new("failed.zip"),
+        )
+        .unwrap();
+        fs::write(
+            source_path.join("notes/owner-note.txt"),
+            b"changed after admission",
+        )
+        .unwrap();
+        assert!(matches!(
+            crate::publish_archive(&failed, &request),
+            Err(crate::ArchivePublicationError::Encode(_))
+        ));
+        assert!(!failed.final_path().exists());
+        assert_eq!(fs::read_dir(&parent_path).unwrap().count(), 1);
     }
 }

@@ -284,7 +284,7 @@ final class OwnerRead: @unchecked Sendable {
 }
 
 struct OwnerBrowser: UIViewRepresentable {
-  let owner: OwnerJournal
+  @ObservedObject var owner: OwnerJournal
   func makeCoordinator() -> OwnerBrowserCoordinator { OwnerBrowserCoordinator(owner) }
   func makeUIView(context: Context) -> WKWebView {
     let configuration = WKWebViewConfiguration()
@@ -315,6 +315,7 @@ struct OwnerBrowser: UIViewRepresentable {
     if owner.dimmed { web.endEditing(true) }
     web.isHidden = owner.dimmed
     web.isUserInteractionEnabled = !owner.dimmed
+    web.accessibilityElementsHidden = owner.dimmed
   }
   static func dismantleUIView(_ web: WKWebView, coordinator: OwnerBrowserCoordinator) {
     web.stopLoading(); coordinator.close(); web.navigationDelegate = nil; web.uiDelegate = nil

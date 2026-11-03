@@ -23,6 +23,7 @@ solstone-core-journal-io = { workspace = true }
 workspace = true
 
 [features]
+full-tests = []
 test-hooks = ["solstone-core-journal-io/test-hooks"]
 
 [[test]]

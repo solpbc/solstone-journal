@@ -16,6 +16,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed a failure when downloading a journal archive in the android and iphone development apps.
+- dimming the journal on iphone hides the keyboard and page controls until you wake it.
+- the journal on iphone keeps its folder permissions private when opening a new or existing journal.
 - fixed the stats page failing to open when your journal runs on android or ios.
 - reduced unnecessary background work while the journal on a phone is idle.
 - new recordings can now contribute to voice discovery on android and ios, and you can start teaching a voice before any speakers in that recording have been named.

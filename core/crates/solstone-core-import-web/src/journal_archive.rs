@@ -14,10 +14,9 @@ use axum::{
 use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
 use solstone_core_import_sources::archive::plan_journal_archive;
-use solstone_core_journal_archive::{
-    ArchiveSource, EncodeArchiveRequest, ExplicitArchiveOutputRequest,
-    acquire_explicit_output_target, publish_archive,
-};
+use solstone_core_journal_archive::{ArchiveSource, EncodeArchiveRequest, publish_archive};
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+use solstone_core_journal_archive::{ExplicitArchiveOutputRequest, acquire_explicit_output_target};
 use tokio_util::io::ReaderStream;
 
 use crate::{
@@ -73,7 +72,11 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
 async fn export_file(root: &Path) -> Result<tokio::fs::File, String> {
     let source = ArchiveSource::open(root).map_err(|error| error.to_string())?;
     let scratch = tempfile::tempdir().map_err(|error| error.to_string())?;
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let output = scratch.path().join(EXPORT_FILENAME);
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let target = bound_export_target(scratch.path())?;
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let target = acquire_explicit_output_target(&ExplicitArchiveOutputRequest::new(
         output,
         scratch.path().to_owned(),
@@ -92,6 +95,23 @@ async fn export_file(root: &Path) -> Result<tokio::fs::File, String> {
         .map_err(|error| error.to_string())?;
     drop(scratch);
     Ok(file)
+}
+
+#[cfg(any(
+    target_os = "ios",
+    target_os = "android",
+    all(test, unix, feature = "full-tests")
+))]
+fn bound_export_target(
+    parent: &Path,
+) -> Result<solstone_core_journal_archive::ArchiveOutputTarget, String> {
+    let parent = solstone_core_journal_io::JournalRoot::open_no_follow(parent)
+        .map_err(|error| error.to_string())?;
+    solstone_core_journal_archive::acquire_bound_output_target(
+        parent,
+        std::ffi::OsStr::new(EXPORT_FILENAME),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn staged_archive_path(root: &Path, data: &Value) -> Result<PathBuf, Box<Response>> {
@@ -166,6 +186,19 @@ mod tests {
         corpus::tests::{request, response_header},
         test_support::{phase_root, seed_import},
     };
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn mobile_export_target_uses_admitted_temp_parent() {
+        let scratch = tempfile::tempdir().expect("temporary export parent");
+        let target = bound_export_target(scratch.path()).expect("admitted mobile target");
+        assert_eq!(
+            target.final_path(),
+            scratch.path().canonicalize().unwrap().join(EXPORT_FILENAME)
+        );
+        target.revalidate().expect("free bound target");
+        assert_eq!(fs::read_dir(scratch.path()).unwrap().count(), 0);
+    }
 
     #[tokio::test]
     async fn ac18_export_streams_the_public_archive_contract_without_journal_residue() {

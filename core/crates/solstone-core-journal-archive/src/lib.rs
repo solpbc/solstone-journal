@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Capability-safe, read-only inventory of portable journal archive sources.
+//! Capability-safe portable archive inventory, encoding and create-only publication.
 //!
-//! This crate deliberately owns no archive publication, command-line surface,
-//! or generic filesystem traversal API. [`ArchiveSource`] retains a
-//! [`solstone_core_journal_io::JournalRoot`] and exposes only its frozen, verified
-//! archive inventory plus checked member reads. It
-//! does not implement root acquisition; [`ArchiveSource::open`] delegates to
-//! [`solstone_core_journal_io::JournalRoot::open`]. It owns no output-path
-//! selection, publication, command-line, HTTP, or generic filesystem traversal API.
+//! [`ArchiveSource`] retains a [`solstone_core_journal_io::JournalRoot`] for
+//! verified inventory and member reads. [`ArchiveOutputTarget`] retains the
+//! selected existing output parent. Callers select an explicit path or supply
+//! an owned admitted parent and one free leaf; publication stays descriptor-relative.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
@@ -61,7 +58,7 @@ pub use source::ArchiveSource;
 #[cfg(unix)]
 pub use target::{
     ArchiveOutputTarget, ExplicitArchiveOutputRequest, ExplicitTargetError,
-    acquire_explicit_output_target,
+    acquire_bound_output_target, acquire_explicit_output_target,
 };
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use test_hooks::{

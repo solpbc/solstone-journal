@@ -3,6 +3,7 @@
 //! Development-only iOS helper bridge. Fault operations never enter a release binary.
 mod owner_folder;
 mod owner_response;
+mod root_privacy;
 mod saved_sources;
 use chrono::NaiveDate;
 use serde_json::{Value, json};
@@ -386,10 +387,19 @@ fn run(v: Value) -> Result<Value, String> {
             {
                 return Err("worker already bound to another journal".into());
             }
-        } else {
-            if op == "open" {
-                std::fs::create_dir_all(&requested).map_err(|e| e.to_string())?;
+        }
+        if op == "open" {
+            // Recheck the signed-container child route even after a read-only
+            // recovery operation has already retained this root.
+            let admitted = root_privacy::create_root(&requested)?;
+            if let Some(current) = guard.as_ref() {
+                if current.identity() != admitted.identity() {
+                    return Err("journal root changed during admission".into());
+                }
+            } else {
+                *guard = Some(Arc::new(admitted));
             }
+        } else if guard.is_none() {
             *guard = Some(Arc::new(
                 JournalRoot::open(&requested).map_err(|e| e.to_string())?,
             ));
@@ -399,6 +409,7 @@ fn run(v: Value) -> Result<Value, String> {
     root.revalidate_canonical_binding()
         .map_err(|e| e.to_string())?;
     if op == "open" {
+        root_privacy::apply_private_mode(root)?;
         *STOP_ROOT.lock().unwrap_or_else(|p| p.into_inner()) = Some(Arc::clone(root));
     }
     let p = root.canonical_path();
