@@ -1848,10 +1848,9 @@ mod tests {
     }
 
     #[test]
-    fn stale_grant_and_expired_row_are_not_capable() {
+    fn stale_grant_is_not_capable() {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
         let t_old = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
-        let t_now = OffsetDateTime::from_unix_timestamp(1_790_208_000).unwrap();
         set_test_clock(Some(t_old));
         let reg = registry(&root);
 
@@ -1865,7 +1864,7 @@ mod tests {
         )
         .unwrap();
 
-        // 1. Stale grant timestamp does not match
+        // Stale grant timestamp does not match
         let (devices, grants) = reg.read_devices_locked().unwrap();
         assert_eq!(grants.len(), 1);
         let grant_stale = CapabilityGrant {
@@ -1885,28 +1884,6 @@ mod tests {
             TOKEN_1,
             &key(),
             registered_at,
-        ));
-
-        // 2. Row older than 30 days is filtered out by deliver_notification cutoff
-        let notif = crate::envelope::Notification {
-            at: t_now,
-            kind: "test".to_owned(),
-            title: "solstone".to_owned(),
-            body: "test".to_owned(),
-            open: None,
-        };
-        let outcome = crate::router::deliver_notification(
-            root.path(),
-            "https://portal.example.com",
-            t_now,
-            &notif,
-            &crate::relay::UreqRelay::default(),
-            None,
-        );
-        // Because row was registered > 30 days ago, deliver_notification finds no eligible recipient
-        assert!(matches!(
-            outcome,
-            crate::router::DeliveryOutcome::Refused(crate::router::Refused::NoRecipient)
         ));
 
         set_test_clock(None);

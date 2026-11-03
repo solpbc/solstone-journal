@@ -1240,7 +1240,7 @@ mod tests {
     }
 
     #[test]
-    fn device_age_30_vs_31_and_ledger_filtering() {
+    fn device_age_is_no_filter_and_the_ledger_is() {
         let root = setup_test_journal();
         let cid_authorized =
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -1258,8 +1258,6 @@ mod tests {
         );
 
         // now = 2026-08-16T19:00:00Z (12:00 Phoenix)
-        // 30 days before = 2026-07-17T19:00:00Z
-        // 31 days before = 2026-07-16T19:00:00Z
         let reg = serde_json::json!({
             "version": 2,
             "devices": [
@@ -1310,6 +1308,7 @@ mod tests {
         });
         let dispatch_resp = serde_json::json!({
             "results": [
+                { "token": token_31_days, "outcome": "sent" },
                 { "token": token_30_days, "outcome": "sent" }
             ]
         });
@@ -1384,7 +1383,10 @@ mod tests {
         assert_eq!(rec.state, OnceState::Done);
 
         let sent = transport.dispatched_tokens.lock().unwrap().clone();
-        assert_eq!(sent, vec![token_30_days.to_owned()]);
+        assert_eq!(
+            sent,
+            vec![token_31_days.to_owned(), token_30_days.to_owned()]
+        );
     }
 
     #[test]
