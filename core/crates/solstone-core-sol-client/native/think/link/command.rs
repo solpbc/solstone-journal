@@ -44,6 +44,11 @@ const PAIRED: &str = "paired.";
 const NOT_PAIRED: &str = "not paired.";
 const MISMATCH_BODY: &str = "you said this mark doesn't match the one your journal shows, so this computer isn't paired, and nothing it has kept went to that journal through this link. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run solstone link join again, or email support@solstone.app and we'll help.";
 const CANCEL: &str = "pairing cancelled. nothing this computer has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join again when you're ready.";
+// `link confirm` can end a link that was already sending, so these say nothing about
+// what reached that journal.
+const CONFIRM_MISMATCH_BODY: &str = "you said this mark doesn't match the one your journal shows, so this computer isn't paired. you may have pasted the wrong link, or something isn't right. get a fresh pairing link from your journal and run solstone link join again, or email support@solstone.app and we'll help.";
+const CONFIRM_CANCEL: &str = "pairing cancelled. get a fresh pairing link from your journal and run solstone link join again when you're ready.";
+const CONFIRM_MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired. check the words, get a fresh pairing link from your journal and run solstone link join again.";
 const JOIN_NO_TERMINAL: &str = "solstone link join can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
 const MARK_USAGE: &str =
     "give the two words of your journal's mark, like --mark \"bramble quokka\".";
@@ -424,7 +429,10 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
         let Some(jid) = ca_jid.as_deref() else {
             return CommandOutput::failure(format!("{MARK_UNVERIFIABLE_CONFIRM}\n"), 5);
         };
-        answer_from_words(mark, jid).inspect_err(|_| retire_bundle(seam, &selection))
+        answer_from_words(mark, jid).map_err(|_| {
+            retire_bundle(seam, &selection);
+            CommandOutput::failure(format!("{NOT_PAIRED}\n{CONFIRM_MARK_MISMATCH}\n"), 1)
+        })
     } else {
         let Some(mut terminal) = seam.open_terminal() else {
             return CommandOutput::failure(format!("{CONFIRM_NO_TERMINAL}\n"), 1);
@@ -434,13 +442,13 @@ pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
             MarkAnswer::No => {
                 retire_bundle(seam, &selection);
                 Err(CommandOutput::failure(
-                    format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"),
+                    format!("{NOT_PAIRED}\n{CONFIRM_MISMATCH_BODY}\n"),
                     1,
                 ))
             }
             MarkAnswer::Cancelled => {
                 retire_bundle(seam, &selection);
-                Err(CommandOutput::failure(format!("{CANCEL}\n"), 1))
+                Err(CommandOutput::failure(format!("{CONFIRM_CANCEL}\n"), 1))
             }
             MarkAnswer::WalkedAway => {
                 return CommandOutput::failure(held_lines(&selection.label), 5);
