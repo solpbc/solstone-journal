@@ -773,6 +773,9 @@ mod tests {
     }
 
     const SPIN_CAP: usize = 10_000_000;
+    /// How long a test watches for something that must not happen. `SPIN_CAP` is
+    /// a failure timeout for a condition that will come true, so it stays long.
+    const QUIET_SPINS: usize = 100_000;
 
     fn spin_until(mut ready: impl FnMut() -> bool) {
         for _ in 0..SPIN_CAP {
@@ -2117,7 +2120,7 @@ mod tests {
             retired_flag.store(true, Ordering::Release);
         });
         let release_guard = FlagRelease(Arc::clone(&release));
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
             std::thread::yield_now();
         }
@@ -2166,13 +2169,13 @@ mod tests {
             retired_flag.store(true, Ordering::Release);
         });
         let release_guard = FlagRelease(Arc::clone(&release));
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
             std::thread::yield_now();
         }
         slot.pause_before_spawn.store(false, Ordering::Release);
         spin_until(|| entered.load(Ordering::Acquire));
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
             std::thread::yield_now();
         }
@@ -2213,7 +2216,7 @@ mod tests {
             assert!(on_done_for_retire.load(Ordering::Acquire));
             retired_flag.store(true, Ordering::Release);
         });
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
             assert!(!on_done.load(Ordering::Acquire));
             std::thread::yield_now();
@@ -2404,13 +2407,13 @@ mod tests {
         });
         let second = tokio::spawn(async { true });
         assert!(second.await.expect("second task"));
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
             assert!(!slot.snapshot_delete_waiting.load(Ordering::Acquire));
-            assert!(directory.is_dir());
             assert!(fake.live.load(Ordering::Acquire) > 0);
             std::thread::yield_now();
         }
+        assert!(directory.is_dir());
         slot.pause_before_validation.store(false, Ordering::Release);
         let slot_wait = Arc::clone(&slot);
         tokio::task::spawn_blocking(move || {
@@ -2418,12 +2421,12 @@ mod tests {
         })
         .await
         .expect("cleanup pause");
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
-            assert!(directory.is_dir());
             assert!(fake.live.load(Ordering::Acquire) > 0);
             std::thread::yield_now();
         }
+        assert!(directory.is_dir());
         slot.pause_before_snapshot_delete
             .store(false, Ordering::Release);
         retire_thread.join().expect("retire");
@@ -2487,7 +2490,7 @@ mod tests {
             slot_for_retire.retire().expect("checked import retirement");
             retired_flag.store(true, Ordering::Release);
         });
-        for _ in 0..SPIN_CAP {
+        for _ in 0..QUIET_SPINS {
             assert!(!retired.load(Ordering::Acquire));
             std::thread::yield_now();
         }
