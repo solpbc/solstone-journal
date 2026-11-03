@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 246b7fd80ae38c8a979585665aad30ebd61806bac895fd16f7419c7b58a30b6b
+// authority-source-sha256: 6ae896385631d8abde3ecbf70d1ab47c7f2f7f0a8ee5568915de89470ed239dd
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -1978,6 +1978,21 @@ pub const ENTRIES: &[InventoryEntry] = &[
     },
     InventoryEntry {
         surface: "sol-link",
+        path: &["link", "confirm"],
+        kind: "top-level",
+        help: "confirm the journal's mark for a link waiting on it",
+        authority_path: "core/native-sol/think/native/link/authority.toml",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"label\",\"nargs\":1,\"options\":[\"--label\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"mark\",\"nargs\":1,\"options\":[\"--mark\"],\"required\":false,\"secondary\":[],\"type\":\"text\"}]",
+        entry_type: "top-level-link",
+        operation_id: "link.confirm",
+        method: None,
+        route: None,
+        contract_operation_id: None,
+        handler: "link_confirm",
+        resident: false,
+    },
+    InventoryEntry {
+        surface: "sol-link",
         path: &["link", "status"],
         kind: "top-level",
         help: "show link status and observed remote journal version",
@@ -2512,6 +2527,7 @@ pub const HANDLERS: &[Handler] = &[
     apps_transcripts_native_command_rs::stats,
     think_native_import_command_rs::import_top_level,
     think_native_link_command_rs::link_join,
+    think_native_link_command_rs::link_confirm,
     think_native_link_command_rs::link_status,
     think_native_moved_command_rs::navigate,
     think_native_status_command_rs::status,

@@ -39,6 +39,19 @@ params = [
 
 [[entries]]
 surface = "sol-link"
+path = ["link", "confirm"]
+kind = "top-level"
+help = "confirm the journal's mark for a link waiting on it"
+operation_id = "link.confirm"
+entry_type = "top-level-link"
+handler = "link_confirm"
+params = [
+  { name = "label", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--label"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "mark", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--mark"], secondary = [], hidden = false, is_flag = false, count = false },
+]
+
+[[entries]]
+surface = "sol-link"
 path = ["link", "status"]
 kind = "top-level"
 help = "show link status and observed remote journal version"

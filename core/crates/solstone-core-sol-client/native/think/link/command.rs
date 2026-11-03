@@ -49,6 +49,12 @@ const MARK_USAGE: &str =
     "give the two words of your journal's mark, like --mark \"bramble quokka\".";
 const MARK_MISMATCH: &str = "the mark words you gave don't match the journal's mark, so this computer isn't paired, and nothing it has kept went to that journal through this link. check the words, get a fresh pairing link from your journal and run solstone link join again.";
 const MARK_UNVERIFIABLE: &str = "this computer couldn't work out the journal's mark, so the words you gave can't be matched. this computer isn't paired, and nothing it has kept went to that journal through this link. get a fresh pairing link from your journal and run solstone link join in a terminal to decide for yourself.";
+const HELD: &str = "waiting for you to confirm your journal's mark. nothing waiting goes into your journal until you do.";
+const CONFIRM_RUN_LINE: &str = "when you're ready, run: solstone link confirm";
+const CONFIRM_DONE: &str = "your journal's mark is already confirmed. nothing to do.";
+const CONFIRM_NO_TERMINAL: &str = "solstone link confirm can't ask you about your journal's mark here. run it in a terminal, or give the mark's two words with --mark \"word word\".";
+const CONFIRM_HELP: &str = "usage: solstone link confirm [-h] [--label LABEL] [--mark MARK]\n\nConfirm the journal's mark for a link waiting on it.\n\noptions:\n  -h, --help     show this help message and exit\n  --label LABEL  Link bundle label (defaults to the only paired link)\n  --mark MARK    the two words of the mark your journal's network app shows.\n                 needed when there's no terminal to ask you on.\n";
+const CONFIRM_USAGE: &str = "usage: solstone link confirm [-h] [--label LABEL] [--mark MARK]\n";
 const DEFAULT_CLIENT_LABEL: &str = "linked-system";
 const DEFAULT_SERVE_PORT: u16 = 5015;
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
@@ -182,7 +188,16 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
 
     // Nothing is written until the owner has confirmed the journal's mark.
     let confirmed = match terminal {
-        Some(mut terminal) => answer_at_terminal(terminal.as_mut(), &credential.instance_id),
+        Some(mut terminal) => {
+            match answer_at_terminal(terminal.as_mut(), &credential.instance_id) {
+                MarkAnswer::Yes => Ok(()),
+                MarkAnswer::No => Err(CommandOutput::failure(
+                    format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"),
+                    1,
+                )),
+                MarkAnswer::Stopped => Err(CommandOutput::failure(format!("{CANCEL}\n"), 1)),
+            }
+        }
         None => answer_from_words(
             parsed.mark.as_deref().expect("mark or terminal present"),
             &credential.instance_id,
@@ -268,8 +283,15 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     CommandOutput::success(format!("{PAIRED}\ncredentials: {}\n", bundle_dir.display()))
 }
 
-/// Ask on the owner's terminal. The outcome to print if they don't go ahead.
-fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> Result<(), CommandOutput> {
+enum MarkAnswer {
+    Yes,
+    No,
+    /// Cancelled at the question, or nobody left at the terminal to answer.
+    Stopped,
+}
+
+/// Ask on the owner's terminal.
+fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> MarkAnswer {
     let spec = crate::mark_text::mark_from_jid(jid)
         .ok()
         .map(|mark| mark.to_render_spec());
@@ -291,20 +313,19 @@ fn answer_at_terminal(terminal: &mut dyn LinkJoinTerminal, jid: &str) -> Result<
         (&["continue"], &["cancel"])
     };
     loop {
-        // A closed terminal leaves nothing saved, so this ends the way cancelling does.
         let Some(line) = terminal.read_answer() else {
-            return Err(CommandOutput::failure(format!("{CANCEL}\n"), 1));
+            return MarkAnswer::Stopped;
         };
         let answer = line.trim().to_ascii_lowercase();
         if go_ahead.contains(&answer.as_str()) {
-            return Ok(());
+            return MarkAnswer::Yes;
         }
         if stop.contains(&answer.as_str()) {
-            return Err(if spec.is_some() {
-                CommandOutput::failure(format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"), 1)
+            return if spec.is_some() {
+                MarkAnswer::No
             } else {
-                CommandOutput::failure(format!("{CANCEL}\n"), 1)
-            });
+                MarkAnswer::Stopped
+            };
         }
         terminal.write_text(&format!("{ask}\n"));
     }
@@ -339,6 +360,145 @@ fn mark_words(value: &str) -> Vec<&str> {
         .collect()
 }
 
+/// The journal id of the CA a link bundle pins, which is the first in its chain,
+/// when that certificate can be read.
+fn bundle_ca_jid(bundle: &LinkServeBundle) -> Option<String> {
+    let der = crate::link_credentials::pem_cert_der(bundle.ca_chain_pem.first()?)?;
+    let spki = spl_core::ca::extract_spki_der(&der).ok()?;
+    spl_core::relay_window::jid_from_spki(&spki).ok()
+}
+
+/// A link whose stored id isn't its own CA's waits for the owner. One with no
+/// readable CA can't be judged and carries on.
+fn bundle_is_held(bundle: &LinkServeBundle) -> bool {
+    bundle_ca_jid(bundle).is_some_and(|jid| jid != bundle.instance_id)
+}
+
+fn held_lines(label: &str) -> String {
+    format!("{HELD}\n{CONFIRM_RUN_LINE} --label {label}\n")
+}
+
+#[must_use]
+pub fn link_confirm(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_confirm_args(ctx.args) {
+        Ok(parsed) => parsed,
+        Err(error) => return confirm_usage_error(&error),
+    };
+    if parsed.help {
+        return CommandOutput::success(CONFIRM_HELP);
+    }
+    if let Some(unknown) = parsed.unknown {
+        return confirm_usage_error(&format!("unrecognized arguments: {unknown}"));
+    }
+    if parsed.mark_repeated
+        || parsed
+            .mark
+            .as_deref()
+            .is_some_and(|mark| mark_words(mark).len() != 2)
+    {
+        return CommandOutput::failure(format!("{MARK_USAGE}\n"), 2);
+    }
+    let Some(seam) = ctx.link_pairing else {
+        return CommandOutput::failure("Link pairing seam is unavailable.\n", 1);
+    };
+    let selection = match resolve_serve_bundle(parsed.label.as_deref(), ctx.env) {
+        Ok(selection) => selection,
+        Err(error) => {
+            return CommandOutput::failure(format!("solstone link confirm: error: {error}\n"), 1);
+        }
+    };
+    let Some(jid) = bundle_ca_jid(&selection.bundle).filter(|_| bundle_is_held(&selection.bundle))
+    else {
+        return CommandOutput::success(format!("{CONFIRM_DONE}\n"));
+    };
+
+    let answer = if let Some(mark) = parsed.mark.as_deref() {
+        answer_from_words(mark, &jid).inspect_err(|_| retire_bundle(seam, &selection))
+    } else {
+        let Some(mut terminal) = seam.open_terminal() else {
+            return CommandOutput::failure(format!("{CONFIRM_NO_TERMINAL}\n"), 1);
+        };
+        match answer_at_terminal(terminal.as_mut(), &jid) {
+            MarkAnswer::Yes => Ok(()),
+            MarkAnswer::No => {
+                retire_bundle(seam, &selection);
+                Err(CommandOutput::failure(
+                    format!("{NOT_PAIRED}\n{MISMATCH_BODY}\n"),
+                    1,
+                ))
+            }
+            MarkAnswer::Stopped => {
+                return CommandOutput::failure(held_lines(&selection.label), 5);
+            }
+        }
+    };
+    if let Err(refused) = answer {
+        return match fs::remove_dir_all(&selection.bundle_dir) {
+            Ok(()) => refused,
+            Err(error) => CommandOutput::failure(format!("{error}\n"), 1),
+        };
+    }
+    match store_confirmed_id(&selection.bundle_dir, &jid) {
+        Ok(()) => CommandOutput::success(format!("{PAIRED}\n")),
+        Err(error) => CommandOutput::failure(format!("{error}\n"), 1),
+    }
+}
+
+/// Best effort, like a refused join: the journal's row for this device goes.
+fn retire_bundle(seam: &dyn crate::seam::LinkJoinPairingSeam, selection: &ServeBundleSelection) {
+    let bundle = &selection.bundle;
+    let relay = match &bundle.relay_access {
+        Some(crate::link_credentials::StoreLoadOutcome::Ready(record)) => Some(record),
+        _ => None,
+    };
+    let ca_fp_prefix = bundle
+        .ca_chain_pem
+        .first()
+        .and_then(|pem| crate::link_credentials::pem_cert_der(pem))
+        .map(|der| spl_core::ca::sha256(&der)[..16].to_vec())
+        .unwrap_or_default();
+    seam.retire(&LinkJoinCredential {
+        client_key_pem: bundle.private_key_pem.clone(),
+        client_cert_pem: bundle.client_cert_pem.clone(),
+        ca_chain_pem: bundle.ca_chain_pem.clone(),
+        ca_fingerprint: String::new(),
+        instance_id: bundle.instance_id.clone(),
+        home_label: bundle.home_label.clone(),
+        home_attestation: Some(bundle.home_attestation.clone()),
+        local_endpoints: bundle.local_endpoints.clone(),
+        relay_origin: relay.and_then(|record| record.relay_origin.clone()),
+        relay_device_token: relay.and_then(|record| record.device_token.clone()),
+        relay_device_token_expires_at: relay.and_then(|record| record.expires_at),
+        ca_fp_prefix,
+        endpoints: bundle.endpoints.clone(),
+    });
+}
+
+/// The owner said this mark is their journal's, so the id the link stores
+/// becomes the one that mark came from.
+fn store_confirmed_id(bundle_dir: &Path, jid: &str) -> io::Result<()> {
+    for (name, pointer) in [
+        ("peer.json", "/instance_id"),
+        ("relay_access.json", "/identity/instance_id"),
+    ] {
+        let path = bundle_dir.join(name);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        let mut value: Value = serde_json::from_str(&text).map_err(io::Error::other)?;
+        let Some(slot) = value.pointer_mut(pointer) else {
+            continue;
+        };
+        *slot = Value::String(jid.to_owned());
+        let staged = bundle_dir.join(format!(".{name}.confirm"));
+        write_private_file(&staged, json_pretty_ascii(&value).as_bytes())?;
+        fs::rename(&staged, &path)?;
+    }
+    Ok(())
+}
+
 pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, CommandOutput> {
     let parsed = match parse_serve_args(ctx.args) {
         Ok(parsed) => parsed,
@@ -365,6 +525,9 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         Ok(selection) => selection,
         Err(error) => return Err(CommandOutput::failure(format!("{error}\n"), 1)),
     };
+    if bundle_is_held(&selection.bundle) {
+        return Err(CommandOutput::failure(held_lines(&selection.label), 5));
+    }
     let policy = if parsed.direct {
         LinkServeCarrierPolicy::Direct
     } else if parsed.relay_only {
@@ -523,6 +686,9 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}{unpaired_note}",
         selection.label, state_str, version_str
     );
+    if bundle_is_held(&selection.bundle) {
+        output.push_str(&held_lines(&selection.label));
+    }
     if let Some(snap) = &live_status {
         for sighting in &snap.unknown_journals {
             output.push_str(&format_sighting_block(
@@ -733,6 +899,45 @@ fn parse_args(args: &[String]) -> Result<ParsedArgs, String> {
         index += 1;
     }
     Ok(parsed)
+}
+
+fn parse_confirm_args(args: &[String]) -> Result<ParsedArgs, String> {
+    let mut parsed = ParsedArgs::default();
+    let mut index = 0;
+    while index < args.len() {
+        let token = &args[index];
+        if token == "-h" || token == "--help" {
+            parsed.help = true;
+        } else if let Some(value) = token.strip_prefix("--label=") {
+            parsed.label = Some(value.to_string());
+        } else if token == "--label" {
+            index += 1;
+            parsed.label = Some(take_value(args, index, "--label")?.to_string());
+        } else if let Some(value) = token.strip_prefix("--mark=") {
+            parsed.mark_repeated |= parsed.mark.is_some();
+            parsed.mark = Some(value.to_string());
+        } else if token == "--mark" {
+            index += 1;
+            parsed.mark_repeated |= parsed.mark.is_some();
+            parsed.mark = Some(
+                args.get(index)
+                    .filter(|value| !value.starts_with('-'))
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        } else if parsed.unknown.is_none() {
+            parsed.unknown = Some(token.clone());
+        }
+        index += 1;
+    }
+    Ok(parsed)
+}
+
+fn confirm_usage_error(error: &str) -> CommandOutput {
+    CommandOutput::failure(
+        format!("{CONFIRM_USAGE}solstone link confirm: error: {error}\n"),
+        2,
+    )
 }
 
 fn parse_serve_args(args: &[String]) -> Result<ParsedServeArgs, String> {
