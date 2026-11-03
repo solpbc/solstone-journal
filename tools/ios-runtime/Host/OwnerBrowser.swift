@@ -310,7 +310,12 @@ struct OwnerBrowser: UIViewRepresentable {
     web.load(URLRequest(url: OwnerOrigin.url(owner.route)))
     return web
   }
-  func updateUIView(_ web: WKWebView, context: Context) {}
+  func updateUIView(_ web: WKWebView, context: Context) {
+    // Retain navigation and unfinished forms while the native quiet screen is shown.
+    if owner.dimmed { web.endEditing(true) }
+    web.isHidden = owner.dimmed
+    web.isUserInteractionEnabled = !owner.dimmed
+  }
   static func dismantleUIView(_ web: WKWebView, coordinator: OwnerBrowserCoordinator) {
     web.stopLoading(); coordinator.close(); web.navigationDelegate = nil; web.uiDelegate = nil
   }

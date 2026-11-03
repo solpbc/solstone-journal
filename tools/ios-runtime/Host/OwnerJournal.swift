@@ -10,7 +10,8 @@ import UIKit
   @Published var phase = Phase.closed
   @Published var detail = ""
   @Published var page = UUID()
-  @Published var route = "/init"
+  @Published var route = "/"
+  @Published private(set) var dimmed = false
   @Published var recoveryBusy = false
   @Published var recoveryReview: OwnerCreatorRecovery.Review?
   @Published var showRecoveryReview = false
@@ -27,6 +28,7 @@ import UIKit
   private var ownerStopped = true
   private var choiceSaved = true
   private var servicesPrepared = false
+  private var statusBusy = false
   private var choice: URL? {
     guard let fixture = try? runner.ownerFixture.get() else { return nil }
     return runner.output.appendingPathComponent(fixture.choiceFileName)
@@ -152,7 +154,7 @@ import UIKit
         guard ticket == revision, !ownerStopped, foreground else { return }
         _ = try await runner.servingCall(runner.request("audio-enable"), "owner.audio-ready")
         guard ticket == revision, !ownerStopped, foreground else { return }
-        route = "/init"
+        route = "/"
         page = UUID()
         // Sweep only here, before this start admits the owner page.
         reclaimOwnerBridge()
@@ -174,6 +176,7 @@ import UIKit
   }
   func stop(restart: Bool = false) {
     guard admitFixture() else { return }
+    wake()
     recoveryReview = nil
     showRecoveryReview = false
     phase = .stopping
@@ -213,6 +216,7 @@ import UIKit
   }
   func scene(_ active: Bool) {
     guard admitFixture() else { return }
+    if !active { wake() }
     foreground = active
     UIApplication.shared.isIdleTimerDisabled = active && retained
     guard loaded else { return }
@@ -236,7 +240,9 @@ import UIKit
     }
   }
   func status() async {
-    guard phase == .running, foreground else { return }
+    guard phase == .running, foreground, !statusBusy else { return }
+    statusBusy = true
+    defer { statusBusy = false }
     do {
       let reply = try await runner.servingCall(runner.request("serve-status"), "owner.status")
       if let native = reply["journal"] as? [String: Any],
@@ -249,12 +255,18 @@ import UIKit
       if phase == .running { phase = .unavailable; detail = "journal status unavailable. use stop to check before restarting." }
     }
   }
-  func show(_ path: String) { route = path; page = UUID() }
+  func dim() {
+    guard phase == .running, foreground else { return }
+    dimmed = true
+  }
+  func wake() { dimmed = false }
+  func show(_ path: String) { wake(); route = path; page = UUID() }
   func pageFailed() {
     guard phase == .running else { return }
+    wake()
     detail = "couldn't open this page. open home or health to try again."
   }
-  func uploadUnavailable() { detail = "this file couldn't be sent. choose it again, and check the result before retrying." }
+  func uploadUnavailable() { wake(); detail = "this file couldn't be sent. choose it again, and check the result before retrying." }
 
   private func recoveryCall(_ command: [String: Any]) async throws -> [String: Any] {
     let bytes = try OwnerCreatorRecovery.encode(command)
@@ -384,39 +396,69 @@ struct OwnerJournalView: View {
   @Environment(\.scenePhase) private var scenePhase
   @ObservedObject var owner: OwnerJournal
   var body: some View {
-    VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: 8) {
-        HStack {
-          Text(owner.label).accessibilityIdentifier("owner-run-state")
-          Spacer()
-          if owner.canStart { Button("start") { owner.start() }.accessibilityIdentifier("owner-start") }
-          else if owner.phase != .stopping {
-            Button("stop") { owner.stop() }.accessibilityIdentifier("owner-stop")
-            if owner.phase == .running { Button("restart") { owner.stop(restart: true) } }
-          }
-        }
-        if !owner.detail.isEmpty { Text(owner.detail).font(.caption).foregroundStyle(.secondary) }
-        if owner.canReviewRecovery || owner.recoveryBusy {
+    ZStack {
+      VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
           HStack {
-            Button("review storage recovery") { owner.reviewRecovery() }
-              .disabled(!owner.canReviewRecovery).accessibilityIdentifier("owner-recovery-review")
-            if owner.recoveryHeld {
-              Button("check current storage") { owner.reconcileRecovery() }
-                .disabled(!owner.canReviewRecovery).accessibilityIdentifier("owner-recovery-check")
+            Text(owner.label).accessibilityIdentifier("owner-run-state")
+            Spacer()
+            if owner.canStart { Button("start") { owner.start() }.accessibilityIdentifier("owner-start") }
+            else if owner.phase != .stopping {
+              Button("stop") { owner.stop() }.accessibilityIdentifier("owner-stop")
+              if owner.phase == .running { Button("restart") { owner.stop(restart: true) } }
             }
           }
-        }
-        if !owner.recoveryDetail.isEmpty { Text(owner.recoveryDetail).font(.caption).foregroundStyle(.secondary) }
-        if owner.hasOwnerPage {
-          HStack {
-            Button("home") { owner.show("/") }
-            Button("health") { owner.show("/app/health/") }
+          if !owner.detail.isEmpty { Text(owner.detail).font(.caption).foregroundStyle(.secondary) }
+          if owner.canReviewRecovery || owner.recoveryBusy {
+            HStack {
+              Button("review storage recovery") { owner.reviewRecovery() }
+                .disabled(!owner.canReviewRecovery).accessibilityIdentifier("owner-recovery-review")
+              if owner.recoveryHeld {
+                Button("check current storage") { owner.reconcileRecovery() }
+                  .disabled(!owner.canReviewRecovery).accessibilityIdentifier("owner-recovery-check")
+              }
+            }
           }
+          if !owner.recoveryDetail.isEmpty { Text(owner.recoveryDetail).font(.caption).foregroundStyle(.secondary) }
+          if owner.hasOwnerPage {
+            HStack {
+              Button("home") { owner.show("/") }
+              Button("health") { owner.show("/app/health/") }
+              if owner.phase == .running {
+                Spacer()
+                Button("dim screen") { owner.dim() }.accessibilityIdentifier("owner-dim")
+              }
+            }
+          }
+        }.padding(12).background(.bar)
+        if owner.hasOwnerPage {
+          OwnerBrowser(owner: owner).id(owner.page)
+        } else { Spacer() }
+      }
+      .accessibilityHidden(owner.dimmed)
+      .allowsHitTesting(!owner.dimmed)
+      if owner.dimmed {
+        Button { owner.wake() } label: {
+          VStack(spacing: 16) {
+            Image(systemName: "moon")
+            Text(owner.label)
+            Text("tap to wake").font(.caption)
+          }
+          .foregroundStyle(.white)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(.black)
+          .contentShape(Rectangle())
         }
-      }.padding(12).background(.bar)
-      if owner.hasOwnerPage {
-        OwnerBrowser(owner: owner).id(owner.page)
-      } else { Spacer() }
+        .buttonStyle(.plain)
+        .ignoresSafeArea()
+        .accessibilityLabel("wake journal controls")
+        .accessibilityValue(owner.label)
+        .accessibilityIdentifier("owner-wake")
+      }
+    }
+    .statusBarHidden(owner.dimmed)
+    .onChange(of: owner.phase) { _, phase in
+      if phase != .running { owner.wake() }
     }
     .alert("review storage recovery", isPresented: $owner.showRecoveryReview) {
       Button("keep stopped", role: .cancel) { owner.recoveryReview = nil }
@@ -434,9 +476,12 @@ struct OwnerJournalView: View {
     .task {
       owner.scene(scenePhase == .active)
       owner.open()
+    }
+    .task(id: owner.dimmed) {
       while !Task.isCancelled {
-        try? await Task.sleep(for: .seconds(10))
-        if !Task.isCancelled { await owner.status() }
+        await owner.status()
+        do { try await Task.sleep(for: .seconds(owner.dimmed ? 60 : 10)) }
+        catch { return }
       }
     }
     .onChange(of: scenePhase) { _, value in owner.scene(value == .active) }
