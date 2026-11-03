@@ -337,10 +337,10 @@ mod tests {
 
     #[test]
     fn sense_lists_over_their_bounds_are_cut_on_a_provider_that_cannot_hold_them() {
-        let schema: Value = serde_json::from_str(include_str!(
-            "../../../payload/solstone/talent/sense.schema.json"
-        ))
-        .unwrap();
+        let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/talent/sense.schema.json");
+        let schema: Value =
+            serde_json::from_str(&std::fs::read_to_string(schema_path).unwrap()).unwrap();
         let topics: Vec<String> = (0..13).map(|topic| format!("topic {topic}")).collect();
         let reply = json!({"topics": topics}).to_string();
         let result = validate_schema_with_annotations(&reply, &schema);

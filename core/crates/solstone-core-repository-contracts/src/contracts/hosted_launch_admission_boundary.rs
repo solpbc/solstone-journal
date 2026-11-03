@@ -347,6 +347,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "local_endpoint",
+        include_str!("../../../solstone-core-convey-shell/src/local_endpoint.rs"),
+    ),
+    (
+        "convey",
         "local_network",
         include_str!("../../../solstone-core-convey-shell/src/local_network.rs"),
     ),

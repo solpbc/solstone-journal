@@ -89,8 +89,8 @@ pub(crate) fn sources_are_enabled(config: &Map<String, Value>) -> bool {
 
 /// How closely a line of an imported recording must match the owner's voiceprint
 /// to read You. Live capture names the owner from 0.43, but a recording can be
-/// anyone's: strangers' lines scored up to 0.47 against the founder's voiceprint,
-/// and his own matched lines a median of 0.69.
+/// anyone's: strangers' lines scored up to 0.47 against one owner's voiceprint,
+/// and that owner's own matched lines a median of 0.69.
 const IMPORTED_OWNER_SCORE_MIN: f32 = 0.5;
 
 /// The lines of an imported recording heard as the owner's voice: the owner
