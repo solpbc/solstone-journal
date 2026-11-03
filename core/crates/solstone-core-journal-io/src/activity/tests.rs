@@ -473,17 +473,20 @@ fn unsafe_entry_is_unavailable_and_is_never_replaced() {
 
 #[cfg(unix)]
 #[test]
-fn wrong_mode_and_root_rebind_are_unavailable_without_repair() {
+fn loose_mode_is_repaired_and_root_rebind_remains_unavailable() {
     use std::os::unix::fs::PermissionsExt;
     let f = Fixture::new();
     fs::write(f.temp.path().join(ENTRY), b"preserve").unwrap();
     fs::set_permissions(f.temp.path().join(ENTRY), fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(matches!(
-        ActivityLease::try_acquire(f.root.clone()),
-        Err(ActivityAdmissionError::Unavailable(
-            ActivityUnavailable::Entry(ExistingParentLockError::WrongMode { .. })
-        ))
-    ));
+    drop(ActivityLease::try_acquire(f.root.clone()).unwrap());
+    assert_eq!(
+        fs::metadata(f.temp.path().join(ENTRY))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777,
+        0o600
+    );
     assert_eq!(fs::read(f.temp.path().join(ENTRY)).unwrap(), b"preserve");
     fs::set_permissions(f.temp.path().join(ENTRY), fs::Permissions::from_mode(0o600)).unwrap();
     let activity = ActivityLease::try_acquire(f.root.clone()).unwrap();

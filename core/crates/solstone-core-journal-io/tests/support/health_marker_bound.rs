@@ -199,7 +199,7 @@ fn bound_lock_existing_mode_revalidates_and_replacement_refuses() {
 }
 
 #[test]
-fn bound_lock_created_mode_policy_remains_strict() {
+fn bound_lock_revalidation_repairs_loose_modes() {
     use std::ffi::OsStr;
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
@@ -215,13 +215,11 @@ fn bound_lock_created_mode_policy_remains_strict() {
     held.revalidate_bound(&parent, name).unwrap();
     let path = root.path().join("metadata/stream.updated.lock");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(matches!(
-        held.revalidate_bound(&parent, name),
-        Err(crate::ExistingParentLockError::WrongMode {
-            observed: 0o644,
-            ..
-        })
-    ));
+    held.revalidate_bound(&parent, name).unwrap();
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+        0o600
+    );
     assert!(fs::read(&path).unwrap().is_empty());
 }
 

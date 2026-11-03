@@ -4,8 +4,12 @@ Callosum is a JSON-per-line message bus for real-time event distribution across 
 
 ## Protocol
 
-**Transport:** Unix domain socket at `journal/health/callosum.sock` on Unix; an authenticated,
-deterministically named Windows named pipe derived from that journal endpoint on Windows. The Windows
+**Transport:** Desktop Unix clients pass the journal's logical
+`health/callosum.sock` address through `solstone_core_callosum::endpoint_path`.
+When the journal has a runtime namespace, that resolver selects `callosum.sock`
+beside `journal.sock`; otherwise it keeps the journal-local socket. Embedded
+Unix hosts retain their local transport. Windows uses an authenticated,
+deterministically named pipe derived from that journal endpoint. The Windows
 pipe accepts only the current user and rejects remote clients: this is a cross-user/cross-identity
 and remote-network boundary, not a defense against malware already running as that same user/SID.
 
@@ -199,7 +203,8 @@ and remote-network boundary, not a defense against malware already running as th
 ## Implementation
 
 The bus is `solstone-core-callosum`. On Unix, its socket is
-`journal/health/callosum.sock`; on Windows, the same facade derives an authenticated named pipe
+the logical `journal/health/callosum.sock` address through the shared endpoint
+resolver described above; on Windows, the same facade derives an authenticated named pipe
 from that endpoint. Messages are one JSON object per line with `tract`, `event`, `ts`, plus event
 fields.
 

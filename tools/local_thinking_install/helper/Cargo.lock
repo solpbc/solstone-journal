@@ -972,6 +972,7 @@ dependencies = [
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-io",
+ "solstone-core-local-endpoint",
  "tokio",
  "widestring",
  "windows-sys 0.61.2",
@@ -1117,6 +1118,19 @@ dependencies = [
  "thiserror",
  "ureq",
  "uuid",
+]
+
+[[package]]
+name = "solstone-core-local-endpoint"
+version = "2.0.66"
+dependencies = [
+ "libc",
+ "nix 0.30.1",
+ "serde",
+ "serde_json",
+ "socket2",
+ "toml_edit",
+ "ureq",
 ]
 
 [[package]]

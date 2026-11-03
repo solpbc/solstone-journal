@@ -687,20 +687,13 @@ fn existing_parent_lock_umask_helper() {
     };
     let parent = PathBuf::from(parent);
     let _restore = UmaskRestore::set(0o200);
-    let error = acquire(&parent, OsStr::new("lock"), Duration::from_secs(1)).unwrap_err();
-    assert!(matches!(
-        error,
-        ExistingParentLockError::WrongMode {
-            observed: 0o400,
-            ..
-        }
-    ));
-    assert_eq!(entry_mode(&parent.join("lock")), 0o400);
+    drop(acquire(&parent, OsStr::new("lock"), Duration::from_secs(1)).unwrap());
+    assert_eq!(entry_mode(&parent.join("lock")), 0o600);
 }
 
 #[cfg(unix)]
 #[test]
-fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
+fn existing_parent_lock_repairs_umask_restricted_creation() {
     let temporary = tempfile::TempDir::new().unwrap();
     let parent = temporary.path().join("locks");
     fs::create_dir(&parent).unwrap();
@@ -714,7 +707,7 @@ fn existing_parent_lock_leaves_umask_restricted_creation_unrepaired() {
         .status()
         .unwrap();
     assert!(status.success());
-    assert_eq!(entry_mode(&parent.join("lock")), 0o400);
+    assert_eq!(entry_mode(&parent.join("lock")), 0o600);
 }
 
 #[test]

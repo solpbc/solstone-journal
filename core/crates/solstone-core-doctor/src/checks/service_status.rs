@@ -156,7 +156,14 @@ fn endpoint_absent(context: &CheckContext) -> Option<Unavailable> {
                 Err(_) => return Some(Unavailable::Unverifiable),
                 Ok(None) => {}
             }
-            (!context.callosum_socket_path.exists()).then_some(Unavailable::NoSocket)
+            #[cfg(unix)]
+            let path = match solstone_core_callosum::endpoint_path(&context.callosum_socket_path) {
+                Ok(path) => path,
+                Err(_) => return Some(Unavailable::Unverifiable),
+            };
+            #[cfg(not(unix))]
+            let path = &context.callosum_socket_path;
+            (!path.exists()).then_some(Unavailable::NoSocket)
         }
     }
 }

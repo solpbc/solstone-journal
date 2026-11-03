@@ -288,6 +288,11 @@ fn inspect_socket(path: &Path) -> SocketInspection {
     if path.to_str().is_none() {
         return SocketInspection::InvalidUtf8;
     }
+    #[cfg(unix)]
+    let path = match solstone_core_callosum::endpoint_path(path) {
+        Ok(path) => path,
+        Err(error) => return SocketInspection::NotInspectable(error.to_string()),
+    };
     match std::fs::metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => SocketInspection::NotFound,
         Err(error) => SocketInspection::NotInspectable(error.to_string()),

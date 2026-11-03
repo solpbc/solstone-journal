@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on linux, journals on FAT or exFAT drives, common on USB sticks and external drives, can now start and save entries after you accept the storage warning. agents can still connect using your other routes, but not directly on the same computer.
 - a story no longer swaps words from a recording for a possible name when those words are already solstone or sol pbc, or the name of someone or something else in your facets. your transcript and search are unchanged.
 - from this update on, an activity's list of people and things keeps every name from each part of it, not only the last few minutes. stories, your agents and the daily briefing read that list.
 - an agent that can no longer reach your journal, because you changed or removed your journal's address on your own domain or revoked it from the command line, now drops out of the agents app instead of showing as connected.

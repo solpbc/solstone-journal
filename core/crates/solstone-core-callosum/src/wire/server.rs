@@ -76,6 +76,8 @@ pub(crate) struct ServerInner {
     #[cfg(test)]
     skip_endpoint_cleanup: bool,
     pub(crate) socket_path: PathBuf,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    runtime_endpoint: std::sync::OnceLock<solstone_core_local_endpoint::SocketLease>,
     #[cfg(unix)]
     local_root: Option<Arc<solstone_core_journal_io::JournalRoot>>,
     #[cfg(unix)]
@@ -128,6 +130,8 @@ fn new_server_inner(
         #[cfg(test)]
         skip_endpoint_cleanup: false,
         socket_path,
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        runtime_endpoint: std::sync::OnceLock::new(),
         #[cfg(unix)]
         local_root,
         #[cfg(unix)]
@@ -292,6 +296,8 @@ impl CallosumSocketServer {
         #[cfg(any(test, feature = "test-hooks"))] hooks: Option<Arc<ServerTestHooks>>,
         #[cfg(not(any(test, feature = "test-hooks")))] _hooks: Option<()>,
     ) -> Result<Self, CallosumSocketServerError> {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let logical_path = socket_path.clone();
         #[cfg(any(target_os = "linux", target_os = "android"))]
         let socket_path = match &bound_endpoint {
             Some(endpoint) => endpoint
@@ -312,6 +318,13 @@ impl CallosumSocketServer {
         let legacy_endpoint = bound_endpoint.is_none();
         #[cfg(not(any(target_os = "linux", target_os = "android")))]
         let legacy_endpoint = true;
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let runtime_endpoint = (legacy_endpoint && socket_path != logical_path)
+            .then(|| solstone_core_local_endpoint::SocketLease::bind_companion(&socket_path))
+            .transpose()
+            .map_err(CallosumSocketServerError::Io)?;
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let legacy_endpoint = legacy_endpoint && runtime_endpoint.is_none();
         if legacy_endpoint && let Some(parent) = socket_path.parent() {
             fs::create_dir_all(parent).map_err(CallosumSocketServerError::Io)?;
         }
@@ -320,7 +333,28 @@ impl CallosumSocketServer {
             fs::remove_file(&socket_path).map_err(CallosumSocketServerError::Io)?;
         }
         #[cfg(unix)]
-        let listener = UnixListener::bind(&socket_path).map_err(CallosumSocketServerError::Io)?;
+        let listener = {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            if let Some(endpoint) = &runtime_endpoint {
+                UnixListener::from_std(
+                    endpoint
+                        .listener
+                        .try_clone()
+                        .map_err(CallosumSocketServerError::Io)?,
+                )
+            } else {
+                UnixListener::bind(&socket_path)
+            }
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            UnixListener::bind(&socket_path)
+        }
+        .map_err(|error| {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            if legacy_endpoint && socket_path.ends_with("health/callosum.sock") {
+                log::error!("Callosum could not bind its journal-local socket: {error}; a journal on a drive without Unix sockets needs SOLSTONE_JOURNAL_SOCKET in a private runtime directory");
+            }
+            CallosumSocketServerError::Io(error)
+        })?;
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if let Some(endpoint) = bound_endpoint.as_mut() {
             endpoint.bound().map_err(CallosumSocketServerError::Io)?;
@@ -339,6 +373,10 @@ impl CallosumSocketServer {
             #[cfg(any(test, feature = "test-hooks"))]
             hooks,
         );
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(endpoint) = runtime_endpoint {
+            let _ = inner.runtime_endpoint.set(endpoint);
+        }
         track_task(
             &inner,
             tokio::spawn(run_dispatcher(Arc::clone(&inner), broadcast_rx)),
@@ -488,6 +526,11 @@ impl CallosumSocketServer {
     }
 
     fn cleanup_endpoint(&self) {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(endpoint) = self.inner.runtime_endpoint.get() {
+            endpoint.cleanup();
+            return;
+        }
         #[cfg(unix)]
         if self.inner.local_registration.get().is_some() {
             return;

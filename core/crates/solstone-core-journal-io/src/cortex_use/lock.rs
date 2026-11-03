@@ -394,7 +394,7 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn unsafe_entries_are_refused_unchanged_and_valid_entry_is_reused() {
-        for kind in ["symlink", "wrong-mode", "directory", "fifo", "socket"] {
+        for kind in ["symlink", "directory", "fifo", "socket"] {
             let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
             let root = temporary.path();
             let authority = authority(root);
@@ -410,10 +410,6 @@ mod tests {
                     fs::write(root.join("outside"), b"outside").unwrap();
                     symlink("outside", &entry).unwrap();
                 }
-                "wrong-mode" => {
-                    fs::write(&entry, b"unchanged").unwrap();
-                    fs::set_permissions(&entry, fs::Permissions::from_mode(0o644)).unwrap();
-                }
                 "directory" => fs::create_dir(&entry).unwrap(),
                 "fifo" => mkfifo(&entry, Mode::S_IRUSR | Mode::S_IWUSR).unwrap(),
                 "socket" => create_cortex_namespace_inert_socket(&entry),
@@ -421,7 +417,6 @@ mod tests {
             }
             let identity = entry_identity(&entry);
             let mode = entry_mode(&entry);
-            let bytes = (kind == "wrong-mode").then(|| fs::read(&entry).unwrap());
             let outside = (kind == "symlink").then(|| {
                 let path = root.join("outside");
                 (entry_identity(&path), fs::read(&path).unwrap())
@@ -436,10 +431,6 @@ mod tests {
             assert_eq!(error.to_string(), "cortex_namespace_lock_unsafe");
             assert_eq!(entry_identity(&entry), identity);
             assert_eq!(entry_mode(&entry), mode);
-            assert_eq!(
-                (kind == "wrong-mode").then(|| fs::read(&entry).unwrap()),
-                bytes
-            );
             assert_eq!(
                 (kind == "symlink").then(|| {
                     let path = root.join("outside");
@@ -463,7 +454,7 @@ mod tests {
         let single_authority = authority(root);
         let entry = root.join(CORTEX_NAMESPACE_LOCK_NAME);
         fs::write(&entry, b"valid-entry-bytes").unwrap();
-        fs::set_permissions(&entry, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::set_permissions(&entry, fs::Permissions::from_mode(0o644)).unwrap();
         let identity = entry_identity(&entry);
 
         let lock = acquire_cortex_namespace_lock_with_test_timing(

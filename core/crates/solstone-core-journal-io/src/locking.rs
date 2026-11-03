@@ -25,7 +25,7 @@ use nix::errno::Errno;
 #[cfg(unix)]
 use nix::fcntl::{AT_FDCWD, AtFlags, Flock, FlockArg, OFlag, openat};
 #[cfg(unix)]
-use nix::sys::stat::{FileStat, Mode, SFlag, fstat, fstatat};
+use nix::sys::stat::{FileStat, Mode, SFlag, fchmod, fstat, fstatat};
 #[cfg(windows)]
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF, FILE_OPEN_REPARSE_POINT,
@@ -938,7 +938,7 @@ pub(crate) fn open_existing_parent_lock_retained(
         }
         .into());
     }
-    if inspect_lock_entry(parent, &name, &path, false)?.is_none() {
+    if inspect_lock_entry(parent, &name, &path)?.is_none() {
         return Ok(None);
     }
     let guard = acquire_lock_in_parent_retained(
@@ -1010,7 +1010,7 @@ fn acquire_lock_in_parent_retained(
     let deadline = Instant::now() + timeout;
     loop {
         authorize_bound_lock(path, checkpoint)?;
-        let existing = inspect_lock_entry(parent_fd, name, path, allow_create)?;
+        let existing = inspect_lock_entry(parent_fd, name, path)?;
         let file = match existing {
             Some(_) => match openat(parent_fd, name.as_os_str(), ENTRY_OPEN_FLAGS, Mode::empty()) {
                 Ok(fd) => File::from(fd),
@@ -1266,8 +1266,7 @@ pub fn hold_exclusive_parent_lock_bound_checked(
         FlockArg::LockExclusiveNonblock,
         checkpoint,
         || {
-            let existing =
-                inspect_lock_entry(parent, &sidecar, &path, false).map_err(io::Error::other)?;
+            let existing = inspect_lock_entry(parent, &sidecar, &path).map_err(io::Error::other)?;
             run_race_hook(BEFORE_ORDINARY_BOUND_LOCK_OPEN);
             let file = File::from(openat(
                 parent,
@@ -1414,6 +1413,7 @@ const PARENT_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
     .union(OFlag::O_NOFOLLOW);
 #[cfg(unix)]
 const ENTRY_OPEN_FLAGS: OFlag = OFlag::O_RDONLY
+    .union(OFlag::O_NONBLOCK)
     .union(OFlag::O_CLOEXEC)
     .union(OFlag::O_NOFOLLOW);
 #[cfg(unix)]
@@ -1493,14 +1493,14 @@ fn inspect_lock_entry(
     parent: &impl AsFd,
     name: &NormalLockName,
     path: &Path,
-    require_private_mode: bool,
 ) -> Result<Option<LockEntryIdentity>, ExistingParentLockError> {
     let status = match fstatat(parent, name.as_os_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(status) => status,
         Err(Errno::ENOENT) => return Ok(None),
         Err(source) => return Err(existing_io("stat persistent lock entry", path, source)),
     };
-    validate_lock_entry(&status, path, require_private_mode)?;
+    // Inspect kind and identity before opening; mode repair requires the exact fd.
+    validate_lock_entry(&status, path)?;
     Ok(Some(identity(&status)))
 }
 
@@ -1513,9 +1513,33 @@ fn verify_final_lock_entry(
     path: &Path,
     require_private_mode: bool,
 ) -> Result<LockEntryIdentity, ExistingParentLockError> {
+    let status = verify_lock_entry_identity(parent, name, opened, expected_existing, path)?;
+    if require_private_mode && permission_mode(&status) != 0o600 {
+        set_private_lock_mode(opened).map_err(|source| ExistingParentLockError::Io {
+            operation: "make persistent lock entry private",
+            path: path.to_owned(),
+            source,
+        })?;
+        run_race_hook(AFTER_LOCK_MODE_REPAIR);
+        // FAT/exFAT can report successful chmod without storing the mode.
+        // Success never authorizes a different kind, inode, or name after repair.
+        return verify_lock_entry_identity(parent, name, opened, Some(identity(&status)), path)
+            .map(|status| identity(&status));
+    }
+    Ok(identity(&status))
+}
+
+#[cfg(unix)]
+fn verify_lock_entry_identity(
+    parent: &impl AsFd,
+    name: &NormalLockName,
+    opened: &File,
+    expected_existing: Option<LockEntryIdentity>,
+    path: &Path,
+) -> Result<FileStat, ExistingParentLockError> {
     let opened_status = fstat(opened)
         .map_err(|source| existing_io("stat opened persistent lock entry", path, source))?;
-    validate_lock_entry(&opened_status, path, require_private_mode)?;
+    validate_lock_entry(&opened_status, path)?;
     let named_status = match fstatat(parent, name.as_os_str(), AtFlags::AT_SYMLINK_NOFOLLOW) {
         Ok(status) => status,
         Err(Errno::ENOENT) => {
@@ -1525,7 +1549,7 @@ fn verify_final_lock_entry(
         }
         Err(source) => return Err(existing_io("stat persistent lock entry", path, source)),
     };
-    validate_lock_entry(&named_status, path, require_private_mode)?;
+    validate_lock_entry(&named_status, path)?;
     let opened_identity = identity(&opened_status);
     if opened_identity != identity(&named_status)
         || expected_existing.is_some_and(|expected| expected != opened_identity)
@@ -1534,30 +1558,44 @@ fn verify_final_lock_entry(
             path: path.to_path_buf(),
         });
     }
-    Ok(opened_identity)
+    Ok(opened_status)
 }
 
 #[cfg(unix)]
-fn validate_lock_entry(
-    status: &FileStat,
-    path: &Path,
-    require_private_mode: bool,
-) -> Result<(), ExistingParentLockError> {
+fn validate_lock_entry(status: &FileStat, path: &Path) -> Result<(), ExistingParentLockError> {
     if !is_kind(status, SFlag::S_IFREG) {
         return Err(ExistingParentLockError::UnsafeLockEntry {
             path: path.to_path_buf(),
             kind: file_kind(status),
         });
     }
-    if require_private_mode
-        && permission_mode(status) != mode_to_u32(nix::libc::mode_t::from(0o600u16))
-    {
-        return Err(ExistingParentLockError::WrongMode {
-            path: path.to_path_buf(),
-            observed: permission_mode(status),
-        });
-    }
     Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_lock_mode(opened: &File) -> io::Result<()> {
+    #[cfg(all(test, feature = "full-tests"))]
+    if let Some(repair) = LOCK_MODE_REPAIR.with(|slot| slot.get()) {
+        return repair(opened);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let volume = nix::sys::statfs::fstatfs(opened).map_err(io::Error::from)?;
+        // These volumes do not store Unix modes. On exFAT, even a no-op chmod
+        // can change a new empty file's synthetic inode, so inspect before mutating.
+        if matches!(volume.filesystem_type_name(), "exfat" | "msdos") {
+            return Ok(());
+        }
+    }
+    fchmod(opened, Mode::S_IRUSR | Mode::S_IWUSR).map_err(io::Error::from)
+}
+
+#[cfg(all(test, unix, feature = "full-tests"))]
+type LockModeRepair = fn(&File) -> io::Result<()>;
+
+#[cfg(all(test, unix, feature = "full-tests"))]
+thread_local! {
+    static LOCK_MODE_REPAIR: std::cell::Cell<Option<LockModeRepair>> = const { std::cell::Cell::new(None) };
 }
 
 #[cfg(unix)]
@@ -2459,14 +2497,16 @@ const AFTER_PARENT_INSPECTION: usize = 0;
 const AFTER_LOCK_FLOCK: usize = 1;
 #[cfg(unix)]
 const BEFORE_ORDINARY_BOUND_LOCK_OPEN: usize = 2;
+#[cfg(unix)]
+const AFTER_LOCK_MODE_REPAIR: usize = 3;
 
 #[cfg(all(test, unix))]
-type RaceHooks = [Option<fn()>; 3];
+type RaceHooks = [Option<fn()>; 4];
 
 #[cfg(all(test, unix))]
 thread_local! {
     static RACE_HOOKS: std::cell::Cell<RaceHooks> =
-        const { std::cell::Cell::new([None; 3]) };
+        const { std::cell::Cell::new([None; 4]) };
 }
 
 #[cfg(all(test, unix))]
@@ -2823,24 +2863,114 @@ mod tests {
             ));
             assert_eq!(snapshot(&entry), before);
         }
-        let wrong_mode = parent.join("wrong-mode");
-        fs::write(&wrong_mode, b"keep").unwrap();
-        fs::set_permissions(&wrong_mode, fs::Permissions::from_mode(0o644)).unwrap();
-        let before = snapshot(&wrong_mode);
-        assert!(matches!(
-            acquire(&parent, OsStr::new("wrong-mode"), Duration::ZERO),
-            Err(ExistingParentLockError::WrongMode {
-                observed: 0o644,
-                ..
-            })
-        ));
-        assert_eq!(snapshot(&wrong_mode), before);
         let nul = OsString::from_vec(b"nul\0lock".to_vec());
         // nix translates an interior NUL in an otherwise normal component to EINVAL.
         assert!(matches!(
             acquire(&parent, &nul, Duration::ZERO),
             Err(ExistingParentLockError::Io { .. })
         ));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn private_lock_repairs_readable_entries_and_rechecks() {
+        let temp = TempDir::new();
+        let path = temp.path().join("private.lock");
+        fs::write(&path, b"preserve").unwrap();
+        let before = snapshot(&path);
+        let parent = File::open(temp.path()).unwrap();
+        for mode in [0o644, 0o777, 0o400] {
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            let lock = acquire_existing_parent_lock_bound(
+                &parent,
+                OsStr::new("private.lock"),
+                Duration::ZERO,
+                Duration::ZERO,
+            )
+            .unwrap();
+            lock.revalidate_bound(&parent, OsStr::new("private.lock"))
+                .unwrap();
+            assert_eq!(snapshot(&path).mode, 0o600);
+            assert_eq!(snapshot(&path).identity, before.identity);
+            assert_eq!(snapshot(&path).bytes, before.bytes);
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn private_lock_accepts_mount_modes_and_refuses_failed_repair() {
+        thread_local! { static CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                LOCK_MODE_REPAIR.with(|slot| slot.set(None));
+            }
+        }
+        let _reset = Reset;
+        let temp = TempDir::new();
+        let path = temp.path().join("fixed.lock");
+        fs::write(&path, b"preserve").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o777)).unwrap();
+        let before = snapshot(&path);
+        let parent = File::open(temp.path()).unwrap();
+        LOCK_MODE_REPAIR.with(|slot| {
+            slot.set(Some(|_| {
+                CALLS.with(|calls| calls.set(calls.get() + 1));
+                Ok(())
+            }))
+        });
+        let lock = acquire_existing_parent_lock_bound(
+            &parent,
+            OsStr::new("fixed.lock"),
+            Duration::ZERO,
+            Duration::ZERO,
+        )
+        .unwrap();
+        lock.revalidate_bound(&parent, OsStr::new("fixed.lock"))
+            .unwrap();
+        lock.revalidate_bound(&parent, OsStr::new("fixed.lock"))
+            .unwrap();
+        assert_eq!(CALLS.with(|calls| calls.get()), 4);
+        assert_eq!(snapshot(&path), before);
+        LOCK_MODE_REPAIR.with(|slot| {
+            slot.set(Some(|_| {
+                CALLS.with(|calls| calls.set(calls.get() + 1));
+                Err(io::Error::from(io::ErrorKind::PermissionDenied))
+            }))
+        });
+        assert!(matches!(
+            lock.revalidate_bound(&parent, OsStr::new("fixed.lock")),
+            Err(ExistingParentLockError::Io { .. })
+        ));
+        drop(lock);
+        assert!(matches!(
+            acquire(temp.path(), OsStr::new("fixed.lock"), Duration::ZERO),
+            Err(ExistingParentLockError::Io { .. })
+        ));
+        assert_eq!(CALLS.with(|calls| calls.get()), 6);
+        assert_eq!(snapshot(&path), before);
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn private_lock_repair_never_changes_a_replacement_entry() {
+        for point in [AFTER_LOCK_FLOCK, AFTER_LOCK_MODE_REPAIR] {
+            let temp = TempDir::new();
+            let entry = temp.path().join("lock");
+            let staged = temp.path().join("replacement");
+            fs::write(&entry, b"old").unwrap();
+            fs::write(&staged, b"replacement").unwrap();
+            fs::set_permissions(&entry, fs::Permissions::from_mode(0o644)).unwrap();
+            fs::set_permissions(&staged, fs::Permissions::from_mode(0o644)).unwrap();
+            let expected = snapshot(&staged);
+            ENTRY_REPLACEMENT.with(|state| state.replace(Some((entry, staged))));
+            let _hook = RaceHook::install(point, replace_entry_hook);
+            assert!(matches!(
+                acquire(temp.path(), OsStr::new("lock"), Duration::ZERO),
+                Err(ExistingParentLockError::NamespaceChanged { .. })
+            ));
+            assert_eq!(snapshot(&temp.path().join("lock")), expected);
+        }
     }
 
     #[test]

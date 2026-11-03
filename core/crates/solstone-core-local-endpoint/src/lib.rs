@@ -156,10 +156,21 @@ pub struct SocketLease {
     pub listener: std::os::unix::net::UnixListener,
     path: PathBuf,
     inode: u64,
-    _directory_lock: nix::fcntl::Flock<std::fs::File>,
+    _directory_lock: Option<nix::fcntl::Flock<std::fs::File>>,
+    owns_record: bool,
 }
 impl SocketLease {
     pub fn bind(path: &Path) -> io::Result<Self> {
+        Self::bind_inner(path, true)
+    }
+
+    /// Bind a companion using its own creation lock, so the HTTP owner's
+    /// lifetime directory lease does not prevent a companion restart.
+    pub fn bind_companion(path: &Path) -> io::Result<Self> {
+        Self::bind_inner(path, false)
+    }
+
+    fn bind_inner(path: &Path, owns_record: bool) -> io::Result<Self> {
         validate_socket_path(path)?;
         let parent = path
             .parent()
@@ -176,11 +187,32 @@ impl SocketLease {
         }
         // Serialize the stale-check/unlink/bind transaction. A concurrent start
         // must not unlink a socket another start just brought up.
-        let directory_lock = nix::fcntl::Flock::lock(
-            std::fs::File::open(parent)?,
-            nix::fcntl::FlockArg::LockExclusiveNonblock,
-        )
-        .map_err(|(_, error)| io::Error::from(error))?;
+        let lock_file = if owns_record {
+            std::fs::File::open(parent)?
+        } else {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .mode(0o600)
+                .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
+                .open(path.with_extension("bind.lock"))?;
+            let metadata = file.metadata()?;
+            if !metadata.is_file()
+                || metadata.uid() != owner_uid()
+                || metadata.mode() & 0o777 != 0o600
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "companion socket lock must be a private file owned by this account",
+                ));
+            }
+            file
+        };
+        let directory_lock =
+            nix::fcntl::Flock::lock(lock_file, nix::fcntl::FlockArg::LockExclusiveNonblock)
+                .map_err(|(_, error)| io::Error::from(error))?;
 
         match fs::symlink_metadata(path) {
             Ok(m) if m.file_type().is_socket() && m.uid() == owner_uid() => {
@@ -217,7 +249,8 @@ impl SocketLease {
             listener,
             path: path.to_owned(),
             inode,
-            _directory_lock: directory_lock,
+            _directory_lock: owns_record.then_some(directory_lock),
+            owns_record,
         };
         fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
         lease.listener.set_nonblocking(true)?;
@@ -247,7 +280,9 @@ impl SocketLease {
     pub fn cleanup(&self) {
         if fs::symlink_metadata(&self.path).is_ok_and(|m| m.ino() == self.inode) {
             let _ = fs::remove_file(&self.path);
-            let _ = fs::remove_file(record_path(&self.path));
+            if self.owns_record {
+                let _ = fs::remove_file(record_path(&self.path));
+            }
         }
     }
 }

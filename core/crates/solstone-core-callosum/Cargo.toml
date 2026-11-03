@@ -60,3 +60,6 @@ required-features = ["test-hooks", "wire"]
 # while allowing the one audited Windows SID-resolution FFI module to opt out narrowly.
 [lints.rust]
 unsafe_code = "deny"
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+solstone-core-local-endpoint.workspace = true

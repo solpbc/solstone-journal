@@ -2398,28 +2398,22 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
     #[test]
-    fn wrong_mode_lock_fails_before_stage() {
+    fn loose_mode_lock_is_repaired_before_publication() {
         let temporary = temp();
         let _ = health_at(temporary.path());
         let lock_path = health_dir(temporary.path()).join(".oplog-namespace.lock");
         fs::write(&lock_path, b"unchanged").unwrap();
         fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o644)).unwrap();
-        let ids: Vec<[u8; 16]> = (0..OPLOG_CREATE_ATTEMPTS)
-            .map(|index| [0x56 + index as u8; 16])
-            .collect();
-        let (result, state) = with_trace(
-            OplogCreateTraceState {
-                file_ids: ids.clone().into(),
-                ..empty_trace()
-            },
-            || create(temporary.path()),
+        let before = fs::metadata(&lock_path).unwrap();
+        drop(create(temporary.path()).unwrap());
+        let after = fs::metadata(&lock_path).unwrap();
+        assert_eq!(
+            std::os::unix::fs::MetadataExt::ino(&before),
+            std::os::unix::fs::MetadataExt::ino(&after)
         );
-        expect_token(&result.unwrap_err(), "oplog_create_lock_unsafe");
-        assert_eq!(state.file_ids.len(), 0);
-        for id in ids {
-            assert!(!health_dir(temporary.path()).join(dest_for(id)).exists());
-        }
+        assert_eq!(after.permissions().mode() & 0o7777, 0o600);
         assert_eq!(fs::read(&lock_path).unwrap(), b"unchanged");
     }
 

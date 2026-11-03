@@ -60,3 +60,10 @@ existing socket owned by its OS account, then falls back to `localhost:5015`.
 It reads no journal-local files. An empty socket override selects TCP-only for
 internal children. Internal callers use their own journal's published endpoint.
 Windows and embedded mobile hosts keep their existing transport.
+
+Callosum uses `callosum.sock` beside the selected `journal.sock` on desktop
+Unix. Its clients resolve the logical `<journal>/health/callosum.sock` address
+through `solstone_core_callosum::endpoint_path`. A root without a runtime
+namespace keeps its journal-local socket, which requires a filesystem that
+supports Unix sockets. On Linux, give a development root on FAT/exFAT its own
+private runtime directory with `SOLSTONE_JOURNAL_SOCKET`.
