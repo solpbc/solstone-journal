@@ -351,6 +351,21 @@ impl Registry {
         })
     }
 
+    /// Whether `words` are, ignoring case, spaces and punctuation, the name of
+    /// an attached entity other than `entity_id`. Words that already name a
+    /// saved entity are evidence for that one, not for a respelling.
+    #[must_use]
+    pub fn names_another(&self, words: &str, entity_id: &str) -> bool {
+        let key = fold(words);
+        self.attached().is_some_and(|attached| {
+            attached.iter().any(|(id, entity)| {
+                id != entity_id
+                    && entity.name.as_deref().is_some_and(|name| fold(name) == key)
+                    && !self.retired(id)
+            })
+        })
+    }
+
     /// Whether `entity_id` still exists under `name` and this viewer may see it.
     pub fn admits(&self, entity_id: &str, name: &str, viewer: &Viewer) -> bool {
         let Some(entity) = self.attached().and_then(|attached| attached.get(entity_id)) else {
@@ -623,13 +638,15 @@ fn statement_words(transcript: &str, wanted: &BTreeSet<u64>) -> BTreeMap<u64, St
 /// transcript reader shows no label for them: it would add nothing to the text.
 #[must_use]
 pub fn repeats_heard(entry: &LiveEntry) -> bool {
-    let fold = |text: &str| {
-        text.chars()
-            .filter(|c| c.is_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect::<String>()
-    };
     fold(&entry.heard) == fold(&entry.name)
+}
+
+/// A name with case, spaces and punctuation set aside.
+fn fold(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// The labels a transcript reader shows for these entries, or `None` when

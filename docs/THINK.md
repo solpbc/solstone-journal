@@ -147,7 +147,9 @@ route switches are constants in
 Work and Conversation read an entry whose name is spelled differently from its
 words in place of those words, through the same source-bound view as product
 spellings (`solstone-core-talent-runtime/src/product_names.rs`); a quote with that
-name must trace to the labelled words. No other talent reads possible names. An
+name must trace to the labelled words. Words that are a product name, or already
+the name of another attached entity, stay as heard: they were right, and the
+entity they name is the evidence. No other talent reads possible names. An
 entry whose name only repeats its words is kept for search and shown to no
 transcript reader.
 

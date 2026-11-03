@@ -52,7 +52,9 @@ fn view(config: &Map<String, Value>) -> Option<View> {
 
 /// The possible names a source's statements may read in place of their words,
 /// by statement ordinal: entries the owner is shown now whose name is spelled
-/// differently from the words. An entry that repeats its words changes nothing.
+/// differently from the words. An entry that repeats its words changes nothing,
+/// and neither does one whose words are a product name or already name another
+/// saved entity: those words were right as heard.
 fn possible_names(
     registry: &solstone_core_possible_names::Registry,
     source: &EntrySource,
@@ -63,7 +65,11 @@ fn possible_names(
     };
     let viewer = solstone_core_possible_names::Viewer::Owner;
     for entry in solstone_core_possible_names::live_entries_with(registry, segment, &viewer) {
-        if entry.file == source.file && !solstone_core_possible_names::repeats_heard(&entry) {
+        if entry.file == source.file
+            && !solstone_core_possible_names::repeats_heard(&entry)
+            && !crate::possible_names::retrieval::is_product(&entry.heard)
+            && !registry.names_another(&entry.heard, &entry.entity_id)
+        {
             by_statement.entry(entry.sentence).or_default().push(entry);
         }
     }
@@ -697,6 +703,46 @@ mod tests {
             prepare(root.path(), talent, &mut c, &loaded.sources);
             assert!(view(&c).is_none(), "{talent}");
         }
+    }
+    #[test]
+    fn words_that_already_name_a_product_or_another_saved_entity_stay_as_heard() {
+        let root = tempfile::tempdir().unwrap();
+        let path = speech(
+            root.path(),
+            &[
+                json!({"start":"09:00:01","speaker":1,"text":"Fryer moved the Orchard budget into Solstone today."}),
+            ],
+        );
+        known(root.path(), "friar", "Friar");
+        known(root.path(), "orchard", "Orchard");
+        known(root.path(), "orchard-fund", "Orchard Fund");
+        known(root.path(), "solstone-cloud", "Solstone Cloud");
+        possible_names(
+            &path,
+            &[
+                (1, "Fryer", "friar", "Friar"),
+                (1, "Orchard", "orchard-fund", "Orchard Fund"),
+                (1, "Solstone", "solstone-cloud", "Solstone Cloud"),
+            ],
+        );
+        let loaded = load(root.path(), None);
+        let mut c = config(&loaded.text);
+        prepare(root.path(), "conversation", &mut c, &loaded.sources);
+        let v = view(&c).unwrap();
+        assert!(
+            v.text.contains("Friar moved the Orchard budget"),
+            "{}",
+            v.text
+        );
+        assert!(!v.text.contains("Orchard Fund"), "{}", v.text);
+        assert!(!v.text.contains("Solstone Cloud"), "{}", v.text);
+        let named: Vec<_> = v
+            .lines
+            .iter()
+            .flat_map(|l| &l.edits)
+            .filter_map(|e| e.entity_id.as_deref())
+            .collect();
+        assert_eq!(named, ["friar"]);
     }
     #[test]
     fn variant_free_input_is_a_noop_and_unbound_source_has_a_gap() {

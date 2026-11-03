@@ -474,14 +474,14 @@ impl ActivityStateMachine {
                         prior.insert("_pending_type_count".to_owned(), json!(count));
                         prior.insert("_change".to_owned(), json!("type_change_pending"));
                         prior.insert("level".to_owned(), json!(level));
-                        prior.insert("active_entities".to_owned(), json!(entities));
+                        merge_entities(prior, &entities);
                         append_segment(prior, segment);
                         changes.push(Value::Object(prior.clone()));
                     }
                 } else {
                     prior.insert("description".to_owned(), json!(description));
                     prior.insert("level".to_owned(), json!(level));
-                    prior.insert("active_entities".to_owned(), json!(entities));
+                    merge_entities(prior, &entities);
                     prior.insert("_pending_type".to_owned(), Value::Null);
                     prior.insert("_pending_type_count".to_owned(), json!(0));
                     prior.insert("_change".to_owned(), json!("continuing"));
@@ -668,6 +668,29 @@ fn note_pending_miss(entry: &mut Map<String, Value>, segment: &str) {
         && !values.iter().any(|value| value.as_str() == Some(segment))
     {
         values.push(json!(segment));
+    }
+}
+/// An activity's entities are every name its segments' Sense listed, once
+/// each (ignoring case), in the order they first came up.
+fn merge_entities(entry: &mut Map<String, Value>, entities: &[String]) {
+    let merged = entry
+        .entry("active_entities".to_owned())
+        .or_insert_with(|| json!([]));
+    if !merged.is_array() {
+        *merged = json!([]);
+    }
+    let Some(values) = merged.as_array_mut() else {
+        return;
+    };
+    let mut seen = values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|name| name.trim().to_lowercase())
+        .collect::<BTreeSet<_>>();
+    for name in entities {
+        if seen.insert(name.trim().to_lowercase()) {
+            values.push(json!(name));
+        }
     }
 }
 fn append_segment(entry: &mut Map<String, Value>, segment: &str) {
@@ -907,6 +930,41 @@ mod tests {
         assert!(
             !machine.should_reset("235959_60", "20260101", Some("235000_7200")),
             "the reference clamps an overrun to 23:59:59"
+        );
+    }
+
+    #[test]
+    fn an_activity_keeps_every_name_its_segments_listed() {
+        let with = |names: serde_json::Value| {
+            let mut s = sense(json!([{"facet":"work"}]));
+            s["entities"] = names;
+            s
+        };
+        let mut machine = ActivityStateMachine::default();
+        machine.update(
+            &with(json!([{"name":"Mina"},{"name":"Orchard"}])),
+            "090000_60",
+            "20260101",
+            None,
+            0,
+        );
+        machine.update(
+            &with(json!([{"name":"mina"},{"name":"Ravi"}])),
+            "090100_60",
+            "20260101",
+            None,
+            0,
+        );
+        machine.update(&with(json!([])), "090200_60", "20260101", None, 0);
+        machine.close_active("090300_60", 0);
+        let record = machine
+            .completed_activities()
+            .into_iter()
+            .find(|record| record["facet"] == "work")
+            .expect("completed record");
+        assert_eq!(
+            record["active_entities"],
+            json!(["Mina", "Orchard", "Ravi"])
         );
     }
 
