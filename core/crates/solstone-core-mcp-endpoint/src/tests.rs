@@ -2825,20 +2825,19 @@ impl<'ast> syn::visit::Visit<'ast> for MemorySourceResolverVisitor<'_> {
     }
 
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
-        if let syn::Expr::Path(expr_path) = &*node.func {
-            if let Some(last_seg) = expr_path.path.segments.last() {
-                if last_seg.ident == "from_verified_id" {
-                    if self.file_name == "agent_state.rs"
-                        && self.enclosing_fn.as_deref() == Some("memory_source")
-                    {
-                        self.allowed_calls += 1;
-                    } else {
-                        self.violations.push(format!(
-                            "{}: function {:?} called from_verified_id",
-                            self.file_name, self.enclosing_fn
-                        ));
-                    }
-                }
+        if let syn::Expr::Path(expr_path) = &*node.func
+            && let Some(last_seg) = expr_path.path.segments.last()
+            && last_seg.ident == "from_verified_id"
+        {
+            if self.file_name == "agent_state.rs"
+                && self.enclosing_fn.as_deref() == Some("memory_source")
+            {
+                self.allowed_calls += 1;
+            } else {
+                self.violations.push(format!(
+                    "{}: function {:?} called from_verified_id",
+                    self.file_name, self.enclosing_fn
+                ));
             }
         }
         syn::visit::visit_expr_call(self, node);
