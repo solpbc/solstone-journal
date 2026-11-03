@@ -139,8 +139,19 @@ mod tests {
             .unwrap();
         assert_eq!(read.digest().size, 14);
         read.revalidate_contents(&|| Ok(())).unwrap();
-        std::fs::write(path, b"replaced bytes").unwrap();
-        assert!(read.revalidate_contents(&|| Ok(())).is_err());
+        #[cfg(unix)]
+        {
+            std::fs::write(path, b"replaced bytes").unwrap();
+            assert!(read.revalidate_contents(&|| Ok(())).is_err());
+        }
+        #[cfg(windows)]
+        {
+            // The retained Windows handle excludes write sharing, so the
+            // mutation is refused before it can change the retained content.
+            let error = std::fs::write(path, b"replaced bytes").unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(32));
+            read.revalidate_contents(&|| Ok(())).unwrap();
+        }
     }
 
     #[test]
