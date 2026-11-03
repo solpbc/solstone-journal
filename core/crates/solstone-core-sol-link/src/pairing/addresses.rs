@@ -3,6 +3,7 @@
 
 //! Pair-link address discovery and wire encoding.
 
+#[cfg(unix)]
 use std::ffi::CStr;
 use std::fmt;
 use std::io;
