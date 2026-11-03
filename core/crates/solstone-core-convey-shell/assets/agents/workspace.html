@@ -516,7 +516,9 @@
     const notices = (state.replay_notices || []).filter(notice => !notice.dismissed).map(notice => `<section class="notice"><p>your journal disconnected ${esc(notice.name)} on ${esc(notice.door)} because the token it uses to stay connected was used twice. connect it again with a new pairing code.</p><button class="btn sm" data-action="dismiss-replay" data-notice="${esc(notice.id)}">dismiss</button></section>`).join('');
     const replaced = state.sme_account?.replaced;
     const back = replaced ? `<section class="notice success" data-sme-replaced><p>your solstone.me address ${esc(replaced.address)} came back to this journal on ${esc(formatAgentTimestamp(replaced.replaced_at))}. if that wasn't you, tell support in the services portal. if an agent can't reach your journal, connect it again with a new pairing code.</p><button class="btn sm" data-action="dismiss-sme-replaced">dismiss</button></section>` : '';
-    return `<p class="brandlock"><span class="lockdot" aria-hidden="true"></span>your journal is always private, only yours.</p><h1>agents</h1><p class="status-line"><span class="sdot ${tone}" aria-hidden="true"></span>${sentence}</p>${lanes}${moveOffNotice}${back}${notices}${agentsList()}`;
+    // When the journal can't read what it keeps about its agents, it refuses every agent rather than guess.
+    const unreadable = state.agent_state_unreadable ? `<section class="notice error" data-agent-state-unreadable><p>your journal couldn't read its agent settings, so no agent can use your journal until it can. nothing is lost. try again in a moment, and if it keeps happening, tell support in the services portal.</p><button class="btn sm" data-action="reload">try again</button></section>` : '';
+    return `<p class="brandlock"><span class="lockdot" aria-hidden="true"></span>your journal is always private, only yours.</p><h1>agents</h1><p class="status-line"><span class="sdot ${tone}" aria-hidden="true"></span>${sentence}</p>${unreadable}${lanes}${moveOffNotice}${back}${notices}${agentsList()}`;
   }
 
   // ---- dialogs -----------------------------------------------------------------------------------
