@@ -690,6 +690,12 @@ final class JournalFirstRunModel {
         return JournalMark.validate(render)
     }
 
+    /// A locked journal has a mark even when this read of it can't be drawn. Anything else without
+    /// a drawable mark has no identity to show yet.
+    var lockedMarkIsUnreadable: Bool {
+        validatedMark == nil && setupState?.mark.state == .locked
+    }
+
     var canCommitDisplayedMark: Bool {
         guard handoffError == nil, setupState?.mark.state == .proposed,
               validatedMark != nil, let displayedProposalID, !displayedProposalID.isEmpty else { return false }

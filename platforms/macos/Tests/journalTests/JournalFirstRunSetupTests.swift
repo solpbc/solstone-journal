@@ -446,6 +446,7 @@ extension JournalFirstRunModelTests {
         await world.fixture.model.reconcileActivation()
         #expect(world.fixture.model.route == .ritual(.mark))
         #expect(!world.fixture.model.canCommitDisplayedMark)
+        #expect(!world.fixture.model.lockedMarkIsUnreadable)
         await world.fixture.model.commitDisplayedMark()
         #expect(world.client.actions.isEmpty)
         #expect(world.fixture.model.showsMarkRegenerate)

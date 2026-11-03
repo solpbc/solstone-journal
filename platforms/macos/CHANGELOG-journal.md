@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- your journal's mark now has the same colors and layout on this mac as in your journal's network app: darker words, its own colors around each icon. when your journal's mark can't be read, it shows as unavailable.
+
 ## [2.0.66 (build 115)] - 2026-11-02
 
 ### Changed

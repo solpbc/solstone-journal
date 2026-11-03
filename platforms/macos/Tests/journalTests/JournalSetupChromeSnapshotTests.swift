@@ -149,6 +149,30 @@ struct JournalSetupChromeSnapshotTests {
             )
         )
 
+        let markLockedUnreadable = JournalSetupState(
+            schema: "solstone.setup-state.v1",
+            journalPath: "/tmp/journal",
+            done: false,
+            mark: .init(render: nil, state: .locked, proposalID: nil),
+            thinking: .init(choice: nil, saved: false, capability: .ok, downloadBytes: nil),
+            downloads: .init(
+                speech: .init(state: .idle, attemptID: nil, bytesDone: 0, bytesTotal: nil),
+                thinking: .init(state: .idle, attemptID: nil, bytesDone: 0, bytesTotal: nil)
+            )
+        )
+
+        let markProposedNoRender = JournalSetupState(
+            schema: "solstone.setup-state.v1",
+            journalPath: "/tmp/journal",
+            done: false,
+            mark: .init(render: nil, state: .proposed, proposalID: "prop-1"),
+            thinking: .init(choice: nil, saved: false, capability: .ok, downloadBytes: nil),
+            downloads: .init(
+                speech: .init(state: .idle, attemptID: nil, bytesDone: 0, bytesTotal: nil),
+                thinking: .init(state: .idle, attemptID: nil, bytesDone: 0, bytesTotal: nil)
+            )
+        )
+
         let states: [StateFixture] = [
             StateFixture(name: "welcome") { model in
                 model.applySnapshotState(route: .ritual(.welcome), setupCopy: copy, loginFailure: "Could not set start at login")
@@ -161,6 +185,14 @@ struct JournalSetupChromeSnapshotTests {
             },
             StateFixture(name: "mark-locked") { model in
                 model.applySnapshotState(route: .ritual(.mark), setupState: markLocked, setupCopy: copy)
+            },
+            StateFixture(name: "mark-locked-unreadable") { model in
+                model.applySnapshotState(route: .ritual(.mark), setupState: markLockedUnreadable, setupCopy: copy)
+                #expect(model.lockedMarkIsUnreadable)
+            },
+            StateFixture(name: "mark-proposed-no-render") { model in
+                model.applySnapshotState(route: .ritual(.mark), setupState: markProposedNoRender, setupCopy: copy)
+                #expect(!model.lockedMarkIsUnreadable)
             },
             StateFixture(name: "thinking-capable") { model in
                 model.applySnapshotState(route: .ritual(.thinking), setupState: thinkingCapable, setupCopy: copy)

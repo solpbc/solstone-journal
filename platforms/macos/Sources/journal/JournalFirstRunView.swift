@@ -343,6 +343,12 @@ struct JournalFirstRunView: View {
                         if let mark = model.validatedMark {
                             JournalMarkView(mark: mark, isConfirmed: model.setupState?.mark.state == .locked)
                                 .frame(maxWidth: .infinity, alignment: .center)
+                        } else if model.lockedMarkIsUnreadable {
+                            JournalMarkUnavailableView()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else {
+                            JournalMarkView(mark: nil)
+                                .frame(maxWidth: .infinity, alignment: .center)
                         }
 
                         if model.showsMarkRegenerate {
