@@ -163,7 +163,7 @@ Accepted residuals:
 - A guard an older binary reset stays reset until the next pause, resume, or permission save on that connection, so a second downgrade before then serves its reads.
 - A counter bump that loses the lock is a refused call that was not counted.
 - Once a takeover swap commits, a lost token response leaves the old instance dead and the new one without tokens, and the owner makes a new code.
-- If the journal keeps reporting that it can't read its agent settings, moving `mcp-endpoint/agent-state.json` aside recovers. It lifts every owner pause and leaves reconnected agents recalling empty.
+- Moving `journal/mcp-endpoint/agent-state.json` aside (see § State corruption) lifts every owner pause, and agents brought back from earlier agents recall none of their earlier notes, which stay in the journal, listed under earlier agents in the agents app.
 
 ## Redirects
 
@@ -214,6 +214,13 @@ If it is unreadable or corrupt, OAuth issuance and redemption fail closed
 independent and is not affected. Recover by restoring or removing the
 corrupt file. New OAuth state starts empty; existing OAuth grants are
 lost, static tokens are not.
+
+`journal/mcp-endpoint/agent-state.json` holds owner pauses, the counts of
+attempts made while paused, and which earlier agent a reconnected agent
+continues. If it is unreadable or corrupt, every tool list and tool call gets
+`Access denied` (`-32001`, reason `no_permission`) and the agents app says it
+can't read its agent settings. If that keeps happening, recover by moving the
+file aside. The residual list above says what that costs.
 
 
 ## Agent memories
