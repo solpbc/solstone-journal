@@ -996,13 +996,14 @@ async fn set_byo_hostname(
         endpoint.insert("byo_hostname".to_string(), Value::Object(byo_obj));
         JournalConfigMutation {
             changed: true,
-            value: Ok(()),
+            value: Ok(next.generation),
         }
     });
 
     match mutation {
         Ok(trans) => match trans.value {
-            Ok(()) => {
+            Ok(generation) => {
+                retire_byo_grants(&journal, generation);
                 if trans.changed {
                     perform_byo_cutover(journal).await
                 } else {
@@ -1016,6 +1017,17 @@ async fn set_byo_hostname(
             err.to_string(),
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
+    }
+}
+
+/// A grant made at an earlier owner hostname generation can never verify
+/// again, so it leaves the agents list as the hostname changes.
+fn retire_byo_grants(journal: &std::path::Path, generation: u64) {
+    if OAuthStore::open(journal)
+        .retire_byo_grants_outside(Some(generation))
+        .is_err()
+    {
+        log::warn!("agents: grants for an earlier hostname were not retired");
     }
 }
 
@@ -1057,13 +1069,14 @@ async fn remove_byo_hostname(Extension(journal): Extension<Arc<PathBuf>>) -> Res
         endpoint.remove("byo_relay");
         JournalConfigMutation {
             changed: true,
-            value: Ok(()),
+            value: Ok(next.generation),
         }
     });
 
     match mutation {
         Ok(trans) => match trans.value {
-            Ok(()) => {
+            Ok(generation) => {
+                retire_byo_grants(&journal, generation);
                 let _ = crate::byo_relay::delete_known_host(&journal);
                 if trans.changed {
                     perform_byo_cutover(journal).await

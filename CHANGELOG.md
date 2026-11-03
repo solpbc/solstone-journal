@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an agent that can no longer reach your journal, because you changed or removed your journal's address on your own domain or revoked it from the command line, now drops out of the agents app instead of showing as connected.
 - `solstone journal importer --facet` now files an audio or text file under the facet you name, so a connection limited to that facet can read its transcript and activities if you've let it see those. a muted or missing facet, or an import `--facet` does not apply to, is refused before anything is imported.
 - a PDF too long for the local model to read whole is now read from its first and last pages, where its parties, dates and signatures usually are, plus the opening lines of some pages in between. before, only its last pages were read, so its summary could miss its title and who it named. a model with room for the whole PDF still reads every page.
 - fixed another android permission error when downloading a journal archive.

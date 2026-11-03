@@ -1394,6 +1394,11 @@ impl OAuthStore {
                 .filter(|g| g.client_record_id == client_record_id)
                 .map(|g| g.id.clone())
                 .collect();
+            // Its grants can never verify again; keeping them would list a dead
+            // connection as connected until its deadline.
+            store
+                .grants
+                .retain(|g| g.client_record_id != client_record_id);
             Ok(())
         })?;
         let perm_store = crate::permissions::PermissionStore::open(&self.root);
@@ -1422,19 +1427,31 @@ impl OAuthStore {
         let client_id = client_id.to_owned();
         let mut grant_ids = Vec::new();
         self.mutate(|store, _now| {
-            let client = store
+            // One client id can hold a record for an owner hostname and one for
+            // the other doors; revoking the client revokes both.
+            let mut record_ids = Vec::new();
+            for client in store
                 .clients
                 .iter_mut()
-                .find(|client| client.client_id == client_id)
-                .ok_or(OAuthStoreError::ClientNotFound)?;
-            client.revocation_generation = client.revocation_generation.saturating_add(1);
-            let client_record_id = client.id.clone();
+                .filter(|client| client.client_id == client_id)
+            {
+                client.revocation_generation = client.revocation_generation.saturating_add(1);
+                record_ids.push(client.id.clone());
+            }
+            if record_ids.is_empty() {
+                return Err(OAuthStoreError::ClientNotFound);
+            }
             grant_ids = store
                 .grants
                 .iter()
-                .filter(|g| g.client_record_id == client_record_id)
+                .filter(|g| record_ids.contains(&g.client_record_id))
                 .map(|g| g.id.clone())
                 .collect();
+            // Its grants can never verify again; keeping them would list a dead
+            // connection as connected until its deadline.
+            store
+                .grants
+                .retain(|g| !record_ids.contains(&g.client_record_id));
             Ok(())
         })?;
         let perm_store = crate::permissions::PermissionStore::open(&self.root);
@@ -1502,6 +1519,33 @@ impl OAuthStore {
         Ok(true)
     }
 
+    /// Remove every grant issued at an owner hostname generation other than
+    /// `current`. A changed or removed hostname ends those grants for good
+    /// (`RuntimeBinding::grant_matches`), so none may stay listed as connected.
+    pub(crate) fn retire_byo_grants_outside(
+        &self,
+        current: Option<u64>,
+    ) -> Result<usize, OAuthStoreError> {
+        let mut retired = Vec::new();
+        self.mutate(|store, _now| {
+            retired = store
+                .grants
+                .iter()
+                .filter(|grant| grant.generation.is_some() && grant.generation != current)
+                .map(|grant| grant.id.clone())
+                .collect();
+            store
+                .grants
+                .retain(|grant| grant.generation.is_none() || grant.generation == current);
+            Ok(())
+        })?;
+        let permissions = crate::permissions::PermissionStore::open(&self.root);
+        for grant_id in &retired {
+            let _ = permissions.remove_connection(&format!("oauth:{grant_id}"));
+        }
+        Ok(retired.len())
+    }
+
     /// Revoke a specific grant by its connection ID.
     pub fn revoke_grant_by_id(&self, grant_id: &str) -> Result<bool, OAuthStoreError> {
         let grant_id = grant_id.to_owned();
@@ -1554,21 +1598,33 @@ impl OAuthStore {
     ) -> Result<T, OAuthStoreError> {
         self.ensure_directory()?;
         let path = self.oauth_path();
-        let _lock = hold_lock(
-            &path,
-            LockOptions {
-                mode: Some(0o600),
-                ..LockOptions::default()
-            },
-        )
-        .map_err(OAuthStoreError::Lock)?;
-        let mut store = self.read_store()?;
-        let now = current_time();
-        prune(&mut store, now);
-        let (persistence, result) = operation(&mut store, now);
-        if persistence == EditPersistence::Persist {
+        let (result, lapsed) = {
+            let _lock = hold_lock(
+                &path,
+                LockOptions {
+                    mode: Some(0o600),
+                    ..LockOptions::default()
+                },
+            )
+            .map_err(OAuthStoreError::Lock)?;
+            let mut store = self.read_store()?;
+            let now = current_time();
+            let lapsed = prune(&mut store, now);
+            let (persistence, result) = operation(&mut store, now);
+            if persistence != EditPersistence::Persist {
+                return result;
+            }
             self.write_store(&path, &mut store)?;
             after_write()?;
+            (result, lapsed)
+        };
+        // A lapsed grant's read permission goes with it, as on every other way a
+        // grant ends, so no row outlives the connection it described.
+        if !lapsed.is_empty() {
+            let permissions = crate::permissions::PermissionStore::open(&self.root);
+            for grant_id in lapsed {
+                let _ = permissions.remove_connection(&format!("oauth:{grant_id}"));
+            }
         }
         result
     }
@@ -1799,7 +1855,9 @@ fn issue_authorization(
     }
 }
 
-fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) {
+/// Drops what has lapsed and returns the ids of the grants it dropped, so the
+/// caller can remove their permission rows once the drop is on disk.
+fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) -> Vec<String> {
     store.pending.retain(|pending| {
         if pending.authorization_code_verifier.is_some() {
             pending.code_expires_at.is_some_and(|expires| expires > now)
@@ -1807,6 +1865,12 @@ fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) {
             pending.expires_at > now
         }
     });
+    let lapsed = store
+        .grants
+        .iter()
+        .filter(|grant| grant.refresh_expires_at <= now)
+        .map(|grant| grant.id.clone())
+        .collect();
     store.grants.retain(|grant| grant.refresh_expires_at > now);
     store.clients.retain(|client| {
         client.last_used_at.is_some()
@@ -1824,6 +1888,7 @@ fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) {
     store
         .pending
         .retain(|pending| pending.pairing_window.is_none() || pending.pairing_window == live);
+    lapsed
 }
 
 fn enforce_entry_sizes(store: &OAuthStoreFile) -> Result<(), OAuthStoreError> {
@@ -2222,6 +2287,135 @@ mod tests {
             clear_now();
             TEST_MAX_STATE_BYTES.with(|limit| limit.set(None));
         }
+    }
+
+    fn whole_journal_grant(store: &OAuthStore, journal: &tempfile::TempDir) -> String {
+        let client = seed_client(store, "192.0.2.1");
+        let tokens = issue_tokens(
+            store,
+            &client,
+            "https://client.example/cimd.json",
+            &test_binding(),
+            "relay",
+            Some(ReadPermission::default_whole_journal()),
+        );
+        assert!(
+            PermissionStore::open(journal.path())
+                .get_permission(&format!("oauth:{}", tokens.token_id))
+                .unwrap()
+                .is_some()
+        );
+        tokens.token_id
+    }
+
+    fn permission_row(journal: &tempfile::TempDir, grant_id: &str) -> bool {
+        PermissionStore::open(journal.path())
+            .get_permission(&format!("oauth:{grant_id}"))
+            .unwrap()
+            .is_some()
+    }
+
+    #[test]
+    fn a_revoked_client_leaves_no_connection_listed() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let grant = whole_journal_grant(&store, &journal);
+
+        store
+            .revoke_client_by_client_id("https://client.example/cimd.json")
+            .unwrap();
+
+        assert!(!store.list_grants().unwrap().iter().any(|g| g.id == grant));
+        assert!(!permission_row(&journal, &grant));
+    }
+
+    #[test]
+    fn revoking_a_client_revokes_its_hostname_record_too() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let other_doors = whole_journal_grant(&store, &journal);
+        let hostname_record = store
+            .register_client(
+                "https://client.example/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("fixture".to_owned()),
+                "byo:192.0.2.1",
+            )
+            .unwrap()
+            .id;
+        let hostname = issue_tokens(
+            &store,
+            &hostname_record,
+            "https://client.example/cimd.json",
+            &test_binding(),
+            "relay",
+            Some(ReadPermission::default_whole_journal()),
+        )
+        .token_id;
+        assert_ne!(other_doors, hostname);
+
+        store
+            .revoke_client_by_client_id("https://client.example/cimd.json")
+            .unwrap();
+
+        assert!(store.list_grants().unwrap().is_empty());
+        assert!(!permission_row(&journal, &other_doors));
+        assert!(!permission_row(&journal, &hostname));
+    }
+
+    #[test]
+    fn a_grant_from_an_earlier_hostname_leaves_the_list() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let earlier = whole_journal_grant(&store, &journal);
+        let current = whole_journal_grant(&store, &journal);
+        let elsewhere = whole_journal_grant(&store, &journal);
+        store
+            .mutate(|file, _| {
+                for grant in &mut file.grants {
+                    if grant.id == earlier {
+                        grant.generation = Some(1);
+                    } else if grant.id == current {
+                        grant.generation = Some(2);
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(store.retire_byo_grants_outside(Some(2)).unwrap(), 1);
+
+        let listed: Vec<String> = store
+            .list_grants()
+            .unwrap()
+            .into_iter()
+            .map(|g| g.id)
+            .collect();
+        assert!(!listed.contains(&earlier));
+        assert!(listed.contains(&current));
+        assert!(
+            listed.contains(&elsewhere),
+            "a grant on another door is untouched"
+        );
+        assert!(!permission_row(&journal, &earlier));
+        assert!(permission_row(&journal, &current));
+    }
+
+    #[test]
+    fn a_lapsed_grant_takes_its_permission_row_with_it() {
+        let _guard = NowGuard;
+        let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
+        set_now(start.timestamp());
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let grant = whole_journal_grant(&store, &journal);
+
+        set_now(start.timestamp() + super::REFRESH_TTL_SECS + 1);
+        // Any write prunes; making a pairing code is the owner's usual one.
+        store.generate_pairing_code_with_door("relay").unwrap();
+
+        assert!(!store.list_grants().unwrap().iter().any(|g| g.id == grant));
+        assert!(!permission_row(&journal, &grant));
     }
 
     #[test]
