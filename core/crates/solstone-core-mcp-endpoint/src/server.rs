@@ -31,6 +31,7 @@ use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
 use crate::proxy_preface::{ParsedPreface, parse_preface};
 use crate::session::{SessionError, SessionTable};
 use crate::tokens::{TokenStore, TokenStoreError, VerifiedToken};
+use solstone_core_format::agent_memory::SourceKey;
 
 const PROXY_PREFACE_DEADLINE: Duration = Duration::from_secs(2);
 const TLS_HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
@@ -40,10 +41,15 @@ const TLS_HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
 pub(crate) struct MemoryAuthority<'a> {
     verified: &'a VerifiedToken,
     creation_label: String,
+    source: SourceKey,
 }
 
 impl<'a> MemoryAuthority<'a> {
-    fn verified(journal: &Path, verified: &'a VerifiedToken) -> Self {
+    fn verified(
+        journal: &Path,
+        verified: &'a VerifiedToken,
+    ) -> Result<Self, crate::agent_state::AgentStateError> {
+        let source = crate::agent_state::memory_source(journal, &verified.id)?;
         let label = if verified.id.starts_with("oauth:") {
             OAuthStore::open(journal)
                 .list_clients()
@@ -70,10 +76,11 @@ impl<'a> MemoryAuthority<'a> {
         if safe.trim().is_empty() {
             safe = "connected agent".into();
         }
-        Self {
+        Ok(Self {
             verified,
             creation_label: safe,
-        }
+            source,
+        })
     }
 
     pub(crate) fn id(&self) -> &str {
@@ -81,6 +88,9 @@ impl<'a> MemoryAuthority<'a> {
     }
     pub(crate) fn label(&self) -> &str {
         &self.creation_label
+    }
+    pub(crate) fn source(&self) -> &SourceKey {
+        &self.source
     }
 }
 
@@ -721,6 +731,26 @@ fn post_json_rpc(
             }
         },
         Ok(McpMethod::ToolsList) => {
+            let pause = match check_connection_pause(journal_root, verified) {
+                Ok(p) => p,
+                Err(_) => {
+                    return json_rpc_response(JsonRpcResponse::permission_denied(
+                        json_request.id.as_ref(),
+                        "no_permission",
+                    ));
+                }
+            };
+            if pause.is_some() {
+                let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
+                let tools = crate::registry::advertised_tools_list_with_facet_ids(&decision, &[]);
+                if let Some(session_id) = session_id {
+                    sessions.record_listed_while_paused(session_id);
+                }
+                return json_rpc_response(JsonRpcResponse::success(
+                    json_request.id.as_ref(),
+                    tools,
+                ));
+            }
             let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
             let generation = decision_generation(&decision);
             let tools = crate::registry::advertised_tools_list(journal_root, &decision);
@@ -732,14 +762,70 @@ fn post_json_rpc(
             json_rpc_response(JsonRpcResponse::success(json_request.id.as_ref(), tools))
         }
         Ok(McpMethod::ToolsCall(tool_name)) => {
-            let tools_list_changed = session_id.is_some_and(|session_id| {
-                sessions.tools_list_is_stale(
-                    session_id,
-                    decision_generation(&permissions::evaluate_connection_read(
+            let pause = match check_connection_pause(journal_root, verified) {
+                Ok(p) => p,
+                Err(_) => {
+                    return json_rpc_response(JsonRpcResponse::permission_denied(
+                        json_request.id.as_ref(),
+                        "no_permission",
+                    ));
+                }
+            };
+            if let Some(pause) = pause {
+                let now = crate::oauth::current_time();
+                let audit_name = crate::registry::TOOLS
+                    .iter()
+                    .find(|t| t.tool_name == tool_name)
+                    .map(|t| t.audit_name)
+                    .unwrap_or(solstone_core_mcp_audit::ToolName::RecallMemory);
+                let arguments = tool_arguments(&json_request)
+                    .and_then(|v| v.as_object().cloned())
+                    .unwrap_or_default();
+                let admission = solstone_core_mcp_audit::Admission {
+                    connection: &verified.id,
+                    agent_identity: &verified.agent_identity,
+                    tool_name: audit_name,
+                    arguments,
+                    permission: None,
+                };
+                if let Ok(coordinates) =
+                    crate::audit::write_admitted_interaction(journal_root, now, &admission)
+                {
+                    let _ = crate::audit::write_outcome_paused(
                         journal_root,
-                        &verified.id,
-                    )),
-                )
+                        &coordinates,
+                        now,
+                        Some("it was paused, so nothing was read or saved."),
+                    );
+                }
+                let stamp = match pause {
+                    ConnectionPause::Owner { pause_id } => pause_id,
+                    ConnectionPause::Idle { refresh_expires_at } => refresh_expires_at.to_string(),
+                };
+                let _ = crate::agent_state::bump_attempts(journal_root, &verified.id, &stamp, now);
+
+                return json_rpc_response(JsonRpcResponse::success(
+                    json_request.id.as_ref(),
+                    serde_json::json!({
+                        "isError": true,
+                        "paused": true,
+                        "content": [{
+                            "type": "text",
+                            // Told to the agent so it can tell its person.
+                            "text": "this connection is paused. the owner can resume it in their journal's agents app. nothing was read or saved."
+                        }]
+                    }),
+                ));
+            }
+            let tools_list_changed = session_id.is_some_and(|session_id| {
+                sessions.take_listed_while_paused(session_id)
+                    || sessions.tools_list_is_stale(
+                        session_id,
+                        decision_generation(&permissions::evaluate_connection_read(
+                            journal_root,
+                            &verified.id,
+                        )),
+                    )
             });
             execute_tool_call(
                 &json_request,
@@ -751,6 +837,38 @@ fn post_json_rpc(
         }
         Err(response) => json_rpc_response(*response),
     }
+}
+
+enum ConnectionPause {
+    Owner { pause_id: String },
+    Idle { refresh_expires_at: i64 },
+}
+
+fn check_connection_pause(
+    journal_root: &std::path::Path,
+    verified: &VerifiedToken,
+) -> Result<Option<ConnectionPause>, crate::agent_state::AgentStateError> {
+    if let Some(op) = crate::agent_state::is_owner_paused(journal_root, &verified.id)? {
+        return Ok(Some(ConnectionPause::Owner {
+            pause_id: op.pause_id,
+        }));
+    }
+    if verified.id.starts_with("oauth:") {
+        let grant_id = &verified.id["oauth:".len()..];
+        let store = OAuthStore::open(journal_root);
+        let refresh_expires_at = store
+            .grant_refresh_expires_at(grant_id)
+            .map_err(|_| crate::agent_state::AgentStateError::Unreadable)?;
+        if let Some(refresh_expires_at) = refresh_expires_at {
+            let now = crate::oauth::current_time();
+            if refresh_expires_at <= now {
+                return Ok(Some(ConnectionPause::Idle {
+                    refresh_expires_at: refresh_expires_at.timestamp(),
+                }));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn decision_generation(decision: &permissions::PermissionDecision) -> Option<u64> {
@@ -768,9 +886,18 @@ fn execute_tool_call(
     tools_list_changed: bool,
 ) -> HttpResponse {
     if tool_name.is_memory() {
+        let authority = match MemoryAuthority::verified(journal_root, verified) {
+            Ok(auth) => auth,
+            Err(_) => {
+                return json_rpc_response(JsonRpcResponse::permission_denied(
+                    request.id.as_ref(),
+                    "no_permission",
+                ));
+            }
+        };
         return crate::memory_tools::execute(
             journal_root,
-            &MemoryAuthority::verified(journal_root, verified),
+            &authority,
             request,
             tool_name,
             chrono::Utc::now(),
@@ -4364,5 +4491,649 @@ mod unit_tests {
             RequestGuard::None,
         );
         assert!(bound_res.is_ok());
+    }
+
+    #[test]
+    fn paused_tool_call_is_one_result_and_tools_list_hides_facets() {
+        use serde_json::Value;
+        use std::fs;
+
+        struct ClockResetGuard;
+        impl Drop for ClockResetGuard {
+            fn drop(&mut self) {
+                crate::oauth::store::set_routine_now(None);
+            }
+        }
+        let _guard = ClockResetGuard;
+
+        let base_now = 1_800_000_000_i64;
+        crate::oauth::store::set_routine_now(Some(base_now));
+
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-server-test-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+
+        // Build one facet directory the way registry.rs journal_with_two_facets does
+        let facet_id = "123e4567-e89b-42d3-a456-426614174000";
+        let facet_dir = journal.path().join("facets").join("alpha");
+        fs::create_dir_all(&facet_dir).unwrap();
+        fs::write(
+            facet_dir.join("facet.json"),
+            json!({"id": facet_id, "title": "Alpha", "description": "Alpha details"}).to_string(),
+        )
+        .unwrap();
+
+        // Issue OAuth grant with facets category and ReadScope::Facets with that facet id
+        let relay = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let binding = relay.binding();
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/oauth_tool_agent.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Tool Agent".to_owned()),
+                &relay.source_cohort(std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let pairing = relay
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-tool-call"));
+        let transaction = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let authorization = relay
+            .store
+            .complete_pairing_with_permission(
+                &transaction,
+                &pairing.code,
+                Some(crate::permissions::ReadPermission {
+                    categories: vec!["facets".to_owned()],
+                    scope: crate::permissions::ReadScope::Facets {
+                        ids: vec![facet_id.to_owned()],
+                    },
+                }),
+                &binding,
+            )
+            .unwrap();
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &authorization.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-tool-call",
+                &binding,
+            )
+            .unwrap();
+        let grant_id = tokens.token_id;
+
+        let sessions = SessionTable::new();
+        let verified = crate::tokens::VerifiedToken {
+            id: format!("oauth:{}", grant_id),
+            agent_identity: client.client_id.clone(),
+        };
+
+        let post = |method: &str, params: serde_json::Value, session: Option<&str>| {
+            let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+            if let Some(session) = session {
+                headers.push(("mcp-session-id".to_owned(), session.to_owned()));
+            }
+            super::post_json_rpc(
+                &crate::http1::HttpRequest::from_test_parts(
+                    crate::http1::HttpMethod::Post,
+                    headers,
+                    serde_json::to_vec(&json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": method,
+                        "params": params,
+                    }))
+                    .unwrap(),
+                ),
+                &sessions,
+                &verified,
+                journal.path(),
+            )
+        };
+
+        // Initialize to establish session
+        let init_resp = post("initialize", json!({}), None);
+        assert_eq!(init_resp.status, 200);
+        let session_id = init_resp.session_id.unwrap();
+
+        // 1. Before pause, tools/list for the oauth grant enumerates that facet id in a schema enum.
+        // Record the tool names.
+        let list_before = post("tools/list", json!({}), Some(&session_id));
+        assert_eq!(list_before.status, 200);
+        let list_before_json: Value = serde_json::from_slice(&list_before.body).unwrap();
+        let tools_before = list_before_json["result"]["tools"].as_array().unwrap();
+        let tool_names: Vec<String> = tools_before
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect();
+        let list_before_str = serde_json::to_string(&list_before_json).unwrap();
+        assert!(
+            list_before_str.contains(facet_id),
+            "tools/list before pause must enumerate facet id in schema enum"
+        );
+
+        // 2. Owner-pause the connection (`set_owner_pause` plus evaluation `hold`).
+        // Permission `generation` is unchanged.
+        let perm_gen_before = crate::permissions::PermissionStore::open(journal.path())
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == verified.id)
+            .unwrap()
+            .generation;
+        let now = crate::oauth::store::current_time();
+        crate::agent_state::set_owner_pause(
+            journal.path(),
+            &verified.id,
+            now,
+            &crate::tokens::SystemRandomSource,
+        )
+        .unwrap();
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_evaluation_only(&verified.id, "hold")
+            .unwrap();
+        let perm_gen_after = crate::permissions::PermissionStore::open(journal.path())
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == verified.id)
+            .unwrap()
+            .generation;
+        assert_eq!(perm_gen_before, perm_gen_after);
+
+        // 3. tools/list names the same tools, the serialized body contains no facet id,
+        // and there is no tools_list_changed anywhere in the JSON.
+        // initialize is still a success result and does not advertise listChanged.
+        let list_paused = post("tools/list", json!({}), Some(&session_id));
+        assert_eq!(list_paused.status, 200);
+        let list_paused_json: Value = serde_json::from_slice(&list_paused.body).unwrap();
+        let tools_paused = list_paused_json["result"]["tools"].as_array().unwrap();
+        let paused_tool_names: Vec<String> = tools_paused
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(tool_names, paused_tool_names);
+        let list_paused_str = serde_json::to_string(&list_paused_json).unwrap();
+        assert!(!list_paused_str.contains(facet_id));
+        assert!(!list_paused_str.contains("tools_list_changed"));
+
+        let init_paused = post("initialize", json!({}), None);
+        assert_eq!(init_paused.status, 200);
+        let init_paused_json: Value = serde_json::from_slice(&init_paused.body).unwrap();
+        assert!(init_paused_json["result"].is_object());
+        let init_str = serde_json::to_string(&init_paused_json).unwrap();
+        assert!(!init_str.contains("listChanged"));
+
+        // 4. tools/call for recall_memory with arguments {} and for list_facets with arguments {"nope":true}
+        // are both JSON-RPC successes (result, not error). Both have result.isError == true and result.paused == true.
+        // Neither is code -32001 or -32000. Do not compare the text content.
+        let call_recall = post(
+            "tools/call",
+            json!({"name": "recall_memory", "arguments": {}}),
+            Some(&session_id),
+        );
+        assert_eq!(call_recall.status, 200);
+        let recall_json: Value = serde_json::from_slice(&call_recall.body).unwrap();
+        assert!(recall_json.get("error").is_none());
+        assert_eq!(recall_json["result"]["isError"], true);
+        assert_eq!(recall_json["result"]["paused"], true);
+
+        let call_facets = post(
+            "tools/call",
+            json!({"name": "list_facets", "arguments": {"nope": true}}),
+            Some(&session_id),
+        );
+        assert_eq!(call_facets.status, 200);
+        let facets_json: Value = serde_json::from_slice(&call_facets.body).unwrap();
+        assert!(facets_json.get("error").is_none());
+        assert_eq!(facets_json["result"]["isError"], true);
+        assert_eq!(facets_json["result"]["paused"], true);
+
+        // 5. read_activity for connection=<oauth id> returns those rows with paused: true, outcome refused,
+        // and reason "it was paused, so nothing was read or saved."
+        // paused_attempts.count is the number of paused calls.
+        let act_page = crate::activity::read_activity(
+            journal.path(),
+            &crate::activity::ActivityQuery {
+                connection: Some(verified.id.clone()),
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(act_page.entries.len(), 2);
+        for entry in &act_page.entries {
+            assert!(entry.paused);
+            assert_eq!(entry.outcome, crate::activity::RecordedOutcome::Refused);
+            assert_eq!(
+                entry.reason.as_deref(),
+                Some("it was paused, so nothing was read or saved.")
+            );
+        }
+        let pause_rec = crate::agent_state::is_owner_paused(journal.path(), &verified.id)
+            .unwrap()
+            .unwrap();
+        let attempts = crate::agent_state::get_attempts_for_stamp(
+            journal.path(),
+            &verified.id,
+            Some(&pause_rec.pause_id),
+        )
+        .unwrap();
+        assert_eq!(attempts.count, 2);
+
+        // 6. crate::run_mcp_probe on that paused connection for list_facets is not the paused tool result:
+        // hold is served, so run_mcp_probe returns the normal tool result, not McpProbeError::PermissionDenied,
+        // and the value has no paused field. recall_memory through the probe is still McpProbeError::InvalidTool.
+        let probe_facets =
+            crate::run_mcp_probe(journal.path(), &verified.id, "list_facets", &json!({}))
+                .expect("hold is served, so run_mcp_probe returns normal tool result");
+        assert!(probe_facets.get("paused").is_none());
+
+        let probe_recall =
+            crate::run_mcp_probe(journal.path(), &verified.id, "recall_memory", &json!({}));
+        assert!(matches!(
+            probe_recall,
+            Err(crate::dispatch::McpProbeError::InvalidTool)
+        ));
+
+        // Direct check: with the owner-pause row removed and evaluation left at hold,
+        // evaluate_connection_read is Snapshot for the original scope;
+        // with evaluation other, it is Denied { reason: "unenforceable" }.
+        crate::agent_state::clear_owner_pause(journal.path(), &verified.id).unwrap();
+        let dec_hold = crate::permissions::evaluate_connection_read(journal.path(), &verified.id);
+        match dec_hold {
+            crate::permissions::PermissionDecision::Snapshot(snapshot) => {
+                assert_eq!(
+                    snapshot.scope,
+                    solstone_core_indexer_query::ConnectionScope::ChosenFacets {
+                        ids: [facet_id.to_owned()].into_iter().collect(),
+                    }
+                );
+            }
+            other => panic!("expected Snapshot for hold with original scope, got {other:?}"),
+        }
+
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_evaluation_only(&verified.id, "other")
+            .unwrap();
+        let dec_other = crate::permissions::evaluate_connection_read(journal.path(), &verified.id);
+        assert_eq!(
+            dec_other,
+            crate::permissions::PermissionDecision::Denied {
+                reason: "unenforceable",
+            }
+        );
+
+        // Put the owner pause back before the rest of the test
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_evaluation_only(&verified.id, "hold")
+            .unwrap();
+        crate::agent_state::set_owner_pause(
+            journal.path(),
+            &verified.id,
+            now,
+            &crate::tokens::SystemRandomSource,
+        )
+        .unwrap();
+
+        // 7. A malformed agent-state.json makes tools/call and tools/list return permission_denied
+        // (error.code == -32001, error.data.reason == "no_permission"), not the paused result.
+        // No chronicle directory is created.
+        let chronicle_dir = journal.path().join("chronicle");
+        if chronicle_dir.exists() {
+            fs::remove_dir_all(&chronicle_dir).unwrap();
+        }
+        fs::write(
+            journal.path().join("mcp-endpoint/agent-state.json"),
+            b"not valid json",
+        )
+        .unwrap();
+
+        let malformed_list = post("tools/list", json!({}), Some(&session_id));
+        let ml_json: Value = serde_json::from_slice(&malformed_list.body).unwrap();
+        assert_eq!(ml_json["error"]["code"], -32001);
+        assert_eq!(ml_json["error"]["data"]["reason"], "no_permission");
+
+        let malformed_call = post(
+            "tools/call",
+            json!({"name": "recall_memory", "arguments": {}}),
+            Some(&session_id),
+        );
+        let mc_json: Value = serde_json::from_slice(&malformed_call.body).unwrap();
+        assert_eq!(mc_json["error"]["code"], -32001);
+        assert_eq!(mc_json["error"]["data"]["reason"], "no_permission");
+
+        assert!(
+            !chronicle_dir.exists(),
+            "no chronicle directory must be created on malformed agent-state.json"
+        );
+
+        // 8. Clear the bad file, pause again, tools/list while paused, then resume
+        // (clear the owner pause and set evaluation enforce, and resume_refresh_expiry if the grant is past its refresh expiry).
+        // The next tools/call in that same session carries tools_list_changed: true even though generation did not change.
+        // A paused response never carries that flag.
+        fs::remove_file(journal.path().join("mcp-endpoint/agent-state.json")).unwrap();
+        let now = crate::oauth::store::current_time();
+        crate::agent_state::set_owner_pause(
+            journal.path(),
+            &verified.id,
+            now,
+            &crate::tokens::SystemRandomSource,
+        )
+        .unwrap();
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_evaluation_only(&verified.id, "hold")
+            .unwrap();
+
+        let list_paused2 = post("tools/list", json!({}), Some(&session_id));
+        let lp2_json: Value = serde_json::from_slice(&list_paused2.body).unwrap();
+        assert!(lp2_json["result"]["tools"].is_array());
+        assert!(
+            !serde_json::to_string(&lp2_json)
+                .unwrap()
+                .contains("tools_list_changed")
+        );
+
+        crate::agent_state::clear_owner_pause(journal.path(), &verified.id).unwrap();
+        crate::permissions::PermissionStore::open(journal.path())
+            .set_evaluation_only(&verified.id, "enforce")
+            .unwrap();
+
+        let call_resumed = post(
+            "tools/call",
+            json!({"name": "list_facets", "arguments": {}}),
+            Some(&session_id),
+        );
+        let cr_json: Value = serde_json::from_slice(&call_resumed.body).unwrap();
+        assert_eq!(cr_json["result"]["_meta"]["tools_list_changed"], true);
+
+        // 9. Repeat the paused tools/call shape for an idle grant:
+        // no owner-pause row, clock one second past refresh_expires_at, same result.paused body,
+        // and paused_attempts stamp is that expiry's unix seconds (timestamp().to_string()).
+        // Resume via resume_refresh_expiry only (no owner-pause row to clear). The next call is not the paused result.
+        assert!(
+            crate::agent_state::is_owner_paused(journal.path(), &verified.id)
+                .unwrap()
+                .is_none()
+        );
+        let expiry = relay
+            .store
+            .grant_refresh_expires_at(&grant_id)
+            .unwrap()
+            .unwrap();
+        crate::oauth::store::set_routine_now(Some(expiry.timestamp() + 1));
+
+        let call_idle = post(
+            "tools/call",
+            json!({"name": "list_facets", "arguments": {}}),
+            Some(&session_id),
+        );
+        let ci_json: Value = serde_json::from_slice(&call_idle.body).unwrap();
+        assert_eq!(ci_json["result"]["isError"], true);
+        assert_eq!(ci_json["result"]["paused"], true);
+
+        let idle_attempts = crate::agent_state::get_attempts_for_stamp(
+            journal.path(),
+            &verified.id,
+            Some(&expiry.timestamp().to_string()),
+        )
+        .unwrap();
+        assert_eq!(idle_attempts.count, 1);
+
+        relay.store.resume_refresh_expiry(&grant_id).unwrap();
+
+        let call_resumed_idle = post(
+            "tools/call",
+            json!({"name": "list_facets", "arguments": {}}),
+            Some(&session_id),
+        );
+        let cri_json: Value = serde_json::from_slice(&call_resumed_idle.body).unwrap();
+        assert!(cri_json["result"].get("paused").is_none());
+    }
+
+    #[tokio::test]
+    async fn reconnected_source_recalls_and_names_the_agent() {
+        use serde_json::Value;
+        use std::net::{IpAddr, Ipv4Addr};
+
+        struct ClockResetGuard;
+        impl Drop for ClockResetGuard {
+            fn drop(&mut self) {
+                crate::oauth::store::set_routine_now(None);
+            }
+        }
+        let _guard = ClockResetGuard;
+
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-server-test-")
+            .tempdir_in(crate::test_scratch())
+            .unwrap();
+
+        let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let key =
+            solstone_core_format::agent_memory::SourceKey::parse(format!("sha256:{hex}")).unwrap();
+
+        let now = chrono::Utc::now();
+        let _prepared = crate::memory::prepare_connection_memory(
+            journal.path(),
+            crate::memory::AuthenticatedMemorySource {
+                verified_id: "bearer:setup",
+                creation_label: "setup label",
+                source: &key,
+            },
+            "north-star note",
+            "op-1",
+            now,
+        )
+        .unwrap();
+
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+        let relay = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let binding = relay.binding();
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Reconnected Agent".to_owned()),
+                &relay.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let pairing = relay
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(format!("source:{hex}")))
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-reconnect"));
+        let transaction = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let verified_id = relay
+            .store
+            .verify_pairing(&transaction, &pairing.code, &binding)
+            .unwrap();
+        let auth = relay
+            .store
+            .complete_confirm_pairing(
+                &verified_id,
+                Some(crate::permissions::ReadPermission::default_whole_journal()),
+                &binding,
+            )
+            .unwrap()
+            .unwrap();
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &auth.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-reconnect",
+                &binding,
+            )
+            .unwrap();
+        let new_id = tokens.token_id;
+
+        assert_eq!(
+            crate::agent_state::memory_source(journal.path(), &format!("oauth:{new_id}")).unwrap(),
+            key
+        );
+
+        let sessions = SessionTable::new();
+        let verified = crate::tokens::VerifiedToken {
+            id: format!("oauth:{new_id}"),
+            agent_identity: client.client_id.clone(),
+        };
+
+        let post = |method: &str, params: serde_json::Value, session: Option<&str>| {
+            let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+            if let Some(session) = session {
+                headers.push(("mcp-session-id".to_owned(), session.to_owned()));
+            }
+            super::post_json_rpc(
+                &crate::http1::HttpRequest::from_test_parts(
+                    crate::http1::HttpMethod::Post,
+                    headers,
+                    serde_json::to_vec(&json!({
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": method,
+                        "params": params,
+                    }))
+                    .unwrap(),
+                ),
+                &sessions,
+                &verified,
+                journal.path(),
+            )
+        };
+
+        let init = post("initialize", json!({}), None);
+        assert_eq!(init.status, 200);
+        let session_id = init.session_id.unwrap();
+
+        let call_res = post(
+            "tools/call",
+            json!({"name": "recall_memory", "arguments": {}}),
+            Some(&session_id),
+        );
+        assert_eq!(call_res.status, 200);
+        let resp_json: Value = serde_json::from_slice(&call_res.body).unwrap();
+        assert!(
+            serde_json::to_string(&resp_json)
+                .unwrap()
+                .contains("north-star note")
+        );
+
+        let conflict_err = match crate::memory::prepare_connection_memory(
+            journal.path(),
+            crate::memory::AuthenticatedMemorySource {
+                verified_id: "bearer:setup",
+                creation_label: "setup label",
+                source: &key,
+            },
+            "different note text",
+            "op-1",
+            now,
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("expected conflict error"),
+        };
+        assert!(
+            conflict_err
+                .to_string()
+                .contains("operation identifier is bound to different bytes")
+        );
+
+        let pairing_normal = relay
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let client_normal = relay
+            .store
+            .register_client(
+                "https://normal.example/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Normal Agent".to_owned()),
+                &relay.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let challenge_normal = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-normal"));
+        let tx_normal = relay
+            .store
+            .create_transaction_with_generation(
+                &client_normal.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge_normal,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let auth_normal = relay
+            .store
+            .complete_pairing_with_permission(
+                &tx_normal,
+                &pairing_normal.code,
+                Some(crate::permissions::ReadPermission::default_whole_journal()),
+                &binding,
+            )
+            .unwrap();
+        let tokens_normal = relay
+            .store
+            .redeem_authorization_code(
+                &auth_normal.code,
+                &client_normal.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-normal",
+                &binding,
+            )
+            .unwrap();
+        let untargeted_id = tokens_normal.token_id;
+        assert!(
+            crate::agent_state::get_memory_source(
+                journal.path(),
+                &format!("oauth:{untargeted_id}")
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 }

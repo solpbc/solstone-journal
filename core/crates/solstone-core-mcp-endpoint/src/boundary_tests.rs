@@ -39,11 +39,15 @@ fn ordinary_reads_keep_cross_source_memory_grants_and_own_recall_stays_scoped() 
         .prefix("ordinary-memory-grant-")
         .tempdir_in(crate::test_scratch())
         .unwrap();
+    let source = solstone_core_format::agent_memory::SourceKey::from_verified_id(
+        "bearer:other-memory-writer",
+    );
     let AppendResult::Stored(receipt) = append_connection_memory(
         journal.path(),
         AuthenticatedMemorySource {
             verified_id: "bearer:other-memory-writer",
             creation_label: "other writer",
+            source: &source,
         },
         "crossmemoryneedle other agent original",
         "ordinary-grant-operation",
@@ -11922,11 +11926,13 @@ fn search_derived_flags_across_record_types() {
     )
     .unwrap();
 
+    let source = solstone_core_format::agent_memory::SourceKey::from_verified_id("bearer:writer");
     let AppendResult::Stored(_) = append_connection_memory(
         journal.path(),
         AuthenticatedMemorySource {
             verified_id: "bearer:writer",
             creation_label: "writer",
+            source: &source,
         },
         "agentmemoryneedle note content",
         "test-op",

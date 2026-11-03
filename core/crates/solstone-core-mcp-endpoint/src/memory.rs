@@ -67,6 +67,7 @@ pub(crate) struct AppendReceipt {
 pub(crate) struct AuthenticatedMemorySource<'a> {
     pub verified_id: &'a str,
     pub creation_label: &'a str,
+    pub source: &'a SourceKey,
 }
 
 /// Storage preparation for the wire. Its success is provisional until the
@@ -282,11 +283,13 @@ fn append_with<S: AppendStore>(
     operation_id: &str,
     now: DateTime<Utc>,
 ) -> Result<AppendResult, AppendError> {
+    let source = SourceKey::from_verified_id(verified_id);
     append_with_source(
         store,
         AuthenticatedMemorySource {
             verified_id,
             creation_label: "authenticated connection",
+            source: &source,
         },
         text,
         operation_id,
@@ -312,8 +315,8 @@ fn append_with_source<S: AppendStore>(
     validate_creation_label(source_input.creation_label)
         .map_err(|_| AppendError("invalid memory creation label"))?;
 
-    let source = SourceKey::from_verified_id(source_input.verified_id);
-    let address = OperationAddress::new(&source, operation_id);
+    let source = source_input.source;
+    let address = OperationAddress::new(source, operation_id);
     let note_digest = digest(note);
     store
         .hold_source(source.component())
@@ -321,7 +324,7 @@ fn append_with_source<S: AppendStore>(
 
     let audit = match store.admit(
         source_input.verified_id,
-        &source,
+        source,
         operation_id,
         &note_digest,
         note.len(),
@@ -358,7 +361,7 @@ fn append_with_source<S: AppendStore>(
                     );
                 }
             };
-            match validate_record(&record, &source, operation_id, note) {
+            match validate_record(&record, source, operation_id, note) {
                 Ok(()) => {}
                 Err(
                     solstone_core_format::agent_memory::FormatError::DigestMismatch
@@ -443,7 +446,7 @@ fn append_with_source<S: AppendStore>(
     };
     match observation {
         SegmentObservation::Tombstone => {
-            let receipt = receipt(&record, &source);
+            let receipt = receipt(&record, source);
             let result = result_shape_for(&receipt);
             return match write_terminal(store, &audit, now, Outcome::Deleted, None, Some(result)) {
                 Publication::Confirmed => Ok(AppendResult::Deleted(receipt)),
@@ -465,7 +468,7 @@ fn append_with_source<S: AppendStore>(
         SegmentObservation::Missing | SegmentObservation::Live => {}
     }
 
-    let origin = origin_for(&record, &source);
+    let origin = origin_for(&record, source);
     let origin_bytes = serde_json::to_vec(&origin)
         .map_err(|_| AppendError("memory origin could not be serialized"))?;
 
@@ -477,12 +480,12 @@ fn append_with_source<S: AppendStore>(
             })
             .and_then(|source_matches| {
                 Ok(source_matches
-                    && ready_matches(store, &record.coordinate, &record, &source, note)?)
+                    && ready_matches(store, &record.coordinate, &record, source, note)?)
             });
         if !matches!(complete, Ok(true)) {
             return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
         }
-        let receipt = receipt(&record, &source);
+        let receipt = receipt(&record, source);
         let result = result_shape_for(&receipt);
         return match write_terminal(store, &audit, now, Outcome::Replayed, None, Some(result)) {
             Publication::Confirmed => Ok(AppendResult::Replayed(receipt)),
@@ -501,7 +504,7 @@ fn append_with_source<S: AppendStore>(
             operation_id: operation_id.to_owned(),
         });
     }
-    if store.bind_stream(&source, &record.coordinate).is_err() {
+    if store.bind_stream(source, &record.coordinate).is_err() {
         return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
     }
 
@@ -545,7 +548,7 @@ fn append_with_source<S: AppendStore>(
     }
 
     if record.phase == Readiness::Noted {
-        let advance = match store.advance_stream(&source, &record.coordinate) {
+        let advance = match store.advance_stream(source, &record.coordinate) {
             Ok(advance) => advance,
             Err(_) => {
                 return Ok(AppendResult::UncertainRetry {
@@ -559,7 +562,7 @@ fn append_with_source<S: AppendStore>(
             seq: advance.seq,
         });
         record.phase = Readiness::Chained;
-        if validate_record(&record, &source, operation_id, note).is_err() {
+        if validate_record(&record, source, operation_id, note).is_err() {
             return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
         }
         match save_record(store, &address, &record, false) {
@@ -579,7 +582,7 @@ fn append_with_source<S: AppendStore>(
         if !chain_matches {
             return terminal_error(store, &audit, now, RECORD_VALIDATION_REASON, operation_id);
         }
-        let ready_bytes = ready_bytes(&record, &source)?;
+        let ready_bytes = ready_bytes(&record, source)?;
         match store.publish_file(&record.coordinate, READY_FILE, &ready_bytes) {
             FilePublication::Confirmed => {}
             FilePublication::Conflict => {
@@ -602,7 +605,7 @@ fn append_with_source<S: AppendStore>(
         }
     }
 
-    let receipt = receipt(&record, &source);
+    let receipt = receipt(&record, source);
     let result = result_shape_for(&receipt);
     match write_terminal(store, &audit, now, Outcome::Stored, None, Some(result)) {
         Publication::Confirmed => Ok(AppendResult::Stored(receipt)),
@@ -1303,11 +1306,14 @@ pub fn append_connection_memory_test_hook(
     operation_id: &str,
     now: DateTime<Utc>,
 ) -> Result<bool, String> {
+    let source = crate::agent_state::memory_source(journal, verified_id)
+        .map_err(|error| error.to_string())?;
     append_connection_memory(
         journal,
         AuthenticatedMemorySource {
             verified_id,
             creation_label: "authenticated connection",
+            source: &source,
         },
         text,
         operation_id,
@@ -1724,11 +1730,13 @@ mod tests {
     #[test]
     fn trusted_creation_label_is_captured_once_and_not_rewritten_by_rename() {
         let mut store = MemoryStore::default();
+        let source = SourceKey::from_verified_id("oauth:grant");
         let first = append_with_source(
             &mut store,
             AuthenticatedMemorySource {
                 verified_id: "oauth:grant",
                 creation_label: "original connection",
+                source: &source,
             },
             "note",
             "op",
@@ -1740,6 +1748,7 @@ mod tests {
             AuthenticatedMemorySource {
                 verified_id: "oauth:grant",
                 creation_label: "renamed connection",
+                source: &source,
             },
             "note",
             "op",
@@ -1922,10 +1931,14 @@ mod full_tests {
         Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap()
     }
 
-    fn authenticated(verified_id: &str) -> AuthenticatedMemorySource<'_> {
+    fn authenticated<'a>(
+        verified_id: &'a str,
+        source: &'a SourceKey,
+    ) -> AuthenticatedMemorySource<'a> {
         AuthenticatedMemorySource {
             verified_id,
             creation_label: "authenticated connection",
+            source,
         }
     }
 
@@ -1946,9 +1959,10 @@ mod full_tests {
         solstone_core_journal_io::JournalRoot::open(&alias)
             .expect("fixture root uses an admitted native path spelling");
         assert_ne!(alias, fs::canonicalize(&alias).unwrap());
+        let source = SourceKey::from_verified_id("bearer:root-alias");
         let AppendResult::Stored(first) = append_connection_memory(
             &alias,
-            authenticated("bearer:root-alias"),
+            authenticated("bearer:root-alias", &source),
             "first",
             "A",
             now(),
@@ -1958,7 +1972,7 @@ mod full_tests {
         };
         let AppendResult::Stored(second) = append_connection_memory(
             &canonical,
-            authenticated("bearer:root-alias"),
+            authenticated("bearer:root-alias", &source),
             "second",
             "B",
             now() + chrono::Duration::seconds(1),
@@ -1970,7 +1984,7 @@ mod full_tests {
         assert_eq!(
             append_connection_memory(
                 &alias,
-                authenticated("bearer:root-alias"),
+                authenticated("bearer:root-alias", &source),
                 "first",
                 "A",
                 now() + chrono::Duration::minutes(1),
@@ -2029,7 +2043,7 @@ mod full_tests {
         assert!(matches!(
             append_connection_memory(
                 journal.path(),
-                authenticated("bearer:linked-stream"),
+                authenticated("bearer:linked-stream", &source),
                 "note",
                 "op",
                 now(),
@@ -2093,9 +2107,10 @@ mod full_tests {
     #[test]
     fn malformed_marker_replay_reports_failure_without_quarantining_or_repairing_it() {
         let journal = fixture();
+        let source = SourceKey::from_verified_id("bearer:corrupt-marker");
         let AppendResult::Stored(first) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:corrupt-marker"),
+            authenticated("bearer:corrupt-marker", &source),
             "note",
             "op",
             now(),
@@ -2113,7 +2128,7 @@ mod full_tests {
         assert!(
             append_connection_memory(
                 journal.path(),
-                authenticated("bearer:corrupt-marker"),
+                authenticated("bearer:corrupt-marker", &source),
                 "note",
                 "op",
                 now(),
@@ -2138,9 +2153,10 @@ mod full_tests {
     #[test]
     fn owner_retention_consumes_the_original_operation_and_later_appends_skip_its_tail() {
         let journal = fixture();
+        let source = SourceKey::from_verified_id("bearer:owner-delete");
         let AppendResult::Stored(first) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:owner-delete"),
+            authenticated("bearer:owner-delete", &source),
             "original",
             "op",
             now(),
@@ -2164,7 +2180,7 @@ mod full_tests {
         assert!(matches!(
             append_connection_memory(
                 journal.path(),
-                authenticated("bearer:owner-delete"),
+                authenticated("bearer:owner-delete", &source),
                 "original",
                 "op",
                 now(),
@@ -2173,7 +2189,7 @@ mod full_tests {
         ));
         let AppendResult::Stored(second) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:owner-delete"),
+            authenticated("bearer:owner-delete", &source),
             "later",
             "new-op",
             now(),
@@ -2225,6 +2241,7 @@ mod full_tests {
                 AuthenticatedMemorySource {
                     verified_id: "bearer:corrupt-coordinate",
                     creation_label: "authenticated connection",
+                    source: &source,
                 },
                 "note",
                 "op",
@@ -2266,6 +2283,7 @@ mod full_tests {
                 AuthenticatedMemorySource {
                     verified_id: "bearer:symlink",
                     creation_label: "authenticated connection",
+                    source: &source,
                 },
                 "note",
                 "op",
@@ -2281,11 +2299,13 @@ mod full_tests {
         let root = std::env::var_os("SOLSTONE_MEMORY_CHILD_ROOT");
         if let Some(root) = root {
             let root = std::path::PathBuf::from(root);
+            let source = SourceKey::from_verified_id("bearer:multi-process");
             let result = append_connection_memory(
                 &root,
                 AuthenticatedMemorySource {
                     verified_id: "bearer:multi-process",
                     creation_label: "authenticated connection",
+                    source: &source,
                 },
                 "note",
                 "same-op",
@@ -2360,7 +2380,7 @@ mod full_tests {
 
         let AppendResult::Stored(second) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:reservation"),
+            authenticated("bearer:reservation", &source),
             "b",
             "B",
             now(),
@@ -2370,7 +2390,7 @@ mod full_tests {
         };
         let AppendResult::Stored(first) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:reservation"),
+            authenticated("bearer:reservation", &source),
             "a",
             "A",
             now() + chrono::Duration::minutes(5),
@@ -2389,7 +2409,7 @@ mod full_tests {
         let source = SourceKey::from_verified_id("bearer:marker-recovery");
         let AppendResult::Stored(first) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:marker-recovery"),
+            authenticated("bearer:marker-recovery", &source),
             "a",
             "A",
             now(),
@@ -2415,7 +2435,7 @@ mod full_tests {
 
         let AppendResult::Stored(second) = append_connection_memory(
             journal.path(),
-            authenticated("bearer:marker-recovery"),
+            authenticated("bearer:marker-recovery", &source),
             "b",
             "B",
             now(),
@@ -2427,7 +2447,7 @@ mod full_tests {
         assert!(matches!(
             append_connection_memory(
                 journal.path(),
-                authenticated("bearer:marker-recovery"),
+                authenticated("bearer:marker-recovery", &source),
                 "a",
                 "A",
                 now() + chrono::Duration::minutes(1),

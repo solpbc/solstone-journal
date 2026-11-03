@@ -2700,6 +2700,195 @@ fn production_source_has_no_logging_or_printing_surface() {
     assert!(violations.is_empty(), "diagnostic egress: {violations:?}");
 }
 
+fn attr_tokens_contain_test_ident(attr: &syn::Attribute) -> bool {
+    if attr.path().is_ident("cfg") {
+        match &attr.meta {
+            syn::Meta::List(list) => {
+                let mut idents = Vec::new();
+                collect_macro_token_idents(list.tokens.clone(), &mut idents);
+                idents.iter().any(|ident| ident == "test")
+            }
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+fn item_has_test_cfg(item: &syn::Item) -> bool {
+    let attrs = match item {
+        syn::Item::Const(i) => &i.attrs,
+        syn::Item::Enum(i) => &i.attrs,
+        syn::Item::ExternCrate(i) => &i.attrs,
+        syn::Item::Fn(i) => &i.attrs,
+        syn::Item::ForeignMod(i) => &i.attrs,
+        syn::Item::Impl(i) => &i.attrs,
+        syn::Item::Macro(i) => &i.attrs,
+        syn::Item::Mod(i) => &i.attrs,
+        syn::Item::Static(i) => &i.attrs,
+        syn::Item::Struct(i) => &i.attrs,
+        syn::Item::Trait(i) => &i.attrs,
+        syn::Item::TraitAlias(i) => &i.attrs,
+        syn::Item::Type(i) => &i.attrs,
+        syn::Item::Union(i) => &i.attrs,
+        syn::Item::Use(i) => &i.attrs,
+        _ => return false,
+    };
+    attrs.iter().any(attr_tokens_contain_test_ident)
+}
+
+fn impl_item_has_test_cfg(item: &syn::ImplItem) -> bool {
+    let attrs = match item {
+        syn::ImplItem::Const(i) => &i.attrs,
+        syn::ImplItem::Fn(i) => &i.attrs,
+        syn::ImplItem::Type(i) => &i.attrs,
+        syn::ImplItem::Macro(i) => &i.attrs,
+        _ => return false,
+    };
+    attrs.iter().any(attr_tokens_contain_test_ident)
+}
+
+fn trait_item_has_test_cfg(item: &syn::TraitItem) -> bool {
+    let attrs = match item {
+        syn::TraitItem::Const(i) => &i.attrs,
+        syn::TraitItem::Fn(i) => &i.attrs,
+        syn::TraitItem::Type(i) => &i.attrs,
+        syn::TraitItem::Macro(i) => &i.attrs,
+        _ => return false,
+    };
+    attrs.iter().any(attr_tokens_contain_test_ident)
+}
+
+fn foreign_item_has_test_cfg(item: &syn::ForeignItem) -> bool {
+    let attrs = match item {
+        syn::ForeignItem::Fn(i) => &i.attrs,
+        syn::ForeignItem::Static(i) => &i.attrs,
+        syn::ForeignItem::Type(i) => &i.attrs,
+        syn::ForeignItem::Macro(i) => &i.attrs,
+        _ => return false,
+    };
+    attrs.iter().any(attr_tokens_contain_test_ident)
+}
+
+struct MemorySourceResolverVisitor<'a> {
+    file_name: &'a str,
+    enclosing_fn: Option<String>,
+    allowed_calls: usize,
+    violations: Vec<String>,
+}
+
+impl<'ast> syn::visit::Visit<'ast> for MemorySourceResolverVisitor<'_> {
+    fn visit_item(&mut self, node: &'ast syn::Item) {
+        if item_has_test_cfg(node) {
+            return;
+        }
+        if let syn::Item::Fn(item_fn) = node {
+            let prior_fn = self.enclosing_fn.replace(item_fn.sig.ident.to_string());
+            syn::visit::visit_item_fn(self, item_fn);
+            self.enclosing_fn = prior_fn;
+            return;
+        }
+        syn::visit::visit_item(self, node);
+    }
+
+    fn visit_impl_item(&mut self, node: &'ast syn::ImplItem) {
+        if impl_item_has_test_cfg(node) {
+            return;
+        }
+        if let syn::ImplItem::Fn(impl_fn) = node {
+            let prior_fn = self.enclosing_fn.replace(impl_fn.sig.ident.to_string());
+            syn::visit::visit_impl_item_fn(self, impl_fn);
+            self.enclosing_fn = prior_fn;
+            return;
+        }
+        syn::visit::visit_impl_item(self, node);
+    }
+
+    fn visit_trait_item(&mut self, node: &'ast syn::TraitItem) {
+        if trait_item_has_test_cfg(node) {
+            return;
+        }
+        if let syn::TraitItem::Fn(trait_fn) = node {
+            let prior_fn = self.enclosing_fn.replace(trait_fn.sig.ident.to_string());
+            syn::visit::visit_trait_item_fn(self, trait_fn);
+            self.enclosing_fn = prior_fn;
+            return;
+        }
+        syn::visit::visit_trait_item(self, node);
+    }
+
+    fn visit_foreign_item(&mut self, node: &'ast syn::ForeignItem) {
+        if foreign_item_has_test_cfg(node) {
+            return;
+        }
+        syn::visit::visit_foreign_item(self, node);
+    }
+
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(expr_path) = &*node.func {
+            if let Some(last_seg) = expr_path.path.segments.last() {
+                if last_seg.ident == "from_verified_id" {
+                    if self.file_name == "agent_state.rs"
+                        && self.enclosing_fn.as_deref() == Some("memory_source")
+                    {
+                        self.allowed_calls += 1;
+                    } else {
+                        self.violations.push(format!(
+                            "{}: function {:?} called from_verified_id",
+                            self.file_name, self.enclosing_fn
+                        ));
+                    }
+                }
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+}
+
+#[test]
+fn production_source_derives_memory_source_only_in_the_resolver() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let files = rust_source_files(&source);
+    let mut allowed_calls = 0;
+    let mut violations = Vec::new();
+
+    for file_path in files {
+        let content = fs::read_to_string(&file_path).expect("source file readable");
+        let parsed: syn::File = syn::parse_file(&content).expect("Rust syntax parses");
+
+        // Skip a file whose inner cfg attribute token stream contains the ident test.
+        if parsed.attrs.iter().any(attr_tokens_contain_test_ident) {
+            continue;
+        }
+
+        let file_name = file_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+
+        let mut visitor = MemorySourceResolverVisitor {
+            file_name,
+            enclosing_fn: None,
+            allowed_calls: 0,
+            violations: Vec::new(),
+        };
+
+        syn::visit::Visit::visit_file(&mut visitor, &parsed);
+
+        allowed_calls += visitor.allowed_calls;
+        violations.extend(visitor.violations);
+    }
+
+    assert!(
+        violations.is_empty(),
+        "forbidden calls to from_verified_id in production source: {violations:?}"
+    );
+    assert_eq!(
+        allowed_calls, 1,
+        "expected exactly one allowed call in agent_state.rs::memory_source, found {allowed_calls}"
+    );
+}
+
 #[test]
 fn production_source_has_no_response_wire_visibility_or_authority_leaks() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

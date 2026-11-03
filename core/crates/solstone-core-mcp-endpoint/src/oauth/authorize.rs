@@ -4,6 +4,7 @@
 //! Authorization endpoint for journal-hosted MCP OAuth.
 
 use std::net::IpAddr;
+use std::path::Path;
 
 use tokio::sync::watch;
 
@@ -14,16 +15,23 @@ use super::dcr::resolve_or_register_cimd_client_with_io;
 use super::dcr::{CimdRegistrationError, resolve_or_register_cimd_client};
 use super::rate_limit::PairingFailureRecord;
 use super::redirect::{RedirectHost, parse_redirect_uri, redirect_uri_is_allowed};
-use super::store::{IssuedAuthorization, OAuthStoreError, RegisteredClient};
+use super::store::{
+    CodeClassification, IssuedAuthorization, OAuthStore, OAuthStoreError, RegisteredClient,
+};
 use super::urlparse::{query_value_encode, validate_cimd_url};
 use super::{
     AUTHORIZE_MAX_BODY_BYTES, MAX_CLIENT_ID_BYTES, MAX_CODE_BYTES, MAX_STATE_BYTES, OAuthRuntime,
     parse_urlencoded_pairs, reject_non_identity_encoding,
 };
+use crate::agent_state::memory_source;
 use crate::http1::{HttpRequest, HttpResponse};
-use crate::permissions::{ReadPermission, ReadScope, resolve_permission_facet_names};
+use crate::owner_memories::source_memory_info;
+use crate::permissions::{
+    PermissionStore, ReadPermission, ReadScope, resolve_permission_facet_names,
+};
 #[cfg(all(test, not(feature = "full-tests")))]
 use crate::tokens::RandomSource;
+use crate::tokens::TokenStore;
 
 const AUTHORIZE_CSP: &str = "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; form-action 'self'; frame-ancestors 'none'";
 const AUTHORIZE_CSS: &str = r#"@font-face{font-family:Comfortaa;src:url('/authorize/assets/Comfortaa-Variable.woff2') format('woff2');font-display:swap;font-weight:300 700}
@@ -55,7 +63,7 @@ impl ConsentSelection {
 
 /// Which half of the consent flow a page serves. The journal's facets appear
 /// only once the requester has shown they hold the pairing code.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 enum ConsentStage {
     /// `incomplete` means the owner sent the code without choosing what the
     /// agent may see; the code was not checked, so it still works.
@@ -65,6 +73,15 @@ enum ConsentStage {
     },
     Choose {
         incomplete: bool,
+    },
+    TargetedCode {
+        wrong_code: bool,
+    },
+    Confirm {
+        name: String,
+        short_key: String,
+        memory_count: usize,
+        live_holder: bool,
     },
 }
 
@@ -291,85 +308,231 @@ pub(crate) fn post_authorize(
         facets: Vec::new(),
         categories: categories.clone(),
     };
-    // An incomplete choice gets the same page back with what was chosen kept,
-    // but only while its code is still open for this request, because the page
-    // then says the code still works. The code is not checked, so it is not
-    // spent and no wrong-code count moves; a limited sender was already turned
-    // away above.
-    let Some(selected_scope) = scope.filter(|_| !categories.is_empty()) else {
-        return match oauth.store.code_step_open(transaction_id, &oauth.binding()) {
-            Ok(true) => pending_page(
-                transaction_id,
-                oauth,
-                ConsentStage::Code {
-                    wrong_code: false,
-                    incomplete: true,
-                },
-                &selection,
-            ),
-            Ok(false) => expired_error(),
-            Err(_) => local_error("authorization is temporarily unavailable"),
-        };
+
+    let classification = match oauth
+        .store
+        .classify_presented_code(pairing_code, &oauth.binding())
+    {
+        Ok(c) => c,
+        Err(_) => return local_error("authorization is temporarily unavailable"),
     };
-    let whole_journal = selected_scope == "whole_journal";
-    let outcome = if whole_journal {
-        let permission = ReadPermission {
-            categories,
-            scope: ReadScope::WholeJournal,
-        };
-        oauth
-            .store
-            .complete_pairing_with_permission(
-                transaction_id,
-                pairing_code,
-                Some(permission),
-                &oauth.binding(),
-            )
-            .map(|issued| success_redirect(&issued))
-    } else {
-        oauth
-            .store
-            .verify_pairing(transaction_id, pairing_code, &oauth.binding())
-            .map(|verified_id| {
+
+    match classification {
+        CodeClassification::Matched {
+            reconnect_to: Some(target),
+        } => {
+            let is_reconnect = field(&pairs, "reconnect") == Some("1");
+            let has_scope_or_category = scope.is_some() || !categories.is_empty();
+            if !is_reconnect || has_scope_or_category {
                 pending_page(
-                    &verified_id,
-                    oauth,
-                    ConsentStage::Choose { incomplete: false },
-                    &selection,
-                )
-            })
-    };
-    match outcome {
-        Ok(response) => response,
-        Err(OAuthStoreError::PairingMismatch) => {
-            if oauth.pairing_limiter.record_failure(source, generation)
-                == PairingFailureRecord::JustTripped
-            {
-                let _ = oauth.store.lock_pairing_code();
-                return too_many_wrong_codes();
-            }
-            match oauth
-                .store
-                .pending_authorization(transaction_id, &oauth.binding())
-            {
-                Ok(Some(pending)) => consent_page(
-                    &pending.client,
-                    &pending.redirect_uri,
                     transaction_id,
                     oauth,
-                    ConsentStage::Code {
-                        wrong_code: true,
-                        incomplete: false,
-                    },
+                    ConsentStage::TargetedCode { wrong_code: false },
                     &selection,
-                ),
-                Ok(None) => local_error(
-                    "too many wrong codes for this request. connect from your agent again.",
-                ),
-                Err(_) => local_error("authorization is temporarily unavailable"),
+                )
+            } else {
+                match oauth
+                    .store
+                    .verify_pairing(transaction_id, pairing_code, &oauth.binding())
+                {
+                    Ok(verified_id) => render_confirm_page(&verified_id, &target, oauth, None),
+                    Err(OAuthStoreError::PairingMismatch) => {
+                        local_error("authorization is temporarily unavailable")
+                    }
+                    Err(error) => pairing_error(error),
+                }
             }
         }
-        Err(error) => pairing_error(error),
+        CodeClassification::Matched { reconnect_to: None } => {
+            let Some(selected_scope) = scope.filter(|_| !categories.is_empty()) else {
+                return match oauth.store.code_step_open(transaction_id, &oauth.binding()) {
+                    Ok(true) => pending_page(
+                        transaction_id,
+                        oauth,
+                        ConsentStage::Code {
+                            wrong_code: false,
+                            incomplete: true,
+                        },
+                        &selection,
+                    ),
+                    Ok(false) => expired_error(),
+                    Err(_) => local_error("authorization is temporarily unavailable"),
+                };
+            };
+            let whole_journal = selected_scope == "whole_journal";
+            let outcome = if whole_journal {
+                let permission = ReadPermission {
+                    categories,
+                    scope: ReadScope::WholeJournal,
+                };
+                oauth
+                    .store
+                    .complete_pairing_with_permission(
+                        transaction_id,
+                        pairing_code,
+                        Some(permission),
+                        &oauth.binding(),
+                    )
+                    .map(|issued| success_redirect(&issued))
+            } else {
+                oauth
+                    .store
+                    .verify_pairing(transaction_id, pairing_code, &oauth.binding())
+                    .map(|verified_id| {
+                        pending_page(
+                            &verified_id,
+                            oauth,
+                            ConsentStage::Choose { incomplete: false },
+                            &selection,
+                        )
+                    })
+            };
+            match outcome {
+                Ok(response) => response,
+                Err(OAuthStoreError::PairingMismatch) => {
+                    if oauth.pairing_limiter.record_failure(source, generation)
+                        == PairingFailureRecord::JustTripped
+                    {
+                        let _ = oauth.store.lock_pairing_code();
+                        return too_many_wrong_codes();
+                    }
+                    match oauth
+                        .store
+                        .pending_authorization(transaction_id, &oauth.binding())
+                    {
+                        Ok(Some(pending)) => consent_page(
+                            &pending.client,
+                            &pending.redirect_uri,
+                            transaction_id,
+                            oauth,
+                            ConsentStage::Code {
+                                wrong_code: true,
+                                incomplete: false,
+                            },
+                            &selection,
+                        ),
+                        Ok(None) => local_error(
+                            "too many wrong codes for this request. connect from your agent again.",
+                        ),
+                        Err(_) => local_error("authorization is temporarily unavailable"),
+                    }
+                }
+                Err(error) => pairing_error(error),
+            }
+        }
+        CodeClassification::NoMatch => {
+            let is_reconnect = field(&pairs, "reconnect") == Some("1");
+            if is_reconnect {
+                match oauth
+                    .store
+                    .verify_pairing(transaction_id, pairing_code, &oauth.binding())
+                {
+                    Ok(_) => local_error("authorization is temporarily unavailable"),
+                    Err(OAuthStoreError::PairingMismatch) => {
+                        if oauth.pairing_limiter.record_failure(source, generation)
+                            == PairingFailureRecord::JustTripped
+                        {
+                            let _ = oauth.store.lock_pairing_code();
+                            return too_many_wrong_codes();
+                        }
+                        match oauth
+                            .store
+                            .pending_authorization(transaction_id, &oauth.binding())
+                        {
+                            Ok(Some(pending)) => consent_page(
+                                &pending.client,
+                                &pending.redirect_uri,
+                                transaction_id,
+                                oauth,
+                                ConsentStage::TargetedCode { wrong_code: true },
+                                &selection,
+                            ),
+                            Ok(None) => local_error(
+                                "too many wrong codes for this request. connect from your agent again.",
+                            ),
+                            Err(_) => local_error("authorization is temporarily unavailable"),
+                        }
+                    }
+                    Err(error) => pairing_error(error),
+                }
+            } else {
+                let Some(selected_scope) = scope.filter(|_| !categories.is_empty()) else {
+                    return match oauth.store.code_step_open(transaction_id, &oauth.binding()) {
+                        Ok(true) => pending_page(
+                            transaction_id,
+                            oauth,
+                            ConsentStage::Code {
+                                wrong_code: false,
+                                incomplete: true,
+                            },
+                            &selection,
+                        ),
+                        Ok(false) => expired_error(),
+                        Err(_) => local_error("authorization is temporarily unavailable"),
+                    };
+                };
+                let whole_journal = selected_scope == "whole_journal";
+                let outcome = if whole_journal {
+                    let permission = ReadPermission {
+                        categories,
+                        scope: ReadScope::WholeJournal,
+                    };
+                    oauth
+                        .store
+                        .complete_pairing_with_permission(
+                            transaction_id,
+                            pairing_code,
+                            Some(permission),
+                            &oauth.binding(),
+                        )
+                        .map(|issued| success_redirect(&issued))
+                } else {
+                    oauth
+                        .store
+                        .verify_pairing(transaction_id, pairing_code, &oauth.binding())
+                        .map(|verified_id| {
+                            pending_page(
+                                &verified_id,
+                                oauth,
+                                ConsentStage::Choose { incomplete: false },
+                                &selection,
+                            )
+                        })
+                };
+                match outcome {
+                    Ok(response) => response,
+                    Err(OAuthStoreError::PairingMismatch) => {
+                        if oauth.pairing_limiter.record_failure(source, generation)
+                            == PairingFailureRecord::JustTripped
+                        {
+                            let _ = oauth.store.lock_pairing_code();
+                            return too_many_wrong_codes();
+                        }
+                        match oauth
+                            .store
+                            .pending_authorization(transaction_id, &oauth.binding())
+                        {
+                            Ok(Some(pending)) => consent_page(
+                                &pending.client,
+                                &pending.redirect_uri,
+                                transaction_id,
+                                oauth,
+                                ConsentStage::Code {
+                                    wrong_code: true,
+                                    incomplete: false,
+                                },
+                                &selection,
+                            ),
+                            Ok(None) => local_error(
+                                "too many wrong codes for this request. connect from your agent again.",
+                            ),
+                            Err(_) => local_error("authorization is temporarily unavailable"),
+                        }
+                    }
+                    Err(error) => pairing_error(error),
+                }
+            }
+        }
     }
 }
 
@@ -380,6 +543,11 @@ fn post_verified_choice(
     transaction_id: &str,
     oauth: &OAuthRuntime,
 ) -> HttpResponse {
+    let reconnect_to = oauth
+        .store
+        .pending_reconnect_to(transaction_id, &oauth.binding())
+        .unwrap_or(None);
+
     let categories = chosen_categories(pairs);
     let names: Vec<String> = pairs
         .iter()
@@ -396,37 +564,232 @@ fn post_verified_choice(
         facets: names.clone(),
         categories: categories.clone(),
     };
-    let incomplete = categories.is_empty()
-        || selection.scope.is_none()
-        || (selection.scope == Some("facets") && names.is_empty());
-    if incomplete {
-        return pending_page(
+
+    if let Some(target) = reconnect_to {
+        let incomplete = categories.is_empty()
+            || selection.scope.is_none()
+            || (selection.scope == Some("facets") && names.is_empty());
+        if incomplete {
+            return match oauth.store.complete_confirm_pairing(
+                transaction_id,
+                None,
+                &oauth.binding(),
+            ) {
+                Err(OAuthStoreError::InvalidGrant) => local_error(
+                    "this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again.",
+                ),
+                Err(error) => pairing_error(error),
+                Ok(_) => render_confirm_page(transaction_id, &target, oauth, Some(&selection)),
+            };
+        }
+        let scope = if selection.scope == Some("whole_journal") {
+            ReadScope::WholeJournal
+        } else {
+            match resolve_permission_facet_names(&oauth.journal_root, &names) {
+                Ok(ids) => ReadScope::Facets { ids },
+                Err(_) => {
+                    return local_error(
+                        "the chosen facets could not be verified; return to your journal and try again",
+                    );
+                }
+            }
+        };
+        let permission = ReadPermission { categories, scope };
+        match oauth.store.complete_confirm_pairing(
             transaction_id,
-            oauth,
-            ConsentStage::Choose { incomplete: true },
-            &selection,
-        );
-    }
-    let scope = if selection.scope == Some("whole_journal") {
-        ReadScope::WholeJournal
+            Some(permission),
+            &oauth.binding(),
+        ) {
+            Ok(Some(issued)) => success_redirect(&issued),
+            Ok(None) => render_confirm_page(transaction_id, &target, oauth, Some(&selection)),
+            Err(OAuthStoreError::InvalidGrant) => local_error(
+                "this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again.",
+            ),
+            Err(error) => pairing_error(error),
+        }
     } else {
-        match resolve_permission_facet_names(&oauth.journal_root, &names) {
-            Ok(ids) => ReadScope::Facets { ids },
-            Err(_) => {
-                return local_error(
-                    "the chosen facets could not be verified; return to your journal and try again",
-                );
+        let incomplete = categories.is_empty()
+            || selection.scope.is_none()
+            || (selection.scope == Some("facets") && names.is_empty());
+        if incomplete {
+            return pending_page(
+                transaction_id,
+                oauth,
+                ConsentStage::Choose { incomplete: true },
+                &selection,
+            );
+        }
+        let scope = if selection.scope == Some("whole_journal") {
+            ReadScope::WholeJournal
+        } else {
+            match resolve_permission_facet_names(&oauth.journal_root, &names) {
+                Ok(ids) => ReadScope::Facets { ids },
+                Err(_) => {
+                    return local_error(
+                        "the chosen facets could not be verified; return to your journal and try again",
+                    );
+                }
+            }
+        };
+        let permission = ReadPermission { categories, scope };
+        match oauth
+            .store
+            .complete_verified_pairing(transaction_id, permission, &oauth.binding())
+        {
+            Ok(issued) => success_redirect(&issued),
+            Err(error) => pairing_error(error),
+        }
+    }
+}
+
+struct ConfirmTargetInfo {
+    name: String,
+    short_key: String,
+    memory_count: usize,
+    live_holder: bool,
+}
+
+fn resolve_confirm_target(
+    root: &Path,
+    target: &str,
+) -> Result<(ConfirmTargetInfo, ConsentSelection), HttpResponse> {
+    let (hex, target_grant_id) = if let Some(id) = target.strip_prefix("oauth:") {
+        let src = memory_source(root, target)
+            .map_err(|_| local_error("authorization is temporarily unavailable"))?;
+        (src.component().to_string(), Some(id))
+    } else if let Some(hex) = target.strip_prefix("source:") {
+        (hex.to_string(), None)
+    } else {
+        return Err(local_error("authorization is temporarily unavailable"));
+    };
+
+    let short_key = hex.chars().take(4).collect::<String>();
+    let (memory_count, memory_label) = source_memory_info(root, &hex);
+
+    let live_tokens = TokenStore::open(root)
+        .list()
+        .map_err(|_| local_error("authorization is temporarily unavailable"))?;
+    let live_grants = OAuthStore::open(root)
+        .list_grants()
+        .map_err(|_| local_error("authorization is temporarily unavailable"))?;
+
+    let mut live_name = None;
+    let mut live_holder = false;
+
+    for token in live_tokens {
+        let conn = format!("bearer:{}", token.id);
+        if let Ok(src) = memory_source(root, &conn)
+            && src.component() == hex
+        {
+            live_holder = true;
+            if live_name.is_none() {
+                live_name = Some(token.label);
             }
         }
-    };
-    let permission = ReadPermission { categories, scope };
-    match oauth
-        .store
-        .complete_verified_pairing(transaction_id, permission, &oauth.binding())
-    {
-        Ok(issued) => success_redirect(&issued),
-        Err(error) => pairing_error(error),
     }
+
+    for grant in live_grants {
+        let conn = format!("oauth:{}", grant.id);
+        if let Ok(src) = memory_source(root, &conn)
+            && src.component() == hex
+        {
+            live_holder = true;
+            if live_name.is_none() {
+                live_name = grant.client_name;
+            }
+        }
+    }
+
+    let name = live_name
+        .or(memory_label)
+        .unwrap_or_else(|| "an earlier agent".to_string());
+
+    let selection = if let Some(id) = target_grant_id {
+        let perm_store = PermissionStore::open(root);
+        let key = format!("oauth:{id}");
+        match perm_store.get_permission(&key) {
+            Ok(Some(record)) => match record.read {
+                Some(read_perm) => {
+                    let (scope, facets) = match read_perm.scope {
+                        ReadScope::WholeJournal => (Some("whole_journal"), Vec::new()),
+                        ReadScope::Facets { ids } => {
+                            let mut names = Vec::new();
+                            if let Ok(declared) =
+                                solstone_core_facets::list_declared_facet_names(root)
+                            {
+                                for d_name in declared {
+                                    if let Ok(Some(decl)) =
+                                        solstone_core_facets::read_facet_declaration(root, &d_name)
+                                        && let Some(fid) =
+                                            decl.value().get("id").and_then(|v| v.as_str())
+                                        && ids.iter().any(|target_id| target_id == fid)
+                                    {
+                                        names.push(d_name);
+                                    }
+                                }
+                            }
+                            (Some("facets"), names)
+                        }
+                    };
+                    ConsentSelection {
+                        scope,
+                        facets,
+                        categories: read_perm.categories,
+                    }
+                }
+                None => ConsentSelection {
+                    scope: None,
+                    facets: Vec::new(),
+                    categories: Vec::new(),
+                },
+            },
+            _ => ConsentSelection {
+                scope: None,
+                facets: Vec::new(),
+                categories: Vec::new(),
+            },
+        }
+    } else {
+        ConsentSelection {
+            scope: None,
+            facets: Vec::new(),
+            categories: Vec::new(),
+        }
+    };
+
+    Ok((
+        ConfirmTargetInfo {
+            name,
+            short_key,
+            memory_count,
+            live_holder,
+        },
+        selection,
+    ))
+}
+
+fn render_confirm_page(
+    transaction_id: &str,
+    target: &str,
+    oauth: &OAuthRuntime,
+    override_selection: Option<&ConsentSelection>,
+) -> HttpResponse {
+    let (info, default_selection) = match resolve_confirm_target(&oauth.journal_root, target) {
+        Ok(res) => res,
+        Err(resp) => return resp,
+    };
+    let selection = override_selection.unwrap_or(&default_selection);
+    pending_page(
+        transaction_id,
+        oauth,
+        ConsentStage::Confirm {
+            name: info.name,
+            short_key: info.short_key,
+            memory_count: info.memory_count,
+            live_holder: info.live_holder,
+        },
+        selection,
+    )
 }
 
 fn chosen_categories(pairs: &[(String, String)]) -> Vec<String> {
@@ -449,22 +812,22 @@ fn pending_page(
     stage: ConsentStage,
     selection: &ConsentSelection,
 ) -> HttpResponse {
+    let requires_verified = matches!(
+        stage,
+        ConsentStage::Choose { .. } | ConsentStage::Confirm { .. }
+    );
     match oauth
         .store
         .pending_authorization(transaction_id, &oauth.binding())
     {
-        Ok(Some(pending))
-            if pending.pairing_verified == matches!(stage, ConsentStage::Choose { .. }) =>
-        {
-            consent_page(
-                &pending.client,
-                &pending.redirect_uri,
-                transaction_id,
-                oauth,
-                stage,
-                selection,
-            )
-        }
+        Ok(Some(pending)) if pending.pairing_verified == requires_verified => consent_page(
+            &pending.client,
+            &pending.redirect_uri,
+            transaction_id,
+            oauth,
+            stage,
+            selection,
+        ),
         Ok(_) => expired_error(),
         Err(_) => local_error("authorization is temporarily unavailable"),
     }
@@ -684,16 +1047,20 @@ fn consent_page_named(
     let client = html_escape(client_label);
     let transaction = html_escape(transaction_id);
     let facets_hint = match stage {
-        ConsentStage::Code { .. } => "you'll choose them once your code matches. ",
-        ConsentStage::Choose { .. } => "",
+        ConsentStage::Code { .. } | ConsentStage::TargetedCode { .. } => {
+            "you'll choose them once your code matches. "
+        }
+        ConsentStage::Choose { .. } | ConsentStage::Confirm { .. } => "",
     };
     let choices = format!(
         r#"<fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" required{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets" required{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">{facets_hint}just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset>{facet_list}<fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen images themselves. screen text has its own permission.</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label><label class="check"><input type="checkbox" name="category" value="screen_text"{screen_text_checked}> <strong>screen text</strong><br><span class="muted">text recognized from your screens, with the time it appeared. this says what was visible, not what you read, typed or did. masking passwords and other secrets is best effort; your redaction rules do not apply.</span></label></fieldset>"#,
         whole_checked = checked(selection.scope == Some("whole_journal")),
         facets_checked = checked(selection.scope == Some("facets")),
         facet_list = match stage {
-            ConsentStage::Code { .. } => String::new(),
-            ConsentStage::Choose { .. } => facet_list(oauth, selection),
+            ConsentStage::Code { .. } | ConsentStage::TargetedCode { .. } => String::new(),
+            ConsentStage::Choose { .. } | ConsentStage::Confirm { .. } => {
+                facet_list(oauth, selection)
+            }
         },
         transcripts_checked = checked(
             selection
@@ -739,6 +1106,44 @@ fn consent_page_named(
             };
             format!(
                 r#"<h1>choose what {client} may see.</h1><p>your code matched. {client} can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{notice}{choices}<button type="submit">connect {client}</button><p class="muted">changed your mind? close this tab. nothing is connected, and this code won't work again.</p></form>"#,
+            )
+        }
+        ConsentStage::TargetedCode { wrong_code } => {
+            let wrong = if wrong_code {
+                "<p class=\"error\" role=\"alert\">that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.</p>"
+            } else {
+                ""
+            };
+            format!(
+                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can save and recall its own agent memories. other journal reads stay within what you choose.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><input type="hidden" name="reconnect" value="1"><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">continue</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
+                host = html_escape(return_host),
+            )
+        }
+        ConsentStage::Confirm {
+            name,
+            short_key,
+            memory_count,
+            live_holder,
+        } => {
+            let memory_line = if memory_count > 0 {
+                let noun = if memory_count == 1 {
+                    "memory."
+                } else {
+                    "memories."
+                };
+                format!("<p>it keeps its {memory_count} {noun}</p>")
+            } else {
+                String::new()
+            };
+            let live_line = if live_holder {
+                "<p>the one connected now stops working.</p>"
+            } else {
+                ""
+            };
+            format!(
+                r#"<h1>connect {name} · {key} again?</h1><p>your code matched.</p>{memory_line}{live_line}<form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}">{choices}<button type="submit">connect {client}</button><p class="muted">changed your mind? close this tab. nothing is connected, and this code won't work again.</p></form>"#,
+                name = html_escape(&name),
+                key = html_escape(&short_key),
             )
         }
     };
@@ -2359,5 +2764,252 @@ mod tests {
         let no_pairing = super::pairing_error(super::OAuthStoreError::NoActivePairing);
         let no_pairing_body = body_text(&no_pairing);
         assert!(!no_pairing_body.contains("journal mcp pairing generate"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reconnect_consent_code_stage_hides_the_target_and_confirm_names_it() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+
+        // Register South Agent and issue an oauth grant
+        let client_south = oauth
+            .store
+            .register_client(
+                "https://south.example/cimd.json",
+                vec![REDIRECT.to_owned()],
+                Some("South Agent".to_owned()),
+                &oauth.source_cohort(SOURCE),
+            )
+            .unwrap();
+        let pairing_south = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let tx_south = oauth
+            .store
+            .create_transaction(
+                &client_south.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &pkce_challenge(),
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let auth_south = oauth
+            .store
+            .complete_pairing_with_permission(
+                &tx_south,
+                &pairing_south.code,
+                Some(crate::permissions::ReadPermission::default_whole_journal()),
+                &oauth.binding(),
+            )
+            .unwrap();
+        let tokens_south = oauth
+            .store
+            .redeem_authorization_code(
+                &auth_south.code,
+                &client_south.client_id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &oauth.binding(),
+            )
+            .unwrap();
+        let grant_id = tokens_south.token_id;
+
+        // Set memory source for South Agent
+        let hex = "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0";
+        crate::agent_state::set_memory_source(journal.path(), &format!("oauth:{grant_id}"), hex)
+            .unwrap();
+
+        // Make a pairing code for reconnecting to South Agent
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect(
+                "relay",
+                Some(format!("oauth:{grant_id}")),
+            )
+            .unwrap();
+
+        // Open a transaction for a new client whose CIMD name is North Client
+        let get = get_with(&oauth, FakeIo::ok("North Client"), &authorize_query(&[])).await;
+        let transaction_id = hidden_transaction_id(&body_text(&get));
+
+        // Post the code with no scope and no category
+        let body_initial = format!(
+            "transaction_id={}&pairing_code={}",
+            query_value_encode(&transaction_id),
+            query_value_encode(&pairing.code),
+        );
+        let resp_initial = post_authorize(&post_request(&body_initial), SOURCE, &oauth);
+        assert_eq!(resp_initial.status, 200);
+        let page_initial = body_text(&resp_initial);
+        assert!(page_initial.contains(r#"name="reconnect" value="1""#));
+        assert!(page_initial.contains("<button type=\"submit\">continue</button>"));
+        assert!(!page_initial.contains("South Agent"));
+        assert!(!page_initial.contains(&hex[..4]));
+        assert!(!page_initial.contains("it keeps its"));
+
+        // Post that same code again with scope=whole_journal and category=transcripts in one body
+        let grants_before = oauth.store.list_grants().unwrap();
+        let body_tamper = format!(
+            "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
+            query_value_encode(&transaction_id),
+            query_value_encode(&pairing.code),
+        );
+        let resp_tamper = post_authorize(&post_request(&body_tamper), SOURCE, &oauth);
+        assert_eq!(resp_tamper.status, 200);
+        assert!(header(&resp_tamper, "Location").is_none());
+        assert_eq!(
+            oauth.store.list_grants().unwrap().len(),
+            grants_before.len()
+        );
+
+        // Post of the code alone (transaction_id + pairing_code + reconnect=1)
+        let body_reconnect = format!(
+            "transaction_id={}&pairing_code={}&reconnect=1",
+            query_value_encode(&transaction_id),
+            query_value_encode(&pairing.code),
+        );
+        let resp_confirm = post_authorize(&post_request(&body_reconnect), SOURCE, &oauth);
+        assert_eq!(resp_confirm.status, 200);
+        let page_confirm = body_text(&resp_confirm);
+        let short_hex = &hex[..4];
+        assert!(page_confirm.contains(&format!(
+            "<h1>connect South Agent · {short_hex} again?</h1>"
+        )));
+        assert!(page_confirm.contains("<p>your code matched.</p>"));
+        assert!(!page_confirm.contains("it keeps its"));
+        assert!(page_confirm.contains("<p>the one connected now stops working.</p>"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn reconnect_consent_gone_target_and_wrong_code_budget() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+
+        // Register South Agent and issue an oauth grant
+        let client_south = oauth
+            .store
+            .register_client(
+                "https://south.example/cimd.json",
+                vec![REDIRECT.to_owned()],
+                Some("South Agent".to_owned()),
+                &oauth.source_cohort(SOURCE),
+            )
+            .unwrap();
+        let pairing_south = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let tx_south = oauth
+            .store
+            .create_transaction(
+                &client_south.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &pkce_challenge(),
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let auth_south = oauth
+            .store
+            .complete_pairing_with_permission(
+                &tx_south,
+                &pairing_south.code,
+                Some(crate::permissions::ReadPermission::default_whole_journal()),
+                &oauth.binding(),
+            )
+            .unwrap();
+        let tokens_south = oauth
+            .store
+            .redeem_authorization_code(
+                &auth_south.code,
+                &client_south.client_id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &oauth.binding(),
+            )
+            .unwrap();
+        let grant_id = tokens_south.token_id;
+
+        let hex = "a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0";
+        crate::agent_state::set_memory_source(journal.path(), &format!("oauth:{grant_id}"), hex)
+            .unwrap();
+
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect(
+                "relay",
+                Some(format!("oauth:{grant_id}")),
+            )
+            .unwrap();
+
+        let get = get_with(&oauth, FakeIo::ok("North Client"), &authorize_query(&[])).await;
+        let transaction_id = hidden_transaction_id(&body_text(&get));
+
+        // Match the code and show confirm page
+        let body_reconnect = format!(
+            "transaction_id={}&pairing_code={}&reconnect=1",
+            query_value_encode(&transaction_id),
+            query_value_encode(&pairing.code),
+        );
+        let resp_confirm = post_authorize(&post_request(&body_reconnect), SOURCE, &oauth);
+        assert_eq!(resp_confirm.status, 200);
+        let page_confirm = body_text(&resp_confirm);
+        let verified_tx = hidden_transaction_id(&page_confirm);
+
+        // Revoke the target grant
+        assert!(oauth.store.revoke_grant_by_id(&grant_id).unwrap());
+
+        // Submit complete choice (transaction_id + choices, no pairing_code)
+        let body_choice = format!(
+            "transaction_id={}&scope=whole_journal&category=transcripts",
+            query_value_encode(&verified_tx),
+        );
+        let resp_choice = post_authorize(&post_request(&body_choice), SOURCE, &oauth);
+        let page_choice = body_text(&resp_choice);
+        assert!(page_choice.contains(
+            "this code no longer works for the agent it was made for. make a new one in the agents app, then connect from your agent again."
+        ));
+        assert_eq!(oauth.store.list_grants().unwrap().len(), 0);
+
+        // Separately, five wrong codes posted with the hidden reconnect=1 field
+        // produce the existing too_many_wrong_codes response, and a sixth does not consume a new code.
+        let _pairing2 = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", None)
+            .unwrap();
+        let get2 = get_with(&oauth, FakeIo::ok("Client"), &authorize_query(&[])).await;
+        let tx_wrong = hidden_transaction_id(&body_text(&get2));
+        let body_wrong = format!(
+            "transaction_id={}&pairing_code=00000000&reconnect=1",
+            query_value_encode(&tx_wrong),
+        );
+
+        for _ in 0..4 {
+            let resp = post_authorize(&post_request(&body_wrong), SOURCE, &oauth);
+            assert!(body_text(&resp).contains("that code didn't match"));
+        }
+        let fifth = post_authorize(&post_request(&body_wrong), SOURCE, &oauth);
+        assert!(body_text(&fifth).contains("too many wrong codes for this request"));
+
+        // A new code is generated
+        let _new_pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+
+        // A sixth post with the old transaction does not consume the new code
+        let sixth = post_authorize(&post_request(&body_wrong), SOURCE, &oauth);
+        assert!(body_text(&sixth).contains("no longer valid"));
+        assert!(oauth.store.pairing_window_open(&oauth.binding()).unwrap());
     }
 }

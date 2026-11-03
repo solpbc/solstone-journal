@@ -132,6 +132,7 @@ pub struct ActivityEntry {
     /// which stays closed and indistinguishable.
     pub reason: Option<String>,
     pub result: Option<ResultShape>,
+    pub paused: bool,
 }
 
 /// One bounded page of activity, newest first.
@@ -321,7 +322,8 @@ pub fn read_activity(
                                 RecordedOutcome::from_written(outcome.outcome)
                             }),
                         reason: sibling.as_ref().and_then(|outcome| outcome.reason.clone()),
-                        result: sibling.and_then(|outcome| outcome.result),
+                        result: sibling.as_ref().and_then(|outcome| outcome.result.clone()),
+                        paused: sibling.as_ref().is_some_and(|outcome| outcome.paused),
                     };
                     if matches(&entry, query) {
                         entries.push(entry);

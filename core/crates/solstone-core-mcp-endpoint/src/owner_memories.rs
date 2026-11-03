@@ -143,6 +143,26 @@ fn read_place(journal: &Path, source: &SourceKey, place: &Place) -> OriginalRead
     read_original(journal, source, &coordinate)
 }
 
+pub(crate) fn source_memory_info(journal: &Path, source_hex: &str) -> (usize, Option<String>) {
+    let source_key = match solstone_core_format::agent_memory::SourceKey::parse(format!(
+        "sha256:{source_hex}"
+    )) {
+        Ok(k) => k,
+        Err(_) => return (0, None),
+    };
+    let found = find_memories(journal, None);
+    let Some(places) = found.by_source.get(source_key.component()) else {
+        return (0, None);
+    };
+    let newest = places
+        .iter()
+        .find_map(|place| match read_place(journal, &source_key, place) {
+            OriginalRead::Ready { origin, .. } => Some(origin.creation_label),
+            _ => None,
+        });
+    (places.len(), newest)
+}
+
 fn summary_value(journal: &Path) -> Value {
     let found = find_memories(journal, None);
     let agents = found
@@ -304,9 +324,11 @@ mod tests {
     }
 
     fn save(journal: &TempDir, id: &str, label: &str, text: &str, minutes: i64) -> Coordinate {
+        let source_key = SourceKey::from_verified_id(id);
         let source = AuthenticatedMemorySource {
             verified_id: id,
             creation_label: label,
+            source: &source_key,
         };
         let operation = format!("op-{minutes}");
         match append_connection_memory(journal.path(), source, text, &operation, at(minutes)) {

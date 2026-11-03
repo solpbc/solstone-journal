@@ -23,6 +23,7 @@ use crate::http1::{HttpRequest, HttpResponse};
 use self::bulkhead::CimdBulkhead;
 use self::rate_limit::PairingRateLimiter;
 use self::store::{OAuthStore, OAuthStoreError, RegisteredClient};
+pub(crate) use store::current_time;
 
 #[cfg(feature = "full-tests")]
 use rustls::pki_types::ServerName;

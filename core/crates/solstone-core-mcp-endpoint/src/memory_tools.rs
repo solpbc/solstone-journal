@@ -186,6 +186,7 @@ fn save(
         AuthenticatedMemorySource {
             verified_id: authority.id(),
             creation_label: authority.label(),
+            source: authority.source(),
         },
         content,
         operation,
@@ -397,11 +398,13 @@ fn memory_publication_queues_under_a_held_index_writer() {
         Default::default(),
     )
     .unwrap();
+    let source = SourceKey::from_verified_id("bearer:fixture");
     let prepared = prepare_connection_memory(
         root.path(),
         AuthenticatedMemorySource {
             verified_id: "bearer:fixture",
             creation_label: "test connection",
+            source: &source,
         },
         "kestrel memory publication",
         "operation-1",
@@ -445,7 +448,7 @@ fn recall_response(
     let Some(args) = recall_args(tool_arguments(request)) else {
         return invalid_params(request, ToolName::RecallMemory);
     };
-    let source = SourceKey::from_verified_id(authority.id());
+    let source = authority.source();
     let mut arguments = Map::new();
     arguments.insert("source_key".into(), json!(source.as_str()));
     arguments.insert("authority".into(), json!("own_memory"));
@@ -488,7 +491,7 @@ fn recall_response(
         journal,
         codec,
         authority.id(),
-        authority.id(),
+        source,
         authority.id(),
         args,
         now.with_timezone(&solstone_core_journal_config::owner_zone(journal))
@@ -496,7 +499,7 @@ fn recall_response(
         deadline,
     );
     // Serialization and final live checks share the engine's absolute budget.
-    if !page.notes.is_empty() && !page_is_live(journal, &source, &page, deadline) {
+    if !page.notes.is_empty() && !page_is_live(journal, source, &page, deadline) {
         page.notes.clear();
         page.continuation = None;
         page.complete = false;
@@ -573,7 +576,7 @@ fn recall_response(
     };
     #[cfg(all(test, feature = "full-tests"))]
     faults::before_terminal(journal, &audit, None, authority.id());
-    if !page.notes.is_empty() && !page_is_live(journal, &source, &page, deadline) {
+    if !page.notes.is_empty() && !page_is_live(journal, source, &page, deadline) {
         let _ = crate::audit::write_outcome(
             journal,
             &audit,

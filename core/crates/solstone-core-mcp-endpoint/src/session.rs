@@ -52,6 +52,7 @@ struct SessionRecord {
     advertised_generation: Option<Option<u64>>,
     generation: Option<u64>,
     admission_ordinal: u64,
+    listed_while_paused: bool,
 }
 
 /// A reason session creation or ownership validation was rejected.
@@ -163,6 +164,7 @@ impl SessionTable {
                 advertised_generation: None,
                 generation,
                 admission_ordinal: ordinal,
+                listed_while_paused: false,
             },
         );
         Ok(session_id)
@@ -209,6 +211,26 @@ impl SessionTable {
             && let Some(session) = state.sessions.get_mut(session_id)
         {
             session.advertised_generation = Some(generation);
+        }
+    }
+
+    pub(crate) fn record_listed_while_paused(&self, session_id: &str) {
+        if let Ok(mut state) = self.sessions.lock()
+            && let Some(session) = state.sessions.get_mut(session_id)
+        {
+            session.listed_while_paused = true;
+        }
+    }
+
+    pub(crate) fn take_listed_while_paused(&self, session_id: &str) -> bool {
+        if let Ok(mut state) = self.sessions.lock()
+            && let Some(session) = state.sessions.get_mut(session_id)
+        {
+            let was = session.listed_while_paused;
+            session.listed_while_paused = false;
+            was
+        } else {
+            false
         }
     }
 

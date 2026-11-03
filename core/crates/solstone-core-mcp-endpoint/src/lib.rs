@@ -23,6 +23,7 @@ pub(crate) mod acme_http;
 pub(crate) mod acme_lifecycle;
 mod activity;
 mod activity_admit;
+pub(crate) mod agent_state;
 mod audit;
 #[cfg(all(test, feature = "full-tests"))]
 mod boundary_tests;
@@ -40,6 +41,8 @@ mod byo_relay_tests;
 mod calendar_tests;
 mod dispatch;
 mod door_state_writer;
+#[cfg(all(test, not(feature = "full-tests")))]
+mod downgrade_tests;
 mod http1;
 mod jsonrpc;
 pub mod lan_door;

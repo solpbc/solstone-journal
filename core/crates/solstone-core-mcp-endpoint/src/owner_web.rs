@@ -23,7 +23,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_format::agent_memory::SourceKey;
 use solstone_core_journal_config::{
     McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
 };
@@ -53,6 +52,10 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
         .route(
             "/app/agents/api/connections/{kind}/{id}/permission",
             put(set_permission),
+        )
+        .route(
+            "/app/agents/api/connections/{kind}/{id}/pause",
+            put(set_pause),
         )
         .route(
             "/app/agents/api/replay-notices/{id}/dismiss",
@@ -180,13 +183,19 @@ pub(crate) fn state_value_with_iface(
         .map(|permission| (permission.connection.clone(), permission))
         .collect();
     let (activity_by_connection, activity_complete) = activity_this_week(root)?;
+    let side_store_fault = crate::agent_state::read_store(root).is_err();
+    let now = crate::oauth::current_time();
     let mut connections = Vec::new();
     for token in tokens {
         let key = format!("bearer:{}", token.id);
         let activity = activity_by_connection.get(&key);
+        let (memory_source, paused, paused_attempts) =
+            connection_projection_fields(root, &key, None, side_store_fault, now);
         connections.push(json!({
             "kind": "bearer", "id": token.id, "key": key, "name": token.label,
-            "memory_source": SourceKey::from_verified_id(&key).component(),
+            "memory_source": memory_source,
+            "paused": paused,
+            "paused_attempts": paused_attempts,
             "auth_method": "bearer token", "created_at": token.created_at,
             "permission": by_key.get(&key),
             "door": Value::Null,
@@ -199,9 +208,14 @@ pub(crate) fn state_value_with_iface(
         let key = format!("oauth:{}", grant.id);
         let activity = activity_by_connection.get(&key);
         let door = grant_door(grant.resource.as_deref());
+        let refresh_expires_at = oauth.grant_refresh_expires_at(&grant.id).ok().flatten();
+        let (memory_source, paused, paused_attempts) =
+            connection_projection_fields(root, &key, refresh_expires_at, side_store_fault, now);
         connections.push(json!({
             "kind": "oauth", "id": grant.id, "key": key,
-            "memory_source": SourceKey::from_verified_id(&key).component(),
+            "memory_source": memory_source,
+            "paused": paused,
+            "paused_attempts": paused_attempts,
             "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
             "client_id": grant.client_id, "auth_method": "OAuth",
             "created_at": grant.created_at, "access_expires_at": grant.access_expires_at,
@@ -843,6 +857,9 @@ pub(crate) fn state_value_with_iface(
         }
     );
     response["byo"] = byo_json;
+    if side_store_fault {
+        response["agent_state_unreadable"] = json!(true);
+    }
     if status == "needs_subscription" {
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
     }
@@ -888,6 +905,70 @@ async fn pairing_watch(Extension(journal): Extension<Arc<PathBuf>>) -> Response 
     }
 }
 
+fn connection_projection_fields(
+    root: &std::path::Path,
+    key: &str,
+    refresh_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    side_store_fault: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> (Value, Value, Value) {
+    if side_store_fault {
+        return (Value::Null, Value::Null, Value::Null);
+    }
+    let memory_source = crate::agent_state::memory_source(root, key)
+        .ok()
+        .map(|s| Value::String(s.component().to_string()))
+        .unwrap_or(Value::Null);
+    let owner_pause = crate::agent_state::is_owner_paused(root, key)
+        .ok()
+        .flatten();
+    let (paused, stamp) = if let Some(op) = owner_pause {
+        (
+            json!({
+                "by": "owner",
+                "since": op.since,
+            }),
+            Some(op.pause_id),
+        )
+    } else if let Some(expires_at) = refresh_expires_at {
+        if expires_at <= now {
+            (
+                json!({
+                    "by": "idle",
+                    "since": expires_at.to_rfc3339(),
+                }),
+                Some(expires_at.timestamp().to_string()),
+            )
+        } else {
+            (Value::Null, None)
+        }
+    } else {
+        (Value::Null, None)
+    };
+    let paused_attempts = if let Some(stamp) = stamp {
+        crate::agent_state::get_attempts_for_stamp(root, key, Some(&stamp))
+            .ok()
+            .map(|attempts| {
+                json!({
+                    "count": attempts.count,
+                    "last_at": attempts.last_at,
+                })
+            })
+            .unwrap_or_else(|| {
+                json!({
+                    "count": 0,
+                    "last_at": Value::Null,
+                })
+            })
+    } else {
+        json!({
+            "count": 0,
+            "last_at": Value::Null,
+        })
+    };
+    (memory_source, paused, paused_attempts)
+}
+
 /// What the connect dialog watches while an owner connects an agent: the open
 /// code and the agents paired in the browser. It reads only the OAuth ledger and
 /// the permissions, never the week's activity, so the dialog can ask every few
@@ -907,12 +988,20 @@ pub(crate) fn pairing_watch_value(root: &std::path::Path) -> Result<Value, Strin
         .into_iter()
         .map(|permission| (permission.connection.clone(), permission))
         .collect();
+    let side_store_fault = crate::agent_state::read_store(root).is_err();
+    let now = crate::oauth::current_time();
     let connections: Vec<Value> = grants
         .into_iter()
         .map(|grant| {
             let key = format!("oauth:{}", grant.id);
+            let refresh_expires_at = oauth.grant_refresh_expires_at(&grant.id).ok().flatten();
+            let (memory_source, paused, paused_attempts) =
+                connection_projection_fields(root, &key, refresh_expires_at, side_store_fault, now);
             json!({
                 "kind": "oauth", "id": grant.id, "key": key,
+                "memory_source": memory_source,
+                "paused": paused,
+                "paused_attempts": paused_attempts,
                 "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
                 "created_at": grant.created_at,
                 "permission": by_key.get(&key),
@@ -2383,7 +2472,146 @@ async fn generate_pairing(
             StatusCode::BAD_REQUEST,
         );
     }
-    match OAuthStore::open(&journal).generate_pairing_code_with_door(door_str.as_str()) {
+    let agent_param = map.get("agent");
+    let reconnect_to = if let Some(agent_val) = agent_param {
+        // Key present: side store must not be unreadable or locked
+        if crate::agent_state::read_store(&journal).is_err() {
+            return refusal(
+                "agent_state_unavailable",
+                "side store is unavailable",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+        let Some(agent_str) = agent_val.as_str() else {
+            return refusal(
+                "pairing_create_failed",
+                "invalid agent parameter",
+                StatusCode::BAD_REQUEST,
+            );
+        };
+        if let Some(oauth_id) = agent_str.strip_prefix("oauth:") {
+            let oauth = OAuthStore::open(&journal);
+            let grants = match oauth.list_grants() {
+                Ok(g) => g,
+                Err(_) => {
+                    return refusal(
+                        "agent_state_unavailable",
+                        "could not read oauth grants",
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    );
+                }
+            };
+            if !grants.iter().any(|g| g.id == oauth_id) {
+                return refusal(
+                    "pairing_create_failed",
+                    "unknown oauth grant id",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            Some(agent_str.to_owned())
+        } else if let Some(hex) = agent_str.strip_prefix("source:") {
+            if hex.len() != 64
+                || !hex
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+            {
+                return refusal(
+                    "pairing_create_failed",
+                    "invalid source hex",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            let (count, _) = crate::owner_memories::source_memory_info(&journal, hex);
+            if count == 0 {
+                return refusal(
+                    "pairing_create_failed",
+                    "source has no memories",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            // Check if held by any listed bearer token or listed grant
+            let tokens = match TokenStore::open(&journal).list() {
+                Ok(t) => t,
+                Err(_) => {
+                    return refusal(
+                        "tokens_unavailable",
+                        "could not list tokens",
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    );
+                }
+            };
+            for token in tokens {
+                let conn = format!("bearer:{}", token.id);
+                match crate::agent_state::memory_source(&journal, &conn) {
+                    Ok(src) => {
+                        if src.component() == hex {
+                            return refusal(
+                                "pairing_create_failed",
+                                "source is held by live connection",
+                                StatusCode::BAD_REQUEST,
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        return refusal(
+                            "agent_state_unavailable",
+                            "could not resolve memory source",
+                            StatusCode::SERVICE_UNAVAILABLE,
+                        );
+                    }
+                }
+            }
+            let grants = match OAuthStore::open(&journal).list_grants() {
+                Ok(g) => g,
+                Err(_) => {
+                    return refusal(
+                        "oauth_store_unavailable",
+                        "could not list oauth grants",
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    );
+                }
+            };
+            for grant in grants {
+                let conn = format!("oauth:{}", grant.id);
+                match crate::agent_state::memory_source(&journal, &conn) {
+                    Ok(src) => {
+                        if src.component() == hex {
+                            return refusal(
+                                "pairing_create_failed",
+                                "source is held by live connection",
+                                StatusCode::BAD_REQUEST,
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        return refusal(
+                            "agent_state_unavailable",
+                            "could not resolve memory source",
+                            StatusCode::SERVICE_UNAVAILABLE,
+                        );
+                    }
+                }
+            }
+            Some(agent_str.to_owned())
+        } else {
+            // bearer:<id>, or any other string
+            return refusal(
+                "pairing_create_failed",
+                "invalid agent reconnect target",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    } else {
+        None
+    };
+
+    let result = if let Some(reconnect) = reconnect_to {
+        OAuthStore::open(&journal)
+            .generate_pairing_code_with_door_and_reconnect(door_str.as_str(), Some(reconnect))
+    } else {
+        OAuthStore::open(&journal).generate_pairing_code_with_door(door_str.as_str())
+    };
+    match result {
         Ok(created) => Json(json!({
             "code": created.code,
             "expires_at": created.expires_at,
@@ -2595,6 +2823,119 @@ async fn set_permission(
     }
 }
 
+async fn set_pause(
+    Extension(journal): Extension<Arc<PathBuf>>,
+    Path((kind, id)): Path<(String, String)>,
+    body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    if !matches!(kind.as_str(), "bearer" | "oauth") {
+        return refusal(
+            "connection_kind_invalid",
+            "unknown connection kind",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    let Json(body) = match body {
+        Ok(b) => b,
+        Err(_) => {
+            return refusal(
+                "invalid_body",
+                "json body required",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
+    let Some(paused) = body.get("paused").and_then(Value::as_bool) else {
+        return refusal(
+            "paused_field_invalid",
+            "paused must be a boolean",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    let key = format!("{kind}:{id}");
+    let existing_pause = match crate::agent_state::is_owner_paused(&journal, &key) {
+        Ok(p) => p,
+        Err(_) => {
+            return refusal(
+                "agent_state_unavailable",
+                "side store is unavailable",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+    };
+    if paused {
+        if PermissionStore::open(&journal)
+            .set_evaluation_only(&key, "hold")
+            .is_err()
+        {
+            return refusal(
+                "permission_store_unavailable",
+                "could not update permission evaluation",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+        let now = crate::oauth::current_time();
+        if crate::agent_state::set_owner_pause(
+            &journal,
+            &key,
+            now,
+            &crate::tokens::SystemRandomSource,
+        )
+        .is_err()
+        {
+            return refusal(
+                "agent_state_unavailable",
+                "could not write pause state",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+        Json(json!({"ok": true})).into_response()
+    } else {
+        if kind == "oauth" {
+            let store = OAuthStore::open(&journal);
+            if store.resume_refresh_expiry(&id).is_err() {
+                return refusal(
+                    "connection_not_found",
+                    "grant not found",
+                    StatusCode::NOT_FOUND,
+                );
+            }
+            if existing_pause.is_some() {
+                let removed = match crate::agent_state::clear_owner_pause(&journal, &key) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        return refusal(
+                            "agent_state_unavailable",
+                            "could not clear pause state",
+                            StatusCode::SERVICE_UNAVAILABLE,
+                        );
+                    }
+                };
+                if removed {
+                    let _ = PermissionStore::open(&journal).set_evaluation_only(&key, "enforce");
+                }
+            }
+        } else {
+            if existing_pause.is_some() {
+                let removed = match crate::agent_state::clear_owner_pause(&journal, &key) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        return refusal(
+                            "agent_state_unavailable",
+                            "could not clear pause state",
+                            StatusCode::SERVICE_UNAVAILABLE,
+                        );
+                    }
+                };
+                if removed {
+                    let _ = PermissionStore::open(&journal).set_evaluation_only(&key, "enforce");
+                }
+            }
+        }
+        Json(json!({"ok": true})).into_response()
+    }
+}
+
 #[derive(Default, Deserialize)]
 struct ActivityParams {
     connection: Option<String>,
@@ -2658,12 +2999,67 @@ async fn activity(
     match read_activity(&journal, &query) {
         Ok(page) => {
             let counts = tally(&page.entries);
-            let entries: Vec<_> = page.entries.into_iter().map(|entry| json!({
-                "day": entry.day, "segment": entry.segment, "timestamp": entry.timestamp,
-                "connection": entry.connection, "agent_identity": entry.agent_identity,
-                "tool": entry.tool_name.token(), "request": entry.request,
-                "outcome": entry.outcome.token(), "reason": entry.reason, "result": entry.result,
-            })).collect();
+            let side_store_fault = crate::agent_state::read_store(&journal).is_err();
+            let live_tokens = TokenStore::open(&journal).list().unwrap_or_default();
+            let live_grants = OAuthStore::open(&journal).list_grants().unwrap_or_default();
+            let live_bearer_names: BTreeMap<String, String> = live_tokens
+                .into_iter()
+                .map(|t| (format!("bearer:{}", t.id), t.label))
+                .collect();
+            let live_oauth_names: BTreeMap<String, String> = live_grants
+                .into_iter()
+                .filter_map(|g| g.client_name.map(|name| (format!("oauth:{}", g.id), name)))
+                .collect();
+            let entries: Vec<_> = page
+                .entries
+                .into_iter()
+                .map(|entry| {
+                    let (name, memory_source, paused) = match entry.connection.as_deref() {
+                        None => (Value::Null, Value::Null, Value::Bool(entry.paused)),
+                        Some(conn) => {
+                            if side_store_fault {
+                                let name = live_bearer_names
+                                    .get(conn)
+                                    .or_else(|| live_oauth_names.get(conn))
+                                    .map(|s| Value::String(s.clone()))
+                                    .unwrap_or(Value::Null);
+                                (name, Value::Null, Value::Null)
+                            } else {
+                                let paused = Value::Bool(entry.paused);
+                                let resolved_source =
+                                    crate::agent_state::memory_source(&journal, conn).ok();
+                                let memory_source = resolved_source
+                                    .as_ref()
+                                    .map(|s| Value::String(s.component().to_string()))
+                                    .unwrap_or(Value::Null);
+                                let name = if let Some(live_name) = live_bearer_names.get(conn) {
+                                    Value::String(live_name.clone())
+                                } else if let Some(live_name) = live_oauth_names.get(conn) {
+                                    Value::String(live_name.clone())
+                                } else if let Some(source) = resolved_source {
+                                    let (_count, label) = crate::owner_memories::source_memory_info(
+                                        &journal,
+                                        source.component(),
+                                    );
+                                    Value::String(label.unwrap_or_else(|| "an earlier agent".to_string()))
+                                } else {
+                                    Value::Null
+                                };
+                                (name, memory_source, paused)
+                            }
+                        }
+                    };
+                    json!({
+                        "day": entry.day, "segment": entry.segment, "timestamp": entry.timestamp,
+                        "connection": entry.connection, "agent_identity": entry.agent_identity,
+                        "name": name,
+                        "memory_source": memory_source,
+                        "paused": paused,
+                        "tool": entry.tool_name.token(), "request": entry.request,
+                        "outcome": entry.outcome.token(), "reason": entry.reason, "result": entry.result,
+                    })
+                })
+                .collect();
             Json(json!({"entries": entries, "counts": counts, "examined": page.examined, "examination_complete": page.examination_complete, "unreadable": page.unreadable, "next": page.next.map(|next| json!({"day": next.day, "segment": next.segment}))})).into_response()
         }
         Err(error) => refusal(
@@ -4317,5 +4713,490 @@ mod tests {
         let body = to_bytes(resp.into_body(), 1024).await.unwrap();
         let val: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(val["code"], "relay_host_key_changed");
+    }
+
+    #[tokio::test]
+    async fn owner_pause_and_resume_for_oauth_and_bearer() {
+        use std::fs;
+
+        struct ClockResetGuard;
+        impl Drop for ClockResetGuard {
+            fn drop(&mut self) {
+                crate::oauth::store::set_routine_now(None);
+            }
+        }
+        let _guard = ClockResetGuard;
+
+        let base_now = 1_800_000_000_i64;
+        crate::oauth::store::set_routine_now(Some(base_now));
+
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+        let journal = Arc::new(root.to_path_buf());
+
+        // Setup OAuth grant
+        let relay = crate::oauth::OAuthRuntime::new(root, "https://mcp.test".to_owned());
+        let binding = relay.binding();
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/oauth_agent.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Test Agent".to_owned()),
+                &relay.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let pairing = relay
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-123"));
+        let transaction = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let authorization = relay
+            .store
+            .complete_pairing_with_permission(
+                &transaction,
+                &pairing.code,
+                Some(ReadPermission {
+                    categories: vec!["facets".to_owned()],
+                    scope: ReadScope::Facets {
+                        ids: vec!["facet-1".to_owned()],
+                    },
+                }),
+                &binding,
+            )
+            .unwrap();
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &authorization.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-123",
+                &binding,
+            )
+            .unwrap();
+        let oauth_id = tokens.token_id;
+
+        // Setup bearer token
+        let token_store = TokenStore::open(root);
+        let _bearer = token_store.create("Test Bearer").unwrap();
+        let bearer_id = token_store
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.label == "Test Bearer")
+            .unwrap()
+            .id;
+        PermissionStore::open(root)
+            .set_permission(
+                &format!("bearer:{}", bearer_id),
+                ReadPermission {
+                    categories: vec!["entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+
+        // 1. Missing or non-bool `paused` is 400 and does not create agent-state.json
+        let resp_missing = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({}))),
+        )
+        .await;
+        assert_eq!(resp_missing.status(), StatusCode::BAD_REQUEST);
+        assert!(!root.join("mcp-endpoint/agent-state.json").exists());
+
+        let resp_nonbool = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": "true"}))),
+        )
+        .await;
+        assert_eq!(resp_nonbool.status(), StatusCode::BAD_REQUEST);
+        assert!(!root.join("mcp-endpoint/agent-state.json").exists());
+
+        // 2. `paused: true` on `oauth/<id>` writes evaluation `hold` without changing `generation`,
+        // then an `owner_pause` row. `state_value` for that connection is `{"by":"owner","since":...}`
+        // and `paused_attempts` is `{"count":0,"last_at":null}`. `created_at` is unchanged.
+        // There is no `paired_at` key.
+        let perm_before = PermissionStore::open(root)
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == format!("oauth:{}", oauth_id))
+            .unwrap();
+        let gen_before = perm_before.generation;
+        let oauth_created_at = state_value(root).unwrap()["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == format!("oauth:{}", oauth_id))
+            .unwrap()["created_at"]
+            .clone();
+
+        let resp_pause_oauth = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": true}))),
+        )
+        .await;
+        assert_eq!(resp_pause_oauth.status(), StatusCode::OK);
+
+        let perm_after = PermissionStore::open(root)
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == format!("oauth:{}", oauth_id))
+            .unwrap();
+        assert_eq!(perm_after.generation, gen_before);
+        assert_eq!(perm_after.evaluation, "hold");
+
+        let state = state_value(root).unwrap();
+        let conn = state["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == format!("oauth:{}", oauth_id))
+            .unwrap()
+            .clone();
+        assert_eq!(conn["paused"]["by"], "owner");
+        let owner_since = conn["paused"]["since"].as_str().unwrap().to_string();
+        assert_eq!(
+            conn["paused_attempts"],
+            json!({"count": 0, "last_at": Value::Null})
+        );
+        assert_eq!(conn["created_at"], oauth_created_at);
+        assert!(conn.get("paired_at").is_none());
+
+        // 3. Snapshot `mcp-endpoint/tokens.json` before and after a bearer pause.
+        // The bytes match. The bearer row is `by: owner`. Bearer `refresh` does not exist;
+        // do not invent an idle pause. With the clock moved past 30 days, `state_value` for the bearer
+        // is still `by: owner`, not `idle`.
+        let tokens_path = root.join("mcp-endpoint/tokens.json");
+        let tokens_bytes_before = fs::read(&tokens_path).unwrap();
+
+        let resp_pause_bearer = set_pause(
+            Extension(journal.clone()),
+            Path(("bearer".to_string(), bearer_id.clone())),
+            Ok(Json(json!({"paused": true}))),
+        )
+        .await;
+        assert_eq!(resp_pause_bearer.status(), StatusCode::OK);
+        let tokens_bytes_after = fs::read(&tokens_path).unwrap();
+        assert_eq!(tokens_bytes_before, tokens_bytes_after);
+
+        let state = state_value(root).unwrap();
+        let bearer_conn = state["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == format!("bearer:{}", bearer_id))
+            .unwrap();
+        assert_eq!(bearer_conn["paused"]["by"], "owner");
+
+        crate::oauth::store::set_routine_now(Some(base_now + 31 * 86400));
+        let state_31d = state_value(root).unwrap();
+        let bearer_conn_31d = state_31d["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == format!("bearer:{}", bearer_id))
+            .unwrap();
+        assert_eq!(bearer_conn_31d["paused"]["by"], "owner");
+
+        // 4. Move the clock past the oauth grant's `refresh_expires_at` while the owner pause remains.
+        // `state_value` is still `by: owner` with the owner's `since`, not `idle`.
+        let oauth_expiry = relay
+            .store
+            .grant_refresh_expires_at(&oauth_id)
+            .unwrap()
+            .unwrap();
+        crate::oauth::store::set_routine_now(Some(oauth_expiry.timestamp() + 10));
+        let state_post_expiry = state_value(root).unwrap();
+        let oauth_conn_post_expiry = state_post_expiry["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == format!("oauth:{}", oauth_id))
+            .unwrap();
+        assert_eq!(oauth_conn_post_expiry["paused"]["by"], "owner");
+        assert_eq!(oauth_conn_post_expiry["paused"]["since"], owner_since);
+
+        // 5. `paused: false` on that oauth id sets `refresh_expires_at` to the pinned now + `REFRESH_TTL_SECS`
+        // (read it back with `grant_refresh_expires_at`), removes the owner-pause row, and sets evaluation
+        // back to `enforce`. Generation is still the pre-pause value unless a permission save happened.
+        // `state_value` `paused` is null and `paused_attempts` is count 0.
+        let resp_resume_oauth = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": false}))),
+        )
+        .await;
+        assert_eq!(resp_resume_oauth.status(), StatusCode::OK);
+
+        let new_expiry = relay
+            .store
+            .grant_refresh_expires_at(&oauth_id)
+            .unwrap()
+            .unwrap();
+        let expected_expiry = (oauth_expiry.timestamp() + 10) + 30 * 86400;
+        assert_eq!(new_expiry.timestamp(), expected_expiry);
+        assert!(
+            crate::agent_state::is_owner_paused(root, &format!("oauth:{}", oauth_id))
+                .unwrap()
+                .is_none()
+        );
+
+        let perm_resumed = PermissionStore::open(root)
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == format!("oauth:{}", oauth_id))
+            .unwrap();
+        assert_eq!(perm_resumed.evaluation, "enforce");
+        assert_eq!(perm_resumed.generation, gen_before);
+
+        let state_resumed = state_value(root).unwrap();
+        let oauth_conn_resumed = state_resumed["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["key"] == format!("oauth:{}", oauth_id))
+            .unwrap();
+        assert!(oauth_conn_resumed["paused"].is_null());
+        assert_eq!(oauth_conn_resumed["paused_attempts"]["count"], 0);
+
+        // 6. Bearer resume clears the owner-pause row and sets evaluation to `enforce`.
+        // `tokens.json` bytes stay the same as after create.
+        let resp_resume_bearer = set_pause(
+            Extension(journal.clone()),
+            Path(("bearer".to_string(), bearer_id.clone())),
+            Ok(Json(json!({"paused": false}))),
+        )
+        .await;
+        assert_eq!(resp_resume_bearer.status(), StatusCode::OK);
+        assert!(
+            crate::agent_state::is_owner_paused(root, &format!("bearer:{}", bearer_id))
+                .unwrap()
+                .is_none()
+        );
+        let perm_bearer_resumed = PermissionStore::open(root)
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == format!("bearer:{}", bearer_id))
+            .unwrap();
+        assert_eq!(perm_bearer_resumed.evaluation, "enforce");
+        assert_eq!(fs::read(&tokens_path).unwrap(), tokens_bytes_before);
+
+        // 7. `set_permission` while owner-paused leaves evaluation `hold` and bumps generation.
+        // `clear_permission` leaves evaluation `hold` and `read` null.
+        // A side-store file that is not JSON makes `set_permission` on an existing record
+        // keep that record's evaluation string and makes `set_permission` with no record
+        // return `PermissionStoreError::AgentStateFault` without creating a record.
+        let _ = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": true}))),
+        )
+        .await;
+        let p_store = PermissionStore::open(root);
+        let updated_perm = p_store
+            .set_permission(
+                &format!("oauth:{}", oauth_id),
+                ReadPermission {
+                    categories: vec!["entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        assert_eq!(updated_perm.evaluation, "hold");
+        assert_eq!(updated_perm.generation, gen_before + 1);
+
+        let cleared = p_store
+            .clear_permission(&format!("oauth:{}", oauth_id))
+            .unwrap();
+        assert!(cleared);
+        let rec = p_store
+            .read()
+            .unwrap()
+            .permissions
+            .into_iter()
+            .find(|p| p.connection == format!("oauth:{}", oauth_id))
+            .unwrap();
+        assert_eq!(rec.evaluation, "hold");
+        assert!(rec.read.is_none());
+
+        // Invalid JSON side-store:
+        fs::write(root.join("mcp-endpoint/agent-state.json"), b"invalid json").unwrap();
+        let eval_before_fault = rec.evaluation.clone();
+        let updated_fault = p_store
+            .set_permission(
+                &format!("oauth:{}", oauth_id),
+                ReadPermission {
+                    categories: vec!["entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+        assert_eq!(updated_fault.evaluation, eval_before_fault);
+
+        let err_fault = p_store.set_permission(
+            "oauth:nonexistent",
+            ReadPermission {
+                categories: vec!["entities".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        );
+        assert!(matches!(
+            err_fault,
+            Err(crate::permissions::PermissionStoreError::AgentStateFault)
+        ));
+        assert!(
+            p_store
+                .read()
+                .unwrap()
+                .permissions
+                .iter()
+                .all(|p| p.connection != "oauth:nonexistent")
+        );
+
+        // 8. A pairing POST with `{"door":"relay","agent":"bearer:<id>"}` is 400 and creates no pairing code.
+        fs::remove_file(root.join("mcp-endpoint/agent-state.json")).unwrap();
+        let bad_pairing_body = axum::body::Bytes::from(format!(
+            r#"{{"door":"relay","agent":"bearer:{}"}}"#,
+            bearer_id
+        ));
+        let bad_pairing_resp = generate_pairing(Extension(journal.clone()), bad_pairing_body).await;
+        assert_eq!(bad_pairing_resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn reconnected_activity_names_the_client_not_the_client_id() {
+        use crate::oauth::OAuthRuntime;
+
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+
+        let relay = OAuthRuntime::new(root, "https://mcp.test".to_owned());
+        let binding = relay.binding();
+        let client = relay
+            .store
+            .register_client(
+                "https://south.example/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("South Agent".to_owned()),
+                &relay.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let pairing = relay
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-activity"));
+        let tx = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let auth = relay
+            .store
+            .complete_pairing_with_permission(
+                &tx,
+                &pairing.code,
+                Some(crate::permissions::ReadPermission::default_whole_journal()),
+                &binding,
+            )
+            .unwrap();
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &auth.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-activity",
+                &binding,
+            )
+            .unwrap();
+        let grant_id = tokens.token_id;
+
+        let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        crate::agent_state::set_memory_source(root, &format!("oauth:{grant_id}"), hex).unwrap();
+
+        let now = chrono::Utc::now();
+        let coords = crate::audit::write_admitted_interaction(
+            root,
+            now,
+            &solstone_core_mcp_audit::Admission {
+                connection: &format!("oauth:{grant_id}"),
+                agent_identity: &client.client_id,
+                tool_name: solstone_core_mcp_audit::ToolName::Search,
+                arguments: serde_json::Map::new(),
+                permission: None,
+            },
+        )
+        .unwrap();
+        crate::audit::write_outcome(
+            root,
+            &coords,
+            now,
+            solstone_core_mcp_audit::Outcome::Served,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let resp = activity(
+            Extension(Arc::new(root.to_path_buf())),
+            Query(ActivityParams::default()),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let val: Value = serde_json::from_slice(&bytes).unwrap();
+        let entry = &val["entries"][0];
+        assert_eq!(entry["name"], "South Agent");
+        assert_eq!(entry["memory_source"], hex);
+        assert_ne!(entry["name"], client.client_id);
+        assert_ne!(entry["memory_source"], client.client_id);
+        assert!(!entry["name"].as_str().unwrap().starts_with("sha256:"));
+        assert!(
+            !entry["memory_source"]
+                .as_str()
+                .unwrap()
+                .starts_with("sha256:")
+        );
     }
 }

@@ -283,17 +283,24 @@ pub(crate) fn requirement_refusal(
 /// the `facet` argument rather than guessing at one: the agent is told less,
 /// and call-time authorization is unchanged either way.
 pub(crate) fn advertised_tools_list(journal_root: &Path, permission: &PermissionDecision) -> Value {
+    let facet_ids = connection_facet_ids(journal_root, permission);
+    advertised_tools_list_with_facet_ids(permission, &facet_ids)
+}
+
+pub(crate) fn advertised_tools_list_with_facet_ids(
+    permission: &PermissionDecision,
+    facet_ids: &[String],
+) -> Value {
     let snapshot = match permission {
         PermissionDecision::Snapshot(snapshot) => Some(snapshot),
         PermissionDecision::Denied { .. } => None,
     };
     let empty_categories = BTreeSet::new();
-    let facet_ids = connection_facet_ids(journal_root, permission);
     let context = SchemaContext {
         categories: snapshot
             .map(|snapshot| &snapshot.categories)
             .unwrap_or(&empty_categories),
-        facet_ids: &facet_ids,
+        facet_ids,
     };
     let tools = TOOLS
         .iter()
@@ -509,7 +516,7 @@ fn save_memory_input_schema(_context: &SchemaContext<'_>) -> Value {
         "required": ["content", "operation_id"],
         "properties": {
             "content": {"type": "string", "minLength": 1, "maxLength": 32768, "description": "exact UTF-8 content, limited to 32,768 decoded bytes"},
-            "operation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "an id you choose for this save, made of letters, digits, '.', '_', ':' or '-'; reuse it only to retry the same note"}
+            "operation_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]+$", "description": "an id you choose for this save, made of letters, digits, '.', '_', ':' or '-'; reuse it only to retry the same note. the id is unique across this agent's whole history, not only the current pairing."}
         }
     })
 }

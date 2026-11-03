@@ -273,6 +273,8 @@ pub struct OutcomeRecord {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<ResultShape>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub paused: bool,
 }
 
 /// Location of one durably published interaction record.
@@ -483,6 +485,27 @@ pub fn write_outcome_record(
     reason: Option<&str>,
     result: Option<ResultShape>,
 ) -> Result<(), AuditWriteError> {
+    write_outcome_record_with_paused(
+        journal_root,
+        coordinates,
+        now,
+        outcome,
+        reason,
+        result,
+        false,
+    )
+}
+
+/// Publish the outcome sibling of one already-admitted interaction with an explicit paused flag.
+pub fn write_outcome_record_with_paused(
+    journal_root: &Path,
+    coordinates: &AuditCoordinates,
+    now: DateTime<Utc>,
+    outcome: Outcome,
+    reason: Option<&str>,
+    result: Option<ResultShape>,
+    paused: bool,
+) -> Result<(), AuditWriteError> {
     let day_key = coordinates.day.format("%Y%m%d").to_string();
     let segment_directory = segment_path(
         journal_root,
@@ -498,6 +521,7 @@ pub fn write_outcome_record(
         outcome,
         reason: reason.map(str::to_owned),
         result,
+        paused,
     };
     let contents = serde_json::to_vec(&record).map_err(AuditWriteError::Serialization)?;
     sync_audit_parent_chain(journal_root, &day_key, &coordinates.segment)?;

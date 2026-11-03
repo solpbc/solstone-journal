@@ -23,7 +23,9 @@ use subtle::ConstantTimeEq;
 
 use super::pairing::{canonicalize_pairing_code, encode_pairing_code};
 use crate::permissions::ReadPermission;
-use crate::tokens::{RandomSource, RandomSourceError, SystemRandomSource, VerifiedToken};
+use crate::tokens::{
+    RandomSource, RandomSourceError, SystemRandomSource, TokenStore, VerifiedToken,
+};
 
 const OAUTH_DIRECTORY: &str = "mcp-endpoint";
 const OAUTH_FILE: &str = "oauth.json";
@@ -48,9 +50,46 @@ const REFRESH_HISTORY_LIMIT: usize = 16;
 const REFRESH_GRACE_SECS: i64 = 30;
 const MAX_REPLAY_NOTICES: usize = 16;
 
+#[cfg(test)]
+pub(crate) static TAKEOVER_STOP_AFTER: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) static I4_TEST_HOLD: std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn check_takeover_stop(step: usize) -> Result<(), OAuthStoreError> {
+    let stop_after = TAKEOVER_STOP_AFTER.load(std::sync::atomic::Ordering::SeqCst);
+    if stop_after > 0 && stop_after == step {
+        return Err(OAuthStoreError::InvalidGrant);
+    }
+    Ok(())
+}
+#[cfg(not(test))]
+fn check_takeover_stop(_step: usize) -> Result<(), OAuthStoreError> {
+    Ok(())
+}
+
+#[cfg(test)]
+fn trigger_i4_hold() {
+    let cb = if let Ok(mut guard) = I4_TEST_HOLD.lock() {
+        guard.take()
+    } else {
+        None
+    };
+    if let Some(cb) = cb {
+        cb();
+    }
+}
+#[cfg(not(test))]
+fn trigger_i4_hold() {}
+
 /// A journal-root-bound OAuth ledger.
 pub struct OAuthStore {
     root: PathBuf,
+    #[cfg(test)]
+    pub(crate) lock_timeout: Option<std::time::Duration>,
 }
 
 /// A newly generated pairing code. The plaintext is returned exactly once.
@@ -117,11 +156,20 @@ pub(crate) struct RegisteredClient {
     pub(crate) created_at: DateTime<Utc>,
 }
 
+/// Classification of a presented pairing code for an OAuth authorization request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CodeClassification {
+    Matched { reconnect_to: Option<String> },
+    NoMatch,
+}
+
 /// Stored context needed to faithfully re-render a pending consent request.
 pub(crate) struct PendingAuthorization {
     pub(crate) client: RegisteredClient,
     pub(crate) redirect_uri: String,
     pub(crate) pairing_verified: bool,
+    #[allow(dead_code)]
+    pub(crate) reconnect_to: Option<String>,
 }
 
 /// Non-secret metadata suitable for listing registered OAuth clients.
@@ -158,6 +206,7 @@ pub(crate) struct ReplayNotice {
 pub enum OAuthStoreError {
     Randomness,
     InvalidToken,
+    InvalidGrant,
     RefreshReused { grant_id: String },
     NoActivePairing,
     Quota,
@@ -185,6 +234,7 @@ impl fmt::Display for OAuthStoreError {
         formatter.write_str(match self {
             Self::Randomness => "could not obtain complete OAuth randomness",
             Self::InvalidToken => "OAuth token is invalid",
+            Self::InvalidGrant => "OAuth grant is invalid",
             Self::RefreshReused { .. } => "OAuth refresh token was reused",
             Self::NoActivePairing => "no active pairing code",
             Self::Quota => "OAuth store quota reached",
@@ -217,6 +267,17 @@ impl Error for OAuthStoreError {
             Self::Read { source, .. } => Some(source),
             Self::Write(error) => Some(error),
             _ => None,
+        }
+    }
+}
+
+impl From<crate::agent_state::AgentStateError> for OAuthStoreError {
+    fn from(err: crate::agent_state::AgentStateError) -> Self {
+        match err {
+            crate::agent_state::AgentStateError::Lock(l) => Self::Lock(l),
+            crate::agent_state::AgentStateError::Write(w) => Self::Write(w),
+            crate::agent_state::AgentStateError::Directory(d) => Self::Directory(d),
+            crate::agent_state::AgentStateError::Unreadable => Self::StateTooLarge,
         }
     }
 }
@@ -342,6 +403,8 @@ struct StoredPending {
     /// while any row carries it; making and revoking a code clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pairing_window: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reconnect_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -356,6 +419,20 @@ struct StoredPairing {
     door: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     config_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reconnect_to: Option<String>,
+}
+
+enum TakeoverFirstEditResult {
+    ExistingGrant {
+        grant_id: String,
+        is_paused: bool,
+        pending_permission: Option<ReadPermission>,
+    },
+    EarlierSource {
+        grant_id: String,
+        permission: Option<ReadPermission>,
+    },
 }
 
 impl OAuthStore {
@@ -364,20 +441,51 @@ impl OAuthStore {
     pub fn open(journal_root: &Path) -> Self {
         Self {
             root: journal_root.to_path_buf(),
+            #[cfg(test)]
+            lock_timeout: None,
         }
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_lock_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.lock_timeout = Some(timeout);
+        self
     }
 
     pub fn generate_pairing_code_with_door(
         &self,
         door: &str,
     ) -> Result<CreatedPairingCode, OAuthStoreError> {
-        self.generate_pairing_code_with_random_and_door(&SystemRandomSource, door)
+        self.generate_pairing_code_with_door_and_reconnect(door, None)
     }
 
+    pub fn generate_pairing_code_with_door_and_reconnect(
+        &self,
+        door: &str,
+        reconnect_to: Option<String>,
+    ) -> Result<CreatedPairingCode, OAuthStoreError> {
+        self.generate_pairing_code_with_random_door_and_reconnect(
+            &SystemRandomSource,
+            door,
+            reconnect_to,
+        )
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn generate_pairing_code_with_random_and_door(
         &self,
         random: &dyn RandomSource,
         door: &str,
+    ) -> Result<CreatedPairingCode, OAuthStoreError> {
+        self.generate_pairing_code_with_random_door_and_reconnect(random, door, None)
+    }
+
+    pub(crate) fn generate_pairing_code_with_random_door_and_reconnect(
+        &self,
+        random: &dyn RandomSource,
+        door: &str,
+        reconnect_to: Option<String>,
     ) -> Result<CreatedPairingCode, OAuthStoreError> {
         let (door_stored, config_generation) = match door {
             "local" => (Some("local".to_string()), None),
@@ -422,6 +530,7 @@ impl OAuthStore {
                 locked: false,
                 door: door_stored,
                 config_generation,
+                reconnect_to,
             });
             Ok(CreatedPairingCode {
                 code,
@@ -519,6 +628,35 @@ impl OAuthStore {
             .pairing
             .map(|pairing| pairing.generation)
             .unwrap_or(0))
+    }
+
+    pub(crate) fn grant_refresh_expires_at(
+        &self,
+        grant_id: &str,
+    ) -> Result<Option<DateTime<Utc>>, OAuthStoreError> {
+        let store = self.read_store()?;
+        Ok(store
+            .grants
+            .iter()
+            .find(|g| g.id == grant_id)
+            .map(|g| g.refresh_expires_at))
+    }
+
+    pub(crate) fn resume_refresh_expiry(
+        &self,
+        grant_id: &str,
+    ) -> Result<DateTime<Utc>, OAuthStoreError> {
+        self.edit(
+            |store, now| {
+                let Some(grant) = store.grants.iter_mut().find(|g| g.id == grant_id) else {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
+                };
+                let expiry = now + Duration::seconds(REFRESH_TTL_SECS);
+                grant.refresh_expires_at = expiry;
+                (EditPersistence::Persist, Ok(expiry))
+            },
+            || Ok(()),
+        )
     }
 
     /// Verify a presented access token against freshly loaded durable state.
@@ -710,7 +848,7 @@ impl OAuthStore {
             {
                 return Err(OAuthStoreError::TransactionNotFound);
             }
-            let pairing_window = store
+            let (pairing_window, reconnect_to) = store
                 .pairing
                 .as_ref()
                 .filter(|pairing| {
@@ -718,7 +856,7 @@ impl OAuthStore {
                         && !pairing.locked
                         && door.is_none_or(|binding| pairing_door_matches(pairing, binding))
                 })
-                .map(|pairing| pairing.generation)
+                .map(|pairing| (pairing.generation, pairing.reconnect_to.clone()))
                 .ok_or(OAuthStoreError::NoActivePairing)?;
             if store.pending.len() >= MAX_PENDING
                 || store
@@ -749,6 +887,7 @@ impl OAuthStore {
                 generation,
                 pairing_verified: false,
                 pairing_window: Some(pairing_window),
+                reconnect_to,
             });
             Ok(transaction_id)
         })
@@ -796,6 +935,14 @@ impl OAuthStore {
             let index = open_pending_index(store, transaction_id, binding, now)?;
             if store.pending[index].pairing_verified {
                 return Err(OAuthStoreError::TransactionNotFound);
+            }
+            if store.pending[index].reconnect_to.is_some()
+                || store
+                    .pairing
+                    .as_ref()
+                    .is_some_and(|p| p.reconnect_to.is_some())
+            {
+                return Err(OAuthStoreError::BindingMismatch);
             }
             consume_pairing_code(store, index, presented, binding)?;
             Ok(issue_authorization(
@@ -858,6 +1005,9 @@ impl OAuthStore {
             if !store.pending[index].pairing_verified {
                 return Err(OAuthStoreError::TransactionNotFound);
             }
+            if store.pending[index].reconnect_to.is_some() {
+                return Err(OAuthStoreError::BindingMismatch);
+            }
             Ok(issue_authorization(
                 &mut store.pending[index],
                 Some(permission),
@@ -865,6 +1015,111 @@ impl OAuthStore {
                 now,
             ))
         })
+    }
+
+    /// Re-check target and complete a verified transaction that carries a reconnect target.
+    pub(crate) fn complete_confirm_pairing(
+        &self,
+        transaction_id: &str,
+        permission: Option<ReadPermission>,
+        binding: &super::RuntimeBinding,
+    ) -> Result<Option<IssuedAuthorization>, OAuthStoreError> {
+        let code_bytes = random_bytes(&SystemRandomSource)?;
+        self.edit(
+            |store, now| {
+                let index = match open_pending_index(store, transaction_id, binding, now) {
+                    Ok(i) => i,
+                    Err(e) => return (EditPersistence::Drop, Err(e)),
+                };
+                if !store.pending[index].pairing_verified {
+                    return (
+                        EditPersistence::Drop,
+                        Err(OAuthStoreError::TransactionNotFound),
+                    );
+                }
+                let Some(reconnect_target) = store.pending[index].reconnect_to.clone() else {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::BindingMismatch));
+                };
+
+                let target_gone = if let Some(oauth_id) = reconnect_target.strip_prefix("oauth:") {
+                    !store.grants.iter().any(|g| g.id == oauth_id)
+                } else if let Some(hex) = reconnect_target.strip_prefix("source:") {
+                    match is_source_held_by_live_connection_locked(&self.root, store, hex) {
+                        Ok(held) => held,
+                        Err(e) => return (EditPersistence::Drop, Err(e)),
+                    }
+                } else {
+                    true
+                };
+
+                if target_gone {
+                    store.pending[index].reconnect_to = None;
+                    return (EditPersistence::Persist, Err(OAuthStoreError::InvalidGrant));
+                }
+
+                let Some(permission) = permission else {
+                    return (EditPersistence::Drop, Ok(None));
+                };
+
+                let issued = issue_authorization(
+                    &mut store.pending[index],
+                    Some(permission),
+                    &code_bytes,
+                    now,
+                );
+                (EditPersistence::Persist, Ok(Some(issued)))
+            },
+            || Ok(()),
+        )
+    }
+
+    /// Read the reconnect target on an open pending transaction, if any.
+    pub(crate) fn pending_reconnect_to(
+        &self,
+        transaction_id: &str,
+        binding: &super::RuntimeBinding,
+    ) -> Result<Option<String>, OAuthStoreError> {
+        let store = self.read_store()?;
+        let now = current_time();
+        let Some(pending) = store.pending.iter().find(|pending| {
+            pending.transaction_id == transaction_id
+                && pending.resource == binding.canonical()
+                && pending.generation == binding.stored_grant_generation()
+                && pending.expires_at > now
+        }) else {
+            return Ok(None);
+        };
+        Ok(pending.reconnect_to.clone())
+    }
+
+    /// Classify a presented pairing code without consuming it or incrementing failures.
+    pub(crate) fn classify_presented_code(
+        &self,
+        pairing_code: &str,
+        binding: &super::RuntimeBinding,
+    ) -> Result<CodeClassification, OAuthStoreError> {
+        let store = self.read_store()?;
+        let now = current_time();
+        let Some(pairing) = store.pairing.as_ref() else {
+            return Ok(CodeClassification::NoMatch);
+        };
+        if pairing.expires_at <= now || pairing.locked || !pairing_door_matches(pairing, binding) {
+            return Ok(CodeClassification::NoMatch);
+        }
+        let presented = presented_pairing_digest(pairing_code);
+        let Some(verifier) = decode_b64_32(&pairing.verifier) else {
+            return Err(OAuthStoreError::Malformed {
+                path: PathBuf::from(OAUTH_FILE),
+            });
+        };
+        let matches = presented.is_some_and(|digest| bool::from(digest.ct_eq(&verifier)));
+        if matches {
+            Ok(CodeClassification::Matched {
+                reconnect_to: pairing.reconnect_to.clone(),
+            })
+        } else {
+            Ok(CodeClassification::NoMatch)
+        }
     }
 
     /// Exchange a single-use authorization code for access and refresh tokens.
@@ -900,6 +1155,29 @@ impl OAuthStore {
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
         let presented = decode_sha256(code).ok_or(OAuthStoreError::InvalidToken)?;
+        let has_reconnect = {
+            let store = self.read_store()?;
+            store.pending.iter().any(|pending| {
+                pending.reconnect_to.is_some()
+                    && pending
+                        .authorization_code_verifier
+                        .as_ref()
+                        .is_some_and(|verifier| {
+                            decode_b64_32(verifier).is_some_and(|d| bool::from(presented.ct_eq(&d)))
+                        })
+            })
+        };
+        if has_reconnect {
+            return self.redeem_authorization_code_takeover(
+                code,
+                client_id,
+                redirect_uri,
+                resource,
+                pkce_verifier,
+                binding,
+                random,
+            );
+        }
         let access_bytes = random_bytes(random)?;
         let refresh_bytes = random_bytes(random)?;
         let id_bytes = random_bytes(random)?;
@@ -920,6 +1198,9 @@ impl OAuthStore {
                 }
             }
             let index = matched.ok_or(OAuthStoreError::InvalidToken)?;
+            if store.pending[index].reconnect_to.is_some() {
+                return Err(OAuthStoreError::InvalidGrant);
+            }
             let pending = store.pending.remove(index);
             granted_permission = pending.permission.clone();
             let code_expires_at = pending
@@ -1005,6 +1286,522 @@ impl OAuthStore {
         Ok(issued)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn redeem_authorization_code_takeover(
+        &self,
+        code: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
+        random: &dyn RandomSource,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
+        let presented = decode_sha256(code).ok_or(OAuthStoreError::InvalidToken)?;
+        let access_bytes = random_bytes(random)?;
+        let refresh_bytes = random_bytes(random)?;
+        let id_bytes = random_bytes(random)?;
+        let pkce_digest = sha256_digest(pkce_verifier.as_bytes());
+
+        let edit_res = self.edit(
+            |store, now| {
+                let mut matched = None;
+                for (index, pending) in store.pending.iter().enumerate() {
+                    let Some(verifier) = pending.authorization_code_verifier.as_ref() else {
+                        continue;
+                    };
+                    let verifier = match decode_b64_32(verifier) {
+                        Some(v) => v,
+                        None => {
+                            return (
+                                EditPersistence::Drop,
+                                Err(OAuthStoreError::Malformed {
+                                    path: PathBuf::from(OAUTH_FILE),
+                                }),
+                            );
+                        }
+                    };
+                    if bool::from(presented.ct_eq(&verifier)) && matched.is_none() {
+                        matched = Some(index);
+                    }
+                }
+                let index = match matched {
+                    Some(idx) => idx,
+                    None => return (EditPersistence::Drop, Err(OAuthStoreError::InvalidToken)),
+                };
+
+                let pending = &store.pending[index];
+                let code_expires_at = match pending.code_expires_at {
+                    Some(exp) => exp,
+                    None => return (EditPersistence::Drop, Err(OAuthStoreError::CodeExpired)),
+                };
+                if code_expires_at <= now {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::CodeExpired));
+                }
+                let client = match store
+                    .clients
+                    .iter()
+                    .find(|client| client.id == pending.client_record_id)
+                {
+                    Some(c) => c,
+                    None => return (EditPersistence::Drop, Err(OAuthStoreError::BindingMismatch)),
+                };
+                let stored_challenge = decode_b64_32(&pending.pkce_s256);
+                if client.client_id != client_id
+                    || pending.redirect_uri != redirect_uri
+                    || pending.resource != resource
+                    || pending.resource != binding.canonical()
+                    || pending.generation != binding.stored_grant_generation()
+                    || pending.pkce_method != "S256"
+                    || stored_challenge
+                        .is_none_or(|challenge| !bool::from(pkce_digest.ct_eq(&challenge)))
+                {
+                    return (EditPersistence::Drop, Err(OAuthStoreError::BindingMismatch));
+                }
+
+                let target = match &pending.reconnect_to {
+                    Some(t) => t.clone(),
+                    None => return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant)),
+                };
+
+                if let Some(target_grant_id) = target.strip_prefix("oauth:") {
+                    let target_grant_id = target_grant_id.to_string();
+                    let grant_exists = store.grants.iter().any(|g| g.id == target_grant_id);
+                    if !grant_exists {
+                        store.pending.remove(index);
+                        return (EditPersistence::Persist, Err(OAuthStoreError::InvalidGrant));
+                    }
+
+                    // Existing grant Step 1:
+                    let conn_key = format!("oauth:{target_grant_id}");
+                    let current_source =
+                        match crate::agent_state::memory_source(&self.root, &conn_key) {
+                            Ok(src) => src,
+                            Err(e) => {
+                                return (EditPersistence::Drop, Err(OAuthStoreError::from(e)));
+                            }
+                        };
+                    if let Err(e) = crate::agent_state::set_memory_source(
+                        &self.root,
+                        &conn_key,
+                        current_source.component(),
+                    ) {
+                        return (EditPersistence::Drop, Err(OAuthStoreError::from(e)));
+                    }
+                    trigger_i4_hold();
+                    if check_takeover_stop(1).is_err() {
+                        return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
+                    }
+
+                    // Existing grant Step 2:
+                    let is_paused =
+                        match crate::agent_state::is_owner_paused_locked(&self.root, &conn_key) {
+                            Ok(paused) => paused,
+                            Err(e) => {
+                                return (EditPersistence::Drop, Err(OAuthStoreError::from(e)));
+                            }
+                        };
+
+                    let grant = match store.grants.iter_mut().find(|g| g.id == target_grant_id) {
+                        Some(g) => g,
+                        None => return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant)),
+                    };
+                    grant.access_verifier = sha256_b64(&access_bytes);
+                    grant.refresh_verifier = sha256_b64(&refresh_bytes);
+                    grant.refresh_generation = 0;
+                    grant.revocation_generation = client.revocation_generation;
+                    grant.client_record_id = client.id.clone();
+                    grant.client_id = client.client_id.clone();
+                    grant.created_at = now;
+                    grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+                    grant.resource = binding.stored_grant_resource();
+                    grant.generation = pending.generation;
+                    if !is_paused && grant.refresh_expires_at > now {
+                        grant.refresh_expires_at = now;
+                    }
+
+                    let pending_client_record_id = pending.client_record_id.clone();
+                    if let Some(c) = store
+                        .clients
+                        .iter_mut()
+                        .find(|c| c.id == pending_client_record_id)
+                    {
+                        c.last_used_at = Some(now);
+                    }
+                    let pending_permission = pending.permission.clone();
+
+                    (
+                        EditPersistence::Persist,
+                        Ok(TakeoverFirstEditResult::ExistingGrant {
+                            grant_id: target_grant_id,
+                            is_paused,
+                            pending_permission,
+                        }),
+                    )
+                } else if let Some(hex) = target.strip_prefix("source:") {
+                    let hex = hex.to_string();
+                    let held =
+                        match is_source_held_by_live_connection_locked(&self.root, store, &hex) {
+                            Ok(held) => held,
+                            Err(e) => return (EditPersistence::Drop, Err(e)),
+                        };
+                    if held {
+                        store.pending.remove(index);
+                        return (EditPersistence::Persist, Err(OAuthStoreError::InvalidGrant));
+                    }
+
+                    // Earlier source Step 1:
+                    let grant_id = URL_SAFE_NO_PAD.encode(id_bytes);
+                    let conn_key = format!("oauth:{grant_id}");
+                    if let Err(e) =
+                        crate::agent_state::set_memory_source(&self.root, &conn_key, &hex)
+                    {
+                        return (EditPersistence::Drop, Err(OAuthStoreError::from(e)));
+                    }
+                    trigger_i4_hold();
+                    if check_takeover_stop(1).is_err() {
+                        return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
+                    }
+
+                    // Earlier source Step 2:
+                    let pending = store.pending.remove(index);
+                    let client_record_id = client.id.clone();
+                    let stored_client_id = client.client_id.clone();
+                    let revocation_generation = client.revocation_generation;
+                    store.grants.push(StoredGrant {
+                        id: grant_id.clone(),
+                        client_record_id,
+                        client_id: stored_client_id,
+                        access_verifier: sha256_b64(&access_bytes),
+                        refresh_verifier: sha256_b64(&refresh_bytes),
+                        refresh_generation: 0,
+                        revocation_generation,
+                        access_expires_at: now + Duration::seconds(ACCESS_TTL_SECS),
+                        refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
+                        created_at: now,
+                        resource: binding.stored_grant_resource(),
+                        generation: pending.generation,
+                    });
+                    if let Some(c) = store
+                        .clients
+                        .iter_mut()
+                        .find(|c| c.id == pending.client_record_id)
+                    {
+                        c.last_used_at = Some(now);
+                    }
+
+                    (
+                        EditPersistence::Persist,
+                        Ok(TakeoverFirstEditResult::EarlierSource {
+                            grant_id,
+                            permission: pending.permission,
+                        }),
+                    )
+                } else {
+                    (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant))
+                }
+            },
+            || Ok(()),
+        )?;
+
+        check_takeover_stop(2)?;
+
+        match edit_res {
+            TakeoverFirstEditResult::ExistingGrant {
+                grant_id,
+                is_paused,
+                pending_permission,
+            } => {
+                let conn_key = format!("oauth:{grant_id}");
+                // Step 3: Permission row, same oauth:<id> key.
+                let is_paused_now =
+                    crate::agent_state::is_owner_paused_locked(&self.root, &conn_key)
+                        .map_err(OAuthStoreError::from)?;
+                let eval = if is_paused_now { "hold" } else { "enforce" };
+                let perm = pending_permission.unwrap_or_else(ReadPermission::default_whole_journal);
+                crate::permissions::PermissionStore::open(&self.root)
+                    .update_permission_preserving_generation(&conn_key, perm, eval)
+                    .map_err(|_| OAuthStoreError::Permission)?;
+                check_takeover_stop(3)?;
+
+                // Step 4: A second edit sets refresh_expires_at = now + REFRESH_TTL_SECS only.
+                self.edit(
+                    |store, now| {
+                        let Some(grant) = store.grants.iter_mut().find(|g| g.id == grant_id) else {
+                            return (EditPersistence::Drop, Err(OAuthStoreError::InvalidGrant));
+                        };
+                        grant.refresh_expires_at = now + Duration::seconds(REFRESH_TTL_SECS);
+                        (EditPersistence::Persist, Ok(()))
+                    },
+                    || Ok(()),
+                )?;
+                check_takeover_stop(4)?;
+
+                // Step 5 & 6: Owner pause only
+                if is_paused || is_paused_now {
+                    crate::agent_state::clear_owner_pause(&self.root, &conn_key)
+                        .map_err(OAuthStoreError::from)?;
+                    check_takeover_stop(5)?;
+                    crate::permissions::PermissionStore::open(&self.root)
+                        .set_evaluation_only(&conn_key, "enforce")
+                        .map_err(|_| OAuthStoreError::Permission)?;
+                    check_takeover_stop(6)?;
+                }
+
+                // Remove the pending row
+                self.edit(
+                    |store, _now| {
+                        if let Some(pos) = store.pending.iter().position(|p| {
+                            p.authorization_code_verifier.as_ref().is_some_and(|v| {
+                                decode_b64_32(v).is_some_and(|d| bool::from(presented.ct_eq(&d)))
+                            })
+                        }) {
+                            store.pending.remove(pos);
+                            (EditPersistence::Persist, Ok(()))
+                        } else {
+                            (EditPersistence::Drop, Ok(()))
+                        }
+                    },
+                    || Ok(()),
+                )?;
+
+                Ok(IssuedTokens {
+                    access_token: URL_SAFE_NO_PAD.encode(access_bytes),
+                    refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
+                    token_id: grant_id,
+                    expires_in: ACCESS_TTL_SECS,
+                    first_grant: None,
+                })
+            }
+            TakeoverFirstEditResult::EarlierSource {
+                grant_id,
+                permission,
+            } => {
+                let conn_key = format!("oauth:{grant_id}");
+                if let Some(perm) = permission
+                    && crate::permissions::PermissionStore::open(&self.root)
+                        .set_permission(&conn_key, perm)
+                        .is_err()
+                {
+                    let _ = self.revoke_grant_by_id(&grant_id);
+                    return Err(OAuthStoreError::Permission);
+                }
+                Ok(IssuedTokens {
+                    access_token: URL_SAFE_NO_PAD.encode(access_bytes),
+                    refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
+                    token_id: grant_id,
+                    expires_in: ACCESS_TTL_SECS,
+                    first_grant: None,
+                })
+            }
+        }
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn redeem_takeover_without_oauth_lock(
+        &self,
+        code: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
+        self.redeem_takeover_without_oauth_lock_with_random(
+            code,
+            client_id,
+            redirect_uri,
+            resource,
+            pkce_verifier,
+            binding,
+            &SystemRandomSource,
+        )
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub(crate) fn redeem_takeover_without_oauth_lock_with_random(
+        &self,
+        code: &str,
+        client_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
+        random: &dyn RandomSource,
+    ) -> Result<IssuedTokens, OAuthStoreError> {
+        let presented = decode_sha256(code).ok_or(OAuthStoreError::InvalidToken)?;
+        let access_bytes = random_bytes(random)?;
+        let refresh_bytes = random_bytes(random)?;
+        let id_bytes = random_bytes(random)?;
+        let pkce_digest = sha256_digest(pkce_verifier.as_bytes());
+
+        let mut store = self.read_store()?;
+        let now = current_time();
+
+        let mut matched = None;
+        for (index, pending) in store.pending.iter().enumerate() {
+            let Some(verifier) = pending.authorization_code_verifier.as_ref() else {
+                continue;
+            };
+            let verifier = decode_b64_32(verifier).ok_or_else(|| OAuthStoreError::Malformed {
+                path: PathBuf::from(OAUTH_FILE),
+            })?;
+            if bool::from(presented.ct_eq(&verifier)) && matched.is_none() {
+                matched = Some(index);
+            }
+        }
+        let index = matched.ok_or(OAuthStoreError::InvalidToken)?;
+        let pending = &store.pending[index];
+        let code_expires_at = pending
+            .code_expires_at
+            .ok_or(OAuthStoreError::CodeExpired)?;
+        if code_expires_at <= now {
+            return Err(OAuthStoreError::CodeExpired);
+        }
+        let client = store
+            .clients
+            .iter()
+            .find(|client| client.id == pending.client_record_id)
+            .ok_or(OAuthStoreError::BindingMismatch)?;
+        let stored_challenge = decode_b64_32(&pending.pkce_s256);
+        if client.client_id != client_id
+            || pending.redirect_uri != redirect_uri
+            || pending.resource != resource
+            || pending.resource != binding.canonical()
+            || pending.generation != binding.stored_grant_generation()
+            || pending.pkce_method != "S256"
+            || stored_challenge.is_none_or(|challenge| !bool::from(pkce_digest.ct_eq(&challenge)))
+        {
+            return Err(OAuthStoreError::BindingMismatch);
+        }
+
+        let target = pending
+            .reconnect_to
+            .clone()
+            .ok_or(OAuthStoreError::InvalidGrant)?;
+
+        if let Some(target_grant_id) = target.strip_prefix("oauth:") {
+            let target_grant_id = target_grant_id.to_string();
+            let grant_exists = store.grants.iter().any(|g| g.id == target_grant_id);
+            if !grant_exists {
+                store.pending.remove(index);
+                self.write_store(&self.oauth_path(), &mut store)?;
+                return Err(OAuthStoreError::InvalidGrant);
+            }
+
+            let conn_key = format!("oauth:{target_grant_id}");
+            let current_source = crate::agent_state::memory_source(&self.root, &conn_key)
+                .map_err(OAuthStoreError::from)?;
+            crate::agent_state::set_memory_source(
+                &self.root,
+                &conn_key,
+                current_source.component(),
+            )
+            .map_err(OAuthStoreError::from)?;
+            trigger_i4_hold();
+
+            let is_paused = crate::agent_state::is_owner_paused_locked(&self.root, &conn_key)
+                .map_err(OAuthStoreError::from)?;
+            let grant = store
+                .grants
+                .iter_mut()
+                .find(|g| g.id == target_grant_id)
+                .ok_or(OAuthStoreError::InvalidGrant)?;
+            grant.access_verifier = sha256_b64(&access_bytes);
+            grant.refresh_verifier = sha256_b64(&refresh_bytes);
+            grant.refresh_generation = 0;
+            grant.revocation_generation = client.revocation_generation;
+            grant.client_record_id = client.id.clone();
+            grant.client_id = client.client_id.clone();
+            grant.created_at = now;
+            grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+            grant.resource = binding.stored_grant_resource();
+            grant.generation = pending.generation;
+            if !is_paused && grant.refresh_expires_at > now {
+                grant.refresh_expires_at = now;
+            }
+            if let Some(c) = store
+                .clients
+                .iter_mut()
+                .find(|c| c.id == pending.client_record_id)
+            {
+                c.last_used_at = Some(now);
+            }
+            self.write_store(&self.oauth_path(), &mut store)?;
+
+            Ok(IssuedTokens {
+                access_token: URL_SAFE_NO_PAD.encode(access_bytes),
+                refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
+                token_id: target_grant_id,
+                expires_in: ACCESS_TTL_SECS,
+                first_grant: None,
+            })
+        } else if let Some(hex) = target.strip_prefix("source:") {
+            let hex = hex.to_string();
+            let held = is_source_held_by_live_connection_locked(&self.root, &store, &hex)?;
+            if held {
+                store.pending.remove(index);
+                self.write_store(&self.oauth_path(), &mut store)?;
+                return Err(OAuthStoreError::InvalidGrant);
+            }
+
+            let grant_id = URL_SAFE_NO_PAD.encode(id_bytes);
+            let conn_key = format!("oauth:{grant_id}");
+            crate::agent_state::set_memory_source(&self.root, &conn_key, &hex)
+                .map_err(OAuthStoreError::from)?;
+            trigger_i4_hold();
+
+            let pending = store.pending.remove(index);
+            let client_record_id = client.id.clone();
+            let stored_client_id = client.client_id.clone();
+            let revocation_generation = client.revocation_generation;
+            store.grants.push(StoredGrant {
+                id: grant_id.clone(),
+                client_record_id,
+                client_id: stored_client_id,
+                access_verifier: sha256_b64(&access_bytes),
+                refresh_verifier: sha256_b64(&refresh_bytes),
+                refresh_generation: 0,
+                revocation_generation,
+                access_expires_at: now + Duration::seconds(ACCESS_TTL_SECS),
+                refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
+                created_at: now,
+                resource: binding.stored_grant_resource(),
+                generation: pending.generation,
+            });
+            if let Some(c) = store
+                .clients
+                .iter_mut()
+                .find(|c| c.id == pending.client_record_id)
+            {
+                c.last_used_at = Some(now);
+            }
+            if let Ok(on_disk) = self.read_store() {
+                for g in on_disk.grants {
+                    if !store.grants.iter().any(|existing| existing.id == g.id) {
+                        store.grants.push(g);
+                    }
+                }
+            }
+            self.write_store(&self.oauth_path(), &mut store)?;
+            if let Some(perm) = pending.permission {
+                let _ = crate::permissions::PermissionStore::open(&self.root)
+                    .set_permission(&conn_key, perm);
+            }
+            Ok(IssuedTokens {
+                access_token: URL_SAFE_NO_PAD.encode(access_bytes),
+                refresh_token: URL_SAFE_NO_PAD.encode(refresh_bytes),
+                token_id: grant_id,
+                expires_in: ACCESS_TTL_SECS,
+                first_grant: None,
+            })
+        } else {
+            Err(OAuthStoreError::InvalidGrant)
+        }
+    }
+
     /// Rotate a refresh token and issue a new access/refresh pair.
     pub(crate) fn refresh_grant(
         &self,
@@ -1064,7 +1861,6 @@ impl OAuthStore {
                     return (EditPersistence::Drop, Err(OAuthStoreError::InvalidToken));
                 };
                 if store.grants[index].client_id != client_id
-                    || store.grants[index].refresh_expires_at <= now
                     || store.grants[index].revocation_generation != client.revocation_generation
                     || !binding.grant_matches(
                         &store.grants[index].resource,
@@ -1144,6 +1940,13 @@ impl OAuthStore {
                     write_refresh_verifier(&sha256_b64(&refresh_bytes), &secret, &history);
                 grant.refresh_generation = generation;
                 grant.access_expires_at = now + Duration::seconds(ACCESS_TTL_SECS);
+                let connection = format!("oauth:{}", grant.id);
+                let is_owner_paused =
+                    crate::agent_state::is_owner_paused_locked(&self.root, &connection)
+                        .unwrap_or(true);
+                if !is_owner_paused && grant.refresh_expires_at > now {
+                    grant.refresh_expires_at = now + Duration::seconds(REFRESH_TTL_SECS);
+                }
                 (
                     EditPersistence::Persist,
                     Ok(IssuedTokens {
@@ -1217,7 +2020,6 @@ impl OAuthStore {
             let is_idle = |client: &StoredClient, store: &OAuthStoreFile| -> bool {
                 let has_live_grant = store.grants.iter().any(|g| {
                     g.client_record_id == client.id
-                        && g.refresh_expires_at > now
                         && g.revocation_generation == client.revocation_generation
                 });
                 if has_live_grant {
@@ -1349,6 +2151,7 @@ impl OAuthStore {
             client: registered_from(client),
             redirect_uri: pending.redirect_uri.clone(),
             pairing_verified: pending.pairing_verified,
+            reconnect_to: pending.reconnect_to.clone(),
         }))
     }
 
@@ -1464,12 +2267,8 @@ impl OAuthStore {
     /// List all active grants with their client metadata.
     pub fn list_grants(&self) -> Result<Vec<OAuthGrantSummary>, OAuthStoreError> {
         let store = self.read_store()?;
-        let now = current_time();
         let mut summaries = Vec::new();
         for grant in &store.grants {
-            if grant.access_expires_at <= now && grant.refresh_expires_at <= now {
-                continue;
-            }
             let client = store
                 .clients
                 .iter()
@@ -1598,15 +2397,16 @@ impl OAuthStore {
     ) -> Result<T, OAuthStoreError> {
         self.ensure_directory()?;
         let path = self.oauth_path();
+        let lock_options = LockOptions {
+            mode: Some(0o600),
+            #[cfg(test)]
+            timeout: self
+                .lock_timeout
+                .unwrap_or_else(|| LockOptions::default().timeout),
+            ..LockOptions::default()
+        };
         let (result, lapsed) = {
-            let _lock = hold_lock(
-                &path,
-                LockOptions {
-                    mode: Some(0o600),
-                    ..LockOptions::default()
-                },
-            )
-            .map_err(OAuthStoreError::Lock)?;
+            let _lock = hold_lock(&path, lock_options).map_err(OAuthStoreError::Lock)?;
             let mut store = self.read_store()?;
             let now = current_time();
             let lapsed = prune(&mut store, now);
@@ -1802,6 +2602,11 @@ fn consume_pairing_code(
         }
         return Err(OAuthStoreError::PairingMismatch);
     }
+    if let Some(pairing) = store.pairing.as_ref()
+        && pairing.reconnect_to.is_some()
+    {
+        store.pending[index].reconnect_to = pairing.reconnect_to.clone();
+    }
     store.pairing_generation = store.pairing_generation.saturating_add(1);
     store.pairing = None;
     // The code is spent; this transaction no longer needs its window, and an
@@ -1855,6 +2660,54 @@ fn issue_authorization(
     }
 }
 
+fn is_source_held_by_live_connection_locked(
+    root: &Path,
+    store: &OAuthStoreFile,
+    hex: &str,
+) -> Result<bool, OAuthStoreError> {
+    let path = crate::agent_state::agent_state_path(root);
+    let _side_lock = if path.exists() {
+        Some(
+            hold_lock(
+                &path,
+                LockOptions {
+                    mode: Some(0o600),
+                    ..LockOptions::default()
+                },
+            )
+            .map_err(OAuthStoreError::Lock)?,
+        )
+    } else {
+        None
+    };
+    let tokens = TokenStore::open(root)
+        .list()
+        .map_err(|_| OAuthStoreError::StateTooLarge)?;
+    for token in tokens {
+        let conn = format!("bearer:{}", token.id);
+        match crate::agent_state::memory_source(root, &conn) {
+            Ok(src) => {
+                if src.component() == hex {
+                    return Ok(true);
+                }
+            }
+            Err(_) => return Err(OAuthStoreError::StateTooLarge),
+        }
+    }
+    for grant in &store.grants {
+        let conn = format!("oauth:{}", grant.id);
+        match crate::agent_state::memory_source(root, &conn) {
+            Ok(src) => {
+                if src.component() == hex {
+                    return Ok(true);
+                }
+            }
+            Err(_) => return Err(OAuthStoreError::StateTooLarge),
+        }
+    }
+    Ok(false)
+}
+
 /// Drops what has lapsed and returns the ids of the grants it dropped, so the
 /// caller can remove their permission rows once the drop is on disk.
 fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) -> Vec<String> {
@@ -1865,13 +2718,7 @@ fn prune(store: &mut OAuthStoreFile, now: DateTime<Utc>) -> Vec<String> {
             pending.expires_at > now
         }
     });
-    let lapsed = store
-        .grants
-        .iter()
-        .filter(|grant| grant.refresh_expires_at <= now)
-        .map(|grant| grant.id.clone())
-        .collect();
-    store.grants.retain(|grant| grant.refresh_expires_at > now);
+    let lapsed = Vec::new();
     store.clients.retain(|client| {
         client.last_used_at.is_some()
             || now - client.created_at < Duration::seconds(CLIENT_UNUSED_TTL_SECS)
@@ -2081,7 +2928,7 @@ fn decode_sha256(presented: &str) -> Option<[u8; TOKEN_BYTES]> {
     Some(sha256_digest(&raw))
 }
 
-fn current_time() -> DateTime<Utc> {
+pub(crate) fn current_time() -> DateTime<Utc> {
     #[cfg(test)]
     {
         if let Some(now) = TEST_NOW.with(std::cell::Cell::get) {
@@ -2113,6 +2960,16 @@ pub(crate) fn set_test_now(timestamp: Option<i64>) {
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
+pub(crate) fn set_routine_now(timestamp: Option<i64>) {
+    TEST_NOW.with(|now| now.set(timestamp));
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+pub(crate) fn set_routine_now(timestamp: Option<i64>) {
+    set_test_now(timestamp);
+}
+
+#[cfg(all(test, not(feature = "full-tests")))]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
     use std::collections::HashSet;
@@ -2122,17 +2979,18 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use chrono::{Duration, TimeZone, Utc};
     use serde::Deserialize;
+    use sha2::Digest;
 
     use super::{
         AUTH_CODE_TTL_SECS, CLIENT_UNUSED_TTL_SECS, MAX_CLIENTS, MAX_CLIENTS_PER_SOURCE,
         MAX_GRANTS, MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE, MAX_REPLAY_NOTICES,
         OAUTH_SCHEMA, OAuthStore, OAuthStoreError, OAuthStoreFile, PENDING_TRANSACTION_TTL_SECS,
         REFRESH_HISTORY_LIMIT, StoredClient, StoredGrant, TEST_MAX_STATE_BYTES, TEST_NOW,
-        sha256_b64,
+        current_time, sha256_b64,
     };
     use crate::http1::{HttpMethod, HttpRequest};
     use crate::oauth::{OAuthRuntime, RuntimeBinding};
-    use crate::permissions::{PermissionStore, ReadPermission};
+    use crate::permissions::{PermissionStore, PermissionsFile, ReadPermission};
     use crate::tokens::{RandomSource, RandomSourceError};
 
     fn test_binding() -> RuntimeBinding {
@@ -2402,20 +3260,24 @@ mod tests {
     }
 
     #[test]
-    fn a_lapsed_grant_takes_its_permission_row_with_it() {
+    fn an_idle_grant_stays_listed_and_its_permission_bytes_stay() {
         let _guard = NowGuard;
         let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
         set_now(start.timestamp());
         let journal = journal_root();
         let store = store_in(&journal);
         let grant = whole_journal_grant(&store, &journal);
+        let perm_path = journal.path().join("mcp-endpoint/permissions.json");
+        let bytes_before = fs::read(&perm_path).unwrap();
 
         set_now(start.timestamp() + super::REFRESH_TTL_SECS + 1);
         // Any write prunes; making a pairing code is the owner's usual one.
         store.generate_pairing_code_with_door("relay").unwrap();
 
-        assert!(!store.list_grants().unwrap().iter().any(|g| g.id == grant));
-        assert!(!permission_row(&journal, &grant));
+        let bytes_after = fs::read(&perm_path).unwrap();
+        assert_eq!(bytes_before, bytes_after);
+        assert!(store.list_grants().unwrap().iter().any(|g| g.id == grant));
+        assert!(permission_row(&journal, &grant));
     }
 
     #[test]
@@ -2587,8 +3449,8 @@ mod tests {
             "after disconnecting"
         );
 
-        // Past every refresh lifetime the grants are pruned; the client's
-        // redeemed-code fact remains.
+        // Refresh expiry no longer prunes grants. `first` and `again` were
+        // revoked before the lapse; `after_disconnect` stays.
         set_now(start.timestamp() + super::REFRESH_TTL_SECS + 1);
         let after_lapse = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
         assert!(after_lapse.first_grant.is_none(), "after its access lapsed");
@@ -2597,8 +3459,11 @@ mod tests {
             held.iter()
                 .map(|grant| grant.id.as_str())
                 .collect::<Vec<_>>(),
-            [after_lapse.token_id.as_str()],
-            "no earlier grant was left to answer from"
+            [
+                after_disconnect.token_id.as_str(),
+                after_lapse.token_id.as_str()
+            ],
+            "after_disconnect stays and after_lapse is added"
         );
 
         let other_cohort = register(agent, "byo:example");
@@ -5381,6 +6246,7 @@ mod tests {
                 locked: false,
                 door: None,
                 config_generation: None,
+                reconnect_to: None,
             });
             fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
             assert!(
@@ -5775,5 +6641,1171 @@ mod tests {
             value["pairing"]["door"].as_str(),
             Some("https://canonical.example.com/mcp")
         );
+    }
+
+    #[test]
+    fn test_redeem_takeover_without_oauth_lock_compiles() {
+        let journal = tempfile::tempdir().unwrap();
+        let store = store_in(&journal);
+        let binding = test_binding();
+        let _ = store.redeem_takeover_without_oauth_lock(
+            "dummy_code",
+            "dummy_client",
+            "http://127.0.0.1/callback",
+            binding.canonical(),
+            "verifier",
+            &binding,
+        );
+    }
+
+    #[test]
+    fn idle_pause_refresh_day_29_extends_to_day_59_and_day_31_does_not() {
+        let _guard = NowGuard;
+        let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
+        set_now(start.timestamp());
+
+        let binding = test_binding();
+        let agent = "https://client.example/cimd.json";
+
+        // Journal A
+        let journal_a = journal_root();
+        let store_a = store_in(&journal_a);
+        let client_a = store_a
+            .register_client(
+                agent,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let tokens_a = issue_tokens(&store_a, &client_a.id, agent, &binding, "relay", None);
+
+        // Journal B
+        let journal_b = journal_root();
+        let store_b = store_in(&journal_b);
+        let client_b = store_b
+            .register_client(
+                agent,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let tokens_b = issue_tokens(&store_b, &client_b.id, agent, &binding, "relay", None);
+
+        // Journal A refreshes at start+29 days; grant_refresh_expires_at equals start+59 days.
+        set_now((start + Duration::days(29)).timestamp());
+        store_a
+            .refresh_grant(&tokens_a.refresh_token, agent, &binding)
+            .unwrap();
+        assert_eq!(
+            store_a
+                .grant_refresh_expires_at(&tokens_a.token_id)
+                .unwrap(),
+            Some(start + Duration::days(59))
+        );
+
+        // Journal B does not refresh until start+31 days; refresh returns Ok,
+        // the grant id is unchanged and still in list_grants, refresh_expires_at is still
+        // start+30 days, and mcp-endpoint/agent-state.json does not exist.
+        set_now((start + Duration::days(31)).timestamp());
+        let refreshed_b = store_b
+            .refresh_grant(&tokens_b.refresh_token, agent, &binding)
+            .unwrap();
+        assert_eq!(refreshed_b.token_id, tokens_b.token_id);
+        assert!(
+            store_b
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|g| g.id == tokens_b.token_id)
+        );
+        assert_eq!(
+            store_b
+                .grant_refresh_expires_at(&tokens_b.token_id)
+                .unwrap(),
+            Some(start + Duration::days(30))
+        );
+        assert!(
+            !journal_b
+                .path()
+                .join("mcp-endpoint/agent-state.json")
+                .exists()
+        );
+
+        // A second refresh at start+60 days still returns Ok and leaves refresh_expires_at at start+30 days.
+        set_now((start + Duration::days(60)).timestamp());
+        let refreshed_b2 = store_b
+            .refresh_grant(&refreshed_b.refresh_token, agent, &binding)
+            .unwrap();
+        assert_eq!(refreshed_b2.token_id, tokens_b.token_id);
+        assert_eq!(
+            store_b
+                .grant_refresh_expires_at(&tokens_b.token_id)
+                .unwrap(),
+            Some(start + Duration::days(30))
+        );
+
+        // Then resume_refresh_expiry makes it now + REFRESH_TTL_SECS.
+        let now_60 = start + Duration::days(60);
+        let resumed = store_b.resume_refresh_expiry(&tokens_b.token_id).unwrap();
+        assert_eq!(resumed, now_60 + Duration::seconds(super::REFRESH_TTL_SECS));
+        assert_eq!(
+            store_b
+                .grant_refresh_expires_at(&tokens_b.token_id)
+                .unwrap(),
+            Some(now_60 + Duration::seconds(super::REFRESH_TTL_SECS))
+        );
+    }
+
+    #[test]
+    fn idle_pause_owner_pause_does_not_slide_refresh_expiry() {
+        let _guard = NowGuard;
+        let start = Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap();
+        set_now(start.timestamp());
+
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let binding = test_binding();
+        let agent = "https://client.example/cimd.json";
+        let client = store
+            .register_client(
+                agent,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let tokens = issue_tokens(&store, &client.id, agent, &binding, "relay", None);
+
+        let conn = format!("oauth:{}", tokens.token_id);
+        let random = crate::tokens::SystemRandomSource;
+        crate::agent_state::set_owner_pause(journal.path(), &conn, start, &random).unwrap();
+
+        let recorded_expiry = store.grant_refresh_expires_at(&tokens.token_id).unwrap();
+
+        set_now((start + Duration::days(5)).timestamp());
+        store
+            .refresh_grant(&tokens.refresh_token, agent, &binding)
+            .unwrap();
+
+        let expiry_after = store.grant_refresh_expires_at(&tokens.token_id).unwrap();
+        assert_eq!(recorded_expiry, expiry_after);
+    }
+
+    #[test]
+    fn idle_pause_oldest_client_at_the_cap_survives_eviction() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let oldest_client = store
+            .register_client(
+                "https://client.example/oldest_live.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.60",
+            )
+            .unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let tx = store
+            .create_transaction(
+                &oldest_client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-verifier"),
+                "S256",
+                None,
+                "192.0.2.60",
+            )
+            .unwrap();
+        let auth = store
+            .complete_pairing(&tx, &pairing.code, &test_binding())
+            .unwrap();
+        let tokens = store
+            .redeem_authorization_code(
+                &auth.code,
+                &oldest_client.client_id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &test_binding(),
+            )
+            .unwrap();
+
+        for index in 1..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            store
+                .register_client(
+                    &format!("https://client.example/idle_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.60",
+                )
+                .unwrap();
+        }
+
+        let expiry = store
+            .grant_refresh_expires_at(&tokens.token_id)
+            .unwrap()
+            .expect("grant exists");
+        set_now(expiry.timestamp() + 1);
+
+        let over = store
+            .register_client(
+                "https://client.example/over.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.60",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/over.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&oldest_client.client_id)
+                .unwrap()
+                .is_some(),
+            "oldest client record is still there"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/idle_1.json")
+                .unwrap()
+                .is_none(),
+            "an idle client with no grant is the one gone"
+        );
+        assert!(
+            store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|g| g.id == tokens.token_id),
+            "the idle grant's id is still in list_grants"
+        );
+    }
+
+    #[test]
+    fn idle_pause_replay_after_expiry_revokes_once() {
+        let _guard = NowGuard;
+        let base_time = 1_800_000_000_i64;
+        set_now(base_time);
+        let journal = journal_root();
+        let oauth = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let source = oauth.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)));
+        let client = oauth
+            .store
+            .register_client(
+                "https://client.example/replay.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("replay fixture".to_owned()),
+                &source,
+            )
+            .unwrap();
+        let tokens0 = issue_tokens(
+            &oauth.store,
+            &client.id,
+            &client.client_id,
+            &oauth.binding(),
+            "relay",
+            Some(ReadPermission::default_whole_journal()),
+        );
+        let grant_id = tokens0.token_id.clone();
+
+        // Refresh once
+        set_now(base_time + 10);
+        let tokens1 = oauth
+            .store
+            .refresh_grant(&tokens0.refresh_token, &client.client_id, &oauth.binding())
+            .unwrap();
+
+        // Move set_now to just past that grant's refresh_expires_at
+        let expiry = oauth
+            .store
+            .grant_refresh_expires_at(&grant_id)
+            .unwrap()
+            .unwrap();
+        set_now(expiry.timestamp() + 1);
+
+        // Refresh the current token (rotates, expiry unchanged, grant still listed)
+        let rotated_out_token = tokens1.refresh_token.clone();
+        let tokens2 = oauth
+            .store
+            .refresh_grant(&rotated_out_token, &client.client_id, &oauth.binding())
+            .unwrap();
+        assert_eq!(
+            oauth.store.grant_refresh_expires_at(&grant_id).unwrap(),
+            Some(expiry)
+        );
+        assert!(
+            oauth
+                .store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|g| g.id == grant_id)
+        );
+
+        // A refresh of the rotated-out token with a wrong client id returns the same
+        // invalid_grant shape as replay_after_grace_revokes_the_grant_on_disk and does not revoke
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let before_rejections = fs::read(&path).unwrap();
+        let wrong_client =
+            refresh_request(&oauth, &rotated_out_token, "https://wrong.example/client");
+        assert_eq!(wrong_client.status, 400);
+        assert_eq!(response_json(&wrong_client)["error"], "invalid_grant");
+        assert_eq!(fs::read(&path).unwrap(), before_rejections);
+        assert!(
+            oauth
+                .store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|g| g.id == grant_id)
+        );
+
+        // Advance REFRESH_GRACE_SECS + 1
+        set_now(expiry.timestamp() + 1 + super::REFRESH_GRACE_SECS + 1);
+
+        // Replay the rotated-out token with the real client id
+        let replay = refresh_request(&oauth, &rotated_out_token, &client.client_id);
+        assert_eq!(replay.status, 400);
+        assert_eq!(
+            response_json(&replay),
+            serde_json::json!({"error": "invalid_grant"})
+        );
+
+        // Assert the grant is gone, its permission row is gone, and list_replay_notices has one notice
+        assert!(
+            !oauth
+                .store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|g| g.id == grant_id)
+        );
+        assert!(
+            PermissionStore::open(journal.path())
+                .read()
+                .unwrap()
+                .permissions
+                .iter()
+                .all(|record| record.connection != format!("oauth:{grant_id}"))
+        );
+        let notices = oauth.store.list_replay_notices().unwrap();
+        assert_eq!(notices.len(), 1);
+
+        // The access token from the post-expiry refresh no longer verifies
+        assert!(matches!(
+            oauth
+                .store
+                .verify_access_token(&tokens2.access_token, &oauth.binding()),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+    }
+
+    static TAKEOVER_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    struct TakeoverGuard<'a>(Option<std::sync::MutexGuard<'a, ()>>);
+    impl TakeoverGuard<'_> {
+        fn acquire() -> Self {
+            let guard = TAKEOVER_TEST_MUTEX
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            Self(Some(guard))
+        }
+    }
+    impl Drop for TakeoverGuard<'_> {
+        fn drop(&mut self) {
+            super::TAKEOVER_STOP_AFTER.store(0, std::sync::atomic::Ordering::SeqCst);
+            if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
+                *g = None;
+            }
+            drop(self.0.take());
+        }
+    }
+
+    #[test]
+    fn idle_pause_takeover_prefixes() {
+        let _guard = NowGuard;
+        let _takeover_guard = TakeoverGuard::acquire();
+        let base_time = 1_800_000_000_i64;
+        set_now(base_time);
+
+        for is_paused in [true, false] {
+            let max_step = if is_paused { 6 } else { 4 };
+            for step in 1..=max_step {
+                set_now(base_time);
+                super::TAKEOVER_STOP_AFTER.store(0, std::sync::atomic::Ordering::SeqCst);
+
+                let journal = journal_root();
+                let oauth = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+                let source = "192.0.2.1";
+
+                let client_a = oauth
+                    .store
+                    .register_client(
+                        "https://client.a/cimd.json",
+                        vec!["http://127.0.0.1/callback".to_owned()],
+                        Some("Client A".to_owned()),
+                        source,
+                    )
+                    .unwrap();
+
+                let tokens_a = issue_tokens(
+                    &oauth.store,
+                    &client_a.id,
+                    &client_a.client_id,
+                    &oauth.binding(),
+                    "relay",
+                    Some(ReadPermission {
+                        categories: vec!["facets".to_owned()],
+                        scope: crate::permissions::ReadScope::Facets {
+                            ids: vec!["f1".to_owned()],
+                        },
+                    }),
+                );
+                let grant_id = tokens_a.token_id.clone();
+                let conn_key = format!("oauth:{grant_id}");
+
+                // Rotate refresh token once so we have an old rotated token too
+                set_now(base_time + 10);
+                let tokens_a_rot = oauth
+                    .store
+                    .refresh_grant(
+                        &tokens_a.refresh_token,
+                        &client_a.client_id,
+                        &oauth.binding(),
+                    )
+                    .unwrap();
+                let old_rotated_token = tokens_a.refresh_token.clone();
+                let old_current_token = tokens_a_rot.refresh_token.clone();
+
+                if is_paused {
+                    crate::agent_state::set_owner_pause(
+                        journal.path(),
+                        &conn_key,
+                        current_time(),
+                        &crate::tokens::SystemRandomSource,
+                    )
+                    .unwrap();
+                    PermissionStore::open(journal.path())
+                        .set_evaluation_only(&conn_key, "hold")
+                        .unwrap();
+                }
+
+                let perm_bytes_before =
+                    fs::read(journal.path().join("mcp-endpoint/permissions.json")).unwrap();
+                let current_source_before =
+                    crate::agent_state::memory_source(journal.path(), &conn_key).unwrap();
+
+                // Build a second client and a targeted code oauth:<grant_id>
+                let client_b = oauth
+                    .store
+                    .register_client(
+                        "https://client.b/cimd.json",
+                        vec!["http://127.0.0.1/callback".to_owned()],
+                        Some("Client B".to_owned()),
+                        source,
+                    )
+                    .unwrap();
+                let pairing_b = oauth
+                    .store
+                    .generate_pairing_code_with_door_and_reconnect(
+                        "relay",
+                        Some(format!("oauth:{grant_id}")),
+                    )
+                    .unwrap();
+                let challenge_b = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(b"verifier-b"));
+                let tx_b = oauth
+                    .store
+                    .create_transaction_with_generation(
+                        &client_b.id,
+                        "http://127.0.0.1/callback",
+                        oauth.binding().canonical(),
+                        "https://mcp.test",
+                        &challenge_b,
+                        "S256",
+                        None,
+                        source,
+                        oauth.binding().stored_grant_generation(),
+                    )
+                    .unwrap();
+                let verified_b = oauth
+                    .store
+                    .verify_pairing(&tx_b, &pairing_b.code, &oauth.binding())
+                    .unwrap();
+                let auth_b = oauth
+                    .store
+                    .complete_confirm_pairing(
+                        &verified_b,
+                        Some(ReadPermission {
+                            categories: vec!["facets".to_owned()],
+                            scope: crate::permissions::ReadScope::Facets {
+                                ids: vec!["f2".to_owned()],
+                            },
+                        }),
+                        &oauth.binding(),
+                    )
+                    .unwrap()
+                    .unwrap();
+
+                let pre_store = OAuthStore::open(journal.path()).read_store().unwrap();
+                let pre_grant = pre_store
+                    .grants
+                    .iter()
+                    .find(|g| g.id == grant_id)
+                    .unwrap()
+                    .clone();
+                let oauth_bytes_before_redeem =
+                    fs::read(journal.path().join("mcp-endpoint/oauth.json")).unwrap();
+
+                // Stop after numbered write
+                super::TAKEOVER_STOP_AFTER.store(step, std::sync::atomic::Ordering::SeqCst);
+                let redeem_res = oauth.store.redeem_authorization_code(
+                    &auth_b.code,
+                    &client_b.client_id,
+                    "http://127.0.0.1/callback",
+                    oauth.binding().canonical(),
+                    "verifier-b",
+                    &oauth.binding(),
+                );
+                assert!(redeem_res.is_err());
+
+                // Reopen stores and check:
+                let store = OAuthStore::open(journal.path());
+                let perm_store = PermissionStore::open(journal.path());
+
+                if step == 1 {
+                    // After 1: the grant's refresh token still verifies, permission bytes are unchanged,
+                    // an owner pause is unchanged, and the mapping row is oauth:<same id> to that grant's current source component.
+                    // oauth.json has no new verifiers.
+                    let post_store = store.read_store().unwrap();
+                    let post_grant = post_store.grants.iter().find(|g| g.id == grant_id).unwrap();
+                    assert_eq!(post_grant.access_verifier, pre_grant.access_verifier);
+                    assert_eq!(post_grant.refresh_verifier, pre_grant.refresh_verifier);
+                    assert_eq!(
+                        fs::read(journal.path().join("mcp-endpoint/oauth.json")).unwrap(),
+                        oauth_bytes_before_redeem
+                    );
+                    assert_eq!(
+                        fs::read(journal.path().join("mcp-endpoint/permissions.json")).unwrap(),
+                        perm_bytes_before
+                    );
+                    assert_eq!(
+                        crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                            .unwrap()
+                            .is_some(),
+                        is_paused
+                    );
+                    assert_eq!(
+                        crate::agent_state::memory_source(journal.path(), &conn_key).unwrap(),
+                        current_source_before
+                    );
+                    let refresh_ok = store.refresh_grant(
+                        &old_current_token,
+                        &client_a.client_id,
+                        &oauth.binding(),
+                    );
+                    assert!(refresh_ok.is_ok());
+                } else if step == 2 {
+                    // After 2: the old refresh token is InvalidToken or the HTTP invalid_grant shape,
+                    // list_replay_notices is empty, the grant is still listed, and it is still paused
+                    // (owner pause still there, or refresh_expires_at equal to the pinned now when it was not owner-paused).
+                    // The permission row is still the old bytes.
+                    assert!(matches!(
+                        store.refresh_grant(
+                            &old_current_token,
+                            &client_a.client_id,
+                            &oauth.binding()
+                        ),
+                        Err(OAuthStoreError::InvalidToken)
+                    ));
+                    assert!(store.list_replay_notices().unwrap().is_empty());
+                    assert!(
+                        store
+                            .list_grants()
+                            .unwrap()
+                            .iter()
+                            .any(|g| g.id == grant_id)
+                    );
+                    if is_paused {
+                        assert!(
+                            crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                                .unwrap()
+                                .is_some()
+                        );
+                    } else {
+                        let exp = store.grant_refresh_expires_at(&grant_id).unwrap().unwrap();
+                        assert_eq!(exp, current_time());
+                    }
+                    assert_eq!(
+                        fs::read(journal.path().join("mcp-endpoint/permissions.json")).unwrap(),
+                        perm_bytes_before
+                    );
+                } else if step == 3 {
+                    // After 3: the permission read grant is the pending choice, generation is unchanged,
+                    // evaluation stays hold if it was owner-paused and enforce otherwise, and the grant is still paused.
+                    let perm_rec = perm_store
+                        .read()
+                        .unwrap()
+                        .permissions
+                        .into_iter()
+                        .find(|p| p.connection == conn_key)
+                        .unwrap();
+                    assert_eq!(
+                        perm_rec.read,
+                        Some(ReadPermission {
+                            categories: vec!["facets".to_owned()],
+                            scope: crate::permissions::ReadScope::Facets {
+                                ids: vec!["f2".to_owned()],
+                            },
+                        })
+                    );
+                    let old_perm_rec: PermissionsFile =
+                        serde_json::from_slice(&perm_bytes_before).unwrap();
+                    let old_p = old_perm_rec
+                        .permissions
+                        .into_iter()
+                        .find(|p| p.connection == conn_key)
+                        .unwrap();
+                    assert_eq!(perm_rec.generation, old_p.generation);
+                    assert_eq!(
+                        perm_rec.evaluation,
+                        if is_paused { "hold" } else { "enforce" }
+                    );
+                    if is_paused {
+                        assert!(
+                            crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                                .unwrap()
+                                .is_some()
+                        );
+                    } else {
+                        let exp = store.grant_refresh_expires_at(&grant_id).unwrap().unwrap();
+                        assert_eq!(exp, current_time());
+                    }
+                } else if step == 4 {
+                    // After 4: refresh_expires_at is now + REFRESH_TTL_SECS. An owner-paused target is still owner-paused.
+                    // An unpaused target is no longer idle.
+                    let exp = store.grant_refresh_expires_at(&grant_id).unwrap().unwrap();
+                    assert_eq!(
+                        exp,
+                        current_time() + Duration::seconds(super::REFRESH_TTL_SECS)
+                    );
+                    if is_paused {
+                        assert!(
+                            crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                                .unwrap()
+                                .is_some()
+                        );
+                    } else {
+                        assert!(exp > current_time());
+                    }
+                } else if step == 5 {
+                    // After 5, only the owner-paused case: the owner-pause row is gone and evaluation is still hold.
+                    assert!(
+                        crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                            .unwrap()
+                            .is_none()
+                    );
+                    let perm_rec = perm_store
+                        .read()
+                        .unwrap()
+                        .permissions
+                        .into_iter()
+                        .find(|p| p.connection == conn_key)
+                        .unwrap();
+                    assert_eq!(perm_rec.evaluation, "hold");
+                } else if step == 6 {
+                    // After 6, only the owner-paused case: evaluation is enforce.
+                    assert!(
+                        crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                            .unwrap()
+                            .is_none()
+                    );
+                    let perm_rec = perm_store
+                        .read()
+                        .unwrap()
+                        .permissions
+                        .into_iter()
+                        .find(|p| p.connection == conn_key)
+                        .unwrap();
+                    assert_eq!(perm_rec.evaluation, "enforce");
+                }
+
+                // From each of those prefixes, a new targeted code for the same grant runs to IssuedTokens.
+                super::TAKEOVER_STOP_AFTER.store(0, std::sync::atomic::Ordering::SeqCst);
+                let client_c = oauth
+                    .store
+                    .register_client(
+                        "https://client.c/cimd.json",
+                        vec!["http://127.0.0.1/callback".to_owned()],
+                        Some("Client C".to_owned()),
+                        source,
+                    )
+                    .unwrap();
+                let pairing_c = oauth
+                    .store
+                    .generate_pairing_code_with_door_and_reconnect(
+                        "relay",
+                        Some(format!("oauth:{grant_id}")),
+                    )
+                    .unwrap();
+                let challenge_c = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(b"verifier-c"));
+                let tx_c = oauth
+                    .store
+                    .create_transaction_with_generation(
+                        &client_c.id,
+                        "http://127.0.0.1/callback",
+                        oauth.binding().canonical(),
+                        "https://mcp.test",
+                        &challenge_c,
+                        "S256",
+                        None,
+                        source,
+                        oauth.binding().stored_grant_generation(),
+                    )
+                    .unwrap();
+                let verified_c = oauth
+                    .store
+                    .verify_pairing(&tx_c, &pairing_c.code, &oauth.binding())
+                    .unwrap();
+                let auth_c = oauth
+                    .store
+                    .complete_confirm_pairing(
+                        &verified_c,
+                        Some(ReadPermission {
+                            categories: vec!["facets".to_owned()],
+                            scope: crate::permissions::ReadScope::Facets {
+                                ids: vec!["f3".to_owned()],
+                            },
+                        }),
+                        &oauth.binding(),
+                    )
+                    .unwrap()
+                    .unwrap();
+
+                let issued_c = oauth
+                    .store
+                    .redeem_authorization_code(
+                        &auth_c.code,
+                        &client_c.client_id,
+                        "http://127.0.0.1/callback",
+                        oauth.binding().canonical(),
+                        "verifier-c",
+                        &oauth.binding(),
+                    )
+                    .unwrap();
+
+                // The grant id is unchanged.
+                assert_eq!(issued_c.token_id, grant_id);
+
+                // Old current and old rotated refresh tokens are plain invalid and write no replay notice.
+                assert!(matches!(
+                    oauth.store.refresh_grant(
+                        &old_current_token,
+                        &client_a.client_id,
+                        &oauth.binding()
+                    ),
+                    Err(OAuthStoreError::InvalidToken)
+                ));
+                assert!(matches!(
+                    oauth.store.refresh_grant(
+                        &old_rotated_token,
+                        &client_a.client_id,
+                        &oauth.binding()
+                    ),
+                    Err(OAuthStoreError::InvalidToken)
+                ));
+                assert!(oauth.store.list_replay_notices().unwrap().is_empty());
+
+                // The new access token verifies on the new client's door.
+                assert!(
+                    oauth
+                        .store
+                        .verify_access_token(&issued_c.access_token, &oauth.binding())
+                        .is_ok()
+                );
+
+                // list_grants shows the new door resource and a created_at equal to the redemption clock.
+                let grants = oauth.store.list_grants().unwrap();
+                let g = grants.iter().find(|g| g.id == grant_id).unwrap();
+                assert_eq!(g.resource, oauth.binding().stored_grant_resource());
+                assert_eq!(g.created_at, current_time());
+
+                // A paused target is not owner-paused at the end, and refresh_expires_at is after now.
+                assert!(
+                    crate::agent_state::is_owner_paused(journal.path(), &conn_key)
+                        .unwrap()
+                        .is_none()
+                );
+                let exp = oauth
+                    .store
+                    .grant_refresh_expires_at(&grant_id)
+                    .unwrap()
+                    .unwrap();
+                assert!(exp > current_time());
+
+                // One day later, generate_pairing_code_with_door leaves the grant listed and the new refresh token still refreshes.
+                set_now(current_time().timestamp() + 86400);
+                oauth
+                    .store
+                    .generate_pairing_code_with_door("relay")
+                    .unwrap();
+                assert!(
+                    oauth
+                        .store
+                        .list_grants()
+                        .unwrap()
+                        .iter()
+                        .any(|g| g.id == grant_id)
+                );
+                assert!(
+                    oauth
+                        .store
+                        .refresh_grant(
+                            &issued_c.refresh_token,
+                            &client_c.client_id,
+                            &oauth.binding()
+                        )
+                        .is_ok()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn idle_pause_takeover_i4_second_exchange_is_locked_out() {
+        let _guard = NowGuard;
+        let _takeover_guard = TakeoverGuard::acquire();
+        let base_time = 1_800_000_000_i64;
+        set_now(base_time);
+
+        let journal = journal_root();
+        let oauth = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let source = "192.0.2.1";
+        let hex = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+        let client1 = oauth
+            .store
+            .register_client(
+                "https://client1.test/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Client 1".to_owned()),
+                source,
+            )
+            .unwrap();
+        let client2 = oauth
+            .store
+            .register_client(
+                "https://client2.test/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Client 2".to_owned()),
+                source,
+            )
+            .unwrap();
+
+        // Code 1
+        let pairing1 = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(format!("source:{hex}")))
+            .unwrap();
+        let challenge1 = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(b"verifier1"));
+        let tx1 = oauth
+            .store
+            .create_transaction_with_generation(
+                &client1.id,
+                "http://127.0.0.1/callback",
+                oauth.binding().canonical(),
+                "https://mcp.test",
+                &challenge1,
+                "S256",
+                None,
+                source,
+                oauth.binding().stored_grant_generation(),
+            )
+            .unwrap();
+        let verified1 = oauth
+            .store
+            .verify_pairing(&tx1, &pairing1.code, &oauth.binding())
+            .unwrap();
+        let auth1 = oauth
+            .store
+            .complete_confirm_pairing(
+                &verified1,
+                Some(ReadPermission::default_whole_journal()),
+                &oauth.binding(),
+            )
+            .unwrap()
+            .unwrap();
+
+        // Code 2
+        let pairing2 = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(format!("source:{hex}")))
+            .unwrap();
+        let challenge2 = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(b"verifier2"));
+        let tx2 = oauth
+            .store
+            .create_transaction_with_generation(
+                &client2.id,
+                "http://127.0.0.1/callback",
+                oauth.binding().canonical(),
+                "https://mcp.test",
+                &challenge2,
+                "S256",
+                None,
+                source,
+                oauth.binding().stored_grant_generation(),
+            )
+            .unwrap();
+        let verified2 = oauth
+            .store
+            .verify_pairing(&tx2, &pairing2.code, &oauth.binding())
+            .unwrap();
+        let auth2 = oauth
+            .store
+            .complete_confirm_pairing(
+                &verified2,
+                Some(ReadPermission::default_whole_journal()),
+                &oauth.binding(),
+            )
+            .unwrap()
+            .unwrap();
+
+        // Channels for synchronization without sleep
+        let (tx_to_main, rx_in_main) = std::sync::mpsc::channel();
+        let (tx_to_thread, rx_in_thread) = std::sync::mpsc::channel();
+        let rx_in_thread = std::sync::Mutex::new(rx_in_thread);
+
+        if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
+            *g = Some(Box::new(move || {
+                tx_to_main.send(()).unwrap();
+                rx_in_thread.lock().unwrap().recv().unwrap();
+            }));
+        }
+
+        let store_thread = OAuthStore::open(journal.path());
+        let binding_thread = oauth.binding();
+        let code1 = auth1.code.clone();
+        let client_id1 = client1.client_id.clone();
+
+        let handle = std::thread::spawn(move || {
+            store_thread.redeem_authorization_code(
+                &code1,
+                &client_id1,
+                "http://127.0.0.1/callback",
+                binding_thread.canonical(),
+                "verifier1",
+                &binding_thread,
+            )
+        });
+
+        // Main thread waits until thread 1 blocks in I4_TEST_HOLD
+        rx_in_main.recv().unwrap();
+
+        // A second OAuthStore::open(...).with_lock_timeout(Duration::ZERO) redeem returns OAuthStoreError::Lock
+        let locked_store =
+            OAuthStore::open(journal.path()).with_lock_timeout(std::time::Duration::ZERO);
+        let res2 = locked_store.redeem_authorization_code(
+            &auth2.code,
+            &client2.client_id,
+            "http://127.0.0.1/callback",
+            oauth.binding().canonical(),
+            "verifier2",
+            &oauth.binding(),
+        );
+        assert!(matches!(res2, Err(OAuthStoreError::Lock(_))));
+        assert!(oauth.store.list_grants().unwrap().is_empty());
+
+        // Release the first thread
+        tx_to_thread.send(()).unwrap();
+        let issued1 = handle.join().unwrap().unwrap();
+
+        // It creates exactly one grant whose mapping is that hex
+        let grants_after1 = oauth.store.list_grants().unwrap();
+        assert_eq!(grants_after1.len(), 1);
+        assert_eq!(grants_after1[0].id, issued1.token_id);
+        let conn1 = format!("oauth:{}", issued1.token_id);
+        assert_eq!(
+            crate::agent_state::memory_source(journal.path(), &conn1)
+                .unwrap()
+                .component(),
+            hex
+        );
+
+        // Redeeming the second code again returns InvalidGrant
+        let res2_again = oauth.store.redeem_authorization_code(
+            &auth2.code,
+            &client2.client_id,
+            "http://127.0.0.1/callback",
+            oauth.binding().canonical(),
+            "verifier2",
+            &oauth.binding(),
+        );
+        assert!(matches!(res2_again, Err(OAuthStoreError::InvalidGrant)));
+
+        // Still exactly one grant maps to that hex
+        let grants_final = oauth.store.list_grants().unwrap();
+        assert_eq!(grants_final.len(), 1);
+
+        if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
+            *g = None;
+        }
+    }
+
+    #[test]
+    fn idle_pause_lock_free_mutant_can_double_grant() {
+        let _guard = NowGuard;
+        let _takeover_guard = TakeoverGuard::acquire();
+        let base_time = 1_800_000_000_i64;
+        set_now(base_time);
+
+        let journal = journal_root();
+        let oauth = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let source = "192.0.2.1";
+        let hex = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+        let client1 = oauth
+            .store
+            .register_client(
+                "https://client1.mutant/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Mutant 1".to_owned()),
+                source,
+            )
+            .unwrap();
+        let client2 = oauth
+            .store
+            .register_client(
+                "https://client2.mutant/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Mutant 2".to_owned()),
+                source,
+            )
+            .unwrap();
+
+        // Code 1
+        let pairing1 = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(format!("source:{hex}")))
+            .unwrap();
+        let challenge1 = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(b"verifier-m1"));
+        let tx1 = oauth
+            .store
+            .create_transaction_with_generation(
+                &client1.id,
+                "http://127.0.0.1/callback",
+                oauth.binding().canonical(),
+                "https://mcp.test",
+                &challenge1,
+                "S256",
+                None,
+                source,
+                oauth.binding().stored_grant_generation(),
+            )
+            .unwrap();
+        let verified1 = oauth
+            .store
+            .verify_pairing(&tx1, &pairing1.code, &oauth.binding())
+            .unwrap();
+        let auth1 = oauth
+            .store
+            .complete_confirm_pairing(
+                &verified1,
+                Some(ReadPermission::default_whole_journal()),
+                &oauth.binding(),
+            )
+            .unwrap()
+            .unwrap();
+
+        // Code 2
+        let pairing2 = oauth
+            .store
+            .generate_pairing_code_with_door_and_reconnect("relay", Some(format!("source:{hex}")))
+            .unwrap();
+        let challenge2 = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(b"verifier-m2"));
+        let tx2 = oauth
+            .store
+            .create_transaction_with_generation(
+                &client2.id,
+                "http://127.0.0.1/callback",
+                oauth.binding().canonical(),
+                "https://mcp.test",
+                &challenge2,
+                "S256",
+                None,
+                source,
+                oauth.binding().stored_grant_generation(),
+            )
+            .unwrap();
+        let verified2 = oauth
+            .store
+            .verify_pairing(&tx2, &pairing2.code, &oauth.binding())
+            .unwrap();
+        let auth2 = oauth
+            .store
+            .complete_confirm_pairing(
+                &verified2,
+                Some(ReadPermission::default_whole_journal()),
+                &oauth.binding(),
+            )
+            .unwrap()
+            .unwrap();
+
+        let (tx_to_main, rx_in_main) = std::sync::mpsc::channel();
+        let (tx_to_thread, rx_in_thread) = std::sync::mpsc::channel();
+        let rx_in_thread = std::sync::Mutex::new(rx_in_thread);
+
+        if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
+            *g = Some(Box::new(move || {
+                tx_to_main.send(()).unwrap();
+                rx_in_thread.lock().unwrap().recv().unwrap();
+            }));
+        }
+
+        let store_thread = OAuthStore::open(journal.path());
+        let binding_thread = oauth.binding();
+        let code1 = auth1.code.clone();
+        let client_id1 = client1.client_id.clone();
+
+        let handle = std::thread::spawn(move || {
+            store_thread.redeem_takeover_without_oauth_lock(
+                &code1,
+                &client_id1,
+                "http://127.0.0.1/callback",
+                binding_thread.canonical(),
+                "verifier-m1",
+                &binding_thread,
+            )
+        });
+
+        // Main thread waits until thread 1 triggers I4_TEST_HOLD
+        rx_in_main.recv().unwrap();
+
+        // Now thread 2 calls redeem_takeover_without_oauth_lock while thread 1 is paused
+        let res2 = oauth.store.redeem_takeover_without_oauth_lock(
+            &auth2.code,
+            &client2.client_id,
+            "http://127.0.0.1/callback",
+            oauth.binding().canonical(),
+            "verifier-m2",
+            &oauth.binding(),
+        );
+        assert!(res2.is_ok());
+
+        // Resume thread 1
+        tx_to_thread.send(()).unwrap();
+        let res1 = handle.join().unwrap();
+        assert!(res1.is_ok());
+
+        // Both leave two grants
+        let grants = oauth.store.list_grants().unwrap();
+        assert_eq!(grants.len(), 2);
+
+        if let Ok(mut g) = super::I4_TEST_HOLD.lock() {
+            *g = None;
+        }
     }
 }

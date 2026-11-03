@@ -48,6 +48,23 @@ pub(crate) fn write_outcome(
     write_outcome_record(journal_root, coordinates, now, outcome, reason, result)
 }
 
+pub(crate) fn write_outcome_paused(
+    journal_root: &Path,
+    coordinates: &AuditCoordinates,
+    now: DateTime<Utc>,
+    reason: Option<&str>,
+) -> Result<(), AuditWriteError> {
+    solstone_core_mcp_audit::write_outcome_record_with_paused(
+        journal_root,
+        coordinates,
+        now,
+        Outcome::Refused,
+        reason,
+        None,
+        true,
+    )
+}
+
 fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
     let Ok(line) = serde_json::to_string(&json!({
         "tract": "observe",

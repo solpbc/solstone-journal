@@ -117,11 +117,12 @@ pub(crate) fn recall(
     args: RecallArgs,
     reference_date: NaiveDate,
 ) -> RecallPage {
+    let source_key = SourceKey::from_verified_id(verified_identity);
     recall_until(
         journal,
         codec,
         connection_identity,
-        verified_identity,
+        &source_key,
         credential_lineage,
         args,
         reference_date,
@@ -137,13 +138,12 @@ pub(crate) fn recall_until(
     journal: &Path,
     codec: &ReferenceCodec,
     connection_identity: &str,
-    verified_identity: &str,
+    source_key: &SourceKey,
     credential_lineage: &str,
     args: RecallArgs,
     mut reference_date: NaiveDate,
     deadline: Instant,
 ) -> RecallPage {
-    let source_key = SourceKey::from_verified_id(verified_identity);
     let boundary = QueryBoundary::OwnMemory {
         source_key: source_key.as_str().to_owned(),
     };
@@ -219,12 +219,9 @@ pub(crate) fn recall_until(
         Err(OwnMemoryOpenError::Pending) => return failure("memory_index_pending"),
         Err(OwnMemoryOpenError::Unavailable) => return failure("memory_index_unavailable"),
     }
-    if let Some(reason) = coverage_failure_reason(coverage_in_view(
-        journal,
-        &connection,
-        &source_key,
-        deadline,
-    )) {
+    if let Some(reason) =
+        coverage_failure_reason(coverage_in_view(journal, &connection, source_key, deadline))
+    {
         return failure(reason);
     }
     if deadline_passed(deadline) {
@@ -295,14 +292,14 @@ pub(crate) fn recall_until(
             exhausted = true;
             break;
         }
-        let candidate = validate_candidate(journal, &source_key, &row, deadline);
+        let candidate = validate_candidate(journal, source_key, &row, deadline);
         if deadline_passed(deadline) {
             if matches!(candidate, Candidate::Ready(_)) {
                 continuation = match mint_cursor(
                     codec,
                     connection_identity,
                     credential_lineage,
-                    &source_key,
+                    source_key,
                     normalized_query.clone(),
                     &query,
                     reference_date,
@@ -329,7 +326,7 @@ pub(crate) fn recall_until(
                         codec,
                         connection_identity,
                         credential_lineage,
-                        &source_key,
+                        source_key,
                         normalized_query.clone(),
                         &query,
                         reference_date,
@@ -375,7 +372,7 @@ pub(crate) fn recall_until(
             codec,
             connection_identity,
             credential_lineage,
-            &source_key,
+            source_key,
             normalized_query,
             &query,
             reference_date,
@@ -1365,11 +1362,13 @@ mod tests {
             .unwrap();
         let journal = outer.path().join("journal");
         fs::create_dir(&journal).unwrap();
+        let source = SourceKey::from_verified_id("light-source");
         let AppendResult::Stored(_) = append_connection_memory(
             &journal,
             AuthenticatedMemorySource {
                 verified_id: "light-source",
                 creation_label: "light fixture",
+                source: &source,
             },
             "needle light original",
             "light-operation",
@@ -1430,11 +1429,13 @@ mod tests {
         assert!(unused.notes.is_empty());
         assert!(!journal.join("streams").exists());
         assert!(!journal.join("config/agent-memory").exists());
+        let source = SourceKey::from_verified_id("scan-source");
         let AppendResult::Stored(receipt) = append_connection_memory(
             &journal,
             AuthenticatedMemorySource {
                 verified_id: "scan-source",
                 creation_label: "scan fixture",
+                source: &source,
             },
             "needle exact original",
             "scan-operation",
@@ -1625,6 +1626,7 @@ mod tests {
                 AuthenticatedMemorySource {
                     verified_id: "measurement-source",
                     creation_label: "measurement label",
+                    source: &source,
                 },
                 "needle exact memory",
                 &format!("saved-{ordinal}"),
@@ -1645,12 +1647,14 @@ mod tests {
                 .unwrap();
             }
         }
+        let other_source = SourceKey::from_verified_id("other-measurement-source");
         for ordinal in 0..8 {
             append_connection_memory(
                 journal.path(),
                 AuthenticatedMemorySource {
                     verified_id: "other-measurement-source",
                     creation_label: "other source",
+                    source: &other_source,
                 },
                 "needle other source",
                 &format!("other-{ordinal}"),

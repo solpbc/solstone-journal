@@ -148,6 +148,14 @@ refused and the grant stays. One exception: the immediately previous token,
 presented again within 30 seconds of the rotation that replaced it, gets back
 the pair that rotation issued.
 
+- Abandoned grants still count toward the 16-client and 1024-grant caps. A new pairing gets today's quota error until the owner disconnects one.
+- A stolen refresh credential stays refreshable while paused and serves nothing until resume.
+- On an older binary, memory tools for an owner-paused connection stay open, idle-paused grants and their permission rows are pruned at the expiry, and notes saved under a freshly derived source show as an earlier agent after re-upgrade.
+- A guard an older binary reset stays reset until the next pause, resume, or permission save on that connection, so a second downgrade before then serves its reads.
+- A counter bump that loses the lock is a refused call that was not counted.
+- Once a takeover swap commits, a lost token response leaves the old instance dead and the new one without tokens, and the owner makes a new code.
+- Moving `mcp-endpoint/agent-state.json` aside lifts every owner pause and leaves reconnected agents recalling empty.
+
 ## Redirects
 
 Only these callback shapes are admitted:
@@ -208,7 +216,7 @@ owner's existing read permissions. There is no separate write permission.
 
 `save_memory` accepts only `content` and `operation_id`. Content is nonempty exact
 UTF-8, up to 32,768 decoded bytes. The operation id is 1–128 ASCII letters, digits,
-periods, underscores, colons or hyphens. Save once per intended note. If the response is lost or
+periods, underscores, colons or hyphens. Save once per intended note. The id is unique across this agent's whole history, not only the current pairing. If the response is lost or
 says `uncertain_retry`, retry with the same operation id and exact content. A
 successful retry returns the original coordinate, timestamp and origin rather
 than another note. Reusing an id with different bytes is refused. A `deleted`

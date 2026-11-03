@@ -90,6 +90,7 @@ fn authorization_code(
         }
         Err(
             OAuthStoreError::InvalidToken
+            | OAuthStoreError::InvalidGrant
             | OAuthStoreError::CodeExpired
             | OAuthStoreError::BindingMismatch,
         ) => oauth_error("invalid_grant"),

@@ -145,6 +145,7 @@ pub enum PermissionStoreError {
     Write(AtomicWriteError),
     ConnectionNotFound { key: String },
     InvalidConnectionKey { key: String },
+    AgentStateFault,
 }
 
 fn format_message(formatter: &mut fmt::Formatter<'_>, message: fmt::Arguments<'_>) -> fmt::Result {
@@ -184,6 +185,10 @@ impl fmt::Display for PermissionStoreError {
             Self::InvalidConnectionKey { key } => format_message(
                 formatter,
                 format_args!("invalid connection key format: {key}"),
+            ),
+            Self::AgentStateFault => format_message(
+                formatter,
+                format_args!("could not determine agent state pause status"),
             ),
         }
     }
@@ -244,7 +249,13 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
         };
     };
 
-    if record.schema != SCHEMA_VERSION || record.evaluation != "enforce" {
+    if record.schema != SCHEMA_VERSION {
+        return PermissionDecision::Denied {
+            reason: "unenforceable",
+        };
+    }
+
+    if record.evaluation != "enforce" && record.evaluation != "hold" {
         return PermissionDecision::Denied {
             reason: "unenforceable",
         };
@@ -366,6 +377,7 @@ impl PermissionStore {
         connection_key: &str,
         read: ReadPermission,
     ) -> Result<ConnectionPermissionRecord, PermissionStoreError> {
+        let pause_status = crate::agent_state::is_owner_paused_locked(&self.root, connection_key);
         self.ensure_directory()?;
         let path = self.permissions_path();
         let _lock = hold_lock(
@@ -377,19 +389,73 @@ impl PermissionStore {
         )
         .map_err(PermissionStoreError::Lock)?;
         let mut file = self.read()?;
-        let next_generation = match file
+        let existing = file
             .permissions
             .iter()
-            .find(|p| p.connection == connection_key)
-        {
+            .find(|p| p.connection == connection_key);
+        let next_generation = match existing {
             Some(existing) => existing.generation.saturating_add(1),
             None => 1,
+        };
+        let evaluation = match pause_status {
+            Ok(true) => "hold".to_string(),
+            Ok(false) => "enforce".to_string(),
+            Err(_) => match existing {
+                Some(existing) => existing.evaluation.clone(),
+                None => return Err(PermissionStoreError::AgentStateFault),
+            },
         };
         let record = ConnectionPermissionRecord {
             connection: connection_key.to_string(),
             schema: SCHEMA_VERSION,
             generation: next_generation,
-            evaluation: "enforce".to_string(),
+            evaluation,
+            read: Some(read),
+        };
+        if let Some(pos) = file
+            .permissions
+            .iter()
+            .position(|p| p.connection == connection_key)
+        {
+            file.permissions[pos] = record.clone();
+        } else {
+            file.permissions.push(record.clone());
+        }
+        self.write_locked(&file)?;
+        Ok(record)
+    }
+
+    /// Update read grant without changing generation. Used in takeover step 3.
+    pub fn update_permission_preserving_generation(
+        &self,
+        connection_key: &str,
+        read: ReadPermission,
+        evaluation: &str,
+    ) -> Result<ConnectionPermissionRecord, PermissionStoreError> {
+        self.ensure_directory()?;
+        let path = self.permissions_path();
+        let _lock = hold_lock(
+            &path,
+            LockOptions {
+                mode: Some(0o600),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(PermissionStoreError::Lock)?;
+        let mut file = self.read()?;
+        let existing = file
+            .permissions
+            .iter()
+            .find(|p| p.connection == connection_key);
+        let generation = match existing {
+            Some(existing) => existing.generation,
+            None => 1,
+        };
+        let record = ConnectionPermissionRecord {
+            connection: connection_key.to_string(),
+            schema: SCHEMA_VERSION,
+            generation,
+            evaluation: evaluation.to_string(),
             read: Some(read),
         };
         if let Some(pos) = file
@@ -409,6 +475,7 @@ impl PermissionStore {
     /// Returns true if an existing permission was cleared (incrementing generation and leaving read: None).
     /// Clear of missing does not invent a document and returns false.
     pub fn clear_permission(&self, connection_key: &str) -> Result<bool, PermissionStoreError> {
+        let pause_status = crate::agent_state::is_owner_paused_locked(&self.root, connection_key);
         self.ensure_directory()?;
         let path = self.permissions_path();
         let _lock = hold_lock(
@@ -426,13 +493,58 @@ impl PermissionStore {
             .position(|p| p.connection == connection_key)
         {
             let next_generation = file.permissions[pos].generation.saturating_add(1);
+            let evaluation = match pause_status {
+                Ok(true) => "hold".to_string(),
+                Ok(false) => "enforce".to_string(),
+                Err(_) => file.permissions[pos].evaluation.clone(),
+            };
             file.permissions[pos] = ConnectionPermissionRecord {
                 connection: connection_key.to_string(),
                 schema: SCHEMA_VERSION,
                 generation: next_generation,
-                evaluation: "enforce".to_string(),
+                evaluation,
                 read: None,
             };
+            self.write_locked(&file)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Write evaluation without changing generation or the read grant.
+    /// No-op returning false if there is no record.
+    pub fn set_evaluation_only(
+        &self,
+        connection_key: &str,
+        evaluation: &str,
+    ) -> Result<bool, PermissionStoreError> {
+        self.set_evaluation_only_with_options(
+            connection_key,
+            evaluation,
+            LockOptions {
+                mode: Some(0o600),
+                ..LockOptions::default()
+            },
+        )
+    }
+
+    pub fn set_evaluation_only_with_options(
+        &self,
+        connection_key: &str,
+        evaluation: &str,
+        lock_options: LockOptions,
+    ) -> Result<bool, PermissionStoreError> {
+        self.ensure_directory()?;
+        let path = self.permissions_path();
+        let _lock = hold_lock(&path, lock_options).map_err(PermissionStoreError::Lock)?;
+        let mut file = self.read()?;
+        if let Some(pos) = file
+            .permissions
+            .iter()
+            .position(|p| p.connection == connection_key)
+        {
+            file.permissions[pos].evaluation = evaluation.to_string();
             self.write_locked(&file)?;
             Ok(true)
         } else {
