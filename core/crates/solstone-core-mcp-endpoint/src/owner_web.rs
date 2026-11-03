@@ -2900,37 +2900,36 @@ async fn set_pause(
                     StatusCode::NOT_FOUND,
                 );
             }
-            if existing_pause.is_some() {
-                let removed = match crate::agent_state::clear_owner_pause(&journal, &key) {
-                    Ok(r) => r,
-                    Err(_) => {
-                        return refusal(
-                            "agent_state_unavailable",
-                            "could not clear pause state",
-                            StatusCode::SERVICE_UNAVAILABLE,
-                        );
-                    }
-                };
-                if removed {
-                    let _ = PermissionStore::open(&journal).set_evaluation_only(&key, "enforce");
-                }
+        }
+        if existing_pause.is_some()
+            && crate::agent_state::clear_owner_pause(&journal, &key).is_err()
+        {
+            return refusal(
+                "agent_state_unavailable",
+                "could not clear pause state",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
+        }
+        let perm_store = PermissionStore::open(&journal);
+        let perm_record = match perm_store.get_permission(&key) {
+            Ok(rec) => rec,
+            Err(_) => {
+                return refusal(
+                    "permission_store_unavailable",
+                    "could not read permission evaluation",
+                    StatusCode::SERVICE_UNAVAILABLE,
+                );
             }
-        } else {
-            if existing_pause.is_some() {
-                let removed = match crate::agent_state::clear_owner_pause(&journal, &key) {
-                    Ok(r) => r,
-                    Err(_) => {
-                        return refusal(
-                            "agent_state_unavailable",
-                            "could not clear pause state",
-                            StatusCode::SERVICE_UNAVAILABLE,
-                        );
-                    }
-                };
-                if removed {
-                    let _ = PermissionStore::open(&journal).set_evaluation_only(&key, "enforce");
-                }
-            }
+        };
+        if let Some(record) = perm_record
+            && record.evaluation == "hold"
+            && perm_store.set_evaluation_only(&key, "enforce").is_err()
+        {
+            return refusal(
+                "permission_store_unavailable",
+                "could not update permission evaluation",
+                StatusCode::SERVICE_UNAVAILABLE,
+            );
         }
         Json(json!({"ok": true})).into_response()
     }
@@ -5089,6 +5088,228 @@ mod tests {
         ));
         let bad_pairing_resp = generate_pairing(Extension(journal.clone()), bad_pairing_body).await;
         assert_eq!(bad_pairing_resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn resume_clears_a_leftover_hold_for_oauth_and_bearer() {
+        use std::fs;
+
+        struct ClockResetGuard;
+        impl Drop for ClockResetGuard {
+            fn drop(&mut self) {
+                crate::oauth::store::set_routine_now(None);
+            }
+        }
+        let _guard = ClockResetGuard;
+
+        let base_now = 1_800_000_000_i64;
+        crate::oauth::store::set_routine_now(Some(base_now));
+
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
+        let root = temp.path();
+        let journal = Arc::new(root.to_path_buf());
+
+        // Setup OAuth grant
+        let relay = crate::oauth::OAuthRuntime::new(root, "https://mcp.test".to_owned());
+        let binding = relay.binding();
+        let client = relay
+            .store
+            .register_client(
+                "https://client.example/oauth_agent.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("Test Agent".to_owned()),
+                &relay.source_cohort(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            )
+            .unwrap();
+        let pairing = relay
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"verifier-123"));
+        let transaction = relay
+            .store
+            .create_transaction_with_generation(
+                &client.id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+                binding.stored_grant_generation(),
+            )
+            .unwrap();
+        let authorization = relay
+            .store
+            .complete_pairing_with_permission(
+                &transaction,
+                &pairing.code,
+                Some(ReadPermission {
+                    categories: vec!["facets".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                }),
+                &binding,
+            )
+            .unwrap();
+        let tokens = relay
+            .store
+            .redeem_authorization_code(
+                &authorization.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "verifier-123",
+                &binding,
+            )
+            .unwrap();
+        let oauth_id = tokens.token_id;
+
+        // Setup bearer token
+        let token_store = TokenStore::open(root);
+        let _bearer = token_store.create("Test Bearer").unwrap();
+        let bearer_id = token_store
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|t| t.label == "Test Bearer")
+            .unwrap()
+            .id;
+        PermissionStore::open(root)
+            .set_permission(
+                &format!("bearer:{}", bearer_id),
+                ReadPermission {
+                    categories: vec!["entities".to_owned()],
+                    scope: ReadScope::WholeJournal,
+                },
+            )
+            .unwrap();
+
+        // 1. Resume of a never-paused oauth grant whose evaluation is "enforce" returns 200 and leaves mcp-endpoint/permissions.json byte-identical.
+        let permissions_path = root.join("mcp-endpoint/permissions.json");
+        let perm_bytes_before = fs::read(&permissions_path).unwrap();
+
+        let resp_never_paused = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": false}))),
+        )
+        .await;
+        assert_eq!(resp_never_paused.status(), StatusCode::OK);
+        assert_eq!(fs::read(&permissions_path).unwrap(), perm_bytes_before);
+
+        // 2. After owner pause, clear_owner_pause directly (not via HTTP). Evaluation is still "hold", generation unchanged, and is_owner_paused is Ok(None).
+        let perm_before_pause = PermissionStore::open(root)
+            .get_permission(&format!("oauth:{}", oauth_id))
+            .unwrap()
+            .unwrap();
+        let gen_before = perm_before_pause.generation;
+        assert_eq!(perm_before_pause.evaluation, "enforce");
+
+        let pause_resp = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": true}))),
+        )
+        .await;
+        assert_eq!(pause_resp.status(), StatusCode::OK);
+
+        let cleared_oauth =
+            crate::agent_state::clear_owner_pause(root, &format!("oauth:{}", oauth_id)).unwrap();
+        assert!(cleared_oauth);
+
+        let perm_after_clear = PermissionStore::open(root)
+            .get_permission(&format!("oauth:{}", oauth_id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(perm_after_clear.evaluation, "hold");
+        assert_eq!(perm_after_clear.generation, gen_before);
+        assert_eq!(
+            crate::agent_state::is_owner_paused(root, &format!("oauth:{}", oauth_id)).unwrap(),
+            None
+        );
+
+        // 3. HTTP resume then returns 200, evaluation is "enforce", generation unchanged, still not owner-paused. The oauth grant's refresh_expires_at is current_time() + REFRESH_TTL_SECS.
+        let resume_resp = set_pause(
+            Extension(journal.clone()),
+            Path(("oauth".to_string(), oauth_id.clone())),
+            Ok(Json(json!({"paused": false}))),
+        )
+        .await;
+        assert_eq!(resume_resp.status(), StatusCode::OK);
+
+        let perm_resumed = PermissionStore::open(root)
+            .get_permission(&format!("oauth:{}", oauth_id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(perm_resumed.evaluation, "enforce");
+        assert_eq!(perm_resumed.generation, gen_before);
+        assert_eq!(
+            crate::agent_state::is_owner_paused(root, &format!("oauth:{}", oauth_id)).unwrap(),
+            None
+        );
+
+        let grant_expiry = relay
+            .store
+            .grant_refresh_expires_at(&oauth_id)
+            .unwrap()
+            .unwrap();
+        let expected_expiry = crate::oauth::current_time().timestamp() + 30 * 86400;
+        assert_eq!(grant_expiry.timestamp(), expected_expiry);
+
+        // 4. The same leftover-hold resume for the bearer key. mcp-endpoint/tokens.json bytes are unchanged by that resume.
+        let tokens_path = root.join("mcp-endpoint/tokens.json");
+        let tokens_bytes_before = fs::read(&tokens_path).unwrap();
+
+        let perm_bearer_before_pause = PermissionStore::open(root)
+            .get_permission(&format!("bearer:{}", bearer_id))
+            .unwrap()
+            .unwrap();
+        let bearer_gen_before = perm_bearer_before_pause.generation;
+        assert_eq!(perm_bearer_before_pause.evaluation, "enforce");
+
+        let pause_resp_bearer = set_pause(
+            Extension(journal.clone()),
+            Path(("bearer".to_string(), bearer_id.clone())),
+            Ok(Json(json!({"paused": true}))),
+        )
+        .await;
+        assert_eq!(pause_resp_bearer.status(), StatusCode::OK);
+
+        let cleared_bearer =
+            crate::agent_state::clear_owner_pause(root, &format!("bearer:{}", bearer_id)).unwrap();
+        assert!(cleared_bearer);
+
+        let perm_bearer_after_clear = PermissionStore::open(root)
+            .get_permission(&format!("bearer:{}", bearer_id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(perm_bearer_after_clear.evaluation, "hold");
+        assert_eq!(perm_bearer_after_clear.generation, bearer_gen_before);
+        assert_eq!(
+            crate::agent_state::is_owner_paused(root, &format!("bearer:{}", bearer_id)).unwrap(),
+            None
+        );
+
+        let resume_resp_bearer = set_pause(
+            Extension(journal.clone()),
+            Path(("bearer".to_string(), bearer_id.clone())),
+            Ok(Json(json!({"paused": false}))),
+        )
+        .await;
+        assert_eq!(resume_resp_bearer.status(), StatusCode::OK);
+
+        let perm_bearer_resumed = PermissionStore::open(root)
+            .get_permission(&format!("bearer:{}", bearer_id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(perm_bearer_resumed.evaluation, "enforce");
+        assert_eq!(perm_bearer_resumed.generation, bearer_gen_before);
+        assert_eq!(
+            crate::agent_state::is_owner_paused(root, &format!("bearer:{}", bearer_id)).unwrap(),
+            None
+        );
+        assert_eq!(fs::read(&tokens_path).unwrap(), tokens_bytes_before);
     }
 
     #[tokio::test]
