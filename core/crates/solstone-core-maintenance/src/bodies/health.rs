@@ -873,6 +873,13 @@ mod tests {
             writer.leaf_name().to_owned()
         };
         let path = journal.path().join("chronicle/20260101/health").join(&leaf);
+        // Last written on the day it was opened, so it is old by its write too.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::from(instant))
+            .unwrap();
         let services = HealthServices {
             now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
             zone: chrono_tz::Tz::UTC,

@@ -120,7 +120,16 @@ fn released_old_oplog(journal: &Journal) -> String {
         instant,
     )
     .expect("oplog");
-    writer.leaf_name().to_owned()
+    let leaf = writer.leaf_name().to_owned();
+    drop(writer);
+    // Last written on the day it was opened, so it is old by its write too.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(journal.root.join("chronicle/20260101/health").join(&leaf))
+        .expect("oplog")
+        .set_modified(std::time::SystemTime::from(instant))
+        .expect("last write");
+    leaf
 }
 
 #[test]

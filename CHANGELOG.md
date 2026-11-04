@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- operational logs from reprocessing or importing an older day now stay for your log retention period, counted from when that work ran. before, the next cleanup removed them because the day itself was older than the period.
 - command-line requests through a paired journal connection now reach your journal.
 - days whose recordings sit directly in the day's folder no longer stall when your journal revisits them, so the day's summaries now finish.
 - older days with a screen description written by an earlier version of the journal no longer stall when your journal revisits them. that description stays in your journal as it was, and the day's summaries now finish.

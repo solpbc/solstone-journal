@@ -8,11 +8,18 @@
 //! operational-log catalog. A malformed or unsafe `oplog--` candidate makes the
 //! catalog unavailable for its whole day, so that day is kept fail-closed while
 //! other days are still considered independently.
+//!
+//! A log's age is its partition day, unless the log was written later than
+//! that. Re-running a past day writes that run's logs into the past day's
+//! partition, and a pinned writer's opened instant lies on that day too, so
+//! only the admitted descriptor's last write says the run was recent. A log
+//! last written inside the window is kept with it.
 
 use std::fs::File;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate};
 use solstone_core_journal_io::JournalRoot;
 use solstone_core_journal_io::operational_log::{
     LeaseProbe, OplogFileIdentity, catalog_oplogs, probe_retained_oplog_lease,
@@ -188,10 +195,17 @@ fn plan_oplog_retention_with_probe(
                 });
                 continue;
             };
+            let written_recently = entry
+                .modified()
+                .and_then(utc_day)
+                .is_some_and(|written| written >= cutoff);
             match probe(&file, entry.identity()) {
+                LeaseProbe::Released if written_recently => plan.retained.push(RetainedOplog {
+                    day,
+                    leaf: Some(leaf.to_owned()),
+                    reason: OplogRetentionKept::TooYoung,
+                }),
                 LeaseProbe::Released => plan.prunable.push(OplogRetentionTarget {
-                    // The partition day, never the leaf's embedded opened instant,
-                    // is the retention date.
                     day,
                     leaf: leaf.to_owned(),
                     identity: entry.identity(),
@@ -213,6 +227,12 @@ fn plan_oplog_retention_with_probe(
     plan
 }
 
+/// The UTC day of a last write, dated the way the mtime log classes date theirs.
+fn utc_day(when: SystemTime) -> Option<NaiveDate> {
+    let seconds = when.duration_since(UNIX_EPOCH).ok()?.as_secs();
+    DateTime::from_timestamp(i64::try_from(seconds).ok()?, 0).map(|when| when.date_naive())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -225,9 +245,19 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn an_indeterminate_probe_keeps_an_old_catalogued_oplog() {
-        let journal = tempfile::tempdir().expect("journal");
+    fn day(year: i32, month: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, month, day).expect("day")
+    }
+
+    fn policy() -> LogPolicy {
+        LogPolicy {
+            days: 7,
+            enabled: true,
+        }
+    }
+
+    /// One released oplog in the 2026-01-01 partition, last written on `written`.
+    fn january_oplog(journal: &Path, written: NaiveDate) -> String {
         let instant = FixedOffset::east_opt(0)
             .expect("UTC")
             .with_ymd_and_hms(2026, 1, 1, 12, 0, 0)
@@ -235,7 +265,7 @@ mod tests {
             .expect("instant");
         let leaf = {
             let writer = create_oplog_at(
-                JournalRoot::open(journal.path()).expect("journal root"),
+                JournalRoot::open(journal).expect("journal root"),
                 "source",
                 "run",
                 OplogFormat::Log,
@@ -244,21 +274,64 @@ mod tests {
             .expect("oplog");
             writer.leaf_name().to_owned()
         };
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(journal.join("chronicle/20260101/health").join(&leaf))
+            .expect("oplog")
+            .set_modified(SystemTime::from(
+                written.and_hms_opt(12, 0, 0).expect("noon").and_utc(),
+            ))
+            .expect("last write");
+        leaf
+    }
 
-        let plan = plan_oplog_retention_with_probe(
-            journal.path(),
-            &LogPolicy {
-                days: 7,
-                enabled: true,
-            },
-            NaiveDate::from_ymd_opt(2026, 8, 5).expect("today"),
-            |_, _| LeaseProbe::Indeterminate,
-        );
+    #[test]
+    fn an_indeterminate_probe_keeps_an_old_catalogued_oplog() {
+        let journal = tempfile::tempdir().expect("journal");
+        let leaf = january_oplog(journal.path(), day(2026, 1, 1));
+
+        let plan =
+            plan_oplog_retention_with_probe(journal.path(), &policy(), day(2026, 8, 5), |_, _| {
+                LeaseProbe::Indeterminate
+            });
         assert!(plan.prunable.is_empty(), "{plan:?}");
         assert!(plan.retained.iter().any(|retained| {
-            retained.day() == NaiveDate::from_ymd_opt(2026, 1, 1).expect("day")
+            retained.day() == day(2026, 1, 1)
                 && retained.leaf() == Some(leaf.as_str())
                 && retained.reason() == &OplogRetentionKept::Indeterminate
         }));
+    }
+
+    /// Re-running a past day writes its logs into that day. Those logs are as
+    /// young as the run, so the next prune keeps them; an old run's are removed.
+    #[test]
+    fn a_past_day_run_inside_the_window_keeps_its_logs() {
+        let journal = tempfile::tempdir().expect("journal");
+        let leaf = january_oplog(journal.path(), day(2026, 8, 4));
+
+        let plan =
+            plan_oplog_retention_with_probe(journal.path(), &policy(), day(2026, 8, 5), |_, _| {
+                LeaseProbe::Released
+            });
+        assert!(plan.prunable.is_empty(), "{plan:?}");
+        assert!(plan.retained.iter().any(|retained| {
+            retained.day() == day(2026, 1, 1)
+                && retained.leaf() == Some(leaf.as_str())
+                && retained.reason() == &OplogRetentionKept::TooYoung
+        }));
+
+        let later =
+            plan_oplog_retention_with_probe(journal.path(), &policy(), day(2026, 8, 20), |_, _| {
+                LeaseProbe::Released
+            });
+        assert_eq!(
+            later
+                .prunable
+                .iter()
+                .map(OplogRetentionTarget::leaf)
+                .collect::<Vec<_>>(),
+            vec![leaf.as_str()],
+            "{later:?}"
+        );
     }
 }

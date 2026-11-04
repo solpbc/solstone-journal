@@ -97,6 +97,28 @@ fn create_oplog(
     .expect("oplog")
 }
 
+/// Date a fixture oplog's last write to noon UTC on `day` (YYYYMMDD), the day it
+/// was opened on, so it is old by its write as well as by its partition.
+fn last_written_on(bed: &Bed, day: &str, leaf: &str) {
+    let noon = NaiveDate::parse_from_str(day, "%Y%m%d")
+        .expect("a day")
+        .and_hms_opt(12, 0, 0)
+        .expect("noon")
+        .and_utc();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(
+            bed.root
+                .join("chronicle")
+                .join(day)
+                .join("health")
+                .join(leaf),
+        )
+        .expect("oplog")
+        .set_modified(std::time::SystemTime::from(noon))
+        .expect("last write");
+}
+
 fn teardown(bed: &Bed) {
     fs::remove_dir_all(&bed.root).expect("teardown");
 }
@@ -259,6 +281,7 @@ fn canonical_oplogs_are_liveness_gated_and_unavailable_days_are_isolated() {
         let writer = create_oplog(&bed, 2026, 1, 1);
         writer.leaf_name().to_owned()
     };
+    last_written_on(&bed, "20260101", &released_leaf);
     let recent_leaf = {
         let writer = create_oplog(&bed, 2026, 8, 4);
         writer.leaf_name().to_owned()
@@ -352,6 +375,8 @@ fn canonical_oplog_removal_revalidates_identity_before_unlinking() {
         let writer = create_oplog(&bed, 2026, 1, 1);
         writer.leaf_name().to_owned()
     };
+    last_written_on(&bed, "20260101", &first_leaf);
+    last_written_on(&bed, "20260101", &second_leaf);
     let planned = plan_oplog_retention(
         &bed.root,
         &LogPolicy {
