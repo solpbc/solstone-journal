@@ -203,7 +203,7 @@ pub(crate) fn admit_writer(
         Err(error)
             if matches!(
                 operation,
-                "reset" | "remove-legacy-index" | "migrate-index-stream"
+                "reset" | "index-recover" | "remove-legacy-index" | "migrate-index-stream"
             ) =>
         {
             log::warn!(

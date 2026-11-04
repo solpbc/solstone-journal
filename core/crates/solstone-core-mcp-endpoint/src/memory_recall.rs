@@ -278,7 +278,8 @@ pub(crate) fn recall_until(
                 exhausted = true;
                 break;
             }
-            Err(_) => {
+            Err(error) => {
+                solstone_core_indexer_query::report_memory_read_damage(journal, &error);
                 reason = Some("memory_index_unavailable");
                 break;
             }

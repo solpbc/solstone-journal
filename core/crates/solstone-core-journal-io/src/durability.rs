@@ -109,6 +109,7 @@ pub enum ArtifactId {
     WorkInventory,
     IndexTodo,
     IndexAttempts,
+    IndexRecovery,
 }
 
 /// One artifact the journal reads, with its declared class and path glob.
@@ -130,6 +131,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::Wipeable,
         parser: ParserKind::RecordFramedJsonl,
         rationale: "recent search attempt diagnostics; current work and source files determine search health",
+    },
+    DurableArtifact {
+        id: ArtifactId::IndexRecovery,
+        path: "indexer/recovery.json",
+        class: DurabilityClass::Wipeable,
+        parser: ParserKind::WholeJson,
+        rationale: "when search last found its index sound and last rebuilt it; losing it costs one extra check and one missed note about the disk",
     },
     DurableArtifact {
         id: ArtifactId::IndexTodo,

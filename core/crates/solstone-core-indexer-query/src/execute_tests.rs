@@ -3885,3 +3885,148 @@ fn finding_a_reindexed_entry_never_reads_all_of_chunks() {
     drop(conn);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A journal with a complete index, whose file then took `damage`.
+fn damaged_journal(name: &str, damage: fn(&Path)) -> PathBuf {
+    let root = temp_root(name);
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"identity":{"timezone":"UTC"}}"#,
+    )
+    .unwrap();
+    for index in 0..80 {
+        let source = root.join(format!(
+            "chronicle/20260103/desktop/12{index:02}00_300/talents/activity.md"
+        ));
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(
+            &source,
+            format!("# note {index}\nkestrel note {}\n", "word ".repeat(60)),
+        )
+        .unwrap();
+    }
+    scan_journal(&root, true).unwrap();
+    let db = db_path(&root);
+    Connection::open(&db)
+        .unwrap()
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .unwrap();
+    damage(&db);
+    root
+}
+
+fn scribble_header(db: &Path) {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new().write(true).open(db).unwrap();
+    file.write_all(&[0x5a; 4096]).unwrap();
+}
+
+/// Noise over most pages but the first, so opening the file still works and the
+/// failure comes from a real read.
+fn scribble_pages(db: &Path) {
+    use std::io::{Seek, SeekFrom, Write};
+    let pages = fs::metadata(db).unwrap().len() / 4096;
+    let mut file = fs::OpenOptions::new().write(true).open(db).unwrap();
+    for page in 1..pages {
+        file.seek(SeekFrom::Start(page * 4096)).unwrap();
+        file.write_all(&[0x5a; 4096]).unwrap();
+    }
+}
+
+/// SQLite says "malformed database schema" for this one, in other words.
+fn scribble_schema(db: &Path) {
+    let connection = Connection::open(db).unwrap();
+    connection
+        .execute_batch(
+            "PRAGMA writable_schema=ON;
+             UPDATE sqlite_master SET sql='not sql at all' WHERE name='files';
+             PRAGMA writable_schema=OFF;
+             PRAGMA wal_checkpoint(TRUNCATE);",
+        )
+        .unwrap();
+}
+
+fn check_is_listed(root: &Path) -> bool {
+    solstone_core_indexer_store::todo::listed_attempts(
+        root,
+        solstone_core_indexer_store::todo::Token::IndexCheck,
+    )
+    .unwrap()
+    .is_some()
+}
+
+#[test]
+fn a_reader_failure_reaches_the_check() {
+    type Read = fn(&Path) -> bool;
+    let readers: [(&str, Read); 3] = [
+        ("search", |root| {
+            search(root, &request("kestrel"), reference_date()).is_err()
+        }),
+        ("connections", |root| {
+            crate::load_edge_evidence(
+                root,
+                "a",
+                "b",
+                &crate::EdgeEvidenceRequest::default(),
+                &[],
+                &crate::EdgeAliases::default(),
+            )
+            .is_err()
+        }),
+        ("memory", |root| {
+            crate::open_own_memory_index(root, std::time::Duration::from_secs(1)).is_err()
+        }),
+    ];
+    for (name, read) in readers {
+        for (shape, damage) in [
+            ("header", scribble_header as fn(&Path)),
+            ("pages", scribble_pages as fn(&Path)),
+            ("schema", scribble_schema as fn(&Path)),
+        ] {
+            let root = damaged_journal(&format!("reader-damage-{name}-{shape}"), damage);
+            assert!(!check_is_listed(&root));
+            assert!(read(&root), "{name} on {shape} should fail");
+            assert!(check_is_listed(&root), "{name} on {shape}");
+            fs::remove_dir_all(&root).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_reader_on_a_sound_index_asks_for_nothing() {
+    let root = damaged_journal("reader-sound", |_| {});
+    let answer = search(&root, &request("kestrel"), reference_date()).unwrap();
+    assert!(!answer.results.is_empty());
+    assert!(!check_is_listed(&root));
+    fs::remove_dir_all(&root).unwrap();
+}
+
+/// Everything from a failing search to search answering again. The wait between
+/// checks is moved along by hand, since the clock seam is the store's.
+#[test]
+fn search_recovers_by_itself_after_a_real_failure() {
+    use solstone_core_indexer_store::todo::{DrainOptions, drain};
+    let root = damaged_journal("reader-recovers", scribble_header);
+    assert!(search(&root, &request("kestrel"), reference_date()).is_err());
+    assert!(check_is_listed(&root));
+    let first = drain(&root, DrainOptions::default()).unwrap();
+    assert!(first.timed_out, "held for the second check");
+    let due = fs::read_dir(root.join("indexer/todo"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| fs::read_to_string(path).is_ok_and(|text| text.contains("@index-check")))
+        .unwrap();
+    let mut entry: serde_json::Value = serde_json::from_slice(&fs::read(&due).unwrap()).unwrap();
+    assert_eq!(entry["attempts"], 1);
+    entry["not_before_ms"] = serde_json::json!(0);
+    fs::write(&due, serde_json::to_vec(&entry).unwrap()).unwrap();
+    for _ in 0..5 {
+        drain(&root, DrainOptions::default()).unwrap();
+    }
+    assert!(!check_is_listed(&root));
+    let answer = search(&root, &request("kestrel"), reference_date()).unwrap();
+    assert!(!answer.results.is_empty());
+    assert_eq!(answer.degraded, None, "the build finished");
+    fs::remove_dir_all(&root).unwrap();
+}

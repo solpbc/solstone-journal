@@ -18,6 +18,12 @@ use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_du
 use solstone_core_journal_io::errors::AtomicWriteError;
 use solstone_core_journal_io::paths::realpath_non_strict;
 
+/// The longest an index check waits to retry, doubled so a small clock step
+/// doesn't read as a clock that moved.
+pub const INDEX_CHECK_RETRY_CEILING_MS: u64 = 2 * 60 * 60 * 1000;
+/// The same for the wait before a second check.
+pub const INDEX_CHECK_HOLD_CEILING_MS: u64 = 20 * 60 * 1000;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Token {
     ScanFull,
@@ -26,6 +32,9 @@ pub enum Token {
     /// Connections waiting to be brought current after a change they were
     /// resolved against. Last in line: it runs a short slice and re-queues.
     Edges,
+    /// A real operation hit what looks like a damaged index, so the drain should
+    /// check the file. Never claimed and never served as work.
+    IndexCheck,
 }
 
 impl Token {
@@ -36,6 +45,7 @@ impl Token {
             Self::Reclassify => "@reclassify",
             Self::EntitySearch => "@entity-search",
             Self::Edges => "@edges",
+            Self::IndexCheck => "@index-check",
         }
     }
 }
@@ -58,6 +68,7 @@ impl Entry {
             ("reclassify", "@reclassify") => Some(2),
             ("entity-search", "@entity-search") => Some(3),
             ("edges", "@edges") => Some(4),
+            ("index-check", "@index-check") => Some(5),
             _ => None,
         }
     }
@@ -399,7 +410,9 @@ pub fn read_entry(path: &Path, repair: bool) -> io::Result<Option<Entry>> {
 /// Stops at the first due entry, without listing the whole directory first.
 pub fn has_due(journal: &Path, at_ms: u64) -> io::Result<bool> {
     for path in entry_paths_iter(&root(journal))? {
-        if read_entry(&path?, false)?.is_some_and(|entry| entry.not_before_ms <= at_ms) {
+        if read_entry(&path?, false)?
+            .is_some_and(|entry| entry.not_before_ms <= at_ms || entry.check_time_is_wrong(at_ms))
+        {
             return Ok(true);
         }
     }
@@ -456,6 +469,10 @@ pub struct TodoStatus {
     /// failed three times are counted as failed instead; both are left out.
     #[serde(default)]
     pub oldest_enqueued_ms: Option<u64>,
+    /// A check of the index file is asked for or under way. It isn't work on the
+    /// list: nothing serves it, so it stays out of the counts and keys.
+    #[serde(default)]
+    pub index_check: bool,
     /// Search tokens (whole-journal scans, reclassification, entity search)
     /// that have failed three or more times and are waiting to retry.
     #[serde(default)]
@@ -463,11 +480,24 @@ pub struct TodoStatus {
 }
 
 impl Entry {
+    /// An index check set further ahead than any wait it sets means a clock
+    /// moved. It's due now, or it could wait until the clock catches up.
+    #[must_use]
+    pub fn check_time_is_wrong(&self, at_ms: u64) -> bool {
+        self.key == Token::IndexCheck.key()
+            && self.not_before_ms.saturating_sub(at_ms)
+                > if self.attempts == 0 {
+                    INDEX_CHECK_RETRY_CEILING_MS
+                } else {
+                    INDEX_CHECK_HOLD_CEILING_MS
+                }
+    }
+
     /// Whether this entry is search work, as opposed to a queued connections
     /// refresh, which runs a slice at a time while search is current.
     #[must_use]
     pub fn is_search_work(&self) -> bool {
-        self.key != Token::Edges.key()
+        self.key != Token::Edges.key() && self.key != Token::IndexCheck.key()
     }
 }
 
@@ -480,6 +510,10 @@ pub fn inspect(journal: &Path) -> io::Result<TodoStatus> {
     ] {
         for path in entry_paths(&directory)? {
             if let Some(entry) = read_entry(&path, false)? {
+                if entry.key == Token::IndexCheck.key() {
+                    status.index_check = true;
+                    continue;
+                }
                 if claimed {
                     status.claimed += 1
                 } else {

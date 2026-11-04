@@ -1383,12 +1383,18 @@ impl QueryConnection {
         Ok(())
     }
 
+    fn unreadable(&self, error: &solstone_core_indexer_store::StoreError) -> IndexAccessError {
+        let detail = error.to_string();
+        report_damage_at(&self.path, &detail);
+        IndexAccessError::Unreadable {
+            path: self.path.clone(),
+            detail,
+        }
+    }
+
     fn classification_tables_exist(&self) -> Result<bool, IndexAccessError> {
         solstone_core_indexer_store::db::chunk_classification_tables_exist(&self.connection)
-            .map_err(|error| IndexAccessError::Unreadable {
-                path: self.path.clone(),
-                detail: error.to_string(),
-            })
+            .map_err(|error| self.unreadable(&error))
     }
 
     fn classification_coverage_complete(&self) -> Result<bool, IndexAccessError> {
@@ -1398,10 +1404,7 @@ impl QueryConnection {
         }
         let state =
             solstone_core_indexer_store::db::read_chunk_classification_backfill(&self.connection)
-                .map_err(|error| IndexAccessError::Unreadable {
-                path: self.path.clone(),
-                detail: error.to_string(),
-            })?;
+                .map_err(|error| self.unreadable(&error))?;
         let Some(state) = state else {
             return Ok(false);
         };
@@ -1419,10 +1422,7 @@ impl QueryConnection {
         &self,
     ) -> Result<Option<ConnectionIndexDegraded>, IndexAccessError> {
         let state = solstone_core_indexer_store::db::read_index_build_state(&self.connection)
-            .map_err(|error| IndexAccessError::Unreadable {
-                path: self.path.clone(),
-                detail: error.to_string(),
-            })?;
+            .map_err(|error| self.unreadable(&error))?;
         Ok(match state {
             None => Some(ConnectionIndexDegraded::Unknown),
             Some(state)
@@ -1441,10 +1441,7 @@ impl QueryConnection {
         let state = solstone_core_indexer_store::db::read_index_build_state(&self.connection)
             .map_err(|error| match error {
                 solstone_core_indexer_store::StoreError::Sql(error) => self.classify(error),
-                other => IndexAccessError::Unreadable {
-                    path: self.path.clone(),
-                    detail: other.to_string(),
-                },
+                other => self.unreadable(&other),
             })?;
         let Some(state) = state else {
             return Ok(Some(IndexDegraded::Unknown));
@@ -1870,6 +1867,7 @@ fn usize_to_sql(value: usize) -> String {
 
 fn classify_sql_error(path: PathBuf, error: Error) -> IndexAccessError {
     let detail = error.to_string();
+    report_damage_at(&path, &detail);
     if matches!(
         error,
         Error::SqliteFailure(ref sqlite, _)
@@ -1878,6 +1876,14 @@ fn classify_sql_error(path: PathBuf, error: Error) -> IndexAccessError {
         IndexAccessError::Locked { path, detail }
     } else {
         IndexAccessError::Unreadable { path, detail }
+    }
+}
+
+/// Ask for a check when a read fails the way a damaged file does. `path` is the
+/// one this crate built from the journal, so the request reaches the right list.
+fn report_damage_at(path: &Path, detail: &str) {
+    if let Some(journal) = path.parent().and_then(Path::parent) {
+        solstone_core_indexer_store::recovery::report_if_damage_text(journal, detail);
     }
 }
 

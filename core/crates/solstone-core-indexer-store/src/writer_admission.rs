@@ -10,6 +10,7 @@
 //! - `scan_journal` (scan)
 //! - `rescan_file` (rescan-file)
 //! - `reset_index` (reset)
+//! - the last-resort recovery of a damaged index (index-recover)
 //! - `prune_by_paths` (prune-paths)
 //! - `prune_authored_chat_paths` (prune-authored-chat)
 //! - `prune_chunks_by_stream` (prune-stream)

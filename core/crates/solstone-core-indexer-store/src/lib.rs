@@ -13,6 +13,7 @@ pub mod generation;
 pub mod merge;
 pub mod migrations;
 pub mod reconcile;
+pub mod recovery;
 pub mod retention;
 pub mod scan;
 mod screen_text;
@@ -86,6 +87,17 @@ impl StoreError {
                     rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
                 )
         )
+    }
+}
+
+impl StoreError {
+    /// Whether this is worth asking for a check of the file. Wider than
+    /// [`Self::is_corruption`] on purpose: indexing a file keeps only the text of
+    /// a SQL error. It can only start a check, and only the check can empty anything.
+    #[must_use]
+    pub fn suggests_damage(&self) -> bool {
+        self.is_corruption()
+            || matches!(self, Self::Io(error) if recovery::text_suggests_damage(&error.to_string()))
     }
 }
 

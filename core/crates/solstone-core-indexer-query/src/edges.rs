@@ -515,6 +515,27 @@ pub fn load_entity_network(
     attendance_kinds: &[&str],
     aliases: &EdgeAliases,
 ) -> Result<NetworkResponse, EdgeQueryError> {
+    report_edge_damage(
+        journal,
+        load_entity_network_unreported(
+            journal,
+            entity_id,
+            request,
+            principal_id,
+            attendance_kinds,
+            aliases,
+        ),
+    )
+}
+
+fn load_entity_network_unreported(
+    journal: &Path,
+    entity_id: &str,
+    request: &NetworkRequest,
+    principal_id: Option<&str>,
+    attendance_kinds: &[&str],
+    aliases: &EdgeAliases,
+) -> Result<NetworkResponse, EdgeQueryError> {
     let requested_id = entity_id;
     let entity_id = aliases.canonical(entity_id);
     if !(0..=NETWORK_NEIGHBOR_LIMIT_MAX).contains(&request.limit) {
@@ -652,6 +673,27 @@ pub fn load_edge_evidence(
     attendance_kinds: &[&str],
     aliases: &EdgeAliases,
 ) -> Result<EdgeEvidenceResponse, EdgeQueryError> {
+    report_edge_damage(
+        journal,
+        load_edge_evidence_unreported(
+            journal,
+            entity_id,
+            peer_id,
+            request,
+            attendance_kinds,
+            aliases,
+        ),
+    )
+}
+
+fn load_edge_evidence_unreported(
+    journal: &Path,
+    entity_id: &str,
+    peer_id: &str,
+    request: &EdgeEvidenceRequest,
+    attendance_kinds: &[&str],
+    aliases: &EdgeAliases,
+) -> Result<EdgeEvidenceResponse, EdgeQueryError> {
     let (requested_id, requested_peer) = (entity_id, peer_id);
     let entity_id = aliases.canonical(entity_id);
     let peer_id = aliases.canonical(peer_id);
@@ -713,6 +755,25 @@ pub fn load_edge_evidence(
 
 /// Load a global ranked edge overview. Type lookup is best-effort and only called for safe IDs.
 pub fn load_network_overview(
+    journal: &Path,
+    request: &NetworkOverviewRequest,
+    attendance_kinds: &[&str],
+    entity_type_lookup: &EntityTypeLookup<'_>,
+    aliases: &EdgeAliases,
+) -> Result<NetworkOverviewResponse, EdgeQueryError> {
+    report_edge_damage(
+        journal,
+        load_network_overview_unreported(
+            journal,
+            request,
+            attendance_kinds,
+            entity_type_lookup,
+            aliases,
+        ),
+    )
+}
+
+fn load_network_overview_unreported(
     journal: &Path,
     request: &NetworkOverviewRequest,
     attendance_kinds: &[&str],
@@ -1207,6 +1268,17 @@ pub fn is_safe_entity_id_component(entity_id: &str) -> bool {
 fn invalid(detail: String) -> EdgeQueryError {
     EdgeQueryError::InvalidRequestValue { detail }
 }
+/// Ask for a check when a read fails the way a damaged file does.
+fn report_edge_damage<T>(
+    journal: &Path,
+    result: Result<T, EdgeQueryError>,
+) -> Result<T, EdgeQueryError> {
+    if let Err(EdgeQueryError::EdgeIndexUnavailable { detail, .. }) = &result {
+        solstone_core_indexer_store::recovery::report_if_damage_text(journal, detail);
+    }
+    result
+}
+
 fn unavailable(path: PathBuf, error: SqlError) -> EdgeQueryError {
     EdgeQueryError::EdgeIndexUnavailable {
         path,

@@ -174,7 +174,10 @@ pub fn evaluate_search_index(
     };
 
     let coverage = match index.failure {
-        Some(solstone_core_system_health::IndexFailure::Unreadable) => "unknown",
+        Some(
+            solstone_core_system_health::IndexFailure::Unreadable
+            | solstone_core_system_health::IndexFailure::DamageCheck,
+        ) => "unknown",
         _ if index.pending == 0
             && index.failed == 0
             && index.retained == 0

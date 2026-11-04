@@ -23,6 +23,9 @@ use crate::indexing_observation::{IndexingObservations, read_indexing_observatio
 
 pub const INDEX_TEXT_OK: &str = "search is up to date with your journal.";
 pub const INDEX_TEXT_BUILDING: &str = "search is still being built.";
+pub const INDEX_TEXT_DAMAGE_CHECK: &str =
+    "search found a problem with its index and is checking it.";
+pub const INDEX_TEXT_REPEATED_REBUILD: &str = "search has had to rebuild itself more than once this week, which can mean the disk is failing.";
 pub const INDEX_TEXT_FAILED_FILES: &str = "some journal updates couldn't be added to search.";
 pub const INDEX_TEXT_UNREADABLE: &str = "search can't read its index right now.";
 pub const INDEX_TEXT_NEWER_GENERATION: &str =
@@ -75,6 +78,9 @@ pub enum IndexFailure {
     /// Queued whole-journal work (a full scan, reclassification, entity
     /// search) has failed three or more times and is waiting to retry.
     FailedWork,
+    /// A read or write hit what looks like a damaged index, and search is
+    /// checking the file. It rebuilds by itself if the damage is confirmed.
+    DamageCheck,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -415,6 +421,13 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
                 health.state = IndexHealthState::Behind;
                 health.text = "search is catching up with your journal.".to_owned();
             }
+            // Ahead of whatever else the damage made it read as, because this one
+            // says what's happening about it.
+            if todo.index_check {
+                health.state = IndexHealthState::Failing;
+                health.failure = Some(IndexFailure::DamageCheck);
+                health.text = INDEX_TEXT_DAMAGE_CHECK.to_owned();
+            }
         }
         Err(error) => {
             log::warn!("search work list could not be read: {error}");
@@ -448,6 +461,9 @@ fn with_work_list(journal: &Path, mut health: IndexHealth) -> IndexHealth {
     {
         health.state = IndexHealthState::Behind;
         health.text = INDEX_TEXT_CHECK_OVERDUE.to_owned();
+    }
+    if solstone_core_indexer_store::recovery::rebuilt_more_than_once_this_week(journal) {
+        health.text = format!("{} {INDEX_TEXT_REPEATED_REBUILD}", health.text);
     }
     health
 }
@@ -517,6 +533,83 @@ mod tests {
 
     use super::*;
     use crate::indexing_observation::{IndexingAttemptObservation, IndexingDiagnostics};
+
+    fn indexed_journal_with_damage() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        for index in 0..60 {
+            let source = journal
+                .path()
+                .join(format!("imports/fixture{index}/summary.md"));
+            std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+            std::fs::write(&source, format!("kestrel {index} {}", "word ".repeat(40))).unwrap();
+        }
+        solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+        let db = solstone_core_indexer_store::db::db_path(journal.path());
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        std::fs::write(&db, [0x5a; 8192]).unwrap();
+        journal
+    }
+
+    #[test]
+    fn a_damaged_index_says_it_is_being_checked_ahead_of_unreadable() {
+        let journal = indexed_journal_with_damage();
+        let unreported = evaluate_index_health(journal.path(), Utc::now());
+        assert_eq!(unreported.failure, Some(IndexFailure::Unreadable));
+        solstone_core_indexer_store::recovery::report_index_damage(journal.path());
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert_eq!(health.state, IndexHealthState::Failing);
+        assert_eq!(health.failure, Some(IndexFailure::DamageCheck));
+        assert_eq!(health.text, INDEX_TEXT_DAMAGE_CHECK);
+        assert_eq!(health.queued, 0, "a check is not search work");
+    }
+
+    /// The second check's wait moved along by hand, since the clock seam is the store's.
+    fn recover(journal: &std::path::Path) {
+        use solstone_core_indexer_store::todo::{DrainOptions, drain};
+        solstone_core_indexer_store::recovery::report_index_damage(journal);
+        assert!(drain(journal, DrainOptions::default()).unwrap().timed_out);
+        let due = std::fs::read_dir(journal.join("indexer/todo"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                std::fs::read_to_string(path).is_ok_and(|text| text.contains("@index-check"))
+            })
+            .unwrap();
+        let mut entry: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&due).unwrap()).unwrap();
+        entry["not_before_ms"] = serde_json::json!(0);
+        std::fs::write(&due, serde_json::to_vec(&entry).unwrap()).unwrap();
+        for _ in 0..5 {
+            drain(journal, DrainOptions::default()).unwrap();
+        }
+    }
+
+    #[test]
+    fn health_reads_true_through_a_recovery_and_notes_a_second() {
+        let journal = indexed_journal_with_damage();
+        recover(journal.path());
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert_eq!(health.failure, None, "{health:?}");
+        assert_eq!(health.state, IndexHealthState::Ok);
+        assert_eq!(health.text, INDEX_TEXT_OK);
+
+        let db = solstone_core_indexer_store::db::db_path(journal.path());
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        std::fs::write(&db, [0x5a; 8192]).unwrap();
+        recover(journal.path());
+        let health = evaluate_index_health(journal.path(), Utc::now());
+        assert_eq!(health.state, IndexHealthState::Ok);
+        assert!(
+            health.text.contains(INDEX_TEXT_REPEATED_REBUILD),
+            "{health:?}"
+        );
+    }
 
     #[test]
     fn a_queued_connections_refresh_leaves_search_current() {

@@ -44,6 +44,7 @@ pub use own_memory::{
     OwnMemoryQueryMode, compile_own_memory_query, inspect_own_memory_index,
     memory_row_matches_original, open_own_memory_connection, open_own_memory_index,
     own_memory_candidate_statement, own_memory_candidates, read_own_memory_row,
+    report_memory_read_damage,
 };
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use solstone_core_indexer_store::screen_text_source_current;

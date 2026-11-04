@@ -33,9 +33,15 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
 
 fn fix_for(failure: IndexFailure) -> Option<&'static str> {
     match failure {
-        IndexFailure::MembershipsMissing | IndexFailure::StampUnreadable => {
+        IndexFailure::MembershipsMissing => {
             Some("run solstone journal indexer --reset --rescan-full")
         }
+        IndexFailure::StampUnreadable => Some(
+            "search rebuilds its index from your journal once the damage is confirmed; if it persists, run solstone journal indexer --reset --rescan-full",
+        ),
+        IndexFailure::DamageCheck => Some(
+            "search is checking this itself and rebuilds if the damage is confirmed; run solstone journal indexer status for details",
+        ),
         IndexFailure::ClassificationStalled => {
             Some("run solstone journal indexer --rescan and check its warnings")
         }
@@ -49,7 +55,7 @@ fn fix_for(failure: IndexFailure) -> Option<&'static str> {
             "search keeps retrying these removals; run solstone journal indexer status for details",
         ),
         IndexFailure::Unreadable => Some(
-            "run solstone journal indexer status for details; if it persists, run solstone journal indexer --reset --rescan-full",
+            "search rebuilds its index from your journal once the damage is confirmed; if it persists, run solstone journal indexer --reset --rescan-full",
         ),
         IndexFailure::NewerGeneration => Some("update solstone to the newest version"),
         IndexFailure::ScanFailed => {

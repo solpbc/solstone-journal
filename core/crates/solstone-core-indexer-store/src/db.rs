@@ -343,11 +343,15 @@ pub(crate) fn reset_index_admitted(
     rebuild_empty_index(journal)
 }
 
-/// What SQLite's own check says is wrong with the file, if anything.
+/// What SQLite's own check says is wrong with the file, if anything. For an
+/// owner's explicit reset, so any row at all counts: it's how they clear a file
+/// the automatic path won't touch, such as one with a bad sector.
 fn file_damage(path: &Path) -> Result<Option<String>, StoreError> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     conn.execute_batch("PRAGMA busy_timeout=5000;")?;
-    let verdict = conn.query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0));
+    let verdict = conn.query_row("PRAGMA integrity_check(1)", [], |row| {
+        row.get::<_, String>(0)
+    });
     match verdict.map_err(StoreError::from) {
         Ok(verdict) if verdict == "ok" => Ok(None),
         Ok(verdict) => Ok(Some(verdict)),
@@ -373,7 +377,7 @@ pub(crate) fn empty_damaged_index(path: &Path) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn rebuild_empty_index(journal: &Path) -> Result<(), StoreError> {
+pub(crate) fn rebuild_empty_index(journal: &Path) -> Result<(), StoreError> {
     let index_dir = journal.join(INDEX_DIR);
     fs::create_dir_all(&index_dir)?;
     let mut conn = Connection::open(db_path(journal))?;

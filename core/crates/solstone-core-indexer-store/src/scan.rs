@@ -452,7 +452,13 @@ pub fn scan_journal_with_checkpoint(
     full: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ScanReport, StoreError> {
-    let admission = IndexAdmission::acquire_checked(journal, "scan", checkpoint)?;
+    let admission = match IndexAdmission::acquire_checked(journal, "scan", checkpoint) {
+        Ok(admission) => admission,
+        Err(error) => {
+            crate::recovery::report_if_damage(journal, &error);
+            return Err(error);
+        }
+    };
     scan_journal_admitted(journal, full, &admission, checkpoint)
 }
 
@@ -484,6 +490,9 @@ fn scan_journal_guarded(
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ScanReport, StoreError> {
     let result = scan_journal_pass(journal, full, hand_off_edges, admission, checkpoint);
+    if let Err(error) = &result {
+        crate::recovery::report_if_damage(journal, error);
+    }
     if let Err(error) = &result
         && !matches!(
             error,
@@ -785,6 +794,7 @@ fn scan_journal_pass(
         ) {
             Ok(warnings) => warnings,
             Err(StoreError::Io(error)) => {
+                crate::recovery::report_if_damage_text(journal, &error.to_string());
                 report.skipped += 1;
                 report.fail(Some(rel), Some(*mtime));
                 report.warnings.push(error.to_string());
@@ -1069,7 +1079,10 @@ fn index_planned_file(
         }
         // Left for the finishing pass, which counts it. This is also how a full
         // disk arrives: an insert error surfaces as an unreadable file.
-        Err(StoreError::Io(_)) => Ok(false),
+        Err(StoreError::Io(error)) => {
+            crate::recovery::report_if_damage_text(journal, &error.to_string());
+            Ok(false)
+        }
         Err(error) => Err(error),
     }
 }
@@ -1633,6 +1646,8 @@ fn reconcile_edges_handing_off(
     match crate::edge_refresh::invalidate_edges(conn, journal, &mut resolver, checkpoint) {
         Ok(invalidation) => report.marked = invalidation.marked,
         Err(error @ StoreError::WriterAdmission { .. }) => return Err(error),
+        // Saying so only in a warning would leave a damaged file unnoticed.
+        Err(error) if error.is_corruption() => return Err(error),
         Err(error) => report.warnings.push(format!(
             "connections not checked against entity changes: {error}"
         )),

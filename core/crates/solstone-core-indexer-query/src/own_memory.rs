@@ -148,8 +148,22 @@ pub fn open_own_memory_index(
     busy_timeout: Duration,
 ) -> Result<Connection, OwnMemoryOpenError> {
     let connection = open_own_memory_connection(journal, busy_timeout)?;
+    report_memory_damage(journal, &connection);
     inspect_own_memory_index(&connection)?;
     Ok(connection)
+}
+
+/// The memory readers keep no error text, so this asks the file directly.
+/// Reading the build state is what a damaged file fails first here.
+fn report_memory_damage(journal: &Path, connection: &Connection) {
+    if let Err(error) = read_index_build_state(connection) {
+        solstone_core_indexer_store::recovery::report_if_damage(journal, &error);
+    }
+}
+
+/// Ask for a check when a memory read fails the way a damaged file does.
+pub fn report_memory_read_damage(journal: &Path, error: &rusqlite::Error) {
+    solstone_core_indexer_store::recovery::report_if_damage_text(journal, &error.to_string());
 }
 
 pub fn open_own_memory_connection(
@@ -160,8 +174,11 @@ pub fn open_own_memory_connection(
     if !path.is_file() {
         return Err(OwnMemoryOpenError::Unavailable);
     }
-    let connection = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|_| OwnMemoryOpenError::Unavailable)?;
+    let connection =
+        Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|error| {
+            report_memory_read_damage(journal, &error);
+            OwnMemoryOpenError::Unavailable
+        })?;
     connection
         .busy_timeout(busy_timeout)
         .map_err(|_| OwnMemoryOpenError::Unavailable)?;

@@ -222,6 +222,18 @@ pub fn drain_with_checkpoint(
     options: DrainOptions,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<DrainReport, StoreError> {
+    let result = run_drain(journal, options, checkpoint);
+    if let Err(error) = &result {
+        crate::recovery::report_if_damage(journal, error);
+    }
+    result
+}
+
+fn run_drain(
+    journal: &Path,
+    options: DrainOptions,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<DrainReport, StoreError> {
     let started = Instant::now();
     let check = || {
         checkpoint()?;
@@ -268,6 +280,12 @@ pub fn drain_with_checkpoint(
             )?;
             report.recovered += 1;
         }
+    }
+    if crate::recovery::check_index_damage(journal, &check) == crate::recovery::AfterCheck::EndDrain
+    {
+        report.timed_out = true;
+        report.remaining = inspect(journal)?;
+        return Ok(report);
     }
     let mut list = WorkList::default();
     let mut run: Option<ScanRun> = None;
@@ -366,6 +384,7 @@ pub fn drain_with_checkpoint(
                         break;
                     }
                     Err(error) => {
+                        crate::recovery::report_if_damage(journal, &error);
                         return_failed(journal, entry.clone(), &claim, &error.to_string())?;
                         list.failed(entry);
                         report.failed += 1;
@@ -684,6 +703,8 @@ impl WorkList {
                     entry,
                 )),
                 Some(4) => edges = Some(entry),
+                // The index check runs on its own, before any work.
+                Some(5) => {}
                 Some(_) => tokens.push(entry),
                 None => {}
             }

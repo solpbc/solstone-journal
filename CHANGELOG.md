@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on windows, the journal app's pairing view now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
 - on a mac, a journal on an exFAT or FAT drive now says plainly that it can't run there and to use a mac-formatted drive. before, it failed without saying why.
 - a full search rebuild your journal runs on its own, such as after a restore, no longer keeps what you save out of search until it's done. it works in short turns, newest days first, and new saves go ahead of it.
+- if the search index itself is damaged, search now rebuilds it from your journal on its own, newest days first, after checking the damage is real. what you save waits to reach search while it checks, then keeps reaching it during the rebuild. the health page says when it's checking.
 - `solstone journal indexer --reset --rescan-full` now works on a damaged search index. it used to fail on the damage it was meant to clear.
 - importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
 - importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
