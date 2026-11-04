@@ -175,6 +175,7 @@ mod tests {
                         prev_segment: None,
                         seq: 1,
                     },
+                    body_only: false,
                 }],
                 indexing: IndexPublicationOutcomes::default(),
                 day_markers: vec![],

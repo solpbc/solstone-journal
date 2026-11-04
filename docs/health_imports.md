@@ -5,6 +5,10 @@ body data entering the journal. The filename is retained for links; `health` in
 owner-facing language means the journal system's health, while physiological
 records are body data.
 
+Apple Health and Oura are moving onto the journal's ordinary segments.
+[`BODY_SEGMENTS.md`](BODY_SEGMENTS.md) is the contract for that move; no owner
+command writes those segments yet, and what follows on bundles stays true until one does.
+
 ## Strava workouts
 
 Strava is the first body source an owner brings in from the import page (the **Strava** card), or with `solstone journal importer --source strava <download.zip | activities.csv>`.

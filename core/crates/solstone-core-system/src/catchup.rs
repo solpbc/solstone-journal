@@ -1010,7 +1010,9 @@ pub fn updated_days(
             if exclude.contains(&day) {
                 continue;
             }
-            if !day_marker_pair_status(journal, &day)?.is_complete() {
+            if !day_marker_pair_status(journal, &day)?.is_complete()
+                && !solstone_core_segment::day_holds_nothing_the_owner_did(journal, &day)
+            {
                 updated.push(day);
             }
         }
@@ -3563,6 +3565,24 @@ mod tests {
             )
             .expect("expired retry days"),
             vec!["20260101".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_day_holding_only_body_records_is_not_an_updated_day() {
+        let bed = Bed::new("updated-days-body");
+        bed.write(
+            "chronicle/20260101/import.apple_health/063000_300/body.jsonl",
+            b"{}\n",
+        );
+        bed.write(
+            "chronicle/20260101/health/stream.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        assert!(
+            updated_days(&bed.root, &BTreeSet::new())
+                .expect("updated days")
+                .is_empty()
         );
     }
 

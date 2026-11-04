@@ -18,18 +18,30 @@ use crate::{
 
 const MARKER_VERSION: u64 = 1;
 
-/// The two marker files participating in a day's completion comparison.
+/// A day's marker files. `Stream` and `Daily` take part in its completion
+/// comparison. `Body` does not: it only moves when body records change, so that
+/// publishing them leaves a day's completion alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthMarkerKind {
     Stream,
     Daily,
+    Body,
 }
 
 impl HealthMarkerKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Stream => "stream",
+            Self::Daily => "daily",
+            Self::Body => "body",
+        }
+    }
+
     fn filename(self) -> &'static str {
         match self {
             Self::Stream => "stream.updated",
             Self::Daily => "daily.updated",
+            Self::Body => "body.updated",
         }
     }
 }
@@ -246,18 +258,35 @@ pub fn bump_stream_marker_checked(
     day: &str,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<u64, AtomicWriteError> {
-    let path = health_marker_path(journal, day, HealthMarkerKind::Stream);
+    bump_marker_checked(journal, day, HealthMarkerKind::Stream, checkpoint)
+}
+
+/// Advance the marker that says a day's body records changed.
+pub fn bump_body_marker(journal: &Path, day: &str) -> Result<u64, AtomicWriteError> {
+    bump_marker_checked(journal, day, HealthMarkerKind::Body, &|| Ok(()))
+}
+
+fn bump_marker_checked(
+    journal: &Path,
+    day: &str,
+    kind: HealthMarkerKind,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<u64, AtomicWriteError> {
+    let path = health_marker_path(journal, day, kind);
     checkpoint().map_err(|error| atomic_error(&path, error))?;
     let _lock =
         hold_lock(&path, LockOptions::default()).map_err(|error| atomic_error(&path, error))?;
     checkpoint().map_err(|error| atomic_error(&path, error))?;
     let state = read_health_marker_path(&path).map_err(|error| atomic_error(&path, error))?;
-    let (generation, fingerprint) = state
-        .generation_and_fingerprint()
-        .ok_or_else(|| atomic_error(&path, "refusing to replace malformed stream marker"))?;
-    let next = generation
-        .checked_add(1)
-        .ok_or_else(|| atomic_error(&path, "stream marker generation overflow"))?;
+    let (generation, fingerprint) = state.generation_and_fingerprint().ok_or_else(|| {
+        atomic_error(
+            &path,
+            format!("refusing to replace malformed {} marker", kind.name()),
+        )
+    })?;
+    let next = generation.checked_add(1).ok_or_else(|| {
+        atomic_error(&path, format!("{} marker generation overflow", kind.name()))
+    })?;
     checkpoint().map_err(|error| atomic_error(&path, error))?;
     write_marker(
         &path,

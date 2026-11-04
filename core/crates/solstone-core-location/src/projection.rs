@@ -172,12 +172,17 @@ pub fn record_path(journal: &Path, day: &str) -> PathBuf {
 /// The day's stream marker as a comparable token. Unreadable reads as its own
 /// token, so it is retried rather than mistaken for unchanged.
 pub fn source_token(journal: &Path, day: &str) -> String {
+    marker_token(journal, day, HealthMarkerKind::Stream)
+}
+
+/// One of a day's markers as a value that changes when the marker moves.
+pub(crate) fn marker_token(journal: &Path, day: &str, kind: HealthMarkerKind) -> String {
     let nanos = |modified: std::time::SystemTime| {
         modified
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |duration| duration.as_nanos())
     };
-    match read_health_marker(journal, day, HealthMarkerKind::Stream) {
+    match read_health_marker(journal, day, kind) {
         Ok(HealthMarkerState::Absent) => "absent".to_owned(),
         Ok(HealthMarkerState::LegacyEmpty { modified }) => format!("legacy:{}", nanos(modified)),
         Ok(HealthMarkerState::MalformedNonEmpty { modified }) => {
@@ -558,6 +563,8 @@ pub struct Reconciler {
     names: String,
     /// Whether places have been worked out since this process started.
     places_current: bool,
+    /// The day's body documents, which share this pass.
+    pub(crate) body: crate::body_day::BodyDays,
 }
 
 impl Reconciler {

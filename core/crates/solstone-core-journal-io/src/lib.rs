@@ -92,7 +92,6 @@ pub use append::append_text;
 pub use append::run_with_bound_append_open_barrier;
 #[cfg(any(unix, windows))]
 pub use append::{append_text_bound_checked, append_text_checked};
-pub use atomic::is_publication_candidate_name;
 pub use atomic::serialize_json_bytes;
 #[cfg(any(unix, windows))]
 pub use atomic::{
@@ -130,6 +129,7 @@ pub use atomic::{
 pub use atomic::{atomic_replace_detailed_bound, atomic_replace_detailed_bound_checked};
 #[cfg(any(unix, windows))]
 pub use atomic::{install_file, install_retained_file};
+pub use atomic::{is_incidental_file_name, is_publication_candidate_name};
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use atomic::{
     run_with_bound_publication_faults, run_with_bound_publication_faults_and_barrier,
@@ -181,8 +181,8 @@ pub use flat_directory::{
 };
 pub use health_marker::{
     DayMarkerPairStatus, HealthMarker, HealthMarkerError, HealthMarkerKind, HealthMarkerState,
-    PublishOutcome, bump_stream_marker, day_marker_pair_status, health_marker_path,
-    publish_daily_marker_if_current, read_health_marker,
+    PublishOutcome, bump_body_marker, bump_stream_marker, day_marker_pair_status,
+    health_marker_path, publish_daily_marker_if_current, read_health_marker,
 };
 pub use identifier::{IdentifierMintError, is_uuid_v4, mint_uuid_v4};
 pub use inventory_budget::{InventoryBudget, InventoryBudgetLimit};

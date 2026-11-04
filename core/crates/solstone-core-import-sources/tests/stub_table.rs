@@ -11,9 +11,8 @@ use solstone_core_import_sources::{ImportSourcesError, MODULE_STUBS};
 // siblings must change, so git takes one side's number silently, with no conflict marker, and
 // the result compiles and passes while being wrong.
 const EXPECTED_STUBS: &[&str] = &[
-    "apple_health", //
-    "oura",         //
-    "registry",     //
+    "oura",     //
+    "registry", //
 ];
 
 // Same reasoning, same one-per-line shape.

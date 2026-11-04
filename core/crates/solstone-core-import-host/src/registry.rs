@@ -446,7 +446,7 @@ fn write_save_manifest(
     .map_err(|error| error.to_string())
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()

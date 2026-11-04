@@ -1339,11 +1339,11 @@ fn assess_day(journal: &Path, day: &str) -> (DayClassification, Vec<Candidate>) 
         return (DayClassification::Unreadable, Vec::new());
     }
 
-    // Calendar notes are not something the owner shared that day.
+    // Calendar notes and body records are not something the owner shared that day.
     let has_segments = match iter_segments(journal, solstone_core_journal_io::PathOrDay::Day(day)) {
         Ok(segments) => segments
             .iter()
-            .any(|segment| !solstone_core_segment::is_calendar_segment(journal, segment)),
+            .any(|segment| !solstone_core_segment::holds_nothing_the_owner_did(journal, segment)),
         Err(_) => return (DayClassification::Unreadable, Vec::new()),
     };
 

@@ -1093,16 +1093,9 @@ fn extra_files(dirs: &LinkDirs, dir: &str) -> Result<Vec<String>, LinkFolderErro
         let Some(name) = entry.name.to_str() else {
             continue;
         };
-        // Locks are sentinels, and desktop litter (`.DS_Store`, `Thumbs.db`,
-        // `desktop.ini`) is the file manager's, not the journal's.
         if name == LINK_FILE
             || name == OBSERVATIONS_FILE
-            || name.ends_with(".lock")
-            || name == ".DS_Store"
-            || name.starts_with("._")
-            || solstone_core_journal_io::is_publication_candidate_name(std::ffi::OsStr::new(name))
-            || name.eq_ignore_ascii_case("thumbs.db")
-            || name.eq_ignore_ascii_case("desktop.ini")
+            || solstone_core_journal_io::is_incidental_file_name(std::ffi::OsStr::new(name))
         {
             continue;
         }

@@ -316,6 +316,7 @@ fn is_transcript_name(name: &str) -> bool {
         || name == "imported.md"
         || name.ends_with("_transcript.md")
         || name == "workout.json"
+        || name == solstone_core_format::content::body_records::BODY_RECORDS_FILE
 }
 
 fn source_version(
@@ -456,6 +457,7 @@ fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static st
             _ => "Imported Text",
         },
         ContentResolution::Unindexed(RawPerceptFamily::Audio) => "Transcript",
+        ContentResolution::Indexed(Family::BodyRecords) => "Body Records",
         _ if speech => "Transcript",
         _ => match stream {
             Some("import.obsidian") => "Note",
@@ -477,6 +479,9 @@ fn project_line(segment_origin: &str, name: &str, speech: bool, line: &str) -> S
                 .collect::<Vec<_>>()
                 .join("\n");
             append_speaker_change_warning(&text, line)
+        }
+        ContentResolution::Indexed(Family::BodyRecords) => {
+            solstone_core_format::content::body_records::render_line(line)
         }
         ContentResolution::Indexed(Family::AiChat) => {
             let produced = produce_chunks(Family::AiChat, &rel, line);

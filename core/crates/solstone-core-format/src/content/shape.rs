@@ -58,6 +58,7 @@ pub fn resolve_content_shape(content_path: &Path, rel: &str) -> ContentResolutio
             spec.family,
             Family::AgentMemory
                 | Family::Workout
+                | Family::BodyRecords
                 | Family::ProtectedVideo
                 | Family::DesktopActivity
                 | Family::ScreenText

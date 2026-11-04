@@ -48,6 +48,7 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/talent-provenance/**/*.lock",
     "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/stream.updated.lock",
     "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/daily.updated.lock",
+    "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/body.updated.lock",
     "chronicle/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/health/sense-day.lease",
     // Atomic candidates can contain credentials before their final rename.
     "config/**/*.lock",
@@ -170,6 +171,7 @@ mod tests {
             "chronicle/20260929/health/talent-provenance/activity-inputs/personal/activity.json.lock",
             "chronicle/20260929/health/stream.updated.lock",
             "chronicle/20260929/health/daily.updated.lock",
+            "chronicle/20260929/health/body.updated.lock",
             "chronicle/20260929/health/sense-day.lease",
             "health/sync/state",
             "mcp-endpoint/pop.ed25519.pk8",

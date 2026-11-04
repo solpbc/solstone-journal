@@ -79,6 +79,8 @@ const LIST_FACETS_EMPTY: &str = "No facets. This connection can see none.";
 const LIST_ENTITIES_EMPTY: &str = "No entities. This connection can see none that match. This is a complete answer, not an error.";
 const LIST_TRANSCRIPTS_EMPTY: &str = "No transcript segments. This connection can see none that \
 match. This is a complete answer, not an error.";
+const LIST_TRANSCRIPTS_BODY_ELSEWHERE: &str = "No transcript segments, but this journal holds body data. List a day to see which body sources it holds in other_sources.";
+const LIST_TRANSCRIPTS_OTHER_SOURCES: &str = "No transcript segments, but this day holds body data. Pass a label from other_sources as source to list it.";
 const GET_TRANSCRIPT_EMPTY: &str = "This segment has no transcript text.";
 
 /// A prepared response together with the owner coordinates it was built from.
@@ -489,9 +491,8 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
             "the reference did not resolve to anything this connection may read"
         }
         DispatchError::Tool(ToolError::AuditUnavailable) => "the audit record could not be written",
-        DispatchError::Tool(ToolError::InvalidInput) | DispatchError::InvalidInput => {
-            "the request's arguments were not valid for this tool"
-        }
+        DispatchError::Tool(ToolError::InvalidInput | ToolError::SourceArguments)
+        | DispatchError::InvalidInput => "the request's arguments were not valid for this tool",
         DispatchError::PermissionDenied(_) => {
             "the request was outside this connection's permission"
         }
@@ -537,6 +538,7 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             insert_present(&mut arguments, "facet", request.facet_id.as_deref());
             insert_present(&mut arguments, "time_from", request.time_from.as_deref());
             insert_present(&mut arguments, "time_to", request.time_to.as_deref());
+            insert_present(&mut arguments, "source", request.source.as_deref());
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
@@ -2513,12 +2515,23 @@ fn list_transcripts(
                 || cursor.time_from != request.time_from
                 || cursor.time_to != request.time_to
                 || cursor.facet != request.facet_id
+                || cursor.source != request.source
             {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
             Ok(cursor)
         })
         .transpose()?;
+    if let Some(source) = request.source.as_deref() {
+        return crate::body_source::list_source(
+            journal_root,
+            principal,
+            snapshot,
+            &request,
+            source,
+            cursor.as_ref(),
+        );
+    }
 
     let boundary = boundary(
         snapshot,
@@ -2571,6 +2584,7 @@ fn list_transcripts(
     let mut unreadable = 0;
     let mut last_examined: Option<(String, String, String)> = None;
     let mut has_more = false;
+    let mut omitted_body = false;
 
     'outer: for day in &days {
         let day_segments =
@@ -2587,6 +2601,22 @@ fn list_transcripts(
             // Calendar notes are not something the owner did; they are found
             // through search, not listed as a moment of the day.
             if solstone_core_segment::is_calendar_stream(journal_root, &stream) {
+                continue;
+            }
+            // Body windows are reached by naming their source: hundreds a day would
+            // push what the owner said off the page.
+            if solstone_core_segment::is_body_only_segment(&segment) {
+                omitted_body = omitted_body
+                    || segment
+                        .path()
+                        .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
+                        .is_file()
+                        && live_allows(
+                            journal_root,
+                            &boundary,
+                            &segment_assignment_probe_path(day, &stream, &name),
+                            Some(&stream),
+                        );
                 continue;
             }
             let clock = segment_clock(&name);
@@ -2728,6 +2758,7 @@ fn list_transcripts(
                             time_from: request.time_from.clone(),
                             time_to: request.time_to.clone(),
                             facet: request.facet_id.clone(),
+                            source: None,
                             last_day,
                             last_stream,
                             last_name,
@@ -2752,8 +2783,21 @@ fn list_transcripts(
     if unreadable > 0 {
         response_val["unreadable"] = json!(unreadable);
     }
+    let other_sources = request.day.as_deref().map_or_else(Vec::new, |day| {
+        crate::body_source::other_sources(journal_root, snapshot, day)
+    });
+    let empty_note = if other_sources.is_empty() {
+        if omitted_body && request.day.is_none() {
+            LIST_TRANSCRIPTS_BODY_ELSEWHERE
+        } else {
+            LIST_TRANSCRIPTS_EMPTY
+        }
+    } else {
+        response_val["other_sources"] = json!(other_sources);
+        LIST_TRANSCRIPTS_OTHER_SOURCES
+    };
 
-    Ok(Prepared::new(response_val, count, targets).when_empty(LIST_TRANSCRIPTS_EMPTY))
+    Ok(Prepared::new(response_val, count, targets).when_empty(empty_note))
 }
 
 fn get_transcript(
@@ -2763,16 +2807,25 @@ fn get_transcript(
     request: ValidatedGetTranscript,
 ) -> Result<Prepared, DispatchError> {
     let owner_zone = solstone_core_journal_config::owner_zone(journal_root);
-    let ReferenceTarget::Segment(reference) = codec()
-        .resolve(
+    let reference = match codec()
+        .resolve_segment_or_span(
             &request.reference,
-            ReferenceKind::Segment,
             principal.connection,
             snapshot.generation,
         )
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
-    else {
-        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    {
+        ReferenceTarget::Segment(reference) => reference,
+        ReferenceTarget::SourceSpan(span) => {
+            return crate::body_source::read_source_span(
+                journal_root,
+                principal,
+                snapshot,
+                &request,
+                span,
+            );
+        }
+        _ => return Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     };
     let segment =
         iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(&reference.day))
@@ -3074,13 +3127,13 @@ fn content_digest(value: &Value) -> String {
     digest(&canonical_content(value).to_string())
 }
 
-fn canonical_content(value: &Value) -> Value {
+pub(crate) fn canonical_content(value: &Value) -> Value {
     match value {
         Value::Object(fields) => {
             let mut keys = fields
                 .iter()
                 .map(|(key, _)| key.as_str())
-                .filter(|key| !matches!(*key, "reference" | "next_cursor"))
+                .filter(|key| !matches!(*key, "reference" | "next_cursor" | "span_reference"))
                 .collect::<Vec<_>>();
             keys.sort_unstable();
             let mut canonical = Map::new();

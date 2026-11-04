@@ -166,7 +166,7 @@ fn strict_text(path: &Path) -> Result<String, String> {
 /// the evidence value changes `revision_under` on every day that source touches,
 /// so `EarlierContract` does not keep those days. The seven-day window applies
 /// only when evidence still matches under the accepted contract.
-const DERIVED_DAY_DOCUMENTS: &[&str] = &["location.md"];
+const DERIVED_DAY_DOCUMENTS: &[&str] = &["location.md", "body.md"];
 
 /// A supplemental source's immutable contract policy. Mutable source state
 /// belongs only to unfinished-packet freshness, never semantic evidence.
@@ -295,8 +295,12 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
         }
         let normalized = normalized_rel(&rel);
         let mut resolution = content::classify_file(&path, &normalized);
-        // Calendar notes are not something the owner did; no daily unit reads them.
-        if resolution == ContentResolution::Indexed(Family::Calendar) {
+        // Calendar notes and body records are not something the owner did; no
+        // daily unit reads them.
+        if matches!(
+            resolution,
+            ContentResolution::Indexed(Family::Calendar | Family::BodyRecords)
+        ) {
             continue;
         }
         let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -820,11 +824,11 @@ pub fn compute_daily_evidence_cached(
                 .format("%Y%m%d")
                 .to_string();
             // The schedule reads segment times as when the owner was active,
-            // which a calendar note is not.
+            // which a calendar note or a body record is not.
             let keys = iter_segments(journal, PathOrDay::Day(&d))
                 .map_err(|e| e.to_string())?
                 .into_iter()
-                .filter(|s| !solstone_core_segment::is_calendar_segment(journal, s))
+                .filter(|s| !solstone_core_segment::holds_nothing_the_owner_did(journal, s))
                 .map(|s| s.key().to_owned())
                 .collect::<Vec<_>>();
             windows.insert(d, keys);
@@ -1070,6 +1074,33 @@ mod tests {
         )
         .unwrap();
         assert_ne!(changed.revision_under(&old.contract), old.revision);
+    }
+
+    /// Publishing body records beside a day's recordings owes that day nothing new.
+    #[test]
+    fn body_records_and_their_day_document_are_not_daily_evidence() {
+        let root = root("body-records");
+        write(
+            &root,
+            "chronicle/20260910/talents/flow.md",
+            "# Flow\nMeeting.",
+        );
+        let names = ["morning_briefing", "entities:entity_observer"];
+        let before = names.map(|name| revision(&root, name, Some("work")));
+        write(
+            &root,
+            "chronicle/20260910/import.apple_health/063000_300/body.jsonl",
+            r#"{"v":1,"kind":"experience","id":"a","source":"apple_health","type":"t","label":"running"}"#,
+        );
+        write(
+            &root,
+            "chronicle/20260910/body.md",
+            "# body on Thursday, September 10, 2026\n",
+        );
+        assert_eq!(
+            names.map(|name| revision(&root, name, Some("work"))),
+            before
+        );
     }
 
     /// 2.0.42's first start wrote `location.md` into every past day holding phone

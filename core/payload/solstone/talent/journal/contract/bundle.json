@@ -359,6 +359,149 @@
       },
       "source": "core/crates/solstone-core/src/contract/schemas/audio.schema.json"
     },
+    "body-records": {
+      "schema": {
+        "$id": "solstone-journal-format:body-records",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "One row of a body window's body.jsonl. docs/BODY_SEGMENTS.md is the contract.",
+        "properties": {
+          "assembled": {
+            "description": "The rule an experience the source didn't report as one was assembled by, in words.",
+            "type": "string"
+          },
+          "at": {
+            "description": "A point reading's exact time, as the source wrote it, with its offset.",
+            "type": "string"
+          },
+          "by": {
+            "description": "The source's own name for the app or device that recorded this.",
+            "type": "string"
+          },
+          "count": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "date": {
+            "description": "The date a dated assertion covers. A dated row has no time.",
+            "type": "string"
+          },
+          "end": {
+            "description": "An interval's exact end. On an experience_tile, the whole experience's.",
+            "type": "string"
+          },
+          "experience": {
+            "enum": [
+              "workout",
+              "sleep",
+              "mindfulness"
+            ],
+            "type": "string"
+          },
+          "fields": {
+            "description": "Every other field the source gave. Read by agents, never indexed.",
+            "type": "object"
+          },
+          "id": {
+            "description": "Stable across re-imports. A changed value keeps its id.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "index": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "experience",
+              "experience_tile",
+              "stage",
+              "event",
+              "reading",
+              "count",
+              "logged",
+              "dated"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "description": "The kind in plain words.",
+            "type": "string"
+          },
+          "of": {
+            "description": "The id of the experience this row belongs to.",
+            "type": "string"
+          },
+          "source": {
+            "description": "The source family, such as apple_health.",
+            "type": "string"
+          },
+          "start": {
+            "description": "An interval's exact start. On an experience_tile, the whole experience's.",
+            "type": "string"
+          },
+          "type": {
+            "description": "The source's own identifier for this kind.",
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "v": {
+            "const": 1,
+            "type": "integer"
+          },
+          "value": {
+            "description": "The source's exact value.",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Values the source's reader restated for search.",
+            "type": "object"
+          },
+          "words": {
+            "description": "The owner's own words on this record.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "v",
+          "kind",
+          "id",
+          "source",
+          "type",
+          "label"
+        ],
+        "title": "Body Record",
+        "type": "object",
+        "x-journal-contract": {
+          "allowed_producers": [
+            "solstone-core-import-sources"
+          ],
+          "file_kind": "body_jsonl",
+          "format_id": "body-records",
+          "key_fields": [
+            "v",
+            "kind",
+            "id",
+            "source",
+            "type"
+          ],
+          "producer_write_paths": [
+            "chronicle/YYYYMMDD/import.{source}/HHMMSS_LEN/body.jsonl"
+          ],
+          "reference_writer": "solstone-core-import-sources",
+          "schema_owner": "solstone-core-format",
+          "write_discipline": "one file per window, replaced whole and atomically under the source's import lock; rows sorted by time then id; a re-import replaces by id and keeps the rest"
+        }
+      },
+      "source": "core/crates/solstone-core/src/contract/schemas/body-records.schema.json"
+    },
     "browser-jsonl": {
       "digest": "c14e66318587b8fa451ef1363e113885bdd80a41ce680b0c62fcc9033460a2e1",
       "schema": {

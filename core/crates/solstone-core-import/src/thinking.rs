@@ -117,7 +117,7 @@ fn inspect(journal: &Path, id: &str) -> Result<Option<ImportThinking>, String> {
     let mut segments = BTreeSet::new();
     let mut day_coordinates = BTreeMap::<String, BTreeSet<Coordinate>>::new();
     for segment in record.segments {
-        if !matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) {
+        if !matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) || segment.body_only {
             continue;
         }
         solstone_core_journal_io::segment_path(
@@ -336,12 +336,14 @@ mod tests {
                         prev_segment: None,
                         seq: 1,
                     },
+                    body_only: false,
                 },
                 SegmentPublicationOutcome {
                     day: "20260102".into(),
                     stream: "import.notes".into(),
                     segment: "120000_60".into(),
                     outcome: SegmentBindingOutcome::OwnerDeleted,
+                    body_only: false,
                 },
             ],
             indexing: IndexPublicationOutcomes::default(),

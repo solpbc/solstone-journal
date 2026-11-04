@@ -218,7 +218,9 @@ fn every_artifact_has_owning_production_mention_outside_durability() {
                 combined_source.contains("fn classify_heartbeat")
                     || combined_source.contains("classify_heartbeat(")
             }
-            ArtifactId::HealthMarkerStream | ArtifactId::HealthMarkerDaily => {
+            ArtifactId::HealthMarkerStream
+            | ArtifactId::HealthMarkerDaily
+            | ArtifactId::HealthMarkerBody => {
                 combined_source.contains("read_health_marker")
                     || combined_source.contains("HealthMarkerKind")
             }

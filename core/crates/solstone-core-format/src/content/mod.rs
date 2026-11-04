@@ -6,6 +6,7 @@ mod activities;
 pub use activities::is_retired_plan;
 mod ai_chat;
 mod audio;
+pub mod body_records;
 pub use audio::OTHER_VOICE;
 mod browser;
 mod day_accumulator;
@@ -81,6 +82,8 @@ pub enum Family {
     AgentMemory,
     /// One piece of a Strava workout. This family is path-selected only.
     Workout,
+    /// A body window's records. This family is path-selected only.
+    BodyRecords,
     /// A pause while a protected-video window was on screen. This family is path-selected only.
     ProtectedVideo,
     /// Desktop activity notes. This family is path-selected only.
@@ -102,7 +105,7 @@ pub enum RawPerceptFamily {
 }
 
 #[cfg(test)]
-const ALL_FAMILIES: [Family; 21] = [
+const ALL_FAMILIES: [Family; 22] = [
     Family::Markdown,
     Family::Event,
     Family::Activity,
@@ -119,6 +122,7 @@ const ALL_FAMILIES: [Family; 21] = [
     Family::MorningBriefing,
     Family::AgentMemory,
     Family::Workout,
+    Family::BodyRecords,
     Family::ProtectedVideo,
     Family::DesktopActivity,
     Family::ScreenText,
@@ -249,6 +253,17 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
             basis: ScopeBasis::JournalWide,
         },
     },
+    // A day's body record in words (`solstone-core-location` writes it): what
+    // was recorded and by what, never a reading's value.
+    FamilyPattern {
+        pattern: "*/body.md",
+        family: Family::Markdown,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::JournalWide,
+        },
+    },
     FamilyPattern {
         pattern: "*/*/*/talents/sense.json",
         family: Family::Sense,
@@ -330,6 +345,24 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
     FamilyPattern {
         pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/import.*/*/imported.md",
         family: Family::Markdown,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+    },
+    FamilyPattern {
+        pattern: "*/import.apple_health/*/body.jsonl",
+        family: Family::BodyRecords,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+    },
+    FamilyPattern {
+        pattern: "*/import.oura/*/body.jsonl",
+        family: Family::BodyRecords,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Admitted {
             category: AdmittedCategory::Transcripts,
@@ -676,6 +709,7 @@ pub fn produce_chunks_by_shape(
         Family::Sense => sense::render(records),
         Family::MorningBriefing => morning_briefing::render(records),
         Family::Workout => workout::render(records),
+        Family::BodyRecords => body_records::render(records),
         Family::Calendar => render_calendar(records),
         Family::PossibleNames => possible_names::render(records),
         Family::AgentMemory => ProducedChunks {

@@ -17,6 +17,7 @@ full-tests = []
 
 [dependencies]
 chrono.workspace = true
+solstone-core-format.workspace = true
 chrono-tz.workspace = true
 log.workspace = true
 lzma-rs.workspace = true

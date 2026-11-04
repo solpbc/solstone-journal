@@ -348,7 +348,8 @@ where
         return DayOutcome::Malformed;
     };
     let has_data = day_directory.is_dir()
-        && iter_segments(journal, PathOrDay::Day(day)).is_ok_and(|segments| !segments.is_empty());
+        && iter_segments(journal, PathOrDay::Day(day)).is_ok_and(|segments| !segments.is_empty())
+        && !solstone_core_segment::day_holds_nothing_the_owner_did(journal, day);
     if !has_data {
         return DayOutcome::NoData;
     }

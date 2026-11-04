@@ -1908,12 +1908,12 @@ fn reconcile_pass_with_roots(
         }
     };
     let policy = WorkPolicy::read(journal)?;
-    // A day holding only calendar notes holds nothing the owner did, so it
-    // owes no work.
+    // A day holding only calendar notes or body records holds nothing the owner
+    // did, so it owes no work.
     let mut days = solstone_core_journal_io::day_dirs(journal)
         .map_err(|error| error.to_string())?
         .into_iter()
-        .filter(|(day, _)| !solstone_core_segment::day_holds_only_calendar(journal, day))
+        .filter(|(day, _)| !solstone_core_segment::day_holds_nothing_the_owner_did(journal, day))
         .collect::<BTreeMap<_, _>>();
     let imports = solstone_core_import::thinking::read(journal)?;
     let pending_archives =
@@ -3471,6 +3471,80 @@ mod tests {
         assert!(!queue.contains_reference("supervisor-work-19990101-daily"));
     }
 
+    /// A body window as the real writer leaves it, with a chosen facet.
+    fn body_window(root: &Path, day: &str, key: &str) {
+        let dir = root
+            .join("chronicle")
+            .join(day)
+            .join("import.apple_health")
+            .join(key);
+        std::fs::create_dir_all(dir.join("talents")).unwrap();
+        std::fs::write(dir.join("body.jsonl"), "{}\n").unwrap();
+        std::fs::write(dir.join("body.jsonl.lock"), "").unwrap();
+        std::fs::write(dir.join("stream.json"), "{}").unwrap();
+        std::fs::write(dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+    }
+
+    fn inventory_after_a_pass(
+        root: &Path,
+    ) -> (
+        solstone_core_system::work_inventory::WorkInventory,
+        TaskQueue,
+    ) {
+        let queue = queue(root);
+        reconcile(root, &queue, &AtomicBool::new(false)).unwrap();
+        (
+            solstone_core_system::work_inventory::read(root)
+                .unwrap()
+                .unwrap(),
+            queue,
+        )
+    }
+
+    #[test]
+    fn a_day_holding_only_body_windows_owes_nothing_at_any_age() {
+        let root = fixture("local");
+        let today = chrono::Local::now().format("%Y%m%d").to_string();
+        for day in ["19990101", today.as_str()] {
+            body_window(root.path(), day, "063000_300");
+            body_window(root.path(), day, "063500_300");
+        }
+        // A tombstoned window doesn't flip the day.
+        let deleted = root
+            .path()
+            .join("chronicle/19990101/import.apple_health/064000_300");
+        std::fs::create_dir_all(&deleted).unwrap();
+        std::fs::write(deleted.join("tombstone.json"), "{}").unwrap();
+        let (report, queue) = inventory_after_a_pass(root.path());
+        assert_eq!(report.days_total, 0);
+        assert_eq!(report.oldest_day, None);
+        assert!(report.bands.iter().all(|band| band.segments_owed == 0));
+        assert!(!queue.contains_reference("supervisor-work-19990101-daily"));
+        assert!(!queue.contains_reference("supervisor-work-19990101-notes-063000_300"));
+    }
+
+    #[test]
+    fn body_windows_beside_real_segments_change_nothing_a_pass_decides() {
+        let without = fixture("local");
+        segment(without.path(), "20000101", "120000_60");
+        let with = fixture("local");
+        segment(with.path(), "20000101", "120000_60");
+        body_window(with.path(), "20000101", "063000_300");
+        body_window(with.path(), "20000101", "120000_300");
+
+        let (plain, plain_queue) = inventory_after_a_pass(without.path());
+        let (beside, beside_queue) = inventory_after_a_pass(with.path());
+        assert_eq!(beside.days_total, plain.days_total);
+        for (left, right) in plain.bands.iter().zip(&beside.bands) {
+            assert_eq!(left.segments_owed, right.segments_owed);
+            assert_eq!(left.segments_complete, right.segments_complete);
+        }
+        for queue in [&plain_queue, &beside_queue] {
+            assert!(queue.contains_reference("supervisor-work-20000101-notes-120000_60"));
+        }
+        assert!(!beside_queue.contains_reference("supervisor-work-20000101-notes-063000_300"));
+    }
+
     #[test]
     fn other_importers_records_and_oversized_capture_rows_leave_the_inventory_complete() {
         let root = fixture("local");
@@ -3651,6 +3725,7 @@ mod tests {
                     prev_segment: None,
                     seq: 1,
                 },
+                body_only: false,
             }],
             indexing: IndexPublicationOutcomes::default(),
             day_markers: Vec::new(),

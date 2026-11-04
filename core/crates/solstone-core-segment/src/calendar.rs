@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use solstone_core_format::calendar::CALENDAR_SOURCE;
-use solstone_core_journal_io::{PathOrDay, Segment, iter_segments};
+use solstone_core_journal_io::Segment;
 
 use crate::segment_dir::is_safe_stream_component;
 use crate::stream_record::{read_typed_stream_record, stream_record_path};
@@ -33,17 +33,6 @@ pub fn is_calendar_segment(journal: &Path, segment: &Segment) -> bool {
         .directory()
         .and_then(|name| name.to_str())
         .is_some_and(|name| is_calendar_stream(journal, name))
-}
-
-/// Whether every segment of `day` sits in a calendar stream, and it has at
-/// least one. Such a day holds nothing the owner did.
-pub fn day_holds_only_calendar(journal: &Path, day: &str) -> bool {
-    iter_segments(journal, PathOrDay::Day(day)).is_ok_and(|segments| {
-        !segments.is_empty()
-            && segments
-                .iter()
-                .all(|segment| is_calendar_segment(journal, segment))
-    })
 }
 
 #[cfg(test)]
@@ -71,12 +60,6 @@ mod tests {
         .unwrap();
     }
 
-    fn segment(journal: &Path, day: &str, stream: &str, key: &str) {
-        let dir = journal.join("chronicle").join(day).join(stream).join(key);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("note.jsonl"), "{}\n").unwrap();
-    }
-
     #[test]
     fn a_stream_is_a_calendar_stream_by_its_bound_source_only() {
         let journal = TempDir::new();
@@ -94,23 +77,5 @@ mod tests {
         assert!(!is_calendar_stream(root, "../streams/phone_calendar"));
         fs::write(root.join("streams/broken.json"), "{").unwrap();
         assert!(!is_calendar_stream(root, "broken"));
-    }
-
-    #[test]
-    fn a_day_holds_only_calendar_when_every_segment_is_a_calendar_segment() {
-        let journal = TempDir::new();
-        let root = journal.path();
-        stream(root, "phone_calendar", Some("calendar"));
-        stream(root, "phone", Some("audio"));
-        segment(root, "20261019", "phone_calendar", "094000_300");
-        segment(root, "20261019", "phone_calendar", "101000_300");
-        segment(root, "20261020", "phone_calendar", "163000_300");
-        segment(root, "20261020", "phone", "090000_300");
-        assert!(day_holds_only_calendar(root, "20261019"));
-        assert!(!day_holds_only_calendar(root, "20261020"));
-        // A day with no segments at all keeps counting as it always has.
-        fs::create_dir_all(root.join("chronicle/20261021/health")).unwrap();
-        assert!(!day_holds_only_calendar(root, "20261021"));
-        assert!(!day_holds_only_calendar(root, "20261022"));
     }
 }

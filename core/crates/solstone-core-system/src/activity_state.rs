@@ -54,8 +54,13 @@ pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
             continue;
         }
         if let Ok(stream_entries) = fs::read_dir(path) {
+            let stream = entry.file_name();
             for segment in stream_entries.flatten() {
-                if segment.path().is_dir() {
+                if segment.path().is_dir()
+                    && !stream.to_str().is_some_and(|stream| {
+                        solstone_core_segment::is_body_only_dir(stream, &segment.path())
+                    })
+                {
                     collect_segment_facets(&segment.path(), &mut active);
                 }
             }
@@ -92,6 +97,10 @@ pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<Strin
     .map_err(|e| e.to_string())?;
     let mut facets = BTreeSet::new();
     for segment in segments {
+        // An import's chosen facet files body records; it owes no facet's work.
+        if solstone_core_segment::is_body_only_segment(&segment) {
+            continue;
+        }
         let path = segment.path().join("talents/facets.json");
         let rows: Vec<Value> =
             match read_json_durable::<Vec<Value>>(ArtifactId::SegmentFacets, &path) {
@@ -723,6 +732,40 @@ mod tests {
 
     fn sense(facets: serde_json::Value) -> serde_json::Value {
         json!({"density":"active","content_type":"work","activity_summary":"work","facets":facets})
+    }
+
+    #[test]
+    fn a_chosen_facet_on_body_records_activates_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let body = root
+            .path()
+            .join("chronicle/20261010/import.apple_health/063000_300");
+        fs::create_dir_all(body.join("talents")).unwrap();
+        fs::write(body.join("body.jsonl"), "{}\n").unwrap();
+        fs::write(body.join("talents/facets.json"), r#"[{"facet":"health"}]"#).unwrap();
+        assert!(active_facets(root.path(), "20261010").is_empty());
+        assert!(
+            active_facets_checked(root.path(), "20261010")
+                .unwrap()
+                .is_empty()
+        );
+
+        let recording = root.path().join("chronicle/20261010/phone/090000_300");
+        fs::create_dir_all(recording.join("talents")).unwrap();
+        fs::write(recording.join("audio.jsonl"), "{}\n").unwrap();
+        fs::write(
+            recording.join("talents/facets.json"),
+            r#"[{"facet":"work"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            active_facets(root.path(), "20261010"),
+            std::collections::BTreeSet::from(["work".to_owned()])
+        );
+        assert_eq!(
+            active_facets_checked(root.path(), "20261010").unwrap(),
+            std::collections::BTreeSet::from(["work".to_owned()])
+        );
     }
 
     #[test]

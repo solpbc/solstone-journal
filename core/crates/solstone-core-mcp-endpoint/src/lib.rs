@@ -25,6 +25,9 @@ mod activity;
 mod activity_admit;
 pub(crate) mod agent_state;
 mod audit;
+pub(crate) mod body_source;
+#[cfg(all(test, feature = "full-tests"))]
+mod body_source_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod boundary_tests;
 mod bridge_carrier;

@@ -16,6 +16,7 @@ pub(crate) struct ValidatedListTranscripts {
     pub(crate) cursor: Option<String>,
     pub(crate) time_from: Option<String>,
     pub(crate) time_to: Option<String>,
+    pub(crate) source: Option<String>,
 }
 
 pub(crate) struct ValidatedGetTranscript {
@@ -38,6 +39,8 @@ struct ListParams {
     time_from: Option<String>,
     #[serde(default)]
     time_to: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -87,7 +90,13 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
     {
         return Err(ToolError::InvalidInput);
     }
+    if !optional_string_within_limit(&params.source, MAX_FACET_BYTES) {
+        return Err(ToolError::InvalidInput);
+    }
     let normalized_day = super::normalize_day(params.day)?;
+    if params.source.is_some() && (normalized_day.is_none() || params.facet.is_some()) {
+        return Err(ToolError::SourceArguments);
+    }
     if (params.time_from.is_some() || params.time_to.is_some()) && normalized_day.is_none() {
         return Err(ToolError::InvalidInput);
     }
@@ -114,6 +123,7 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
         cursor: params.cursor,
         time_from: params.time_from,
         time_to: params.time_to,
+        source: params.source,
     })
 }
 

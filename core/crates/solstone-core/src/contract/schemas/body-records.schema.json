@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "solstone-journal-format:body-records",
+  "title": "Body Record",
+  "description": "One row of a body window's body.jsonl. docs/BODY_SEGMENTS.md is the contract.",
+  "type": "object",
+  "required": ["v", "kind", "id", "source", "type", "label"],
+  "properties": {
+    "v": { "type": "integer", "const": 1 },
+    "kind": {
+      "type": "string",
+      "enum": ["experience", "experience_tile", "stage", "event", "reading", "count", "logged", "dated"]
+    },
+    "id": { "type": "string", "minLength": 1, "description": "Stable across re-imports. A changed value keeps its id." },
+    "source": { "type": "string", "description": "The source family, such as apple_health." },
+    "type": { "type": "string", "description": "The source's own identifier for this kind." },
+    "label": { "type": "string", "description": "The kind in plain words." },
+    "by": { "type": "string", "description": "The source's own name for the app or device that recorded this." },
+    "at": { "type": "string", "description": "A point reading's exact time, as the source wrote it, with its offset." },
+    "start": { "type": "string", "description": "An interval's exact start. On an experience_tile, the whole experience's." },
+    "end": { "type": "string", "description": "An interval's exact end. On an experience_tile, the whole experience's." },
+    "date": { "type": "string", "description": "The date a dated assertion covers. A dated row has no time." },
+    "value": { "type": "string", "description": "The source's exact value." },
+    "unit": { "type": "string" },
+    "experience": { "type": "string", "enum": ["workout", "sleep", "mindfulness"] },
+    "assembled": { "type": "string", "description": "The rule an experience the source didn't report as one was assembled by, in words." },
+    "of": { "type": "string", "description": "The id of the experience this row belongs to." },
+    "index": { "type": "integer", "minimum": 1 },
+    "count": { "type": "integer", "minimum": 1 },
+    "fields": { "type": "object", "description": "Every other field the source gave. Read by agents, never indexed." },
+    "values": { "type": "object", "description": "Values the source's reader restated for search.", "additionalProperties": { "type": "string" } },
+    "words": { "type": "array", "items": { "type": "string" }, "description": "The owner's own words on this record." }
+  },
+  "x-journal-contract": {
+    "format_id": "body-records",
+    "schema_owner": "solstone-core-format",
+    "reference_writer": "solstone-core-import-sources",
+    "allowed_producers": ["solstone-core-import-sources"],
+    "write_discipline": "one file per window, replaced whole and atomically under the source's import lock; rows sorted by time then id; a re-import replaces by id and keeps the rest",
+    "file_kind": "body_jsonl",
+    "key_fields": ["v", "kind", "id", "source", "type"],
+    "producer_write_paths": ["chronicle/YYYYMMDD/import.{source}/HHMMSS_LEN/body.jsonl"]
+  }
+}

@@ -149,7 +149,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::ListTranscripts,
         wire_name: "list_transcripts",
         title: "list transcripts",
-        description: "List transcript segments this connection may read, each with its time and its source, which says where it came from. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A reference is different on every call, even for the same segment, so don't compare references to tell segments apart. Two segments at the same time with different sources are separate recordings.",
+        description: "List transcript segments this connection may read, each with its time and its source, which says where it came from. Give one day (YYYYMMDD or YYYY-MM-DD), and a time range within it when you know one; without a day, the newest days come first. When more remain, pass next_cursor as cursor to continue. Read one with get_transcript. A reference is different on every call, even for the same segment, so don't compare references to tell segments apart. Two segments at the same time with different sources are separate recordings. A list leaves out body data sources, and a day's list names any it holds in other_sources. Pass one of those labels as source to list that source's segments. The response adds gaps, the stretches no segment this connection can read covers (a gap means no segment, not that nothing happened), and span_reference: pass it to get_transcript as reference to read them all.",
         input_schema: list_transcripts_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
@@ -158,7 +158,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetTranscript,
         wire_name: "get_transcript",
         title: "read a transcript",
-        description: "Read what was said in one transcript segment, from a search result or from list_transcripts. Its source is the one listed with that segment. When it returns next_cursor, pass it as cursor to read the rest. When it says untimed, the times are not real. If a segment can't be read, search again or list that day.",
+        description: "Read what was said in one transcript segment, from a search result or from list_transcripts. Its source is the one listed with that segment. When it returns next_cursor, pass it as cursor to read the rest. When it says untimed, the times are not real. If a segment can't be read, search again or list that day. Pass a span_reference from list_transcripts as reference to read through that source's segments in time order, each entry attributed; a page can be short, so read on while next_cursor is present.",
         input_schema: transcript_input_schema,
         requires: TRANSCRIPTS,
         audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
@@ -630,6 +630,7 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
             "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES, "pattern": DAY_PATTERN, "description": DAY_DESCRIPTION },
             "time_from": { "type": "string", "description": "Start of a time range within day, as HH:MM." },
             "time_to": { "type": "string", "description": "End of a time range within day, as HH:MM." },
+            "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A body source's label, exactly as other_sources or that day's body document gives it. Needs day, and can't be combined with facet." },
         }
     });
     with_scoped_facet(schema, context)

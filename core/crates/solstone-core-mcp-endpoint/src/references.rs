@@ -29,6 +29,7 @@ pub(crate) enum ReferenceKind {
     EntityList,
     Activity,
     ActivityList,
+    SourceSpan,
 }
 
 impl ReferenceKind {
@@ -44,6 +45,7 @@ impl ReferenceKind {
             Self::EntityList => 8,
             Self::Activity => 9,
             Self::ActivityList => 10,
+            Self::SourceSpan => 11,
         }
     }
 
@@ -59,6 +61,7 @@ impl ReferenceKind {
             8 => Some(Self::EntityList),
             9 => Some(Self::Activity),
             10 => Some(Self::ActivityList),
+            11 => Some(Self::SourceSpan),
             _ => None,
         }
     }
@@ -142,9 +145,77 @@ pub(crate) struct TranscriptListCursor {
     pub time_to: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facet: Option<String>,
+    /// A body source's label, for a list of that source alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     pub last_day: String,
     pub last_stream: String,
     pub last_name: String,
+}
+
+/// Where a body source's span read stands: a window, and how far into it.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SourceSpanPosition {
+    pub segment: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statement_ordinal: Option<u64>,
+}
+
+impl SourceSpanPosition {
+    pub(crate) fn at_start(segment: &str) -> Self {
+        Self {
+            segment: segment.to_owned(),
+            version: None,
+            source_index: None,
+            byte_offset: None,
+            statement_ordinal: None,
+        }
+    }
+
+    pub(crate) fn within(
+        segment: &str,
+        cursor: &solstone_core_transcripts::SegmentTranscriptCursor,
+    ) -> Self {
+        Self {
+            segment: segment.to_owned(),
+            version: Some(cursor.version.fingerprint()),
+            source_index: Some(cursor.source_index),
+            byte_offset: Some(cursor.byte_offset),
+            statement_ordinal: Some(cursor.statement_ordinal),
+        }
+    }
+
+    /// The segment cursor this stands for, when it stands inside a window.
+    pub(crate) fn inside(&self) -> Option<solstone_core_transcripts::SegmentTranscriptCursor> {
+        Some(solstone_core_transcripts::SegmentTranscriptCursor {
+            source_index: self.source_index?,
+            byte_offset: self.byte_offset?,
+            statement_ordinal: self.statement_ordinal?,
+            version: solstone_core_transcripts::SegmentTranscriptVersion::from_fingerprint(
+                self.version?,
+            ),
+        })
+    }
+}
+
+/// One body source's windows over a span of a day, read in order. Its walk is
+/// shaped to take a kind filter and to skip windows without a format change.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct SourceSpanReference {
+    pub day: String,
+    pub stream: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<SourceSpanPosition>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -229,6 +300,7 @@ pub(crate) enum ReferenceTarget {
     EntityList(EntityListCursor),
     Activity(ActivityReference),
     ActivityList(ActivityListCursor),
+    SourceSpan(SourceSpanReference),
 }
 
 impl ReferenceTarget {
@@ -244,6 +316,7 @@ impl ReferenceTarget {
             Self::EntityList(_) => ReferenceKind::EntityList,
             Self::Activity(_) => ReferenceKind::Activity,
             Self::ActivityList(_) => ReferenceKind::ActivityList,
+            Self::SourceSpan(_) => ReferenceKind::SourceSpan,
         }
     }
 }
@@ -384,6 +457,26 @@ impl ReferenceCodec {
         Ok(bound.target)
     }
 
+    /// A reference `get_transcript` takes: one segment, or a body source's span.
+    pub(crate) fn resolve_segment_or_span(
+        &self,
+        value: &str,
+        connection: &str,
+        generation: u64,
+    ) -> Result<ReferenceTarget, ReferenceError> {
+        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(value)
+            .map_err(|_| ReferenceError::NotFound)?;
+        if token.len() <= 2 + NONCE_BYTES + HMAC_BYTES || token[0] != TOKEN_VERSION {
+            return Err(ReferenceError::NotFound);
+        }
+        let kind = match ReferenceKind::from_tag(token[1]) {
+            Some(ReferenceKind::SourceSpan) => ReferenceKind::SourceSpan,
+            _ => ReferenceKind::Segment,
+        };
+        self.resolve(value, kind, connection, generation)
+    }
+
     pub(crate) fn resolve_entry_or_activity(
         &self,
         value: &str,
@@ -458,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_kind_tags_roundtrip_1_through_10() {
+    fn reference_kind_tags_roundtrip_1_through_11() {
         for (kind, expected_tag) in [
             (ReferenceKind::Entry, 1),
             (ReferenceKind::Segment, 2),
@@ -470,11 +563,12 @@ mod tests {
             (ReferenceKind::EntityList, 8),
             (ReferenceKind::Activity, 9),
             (ReferenceKind::ActivityList, 10),
+            (ReferenceKind::SourceSpan, 11),
         ] {
             assert_eq!(kind.tag(), expected_tag);
             assert_eq!(ReferenceKind::from_tag(expected_tag), Some(kind));
         }
-        for unknown in [0, 11, 255] {
+        for unknown in [0, 12, 255] {
             assert_eq!(ReferenceKind::from_tag(unknown), None);
         }
     }

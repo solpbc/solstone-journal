@@ -78,6 +78,7 @@ pub enum ArtifactId {
     AwarenessCurrent,
     HealthMarkerStream,
     HealthMarkerDaily,
+    HealthMarkerBody,
     CatchupState,
     SyncHeartbeat,
     CallosumSock,
@@ -342,6 +343,13 @@ pub const JOURNAL_ARTIFACTS: &[DurableArtifact] = &[
         class: DurabilityClass::RegenerableCache,
         parser: ParserKind::WholeJson,
         rationale: "daily health update marker; invalid non-empty copied aside and kept as MalformedNonEmpty",
+    },
+    DurableArtifact {
+        id: ArtifactId::HealthMarkerBody,
+        path: "chronicle/*/health/body.updated",
+        class: DurabilityClass::RegenerableCache,
+        parser: ParserKind::WholeJson,
+        rationale: "body records update marker; invalid non-empty copied aside and kept as MalformedNonEmpty",
     },
     DurableArtifact {
         id: ArtifactId::WorkInventory,

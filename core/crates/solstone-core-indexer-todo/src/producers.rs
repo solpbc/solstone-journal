@@ -32,6 +32,10 @@ pub const PRODUCERS: &[(Family, &str)] = &[
         Family::Workout,
         "import publication and full import scan token",
     ),
+    (
+        Family::BodyRecords,
+        "import publication and full import scan token",
+    ),
     (Family::ProtectedVideo, "ingest retained text publication"),
     (Family::DesktopActivity, "ingest retained text publication"),
     (

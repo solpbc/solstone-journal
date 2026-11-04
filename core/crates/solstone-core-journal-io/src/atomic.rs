@@ -2015,6 +2015,22 @@ pub(crate) const ATOMIC_CANDIDATE_MARKER: &str = "tmp";
 pub(crate) const STAGED_CANDIDATE_MARKER: &str = "stage";
 pub(crate) const CANDIDATE_SUFFIX: &str = ".tmp";
 
+/// A name that says nothing about what a directory holds: lock sentinels,
+/// a file manager's litter (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`) and
+/// an interrupted write's candidate. A name that isn't valid UTF-8 isn't one.
+pub fn is_incidental_file_name(name: &OsStr) -> bool {
+    if is_publication_candidate_name(name) {
+        return true;
+    }
+    name.to_str().is_some_and(|name| {
+        name.ends_with(".lock")
+            || name == ".DS_Store"
+            || name.starts_with("._")
+            || name.eq_ignore_ascii_case("thumbs.db")
+            || name.eq_ignore_ascii_case("desktop.ini")
+    })
+}
+
 /// Whether `name` is a publication candidate this module stages beside a
 /// destination before the atomic rename (`.tmp_…tmp`, `.stage_…tmp`, or the
 /// `_`-led forms used for dotfile destinations). A process killed between

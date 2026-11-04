@@ -423,6 +423,153 @@ fn parse_export_with_event_limit(
     Ok(rows)
 }
 
+/// One element of an Apple export as a body-record reader sees it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AppleElement {
+    pub attributes: BTreeMap<String, String>,
+    /// `MetadataEntry` children, by key.
+    pub metadata: BTreeMap<String, String>,
+    /// A workout's `WorkoutStatistics` children.
+    pub statistics: Vec<BTreeMap<String, String>>,
+    /// A workout's `WorkoutEvent` children.
+    pub events: Vec<BTreeMap<String, String>>,
+}
+
+/// What a scan of an Apple export hands its visitor, in document order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AppleItem {
+    Record(AppleElement),
+    Workout(AppleElement),
+    /// An element this reader doesn't open, by name.
+    NotRead(String),
+}
+
+/// Stream an Apple export's elements to `visit` without holding them, under the
+/// same containment, archive and XML bounds as a bundle save.
+pub fn scan_apple_export(
+    source: &Path,
+    visit: &mut dyn FnMut(AppleItem),
+) -> Result<(), BodyIngestError> {
+    let export = find_export(source)?;
+    with_export(source, &export, |reader| {
+        scan_elements(reader, MAX_APPLE_XML_EVENTS_SCANNED, visit)
+    })
+}
+
+fn scan_elements(
+    reader: &mut dyn BufRead,
+    event_limit: u64,
+    visit: &mut dyn FnMut(AppleItem),
+) -> Result<(), BodyIngestError> {
+    let mut xml = Reader::from_reader(EventCappedReader::new(reader));
+    xml.config_mut().trim_text(true);
+    let mut buffer = Vec::new();
+    let mut events_scanned = 0_u64;
+    let mut records = 0_u64;
+    // The open `Record` or `Workout`, and how deep an unread subtree has gone.
+    let mut open: Option<(bool, AppleElement)> = None;
+    let mut unread_depth = 0_u32;
+    loop {
+        let event = match xml.read_event_into(&mut buffer) {
+            Ok(event) => event,
+            Err(_) if xml.get_ref().exceeded() => return Err(source_error("xml_event_limit")),
+            Err(_) => return Err(source_error("xml")),
+        };
+        xml.get_mut().reset();
+        if !matches!(&event, Event::Eof) {
+            events_scanned = events_scanned
+                .checked_add(1)
+                .filter(|count| *count <= event_limit)
+                .ok_or_else(|| source_error("xml_event_count_limit"))?;
+        }
+        let (start, is_empty) = match event {
+            Event::Eof => break,
+            Event::Start(start) => (start, false),
+            Event::Empty(start) => (start, true),
+            Event::End(end) => {
+                if unread_depth > 0 {
+                    unread_depth -= 1;
+                } else if matches!(end.name().as_ref(), b"Record" | b"Workout")
+                    && let Some((workout, element)) = open.take()
+                {
+                    visit(if workout {
+                        AppleItem::Workout(element)
+                    } else {
+                        AppleItem::Record(element)
+                    });
+                }
+                buffer.clear();
+                continue;
+            }
+            _ => {
+                buffer.clear();
+                continue;
+            }
+        };
+        let name = start.name();
+        let name = name.as_ref();
+        if unread_depth > 0 {
+            unread_depth += u32::from(!is_empty);
+        } else if let Some((_, element)) = open.as_mut() {
+            match name {
+                b"MetadataEntry" => {
+                    let entry = attributes(&xml, &start)?;
+                    if let (Some(key), Some(value)) = (entry.get("key"), entry.get("value")) {
+                        element.metadata.insert(key.clone(), value.clone());
+                    }
+                }
+                b"WorkoutStatistics" => element.statistics.push(attributes(&xml, &start)?),
+                b"WorkoutEvent" => element.events.push(attributes(&xml, &start)?),
+                _ => visit(AppleItem::NotRead(
+                    String::from_utf8_lossy(name).into_owned(),
+                )),
+            }
+            if !is_empty {
+                unread_depth = 1;
+            }
+        } else {
+            match name {
+                b"Record" | b"Workout" => {
+                    records = records
+                        .checked_add(1)
+                        .filter(|count| *count <= MAX_APPLE_RECORDS_SCANNED)
+                        .ok_or_else(|| source_error("record_count_limit"))?;
+                    let workout = name == b"Workout";
+                    let element = AppleElement {
+                        attributes: attributes(&xml, &start)?,
+                        ..AppleElement::default()
+                    };
+                    if is_empty {
+                        visit(if workout {
+                            AppleItem::Workout(element)
+                        } else {
+                            AppleItem::Record(element)
+                        });
+                    } else {
+                        open = Some((workout, element));
+                    }
+                }
+                // Wrappers: a correlation's records are read as records.
+                b"HealthData" | b"Correlation" => {}
+                b"MetadataEntry" => {}
+                _ => {
+                    visit(AppleItem::NotRead(
+                        String::from_utf8_lossy(name).into_owned(),
+                    ));
+                    if !is_empty {
+                        unread_depth = 1;
+                    }
+                }
+            }
+        }
+        buffer.clear();
+    }
+    if open.is_some() || unread_depth > 0 {
+        return Err(source_error("xml"));
+    }
+    Ok(())
+}
+
 struct EventCappedReader<'a> {
     inner: &'a mut dyn BufRead,
     remaining: usize,

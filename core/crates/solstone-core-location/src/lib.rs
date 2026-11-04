@@ -17,6 +17,7 @@ pub mod accuracy;
 pub mod area;
 pub mod asset;
 pub mod beside;
+pub mod body_day;
 mod cache;
 pub mod day;
 pub mod fingerprint;
@@ -134,6 +135,8 @@ pub fn reconcile_journal(
     journal: &Path,
     reconciler: &mut Reconciler,
 ) -> Result<projection::ReconcileReport, area::AreaTierError> {
+    // First, because it needs no area tier and a missing one mustn't pause it.
+    reconciler.body.reconcile(journal);
     let tier = area_tier()?;
     let packs = accuracy::installed_packs(journal);
     Ok(reconciler.reconcile(

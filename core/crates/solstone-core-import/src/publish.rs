@@ -122,6 +122,10 @@ pub struct SegmentPublicationOutcome {
     pub segment: String,
     pub stream: String,
     pub outcome: SegmentBindingOutcome,
+    /// The segment held only body records when published, so it asks for no
+    /// thinking. Left out when false, which keeps every earlier record's bytes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub body_only: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -191,6 +195,11 @@ pub trait PublicationOperations {
     ) -> Result<StreamAdvance, UnboundStreamAdvanceError>;
     fn enqueue_path(&self, journal: &Path, path: &Path) -> Result<QueueFileOutcome, String>;
     fn touch_stream_health_marker(&self, journal: &Path, day: &str) -> Result<(), String>;
+    /// A day that gained only body records moves this marker, not the stream
+    /// marker, whose completion it would hold open with no daily work to close it.
+    fn touch_body_marker(&self, _journal: &Path, _day: &str) -> Result<(), String> {
+        Ok(())
+    }
     fn emit_observed(
         &self,
         journal: &Path,
@@ -239,6 +248,12 @@ impl PublicationOperations for NativePublicationOperations {
 
     fn touch_stream_health_marker(&self, journal: &Path, day: &str) -> Result<(), String> {
         touch_stream_health_marker(journal, day).map_err(|error| error.to_string())
+    }
+
+    fn touch_body_marker(&self, journal: &Path, day: &str) -> Result<(), String> {
+        solstone_core_journal_io::bump_body_marker(journal, day)
+            .map(drop)
+            .map_err(|error| error.to_string())
     }
 
     fn emit_observed(
@@ -334,11 +349,22 @@ pub fn publish_with_operations(
                 }
             }
         };
+        let body_only = matches!(outcome, SegmentBindingOutcome::Bound { .. })
+            && solstone_core_segment::is_body_only_dir(
+                &segment.stream,
+                &input
+                    .journal
+                    .join("chronicle")
+                    .join(&segment.day)
+                    .join(&segment.stream)
+                    .join(&segment.segment),
+            );
         segments.push(SegmentPublicationOutcome {
             day: segment.day.clone(),
             segment: segment.segment.clone(),
             stream: segment.stream.clone(),
             outcome,
+            body_only,
         });
     }
 
@@ -366,18 +392,37 @@ pub fn publish_with_operations(
         }
     }
 
-    let days = input
-        .segments
-        .iter()
-        .zip(&segments)
-        .filter(|(_, s_out)| matches!(s_out.outcome, SegmentBindingOutcome::Bound { .. }))
-        .map(|(s_in, _)| s_in.day.clone())
-        .collect::<BTreeSet<_>>()
+    let days_where = |body_only: bool| {
+        input
+            .segments
+            .iter()
+            .zip(&segments)
+            .filter(|(_, s_out)| {
+                matches!(s_out.outcome, SegmentBindingOutcome::Bound { .. })
+                    && s_out.body_only == body_only
+            })
+            .map(|(s_in, _)| s_in.day.clone())
+            .collect::<BTreeSet<_>>()
+    };
+    // Only what isn't body records asks for thinking.
+    let days = days_where(false).into_iter().collect::<Vec<_>>();
+    let body_days = days_where(true)
         .into_iter()
+        .filter(|day| !days.contains(day))
         .collect::<Vec<_>>();
-    let mut day_markers = Vec::with_capacity(days.len());
+    let mut day_markers = Vec::with_capacity(days.len() + body_days.len());
     for day in &days {
         let outcome = match operations.touch_stream_health_marker(input.journal, day) {
+            Ok(()) => DayMarkerStatus::Touched,
+            Err(error) => DayMarkerStatus::Failed { error },
+        };
+        day_markers.push(DayMarkerOutcome {
+            day: day.clone(),
+            outcome,
+        });
+    }
+    for day in &body_days {
+        let outcome = match operations.touch_body_marker(input.journal, day) {
             Ok(()) => DayMarkerStatus::Touched,
             Err(error) => DayMarkerStatus::Failed { error },
         };
@@ -391,7 +436,7 @@ pub fn publish_with_operations(
         .iter()
         .filter(|path| {
             !input.segments.iter().zip(&segments).any(|(s_in, s_out)| {
-                (!matches!(s_out.outcome, SegmentBindingOutcome::Bound { .. }))
+                (!matches!(s_out.outcome, SegmentBindingOutcome::Bound { .. }) || s_out.body_only)
                     && is_path_under_segment(path, &s_in.day, &s_in.stream, &s_in.segment)
             })
         })
@@ -427,7 +472,7 @@ pub fn publish_with_operations(
     record = write_publication_record(input.import_dir, &record)?;
     // The durable coordinate scope is visible before any admission wakeup.
     for segment in &record.segments {
-        if matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) {
+        if matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) && !segment.body_only {
             operations.emit_observed(
                 input.journal,
                 input.revision,
@@ -1029,6 +1074,69 @@ mod tests {
         )
         .unwrap();
         assert_eq!(*fake.drains.borrow(), vec!["20200101".to_owned()]);
+    }
+
+    #[test]
+    fn a_body_only_segment_starts_no_thinking_at_any_age_beside_one_that_does() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        for day in ["20261010", "20190102"] {
+            let dir = root
+                .join("chronicle")
+                .join(day)
+                .join("import.apple_health/063000_300");
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("body.jsonl"), "{}\n").unwrap();
+            fs::write(dir.join("body.jsonl.lock"), "").unwrap();
+            let mut body = segment(day, "063000_300");
+            body.stream = "import.apple_health".to_string();
+            let file = dir.join("body.jsonl");
+            let fake = FakeOperations {
+                advances: RefCell::new(vec![advance(1)]),
+                enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued)]),
+                ..FakeOperations::default()
+            };
+            let record = publish_with_operations(
+                input(root, None, &[body], std::slice::from_ref(&file)),
+                &fake,
+            )
+            .unwrap();
+            assert!(record.segments[0].body_only);
+            assert_eq!(
+                *fake.enqueues_seen.borrow(),
+                vec![file],
+                "search still gets it"
+            );
+            assert!(fake.observed.borrow().is_empty());
+            assert!(fake.drains.borrow().is_empty());
+            assert!(fake.enrichment.borrow().is_empty());
+            assert!(
+                fake.markers.borrow().is_empty(),
+                "the stream marker doesn't move"
+            );
+        }
+
+        // An older card in the same stream, and any segment beside it, keeps going.
+        let card = root.join("chronicle/20261011/import.apple_health/000000_300");
+        fs::create_dir_all(&card).unwrap();
+        fs::write(card.join("day_summary_transcript.md"), "a card\n").unwrap();
+        fs::write(card.join("body.jsonl"), "{}\n").unwrap();
+        let mut older = segment("20261011", "000000_300");
+        older.stream = "import.apple_health".to_string();
+        let file = card.join("day_summary_transcript.md");
+        let fake = FakeOperations {
+            advances: RefCell::new(vec![advance(1)]),
+            enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued)]),
+            ..FakeOperations::default()
+        };
+        let record = publish_with_operations(
+            input(root, None, &[older], std::slice::from_ref(&file)),
+            &fake,
+        )
+        .unwrap();
+        assert!(!record.segments[0].body_only);
+        assert_eq!(fake.observed.borrow().len(), 1);
+        assert_eq!(*fake.markers.borrow(), vec!["20261011".to_owned()]);
     }
 
     #[test]

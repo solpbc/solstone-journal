@@ -817,7 +817,7 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
 
 /// An import filed under a facet the journal would not route to would land somewhere the
 /// owner did not choose, so it never starts.
-fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), String> {
+pub(crate) fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), String> {
     let inventory = solstone_core_facets::observe_declared_facet_inventory(journal)
         .map_err(|error| format!("could not read your facets, so nothing was imported: {error}"))?;
     if inventory.enabled.iter().any(|enabled| enabled == facet) {

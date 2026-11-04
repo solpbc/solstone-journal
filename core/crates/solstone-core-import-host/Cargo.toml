@@ -23,6 +23,9 @@ in-process-pdf = ["dep:solstone-core-pdf"]
 name = "embedded_import"
 required-features = ["in-process-pdf"]
 
+[[example]]
+name = "apple_body_segments"
+
 [lints]
 workspace = true
 

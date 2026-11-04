@@ -178,11 +178,12 @@ fn segment_ranges(
     day: &str,
 ) -> Result<Vec<(NaiveDateTime, NaiveDateTime)>, String> {
     let anchor = NaiveDate::from_ymd_opt(2000, 1, 1).expect("fixed date is valid");
-    // Calendar notes say what the owner planned, not when they were active.
+    // Calendar notes say what the owner planned and body records what another
+    // system recorded, not when the owner was active.
     let mut ranges = iter_segments(journal, PathOrDay::Day(day))
         .map_err(|e| e.to_string())?
         .into_iter()
-        .filter(|segment| !solstone_core_segment::is_calendar_segment(journal, segment))
+        .filter(|segment| !solstone_core_segment::holds_nothing_the_owner_did(journal, segment))
         .filter_map(|segment| parse_segment(segment.key(), anchor))
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, _)| *start);
