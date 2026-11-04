@@ -10,7 +10,6 @@ use crate::target::cases::generate_cases;
 use crate::target::esm::generate_esm_target;
 use crate::target::gettext::generate_gettext_target;
 use crate::target::model::{Target, TargetBundle, TargetMessage};
-use crate::target::oracle;
 use crate::target::rust::generate_rust_target;
 use crate::target::webextension::generate_webextension_target;
 use crate::vocab::Channel;
@@ -59,10 +58,7 @@ pub fn publish(
     targets: &[Target],
     out_dir: &Path,
 ) -> Result<(), Vec<Fault>> {
-    // 1. Verify oracle probes
-    oracle::verify_oracle_probes().map_err(|f| vec![f])?;
-
-    // 2. Validate destination safety
+    // Validate destination safety
     if let Ok(meta) = fs::symlink_metadata(out_dir)
         && meta.file_type().is_symlink()
     {

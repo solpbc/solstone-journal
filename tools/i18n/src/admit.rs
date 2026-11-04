@@ -4,6 +4,7 @@
 use crate::fault::Fault;
 use crate::metadata::MessageMetadata;
 use crate::model::{Branch, ElementKind, PatternElement};
+use crate::plural::CardinalFamily;
 use crate::vocab::FormatIntent;
 use fluent_syntax::ast;
 use fluent_syntax::parser;
@@ -334,6 +335,7 @@ pub fn validate_admitted_message(
     locale: &str,
     is_source: bool,
     source_msg: Option<&ParsedMessage>,
+    family: Option<&CardinalFamily>,
 ) -> Result<(), Vec<Fault>> {
     let mut faults = Vec::new();
     let msg_id = &msg.id;
@@ -392,6 +394,13 @@ pub fn validate_admitted_message(
                         && !CLDR_CATEGORIES.contains(&key.as_str())
                     {
                         faults.push(Fault::new("cardinal-default", locale, msg_id));
+                    }
+                    // A sentence the locale's family never selects would never show.
+                    if let (Some(key), Some(family)) = (&b.key, family)
+                        && CLDR_CATEGORIES.contains(&key.as_str())
+                        && !family.can_show(key)
+                    {
+                        faults.push(Fault::new("cardinal-branch-unreachable", locale, msg_id));
                     }
                 }
             }
@@ -470,9 +479,10 @@ pub fn validate_admitted_message(
     if !is_source && let Some(src) = source_msg {
         match meta.format_intent {
             FormatIntent::Cardinal => {
-                // Check source categories are present
+                // Check the source categories this locale can select are present
                 for src_b in &src.branches {
                     if let Some(key) = &src_b.key
+                        && family.is_none_or(|family| family.can_show(key))
                         && !msg.branches.iter().any(|b| b.key.as_deref() == Some(key))
                     {
                         faults.push(Fault::new("cardinal-branch-missing", locale, msg_id));

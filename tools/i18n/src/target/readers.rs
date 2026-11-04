@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::plural;
 use crate::target::cases::TestCase;
 use crate::target::oracle;
 use serde_json::Value as JsonValue;
@@ -76,12 +77,7 @@ pub fn read_xcstrings(apple_dir: &Path, case: &TestCase) -> Result<String, Strin
                 .get("count")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(1);
-            let cardinal_rule = if case.locale == "ar" || case.locale == "en-x-plural" {
-                "ar"
-            } else {
-                "en"
-            };
-            let cat = oracle::eval_fluent_category(cardinal_rule, count_val)
+            let cat = plural::category(case.cardinal.as_deref(), count_val)
                 .map_err(|f| format!("oracle fault: {:?}", f))?;
 
             let val_str = if let Some(val) = variations
@@ -107,12 +103,7 @@ pub fn read_xcstrings(apple_dir: &Path, case: &TestCase) -> Result<String, Strin
                 .get("count")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(1);
-            let cardinal_rule = if case.locale == "ar" || case.locale == "en-x-plural" {
-                "ar"
-            } else {
-                "en"
-            };
-            let cat = oracle::eval_fluent_category(cardinal_rule, count_val)
+            let cat = plural::category(case.cardinal.as_deref(), count_val)
                 .map_err(|f| format!("oracle fault: {:?}", f))?;
 
             let val_str = if let Some(val) = variations
@@ -215,12 +206,7 @@ pub fn read_android_xml(android_dir: &Path, case: &TestCase) -> Result<String, S
             .get("count")
             .and_then(|v| v.as_i64())
             .unwrap_or(1);
-        let cardinal_rule = if case.locale == "ar" || case.locale == "en-x-plural" {
-            "ar"
-        } else {
-            "en"
-        };
-        let cat = oracle::eval_fluent_category(cardinal_rule, count_val)
+        let cat = plural::category(case.cardinal.as_deref(), count_val)
             .map_err(|f| format!("oracle fault: {:?}", f))?;
 
         let tag = format!("<item quantity=\"{}\">", cat);
@@ -355,25 +341,15 @@ pub fn read_gettext_po(gettext_dir: &Path, case: &TestCase) -> Result<String, St
             .get("count")
             .and_then(|v| v.as_i64())
             .unwrap_or(1);
-        let cardinal_rule = if case.locale == "ar" || case.locale == "en-x-plural" {
-            "ar"
-        } else {
-            "en"
-        };
-        let cat = oracle::eval_fluent_category(cardinal_rule, count_val)
+        let cat = plural::category(case.cardinal.as_deref(), count_val)
             .map_err(|f| format!("oracle fault: {:?}", f))?;
 
-        let idx = match (cardinal_rule, cat) {
-            ("en", "one") => 0,
-            ("en", _) => 1,
-            ("ar", "zero") => 0,
-            ("ar", "one") => 1,
-            ("ar", "two") => 2,
-            ("ar", "few") => 3,
-            ("ar", "many") => 4,
-            ("ar", _) => 5,
-            _ => 0,
-        };
+        let idx = case
+            .cardinal
+            .as_deref()
+            .and_then(plural::family)
+            .and_then(|family| family.categories().iter().position(|c| *c == cat))
+            .unwrap_or(0);
 
         let target_str_tag = format!("msgstr[{}] \"", idx);
         let str_pos = after_plural

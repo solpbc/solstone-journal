@@ -111,15 +111,36 @@ fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
     s.push_str("const LOCALES = {\n");
     for loc in &bundle.locales {
         let card = loc.cardinal.as_deref().unwrap_or("und");
+        // Number formatting takes the locale; a plural family's id is not one.
         let bundle_locale = if crate::locale::is_standard_formatting_locale(&loc.tag) {
             loc.tag.as_str()
-        } else {
+        } else if card == "ar" {
             card
+        } else {
+            loc.tag.split('-').next().unwrap_or("und")
         };
         s.push_str(&format!(
             "  \"{}\": {{ bundleLocale: \"{}\", cardinal: \"{}\" }},\n",
             loc.tag, bundle_locale, card
         ));
+    }
+    s.push_str("};\n\n");
+
+    // The category functions for the families these locales declare.
+    s.push_str("const CATEGORIES = {\n");
+    let mut seen = Vec::new();
+    for loc in &bundle.locales {
+        if let Some(id) = loc.cardinal.as_deref()
+            && !seen.contains(&id)
+            && let Some(family) = crate::plural::family(id)
+        {
+            seen.push(id);
+            s.push_str(&format!(
+                "  \"{}\": (n) => {},\n",
+                id,
+                family.javascript_expression()
+            ));
+        }
     }
     s.push_str("};\n\n");
 
@@ -131,6 +152,11 @@ fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
             "    formatIntent: \"{}\",\n",
             msg.meta.format_intent.as_str()
         ));
+        if msg.meta.format_intent == crate::vocab::FormatIntent::Cardinal
+            && let Some(sel) = &msg.meta.selector
+        {
+            s.push_str(&format!("    selectorVar: \"{}\",\n", sel.name));
+        }
         if msg.meta.format_intent == crate::vocab::FormatIntent::Enum
             && let Some(sel) = &msg.meta.selector
         {
@@ -279,6 +305,13 @@ fn generate_esm_api_code(bundle: &TargetBundle) -> Result<String, Vec<Fault>> {
     s.push_str("    }\n");
     s.push_str("  }\n\n");
 
+    s.push_str("  if (msgInfo.formatIntent === \"cardinal\") {\n");
+    s.push_str("    const select = CATEGORIES[locInfo.cardinal];\n");
+    s.push_str(&format!(
+        "    fArgs.{} = select ? select(Math.abs(fArgs[msgInfo.selectorVar])) : \"other\";\n",
+        crate::plural::CATEGORY_ARGUMENT
+    ));
+    s.push_str("  }\n\n");
     s.push_str("  const bundle = getBundle(locale);\n\n");
     s.push_str("  const targetKey = msgInfo.formatIntent === \"enum\" ? (msgInfo.variantKeys[selectedVariant] || msgInfo.defaultKey) : msgInfo.resourceKey;\n");
     s.push_str("  const message = bundle.getMessage(targetKey);\n");

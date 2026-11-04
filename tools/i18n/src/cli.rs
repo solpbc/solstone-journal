@@ -313,6 +313,7 @@ pub fn update_history(catalog_dir: &Path) -> Result<(), Vec<Fault>> {
             &config.source_locale,
             true,
             None,
+            registry.cardinal_family(&config.source_locale),
         ) {
             faults.append(&mut admission);
         }
@@ -556,9 +557,16 @@ fn run_lock(args: &[String]) -> i32 {
             }
         };
 
-        if let Err(faults) =
-            crate::admit::validate_admitted_message(msg, &meta, &config.source_locale, true, None)
-        {
+        if let Err(faults) = crate::admit::validate_admitted_message(
+            msg,
+            &meta,
+            &config.source_locale,
+            true,
+            None,
+            LocaleRegistry::embedded()
+                .ok()
+                .and_then(|registry| registry.cardinal_family(&config.source_locale)),
+        ) {
             for f in faults {
                 eprintln!("{}", f);
             }

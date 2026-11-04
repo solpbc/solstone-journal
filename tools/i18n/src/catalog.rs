@@ -179,8 +179,14 @@ impl LoadedCatalog {
         // Validate admitted messages in source
         for (id, msg) in &mut source_file.messages {
             if let Some(meta) = metadata_map.get(id)
-                && let Err(mut f) =
-                    validate_admitted_message(msg, meta, &config.source_locale, true, None)
+                && let Err(mut f) = validate_admitted_message(
+                    msg,
+                    meta,
+                    &config.source_locale,
+                    true,
+                    None,
+                    registry.cardinal_family(&config.source_locale),
+                )
             {
                 faults.append(&mut f);
             }
@@ -299,9 +305,14 @@ impl LoadedCatalog {
                                 faults.push(Fault::new("unknown-message", loc, id));
                             } else if let Some(meta) = metadata_map.get(id) {
                                 let src_msg = source_file.messages.get(id);
-                                if let Err(mut f) =
-                                    validate_admitted_message(msg, meta, loc, false, src_msg)
-                                {
+                                if let Err(mut f) = validate_admitted_message(
+                                    msg,
+                                    meta,
+                                    loc,
+                                    false,
+                                    src_msg,
+                                    registry.cardinal_family(loc),
+                                ) {
                                     faults.append(&mut f);
                                 }
                             }

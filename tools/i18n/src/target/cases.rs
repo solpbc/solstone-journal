@@ -3,6 +3,7 @@
 
 use crate::fault::Fault;
 use crate::model::ElementKind;
+use crate::plural;
 use crate::target::model::{Target, TargetBundle, TargetMessage};
 use crate::target::oracle;
 use crate::vocab::{Channel, FormatIntent, NumericStyle, ScalarType};
@@ -23,12 +24,14 @@ pub struct TestCase {
     pub call_contract: JsonValue,
     pub own_reader: String,
     pub platform_reader: String,
+    pub cardinal: Option<String>,
 }
 
 impl TestCase {
     pub fn to_json_value(&self) -> JsonValue {
         let mut map = Map::new();
         map.insert("target".to_string(), json!(self.target));
+        map.insert("cardinal".to_string(), json!(self.cardinal));
         map.insert("bundle".to_string(), json!(self.bundle));
         map.insert("locale".to_string(), json!(self.locale));
         map.insert(
@@ -142,6 +145,7 @@ pub fn generate_cases(
                             call_contract,
                             own_reader: own_reader.to_string(),
                             platform_reader: "pending".to_string(),
+                            cardinal: loc.cardinal.clone(),
                         });
                     }
                 }
@@ -296,9 +300,7 @@ pub fn compute_expected_string(
     };
 
     let loc_entry = bundle.locales.iter().find(|l| l.tag == locale);
-    let cardinal_rule = loc_entry
-        .and_then(|l| l.cardinal.as_deref())
-        .unwrap_or("und");
+    let cardinal_rule = loc_entry.and_then(|l| l.cardinal.as_deref());
 
     // Determine which branch to evaluate
     let branch = match msg.meta.format_intent {
@@ -328,8 +330,7 @@ pub fn compute_expected_string(
         FormatIntent::Cardinal => {
             let sel = msg.meta.selector.as_ref().unwrap();
             let count_val = inputs.get(&sel.name).and_then(|v| v.as_i64()).unwrap_or(1);
-            let cat =
-                oracle::eval_fluent_category(cardinal_rule, count_val).map_err(|f| vec![f])?;
+            let cat = plural::category(cardinal_rule, count_val).map_err(|f| vec![f])?;
             parsed
                 .branches
                 .iter()
@@ -409,10 +410,7 @@ fn rust_resource_expected(
         .iter()
         .find(|l| l.tag == locale)
         .expect("selected locale");
-    let lang = entry
-        .cardinal
-        .as_deref()
-        .unwrap_or("und")
+    let lang = "und"
         .parse()
         .map_err(|_| vec![Fault::catalog("plural-rule")])?;
     let mut reader = FluentBundle::new(vec![lang]);
@@ -434,6 +432,17 @@ fn rust_resource_expected(
         } else if let Some(v) = value.as_i64() {
             args.set(name, v);
         }
+    }
+    if msg.meta.format_intent == FormatIntent::Cardinal
+        && let Some(count) = msg
+            .meta
+            .selector
+            .as_ref()
+            .and_then(|selector| inputs.get(&selector.name))
+            .and_then(JsonValue::as_i64)
+    {
+        let category = plural::category(entry.cardinal.as_deref(), count).map_err(|f| vec![f])?;
+        args.set(plural::CATEGORY_ARGUMENT, category);
     }
     let (key, _) = resolved_identity(msg, inputs);
     let pattern = reader

@@ -10,27 +10,6 @@ use std::path::Path;
 
 pub fn generate_rust_target(bundle: &TargetBundle, dest_dir: &Path) -> Result<(), Vec<Fault>> {
     for msg in &bundle.messages {
-        if msg.meta.format_intent == FormatIntent::Cardinal {
-            let selector = msg
-                .meta
-                .selector
-                .as_ref()
-                .ok_or_else(|| vec![Fault::catalog("invalid-metadata")])?;
-            let quantity = msg
-                .meta
-                .arguments
-                .iter()
-                .find(|arg| arg.name == selector.name)
-                .ok_or_else(|| vec![Fault::catalog("invalid-metadata")])?;
-            let min = quantity.min.unwrap_or(i32::MIN as f64);
-            let max = quantity.max.unwrap_or(i32::MAX as f64);
-            // The pinned Rust plural dependency diverges from native CLDR Arabic rules outside this interval.
-            for locale in &bundle.locales {
-                if locale.cardinal.as_deref() == Some("ar") && (min < -100.0 || max > 100.0) {
-                    return Err(vec![Fault::new("cardinal-range", &locale.tag, &msg.id)]);
-                }
-            }
-        }
         for arg in &msg.meta.arguments {
             if arg.numeric_style == Some(crate::vocab::NumericStyle::LocaleFormatted) {
                 return Err(vec![Fault::new("locale-formatted", "*", &msg.id)]);
@@ -55,6 +34,34 @@ pub fn generate_rust_target(bundle: &TargetBundle, dest_dir: &Path) -> Result<()
     fs::write(&api_path, api_code.as_bytes()).map_err(|_| vec![Fault::catalog("io-error")])?;
 
     Ok(())
+}
+
+/// The category function for the families this bundle's locales declare.
+fn plural_category_fn(bundle: &TargetBundle) -> String {
+    let mut s = String::new();
+    s.push_str("#[allow(dead_code, unused_parens)]\n");
+    s.push_str(
+        "fn plural_category(family: Option<&str>, count: i64) -> &'static str {\n    let n = count.unsigned_abs();\n    let _ = n;\n    match family {\n",
+    );
+    let mut seen = Vec::new();
+    for loc in &bundle.locales {
+        let Some(id) = loc.cardinal.as_deref() else {
+            continue;
+        };
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id);
+        if let Some(family) = crate::plural::family(id) {
+            s.push_str(&format!(
+                "        Some(\"{}\") => {},\n",
+                id,
+                family.rust_expression()
+            ));
+        }
+    }
+    s.push_str("        _ => \"other\",\n    }\n}\n\n");
+    s
 }
 
 fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
@@ -92,6 +99,8 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
         s.push_str(&format!("    {},\n", msg.resource_key));
     }
     s.push_str("}\n\n");
+
+    s.push_str(&plural_category_fn(bundle));
 
     s.push_str("pub fn render_dotted(locale: &str, dotted_id: &str, args: &[(&str, Value)]) -> Result<String, RenderError> {\n");
     s.push_str("    let id = match dotted_id {\n");
@@ -258,6 +267,24 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
             s.push_str("            };\n");
             s.push_str("            (target_key.to_string(), f_args)\n");
         } else {
+            if msg.meta.format_intent == FormatIntent::Cardinal {
+                let selector = msg
+                    .meta
+                    .selector
+                    .as_ref()
+                    .ok_or_else(|| Fault::catalog("invalid-metadata"))?;
+                let index = msg
+                    .meta
+                    .arguments
+                    .iter()
+                    .position(|arg| arg.name == selector.name)
+                    .ok_or_else(|| Fault::catalog("invalid-metadata"))?;
+                s.push_str(&format!(
+                    "            f_args.set(\"{}\", plural_category(cardinal_rule, v{}));\n",
+                    crate::plural::CATEGORY_ARGUMENT,
+                    index
+                ));
+            }
             s.push_str(&format!(
                 "            (\"{}\".to_string(), f_args)\n",
                 msg.resource_key
@@ -269,8 +296,8 @@ fn generate_rust_api_code(bundle: &TargetBundle) -> Result<String, Fault> {
     s.push_str("    };\n\n");
 
     // Bundle creation and formatting (Fluent default isolation is preserved!)
-    s.push_str("    let lang_str = cardinal_rule.unwrap_or(\"und\");\n");
-    s.push_str("    let lang = lang_str.parse().map_err(|_| RenderError::FormatFailed)?;\n");
+    s.push_str("    let _ = cardinal_rule;\n");
+    s.push_str("    let lang = \"und\".parse().map_err(|_| RenderError::FormatFailed)?;\n");
     s.push_str("    let mut bundle = FluentBundle::new(vec![lang]);\n");
     s.push_str("    let _ = bundle.add_builtins();\n");
     s.push_str("    let res = FluentResource::try_new(ftl_content.to_string()).map_err(|_| RenderError::FormatFailed)?;\n");

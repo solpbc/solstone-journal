@@ -8,7 +8,6 @@ mod tests {
     use crate::locale::LocaleRegistry;
     use crate::target::cases::TestCase;
     use crate::target::model::{Target, enum_variant_resource_key};
-    use crate::target::oracle::eval_fluent_category;
     use crate::target::publish::publish;
     use crate::target::readers::{
         read_android_xml, read_gettext_po, read_webextension_json, read_xcstrings,
@@ -836,7 +835,7 @@ const directResource = new FluentResource(CATALOGS["ar"]);
 const directBundle = new FluentBundle("ar");
 directBundle.addResource(directResource);
 const directMsg = directBundle.getMessage("m73796e74682e6e6f7465732e666f726d73");
-const directVal = directBundle.formatPattern(directMsg.value, { count: -100 });
+const directVal = directBundle.formatPattern(directMsg.value, { count: -100, i18nCategory: "other" });
 assert.strictEqual(rArMin, directVal, "Arabic endpoint render must match direct FluentBundle.formatPattern");
 
 // 6. Unmatched enum unknown selects kind-box
@@ -912,6 +911,7 @@ assert.throws(() => {
                 call_contract: c["call_contract"].clone(),
                 own_reader: c["own_reader"].as_str().unwrap().to_string(),
                 platform_reader: c["platform_reader"].as_str().unwrap().to_string(),
+                cardinal: c["cardinal"].as_str().map(|s| s.to_string()),
             };
 
             assert_eq!(case.platform_reader, "pending");
@@ -1288,34 +1288,6 @@ assert.throws(() => {
         let l_ar = registry.locales.iter().find(|l| l.tag == "ar").unwrap();
         assert!(l_ar.is_eligible_for_channel(Channel::Development));
         assert!(!l_ar.is_eligible_for_channel(Channel::Production));
-    }
-
-    #[test]
-    fn test_cardinal_category_grid_eval() {
-        assert_eq!(eval_fluent_category("en", 1).unwrap(), "one");
-        assert_eq!(eval_fluent_category("en", -1).unwrap(), "one");
-        assert_eq!(eval_fluent_category("en", 0).unwrap(), "other");
-        assert_eq!(eval_fluent_category("en", 2).unwrap(), "other");
-
-        assert_eq!(eval_fluent_category("ar", 0).unwrap(), "zero");
-        assert_eq!(eval_fluent_category("ar", 1).unwrap(), "one");
-        assert_eq!(eval_fluent_category("ar", -1).unwrap(), "one");
-        assert_eq!(eval_fluent_category("ar", 2).unwrap(), "two");
-        assert_eq!(eval_fluent_category("ar", -2).unwrap(), "two");
-
-        for n in 3..=10 {
-            assert_eq!(eval_fluent_category("ar", n).unwrap(), "few");
-        }
-        for n in 11..=99 {
-            assert_eq!(eval_fluent_category("ar", n).unwrap(), "many");
-        }
-        for n in [100, 101, 102, 199, 200] {
-            assert_eq!(eval_fluent_category("ar", n).unwrap(), "other");
-        }
-        assert_eq!(
-            eval_fluent_category("ar", i32::MIN as i64).unwrap(),
-            "other"
-        );
     }
 
     #[test]
@@ -2021,6 +1993,7 @@ assert.throws(() => {
             expected_exact: true,
             call_contract: serde_json::Value::Null,
             platform_reader: "pending".to_string(),
+            cardinal: None,
         };
 
         let reader_result =
@@ -2228,6 +2201,7 @@ assert.throws(() => {
             expected_exact: true,
             call_contract: serde_json::Value::Null,
             platform_reader: "pending".to_string(),
+            cardinal: None,
         };
         let reader_res_loc =
             crate::target::readers::read_xcstrings(&out_dir.join("apple"), &case_loc).unwrap();
@@ -2319,6 +2293,7 @@ assert.throws(() => {
             expected_exact: true,
             call_contract: serde_json::Value::Null,
             platform_reader: "pending".to_string(),
+            cardinal: None,
         };
         let reader_res_ungr =
             crate::target::readers::read_xcstrings(&out_dir.join("apple"), &case_ungr).unwrap();
@@ -2330,7 +2305,7 @@ assert.throws(() => {
         let _ = fs::remove_dir_all(&out_dir);
     }
     #[test]
-    fn rust_arabic_range_refusal_preserves_full_english_range() {
+    fn rust_generates_arabic_quantities_above_one_hundred() {
         let catalog = LoadedCatalog::load_and_validate(
             Path::new("fixtures/targets"),
             Channel::Development,
@@ -2361,18 +2336,313 @@ assert.throws(() => {
             ],
         };
         let owned = TestDirectory::new("arabic-range");
+        bundle.messages[0].meta.arguments[0].min = Some(-1000.0);
+        bundle.messages[0].meta.arguments[0].max = Some(1000.0);
         crate::target::rust::generate_rust_target(&bundle, owned.path()).unwrap();
-        bundle.messages[0].meta.arguments[0].min = Some(-101.0);
-        assert!(
-            crate::target::rust::generate_rust_target(&bundle, owned.path())
-                .unwrap_err()
-                .iter()
-                .any(|f| f.rule == "cardinal-range")
+        let api = fs::read_to_string(owned.path().join("rust/range-control/api.rs")).unwrap();
+        assert!(api.contains("n % 100 >= 3 && n % 100 <= 10"), "{api}");
+    }
+
+    /// Admits one locale's translation of a cardinal message against a family.
+    fn admit_forms(family: &str, translation: &str) -> Result<(), Vec<crate::fault::Fault>> {
+        let catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/targets"),
+            Channel::Development,
+            Some("ar"),
+        )
+        .unwrap();
+        let id = "synth.notes.forms";
+        let mut message = crate::admit::parse_ftl_resource(
+            &format!("{id} = {{ $count ->\n{translation}\n}}\n"),
+            "xx",
+        )?
+        .messages
+        .remove(id)
+        .unwrap();
+        let source = crate::admit::parse_ftl_resource(
+            &format!("{id} = {{ $count ->\n    [one] one\n   *[other] {{ $count }}\n}}\n"),
+            "en",
+        )?
+        .messages
+        .remove(id)
+        .unwrap();
+        crate::admit::validate_admitted_message(
+            &mut message,
+            &catalog.metadata[id],
+            "xx",
+            false,
+            Some(&source),
+            crate::plural::family(family),
+        )
+    }
+
+    fn fault_rules(result: Result<(), Vec<crate::fault::Fault>>) -> Vec<String> {
+        result
+            .unwrap_err()
+            .into_iter()
+            .map(|fault| fault.rule.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn a_translation_writes_the_branches_its_family_selects() {
+        // Other-only: the English [one] is neither required nor able to show.
+        admit_forms("other", "   *[other] { $count }").unwrap();
+        assert_eq!(
+            fault_rules(admit_forms(
+                "other",
+                "    [one] one\n   *[other] { $count }"
+            )),
+            ["cardinal-branch-unreachable"]
         );
-        bundle.messages[0].meta.arguments[0].min = None;
-        bundle.messages[0].meta.arguments[0].max = None;
-        bundle.locales[0].cardinal = Some("en".into());
-        crate::target::rust::generate_rust_target(&bundle, owned.path()).unwrap();
+        // A family with [one] still has to carry the source's.
+        assert_eq!(
+            fault_rules(admit_forms("en", "   *[other] { $count }")),
+            ["cardinal-branch-missing"]
+        );
+        // A category outside the family never shows, whichever family it is.
+        assert_eq!(
+            fault_rules(admit_forms(
+                "en",
+                "    [one] one\n    [few] few { $count }\n   *[other] { $count }"
+            )),
+            ["cardinal-branch-unreachable"]
+        );
+        admit_forms(
+            "east-slavic",
+            "    [one] one\n    [few] few { $count }\n    [many] many { $count }\n   *[other] { $count }",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_exact_number_branch_is_refused_in_every_family() {
+        // A sentence for zero alone is its own message: gettext, Android and
+        // Apple have no exact-number branch to carry it.
+        for family in ["en", "other", "ar"] {
+            let result = admit_forms(family, "    [0] none\n   *[other] { $count }");
+            assert!(result.is_err(), "{family}");
+        }
+    }
+
+    #[test]
+    fn gettext_writes_one_form_per_family_category() {
+        let catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/targets"),
+            Channel::Development,
+            Some("ar"),
+        )
+        .unwrap();
+        let id = "synth.notes.forms";
+        let mut message = catalog.translations["ar"][id].clone();
+        message.branches.retain(|branch| branch.default);
+        let bundle = crate::target::model::TargetBundle {
+            id: "forms".into(),
+            messages: vec![crate::target::model::TargetMessage {
+                id: id.into(),
+                resource_key: crate::history::compute_resource_key(id),
+                meta: catalog.metadata[id].clone(),
+                translations: std::collections::HashMap::from([("ru".into(), message)]),
+            }],
+            locales: vec![crate::locale::LocaleEntry {
+                tag: "ru".into(),
+                tier: crate::vocab::LocaleTier::Release,
+                purpose: crate::vocab::LocalePurpose::Ordinary,
+                development: crate::vocab::ReleaseState::Released,
+                production: crate::vocab::ReleaseState::Released,
+                description: "test".into(),
+                cardinal: Some("east-slavic".into()),
+                webextension_folder: None,
+                android_qualifier: None,
+            }],
+        };
+        let owned = TestDirectory::new("gettext-forms");
+        crate::target::gettext::generate_gettext_target(&bundle, owned.path()).unwrap();
+        let mut po = String::new();
+        for entry in fs::read_dir(owned.path().join("gettext").join("forms")).unwrap() {
+            po.push_str(&fs::read_to_string(entry.unwrap().path()).unwrap());
+        }
+        assert!(po.contains("Plural-Forms: nplurals=3;"), "{po}");
+        assert!(
+            po.contains("msgstr[2]") && !po.contains("msgstr[3]"),
+            "{po}"
+        );
+    }
+
+    /// The selection in every generated reader, for every family, against the table.
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn every_family_selects_alike_in_rust_esm_and_gettext() {
+        let catalog = LoadedCatalog::load_and_validate(
+            Path::new("fixtures/targets"),
+            Channel::Development,
+            Some("ar"),
+        )
+        .unwrap();
+        let id = "synth.notes.forms";
+        let meta = {
+            let mut meta = catalog.metadata[id].clone();
+            for arg in &mut meta.arguments {
+                arg.min = None;
+                arg.max = None;
+            }
+            meta
+        };
+        let mut translations = std::collections::HashMap::new();
+        let mut locales = Vec::new();
+        for family in crate::plural::FAMILIES {
+            let tag = format!("en-x-{}", family.id);
+            let mut branches = String::new();
+            for category in family.categories() {
+                if category != "other" {
+                    branches.push_str(&format!("    [{category}] {category}\n"));
+                }
+            }
+            branches.push_str("   *[other] other\n");
+            let message = crate::admit::parse_ftl_resource(
+                &format!("{id} = {{ $count ->\n{branches}}}\n"),
+                &tag,
+            )
+            .unwrap()
+            .messages
+            .remove(id)
+            .unwrap();
+            translations.insert(tag.clone(), message);
+            locales.push(crate::locale::LocaleEntry {
+                tag,
+                tier: crate::vocab::LocaleTier::Release,
+                purpose: crate::vocab::LocalePurpose::Ordinary,
+                development: crate::vocab::ReleaseState::Released,
+                production: crate::vocab::ReleaseState::Released,
+                description: "test".into(),
+                cardinal: Some(family.id.into()),
+                webextension_folder: None,
+                android_qualifier: None,
+            });
+        }
+        let bundle = crate::target::model::TargetBundle {
+            id: "families".into(),
+            messages: vec![crate::target::model::TargetMessage {
+                id: id.into(),
+                resource_key: crate::history::compute_resource_key(id),
+                meta,
+                translations,
+            }],
+            locales,
+        };
+        let owned = TestDirectory::new("every-family");
+        let out = owned.path();
+        crate::target::rust::generate_rust_target(&bundle, out).unwrap();
+        crate::target::esm::generate_esm_target(&bundle, out, Path::new("vendor/fluent-js"))
+            .unwrap();
+        let probes: Vec<i64> = (-3..=210)
+            .chain([
+                1000,
+                1001,
+                1000000,
+                1000001,
+                2000000,
+                2147483647,
+                -2147483648,
+            ])
+            .collect();
+        let tags: Vec<String> = bundle.locales.iter().map(|l| l.tag.clone()).collect();
+        let list = probes
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let rlib = find_fluent_bundle_rlib().expect("fluent_bundle rlib must exist in deps");
+        let dir = out.join("rust/families");
+        let tag_list = tags
+            .iter()
+            .map(|t| format!("\"{t}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        fs::write(
+            dir.join("main.rs"),
+            format!(
+                r#"mod api;
+fn main() {{
+    for tag in [{tag_list}] {{
+        for n in [{list}_i64] {{
+            let text = api::render_dotted(tag, "{id}", &[("count", api::Value::Cardinal(n))]).unwrap();
+            println!("{{tag}} {{n}} {{text}}");
+        }}
+    }}
+}}
+"#
+            ),
+        )
+        .unwrap();
+        let bin = dir.join("bin");
+        let compiled = Command::new("rustc")
+            .arg("--edition=2024")
+            .arg("-L")
+            .arg(rlib.parent().unwrap())
+            .arg("--extern")
+            .arg(format!("fluent_bundle={}", rlib.display()))
+            .arg("-o")
+            .arg(&bin)
+            .arg(dir.join("main.rs"))
+            .status()
+            .unwrap();
+        assert!(compiled.success());
+        let rust_output = Command::new(&bin).output().unwrap();
+        assert!(rust_output.status.success());
+
+        let forms: Vec<String> = crate::plural::FAMILIES
+            .iter()
+            .map(|family| {
+                format!("[\"en-x-{}\", n => ({})]", family.id, {
+                    let forms = family.gettext_plural_forms();
+                    let start = forms.find("plural=").unwrap() + "plural=".len();
+                    forms[start..].trim_end_matches(';').to_owned()
+                })
+            })
+            .collect();
+        let script = out.join("run.mjs");
+        fs::write(
+            &script,
+            format!(
+                r#"const api = await import({api:?});
+const forms = new Map([{forms}]);
+for (const tag of {tags:?}) {{
+  for (const n of [{list}]) {{
+    const text = api.render(tag, "{id}", [["count", api.cardinal(n)]]);
+    console.log(`${{tag}} ${{n}} ${{text}} ${{forms.get(tag)(Math.abs(n))}}`);
+  }}
+}}
+"#,
+                api = out.join("esm/families/api.mjs").display().to_string(),
+                forms = forms.join(", "),
+            ),
+        )
+        .unwrap();
+        let esm_output = Command::new("node").arg(&script).output().unwrap();
+        assert!(
+            esm_output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&esm_output.stderr)
+        );
+
+        let rust_lines = String::from_utf8(rust_output.stdout).unwrap();
+        let esm_lines = String::from_utf8(esm_output.stdout).unwrap();
+        let mut compared = 0;
+        for (rust_line, esm_line) in rust_lines.lines().zip(esm_lines.lines()) {
+            let rust: Vec<&str> = rust_line.split(' ').collect();
+            let esm: Vec<&str> = esm_line.split(' ').collect();
+            assert_eq!(rust[..3], esm[..3]);
+            let family = crate::plural::family(rust[0].strip_prefix("en-x-").unwrap()).unwrap();
+            let count: i64 = rust[1].parse().unwrap();
+            let expected = family.category(count);
+            assert_eq!(rust[2], expected, "{rust_line}");
+            let form: usize = esm[3].parse().unwrap();
+            assert_eq!(family.categories()[form], expected, "gettext {esm_line}");
+            compared += 1;
+        }
+        assert_eq!(compared, tags.len() * probes.len());
     }
 
     #[test]
@@ -2422,6 +2692,7 @@ assert.throws(() => {
             call_contract: serde_json::Value::Null,
             own_reader: "android-xml".into(),
             platform_reader: "pending".into(),
+            cardinal: None,
         };
         assert_eq!(
             read_android_xml(&owned.path().join("android"), &case).unwrap(),

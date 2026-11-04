@@ -125,6 +125,15 @@ pub struct LocaleRegistry {
 }
 
 impl LocaleRegistry {
+    /// The plural family a locale declares, if it declares one.
+    pub fn cardinal_family(&self, tag: &str) -> Option<&'static crate::plural::CardinalFamily> {
+        self.locales
+            .iter()
+            .find(|locale| locale.tag == tag)
+            .and_then(|locale| locale.cardinal.as_deref())
+            .and_then(crate::plural::family)
+    }
+
     pub fn embedded() -> Result<Self, Fault> {
         let json_str = include_str!("../locales.json");
         Self::load(json_str)
@@ -142,11 +151,19 @@ impl LocaleRegistry {
             if !locale_tags.insert(locale.tag.as_str()) {
                 return Err(Fault::catalog("duplicate-locale"));
             }
-            if let Some(cardinal) = &locale.cardinal
-                && cardinal != "en"
-                && cardinal != "ar"
-            {
-                return Err(Fault::catalog("plural-rule"));
+            if let Some(cardinal) = &locale.cardinal {
+                if crate::plural::family(cardinal).is_none() {
+                    return Err(Fault::catalog("plural-rule"));
+                }
+                // A family that compiles can still select the wrong form, so an
+                // ordinary tag declares one its language is known to use.
+                if locale.purpose == LocalePurpose::Ordinary
+                    && !locale.tag.contains("-x-")
+                    && !crate::plural::language_families(&locale.tag)
+                        .is_some_and(|families| families.contains(&cardinal.as_str()))
+                {
+                    return Err(Fault::catalog("plural-family"));
+                }
             }
             if let Some(folder) = &locale.webextension_folder
                 && !validate_webextension_folder(folder)

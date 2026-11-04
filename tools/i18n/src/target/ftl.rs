@@ -3,6 +3,7 @@
 
 use crate::fault::Fault;
 use crate::model::ElementKind;
+use crate::plural::CATEGORY_ARGUMENT;
 use crate::target::model::{TargetBundle, TargetMessage};
 use crate::vocab::{FormatIntent, NumericStyle, ScalarType};
 
@@ -21,14 +22,19 @@ pub fn generate_bundle_ftl(bundle: &TargetBundle, locale: &str) -> Result<String
                 out.push_str(&format!("{} = {}\n\n", msg.resource_key, pattern_str));
             }
             FormatIntent::Cardinal => {
-                let sel_var = msg
+                // The reader selects the category from the plural table and passes it in.
+                if msg
                     .meta
-                    .selector
-                    .as_ref()
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("count");
-
-                out.push_str(&format!("{} = {{ ${} ->\n", msg.resource_key, sel_var));
+                    .arguments
+                    .iter()
+                    .any(|arg| arg.name == CATEGORY_ARGUMENT)
+                {
+                    return Err(Fault::new("argument-parity", locale, &msg.id));
+                }
+                out.push_str(&format!(
+                    "{} = {{ ${} ->\n",
+                    msg.resource_key, CATEGORY_ARGUMENT
+                ));
                 for b in &parsed.branches {
                     let key = b.key.as_deref().unwrap_or("other");
                     let prefix = if b.default { "   *" } else { "    " };

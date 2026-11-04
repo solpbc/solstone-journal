@@ -14,6 +14,7 @@ pub mod ir;
 pub mod locale;
 pub mod metadata;
 pub mod model;
+pub mod plural;
 pub mod protected;
 pub mod pseudo;
 pub mod publish;

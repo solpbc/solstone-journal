@@ -603,6 +603,7 @@ fn pseudo_catalogs_round_trip_through_the_canonical_profile() {
                 locale,
                 false,
                 Some(&cat.source_messages[id]),
+                None,
             )
             .unwrap();
         }
@@ -776,7 +777,7 @@ fn test_admitted_branch_rules() {
         ],
         selector_var: Some("count".to_string()),
     };
-    let res = validate_admitted_message(&mut msg, &meta, "en", true, None);
+    let res = validate_admitted_message(&mut msg, &meta, "en", true, None, None);
     assert_eq!(res.unwrap_err()[0].rule, "cardinal-default");
 
     // 2. Enum default mismatch
@@ -810,7 +811,7 @@ fn test_admitted_branch_rules() {
         ],
         selector_var: Some("kind".to_string()),
     };
-    let res = validate_admitted_message(&mut enum_msg, &meta, "en", true, None);
+    let res = validate_admitted_message(&mut enum_msg, &meta, "en", true, None, None);
     assert_eq!(res.unwrap_err()[0].rule, "enum-default");
 
     // 3. Argument parity for unknown placeholder
@@ -842,7 +843,7 @@ fn test_admitted_branch_rules() {
         }],
         selector_var: None,
     };
-    let res = validate_admitted_message(&mut unknown_arg_msg, &plain_meta, "en", true, None);
+    let res = validate_admitted_message(&mut unknown_arg_msg, &plain_meta, "en", true, None, None);
     assert!(res.unwrap_err().iter().any(|f| f.rule == "argument-parity"));
 
     // 4. Selector identity when selector variable changes
@@ -862,7 +863,7 @@ fn test_admitted_branch_rules() {
         ],
         selector_var: Some("different_var".to_string()),
     };
-    let res = validate_admitted_message(&mut wrong_sel_msg, &meta, "en", true, None);
+    let res = validate_admitted_message(&mut wrong_sel_msg, &meta, "en", true, None, None);
     assert!(
         res.unwrap_err()
             .iter()
@@ -891,7 +892,7 @@ fn test_admitted_branch_rules() {
         ],
         selector_var: Some("kind".to_string()),
     };
-    let res = validate_admitted_message(&mut extra_enum_msg, &meta, "en", true, None);
+    let res = validate_admitted_message(&mut extra_enum_msg, &meta, "en", true, None, None);
     assert!(res.unwrap_err().iter().any(|f| f.rule == "enum-branch-set"));
 }
 
@@ -979,7 +980,14 @@ fn test_protected_slot_rules() {
         ],
         selector_var: Some("count".to_string()),
     };
-    let res = validate_admitted_message(&mut tr_dropped, &meta, "en-x-synth", false, Some(&src));
+    let res = validate_admitted_message(
+        &mut tr_dropped,
+        &meta,
+        "en-x-synth",
+        false,
+        Some(&src),
+        None,
+    );
     assert!(
         res.unwrap_err()
             .iter()
@@ -1015,7 +1023,7 @@ fn test_protected_slot_rules() {
         ],
         selector_var: Some("count".to_string()),
     };
-    let res = validate_admitted_message(&mut tr_dup, &meta, "en-x-synth", false, Some(&src));
+    let res = validate_admitted_message(&mut tr_dup, &meta, "en-x-synth", false, Some(&src), None);
     assert!(
         res.unwrap_err()
             .iter()
@@ -1056,6 +1064,7 @@ fn test_protected_slot_rules() {
         "en-x-synth",
         false,
         Some(&src),
+        None,
     );
     assert!(
         res.unwrap_err()
@@ -1094,7 +1103,14 @@ fn test_protected_slot_rules() {
         ],
         selector_var: Some("count".to_string()),
     };
-    let res = validate_admitted_message(&mut tr_added_ok, &meta, "en-x-synth", false, Some(&src));
+    let res = validate_admitted_message(
+        &mut tr_added_ok,
+        &meta,
+        "en-x-synth",
+        false,
+        Some(&src),
+        None,
+    );
     assert!(
         res.is_ok(),
         "Added matching cardinal branch should be accepted: {:?}",
@@ -1809,7 +1825,7 @@ fn test_markup_rules() {
         }],
         selector_var: None,
     };
-    let validate_res = validate_admitted_message(&mut msg, &meta, "en", true, None);
+    let validate_res = validate_admitted_message(&mut msg, &meta, "en", true, None, None);
     assert!(validate_res.is_ok());
     assert_eq!(msg.branches[0].pattern[1].kind, ElementKind::Slot);
 }
@@ -2231,6 +2247,7 @@ fn test_pseudo_cli_run() {
                 locale,
                 false,
                 Some(&source.source_messages[id]),
+                None,
             )
             .unwrap();
         }

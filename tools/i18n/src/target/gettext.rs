@@ -56,24 +56,11 @@ fn generate_po_content(
         .iter()
         .any(|m| m.meta.format_intent == FormatIntent::Cardinal);
 
-    let plural_forms = match loc.cardinal.as_deref() {
-        Some("en") => Some("nplurals=2; plural=(n != 1);"),
-        Some("ar") => Some(
-            "nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5);",
-        ),
-        Some(_) => {
-            if has_cardinal_messages {
-                return Err(vec![Fault::new("plural-rule", &loc.tag, "*")]);
-            }
-            None
-        }
-        None => {
-            if has_cardinal_messages {
-                return Err(vec![Fault::new("plural-rule", &loc.tag, "*")]);
-            }
-            None
-        }
-    };
+    let family = loc.cardinal.as_deref().and_then(crate::plural::family);
+    if has_cardinal_messages && family.is_none() {
+        return Err(vec![Fault::new("plural-rule", &loc.tag, "*")]);
+    }
+    let plural_forms = family.map(|family| family.gettext_plural_forms());
 
     s.push_str("msgid \"\"\n");
     s.push_str("msgstr \"\"\n");
@@ -111,56 +98,26 @@ fn generate_po_content(
                     .ok_or_else(|| vec![Fault::new("cardinal-default", &loc.tag, &msg.id)])?;
                 let other_tmpl = render_gettext_template(&other_branch.pattern, msg)?;
 
-                match loc.cardinal.as_deref() {
-                    Some("en") => {
-                        let one_tmpl = match parsed
-                            .branches
-                            .iter()
-                            .find(|b| b.key.as_deref() == Some("one"))
-                        {
-                            Some(b) => render_gettext_template(&b.pattern, msg)?,
-                            None => other_tmpl.clone(),
-                        };
-                        s.push_str(&format!("msgstr[0] \"{}\"\n", escape_po_string(&one_tmpl)));
-                        s.push_str(&format!(
-                            "msgstr[1] \"{}\"\n\n",
-                            escape_po_string(&other_tmpl)
-                        ));
-                    }
-                    Some("ar") => {
-                        let get_cat_tmpl = |cat: &str| -> Result<String, Vec<Fault>> {
-                            if let Some(b) = parsed
-                                .branches
-                                .iter()
-                                .find(|b| b.key.as_deref() == Some(cat))
-                            {
-                                render_gettext_template(&b.pattern, msg)
-                            } else {
-                                Ok(other_tmpl.clone())
-                            }
-                        };
-                        let zero_tmpl = get_cat_tmpl("zero")?;
-                        let one_tmpl = get_cat_tmpl("one")?;
-                        let two_tmpl = get_cat_tmpl("two")?;
-                        let few_tmpl = get_cat_tmpl("few")?;
-                        let many_tmpl = get_cat_tmpl("many")?;
-
-                        s.push_str(&format!("msgstr[0] \"{}\"\n", escape_po_string(&zero_tmpl)));
-                        s.push_str(&format!("msgstr[1] \"{}\"\n", escape_po_string(&one_tmpl)));
-                        s.push_str(&format!("msgstr[2] \"{}\"\n", escape_po_string(&two_tmpl)));
-                        s.push_str(&format!("msgstr[3] \"{}\"\n", escape_po_string(&few_tmpl)));
-                        s.push_str(&format!("msgstr[4] \"{}\"\n", escape_po_string(&many_tmpl)));
-                        s.push_str(&format!(
-                            "msgstr[5] \"{}\"\n\n",
-                            escape_po_string(&other_tmpl)
-                        ));
-                    }
-                    _ => {
-                        s.push_str(&format!(
-                            "msgstr[0] \"{}\"\n\n",
-                            escape_po_string(&other_tmpl)
-                        ));
-                    }
+                let family =
+                    family.ok_or_else(|| vec![Fault::new("plural-rule", &loc.tag, &msg.id)])?;
+                let categories = family.categories();
+                let last = categories.len() - 1;
+                for (index, category) in categories.iter().enumerate() {
+                    let tmpl = match parsed
+                        .branches
+                        .iter()
+                        .find(|b| b.key.as_deref() == Some(category))
+                    {
+                        Some(b) => render_gettext_template(&b.pattern, msg)?,
+                        None => other_tmpl.clone(),
+                    };
+                    let end = if index == last { "\n\n" } else { "\n" };
+                    s.push_str(&format!(
+                        "msgstr[{}] \"{}\"{}",
+                        index,
+                        escape_po_string(&tmpl),
+                        end
+                    ));
                 }
             }
             FormatIntent::Enum => {
