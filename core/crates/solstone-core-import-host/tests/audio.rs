@@ -31,6 +31,14 @@ pub(crate) fn probed(duration_seconds: f64) -> AudioSourceProbe {
     }
 }
 
+/// A running journal's root exists before its Callosum server binds.
+async fn bind_journal_callosum(journal_root: &Path) -> CallosumSocketServer {
+    fs::create_dir_all(journal_root).unwrap();
+    CallosumSocketServer::bind(journal_root.join("health/callosum.sock"))
+        .await
+        .unwrap()
+}
+
 fn request(temp: &TempDir, import_id: &str) -> AudioImportRequest {
     AudioImportRequest {
         source_instant: None,
@@ -834,10 +842,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let during_sidecar = during_request
         .journal_root
         .join("chronicle/20260811/import.audio/120500_300/imported_audio.jsonl");
-    let during_server =
-        CallosumSocketServer::bind(during_request.journal_root.join("health/callosum.sock"))
-            .await
-            .unwrap();
+    let during_server = bind_journal_callosum(&during_request.journal_root).await;
     let send_during_event = async {
         while during_server.client_count() == 0 {
             tokio::task::yield_now().await;
@@ -897,10 +902,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let after_sidecar = after_request
         .journal_root
         .join("chronicle/20260811/import.audio/120500_300/imported_audio.jsonl");
-    let after_server =
-        CallosumSocketServer::bind(after_request.journal_root.join("health/callosum.sock"))
-            .await
-            .unwrap();
+    let after_server = bind_journal_callosum(&after_request.journal_root).await;
     let send_last_event = async {
         while after_server.client_count() == 0 {
             tokio::task::yield_now().await;
@@ -1018,10 +1020,7 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     // stall.
     event_request.stall_timeout = Duration::from_secs(10);
     event_request.poll_interval = Duration::from_millis(1);
-    let server =
-        CallosumSocketServer::bind(event_request.journal_root.join("health/callosum.sock"))
-            .await
-            .unwrap();
+    let server = bind_journal_callosum(&event_request.journal_root).await;
     let wait_for_client = async {
         while server.client_count() == 0 {
             tokio::task::yield_now().await;

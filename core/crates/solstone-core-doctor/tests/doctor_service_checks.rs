@@ -468,6 +468,7 @@ fn callosum_complete_frame_status_consumed() {
 fn registered_sense_dispatch_reads_the_native_beacon_after_unrelated_status() {
     let (mut context, _root) = context();
     context.service_status_timeout = Duration::from_secs(1);
+    fs::create_dir_all(&context.journal_path).expect("create disposable journal");
     let socket_path = context.callosum_socket_path.clone();
     let (ready_tx, ready_rx) = mpsc::sync_channel(0);
     let server = thread::spawn(move || {
