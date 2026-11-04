@@ -809,12 +809,12 @@ pub fn record_ambiguity_observation_checked(
     observation: &AmbiguityObservation,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, EntityWriteError> {
-    let mut rows = record_ambiguity_observations_checked(
-        journal_root,
-        std::slice::from_ref(observation),
-        checkpoint,
-    )?;
-    Ok(rows.pop().expect("one row per observation"))
+    let (_trust, census, typo_enabled) = ambiguity_policy_inputs(journal_root)?;
+    mutate_ambiguities_checked(journal_root, checkpoint, |rows| {
+        let index =
+            apply_ambiguity_observation(journal_root, rows, observation, &census, typo_enabled)?;
+        Ok(rows[index].clone())
+    })
 }
 
 /// Create or update several ambiguity observations, in order, with one read
@@ -822,36 +822,38 @@ pub fn record_ambiguity_observation_checked(
 /// locks. Each observation applies exactly as `record_ambiguity_observation`
 /// would after the ones before it: recording an observation changes only the
 /// ambiguity rows, never the entity census or facet links the policy reads.
+///
+/// Returns how many observations were applied. It deliberately returns no rows:
+/// a row repeated by many observations grows with each one, so holding a copy
+/// per observation would grow memory with the square of the repeats.
 pub fn record_ambiguity_observations(
     journal_root: &Path,
     observations: &[AmbiguityObservation],
-) -> Result<Vec<Value>, EntityWriteError> {
-    record_ambiguity_observations_checked(journal_root, observations, &|| Ok(()))
+) -> Result<usize, EntityWriteError> {
+    if observations.is_empty() {
+        return Ok(0);
+    }
+    let (_trust, census, typo_enabled) = ambiguity_policy_inputs(journal_root)?;
+    mutate_ambiguities_checked(journal_root, &|| Ok(()), |rows| {
+        for observation in observations {
+            apply_ambiguity_observation(journal_root, rows, observation, &census, typo_enabled)?;
+        }
+        Ok(observations.len())
+    })
 }
 
-fn record_ambiguity_observations_checked(
+/// The trust lock and the policy inputs one ambiguity write reads under it.
+fn ambiguity_policy_inputs(
     journal_root: &Path,
-    observations: &[AmbiguityObservation],
-    checkpoint: &dyn Fn() -> Result<(), String>,
-) -> Result<Vec<Value>, EntityWriteError> {
-    if observations.is_empty() {
-        return Ok(Vec::new());
-    }
-    let _trust = hold_entity_trust_lock(journal_root)?;
+) -> Result<(crate::EntityTrustLock, super::census::IdentityCensus, bool), EntityWriteError> {
+    let trust = hold_entity_trust_lock(journal_root)?;
     let census =
         super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
     let config_read = solstone_core_journal_config::read_journal_config(journal_root).ok();
     let typo_enabled = solstone_core_journal_config::entity_tier8_typo_acceptance_enabled(
         config_read.as_ref().and_then(|r| r.config.as_ref()),
     );
-    mutate_ambiguities_checked(journal_root, checkpoint, |rows| {
-        observations
-            .iter()
-            .map(|observation| {
-                apply_ambiguity_observation(journal_root, rows, observation, &census, typo_enabled)
-            })
-            .collect()
-    })
+    Ok((trust, census, typo_enabled))
 }
 
 fn apply_ambiguity_observation(
@@ -860,20 +862,22 @@ fn apply_ambiguity_observation(
     observation: &AmbiguityObservation,
     census: &super::census::IdentityCensus,
     typo_enabled: bool,
-) -> Result<Value, EntityWriteError> {
+) -> Result<usize, EntityWriteError> {
     let scope_key = ambiguity_scope_key(&observation.scope)?;
     let key = format!("{scope_key}|{}", observation.normalized_query);
     let origin_key = origin_key(&observation.origin)?;
     let now = ambiguity_now_iso();
-    let existing = rows.iter_mut().find(|row| {
+    let existing = rows.iter().position(|row| {
         row.get("normalized_query").and_then(Value::as_str)
             == Some(observation.normalized_query.as_str())
             && row
                 .get("scope")
                 .is_some_and(|scope| scope_key_for_row(scope).as_deref() == Some(&scope_key))
     });
-    if let Some(row) = existing {
-        let object = row.as_object_mut().expect("strict rows are objects");
+    if let Some(index) = existing {
+        let object = rows[index]
+            .as_object_mut()
+            .expect("strict rows are objects");
         object.insert(
             "latest_query".to_owned(),
             Value::String(observation.query.clone()),
@@ -926,7 +930,7 @@ fn apply_ambiguity_observation(
             typo_enabled,
         )?;
         super::review_policy::apply_ambiguity_review_policy(object, census, allow_typo, &now);
-        return Ok(row.clone());
+        return Ok(index);
     }
 
     let mut row = Map::new();
@@ -974,8 +978,8 @@ fn apply_ambiguity_observation(
         super::review_policy::typo_scope_is_current(journal_root, &row, census, typo_enabled)?;
     super::review_policy::apply_ambiguity_review_policy(&mut row, census, allow_typo, &now);
     let row = Value::Object(row);
-    rows.push(row.clone());
-    Ok(row)
+    rows.push(row);
+    Ok(rows.len() - 1)
 }
 
 /// Record or replace a resolved ambiguity choice.

@@ -3988,9 +3988,9 @@ fn batched_ambiguity_observations_rewrite_once_and_match_one_at_a_time() {
     assert_eq!(crate::ambiguity_rewrite_count(), observations.len());
     let batched = TempDir::new();
     crate::reset_test_counters();
-    let rows = crate::record_ambiguity_observations(batched.path(), &observations).unwrap();
+    let applied = crate::record_ambiguity_observations(batched.path(), &observations).unwrap();
     assert_eq!(crate::ambiguity_rewrite_count(), 1);
-    assert_eq!(rows.len(), observations.len());
+    assert_eq!(applied, observations.len());
     // The two journals are written moments apart; compare all but the clock.
     fn without_times(value: &mut Value) {
         match value {
