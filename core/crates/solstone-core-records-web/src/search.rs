@@ -737,7 +737,32 @@ fn readable_record(text: &str) -> Option<ReadableRecord> {
 }
 
 /// The excerpt cap: 50 words, with an ellipsis when there was more.
+/// An excerpt flattens its chunk onto one line, so a markdown heading, bullet or quote marker at
+/// the start of a line (a talent's `## Topics` over `- field versioning`) would print as literal
+/// punctuation in the card. Only a marker that opens a line goes; the same characters inside a
+/// line (`#balcony-beta`, `a - b`) are text and stay.
+fn strip_line_markers(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let line = line.trim_start();
+            let hashes = line.len() - line.trim_start_matches('#').len();
+            if (1..=6).contains(&hashes) {
+                let rest = &line[hashes..];
+                if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+                    return rest.trim_start();
+                }
+            }
+            ["- ", "* ", "+ ", "> "]
+                .iter()
+                .find_map(|marker| line.strip_prefix(marker))
+                .map_or(line, str::trim_start)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn cap_words(text: &str) -> String {
+    let text = strip_line_markers(text);
     let mut value = text
         .split_whitespace()
         .take(50)
@@ -1047,6 +1072,22 @@ mod search_failure_detail_tests {
 #[cfg(test)]
 mod highlight_phrase_tests {
     use super::*;
+
+    #[test]
+    fn an_excerpt_drops_markdown_markers_that_open_a_line() {
+        assert_eq!(
+            cap_words("## Topics\n\n- field versioning ownership\n> quoted\n* starred"),
+            "Topics field versioning ownership quoted starred"
+        );
+    }
+
+    #[test]
+    fn an_excerpt_keeps_the_same_characters_inside_a_line() {
+        assert_eq!(
+            cap_words("Checked #balcony-beta - all green\n#hashtag first\n2 * 3"),
+            "Checked #balcony-beta - all green #hashtag first 2 * 3"
+        );
+    }
 
     #[test]
     fn highlight_terms_keeps_a_quoted_phrase_as_one_unit() {

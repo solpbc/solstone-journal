@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- search results no longer show the formatting marks that start a line in your journal's notes, such as `##` before a heading or `-` before a list item, in the text under each result.
 - importing a journal archive no longer sets aside someone from the archive to ask you about because their name is close to another name in the same archive, such as Javier and Javier Garcia. names are checked only against the people and things already in your journal.
 - when importing a journal archive matches someone in it to a person or thing already in your journal, the facets the archive had them in now list them. before, those facets could leave them out, or list someone else in their place.
 - when you reprocess a day, or redo it from scratch, and part of it can't finish on its own, such as an entity review that conflicts with a change already in your journal, your journal no longer runs that day again as soon as each try ends. it now waits between tries, as it does for any other day.
