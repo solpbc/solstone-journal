@@ -621,7 +621,7 @@ fn late_sync_named_replacement_and_new_stage_keep_actual_publication_without_con
 }
 
 #[test]
-fn existing_only_legacy_lock_policy_preserves_inode_and_created_store_stays_strict() {
+fn existing_only_legacy_lock_policy_preserves_inode_and_created_store_makes_it_private() {
     let f = Fixture::new(false);
     let path = f.temp.path().join("health/offload/restore-intents.lock");
     let inode = fs::metadata(&path).unwrap().ino();
@@ -633,6 +633,8 @@ fn existing_only_legacy_lock_policy_preserves_inode_and_created_store_stays_stri
     assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
     assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o644);
     drop(result);
-    assert!(RestoreIntentStore::create(Arc::clone(&f.activity)).is_err());
-    assert_eq!(fs::metadata(path).unwrap().ino(), inode);
+    // The strict store repairs a readable lock in place rather than refusing it.
+    assert!(RestoreIntentStore::create(Arc::clone(&f.activity)).is_ok());
+    assert_eq!(fs::metadata(&path).unwrap().ino(), inode);
+    assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
 }

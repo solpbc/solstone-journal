@@ -825,10 +825,26 @@ fn register_handoff_preserves_unrelated_updates_and_refuses_selected_drift() {
                 result.mutation(),
                 Some(Ok(BoundMutationOutcome::Published(_)))
             ));
-        } else {
+        } else if change == 1 {
             assert!(result.mutation().unwrap().is_err());
             assert!(register.marks.contains_key(&mark.id));
             assert!(result.outcome().targets[0].post_commit_failure.is_some());
+        } else {
+            // A replaced lock entry is a fresh lock, not register drift: it is
+            // made private in place and the unchanged register retires the mark.
+            use std::os::unix::fs::PermissionsExt;
+            assert!(matches!(
+                result.mutation(),
+                Some(Ok(BoundMutationOutcome::Published(_)))
+            ));
+            assert!(!register.marks.contains_key(&mark.id));
+            assert!(result.outcome().targets[0].post_commit_failure.is_none());
+            let lock = f.path("health/retention-marks.json.lock");
+            assert_eq!(fs::read(&lock).unwrap(), b"competitor");
+            assert_eq!(
+                fs::metadata(&lock).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
         }
     }
 }
