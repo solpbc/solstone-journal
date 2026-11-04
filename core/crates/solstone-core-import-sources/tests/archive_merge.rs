@@ -392,6 +392,43 @@ fn ambiguous_and_id_colliding_entities_are_staged_for_later_review() {
 }
 
 #[test]
+fn unrelated_names_are_created_rather_than_set_aside_as_near_matches() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    save_entity_identity(
+        &target,
+        "ada-lovelace",
+        &json!({"id":"ada-lovelace","name":"Ada Lovelace","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    for (id, name) in [
+        ("grace-hopper", "Grace Hopper"),
+        ("alan-turing", "Alan Turing"),
+    ] {
+        save_entity_identity(
+            &source,
+            id,
+            &json!({"id":id,"name":name,"type":"Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert!(
+        result
+            .entity_dispositions
+            .iter()
+            .all(|item| item.disposition == EntityDispositionKind::Created),
+        "{:?}",
+        result.entity_dispositions
+    );
+    assert!(!target.join("entities/ambiguities.jsonl").exists());
+}
+
+#[test]
 fn validation_refuses_unsafe_entries_and_busy_lock_reports_metadata_remedy() {
     let tree = TempTree::new();
     let unsafe_archive = tree.path.join("unsafe.zip");

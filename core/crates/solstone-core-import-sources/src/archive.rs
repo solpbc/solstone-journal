@@ -56,6 +56,9 @@ const ZIP_LOCAL: [u8; 4] = [b'P', b'K', 3, 4];
 const ZIP_EOCD: [u8; 4] = [b'P', b'K', 5, 6];
 const ZIP_SPAN: [u8; 4] = [b'P', b'K', 7, 8];
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+/// Fuzzy name-match floor for an imported entity, on the matcher's 0-100
+/// similarity scale: the same floor every other entity resolution uses.
+const ENTITY_FUZZY_THRESHOLD: f64 = 90.0;
 const LEGACY_TRANSFER_ARCHIVE: &str = "a .tgz or .tar.gz archive isn't supported. if it's an old transfer archive, export that day again as a .zip from the journal it came from and merge that, or merge this file into a new, empty journal on an earlier 2.x release, export that journal as a .zip, and merge that .zip into your journal";
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -1651,7 +1654,7 @@ fn stage_entities(
                 .collect::<Vec<_>>(),
             json!({"kind":"journal"}),
             json!({"source_entity_id": source_id, "lane":"archive_merge"}),
-            0.86,
+            ENTITY_FUZZY_THRESHOLD,
             true,
         )
         .map_err(|error| ImportSourcesError::EntityMerge {
