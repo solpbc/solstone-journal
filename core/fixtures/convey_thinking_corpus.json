@@ -11034,7 +11034,7 @@
             "headline": "thinking status unavailable",
             "identity": {
               "lane": "spp",
-              "model": "local/qwen3.5-4b",
+              "model": "served-model",
               "provider": "local"
             },
             "progressing": false,
