@@ -148,7 +148,7 @@ final class JournalWindowModel {
     @ObservationIgnored private let config: JournalAppConfig
     let supervisor: JournalSupervisor
     @ObservationIgnored private let checkLocalAccess: (@Sendable () async throws -> Void)?
-    @ObservationIgnored private let browserURL: (@Sendable (String) async throws -> URL)?
+    @ObservationIgnored private let browserLink: @Sendable (String) async throws -> URL
     @ObservationIgnored private let baseURL: String
     @ObservationIgnored private let fetchIdentity: IdentityFetch
     @ObservationIgnored private let identityRetryPause: IdentityRetryPause
@@ -166,6 +166,8 @@ final class JournalWindowModel {
 
     var selectedPane: JournalPane = .home
     var localAccessFailure: String?
+    /// The last open didn't get a link from the journal. Cleared by the next open that does.
+    var openFailure: String?
     var identityRead: JournalIdentityRead?
     var diskUsageBytes: Int64?
     var healthDisplay: JournalHealthDisplay = .unknown
@@ -183,7 +185,7 @@ final class JournalWindowModel {
         identitySession: URLSession = .shared,
         dataLoader: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil,
         checkLocalAccess: (@Sendable () async throws -> Void)? = nil,
-        browserURL: (@Sendable (String) async throws -> URL)? = nil,
+        browserLink: @escaping @Sendable (String) async throws -> URL = { _ in throw LocalHTTPError.unavailable },
         fetchIdentity: IdentityFetch? = nil,
         identityRetryPause: @escaping IdentityRetryPause = { try await Task.sleep(for: .milliseconds(500)) },
         fetchDiskUsage: DiskUsageFetch? = nil,
@@ -203,7 +205,7 @@ final class JournalWindowModel {
         let defaultIdentityFetcher = JournalIdentityFetcher(session: identitySession, dataLoader: dataLoader)
         let trimmedBaseURL = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         self.checkLocalAccess = checkLocalAccess
-        self.browserURL = browserURL
+        self.browserLink = browserLink
         self.config = config
         self.supervisor = supervisor
         self.baseURL = trimmedBaseURL
@@ -307,30 +309,33 @@ final class JournalWindowModel {
         }
     }
 
-    func openJournal(using openURL: @escaping @MainActor (URL) -> Bool) {
+    @discardableResult
+    func openJournal(using openURL: @escaping @MainActor (URL) -> Bool) -> Task<Void, Never> {
         openBrowser(path: "/", using: openURL)
     }
 
-    func openBackup(using openURL: @escaping @MainActor (URL) -> Bool) {
+    @discardableResult
+    func openBackup(using openURL: @escaping @MainActor (URL) -> Bool) -> Task<Void, Never> {
         openBrowser(path: "/app/backup", using: openURL)
     }
 
-    private func openBrowser(path: String, using openURL: @escaping @MainActor (URL) -> Bool) {
-        if let browserURL {
-            Task { @MainActor in
-                do { _ = openURL(try await browserURL(path)) }
-                catch { localAccessFailure = error.localizedDescription; identityRead = .unavailable }
+    /// Opens a one-time link from the checked journal. There is no plain-address fallback: a journal
+    /// with local access closed answers a plain address with its landing page.
+    private func openBrowser(path: String, using openURL: @escaping @MainActor (URL) -> Bool) -> Task<Void, Never> {
+        Task { @MainActor in
+            do {
+                let link = try await browserLink(path)
+                openFailure = nil
+                if !openURL(link) {
+                    Logger.journalApp.error("failed to open the journal at \(path, privacy: .public) in the browser")
+                }
+            } catch LocalHTTPError.linkFailed {
+                openFailure = LocalHTTPError.linkFailed.localizedDescription
+            } catch {
+                localAccessFailure = error.localizedDescription
+                identityRead = .unavailable
             }
-            return
         }
-        guard let url = URL(string: baseURL + path) else {
-            Logger.journalApp.error("failed to form journal URL from \(self.baseURL, privacy: .public)")
-            return
-        }
-        if openURL(url) {
-            return
-        }
-        Logger.journalApp.error("failed to open journal at \(url.absoluteString, privacy: .public)")
     }
 
     var diskUsageValue: String {

@@ -365,44 +365,61 @@ struct JournalWindowModelTests {
         #expect(makeModel(config: fixture.config, supervisor: blockedSupervisor).homeOffer == .runState)
     }
 
-    @Test func openJournalUsesDefaultBaseWithTrailingSlash() {
+    @Test func openingAsksTheJournalForALinkToThePathAndOpensItUnchanged() async {
         let fixture = makeUnconfiguredFixture()
         defer { fixture.clear() }
-        let model = makeModel(config: fixture.config)
-        let capture = OpenURLCapture()
-        model.openJournal(using: { url in
-            capture.append(url)
-            return true
+        let links = LinkRequests()
+        let model = makeModel(config: fixture.config, browserLink: { path in
+            await links.record(path)
+            return URL(string: "http://localhost:15415/?auth=one-time")!
         })
-        #expect(capture.absoluteStrings == ["http://127.0.0.1:5015/"])
+        let capture = OpenURLCapture()
+        await model.openJournal(using: { capture.append($0); return true }).value
+        await model.openBackup(using: { capture.append($0); return true }).value
+        #expect(await links.paths == ["/", "/app/backup"])
+        #expect(capture.absoluteStrings == ["http://localhost:15415/?auth=one-time", "http://localhost:15415/?auth=one-time"])
+        #expect(model.openFailure == nil)
     }
 
-    @Test func openJournalUsesInjectedHostAndPort() {
+    @Test func aFailedLinkOpensNothingAndSaysSoWithoutHidingTheJournal() async {
         let fixture = makeUnconfiguredFixture()
         defer { fixture.clear() }
-        let model = makeModel(config: fixture.config, baseURL: "http://10.1.2.3:9999/")
+        let model = makeModel(config: fixture.config, browserLink: { _ in throw LocalHTTPError.linkFailed })
         let capture = OpenURLCapture()
-        model.openJournal(using: { url in
-            capture.append(url)
-            return true
-        })
-        #expect(capture.absoluteStrings == ["http://10.1.2.3:9999/"])
+        await model.openJournal(using: { capture.append($0); return true }).value
+        #expect(capture.urls.isEmpty)
+        #expect(model.openFailure == LocalHTTPError.linkFailed.localizedDescription)
+        #expect(model.localAccessFailure == nil)
     }
 
-    @Test func openJournalFailureDoesNotRetryOrStoreError() throws {
+    @Test func aWrongJournalAtOpenKeepsTheExistingRefusal() async throws {
         let fixture = try makeConfiguredFixture()
         defer { fixture.clear() }
-        let model = makeModel(config: fixture.config)
-        #expect(model.homeOffer == .runState)
+        let model = makeModel(config: fixture.config, browserLink: { _ in throw LocalHTTPError.wrongJournal })
         let capture = OpenURLCapture()
-        model.openJournal(using: { url in
-            capture.append(url)
-            return false
-        })
-        #expect(capture.urls.count == 1)
-        #expect(model.homeOffer == .runState)
+        await model.openBackup(using: { capture.append($0); return true }).value
+        #expect(capture.urls.isEmpty)
+        #expect(model.localAccessFailure == LocalHTTPError.wrongJournal.localizedDescription)
+        #expect(model.markPresentation == .unavailable)
     }
 
+    @Test func identityChecksNeverMakeALink() async throws {
+        let fixture = try makeConfiguredFixture()
+        defer { fixture.clear() }
+        let links = LinkRequests()
+        let model = JournalWindowModel(
+            config: fixture.config, supervisor: try makeSupervisor(),
+            checkLocalAccess: {},
+            browserLink: { path in await links.record(path); return URL(string: "http://localhost:1/?auth=x")! },
+            fetchIdentity: { _ in .mark(.uiTestSample) }
+        )
+        for _ in 0..<40 {
+            model.prepareForWindowOpen()
+            await model.fetchIdentityIfNeeded()
+        }
+        #expect(await links.paths.isEmpty)
+        #expect(model.markPresentation == .mark(.uiTestSample))
+    }
 
     @Test func bundledVersionProbeRunsBeforeStartAndHealthUsesTheActiveRuntime() async throws {
         let fixture = try makeConfiguredFixture()
@@ -600,12 +617,14 @@ struct JournalWindowModelTests {
         aboutOSVersion: @escaping JournalWindowModel.AboutStringProvider = { "15.6" },
         aboutArch: @escaping JournalWindowModel.AboutArchProvider = { "arm64" },
         appBuild: String = "67",
-        onIdentityMark: JournalWindowModel.IdentityMarkObserver? = nil
+        onIdentityMark: JournalWindowModel.IdentityMarkObserver? = nil,
+        browserLink: @escaping @Sendable (String) async throws -> URL = { _ in throw LocalHTTPError.unavailable }
     ) -> JournalWindowModel {
         JournalWindowModel(
             config: config,
             supervisor: supervisor,
             baseURL: baseURL,
+            browserLink: browserLink,
             fetchIdentity: fetchIdentity,
             identityRetryPause: identityRetryPause,
             fetchDiskUsage: fetchDiskUsage,
@@ -700,6 +719,11 @@ private final class OpenURLCapture {
     func append(_ url: URL) {
         urls.append(url)
     }
+}
+
+private actor LinkRequests {
+    private(set) var paths: [String] = []
+    func record(_ path: String) { paths.append(path) }
 }
 
 @MainActor

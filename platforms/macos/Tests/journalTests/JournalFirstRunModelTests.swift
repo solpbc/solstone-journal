@@ -62,6 +62,28 @@ struct JournalFirstRunModelTests {
         #expect(starts == 0)
     }
 
+    @Test func theFirstRunPageOpensThroughALinkAndAFailedLinkOpensNothing() async throws {
+        let linked = makeModel(
+            startResults: [true],
+            probeResults: [.incomplete, .complete],
+            browserLink: { path in
+                #expect(path == "/init")
+                return URL(string: "http://localhost:15415/?auth=one-time")!
+            }
+        )
+        await linked.model.continueFromNameLocation()
+        #expect(linked.browser.opened == [URL(string: "http://localhost:15415/?auth=one-time")!])
+
+        let failed = makeModel(
+            startResults: [true],
+            probeResults: [.incomplete, .complete],
+            browserLink: { _ in throw LocalHTTPError.linkFailed }
+        )
+        await failed.model.continueFromNameLocation()
+        #expect(failed.browser.opened.isEmpty)
+        #expect(failed.routes.contains(.ritual(.finishInBrowser)))
+    }
+
     @Test func createFlowOpensTheJournalPageThenLandsHomeWhenTheJournalSaysDone() async throws {
         let trace = FirstRunTrace()
         let fixture = makeModel(
@@ -580,6 +602,7 @@ func makeModel(
     fetchIdentity: JournalWindowModel.IdentityFetch? = nil,
     onIdentityMark: JournalWindowModel.IdentityMarkObserver? = nil,
     opens: Bool = true,
+    browserLink: @escaping @Sendable (String) async throws -> URL = { URL(string: "http://127.0.0.1:5015" + $0)! },
     browserPollInterval: Duration = .milliseconds(1),
     localSetupCapability: @escaping @Sendable () -> Bool = { false },
     loadSetupCopy: @escaping @Sendable () async -> JournalSetupCopy? = { nil },
@@ -634,6 +657,7 @@ func makeModel(
         handoffStore: handoffStore,
         journalFileReader: journalFileReader,
         discoveryQualificationTimeout: discoveryQualificationTimeout,
+        browserLink: browserLink,
         openURL: { browser.open($0) },
         browserPollInterval: browserPollInterval,
         windowModel: attachWindow ? windowModel : nil,

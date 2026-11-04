@@ -468,7 +468,7 @@ extension JournalFirstRunModelTests {
 
         await world.fixture.model.reconcileActivation()
 
-        #expect(world.fixture.browser.opened == [JournalFirstRunModel.defaultInitPageURL])
+        #expect(world.fixture.browser.opened == [URL(string: "http://127.0.0.1:5015/init")!])
         #expect(world.fixture.model.reopenCount == 0)
         #expect(world.fixture.openJournalCalls == 0)
         #expect(world.fixture.backupOpens == 0)
@@ -989,7 +989,7 @@ extension JournalFirstRunModelTests {
         defer { incapable.refresh.release() }
         try writeStep1(incapable.fixture.mailbox)
         await incapable.fixture.model.reconcileActivation()
-        #expect(incapable.fixture.browser.opened == [JournalFirstRunModel.defaultInitPageURL])
+        #expect(incapable.fixture.browser.opened == [URL(string: "http://127.0.0.1:5015/init")!])
         #expect(incapable.loads.calls == 0)
         #expect(incapable.peer.resolveCount == 0)
 
@@ -998,7 +998,7 @@ extension JournalFirstRunModelTests {
         await missingCopy.fixture.model.reconcileActivation()
         #expect(missingCopy.loads.calls == 1)
         #expect(missingCopy.peer.resolveCount == 0)
-        #expect(missingCopy.fixture.browser.opened == [JournalFirstRunModel.defaultInitPageURL])
+        #expect(missingCopy.fixture.browser.opened == [URL(string: "http://127.0.0.1:5015/init")!])
 
         let absent = ScriptedPeer()
         absent.repeatLast = false
@@ -1008,7 +1008,7 @@ extension JournalFirstRunModelTests {
         await missingPeer.fixture.model.reconcileActivation()
         #expect(missingPeer.peer.resolveCount == 1)
         #expect(missingPeer.peer.verifyCount == 0)
-        #expect(missingPeer.fixture.browser.opened == [JournalFirstRunModel.defaultInitPageURL])
+        #expect(missingPeer.fixture.browser.opened == [URL(string: "http://127.0.0.1:5015/init")!])
 
         let unverified = ScriptedPeer()
         unverified.queue = [setupPeerURL]
@@ -1017,7 +1017,7 @@ extension JournalFirstRunModelTests {
         defer { rejectedPeer.refresh.release() }
         await rejectedPeer.fixture.model.reconcileActivation()
         #expect(rejectedPeer.peer.verifyCount == 1)
-        #expect(rejectedPeer.fixture.browser.opened == [JournalFirstRunModel.defaultInitPageURL])
+        #expect(rejectedPeer.fixture.browser.opened == [URL(string: "http://127.0.0.1:5015/init")!])
         #expect(rejectedPeer.peer.launched.isEmpty)
         #expect(rejectedPeer.fixture.continuation.loadContinuation() == .missing)
         #expect(incapable.fixture.openJournalCalls == 0)

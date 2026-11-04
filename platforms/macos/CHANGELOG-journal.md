@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- the journal app opens your journal, its setup page and backup in your browser with a one-time link, so they still open after you close local access in your journal's settings.
+
 ### Fixed
 
 - the pairing window now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.

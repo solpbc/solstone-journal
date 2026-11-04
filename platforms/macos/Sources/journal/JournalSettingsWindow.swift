@@ -138,13 +138,16 @@ struct JournalSettingsWindow: View {
                 switch model.homeOffer {
                 case .door:
                     Button {
-                        model.openJournal(using: openURL)
+                        _ = model.openJournal(using: openURL)
                     } label: {
                         Label("open your journal", systemImage: "arrow.up.right.square")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .accessibilityIdentifier(AXID.Journal.Home.openJournal)
+                    if let openFailure = model.openFailure {
+                        Text(openFailure).font(.callout)
+                    }
                 case .start:
                     if let stoppedReason = model.stoppedReason {
                         Text(stoppedReason)
@@ -285,11 +288,14 @@ struct JournalSettingsWindow: View {
             )
 
             Button {
-                model.openBackup(using: { openURL($0) })
+                _ = model.openBackup(using: { openURL($0) })
             } label: {
                 Label("open backup", systemImage: "arrow.up.right.square")
             }
             .accessibilityIdentifier(AXID.Journal.Backup.openBackup)
+            if let openFailure = model.openFailure {
+                Text(openFailure).font(.callout)
+            }
         }
     }
 

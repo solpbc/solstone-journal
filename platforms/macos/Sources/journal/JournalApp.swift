@@ -39,8 +39,8 @@ final class JournalAppModel {
         self.iconManager = iconManager
         let windowModel = JournalWindowModel(
             config: config, supervisor: supervisor, dataLoader: loader,
-            checkLocalAccess: { _ = try await local.browserURL(path: "/") },
-            browserURL: { try await local.browserURL(path: $0) }
+            checkLocalAccess: { try await local.verify() },
+            browserLink: { try await local.browserLink(path: $0) }
         )
         windowModel.onIdentityMark = { [weak iconManager] mark in
             iconManager?.handleIdentityMark(mark)
@@ -52,7 +52,7 @@ final class JournalAppModel {
             startSupervisor: { [supervisor] root in
                 await supervisor.start(journalRoot: root)
             },
-            browserURL: { try await local.browserURL(path: $0) },
+            browserLink: { try await local.browserLink(path: $0) },
             windowModel: windowModel,
             supervisorIsLive: { [supervisor] root in
                 supervisor.state == .running

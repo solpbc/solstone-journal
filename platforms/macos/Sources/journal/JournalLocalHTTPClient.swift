@@ -5,6 +5,7 @@ import Darwin
 import Foundation
 import Network
 import JournalRuntime
+import os
 
 /// The app's HTTP consumers share this boundary, including the clients in JournalMarkKit.
 /// Redirects are returned to the consumer and are never followed by this transport.
@@ -14,6 +15,8 @@ struct JournalLocalHTTPClient: Sendable {
     let root: RootProvider
     var environment = ProcessInfo.processInfo.environment
 
+    /// The same check the journal makes before it starts: the browser port busy on either loopback
+    /// address. So the owner sees this app's message, never the journal's own refusal as a stop.
     static func portAvailable(_ port: UInt16) -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
@@ -25,11 +28,32 @@ struct JournalLocalHTTPClient: Sendable {
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
         address.sin_addr.s_addr = inet_addr("127.0.0.1")
-        return withUnsafePointer(to: &address) {
+        let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
             }
         }
+        return bound && !ipv6LoopbackInUse(port)
+    }
+
+    /// Only "in use" counts: a Mac without IPv6 loopback has nothing there to conflict with.
+    private static func ipv6LoopbackInUse(_ port: UInt16) -> Bool {
+        let fd = socket(AF_INET6, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var reuse: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in6()
+        address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+        address.sin6_family = sa_family_t(AF_INET6)
+        address.sin6_port = port.bigEndian
+        address.sin6_addr = in6addr_loopback
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) == 0
+            }
+        }
+        return !bound && errno == EADDRINUSE
     }
 
     static func socketExists(_ path: String) throws -> Bool {
@@ -49,9 +73,94 @@ struct JournalLocalHTTPClient: Sendable {
         return try await send(request, endpoint: endpoint)
     }
 
-    func browserURL(path: String) async throws -> URL {
+    /// Checks that the journal answering is this account's. It never makes a link, so it is safe to
+    /// call as often as identity checks run.
+    func verify() async throws {
+        _ = try await verifiedEndpoint()
+    }
+
+    /// Makes a one-time link that opens `path` (with any query and fragment) in a browser, from the
+    /// checked journal over its owner socket. Each call makes a live link: call it only to open one.
+    /// A journal with no socket, or whose socket answers 404 for links, predates the gate and gets its
+    /// plain address. Any other failure throws `linkFailed`, never a plain address: a gated journal
+    /// answers a bare address with its landing page.
+    func browserLink(path: String) async throws -> URL {
         let endpoint = try await verifiedEndpoint()
-        return URL(string: "http://127.0.0.1:\(endpoint.port)\(path)")!
+        let plain = URL(string: "http://127.0.0.1:\(endpoint.port)\(path)")
+        guard endpoint.socket != nil else {
+            guard let plain else { throw LocalHTTPError.unavailable }
+            return plain
+        }
+        var request = URLRequest(url: URL(string: "http://localhost\(Self.linkRoute)")!, timeoutInterval: 5)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["path": path])
+        let bytes: Data
+        let status: Int
+        do {
+            let (data, response) = try await send(request, endpoint: endpoint)
+            bytes = data
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw Self.linkFailure("no answer: \(error)")
+        }
+        switch Self.linkAnswer(status: status, body: bytes, port: endpoint.port) {
+        case .link(let link):
+            return link
+        case .noLinks:
+            guard let plain else { throw LocalHTTPError.unavailable }
+            return plain
+        case .failed(let cause):
+            throw Self.linkFailure(cause)
+        }
+    }
+
+    static let linkRoute = "/_solstone/browser-link"
+
+    enum LinkAnswer: Equatable {
+        /// A one-time link to open unchanged.
+        case link(URL)
+        /// The journal predates links and its port has no gate.
+        case noLinks
+        /// Anything else. Never a reason to open a plain address.
+        case failed(String)
+    }
+
+    /// What the journal's answer to a link request means.
+    static func linkAnswer(status: Int, body: Data, port: Int) -> LinkAnswer {
+        switch status {
+        case 200:
+            return oneTimeLink(in: body, port: port).map(LinkAnswer.link) ?? .failed("the answer held no usable link")
+        case 404:
+            return .noLinks
+        default:
+            let reason = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? String
+            return .failed("status \(status): \(reason ?? "no reason given")")
+        }
+    }
+
+    /// The link is opened unchanged, and only if it is a one-time link to the checked journal's port.
+    static func oneTimeLink(in bytes: Data, port: Int) -> URL? {
+        guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              let text = object["url"] as? String,
+              let components = URLComponents(string: text),
+              components.scheme == "http",
+              components.host == "localhost" || components.host == "127.0.0.1",
+              components.port == port,
+              components.path == "/",
+              components.fragment == nil,
+              let items = components.queryItems, items.count == 1, items[0].name == "auth",
+              let token = items[0].value, !token.isEmpty
+        else { return nil }
+        return URL(string: text)
+    }
+
+    /// The cause goes to the log, never the link or its token.
+    private static func linkFailure(_ cause: String) -> LocalHTTPError {
+        Logger.journalApp.error("the journal could not make a browser link: \(cause, privacy: .public)")
+        return .linkFailed
     }
 
     private struct Endpoint {
@@ -156,7 +265,7 @@ struct JournalLocalHTTPClient: Sendable {
 }
 
 enum LocalHTTPError: LocalizedError {
-    case refused, wrongJournal, unavailable, invalidResponse, timedOut
+    case refused, wrongJournal, unavailable, invalidResponse, timedOut, linkFailed
     var errorDescription: String? {
         switch self {
         case .refused: "the journal app couldn't connect to your journal on this mac."
@@ -164,6 +273,7 @@ enum LocalHTTPError: LocalizedError {
         case .unavailable: "your journal isn't ready for the journal app yet. try again shortly."
         case .invalidResponse: "the journal app couldn't read what came back from your journal."
         case .timedOut: "the journal app waited too long for your journal. try again."
+        case .linkFailed: "the journal app couldn't open your journal in your browser. try again."
         }
     }
 }
