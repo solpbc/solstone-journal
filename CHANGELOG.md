@@ -14,6 +14,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- ultrawide screens you share are now described from a larger image. with the local model, small text on a 3440×1440 screen is misread about half as often. when the model runs on your own computer, each of these screens takes longer to describe, longest on a smaller graphics card. with your own model, some providers' newest models count more of each image toward your usage. other screen shapes are described as before.
+
 ### Fixed
 
 - when you reprocess a day, or redo it from scratch, and part of it can't finish on its own, such as an entity review that conflicts with a change already in your journal, your journal no longer runs that day again as soon as each try ends. it now waits between tries, as it does for any other day.

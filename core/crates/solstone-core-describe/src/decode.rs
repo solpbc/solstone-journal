@@ -534,7 +534,15 @@ fn vlm_target_dimensions(
     max_image_tokens: Option<u64>,
 ) -> Option<(u32, u32)> {
     const MAX_DIMENSION: f64 = 1920.0;
-    let mut scale = (MAX_DIMENSION / f64::from(width.max(height))).min(1.0);
+    // A screen at least twice as wide as it is tall (21:9 or 32:9) would lose too much text height to the
+    // longest-side cap: a 3440x1440 frame at 1920x803 roughly doubles misread text. It is sized by area
+    // instead, up to 1920 x 1920 px, the largest image every thinking lane admits.
+    const WIDE_MAX_PIXELS: f64 = MAX_DIMENSION * MAX_DIMENSION;
+    let (w, h) = (f64::from(width), f64::from(height));
+    let mut scale = (MAX_DIMENSION / w.max(h)).min(1.0);
+    if w >= 2.0 * h {
+        scale = scale.max((WIDE_MAX_PIXELS / (w * h)).sqrt().min(1.0));
+    }
     if let Some(max_image_tokens) = max_image_tokens {
         let max_pixels = max_image_tokens as f64 * 32.0 * 32.0;
         scale = scale.min((max_pixels / (f64::from(width) * f64::from(height))).sqrt());
@@ -626,5 +634,36 @@ mod image_tests {
             vlm_target_dimensions(small.0, small.1, Some(1024)),
             vlm_target_dimensions(small.0, small.1, None)
         );
+    }
+
+    #[test]
+    fn wide_screens_keep_their_text_height_and_other_screens_keep_the_longest_side_cap() {
+        // Ultrawide and super-ultrawide extraction images grow to the area every lane admits.
+        for wide in [(3440, 1440), (5120, 1440), (2560, 1080)] {
+            let (width, height) = vlm_target_dimensions(wide.0, wide.1, None).unwrap_or(wide);
+            assert!(u64::from(width) * u64::from(height) <= 1920 * 1920);
+            assert!(
+                height > wide.1 * 1920 / wide.0,
+                "{wide:?} kept only {height} px of height"
+            );
+        }
+        assert_eq!(vlm_target_dimensions(3440, 1440, None), Some((2967, 1242)));
+        assert_eq!(vlm_target_dimensions(2560, 1080, None), None);
+        // Desktops, Retina and 4K panels, phones and a near-16:9 capture are unchanged.
+        for (screen, expected) in [
+            ((3840, 2160), (1920, 1080)),
+            ((2880, 1800), (1920, 1200)),
+            ((2560, 1439), (1920, 1079)),
+            ((1179, 2556), (885, 1920)),
+            ((1080, 2400), (864, 1920)),
+        ] {
+            assert_eq!(
+                vlm_target_dimensions(screen.0, screen.1, None),
+                Some(expected)
+            );
+        }
+        // Categorization stays inside its own token budget.
+        let (width, height) = vlm_target_dimensions(3440, 1440, Some(1024)).expect("resized");
+        assert!(u64::from(width) * u64::from(height) <= 1024 * 32 * 32);
     }
 }
