@@ -3517,13 +3517,34 @@ mod tests {
             .path()
             .join("chronicle/19990101/import.apple_health/064000_300");
         std::fs::create_dir_all(&deleted).unwrap();
-        std::fs::write(deleted.join("tombstone.json"), "{}").unwrap();
+        std::fs::write(
+            deleted.join("tombstone.json"),
+            r#"{"manifest":["chronicle/19990101/import.apple_health/064000_300/body.jsonl"]}"#,
+        )
+        .unwrap();
         let (report, queue) = inventory_after_a_pass(root.path());
         assert_eq!(report.days_total, 0);
         assert_eq!(report.oldest_day, None);
         assert!(report.bands.iter().all(|band| band.segments_owed == 0));
         assert!(!queue.contains_reference("supervisor-work-19990101-daily"));
         assert!(!queue.contains_reference("supervisor-work-19990101-notes-063000_300"));
+    }
+
+    #[test]
+    fn deleting_an_older_card_leaves_its_day_owed() {
+        let root = fixture("local");
+        let card = root
+            .path()
+            .join("chronicle/20000101/import.apple_health/000000_300");
+        std::fs::create_dir_all(&card).unwrap();
+        std::fs::write(
+            card.join("tombstone.json"),
+            r#"{"manifest":["chronicle/20000101/import.apple_health/000000_300/day_summary_transcript.md"]}"#,
+        )
+        .unwrap();
+        let (report, _) = inventory_after_a_pass(root.path());
+        assert_eq!(report.days_total, 1);
+        assert!(report.bands.iter().any(|band| band.daily_units_owed > 0));
     }
 
     #[test]

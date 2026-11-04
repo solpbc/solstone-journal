@@ -331,6 +331,22 @@ fn identity_is_the_instant_so_another_offset_changes_nothing() {
 }
 
 #[test]
+fn a_tombstone_that_cant_say_what_it_removed_stays_deleted() {
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    let window = root
+        .join("chronicle/20261010")
+        .join(STREAM)
+        .join("000000_300");
+    fs::create_dir_all(&window).unwrap();
+    fs::write(window.join("tombstone.json"), "{}").unwrap();
+    let export = read(&[heart("2026-10-10 00:01:00 -0600", "70")]);
+    let planned = plan(root, &export, Denver, None, false).unwrap();
+    assert!(planned.files.is_empty());
+    assert_eq!(planned.stayed_deleted, 1);
+}
+
+#[test]
 fn a_window_lands_beside_older_content_and_stays_there() {
     let journal = tempfile::tempdir().unwrap();
     let root = journal.path();

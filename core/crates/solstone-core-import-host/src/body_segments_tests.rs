@@ -209,6 +209,77 @@ fn the_same_export_changes_nothing_an_edit_updates_and_a_deletion_stays() {
 }
 
 #[test]
+fn a_deleted_card_stays_deleted_and_new_rows_land_beside_it() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let delete = |key: &str| {
+        let outcome = door::remove_segments(
+            root,
+            &[solstone_core_retention::Target {
+                day: "20261010".to_owned(),
+                stream: STREAM.to_owned(),
+                dir: key.to_owned(),
+            }],
+            &chrono::Utc::now().to_rfc3339(),
+            RemovalReason::OwnerSegmentDelete,
+            "test",
+        );
+        assert!(outcome.halted.is_none());
+    };
+    let card = window(root, "20261010", "000000_300");
+    fs::create_dir_all(&card).unwrap();
+    fs::write(card.join("day_summary_transcript.md"), "a card\n").unwrap();
+    delete("000000_300");
+    assert!(card.join("tombstone.json").is_file());
+    assert!(!solstone_core_segment::is_body_only_dir(STREAM, &card));
+    assert!(!solstone_core_segment::day_holds_nothing_the_owner_did(
+        root, "20261010"
+    ));
+
+    let source = export(
+        scratch.path(),
+        &[
+            heart("2026-10-10 00:01:00 -0600", "70"),
+            heart("2026-10-10 00:04:00 -0600", "71"),
+        ],
+    );
+    let first = run(root, &source, "20261012_120000", None);
+    assert_eq!(first.published, 1);
+    assert!(
+        first.summary.contains("0 stayed deleted"),
+        "{}",
+        first.summary
+    );
+    let beside = window(root, "20261010", "000000_301");
+    assert_eq!(
+        decode_rows(&fs::read_to_string(beside.join(BODY_RECORDS_FILE)).unwrap())
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(!card.join(BODY_RECORDS_FILE).exists());
+
+    // Nothing moves on the same export, and the deleted card stays what it was.
+    let again = run(root, &source, "20261012_120001", None);
+    assert_eq!(again.published, 0);
+    assert!(!card.join(BODY_RECORDS_FILE).exists());
+
+    // The window beside it, once deleted, stays deleted too.
+    delete("000000_301");
+    assert!(solstone_core_segment::is_body_only_dir(STREAM, &beside));
+    let gone = run(root, &source, "20261012_120002", None);
+    assert_eq!(gone.published, 0);
+    assert!(
+        gone.summary.contains("1 stayed deleted"),
+        "{}",
+        gone.summary
+    );
+    assert!(!beside.join(BODY_RECORDS_FILE).exists());
+    assert!(!card.join(BODY_RECORDS_FILE).exists());
+}
+
+#[test]
 fn a_night_never_shrinks_and_its_tail_rewrites_every_tile() {
     let stage = |start: &str, end: &str, value: &str| {
         format!(

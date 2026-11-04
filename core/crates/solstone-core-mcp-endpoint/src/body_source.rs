@@ -33,7 +33,7 @@ const MAX_WINDOWS_PER_READ: usize = 24;
 /// Entries on one page: what a single segment's page already holds.
 const MAX_ENTRIES_PER_PAGE: usize = solstone_core_transcripts::MAX_TRANSCRIPT_PAGE_ITEMS;
 
-const NOTHING_READABLE: &str = "Nothing this connection can read from that source on that day. A source's label comes from `other_sources` on a day's list_transcripts, or from that day's body document.";
+const NOTHING_READABLE: &str = "No body source with that label holds anything this connection can read on that day. A source's label comes from `other_sources` on a day's list_transcripts, or from that day's body document.";
 const SPAN_EMPTY: &str = "No entries in this span.";
 const SPAN_EMPTY_CONTINUES: &str =
     "No entries in this part of the span. Pass next_cursor as cursor to read on.";
@@ -298,6 +298,8 @@ fn holds_other_content(
         segment.record_identity().is_ok_and(|identity| {
             identity.stream == stream
                 && !solstone_core_segment::is_body_only_segment(segment)
+                // A deleted segment has nothing to read, whatever it held.
+                && !matches!(solstone_core_segment::owner_deleted(segment.path()), Ok(true))
                 && live_allows(
                     journal_root,
                     &transcript_boundary,

@@ -402,6 +402,20 @@ fn a_source_listing_says_only_what_it_knows() {
         json!({"day": DAY, "source": LABEL}),
     );
     assert!(with_card.get("gaps_note").is_some(), "{with_card}");
+
+    // Once the owner deletes it there is nothing left for gaps_note to describe.
+    fs::remove_file(card.join("day_summary_transcript.md")).unwrap();
+    fs::write(
+        card.join("tombstone.json"),
+        r#"{"manifest":["a/day_summary_transcript.md"]}"#,
+    )
+    .unwrap();
+    let deleted_card = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    assert!(deleted_card.get("gaps_note").is_none(), "{deleted_card}");
 }
 
 #[test]
@@ -429,7 +443,11 @@ fn an_unfiltered_list_leaves_body_windows_out_and_names_them() {
         .join(STREAM)
         .join("063000_300");
     fs::remove_file(dir.join("body.jsonl")).unwrap();
-    fs::write(dir.join("tombstone.json"), "{}").unwrap();
+    fs::write(
+        dir.join("tombstone.json"),
+        r#"{"manifest":["a/body.jsonl"]}"#,
+    )
+    .unwrap();
     let list = call(root, "list_transcripts", json!({"day": DAY}));
     assert!(list.get("other_sources").is_none(), "{list}");
 }
@@ -456,7 +474,11 @@ fn a_walk_crosses_what_it_cant_read_and_shows_nothing_hidden() {
         .join(STREAM)
         .join("060500_300");
     fs::remove_file(deleted.join("body.jsonl")).unwrap();
-    fs::write(deleted.join("tombstone.json"), "{}").unwrap();
+    fs::write(
+        deleted.join("tombstone.json"),
+        r#"{"manifest":["a/body.jsonl"]}"#,
+    )
+    .unwrap();
     let page = call(root, "get_transcript", json!({"reference": span}));
     assert_eq!(page["entries"].as_array().unwrap().len(), 4);
     assert!(page["next_cursor"].is_null());

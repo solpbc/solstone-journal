@@ -872,7 +872,7 @@ pub fn summary_text(
 ) -> String {
     let source = source_words(SOURCE);
     let mut text = format!(
-        "# {source} import\n\n{} written, {} unchanged, {} stayed deleted, {} couldn't be read and were left as they are. Placed in {}.\n\n",
+        "# {source} import\n\n{} written, {} unchanged, {} stayed deleted, {} unreadable and left alone. Days and times placed using {}.\n\n",
         count_of_windows(written),
         plan.unchanged,
         plan.stayed_deleted,

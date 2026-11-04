@@ -22,7 +22,7 @@ A **window** is one segment on a civil grid, floored to 300 seconds. Only window
 
 The zone is fixed at a source's first import, so importing again under a later owner zone writes the same coordinates. **Known limit:** a morning run on a trip can land on another civil day from the one lived. A row keeps its own offset, so its exact time stays true, and matching across streams must use instants, never window keys.
 
-A window whose directory already holds older content (Apple's retired day-summary cards sit at `000000_300`) takes `<HHMMSS>_<len + 1>` beside it, and an existing one wins on later imports, so new rows never turn an older segment mixed.
+A window whose directory holds older content, live or deleted (Apple's retired day-summary cards sit at `000000_300`), takes `<HHMMSS>_<len + 1>` beside it, and an existing one wins on later imports, so new rows never turn an older segment mixed.
 
 `format_id: body-records` in [`body-records.schema.json`](../core/crates/solstone-core/src/contract/schemas/body-records.schema.json) describes one row. Rows are compact JSON with sorted keys, sorted by time and then id; dated rows come first.
 
@@ -53,7 +53,7 @@ Importing again, under one lock per source:
 - **The same data** changes nothing. No window is written or published.
 - **An edited record** (same identity, changed value) replaces its row, and the window republishes to search.
 - **A record an export omits** stays. An export isn't a deletion.
-- **A window the owner deleted** stays deleted, counted in the summary. That includes an older card at `000000_300` deleted before a body window landed beside it: this writer doesn't tell its tombstone from a body window's, so rows placed in that day's first five minutes stay out.
+- **A window the owner deleted** stays deleted, counted in the summary. A tombstone's manifest says what it removed. One that shows older content isn't a window the owner deleted, so new rows land beside it and it stays deleted. One that can't say counts as a deleted window, so nothing comes back on a guess.
 - **A window that can't be parsed** is left as it is and counted.
 - **A run that didn't finish** leaves `imports/.<source>-publishing`, and the next run publishes every window in the stream, in its export or not. The marker goes only when the attempt completed and `imports/<id>/imported.json` says `success`.
 
@@ -69,17 +69,18 @@ Apple gives sleep stages, not nights. Per source name, ordered by start, stage i
 
 - **One entry per experience**, from the `experience` row: label, name and owner's words, times, `by`, and the `values` its reader chose. `fields` never reaches this text, so a key nobody listed can't reach search.
 - **One entry per day**, `chronicle/<day>/body.md`: experiences, each kind's count and first and last time, logged kinds, the owner's words on logged rows, dated values. It's deterministic and rebuilt from the windows that survive, on the `location.md` pattern. It holds no reading values.
-- **Nothing else.** Readings, counts, stages and tiles produce no search entry. `imports/<id>/summary.md` holds names and counts.
+- **One entry per import**, `imports/<id>/summary.md`: names and counts.
+- **Nothing else.** Readings, counts, stages and tiles produce no search entry.
 
 Everything generated restates what the source recorded. Nothing is averaged, trended or judged.
 
 ## Thinking
 
-A segment is **body-only** by what it holds, never by its stream alone: it sits in `import.apple_health` or `import.oura`, it holds `body.jsonl` or only a tombstone, and everything else in it is incidental (`stream.json`, locks, a file manager's litter, an interrupted write's candidate, `talents/` holding only `facets.json`). Any other file, or an unreadable directory, fails the test, so older content in the same stream keeps its behaviour. `solstone_core_segment::is_body_only_dir`.
+A segment is **body-only** by what it holds, never by its stream alone: it sits in `import.apple_health` or `import.oura`, it holds `body.jsonl` or a tombstone whose manifest shows it held `body.jsonl`, and everything else in it is incidental (`stream.json`, locks, a file manager's litter, an interrupted write's candidate, `talents/` holding only `facets.json`). Any other file, or an unreadable directory, fails the test, so older content in the same stream keeps its behaviour. `solstone_core_segment::is_body_only_dir`.
 
 A body-only segment isn't processed by Sense and owes no daily work, at any age:
 
-- Publication emits no observed, drain or enrichment event for it, and moves `body.updated` rather than `stream.updated`, whose completion would stay open with no daily work to close it. Other writers of the stream marker still move it, so a day whose body window was deleted reads as updated in the journal health report. A tombstone-only window counts as body-only so that one delete doesn't make a day owed.
+- Publication emits no observed, drain or enrichment event for it, and moves `body.updated` rather than `stream.updated`, whose completion would stay open with no daily work to close it. Other writers of the stream marker still move it, so a day whose body window was deleted reads as updated in the journal health report. A deleted body window stays body-only, so one delete doesn't make a day owed. Any other tombstone, or one that can't say what it removed, keeps its behaviour, so deleting older content owes its day's daily work as it always has.
 - Its coordinates carry `body_only` in `imported.json`, so an import asks no thinking or spending for them.
 - `scan_day` finds no modality and skips it, as with a location-only segment.
 - A day holding only such segments, or calendar notes, owes no work. Daily evidence, the schedule's active times, weekly reflection, reprocessing and both active-facet walks leave them out, so they neither hold nor change a day's daily work.
@@ -100,7 +101,7 @@ Through the MCP surface, with no new tool and no stream name in any response:
    - **`gaps`:** stretches with no window this connection can read. A gap means no window, not no reading. A whole-day segment and a tombstoned window aren't coverage. A clock-change day can show a false hour.
    - **`span_reference`:** pass it to `get_transcript`.
    - **`gaps_note`:** present when this connection can also read other content from the source that day, which these gaps don't describe.
-4. `get_transcript` on a `span_reference` pages entries in time order, each attributed, across windows. A page is whole segment pages, up to 100 entries, and a call visits at most 24 windows, so a page can be short. Hidden and deleted windows are skipped, and one that can't be read is counted in `unreadable`. Only the window being paged is bound to its version: one that changes before the walk reaches it reads as it now is.
+4. `get_transcript` on a `span_reference` pages entries in time order, each attributed, across windows. A page is whole segment pages, up to 100 entries, and a call visits at most 24 windows, so a page can be short. Windows outside this connection's scope and deleted windows are skipped, and one that can't be read is counted in `unreadable`. Only the window being paged is bound to its version: one that changes before the walk reaches it reads as it now is.
 
 `source` matches only `import.apple_health` and `import.oura` labels. Another label, or nothing readable that day, gets no `gaps` and a note saying so. A span crossing midnight is two lists. There's no kind filter yet, so one kind over a month walks every entry of that source; the walk and its cursor can take a filter and skip windows without changing the format.
 
