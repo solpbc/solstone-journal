@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rusqlite::config::DbConfig;
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
 };
@@ -323,6 +324,56 @@ pub(crate) fn reset_index_admitted(
     journal: &Path,
     _admission: &IndexAdmission,
 ) -> Result<(), StoreError> {
+    let damage = match rebuild_empty_index(journal) {
+        Err(error) if error.is_corruption() => error.to_string(),
+        Err(error) => return Err(error),
+        // Dropping every table can succeed on a file with damage only in its
+        // free pages, and the writes that refill it would then fail. A reset
+        // leaves a sound file or says it couldn't.
+        Ok(()) => match file_damage(&db_path(journal))? {
+            Some(damage) => damage,
+            None => return Ok(()),
+        },
+    };
+    log::warn!(
+        target: "solstone::indexer",
+        "index file is damaged, emptying it in place before the reset: {damage}"
+    );
+    empty_damaged_index(&db_path(journal))?;
+    rebuild_empty_index(journal)
+}
+
+/// What SQLite's own check says is wrong with the file, if anything.
+fn file_damage(path: &Path) -> Result<Option<String>, StoreError> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+    let verdict = conn.query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0));
+    match verdict.map_err(StoreError::from) {
+        Ok(verdict) if verdict == "ok" => Ok(None),
+        Ok(verdict) => Ok(Some(verdict)),
+        Err(error) if error.is_corruption() => Ok(Some(error.to_string())),
+        Err(error) => Err(error),
+    }
+}
+
+/// Empty a damaged index file through SQLite's own reset, the documented way to
+/// do this for a badly corrupted database. Deleting the file instead would pair
+/// a new database with any reader still holding the old one, and an open handle
+/// blocks deletion on Windows. The index is derived, so nothing is lost; the
+/// caller holds the writer lease.
+pub(crate) fn empty_damaged_index(path: &Path) -> Result<(), StoreError> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch("PRAGMA busy_timeout=5000;")?;
+    // Read the schema first, ignoring errors, so a file in WAL mode stays in it.
+    let _ = conn.prepare("SELECT 1 FROM sqlite_master LIMIT 1");
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_RESET_DATABASE, true)?;
+    let emptied = conn.execute_batch("VACUUM");
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_RESET_DATABASE, false)?;
+    emptied?;
+    Ok(())
+}
+
+fn rebuild_empty_index(journal: &Path) -> Result<(), StoreError> {
     let index_dir = journal.join(INDEX_DIR);
     fs::create_dir_all(&index_dir)?;
     let mut conn = Connection::open(db_path(journal))?;
@@ -1730,6 +1781,148 @@ mod tests {
         drop(reset_conn);
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup reset root");
+    }
+
+    /// A journal with an index of real rows, checkpointed so damage reaches them.
+    fn damaged_index_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = crate::test_support::reserve_temp_path(name);
+        for index in 0..300 {
+            let dir = root.join(format!("imports/fixture{index}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("summary.md"),
+                format!("# note {index}\nkestrel alpha {}\n", "word ".repeat(40)),
+            )
+            .unwrap();
+        }
+        crate::scan::scan_journal(&root, true).unwrap();
+        let path = db_path(&root);
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .unwrap();
+        (root, path)
+    }
+
+    fn scribble(path: &Path, pages: &[u64]) {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut file = fs::OpenOptions::new().write(true).open(path).unwrap();
+        let noise: Vec<u8> = (0..4096u32)
+            .map(|byte| (byte.wrapping_mul(2_654_435_761) >> 13) as u8)
+            .collect();
+        for page in pages {
+            file.seek(SeekFrom::Start(page * 4096)).unwrap();
+            file.write_all(&noise).unwrap();
+        }
+    }
+
+    fn assert_reset_restores_everything(root: &Path) {
+        reset_index(root).expect("reset a damaged index");
+        let report = crate::scan::scan_journal(root, true).unwrap();
+        assert_eq!(report.failed, 0);
+        let conn = open_index(root).unwrap();
+        let rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM chunks WHERE chunks MATCH 'kestrel'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 300);
+        let check: String = conn
+            .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(check, "ok");
+    }
+
+    #[test]
+    fn reset_empties_a_damaged_index() {
+        type Damage = fn(&Path);
+        let shapes: [(&str, Damage); 4] = [
+            ("header", |path| scribble(path, &[0])),
+            ("truncated", |path| {
+                let pages = fs::metadata(path).unwrap().len() / 4096;
+                let file = fs::OpenOptions::new().write(true).open(path).unwrap();
+                file.set_len(pages / 2 * 4096).unwrap();
+            }),
+            ("pages", |path| {
+                let pages = fs::metadata(path).unwrap().len() / 4096;
+                scribble(path, &(2..pages).step_by(20).collect::<Vec<_>>());
+            }),
+            ("one-leaf", |path| {
+                let pages = fs::metadata(path).unwrap().len() / 4096;
+                scribble(path, &[pages * 3 / 4]);
+            }),
+        ];
+        for (name, damage) in shapes {
+            let (root, path) = damaged_index_fixture(&format!("reset-damage-{name}"));
+            damage(&path);
+            assert_reset_restores_everything(&root);
+            fs::remove_dir_all(&root).unwrap();
+        }
+    }
+
+    #[test]
+    fn reset_empties_damage_that_only_free_pages_hold() {
+        let (root, path) = damaged_index_fixture("reset-free-pages");
+        // Enough freed pages that the free list runs to a second trunk page,
+        // which dropping every table never reads.
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE ballast(body BLOB);
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<4000)
+             INSERT INTO ballast SELECT zeroblob(4000) FROM n;
+             DROP TABLE ballast;
+             PRAGMA wal_checkpoint(TRUNCATE);",
+        )
+        .unwrap();
+        drop(conn);
+        let bytes = fs::read(&path).unwrap();
+        let be32 = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as u64;
+        let first_trunk = be32(32);
+        let second_trunk = be32(((first_trunk - 1) * 4096) as usize);
+        assert!(second_trunk > 0, "the fixture needs a second trunk page");
+        scribble(&path, &[second_trunk - 1]);
+        assert_reset_restores_everything(&root);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reset_leaves_other_errors_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let (root, path) = damaged_index_fixture("reset-other-errors");
+        // Busy: another connection holds the write lock.
+        let holder = Connection::open(&path).unwrap();
+        holder.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        let error = reset_index(&root).unwrap_err();
+        assert!(!error.is_corruption(), "{error}");
+        holder.execute_batch("ROLLBACK;").unwrap();
+        drop(holder);
+        let rows = |path: &Path| -> i64 {
+            Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap()
+                .query_row("SELECT count(*) FROM files", [], |row| row.get(0))
+                .unwrap()
+        };
+        assert_eq!(rows(&path), 300);
+        // Read-only: the same. Running as root would ignore the mode.
+        let index_dir = path.parent().unwrap().to_path_buf();
+        fs::set_permissions(&index_dir, fs::Permissions::from_mode(0o500)).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o400)).unwrap();
+        let readonly = fs::OpenOptions::new().write(true).open(&path).is_err();
+        if readonly {
+            let result = reset_index(&root);
+            fs::set_permissions(&index_dir, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            assert!(result.is_err());
+            assert!(!result.unwrap_err().is_corruption());
+            assert_eq!(rows(&path), 300);
+        } else {
+            fs::set_permissions(&index_dir, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

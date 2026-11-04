@@ -8,14 +8,14 @@ use crate::writer_admission::IndexAdmission;
 use serde::Serialize;
 pub use solstone_core_indexer_todo::{
     Entry, TodoStatus, Token, enqueue_path, enqueue_path_bound, enqueue_token, has_due, inspect,
-    now_ms,
+    listed_attempts, now_ms,
 };
 use solstone_core_indexer_todo::{
     entry_paths, path_absent, publish_if_absent, read_entry, rewrite, root,
 };
 use solstone_core_journal_io::append::append_jsonl;
 use solstone_core_journal_io::locking::{LockOptions, hold_lock_checked};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -42,6 +42,58 @@ const DRAIN_SLICE: Duration = Duration::from_millis(300);
 /// A whole-journal token is not started with less budget than this left, so a
 /// drain stops itself rather than being stopped inside a long pass.
 const TOKEN_MARGIN: Duration = Duration::from_secs(300);
+
+/// The limits of a whole-journal pass that takes turns with saves. Tests shrink
+/// them per thread; every other test runs on these same values.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ScanLimits {
+    /// Under this many files to index, the pass runs in one go, as it always
+    /// has: that's about what the daily check costs.
+    pub(crate) turns_min: usize,
+    /// How long one turn holds the writer.
+    pub(crate) turn: Duration,
+    /// How long a drain takes turns, from the end of its plan. A forced drain
+    /// waits on this one, and its budget is 600 s.
+    pub(crate) run: Duration,
+    /// A turn indexes this many files before it can be asked to give way, so
+    /// a steady stream of saves can't stop the rebuild.
+    pub(crate) min_turn_files: usize,
+    /// How often a turn asks whether a save is waiting, in files. It also asks
+    /// every 250 ms.
+    pub(crate) check_every_files: usize,
+}
+
+const SCAN_LIMITS: ScanLimits = ScanLimits {
+    turns_min: 2_000,
+    turn: Duration::from_secs(5),
+    run: Duration::from_secs(240),
+    min_turn_files: 64,
+    check_every_files: 64,
+};
+
+/// A run ends in order when less than this is left of the drain's budget.
+const SCAN_RUN_STOP_MARGIN: Duration = Duration::from_secs(30);
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_SCAN_LIMITS: std::cell::Cell<Option<ScanLimits>> =
+        const { std::cell::Cell::new(None) };
+    /// Runs after each turn has released the lease.
+    pub(crate) static TEST_AFTER_TURN: std::cell::RefCell<Option<Box<dyn FnMut()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn scan_limits() -> ScanLimits {
+    #[cfg(test)]
+    if let Some(limits) = TEST_SCAN_LIMITS.get() {
+        return limits;
+    }
+    SCAN_LIMITS
+}
+
+pub(crate) fn scan_turns_min() -> usize {
+    scan_limits().turns_min
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct DrainOptions {
@@ -218,6 +270,10 @@ pub fn drain_with_checkpoint(
         }
     }
     let mut list = WorkList::default();
+    let mut run: Option<ScanRun> = None;
+    let mut scan_decided = false;
+    // The full pass was just cleared to run: nothing ends this drain before it.
+    let mut pass_is_next = false;
     let acquire = || loop {
         match IndexAdmission::acquire_bounded(
             journal,
@@ -242,14 +298,26 @@ pub fn drain_with_checkpoint(
             report.timed_out = true;
             break;
         }
-        if started.elapsed() >= DRAIN_SLICE && list.resaved(journal, options.force)? {
+        if run.is_none()
+            && !std::mem::take(&mut pass_is_next)
+            && started.elapsed() >= DRAIN_SLICE
+            && list.resaved(journal, options.force)?
+        {
             break;
         }
         let token_room = options.budget.saturating_sub(started.elapsed()) >= TOKEN_MARGIN;
-        let snapshot = list.next_snapshot(journal, options.force, token_room, SNAPSHOT_ENTRIES)?;
-        if snapshot.is_empty() {
+        list.paths_only = run.is_some();
+        let mut snapshot =
+            list.next_snapshot(journal, options.force, token_room, SNAPSHOT_ENTRIES)?;
+        if snapshot.is_empty() && run.is_none() {
             break;
         }
+        // The first time this drain reaches a full pass, its paths go first and
+        // then it decides whether the pass takes turns. An unclaimed token is
+        // the point: restarts during hours of turns must not read as failures.
+        let scan_token = (!scan_decided && snapshot.last().is_some_and(|e| e.rank() == Some(1)))
+            .then(|| snapshot.pop())
+            .flatten();
         // Paths in bounded batches, then the token in a batch of its own.
         for batch in snapshot.chunks(BATCH_SIZE) {
             if check().is_err() {
@@ -299,6 +367,7 @@ pub fn drain_with_checkpoint(
                     }
                     Err(error) => {
                         return_failed(journal, entry.clone(), &claim, &error.to_string())?;
+                        list.failed(entry);
                         report.failed += 1;
                     }
                 }
@@ -309,9 +378,195 @@ pub fn drain_with_checkpoint(
                 break 'snapshots;
             }
         }
+        if let Some(token) = scan_token {
+            scan_decided = true;
+            run = begin_scan_run(journal, token, &mut list, &acquire, &check)?;
+            // Under the threshold, or it can't take turns: the token comes back
+            // through the next snapshot and runs as it always has. Otherwise any
+            // save made during the walk goes before the first turn.
+            pass_is_next = run.is_none();
+            continue;
+        }
+        let Some(active) = run.as_mut() else {
+            continue;
+        };
+        list.forgive_served_paths();
+        let turn_started = Instant::now();
+        let limits = scan_limits();
+        let should_yield = || {
+            turn_started.elapsed() >= limits.turn
+                || solstone_core_indexer_todo::any_due_path(
+                    journal,
+                    if options.force { u64::MAX } else { now_ms() },
+                    &|key| list.is_served(key),
+                )
+                .unwrap_or(false)
+        };
+        let Some(admission) = acquire()? else {
+            report.timed_out = true;
+            break 'snapshots;
+        };
+        let turn = crate::scan::index_scan_turn(
+            journal,
+            &mut active.plan,
+            &admission,
+            &check,
+            limits,
+            &should_yield,
+        );
+        drop(admission);
+        #[cfg(test)]
+        TEST_AFTER_TURN.with_borrow_mut(|hook| {
+            if let Some(hook) = hook {
+                hook();
+            }
+        });
+        let ended = match turn {
+            Ok(turn) => {
+                active.committed += turn.committed;
+                if turn.committed > 0 {
+                    active.settle(journal, &mut list)?;
+                }
+                let budget_left = options.budget.saturating_sub(started.elapsed());
+                if active.plan.is_empty() {
+                    RunEnd::Finish
+                } else if active.since_plan.elapsed() >= limits.run
+                    || budget_left < SCAN_RUN_STOP_MARGIN
+                {
+                    // A run that indexed nothing is not making progress: a full
+                    // disk looks like this. Today's pass reports what's wrong.
+                    if active.committed == 0 {
+                        RunEnd::Finish
+                    } else {
+                        RunEnd::NextDrain
+                    }
+                } else {
+                    RunEnd::Continue
+                }
+            }
+            Err(StoreError::WriterAdmission { .. }) if check().is_err() => {
+                report.timed_out = true;
+                RunEnd::NextDrain
+            }
+            Err(error) => {
+                log::warn!(
+                    target: "solstone::indexer",
+                    "full pass stopped taking turns: {error}"
+                );
+                RunEnd::Finish
+            }
+        };
+        match ended {
+            RunEnd::Continue => {}
+            RunEnd::Finish => {
+                active.settle(journal, &mut list)?;
+                list.release(&active.token);
+                log::info!(
+                    target: "solstone::indexer",
+                    "full pass took turns for {} file(s) in this drain and is finishing",
+                    active.committed
+                );
+                run = None;
+                pass_is_next = true;
+            }
+            RunEnd::NextDrain => {
+                active.settle(journal, &mut list)?;
+                log::info!(
+                    target: "solstone::indexer",
+                    "full pass took turns for {} file(s) in this drain, {} left",
+                    active.committed,
+                    active.plan.len()
+                );
+                break 'snapshots;
+            }
+        }
+    }
+    // However this drain stopped, stopping is not the crash that attempt is for.
+    if let Some(mut active) = run.take() {
+        active.settle(journal, &mut list)?;
     }
     report.remaining = inspect(journal)?;
     Ok(report)
+}
+
+/// A whole-journal pass working through a large difference in turns.
+struct ScanRun {
+    token: Entry,
+    plan: VecDeque<crate::scan::PlannedFile>,
+    committed: usize,
+    since_plan: Instant,
+    /// The attempt count to put back, until that's done.
+    unsettled: Option<u32>,
+}
+
+enum RunEnd {
+    Continue,
+    Finish,
+    NextDrain,
+}
+
+impl ScanRun {
+    /// Take back the attempt this run held against a crash.
+    fn settle(&mut self, journal: &Path, list: &mut WorkList) -> io::Result<()> {
+        if let Some(attempts) = self.unsettled.take() {
+            set_attempts(journal, &self.token, attempts)?;
+            list.forget(&self.token);
+        }
+        Ok(())
+    }
+}
+
+/// The token's file is on the list, and only the drain rewrites it.
+fn set_attempts(journal: &Path, token: &Entry, attempts: u32) -> io::Result<()> {
+    let path = root(journal).join(token.filename());
+    if let Some(mut entry) = read_entry(&path, false)? {
+        entry.attempts = attempts;
+        rewrite(&path, &entry)?;
+    }
+    Ok(())
+}
+
+/// Decide how a full pass runs. `None` sends it through the next snapshot and
+/// on to today's claim, including when it has died before it could commit:
+/// the attempt held here is what gets it there, and on to Health.
+fn begin_scan_run(
+    journal: &Path,
+    token: Entry,
+    list: &mut WorkList,
+    lease: &dyn Fn() -> Result<Option<IndexAdmission>, StoreError>,
+    check: &dyn Fn() -> Result<(), String>,
+) -> Result<Option<ScanRun>, StoreError> {
+    if token.attempts >= 2 {
+        return Ok(None);
+    }
+    set_attempts(journal, &token, token.attempts.saturating_add(1))?;
+    list.forget(&token);
+    let planned = crate::scan::plan_scan_turns(journal, lease, check);
+    let plan = match planned {
+        Ok(Some(plan)) if plan.len() >= scan_limits().turns_min => plan,
+        Ok(_) => {
+            set_attempts(journal, &token, token.attempts)?;
+            list.forget(&token);
+            return Ok(None);
+        }
+        Err(error) => {
+            log::warn!(
+                target: "solstone::indexer",
+                "full pass could not plan its turns: {error}"
+            );
+            set_attempts(journal, &token, token.attempts)?;
+            list.forget(&token);
+            return Ok(None);
+        }
+    };
+    list.hold(&token);
+    Ok(Some(ScanRun {
+        unsettled: Some(token.attempts),
+        token,
+        plan,
+        committed: 0,
+        since_plan: Instant::now(),
+    }))
 }
 
 /// The drain's view of the list across snapshots. Producers only create
@@ -324,6 +579,11 @@ struct WorkList {
     /// Keys served in this drain. Each is served at most once per drain: a
     /// save made after its turn waits for the next drain.
     served: HashSet<String>,
+    /// Keys that failed in this drain. They stay served even while a full pass
+    /// takes turns, because being served is their retry spacing here.
+    failed: HashSet<String>,
+    /// A full pass is taking turns: the snapshots offer paths and nothing else.
+    paths_only: bool,
 }
 
 impl WorkList {
@@ -331,6 +591,38 @@ impl WorkList {
         self.served.insert(entry.key.clone());
         // The drain is about to claim, remove or rewrite this file.
         self.cache.remove(std::ffi::OsStr::new(&entry.filename()));
+    }
+
+    fn failed(&mut self, entry: &Entry) {
+        self.failed.insert(entry.key.clone());
+    }
+
+    /// This drain rewrote the entry: read it again.
+    fn forget(&mut self, entry: &Entry) {
+        self.cache.remove(std::ffi::OsStr::new(&entry.filename()));
+    }
+
+    /// A pass taking turns holds its token here, unclaimed.
+    fn hold(&mut self, entry: &Entry) {
+        self.served.insert(entry.key.clone());
+    }
+
+    /// The token comes back through the next snapshot.
+    fn release(&mut self, entry: &Entry) {
+        self.served.remove(&entry.key);
+        self.forget(entry);
+    }
+
+    /// While a full pass takes turns, a re-saved file doesn't wait for the next
+    /// drain. Turns are short, so this can't spin the way one drain could.
+    fn forgive_served_paths(&mut self) {
+        let failed = &self.failed;
+        self.served
+            .retain(|key| key.starts_with('@') || failed.contains(key));
+    }
+
+    fn is_served(&self, key: &str) -> bool {
+        self.served.contains(key)
     }
 
     /// Read the list again: decode only files this drain has not seen.
@@ -368,6 +660,7 @@ impl WorkList {
     ///
     /// A forced drain runs for the inputs of the day's thinking, so its
     /// tokens wait until no path is left. Without `token_room` no token runs.
+    /// While a full pass takes turns, no other token runs until it has finished.
     fn next_snapshot(
         &mut self,
         journal: &Path,
@@ -410,13 +703,13 @@ impl WorkList {
         let token = tokens
             .into_iter()
             .min_by_key(|entry| entry.rank())
-            .filter(|_| token_room && !(force && !paths.is_empty()));
+            .filter(|_| !self.paths_only && token_room && !(force && !paths.is_empty()));
         let mut snapshot = paths
             .into_iter()
             .map(|(_, entry)| entry.clone())
             .collect::<Vec<_>>();
         if snapshot.is_empty() && token.is_none() {
-            snapshot.extend(edges.cloned().filter(|_| token_room));
+            snapshot.extend(edges.cloned().filter(|_| token_room && !self.paths_only));
         } else {
             snapshot.extend(token.cloned());
         }
@@ -441,7 +734,7 @@ fn process(
             // A pass that finishes has done this token's work. Files it could
             // not index stay on its receipt, show on Health, and are retried
             // by the daily check; only a pass that stopped keeps the token.
-            crate::scan::scan_journal_admitted(journal, true, admission, checkpoint)?;
+            crate::scan::scan_queued_full_admitted(journal, admission, checkpoint)?;
             Ok(Some("indexed"))
         }
         Some(2) => {
@@ -520,3 +813,7 @@ pub fn drain_now(journal: &Path) -> Result<DrainReport, StoreError> {
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "todo_tests.rs"]
 mod tests;
+
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "todo_rebuild_tests.rs"]
+mod rebuild_tests;

@@ -22,6 +22,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - two names that look or sound alike, such as Muñoz and Munoz, no longer share one entry in detected entities, where one's description replaced the other's. entries already in your journal stay as they are, and your transcripts were never affected.
 - on windows, the journal app's pairing view now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
 - on a mac, a journal on an exFAT or FAT drive now says plainly that it can't run there and to use a mac-formatted drive. before, it failed without saying why.
+- a full search rebuild your journal runs on its own, such as after a restore, no longer keeps what you save out of search until it's done. it works in short turns, newest days first, and new saves go ahead of it.
+- `solstone journal indexer --reset --rescan-full` now works on a damaged search index. it used to fail on the damage it was meant to clear.
 - importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
 - importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
 - thinking now shows the model your own endpoint serves, not the local model, and the local model's name no longer repeats `local/`.

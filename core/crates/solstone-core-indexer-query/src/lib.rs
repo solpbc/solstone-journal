@@ -33,11 +33,11 @@ pub use edges::{
 pub use execute::QueryCounters;
 pub use execute::{
     ActivityObservation, ActivityObservationRead, EntryLocation, IndexedEntry, IndexedPathEntries,
-    OwnerIndex, PossibleNameAdmission, ResolvedCounts, SearchPlan, agents, coverage, hit_at,
-    indexed_entity_ids, indexed_path_has_later_chunk, locate_indexed_entry, open_owner_index,
-    read_activity_observation, read_indexed_entry, read_indexed_path_entries, search,
-    search_connection, search_connection_with_possible_names, search_counts,
-    search_counts_connection,
+    OwnerIndex, PossibleNameAdmission, ResolvedCounts, SearchPlan, agents, coverage,
+    full_pass_working, hit_at, indexed_entity_ids, indexed_path_has_later_chunk,
+    locate_indexed_entry, open_owner_index, read_activity_observation, read_indexed_entry,
+    read_indexed_path_entries, search, search_connection, search_connection_with_possible_names,
+    search_counts, search_counts_connection,
 };
 pub use own_memory::{
     MemoryOriginalRow, OwnMemoryDateFilters, OwnMemoryOpenError, OwnMemoryQuery,

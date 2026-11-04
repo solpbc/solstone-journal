@@ -801,6 +801,17 @@ fn open_index_reader(
     Ok(connection)
 }
 
+/// A full pass is queued or working through the index. One that keeps failing
+/// isn't getting anywhere, and Health says so instead.
+#[must_use]
+pub fn full_pass_working(journal: &Path) -> bool {
+    solstone_core_indexer_store::todo::listed_attempts(
+        journal,
+        solstone_core_indexer_store::todo::Token::ScanFull,
+    )
+    .is_ok_and(|attempts| attempts.is_some_and(|attempts| attempts < 3))
+}
+
 /// A bounded snapshot of one entry as stored in the search index.
 #[derive(Debug, PartialEq)]
 pub enum IndexedEntry {

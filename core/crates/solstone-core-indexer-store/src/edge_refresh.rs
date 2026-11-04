@@ -233,9 +233,10 @@ pub(crate) fn refresh_stale_edges(
     checkpoint: &dyn Fn() -> Result<(), String>,
     budget: Option<Duration>,
 ) -> Result<EdgeRefresh, StoreError> {
-    let started = Instant::now();
     let mut report = EdgeRefresh::default();
     let paths = stale_paths(conn)?;
+    // After the listing, so a long list can't use up the slice unworked.
+    let started = Instant::now();
     let mut handled = 0;
     for rel in &paths {
         if budget.is_some_and(|budget| started.elapsed() >= budget) {

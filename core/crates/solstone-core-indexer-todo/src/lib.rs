@@ -412,6 +412,39 @@ pub fn has_due(journal: &Path, at_ms: u64) -> io::Result<bool> {
     Ok(false)
 }
 
+/// Whether a path is due that `skip` doesn't exclude. Stops at the first, and
+/// ignores tokens and claims, so a whole-journal pass can ask whether a save is
+/// waiting without seeing itself.
+pub fn any_due_path(journal: &Path, at_ms: u64, skip: &dyn Fn(&str) -> bool) -> io::Result<bool> {
+    for path in entry_paths_iter(&root(journal))? {
+        if read_entry(&path?, false)?.is_some_and(|entry| {
+            entry.rank() == Some(0) && entry.not_before_ms <= at_ms && !skip(&entry.key)
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// The attempts of a queued or claimed token, if it is on the list. One keyed
+/// read of each directory, cheap enough for a search to ask.
+pub fn listed_attempts(journal: &Path, token: Token) -> io::Result<Option<u32>> {
+    let name = Entry {
+        key: token.key().to_owned(),
+        kind: token.key()[1..].to_owned(),
+        enqueued_ms: 0,
+        attempts: 0,
+        not_before_ms: 0,
+    }
+    .filename();
+    for directory in [root(journal), root(journal).join("claimed")] {
+        if let Some(entry) = read_entry(&directory.join(&name), false)? {
+            return Ok(Some(entry.attempts));
+        }
+    }
+    Ok(None)
+}
+
 #[derive(Clone, Debug, Default, Serialize, Eq, PartialEq)]
 pub struct TodoStatus {
     pub pending: usize,

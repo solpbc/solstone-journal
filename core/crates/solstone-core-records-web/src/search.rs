@@ -259,13 +259,16 @@ pub(crate) fn search_response_with_index(
             "results": results,
         }));
     }
-    axum::Json(json!({
+    let mut body = json!({
         "total": total,
         "total_days": total_days,
         "relaxed": filtered.relaxed,
         "days": day_results,
-    }))
-    .into_response()
+    });
+    if filtered.degraded.is_some() && solstone_core_indexer_query::full_pass_working(journal_root) {
+        body["rebuilding"] = Value::Bool(true);
+    }
+    axum::Json(body).into_response()
 }
 
 fn owner_memory_descriptor(

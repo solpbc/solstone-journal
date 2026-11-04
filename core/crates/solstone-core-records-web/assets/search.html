@@ -167,6 +167,7 @@
   try{
    const data=await window.apiJson('/app/search/api/search?'+p,{signal:controller.signal});if(!root.isConnected)return;
    status.textContent=data.total?`${data.total.toLocaleString()} matches across ${data.total_days.toLocaleString()} ${data.total_days===1?'day':'days'}.`:'no matches. try fewer words or a wider date range.';
+   if(data.rebuilding)status.append(node('p','','search is rebuilding, so older days may be missing for now.'));
    if(data.relaxed&&data.total)status.append(node('p','','nothing matched your exact search, so these are broader matches.'));
    for(const day of orderedDays(data.days)){
     const section=node('section','search-day');const heading=node('h2');heading.append(dayLink(day.day));section.append(heading);

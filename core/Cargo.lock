@@ -6046,6 +6046,7 @@ dependencies = [
  "solstone-core-home",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
+ "solstone-core-indexer-todo",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-memory-original",

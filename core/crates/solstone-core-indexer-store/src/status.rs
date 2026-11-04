@@ -382,7 +382,7 @@ pub fn inspect_index(journal: &Path) -> Result<IndexStatus, StoreError> {
 }
 
 /// Whether the scan would give this discovered path a `files` row.
-fn eligible(path: &Path, rel: &str) -> bool {
+pub(crate) fn eligible(path: &Path, rel: &str) -> bool {
     if !matches!(
         resolve_content_shape(path, rel),
         ContentResolution::Indexed(_)

@@ -779,6 +779,54 @@ async fn reflection_search_hit_includes_week_url_when_page_exists() {
 }
 
 #[tokio::test]
+async fn search_says_it_is_rebuilding_only_while_a_full_pass_works_through_an_unfinished_index() {
+    use solstone_core_indexer_todo::{Token, enqueue_token, read_entry, rewrite, root};
+    let fixture = Fixture::new("rebuilding-line");
+    write(
+        &fixture.root.join("config/journal.json"),
+        r#"{"setup":{"completed_at":1}}"#,
+    );
+    let note = fixture.root.join("chronicle/20260731/talents/note.md");
+    write(&note, "# Note\n\nthe kestrel launch\n");
+    solstone_core_indexer_store::scan::scan_journal(&fixture.root, true).expect("scan");
+    let search = || async {
+        response_json(request(&fixture.root, "/app/search/api/search?q=kestrel").await).await
+    };
+    assert!(search().await.get("rebuilding").is_none());
+
+    // A full pass over a finished index, as a small merge queues: no line.
+    enqueue_token(&fixture.root, Token::ScanFull).unwrap();
+    assert!(search().await.get("rebuilding").is_none());
+
+    // An unfinished index with its full pass still queued.
+    solstone_core_indexer_store::db::reset_index(&fixture.root).expect("reset");
+    solstone_core_indexer_store::scan::rescan_file(&fixture.root, &note).expect("rescan");
+    let body = search().await;
+    assert_eq!(body["rebuilding"], true);
+    assert_eq!(body["total"], 1);
+
+    // The pass keeps failing: Health says so, and search stops promising.
+    let token = std::fs::read_dir(root(&fixture.root))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            read_entry(path, false)
+                .ok()
+                .flatten()
+                .is_some_and(|entry| entry.key == Token::ScanFull.key())
+        })
+        .unwrap();
+    let mut entry = read_entry(&token, false).unwrap().unwrap();
+    entry.attempts = 3;
+    rewrite(&token, &entry).unwrap();
+    assert!(search().await.get("rebuilding").is_none());
+
+    // The pass is gone, though a file that always fails left the build unfinished.
+    std::fs::remove_file(&token).unwrap();
+    assert!(search().await.get("rebuilding").is_none());
+}
+
+#[tokio::test]
 async fn a_result_opened_after_its_file_was_indexed_again_reads_and_is_marked() {
     let fixture = Fixture::new("reindexed-entry");
     write(

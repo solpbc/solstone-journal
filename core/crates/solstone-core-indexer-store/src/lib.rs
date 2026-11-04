@@ -73,6 +73,22 @@ pub enum StoreError {
     },
 }
 
+impl StoreError {
+    /// Whether SQLite itself says the index file is damaged. Busy, locked, full,
+    /// read-only and I/O errors say nothing about the file and don't count.
+    #[must_use]
+    pub fn is_corruption(&self) -> bool {
+        matches!(
+            self,
+            Self::Sql(rusqlite::Error::SqliteFailure(failure, _))
+                if matches!(
+                    failure.code,
+                    rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+                )
+        )
+    }
+}
+
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

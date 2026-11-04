@@ -416,10 +416,14 @@ fn indexer(args: &[OsString]) -> Outcome {
                 } else {
                     String::new()
                 };
-                stdout.push_str(&format!(
-                    "Indexed {} file(s), removed {}, skipped {}{failed}\n",
-                    report.indexed, report.removed, report.skipped
-                ));
+                if report.deferred_to_full {
+                    stdout.push_str(solstone_core_indexer_store::scan::FULL_PASS_RUNNING);
+                } else {
+                    stdout.push_str(&format!(
+                        "Indexed {} file(s), removed {}, skipped {}{failed}\n",
+                        report.indexed, report.removed, report.skipped
+                    ));
+                }
                 if rescan_full && !reset && !rebuild && report.edge_rows_inserted == 0 {
                     stdout.push_str("No new connections were added in this rescan. Run solstone journal indexer --rebuild-edges to bring any still waiting up to date now.\n");
                 }

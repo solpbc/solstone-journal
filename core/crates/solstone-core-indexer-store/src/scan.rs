@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -84,7 +84,13 @@ pub struct ScanReport {
     /// at, or no file for a failure of the pass itself. `failed` always equals
     /// its length, so the count, the receipt and the exit code agree.
     pub failures: Vec<ScanFailure>,
+    /// A light scan found a large difference while a full pass is working
+    /// through it, so it left the difference to that pass.
+    pub deferred_to_full: bool,
 }
+
+/// What a light scan says when it leaves a large difference to a full pass.
+pub const FULL_PASS_RUNNING: &str = "a full search pass is already working through these changes, so this check left them to it. run solstone journal indexer status for details.\n";
 
 /// One failure a scan counted.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -450,13 +456,34 @@ pub fn scan_journal_with_checkpoint(
     scan_journal_admitted(journal, full, &admission, checkpoint)
 }
 
+/// A full pass run by the to-do list. It leaves a large number of missing
+/// connection files to their own slices instead of extracting them under this
+/// one lease.
+pub(crate) fn scan_queued_full_admitted(
+    journal: &Path,
+    admission: &IndexAdmission,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<ScanReport, StoreError> {
+    scan_journal_guarded(journal, true, true, admission, checkpoint)
+}
+
 pub(crate) fn scan_journal_admitted(
     journal: &Path,
     full: bool,
     admission: &IndexAdmission,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ScanReport, StoreError> {
-    let result = scan_journal_pass(journal, full, admission, checkpoint);
+    scan_journal_guarded(journal, full, false, admission, checkpoint)
+}
+
+fn scan_journal_guarded(
+    journal: &Path,
+    full: bool,
+    hand_off_edges: bool,
+    admission: &IndexAdmission,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<ScanReport, StoreError> {
+    let result = scan_journal_pass(journal, full, hand_off_edges, admission, checkpoint);
     if let Err(error) = &result
         && !matches!(
             error,
@@ -555,6 +582,7 @@ fn commit_scanned(
 fn scan_journal_pass(
     journal: &Path,
     full: bool,
+    hand_off_edges: bool,
     admission: &IndexAdmission,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<ScanReport, StoreError> {
@@ -566,20 +594,7 @@ fn scan_journal_pass(
     let mut report = ScanReport::default();
     let files = discover_indexable_files(journal)?;
 
-    // Calendar text names the owner by their addresses, so new addresses mean
-    // every calendar file is written again in this pass.
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
-    if crate::calendar::reindex_calendar_if_owner_changed(&tx, journal)? {
-        commit_scanned(tx, checkpoint)?;
-    } else {
-        tx.rollback()?;
-    }
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
-    if reindex_retired_event_plans_once(&tx, journal)? {
-        commit_scanned(tx, checkpoint)?;
-    } else {
-        tx.rollback()?;
-    }
+    mark_once_reindexes(&mut conn, journal, checkpoint)?;
 
     let db_mtimes = load_file_mtimes(&conn)?;
     let missing_memberships = missing_activity_memberships(&conn)?;
@@ -634,6 +649,28 @@ fn scan_journal_pass(
             .cmp(solstone_core_indexer_todo::sort_day(a, &today))
             .then_with(|| a.cmp(b))
     });
+
+    // A rebuild is working through a large difference in turns. Indexing it here
+    // would hold every save for as long as it takes. A failing token doesn't
+    // count, so the daily check is never left off by one that is stuck.
+    if !full
+        && to_index.len() > crate::todo::scan_turns_min()
+        && solstone_core_indexer_todo::listed_attempts(
+            journal,
+            solstone_core_indexer_todo::Token::ScanFull,
+        )?
+        .is_some_and(|attempts| attempts < 3)
+        && to_index
+            .iter()
+            .filter(|(rel, path, mtime)| {
+                db_mtimes.get(rel) != Some(mtime) && crate::status::eligible(path, rel)
+            })
+            .count()
+            > crate::todo::scan_turns_min()
+    {
+        report.deferred_to_full = true;
+        return Ok(report);
+    }
 
     let (removed, retained_days) = removal_candidates(&db_mtimes, &files, full);
     let mut pending_chunks = PendingChunkRows::new(
@@ -795,7 +832,8 @@ fn scan_journal_pass(
         &mut conn, journal, checkpoint,
     )?);
 
-    let edge_report = reconcile_edges(&mut conn, journal, full, checkpoint)?;
+    let edge_report =
+        reconcile_and_queue_edges(&mut conn, journal, full, hand_off_edges, checkpoint)?;
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
@@ -871,6 +909,169 @@ fn record_scan_receipt(
     }
     tx.commit()?;
     Ok(())
+}
+
+/// A file a rebuild's turns will index.
+#[derive(Debug)]
+pub(crate) struct PlannedFile {
+    rel: String,
+    path: PathBuf,
+}
+
+/// What a whole-journal pass still has to index, newest day first: every file
+/// the pass would give a row whose stored time differs from the file's. Files
+/// decided by their content while their time matches stay out, since those
+/// checks belong to the pass. `lease` is taken only to read the index: walking
+/// the journal needs no lease and holds up no save.
+pub(crate) fn plan_scan_turns(
+    journal: &Path,
+    lease: &dyn Fn() -> Result<Option<IndexAdmission>, StoreError>,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<Option<VecDeque<PlannedFile>>, StoreError> {
+    let files = discover_indexable_files(journal)?;
+    let db_mtimes = {
+        let Some(admission) = lease()? else {
+            return Ok(None);
+        };
+        let mut conn = open_index_admitted(journal, &admission, checkpoint)?;
+        mark_once_reindexes(&mut conn, journal, checkpoint)?;
+        load_file_mtimes(&conn)?
+    };
+    let mut planned = Vec::new();
+    for (rel, path) in files {
+        let mtime = if is_memory_note(&rel) {
+            memory_file_mtime_secs(&path)
+        } else {
+            file_mtime_secs(&path)
+        };
+        if mtime.is_ok_and(|mtime| db_mtimes.get(&rel) != Some(&mtime))
+            && crate::status::eligible(&path, &rel)
+        {
+            planned.push(PlannedFile { rel, path });
+        }
+    }
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    planned.sort_by(|a, b| {
+        solstone_core_indexer_todo::sort_day(&b.rel, &today)
+            .cmp(solstone_core_indexer_todo::sort_day(&a.rel, &today))
+            .then_with(|| a.rel.cmp(&b.rel))
+    });
+    Ok(Some(planned.into()))
+}
+
+/// How much a turn did.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TurnReport {
+    pub(crate) committed: usize,
+}
+
+/// Index planned files under one lease until `should_yield` says to stop. A
+/// turn does only what a queued save would do, with state read fresh for each
+/// file: it adds or replaces what that file holds. Whatever it can't index it
+/// skips without a decision, and the pass that finishes the rebuild decides.
+pub(crate) fn index_scan_turn(
+    journal: &Path,
+    plan: &mut VecDeque<PlannedFile>,
+    admission: &IndexAdmission,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+    limits: crate::todo::ScanLimits,
+    should_yield: &dyn Fn() -> bool,
+) -> Result<TurnReport, StoreError> {
+    const CHECK_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+    let mut conn = open_index_admitted(journal, admission, checkpoint)?;
+    require_chunk_path_lookup(&conn)?;
+    let mut report = TurnReport::default();
+    let mut calendar_zone_readable: Option<bool> = None;
+    let mut attempted = 0;
+    let mut last_check = std::time::Instant::now();
+    while let Some(file) = plan.pop_front() {
+        attempted += 1;
+        if index_planned_file(
+            &mut conn,
+            journal,
+            &file,
+            &mut calendar_zone_readable,
+            checkpoint,
+        )? {
+            report.committed += 1;
+        }
+        if attempted >= limits.min_turn_files
+            && (attempted % limits.check_every_files == 0 || last_check.elapsed() >= CHECK_EVERY)
+        {
+            last_check = std::time::Instant::now();
+            if should_yield() {
+                break;
+            }
+        }
+    }
+    Ok(report)
+}
+
+/// Whether this file was indexed.
+fn index_planned_file(
+    conn: &mut Connection,
+    journal: &Path,
+    file: &PlannedFile,
+    calendar_zone_readable: &mut Option<bool>,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<bool, StoreError> {
+    let (rel, path) = (file.rel.as_str(), file.path.as_path());
+    let ContentResolution::Indexed(family) = resolve_content_shape(path, rel) else {
+        return Ok(false);
+    };
+    let mtime = if is_memory_note(rel) {
+        memory_file_mtime_secs(path)
+    } else {
+        file_mtime_secs(path)
+    };
+    let Ok(mtime) = mtime else {
+        return Ok(false);
+    };
+    let stored: Option<i64> = conn
+        .query_row("SELECT mtime FROM files WHERE path=?", [rel], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    // A queued save got here first.
+    if stored == Some(mtime) {
+        return Ok(false);
+    }
+    let memory_original = if family == Family::AgentMemory {
+        let Ok(original) = read_memory_original(journal, rel) else {
+            return Ok(false);
+        };
+        Some(original)
+    } else {
+        None
+    };
+    if family == Family::Calendar
+        && !*calendar_zone_readable.get_or_insert_with(|| listing_zone(journal).is_ok())
+    {
+        return Ok(false);
+    }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    match ensure_file_current(
+        &tx,
+        journal,
+        rel,
+        path,
+        mtime,
+        FileUpdate::IfChanged,
+        family,
+        memory_original.as_ref(),
+    ) {
+        Ok(warnings) => {
+            commit_scanned(tx, checkpoint)?;
+            for warning in warnings {
+                log::info!(target: "solstone::indexer", "{warning}");
+            }
+            Ok(true)
+        }
+        // Left for the finishing pass, which counts it. This is also how a full
+        // disk arrives: an insert error surfaces as an unreadable file.
+        Err(StoreError::Io(_)) => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 /// Incrementally classify legacy paths. State advances only with the durable
@@ -1372,13 +1573,24 @@ pub(crate) struct EdgeProcessResult {
     pub(crate) warnings: Vec<String>,
 }
 
+#[cfg(test)]
 fn reconcile_edges(
     conn: &mut Connection,
     journal: &Path,
     full: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<EdgeScanReport, StoreError> {
-    let report = reconcile_edges_with(conn, journal, full, checkpoint)?;
+    reconcile_and_queue_edges(conn, journal, full, false, checkpoint)
+}
+
+fn reconcile_and_queue_edges(
+    conn: &mut Connection,
+    journal: &Path,
+    full: bool,
+    hand_off_edges: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<EdgeScanReport, StoreError> {
+    let report = reconcile_edges_handing_off(conn, journal, full, hand_off_edges, checkpoint)?;
     if report.remaining > 0
         && let Err(error) = solstone_core_indexer_todo::enqueue_token(
             journal,
@@ -1396,6 +1608,16 @@ fn reconcile_edges_with(
     conn: &mut Connection,
     journal: &Path,
     full: bool,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<EdgeScanReport, StoreError> {
+    reconcile_edges_handing_off(conn, journal, full, false, checkpoint)
+}
+
+fn reconcile_edges_handing_off(
+    conn: &mut Connection,
+    journal: &Path,
+    full: bool,
+    hand_off_edges: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<EdgeScanReport, StoreError> {
     let mut resolver = EdgeResolver::new(journal);
@@ -1441,11 +1663,40 @@ fn reconcile_edges_with(
         }
     }
 
+    // A rebuild leaves its missing connection files to the bounded refresh: they
+    // are marked stale here and refreshed in slices, so this pass doesn't hold
+    // the writer for all of them. Files whose rows exist still come here.
+    let mut handed_off = HashSet::new();
+    if hand_off_edges {
+        let missing = to_index
+            .iter()
+            .filter(|(rel, _, _)| !db_mtimes.contains_key(rel))
+            .count();
+        if missing > crate::todo::scan_turns_min() {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            for (rel, _, _) in &to_index {
+                if !db_mtimes.contains_key(rel) {
+                    tx.execute(
+                        "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
+                        params![rel, STALE_EDGE_MTIME],
+                    )?;
+                    handed_off.insert(rel.clone());
+                }
+            }
+            crate::db::admit_scan_journal(checkpoint)?;
+            tx.commit()?;
+            to_index.retain(|(rel, _, _)| !handed_off.contains(rel));
+        }
+    }
+
     // Edges follow file mtimes, and retired plan records stay in files that no
     // longer change. Re-extract those files once so their edges are dropped.
     let plans_rechecked = retired_plan_edges_rechecked(conn)?;
     if !plans_rechecked {
         for (rel, path) in &files {
+            if handed_off.contains(rel) {
+                continue;
+            }
             let activity_file = rel.starts_with("facets/")
                 && rel.contains("/activities/")
                 && rel.ends_with(".jsonl");
@@ -1548,6 +1799,31 @@ fn reconcile_edges_with(
 /// The `index_meta` key marking that event files holding retired schedule
 /// plans were left for a scan to index again.
 const RETIRED_EVENT_PLANS_META: &str = "retired_event_plans";
+
+/// Leave for indexing the files a change of owner addresses or the retired plan
+/// rule reaches. Each is a no-op once done. A rebuild runs these before its
+/// first turn, so the pass that finishes it doesn't index those files again.
+fn mark_once_reindexes(
+    conn: &mut Connection,
+    journal: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), StoreError> {
+    // Calendar text names the owner by their addresses, so new addresses mean
+    // every calendar file is written again in this pass.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+    if crate::calendar::reindex_calendar_if_owner_changed(&tx, journal)? {
+        commit_scanned(tx, checkpoint)?;
+    } else {
+        tx.rollback()?;
+    }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+    if reindex_retired_event_plans_once(&tx, journal)? {
+        commit_scanned(tx, checkpoint)?;
+    } else {
+        tx.rollback()?;
+    }
+    Ok(())
+}
 
 /// An index written before retired schedule plans stopped being indexed still
 /// holds their entries, and the files that carry them no longer change. Once

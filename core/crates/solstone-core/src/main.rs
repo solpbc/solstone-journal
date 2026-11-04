@@ -6425,7 +6425,7 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
                     println!("{ZERO_EDGE_HINT}");
                 }
                 if json_output {
-                    print_json(&json!({
+                    let mut output = json!({
                         "indexed": report.indexed,
                         "removed": report.removed,
                         "skipped": report.skipped,
@@ -6434,7 +6434,13 @@ fn run_indexer_maintenance(options: IndexerOptions) -> ExitCode {
                         "edge_rows_inserted": report.edge_rows_inserted,
                         "merge_steps_spent": report.merge_steps_spent,
                         "failed": report.failed,
-                    }));
+                    });
+                    if report.deferred_to_full {
+                        output["deferred_to_full"] = json!(true);
+                    }
+                    print_json(&output);
+                } else if report.deferred_to_full {
+                    print!("{}", solstone_core_indexer_store::scan::FULL_PASS_RUNNING);
                 }
                 // A full rescan is an operator's repair, so it says when files
                 // failed. A light rescan keeps exit 0 for the scheduled callers;
