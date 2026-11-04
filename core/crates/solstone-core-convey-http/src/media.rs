@@ -3,12 +3,16 @@
 
 //! Shared media mechanics; callers own path admission, scheduling and errors.
 
+use std::future::Future;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use axum::body::Body;
+use axum::body::{Body, Bytes, HttpBody};
 use axum::http::{StatusCode, header};
 use axum::response::Response;
+use hyper::body::Frame;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParsedRange {
@@ -62,11 +66,15 @@ pub fn parse_range(value: &str, total: usize) -> ParsedRange {
     }
 }
 
+/// Personal media, the owner's own recordings, is never kept by any cache, and
+/// every answer advertises ranges so a player can seek from the first response.
+pub const MEDIA_CACHE_CONTROL: &str = "no-store";
+
 pub fn media_response(
     status: StatusCode,
     mimetype: &str,
     path: &Path,
-    bytes: Vec<u8>,
+    body: MediaBody,
     content_range: Option<String>,
 ) -> Response {
     let filename = path
@@ -76,20 +84,159 @@ pub fn media_response(
     let mut response = Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, mimetype)
-        .header(header::CONTENT_LENGTH, bytes.len())
+        .header(header::CONTENT_LENGTH, body.length)
         .header(
             header::CONTENT_DISPOSITION,
             format!("inline; filename={filename}"),
         )
-        .header(header::CACHE_CONTROL, "public, max-age=300");
+        .header(header::CACHE_CONTROL, MEDIA_CACHE_CONTROL)
+        .header(header::ACCEPT_RANGES, "bytes");
     if let Some(content_range) = content_range {
-        response = response
-            .header(header::ACCEPT_RANGES, "bytes")
-            .header(header::CONTENT_RANGE, content_range);
+        response = response.header(header::CONTENT_RANGE, content_range);
     }
     response
-        .body(Body::from(bytes))
+        .body(Body::new(body))
         .expect("media response builds")
+}
+
+/// A selected interval of an open file, sent as it is read.
+///
+/// The first chunk is read when the body is made, on the caller's blocking
+/// thread, so an open, seek or read failure still becomes an error response
+/// before any header is sent. Each later chunk is read on the blocking pool,
+/// never on a Convey async worker, so a slow client holds no thread between
+/// chunks. A file that ends inside the interval ends the body with an error,
+/// which aborts the response short of its `Content-Length` rather than passing
+/// partial media off as complete.
+pub struct MediaBody {
+    length: u64,
+    state: MediaBodyState,
+}
+
+type MediaReader = Box<dyn ReadSeek + Send>;
+type ChunkRead = tokio::task::JoinHandle<std::io::Result<(MediaReader, Vec<u8>)>>;
+
+enum MediaBodyState {
+    Ready {
+        reader: Option<MediaReader>,
+        pending: Option<Vec<u8>>,
+        remaining: u64,
+    },
+    Reading {
+        task: ChunkRead,
+        remaining: u64,
+    },
+    Done,
+}
+
+pub trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
+/// Bytes read per chunk.
+pub const MEDIA_CHUNK_BYTES: usize = 64 * 1024;
+
+impl MediaBody {
+    pub fn empty() -> Self {
+        Self {
+            length: 0,
+            state: MediaBodyState::Done,
+        }
+    }
+
+    /// Seek to `start` and read the first chunk of `length` bytes now.
+    pub fn from_reader(
+        mut reader: impl Read + Seek + Send + 'static,
+        start: usize,
+        length: usize,
+    ) -> std::io::Result<Self> {
+        if length == 0 {
+            return Ok(Self::empty());
+        }
+        reader.seek(SeekFrom::Start(start as u64))?;
+        let length = length as u64;
+        let first = read_chunk(&mut reader, length)?;
+        let remaining = length - first.len() as u64;
+        Ok(Self {
+            length,
+            state: MediaBodyState::Ready {
+                reader: (remaining > 0).then(|| Box::new(reader) as MediaReader),
+                pending: Some(first),
+                remaining,
+            },
+        })
+    }
+}
+
+fn read_chunk(reader: &mut (impl Read + ?Sized), remaining: u64) -> std::io::Result<Vec<u8>> {
+    let size =
+        usize::try_from(remaining.min(MEDIA_CHUNK_BYTES as u64)).unwrap_or(MEDIA_CHUNK_BYTES);
+    let mut chunk = vec![0; size];
+    reader.read_exact(&mut chunk)?;
+    Ok(chunk)
+}
+
+impl HttpBody for MediaBody {
+    type Data = Bytes;
+    type Error = std::io::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        loop {
+            match &mut self.state {
+                MediaBodyState::Done => return Poll::Ready(None),
+                MediaBodyState::Ready {
+                    reader,
+                    pending,
+                    remaining,
+                } => {
+                    if let Some(chunk) = pending.take() {
+                        return Poll::Ready(Some(Ok(Frame::data(Bytes::from(chunk)))));
+                    }
+                    let remaining = *remaining;
+                    let Some(mut reader) = reader.take().filter(|_| remaining > 0) else {
+                        self.state = MediaBodyState::Done;
+                        return Poll::Ready(None);
+                    };
+                    let task = tokio::task::spawn_blocking(move || {
+                        let chunk = read_chunk(&mut reader, remaining)?;
+                        Ok((reader, chunk))
+                    });
+                    self.state = MediaBodyState::Reading { task, remaining };
+                }
+                MediaBodyState::Reading { task, remaining } => {
+                    let read = match Pin::new(task).poll(context) {
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(read) => read,
+                    };
+                    let remaining = *remaining;
+                    match read {
+                        Ok(Ok((reader, chunk))) => {
+                            let left = remaining - chunk.len() as u64;
+                            self.state = MediaBodyState::Ready {
+                                reader: Some(reader),
+                                pending: Some(chunk),
+                                remaining: left,
+                            };
+                        }
+                        Ok(Err(error)) => {
+                            self.state = MediaBodyState::Done;
+                            return Poll::Ready(Some(Err(error)));
+                        }
+                        Err(join) => {
+                            self.state = MediaBodyState::Done;
+                            return Poll::Ready(Some(Err(std::io::Error::other(join))));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        matches!(self.state, MediaBodyState::Done)
+    }
 }
 
 pub fn mime_type(path: &Path) -> Option<&'static str> {
@@ -112,20 +259,6 @@ pub fn mime_type(path: &Path) -> Option<&'static str> {
         "tiff" => Some("image/tiff"),
         _ => None,
     }
-}
-
-/// Read exactly the selected interval from an already open source.
-/// The caller observes length before parsing; later growth is not included and
-/// truncation within this interval is an UnexpectedEof rather than partial media.
-pub fn read_bytes(
-    reader: &mut (impl Read + Seek),
-    start: usize,
-    length: usize,
-) -> std::io::Result<Vec<u8>> {
-    reader.seek(SeekFrom::Start(start as u64))?;
-    let mut bytes = vec![0; length];
-    reader.read_exact(&mut bytes)?;
-    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -161,35 +294,109 @@ mod tests {
         }
     }
 
-    #[test]
-    fn reads_only_selected_bytes_and_refuses_a_short_interval() {
-        struct Counted {
-            file: Cursor<Vec<u8>>,
-            read: usize,
-        }
-        impl Read for Counted {
-            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-                let length = self.file.read(buf)?;
-                self.read += length;
-                Ok(length)
+    async fn collect(mut body: MediaBody) -> (Vec<u8>, usize, Option<std::io::Error>) {
+        let mut bytes = Vec::new();
+        let mut frames = 0;
+        while let Some(frame) =
+            std::future::poll_fn(|context| Pin::new(&mut body).poll_frame(context)).await
+        {
+            match frame {
+                Ok(frame) => {
+                    frames += 1;
+                    bytes.extend_from_slice(frame.data_ref().unwrap());
+                }
+                Err(error) => return (bytes, frames, Some(error)),
             }
         }
-        impl Seek for Counted {
-            fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
-                self.file.seek(position)
-            }
+        (bytes, frames, None)
+    }
+
+    struct Counted {
+        file: Cursor<Vec<u8>>,
+        read: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl Read for Counted {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let length = self.file.read(buf)?;
+            self.read
+                .fetch_add(length, std::sync::atomic::Ordering::SeqCst);
+            Ok(length)
         }
-        let mut file = Counted {
-            file: Cursor::new(vec![7; 4096]),
-            read: 0,
-        };
-        assert_eq!(read_bytes(&mut file, 200, 3).unwrap(), [7; 3]);
-        assert_eq!(file.read, 3);
-        assert_eq!(file.file.position(), 203);
+    }
+    impl Seek for Counted {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.file.seek(position)
+        }
+    }
+
+    #[tokio::test]
+    async fn streams_only_the_selected_interval_in_chunks() {
+        let source: Vec<u8> = (0..300_000u32).map(|n| (n % 251) as u8).collect();
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let body = MediaBody::from_reader(
+            Counted {
+                file: Cursor::new(source.clone()),
+                read: read.clone(),
+            },
+            1_000,
+            200_000,
+        )
+        .unwrap();
+        // Only the first chunk is read before the response starts.
         assert_eq!(
-            read_bytes(&mut file, 4095, 2).unwrap_err().kind(),
-            ErrorKind::UnexpectedEof
+            read.load(std::sync::atomic::Ordering::SeqCst),
+            MEDIA_CHUNK_BYTES
         );
+        let (bytes, frames, error) = collect(body).await;
+        assert!(error.is_none());
+        assert_eq!(bytes, source[1_000..201_000]);
+        assert_eq!(frames, 200_000usize.div_ceil(MEDIA_CHUNK_BYTES));
+        assert_eq!(read.load(std::sync::atomic::Ordering::SeqCst), 200_000);
+    }
+
+    #[tokio::test]
+    async fn a_short_interval_refuses_before_headers_or_aborts_the_body() {
+        // Short within the first chunk: no response is made.
+        let error = MediaBody::from_reader(Cursor::new(vec![7; 4096]), 4095, 2)
+            .err()
+            .unwrap();
+        assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+        // Short after the first chunk: the body ends in an error, never short and clean.
+        let body = MediaBody::from_reader(
+            Cursor::new(vec![7; MEDIA_CHUNK_BYTES + 10]),
+            0,
+            MEDIA_CHUNK_BYTES + 20,
+        )
+        .unwrap();
+        let (bytes, _, error) = collect(body).await;
+        assert_eq!(bytes.len(), MEDIA_CHUNK_BYTES);
+        assert_eq!(error.unwrap().kind(), ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn every_media_answer_is_uncacheable_and_advertises_ranges() {
+        for (status, range) in [
+            (StatusCode::OK, None),
+            (StatusCode::PARTIAL_CONTENT, Some("bytes 0-1/5".to_owned())),
+        ] {
+            let response = media_response(
+                status,
+                "audio/flac",
+                Path::new("mic.flac"),
+                MediaBody::from_reader(Cursor::new(b"abcde".to_vec()), 0, 2).unwrap(),
+                range.clone(),
+            );
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+            assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+            assert_eq!(response.headers()[header::CONTENT_LENGTH], "2");
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::CONTENT_RANGE)
+                    .map(|value| value.to_str().unwrap().to_owned()),
+                range
+            );
+        }
     }
 
     #[test]
@@ -210,11 +417,17 @@ mod tests {
             }
         }
         assert_eq!(
-            read_bytes(&mut Failing(false), 0, 1).unwrap_err().kind(),
+            MediaBody::from_reader(Failing(false), 0, 1)
+                .err()
+                .unwrap()
+                .kind(),
             ErrorKind::Unsupported
         );
         assert_eq!(
-            read_bytes(&mut Failing(true), 0, 1).unwrap_err().kind(),
+            MediaBody::from_reader(Failing(true), 0, 1)
+                .err()
+                .unwrap()
+                .kind(),
             ErrorKind::PermissionDenied
         );
     }

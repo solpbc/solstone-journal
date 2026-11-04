@@ -381,6 +381,8 @@ impl LoopbackDialer for LocalLoopbackDialer {
         let port = self.port;
         Box::pin(async move {
             let stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await?;
+            // A latency option: a socket that refuses it still carries the request.
+            let _ = stream.set_nodelay(true);
             Ok(Box::new(stream) as Box<dyn LoopbackStream>)
         })
     }

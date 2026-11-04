@@ -219,15 +219,12 @@ async fn both_media_routes_preserve_zero_range_headers_and_refusals() {
             assert_eq!(headers["content-type"], "audio/flac");
             assert_eq!(headers["content-length"], body.len().to_string());
             assert_eq!(headers["content-disposition"], "inline; filename=clip.FLAC");
-            assert_eq!(headers["cache-control"], "public, max-age=300");
+            assert_eq!(headers["cache-control"], "no-store");
             assert_eq!(
                 headers.get("content-range").map(|v| v.to_str().unwrap()),
                 expected_range
             );
-            assert_eq!(
-                headers.get("accept-ranges").map(|v| v.to_str().unwrap()),
-                expected_range.map(|_| "bytes")
-            );
+            assert_eq!(headers["accept-ranges"], "bytes");
         }
         for range in ["bytes=-0", "bytes=5-", "bytes=3-1"] {
             let headers = serde_json::json!({"range": range});

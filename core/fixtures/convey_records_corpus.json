@@ -3395,7 +3395,8 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Cache-Control": "public, max-age=300",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store",
             "Content-Disposition": "inline; filename=mic_audio.flac",
             "Content-Length": "17",
             "Content-Type": "audio/flac"
@@ -3417,7 +3418,7 @@
           },
           "response_headers": {
             "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=300",
+            "Cache-Control": "no-store",
             "Content-Disposition": "inline; filename=mic_audio.flac",
             "Content-Length": "16",
             "Content-Range": "bytes 0-15/17",
@@ -3460,7 +3461,8 @@
           "phase": "populated",
           "request_headers": {},
           "response_headers": {
-            "Cache-Control": "public, max-age=300",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store",
             "Content-Disposition": "inline; filename=zero.flac",
             "Content-Length": "0",
             "Content-Type": "audio/flac"

@@ -8,7 +8,9 @@ use std::sync::Arc;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
-use solstone_core_convey_http::media::{ParsedRange, media_response, mime_type, parse_range};
+use solstone_core_convey_http::media::{
+    MediaBody, ParsedRange, media_response, mime_type, parse_range,
+};
 use solstone_core_journal_io::paths::contained_path;
 
 use crate::day::valid_day;
@@ -70,7 +72,7 @@ pub(crate) async fn serve_file(
                 }
             };
             if total == 0 {
-                return media_response(StatusCode::OK, mime, &path, Vec::new(), None);
+                return media_response(StatusCode::OK, mime, &path, MediaBody::empty(), None);
             }
             let Ok(total) = usize::try_from(total) else {
                 return error(
@@ -86,12 +88,12 @@ pub(crate) async fn serve_file(
                 .map(|v| parse_range(v, total))
             {
                 Some(ParsedRange::Valid { start, end }) => {
-                    match read_bytes(&path, start, end - start + 1) {
-                        Ok(bytes) => media_response(
+                    match open_interval(&path, start, end - start + 1) {
+                        Ok(body) => media_response(
                             StatusCode::PARTIAL_CONTENT,
                             mime,
                             &path,
-                            bytes,
+                            body,
                             Some(format!("bytes {start}-{end}/{total}")),
                         ),
                         Err(_) => error(
@@ -108,8 +110,8 @@ pub(crate) async fn serve_file(
                     "",
                     StatusCode::RANGE_NOT_SATISFIABLE,
                 ),
-                _ => match read_bytes(&path, 0, total) {
-                    Ok(bytes) => media_response(StatusCode::OK, mime, &path, bytes, None),
+                _ => match open_interval(&path, 0, total) {
+                    Ok(body) => media_response(StatusCode::OK, mime, &path, body, None),
                     Err(_) => error(
                         "file_not_found",
                         "that file isn't available.",
@@ -123,9 +125,8 @@ pub(crate) async fn serve_file(
     .await
 }
 
-fn read_bytes(path: &Path, start: usize, length: usize) -> std::io::Result<Vec<u8>> {
-    let mut file = fs::File::open(path)?;
-    solstone_core_convey_http::media::read_bytes(&mut file, start, length)
+fn open_interval(path: &Path, start: usize, length: usize) -> std::io::Result<MediaBody> {
+    MediaBody::from_reader(fs::File::open(path)?, start, length)
 }
 
 fn error(reason: &str, message: &str, detail: &str, status: StatusCode) -> Response {

@@ -1205,6 +1205,11 @@ async fn serve_carrier(
     if let Err(error) = SockRef::from(&stream).set_tcp_keepalive(&keepalive) {
         log::debug!("paired-device door could not configure TCP keepalive: {error}");
     }
+    // Every response is small writes a device is waiting on; never hold one
+    // back for the peer's delayed acknowledgement.
+    if let Err(error) = stream.set_nodelay(true) {
+        log::debug!("paired-device door could not disable Nagle: {error}");
+    }
     let store = NonceStore::new(&config.journal_root);
     let now = unix_seconds();
     let relay_admission = peer.and_then(|address| config.relay_admissions.take(address));

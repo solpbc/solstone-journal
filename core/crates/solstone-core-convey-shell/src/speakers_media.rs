@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use solstone_core_convey_http::media::{
-    ParsedRange, media_response, mime_type, parse_range, read_bytes,
+    MediaBody, ParsedRange, media_response, mime_type, parse_range,
 };
 
 use crate::JournalRoot;
@@ -127,9 +127,9 @@ pub async fn serve_audio(
             .into_response();
         };
         let response = (|| {
-            let mut file = fs::File::open(&path)?;
+            let file = fs::File::open(&path)?;
             let total = file.metadata()?.len();
-            audio_response(&mut file, total, mimetype, &path, &headers)
+            audio_response(file, total, mimetype, &path, &headers)
         })();
         response.unwrap_or_else(|_: std::io::Error| {
             media_error(
@@ -146,7 +146,7 @@ pub async fn serve_audio(
 // Length comes from the opened file. Serve only that observed interval; a
 // short read refuses the response, while growth after observation is excluded.
 fn audio_response(
-    file: &mut (impl Read + Seek),
+    file: impl Read + Seek + Send + 'static,
     total: u64,
     mimetype: &str,
     path: &Path,
@@ -157,7 +157,7 @@ fn audio_response(
             StatusCode::OK,
             mimetype,
             path,
-            Vec::new(),
+            MediaBody::empty(),
             None,
         ));
     }
@@ -183,8 +183,8 @@ fn audio_response(
         }
         Some(ParsedRange::Ignore) | None => (StatusCode::OK, 0, total, None),
     };
-    let bytes = read_bytes(file, start, length)?;
-    Ok(media_response(status, mimetype, path, bytes, content_range))
+    let body = MediaBody::from_reader(file, start, length)?;
+    Ok(media_response(status, mimetype, path, body, content_range))
 }
 
 fn is_speaker_attach_candidate(
@@ -280,31 +280,34 @@ mod tests {
 
     #[test]
     fn audio_uses_observed_length_and_refuses_truncation_within_selected_bytes() {
-        let mut file = Cursor::new(b"abc".to_vec());
+        let file = || Cursor::new(b"abc".to_vec());
         let mut headers = HeaderMap::new();
         headers.insert(header::RANGE, "bytes=1-2".parse().unwrap());
         let response =
-            audio_response(&mut file, 5, "audio/flac", Path::new("mic.flac"), &headers).unwrap();
+            audio_response(file(), 5, "audio/flac", Path::new("mic.flac"), &headers).unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 1-2/5");
+        assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
         headers.insert(header::RANGE, "bytes=1-4".parse().unwrap());
         assert_eq!(
-            audio_response(&mut file, 5, "audio/flac", Path::new("mic.flac"), &headers)
+            audio_response(file(), 5, "audio/flac", Path::new("mic.flac"), &headers)
                 .unwrap_err()
                 .kind(),
             ErrorKind::UnexpectedEof
         );
         headers.clear();
         assert_eq!(
-            audio_response(&mut file, 5, "audio/flac", Path::new("mic.flac"), &headers)
+            audio_response(file(), 5, "audio/flac", Path::new("mic.flac"), &headers)
                 .unwrap_err()
                 .kind(),
             ErrorKind::UnexpectedEof
         );
         let response =
-            audio_response(&mut file, 2, "audio/flac", Path::new("mic.flac"), &headers).unwrap();
+            audio_response(file(), 2, "audio/flac", Path::new("mic.flac"), &headers).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_LENGTH], "2");
-        assert_eq!(file.position(), 2);
+        assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     }
 
     #[test]

@@ -66,8 +66,10 @@ impl RelayWebSocket {
         token: &ServiceToken,
     ) -> Result<Self, RelayWebSocketError> {
         let request = relay_request(full_url, token)?;
+        // Disable Nagle: the tunnel carries interactive request/response
+        // traffic, which must not wait on the relay's delayed acknowledgement.
         let (stream, _) =
-            match connect_async_with_config(request, Some(unbounded_config()), false).await {
+            match connect_async_with_config(request, Some(unbounded_config()), true).await {
                 Ok(result) => result,
                 Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
                     return Err(RelayWebSocketError::Status(response.status().as_u16()));

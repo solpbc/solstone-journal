@@ -1732,7 +1732,8 @@
       "body_sha256": "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
       "body_sha256_basis": "raw-body",
       "headers": {
-        "Cache-Control": "public, max-age=300",
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
         "Content-Disposition": "inline; filename=mic_audio.flac",
         "Content-Length": "64",
         "Content-Type": "audio/flac"
@@ -1749,7 +1750,7 @@
       "body_sha256_basis": "raw-body",
       "headers": {
         "Accept-Ranges": "bytes",
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "no-store",
         "Content-Disposition": "inline; filename=mic_audio.flac",
         "Content-Length": "16",
         "Content-Range": "bytes 0-15/64",
@@ -1790,7 +1791,8 @@
       "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "body_sha256_basis": "raw-body",
       "headers": {
-        "Cache-Control": "public, max-age=300",
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
         "Content-Disposition": "inline; filename=mic_audio.flac",
         "Content-Length": "0",
         "Content-Type": "audio/flac"
@@ -1808,7 +1810,8 @@
       "body_sha256": "9656be35bd353ebedd79d7d24a14df408ef96b99fb4e4b4542e3bdd56de73134",
       "body_sha256_basis": "raw-body",
       "headers": {
-        "Cache-Control": "public, max-age=300",
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-store",
         "Content-Disposition": "inline; filename=mic_audio.png",
         "Content-Length": "32",
         "Content-Type": "image/png"
