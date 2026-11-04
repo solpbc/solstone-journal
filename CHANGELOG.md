@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - command-line requests through a paired journal connection now reach your journal.
 - days whose recordings sit directly in the day's folder no longer stall when your journal revisits them, so the day's summaries now finish.
+- older days with a screen description written by an earlier version of the journal no longer stall when your journal revisits them. that description stays in your journal as it was, and the day's summaries now finish.
 - two names that look or sound alike, such as Muñoz and Munoz, no longer share one entry in detected entities, where one's description replaced the other's. entries already in your journal stay as they are, and your transcripts were never affected.
 - on windows, the journal app's pairing view now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
 - on a mac, a journal on an exFAT or FAT drive now says plainly that it can't run there and to use a mac-formatted drive. before, it failed without saying why.

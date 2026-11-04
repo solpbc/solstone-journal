@@ -676,6 +676,9 @@ fn rebuild_conditional_receipt(
 ) -> Result<bool, String> {
     // No-output must not certify a prior saved artifact as this use's result.
     // Keep those bytes intact for their existing owner to reconcile.
+    let Some(request) = events.first().and_then(Value::as_object) else {
+        return Ok(false);
+    };
     let relative = segment
         .strip_prefix(&context.journal)
         .map_err(|e| e.to_string())?
@@ -686,7 +689,11 @@ fn rebuild_conditional_receipt(
             && path
                 .file_name()
                 .and_then(|v| v.to_str())
-                .is_some_and(|file| file == name || file.starts_with(&format!("{name}.")))
+                .is_some_and(|file| {
+                    solstone_core_talent_runtime::conditional_segment::is_prior_output(
+                        request, name, file,
+                    )
+                })
         {
             return Ok(false);
         }
@@ -3501,6 +3508,22 @@ mod tests {
             segment::publish_saved_outputs(&context, &segment).unwrap();
             assert!(rebuild_segment_receipts(&context, None).is_err());
             assert_eq!(fs::read(path).unwrap(), prior);
+        }
+    }
+
+    #[test]
+    fn conditional_seal_keeps_a_pre_native_markdown_output_without_certifying_it() {
+        for stream in [None, Some("notes")] {
+            for name in ["documents", "screen"] {
+                let journal = tempdir().unwrap();
+                let (context, segment) = conditional_segment_fixture(journal.path(), stream);
+                let path = segment.join("talents").join(format!("{name}.md"));
+                let legacy = b"# Earlier record\n\nWritten before this talent wrote JSON.\n";
+                fs::write(&path, legacy).unwrap();
+                segment::publish_saved_outputs(&context, &segment).unwrap();
+                assert!(rebuild_segment_receipts(&context, None).is_ok(), "{name}");
+                assert_eq!(fs::read(path).unwrap(), legacy);
+            }
         }
     }
 

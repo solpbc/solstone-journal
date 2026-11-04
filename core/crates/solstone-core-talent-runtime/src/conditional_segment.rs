@@ -4,6 +4,9 @@
 //! Early segment skips whose applicability can be established again.
 //! Recovery also requires exact use receipts and the current segment
 //! publication/input guards. A prior output has no implicit retirement owner.
+//! A prior output is a file this use would write, in its own format: an
+//! earlier format's file stays untouched and uncertified beside the skip,
+//! just as a written run leaves it beside its new output.
 
 use crate::{
     ExecutionContext, RuntimeOutcome,
@@ -130,7 +133,7 @@ pub fn skip_is_applicable(
             return Err("conditional detection output format changed".into());
         }
     }
-    if !output_absent(&context.journal, &segment, name)? {
+    if !output_absent(&context.journal, &segment, request, name)? {
         return Ok(false);
     }
     let prepared = prepare::prepare(
@@ -211,7 +214,47 @@ pub(crate) fn validate_skip(
     }
 }
 
-fn output_absent(journal: &std::path::Path, segment: &Segment, name: &str) -> Result<bool, String> {
+/// Whether `file` in the segment's `talents/` is this use's own output or
+/// derived from it, under any case alias. Screen and documents wrote Markdown
+/// until July 2026; that file is not what a JSON use writes or certifies.
+/// A request naming no format keeps every extension as its own.
+pub fn is_prior_output(request: &Map<String, Value>, name: &str, file: &str) -> bool {
+    let extension = match request.get("output_path").and_then(Value::as_str) {
+        Some(path) => std::path::Path::new(path)
+            .extension()
+            .and_then(|v| v.to_str())
+            .map(str::to_owned),
+        None => request
+            .get("output")
+            .and_then(Value::as_str)
+            .map(|format| solstone_core_talent_config::output_extension(Some(format)).to_owned()),
+    };
+    let owners: &[&str] = if name == "entities:detection" {
+        &[
+            "_entities_detection",
+            "detection_outcome",
+            "entities:detection",
+        ]
+    } else {
+        &[name]
+    };
+    let folded = file.to_uppercase();
+    owners.iter().any(|owner| {
+        let owner = match &extension {
+            Some(extension) => format!("{owner}.{extension}"),
+            None => (*owner).to_owned(),
+        }
+        .to_ascii_uppercase();
+        folded == owner || folded.starts_with(&format!("{owner}."))
+    })
+}
+
+fn output_absent(
+    journal: &std::path::Path,
+    segment: &Segment,
+    request: &Map<String, Value>,
+    name: &str,
+) -> Result<bool, String> {
     #[cfg(unix)]
     use solstone_core_journal_io::{
         FlatDirectory as Directory, list_flat_directory as list, open_flat_directory_bound as open,
@@ -292,21 +335,7 @@ fn output_absent(journal: &std::path::Path, segment: &Segment, name: &str) -> Re
                 .name
                 .to_str()
                 .ok_or("conditional output name is not UTF-8")?;
-            // A differently cased leaf can still be this output on Windows.
-            let folded = file.to_uppercase();
-            let owners = if name == "entities:detection" {
-                vec![
-                    "_entities_detection",
-                    "detection_outcome",
-                    "entities:detection",
-                ]
-            } else {
-                vec![name]
-            };
-            if owners.into_iter().any(|name| {
-                let owner = name.to_ascii_uppercase();
-                folded == owner || folded.starts_with(&format!("{owner}."))
-            }) {
+            if is_prior_output(request, name, file) {
                 absent = false;
             }
         }
@@ -1009,7 +1038,7 @@ mod tests {
             for leaf in [
                 format!("{name}.json"),
                 format!("{name}.JSON").to_ascii_uppercase(),
-                format!("{name}.md.sources.json"),
+                format!("{name}.json.lock"),
             ] {
                 let (_root, paths, context, request) = fixture(name, "notes");
                 let path = std::path::Path::new(request["output_path"].as_str().unwrap())
@@ -1023,6 +1052,41 @@ mod tests {
                 );
                 assert_eq!(calls, 0);
                 assert_eq!(fs::read(path).unwrap(), old);
+            }
+        }
+    }
+
+    #[test]
+    fn conditional_skip_leaves_a_pre_native_markdown_output_in_place() {
+        for name in ["documents", "screen"] {
+            for stream in ["notes", solstone_core_journal_io::DEFAULT_STREAM] {
+                let (_root, paths, context, request) = fixture(name, stream);
+                let path = std::path::Path::new(request["output_path"].as_str().unwrap())
+                    .with_file_name(format!("{name}.md"));
+                let legacy = b"# Earlier record\n\nWritten before this talent wrote JSON.\n";
+                fs::write(&path, legacy).unwrap();
+                let (outcome, events, calls) = run(&request, &paths, &context);
+                assert!(
+                    !matches!(outcome, RuntimeOutcome::StageFailed(_)),
+                    "{name}: {outcome:?}"
+                );
+                assert_eq!(calls, 0);
+                assert!(
+                    receipt_is_applicable(
+                        &events,
+                        "conditional-use",
+                        name,
+                        "20260101",
+                        stream,
+                        "090000_60",
+                        &paths,
+                        &context
+                    )
+                    .unwrap(),
+                    "{name}"
+                );
+                assert_eq!(fs::read(&path).unwrap(), legacy);
+                assert!(!path.with_extension("json").exists());
             }
         }
     }
