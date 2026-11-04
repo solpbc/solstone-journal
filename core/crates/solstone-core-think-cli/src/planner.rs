@@ -1377,14 +1377,17 @@ fn queue_daily(
     } else if !policy.permits(p.band) {
         report.band(p.band).permission_held += owed;
         held(report, day, None, p.band, "spending_confirmation");
-    } else if intent.is_none()
-        && !solstone_core_system::catchup::eligible_since_ask_or_fail_open(
-            journal,
-            day,
-            SystemTime::now(),
-            ask.asked_at_ms,
-        )
-    {
+    } else if !solstone_core_system::catchup::eligible_since_ask_or_fail_open(
+        journal,
+        day,
+        SystemTime::now(),
+        // A request to process the day waives only the wait earned before it,
+        // as an ask to think it again does. Owed units it cannot finish, such
+        // as an owner conflict, stay with their own recovery, and the day
+        // rests on its retry wait rather than running again at once.
+        ask.asked_at_ms
+            .max(intent.and_then(|intent| intent.asked_at_ms)),
+    ) {
         held(report, day, None, p.band, "retry_wait");
     } else {
         report.band(p.band).eligible += owed;

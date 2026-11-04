@@ -644,6 +644,75 @@ fn a_catchup_backoff_holds_the_day_only_when_earned_after_the_ask() {
     assert!(!daily_for(&plan(root.path(), &queue), &day));
 }
 
+/// A request to process a day, whether made as one or left by an unsuccessful
+/// rebuild, waives only the retry wait the day earned before it. A day it
+/// cannot finish, such as one whose last owed units conflict with the owner,
+/// then rests on its own wait instead of running again as each run ends.
+#[test]
+fn a_process_request_waives_only_the_retry_wait_earned_before_it() {
+    let root = journal();
+    let day = days_ago(90);
+    thought(root.path(), &day, &["090000_300"]);
+    let fingerprint =
+        solstone_core_system::catchup::read_raw_input_fingerprint(root.path(), &day).unwrap();
+    let backoff = |last_attempt_at: f64| {
+        std::fs::create_dir_all(root.path().join("health")).unwrap();
+        std::fs::write(
+            root.path().join("health/catchup-state.json"),
+            serde_json::json!({"version": 1, "entries": {format!("{day}:daily-catchup"): {
+                "day": day, "command_kind": "daily-catchup", "last_attempt_at": last_attempt_at,
+                "next_retry_at": 1e12, "fingerprint": fingerprint, "reason_code": "daily_catchup_failed"
+            }}})
+            .to_string(),
+        )
+        .unwrap();
+    };
+    let after_the_request = || chrono::Utc::now().timestamp() as f64 + 60.0;
+    let queue = queue(root.path());
+    backoff(1000.0);
+    assert!(!daily_for(&plan(root.path(), &queue), &day));
+
+    // Owed-only: the request runs the day once past its earlier wait.
+    work_intent::register(root.path(), &day, false).unwrap();
+    assert!(daily_for(&plan(root.path(), &queue), &day));
+    // That run left the day owed: the request stays, and the day rests.
+    backoff(after_the_request());
+    assert!(!daily_for(&plan(root.path(), &queue), &day));
+    assert!(!work_intent::read(root.path()).unwrap()[&day].from_scratch);
+    // A resting day no longer takes every turn from an older requested day.
+    let older = days_ago(91);
+    thought(root.path(), &older, &["090000_300"]);
+    work_intent::register(root.path(), &older, false).unwrap();
+    let planned = plan(root.path(), &queue);
+    assert!(daily_for(&planned, &older));
+    assert!(!daily_for(&planned, &day));
+
+    // A rebuild that did not finish becomes the same request, and rests the same way.
+    backoff(1000.0);
+    let rebuild = work_intent::register(root.path(), &day, true).unwrap();
+    let lease = work_intent::claim_from_scratch(root.path(), &day, &rebuild.id).unwrap();
+    work_intent::finish_from_scratch(root.path(), &day, &rebuild.id, false).unwrap();
+    drop(lease);
+    let demoted = work_intent::read(root.path()).unwrap()[&day].clone();
+    assert_eq!(demoted.id, rebuild.id);
+    assert_eq!(demoted.state, work_intent::IntentState::Queued);
+    assert!(!demoted.from_scratch);
+    assert!(daily_for(&plan(root.path(), &queue), &day));
+    backoff(after_the_request());
+    assert!(!daily_for(&plan(root.path(), &queue), &day));
+
+    // A request saved by an earlier build carries no time, and waives nothing.
+    let path = root.path().join("health/work-intent.json");
+    edit_record(&path, |store| {
+        store["days"][&day]
+            .as_object_mut()
+            .unwrap()
+            .remove("asked_at_ms");
+    });
+    backoff(1000.0);
+    assert!(!daily_for(&plan(root.path(), &queue), &day));
+}
+
 #[test]
 fn owner_intents_leave_asks_alone_and_hold_them_until_they_end() {
     let root = journal();

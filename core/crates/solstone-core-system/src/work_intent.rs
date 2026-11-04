@@ -76,6 +76,12 @@ pub struct OwnerIntent {
     /// This request already started over once after its run was abandoned.
     #[serde(default, skip_serializing_if = "is_false")]
     pub restarted: bool,
+    /// When the owner asked. The day's own retry wait is waived only for
+    /// what it earned before then, so a day the ask cannot finish rests like
+    /// any other instead of running again as soon as each run ends. A request
+    /// saved by an earlier build has none and is never waived.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_at_ms: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -197,6 +203,7 @@ pub fn register(journal: &Path, day: &str, from_scratch: bool) -> Result<OwnerIn
         owner_stopped: false,
         rebuild: None,
         restarted: false,
+        asked_at_ms: Some(chrono::Utc::now().timestamp_millis()),
     };
     mutate(journal, |days| {
         days.insert(day.to_owned(), intent.clone());
