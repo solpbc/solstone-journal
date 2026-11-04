@@ -1519,9 +1519,13 @@ pub fn owner_view(journal: &Path, config: &Map<String, Value>, now: DateTime<Utc
     OwnerView {
         aggregate_state: inspection.projection.aggregate_state,
         reason_code: inspection.projection.reason_code,
+        model: solstone_core_brain::owner_identity_model(
+            config,
+            inspection.projection.active_lane.as_deref(),
+            inspection.projection.active_model.as_deref(),
+        ),
         lane: inspection.projection.active_lane,
         provider: inspection.projection.active_provider,
-        model: inspection.projection.active_model,
         fingerprint_sha256: inspection.projection.fingerprint_sha256,
         failing_component,
         observed_at,
@@ -1627,10 +1631,11 @@ pub fn human_text(view: &OwnerView) -> String {
     if view.aggregate_state == "ready" {
         let identity = match (&view.provider, &view.model, &view.lane) {
             (Some(provider), Some(model), lane) => format!(
-                "{} {provider}/{model}",
+                "{} {}",
                 lane.as_deref()
                     .map(solstone_core_brain::lane_label)
-                    .unwrap_or("unknown")
+                    .unwrap_or("unknown"),
+                solstone_core_brain::provider_model_text(provider, model)
             ),
             (_, _, Some(lane)) => solstone_core_brain::lane_label(lane).to_owned(),
             _ => "unknown".to_owned(),
@@ -1838,6 +1843,15 @@ mod tests {
             "Thinking ready: your own model openai/gpt, checked 59s ago"
         );
 
+        ready.lane = Some("bundled".to_owned());
+        ready.provider = Some("local".to_owned());
+        ready.model = Some("local/qwen3.5-4b".to_owned());
+        assert_eq!(
+            human_text(&ready),
+            "Thinking ready: local thinking local/qwen3.5-4b, checked 59s ago"
+        );
+
+        ready.lane = Some("byo-cloud".to_owned());
         ready.provider = None;
         ready.model = None;
         ready.checked_age = None;

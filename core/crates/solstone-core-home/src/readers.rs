@@ -1067,7 +1067,7 @@ pub fn build_brain_snapshot(context: &HomeContext) -> Value {
     let inspection = inspect_brain_state(context.journal_root(), &config, context.now_utc);
     let view = present_brain_inspection(&inspection, context.now_utc);
     let projection = &inspection.projection;
-    json!({"state":projection.aggregate_state,"headline":view.headline,"reason_code":projection.reason_code,"reason_text":view.reason_text,"failing_component":view.failing_component,"action":brain_action(&projection.aggregate_state, projection.reason_code.as_deref()),"identity":{"lane":projection.active_lane,"provider":projection.active_provider,"model":projection.active_model},"evidence":{"observed_at":view.evidence.observed_at,"age_seconds":view.evidence.age_seconds,"age_text":view.evidence.age_text},"components":{"generate":brain_component(inspection.record.as_ref(), "generate")},"progressing":view.progressing})
+    json!({"state":projection.aggregate_state,"headline":view.headline,"reason_code":projection.reason_code,"reason_text":view.reason_text,"failing_component":view.failing_component,"action":brain_action(&projection.aggregate_state, projection.reason_code.as_deref()),"identity":{"lane":projection.active_lane,"provider":projection.active_provider,"model":solstone_core_brain::owner_identity_model(&config, projection.active_lane.as_deref(), projection.active_model.as_deref())},"evidence":{"observed_at":view.evidence.observed_at,"age_seconds":view.evidence.age_seconds,"age_text":view.evidence.age_text},"components":{"generate":brain_component(inspection.record.as_ref(), "generate")},"progressing":view.progressing})
 }
 
 fn day_root(context: &HomeContext, day: &str) -> std::path::PathBuf {

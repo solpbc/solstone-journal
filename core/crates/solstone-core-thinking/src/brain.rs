@@ -65,7 +65,7 @@ fn presentation_on(
         "reason_text": view.reason_text,
         "failing_component": view.failing_component,
         "action": action(&projection.aggregate_state, reason, projection.active_lane.as_deref(), view.failing_component.as_deref(), view.progressing),
-        "identity": {"lane": projection.active_lane, "provider": projection.active_provider, "model": projection.active_model},
+        "identity": {"lane": projection.active_lane, "provider": projection.active_provider, "model": solstone_core_brain::owner_identity_model(config, projection.active_lane.as_deref(), projection.active_model.as_deref())},
         "evidence": {"observed_at": view.evidence.observed_at, "age_seconds": view.evidence.age_seconds, "age_text": view.evidence.age_text},
         "components": components,
         "progressing": view.progressing,

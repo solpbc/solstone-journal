@@ -116,6 +116,20 @@ pub fn lane_label(lane: &str) -> &str {
     }
 }
 
+/// `provider/model` for owner words, without repeating a provider prefix the
+/// model id already carries (the bundled model is configured as
+/// `local/qwen3.5-4b`).
+pub fn provider_model_text(provider: &str, model: &str) -> String {
+    if model
+        .strip_prefix(provider)
+        .is_some_and(|rest| rest.starts_with('/'))
+    {
+        model.to_owned()
+    } else {
+        format!("{provider}/{model}")
+    }
+}
+
 /// Owner words for a brain reason code.
 pub fn brain_reason_text(reason: Option<&str>) -> String {
     match reason {

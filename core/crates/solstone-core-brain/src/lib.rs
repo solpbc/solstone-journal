@@ -34,7 +34,7 @@ pub use fingerprint::{
     canonical_fingerprint_preserving_array_order, canonical_json,
     canonical_json_preserving_array_order, classify_stored_binding, derive_active_brain_lane,
     endpoint_credential_binding_hmac, fingerprint_sha256, is_cloud_byo_provider,
-    managed_credential_binding_hmac, strip_credential_binding,
+    managed_credential_binding_hmac, owner_identity_model, strip_credential_binding,
 };
 pub use inspect::{
     BrainInspection, BrainProjection, BundledRuntimePrerequisiteAssessment, FingerprintKeyMaterial,
@@ -45,7 +45,7 @@ pub use inspect::{
 };
 pub use presentation::{
     BrainEvidencePresentation, BrainPresentation, brain_reason_text, lane_label,
-    present_brain_inspection, processing_headline_for_reason,
+    present_brain_inspection, processing_headline_for_reason, provider_model_text,
 };
 pub use record::{
     BrainStateRecord, CredentialRejectionHold, ValidationError, evidence_component_for_reason,

@@ -5,7 +5,9 @@
 
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
-use solstone_core_brain::{inspect_brain_state, present_brain_inspection};
+use solstone_core_brain::{
+    inspect_brain_state, owner_identity_model, present_brain_inspection, provider_model_text,
+};
 
 /// Build the historical `{snapshot, lines}` health-report brain payload.
 ///
@@ -36,7 +38,11 @@ pub(crate) fn build_cli_brain_health(journal_root: &std::path::Path, now: DateTi
         "identity": {
             "lane": projection.active_lane,
             "provider": projection.active_provider,
-            "model": projection.active_model,
+            "model": owner_identity_model(
+                &config,
+                projection.active_lane.as_deref(),
+                projection.active_model.as_deref(),
+            ),
         },
         "evidence": {
             "observed_at": presentation.evidence.observed_at,
@@ -148,8 +154,11 @@ fn render_lines(snapshot: &Value) -> Vec<String> {
     let suffix = component
         .map(|value| format!(" ({value})"))
         .unwrap_or_default();
-    match (lane, provider, model) {
-        (Some(lane), Some(provider), Some(model))
+    let identity = provider
+        .zip(model)
+        .map(|(provider, model)| provider_model_text(provider, model));
+    match (lane, identity) {
+        (Some(lane), Some(identity))
             if snapshot.get("state").and_then(Value::as_str) == Some("ready") =>
         {
             let age = snapshot
@@ -157,12 +166,12 @@ fn render_lines(snapshot: &Value) -> Vec<String> {
                 .and_then(|value| value.get("age_text"))
                 .and_then(Value::as_str);
             lines.push(match age {
-                Some(age) => format!("  {lane} {provider}/{model}, checked {age} ago"),
-                None => format!("  {lane} {provider}/{model}"),
+                Some(age) => format!("  {lane} {identity}, checked {age} ago"),
+                None => format!("  {lane} {identity}"),
             });
         }
-        (Some(lane), Some(provider), Some(model)) => {
-            lines.push(format!("  {lane} {provider}/{model} — {reason}{suffix}"));
+        (Some(lane), Some(identity)) => {
+            lines.push(format!("  {lane} {identity} — {reason}{suffix}"));
         }
         _ if lane.is_some() || provider.is_some() || model.is_some() => {
             lines.push(format!("  {reason}{suffix}"));
@@ -201,7 +210,7 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::{build_cli_brain_health, resolve_cli_brain_action};
+    use super::{build_cli_brain_health, render_lines, resolve_cli_brain_action};
 
     #[test]
     fn cli_actions_match_the_surface_contract() {
@@ -308,6 +317,20 @@ mod tests {
                 false
             ),
             json!({"label":"check again","command":"solstone journal brain refresh"})
+        );
+    }
+
+    #[test]
+    fn ready_identity_line_names_the_bundled_model_once() {
+        let lines = render_lines(&json!({
+            "state": "ready",
+            "headline": "thinking is ready",
+            "identity": {"lane": "bundled", "provider": "local", "model": "local/qwen3.5-4b"},
+            "evidence": {"age_text": "5m"},
+        }));
+        assert_eq!(
+            lines[2],
+            "  local thinking local/qwen3.5-4b, checked 5m ago"
         );
     }
 

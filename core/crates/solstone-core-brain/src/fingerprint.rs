@@ -371,6 +371,26 @@ pub fn derive_active_brain_lane(config: &Map<String, Value>) -> LaneResolution {
     }
 }
 
+/// The model an owner's thinking talks to on `lane`, for owner-facing identity.
+///
+/// On the endpoint lanes (`byo-endpoint`, `spp`) generation sends the
+/// endpoint's `served_model_id`; the configured active model keeps the bundled
+/// default there and is never sent. Every other lane sends the configured
+/// model. The fingerprint and the stored record keep the configured model.
+pub fn owner_identity_model(
+    config: &Map<String, Value>,
+    lane: Option<&str>,
+    model: Option<&str>,
+) -> Option<String> {
+    if matches!(lane, Some("byo-endpoint" | "spp")) {
+        let endpoint = local_endpoint(config);
+        if !endpoint.served_model_id.is_empty() {
+            return Some(endpoint.served_model_id);
+        }
+    }
+    model.map(str::to_owned)
+}
+
 /// The 7-field bundled-runtime object published as `desired_fingerprint_sha256`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundledRuntimeDesired {
@@ -767,9 +787,45 @@ fn is_binding_hmac(value: &str) -> bool {
 mod tests {
     use super::{
         CanonicalInput, canonical_fingerprint, canonical_fingerprint_preserving_array_order,
-        canonical_json, canonical_json_preserving_array_order,
+        canonical_json, canonical_json_preserving_array_order, derive_active_brain_lane,
+        owner_identity_model,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn owner_identity_names_the_model_the_wire_carries() {
+        let identity = |config: Value| {
+            let config = config.as_object().unwrap().clone();
+            let resolution = derive_active_brain_lane(&config);
+            (
+                resolution.lane.clone(),
+                owner_identity_model(
+                    &config,
+                    resolution.lane.as_deref(),
+                    resolution.model.as_deref(),
+                ),
+            )
+        };
+        let bundled =
+            json!({"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}});
+        assert_eq!(
+            identity(bundled),
+            (Some("bundled".into()), Some("local/qwen3.5-4b".into()))
+        );
+        let endpoint = json!({"providers":{
+            "active":{"provider":"local","model":"local/qwen3.5-4b"},
+            "local":{"endpoint_url":"https://example.invalid/v1","served_model_id":"owner-model"}}});
+        assert_eq!(
+            identity(endpoint),
+            (Some("byo-endpoint".into()), Some("owner-model".into()))
+        );
+        let cloud = json!({"providers":{"active":{"provider":"openai","model":"gpt"},
+            "local":{"endpoint_url":"https://example.invalid/v1","served_model_id":"owner-model"}}});
+        assert_eq!(
+            identity(cloud),
+            (Some("byo-cloud".into()), Some("gpt".into()))
+        );
+    }
 
     #[test]
     fn formats_python_float_boundaries() {
