@@ -27,8 +27,8 @@ use spl_core::bridge::BridgeNames;
 use spl_transport::client::{DialedCarrier, TokenPersistHook, TransportClient};
 use spl_transport::credential::{Credential, EndpointAddr};
 use spl_transport::journal_bridge::{
-    self, BridgePolicy, BridgeStartError, CapabilityGate, CarrierOpener, JournalBridgeConfig,
-    JournalBridgeHandle, JournalBridgeStatus, LocalResponse,
+    self, BootstrapMode, BridgePolicy, BridgeStartError, CapabilityGate, CarrierOpener,
+    JournalBridgeConfig, JournalBridgeHandle, JournalBridgeStatus, LocalResponse,
 };
 use spl_transport::relay_pairing::enroll_device;
 use spl_transport::{RelayControlEndpoint, RelayError, TransportError, tls};
@@ -804,6 +804,7 @@ fn bridge_policy(tracker: Arc<StatusTracker>) -> BridgePolicy {
     BridgePolicy {
         port: 0,
         capability_gate: CapabilityGate::Disabled,
+        bootstrap_mode: BootstrapMode::StaticCapability,
         stream_response: Arc::new(|_| true),
         local_response: Arc::new(move |head, status| {
             if head.path() != STATUS_PATH {
