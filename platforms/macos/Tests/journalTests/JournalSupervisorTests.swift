@@ -36,6 +36,24 @@ struct JournalSupervisorTests {
         #expect(supervisor.blockedReason == blockage.ownerMessage)
     }
 
+    @Test func aDriveThatCannotRunTheJournalSaysSoBeforeAnythingStarts() async throws {
+        let events = EventRecorder()
+        let supervisor = JournalSupervisor(
+            gate: RecordingGate(events: events, result: .success),
+            materializer: try await RecordingMaterializer(events: events),
+            runner: RecordingRunner(events: events, gate: RecordingGate(events: events, result: .success)),
+            readinessGate: RecordingReadinessGate(events: events, result: .ready),
+            driveCannotRun: { _ in true }
+        )
+        _ = configureInMemoryReceiptContext(supervisor)
+
+        let started = await supervisor.start(journalRoot: try makeTemporaryDirectory())
+
+        #expect(!started)
+        #expect(await events.snapshot().isEmpty)
+        #expect(supervisor.blockedReason == UICopy.JOURNAL_DRIVE_CANNOT_RUN)
+    }
+
     @Test func openGateRunsMaterializeSpawnReadinessInOrder() async throws {
         let events = EventRecorder()
         let runner = RecordingRunner(

@@ -377,6 +377,46 @@ fn setup_identity_namespace(
     Some(namespace_name(PlatformTag::current(), &root_token).to_string())
 }
 
+#[cfg(unix)]
+fn report_drive_cannot_run<W: Write>(
+    jsonl: bool,
+    stdout: &mut W,
+    stderr: &mut impl Write,
+) -> ExitCode {
+    let message = solstone_core_system::storage_privacy::DRIVE_CANNOT_RUN;
+    if jsonl {
+        let mut emitter = JsonlEmitter::new(stdout);
+        let _ = emitter.emit(
+            events::EventType::StepFailed,
+            &utc_now(),
+            serde_json::Map::from_iter([
+                ("step".into(), serde_json::json!("journal")),
+                ("duration_ms".into(), serde_json::json!(0)),
+                (
+                    "error".into(),
+                    serde_json::json!({
+                        "code": events::ErrorCode::JournalDirInvalid,
+                        "message": message,
+                        "exit_code": 1,
+                    }),
+                ),
+            ]),
+        );
+        let _ = emitter.emit(
+            events::EventType::SetupCompleted,
+            &utc_now(),
+            serde_json::Map::from_iter([
+                ("status".into(), serde_json::json!("failed")),
+                ("failed_step".into(), serde_json::json!("journal")),
+                ("duration_ms".into(), serde_json::json!(0)),
+            ]),
+        );
+    } else {
+        let _ = writeln!(stderr, "{message}");
+    }
+    ExitCode::from(1)
+}
+
 fn report_identity_failure<W: Write>(
     jsonl: bool,
     stdout: &mut W,
@@ -926,6 +966,12 @@ fn run_owner_setup_with_io_with_resolution_env<W: Write, E: Write>(
         return ExitCode::from(2);
     }
     let resolved = resolve_setup(&args, &resolution);
+    #[cfg(unix)]
+    if !resolved.should_short_circuit()
+        && solstone_core_system::storage_privacy::drive_cannot_run_journal(&resolved.journal_path)
+    {
+        return report_drive_cannot_run(args.jsonl, stdout, stderr);
+    }
     let mode = resolve_mode(&args, stdin_is_tty, stdout_is_tty);
     if !resolved.should_short_circuit()
         && !args.skip_wrapper

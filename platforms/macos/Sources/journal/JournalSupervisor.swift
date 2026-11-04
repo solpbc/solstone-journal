@@ -31,6 +31,7 @@ final class JournalSupervisor {
     private let readinessGate: any JournalReadinessChecking
     private let markerURL: URL
     private let portAvailable: (@Sendable () -> Bool)?
+    private let driveCannotRun: @Sendable (URL) -> Bool
     private let port: Int
     private let readinessTimeout: Duration
     private let receiptContextFactory: () -> JournalRuntimeEntryReceiptContext
@@ -53,6 +54,7 @@ final class JournalSupervisor {
         markerURL: URL = ExpectedExitMarker.markerURL(for: ExpectedExitMarker.journalMarkerDiscriminator),
         port: Int = 5015,
         portAvailable: (@Sendable () -> Bool)? = nil,
+        driveCannotRun: @escaping @Sendable (URL) -> Bool = { JournalDriveCheck.cannotRunJournal(root: $0) },
         readinessTimeout: Duration = .seconds(120),
         receiptContextFactory: @escaping () -> JournalRuntimeEntryReceiptContext = {
             JournalRuntimeEntryReceiptLaunch.begin(provenanceBundle: .module)
@@ -72,6 +74,7 @@ final class JournalSupervisor {
         self.readinessGate = readinessGate
         self.markerURL = markerURL
         self.portAvailable = portAvailable
+        self.driveCannotRun = driveCannotRun
         self.port = port
         self.readinessTimeout = readinessTimeout
         self.receiptContextFactory = receiptContextFactory
@@ -110,6 +113,12 @@ final class JournalSupervisor {
         blockedReason = nil
         activeRuntime = nil
         activeJournalRoot = nil
+
+        if driveCannotRun(journalRoot) {
+            state = .blocked(JournalDiagnostic(commandLabel: "journal drive", outputExcerpt: UICopy.JOURNAL_DRIVE_CANNOT_RUN))
+            blockedReason = UICopy.JOURNAL_DRIVE_CANNOT_RUN
+            return false
+        }
 
         let runtime: MaterializedRuntime
         do {

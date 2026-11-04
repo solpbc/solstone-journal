@@ -5,8 +5,18 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
-use solstone_core_system::storage_privacy::{UNAVAILABLE, inspect};
+use solstone_core_system::storage_privacy::{
+    DRIVE_CANNOT_RUN, UNAVAILABLE, drive_cannot_run_journal, inspect,
+};
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
+    if drive_cannot_run_journal(&context.journal_path) {
+        return Ok(make_result(
+            check,
+            Status::Fail,
+            DRIVE_CANNOT_RUN.to_owned(),
+            None::<String>,
+        ));
+    }
     let (status, message) = match inspect(&context.journal_path) {
         Ok(privacy) => (
             if privacy.private || privacy.consented {
