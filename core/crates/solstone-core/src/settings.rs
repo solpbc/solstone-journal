@@ -73,7 +73,10 @@ fn print_status(journal: &Path, json: bool) -> ExitCode {
         // A read contract: the installer parses exactly this shape.
         println!("{{\n  \"dashboard_url\": \"http://localhost:{port}\"\n}}");
     } else {
-        println!("convey\n  bind:              127.0.0.1:{port}\n  {}", open_line(port));
+        println!(
+            "convey\n  bind:              127.0.0.1:{port}\n  {}",
+            open_line(port)
+        );
     }
     ExitCode::SUCCESS
 }

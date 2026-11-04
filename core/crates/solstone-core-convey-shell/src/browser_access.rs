@@ -344,11 +344,9 @@ pub(crate) fn socket_routes(access: Arc<BrowserAccess>) -> Router {
                         Json(json!({"url": url, "expires_in": LINK_LIFETIME.as_secs()})),
                     )
                         .into_response(),
-                    Err(message) => (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({"error": message})),
-                    )
-                        .into_response(),
+                    Err(message) => {
+                        (StatusCode::BAD_REQUEST, Json(json!({"error": message}))).into_response()
+                    }
                 }
             }
         }),
@@ -478,7 +476,9 @@ mod tests {
         let app = app(access(true, true));
         let response = call(&app, HttpRequest::get("/data").body(Body::empty()).unwrap()).await;
         assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         assert_eq!(&body[..], b"Some(Localhost)");
     }
 
@@ -502,7 +502,9 @@ mod tests {
         )
         .await;
         assert_eq!(browser.status(), StatusCode::FORBIDDEN);
-        let body = axum::body::to_bytes(browser.into_body(), 8192).await.unwrap();
+        let body = axum::body::to_bytes(browser.into_body(), 8192)
+            .await
+            .unwrap();
         assert!(String::from_utf8_lossy(&body).contains("solstone journal open"));
     }
 
@@ -565,7 +567,10 @@ mod tests {
         let url = access.mint("/", start).unwrap();
         assert!(
             access
-                .spend(token_of(&url), start + LINK_LIFETIME + Duration::from_secs(1))
+                .spend(
+                    token_of(&url),
+                    start + LINK_LIFETIME + Duration::from_secs(1)
+                )
                 .is_none()
         );
         assert!(access.spend(token_of(&url), start).is_none());
@@ -574,7 +579,12 @@ mod tests {
     #[test]
     fn links_only_go_to_this_origin() {
         let access = access(true, true);
-        for bad in ["//elsewhere.example/", "https://elsewhere.example/", "/a\\b", "/a b"] {
+        for bad in [
+            "//elsewhere.example/",
+            "https://elsewhere.example/",
+            "/a\\b",
+            "/a b",
+        ] {
             assert!(access.mint(bad, Instant::now()).is_err(), "{bad}");
         }
         assert!(access.mint("/init", Instant::now()).is_ok());

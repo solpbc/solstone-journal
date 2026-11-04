@@ -103,7 +103,12 @@ pub async fn serve_connection<I>(
 where
     I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    serve_with_layers(io, common_layers(router).layer(Extension(identity)), builder).await
+    serve_with_layers(
+        io,
+        common_layers(router).layer(Extension(identity)),
+        builder,
+    )
+    .await
 }
 
 /// Serve one HTTP/1 connection with no accept-time identity.

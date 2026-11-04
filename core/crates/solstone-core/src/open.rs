@@ -83,7 +83,10 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
     let agent = endpoint::socket_agent(&socket, std::time::Duration::from_secs(5));
     let mut response = agent
         .post("http://localhost/_solstone/browser-link")
-        .header("User-Agent", concat!("solstone/", env!("CARGO_PKG_VERSION")))
+        .header(
+            "User-Agent",
+            concat!("solstone/", env!("CARGO_PKG_VERSION")),
+        )
         .header("Content-Type", "application/json")
         .send(serde_json::json!({ "path": path }).to_string())
         .map_err(|_| NOT_RUNNING.to_owned())?;
