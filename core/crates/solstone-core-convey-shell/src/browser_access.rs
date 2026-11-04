@@ -60,7 +60,7 @@ const MAX_OUTSTANDING_LINKS: usize = 32;
 const MAX_SESSIONS: usize = 64;
 const MAX_PATH_BYTES: usize = 2048;
 
-const CLOSED_PROGRAM_MESSAGE: &str = "your journal doesn't answer other programs here anymore. update this program, or run solstone journal open to open your journal in a browser.";
+const CLOSED_PROGRAM_MESSAGE: &str = "the journal on this computer doesn't answer programs here anymore. if it's yours, run solstone journal open to open it in a browser, or update this program.";
 const CONSENT_NEEDED: &str = "opening local access lets any account on this computer, and any program running here, open your journal without asking. confirm to turn it on.";
 const UNAVAILABLE: &str = "this choice needs your journal's private connection on this computer, which isn't running right now. your journal stays open to this computer until it is.";
 const SAVE_FAILED: &str = "your choice could not be saved. please try again.";
@@ -160,6 +160,11 @@ impl BrowserAccess {
             .unwrap_or_else(|e| e.into_inner())
             .remove(token)?;
         (link.expires > now).then_some(link.path)
+    }
+
+    /// End every browser session, e.g. one taken while the port was open.
+    fn end_sessions(&self) {
+        *self.sessions.lock().unwrap_or_else(|e| e.into_inner()) = Sessions::default();
     }
 
     fn new_session(&self) -> Option<String> {
@@ -362,14 +367,14 @@ pub(crate) fn setting_routes(access: Arc<BrowserAccess>) -> Router {
             let access = read.clone();
             async move { ([(CACHE_CONTROL, "no-store")], Json(access.snapshot())) }
         })
-        .put(move |Json(body): Json<Value>| {
+        .put(move |headers: HeaderMap, Json(body): Json<Value>| {
             let access = access.clone();
-            async move { change(access, body).await }
+            async move { change(access, &headers, body).await }
         }),
     )
 }
 
-async fn change(access: Arc<BrowserAccess>, body: Value) -> Response {
+async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) -> Response {
     let Some(open) = body.get("open").and_then(Value::as_bool) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -400,8 +405,17 @@ async fn change(access: Arc<BrowserAccess>, body: Value) -> Response {
         )
             .into_response();
     }
-    // The browser that closed the port keeps working: it was already the owner.
-    let session = (!open).then(|| access.new_session()).flatten();
+    // Closing ends every browser session. The browser that closed the port
+    // keeps working: it was already the owner. A program gets no cookie.
+    let session = if open {
+        None
+    } else {
+        access.end_sessions();
+        headers
+            .contains_key("sec-fetch-site")
+            .then(|| access.new_session())
+            .flatten()
+    };
     access.open.store(open, Ordering::SeqCst);
     let mut response = Json(access.snapshot()).into_response();
     if let Some(session) = session {
@@ -598,10 +612,24 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[test]
+    fn ending_sessions_refuses_an_earlier_browser() {
+        let access = access(false, true);
+        let session = access.new_session().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_str(&format!("solstone_authz_5015={session}")).unwrap(),
+        );
+        assert!(access.admitted(&headers));
+        access.end_sessions();
+        assert!(!access.admitted(&headers));
+    }
+
     #[tokio::test]
     async fn turning_local_access_on_needs_consent() {
         let access = access(false, true);
-        let response = change(access.clone(), json!({"open": true})).await;
+        let response = change(access.clone(), &HeaderMap::new(), json!({"open": true})).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert!(access.closed());
     }
