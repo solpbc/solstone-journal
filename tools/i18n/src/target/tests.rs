@@ -2400,6 +2400,14 @@ assert.throws(() => {
             fault_rules(admit_forms("en", "   *[other] { $count }")),
             ["cardinal-branch-missing"]
         );
+        // Every category the family selects needs its own form.
+        assert_eq!(
+            fault_rules(admit_forms(
+                "east-slavic",
+                "    [one] one\n    [many] many { $count }\n   *[other] { $count }"
+            )),
+            ["cardinal-branch-missing"]
+        );
         // A category outside the family never shows, whichever family it is.
         assert_eq!(
             fault_rules(admit_forms(

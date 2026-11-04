@@ -11,6 +11,71 @@ pub const ACCEPTED: &str = "you chose to keep your journal on this drive, where 
 pub const PRIVATE: &str = "your journal's folder is private to your account on this computer.";
 pub const UNAVAILABLE: &str = "your journal's folder privacy could not be checked.";
 
+pub const DRIVE_CANNOT_RUN: &str = "your journal can't run on this drive because the drive can't save files the way your journal needs. use a mac-formatted drive for your journal.";
+
+/// Whether a Mac drive lacks the two operations journal saves are built on: an exclusive rename and
+/// a hard link. It asks the drive by trying both in `root`, or in the closest folder that exists yet.
+/// exFAT refuses the rename and FAT refuses the link, and a volume's advertised capability doesn't
+/// tell them apart. The link only counts on a local drive: that is where it has been measured to mean
+/// the journal can't run. Anything but a refusal of the operation leaves the answer to startup.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn drive_cannot_run_journal(root: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Some(directory) = root.ancestors().find(|path| path.is_dir()) else {
+        return false;
+    };
+    let unique = format!(".solstone-drive-check-{}", std::process::id());
+    let from = directory.join(format!("{unique}-a"));
+    let to = directory.join(format!("{unique}-b"));
+    let linked = directory.join(format!("{unique}-c"));
+    if fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&from)
+        .is_err()
+    {
+        return false;
+    }
+    let refused = match (
+        std::ffi::CString::new(from.as_os_str().as_bytes()),
+        std::ffi::CString::new(to.as_os_str().as_bytes()),
+    ) {
+        (Ok(from_c), Ok(to_c)) => {
+            rename_excl_refused(&from_c, &to_c)
+                || (volume_is_local(directory)
+                    && fs::hard_link(&to, &linked)
+                        .is_err_and(|error| error.raw_os_error() == Some(libc::ENOTSUP)))
+        }
+        _ => false,
+    };
+    let _ = fs::remove_file(&from);
+    let _ = fs::remove_file(&to);
+    let _ = fs::remove_file(&linked);
+    refused
+}
+
+#[cfg(target_os = "macos")]
+fn volume_is_local(directory: &Path) -> bool {
+    nix::sys::statfs::statfs(directory)
+        .is_ok_and(|stats| stats.flags().contains(nix::mount::MntFlags::MNT_LOCAL))
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn rename_excl_refused(from: &std::ffi::CStr, to: &std::ffi::CStr) -> bool {
+    // SAFETY: both paths are valid NUL-terminated strings that outlive the call.
+    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    result == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ENOTSUP)
+}
+
+/// Other Unix drives run the journal under the storage consent.
+#[cfg(not(target_os = "macos"))]
+#[must_use]
+pub fn drive_cannot_run_journal(_root: &Path) -> bool {
+    false
+}
+
 /// Set once at process entry, before starting threads or writing journal files.
 pub fn set_private_umask() {
     nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o077));
@@ -98,6 +163,14 @@ fn volume(root: &Path) -> io::Result<(String, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn checking_a_drive_that_can_run_leaves_nothing_behind() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(!drive_cannot_run_journal(root.path()));
+        assert!(!drive_cannot_run_journal(&root.path().join("not/yet/made")));
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
     #[test]
     fn actual_mode_and_ownership_policy_decide_privacy() {
         assert!(mode_is_private(0o40700, false));

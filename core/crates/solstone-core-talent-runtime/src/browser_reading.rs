@@ -30,12 +30,18 @@ pub(crate) fn floor_reading(config: &Map<String, Value>, journal: &Path) -> Opti
     if solstone_core_tokens::count(transcript) <= budget {
         return None;
     }
-    let mut directory = journal.join("chronicle").join(config.get("day")?.as_str()?);
-    if let Some(stream) = config.get("stream").and_then(Value::as_str) {
-        directory = directory.join(stream);
-    }
-    directory = directory.join(config.get("segment")?.as_str()?);
-    let mut files: Vec<_> = fs::read_dir(directory)
+    let stream = config
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
+    let segment = solstone_core_journal_io::paths::Segment::resolve_exact(
+        journal,
+        config.get("day")?.as_str()?,
+        stream,
+        config.get("segment")?.as_str()?,
+    )
+    .ok()??;
+    let mut files: Vec<_> = fs::read_dir(segment.path())
         .ok()?
         .flatten()
         .map(|entry| entry.path())
@@ -244,6 +250,31 @@ mod tests {
     fn a_rendering_it_cannot_locate_leaves_the_ordinary_path() {
         let (_directory, path, _) = written(&long_page("elsewhere", 800));
         assert!(read_files("no such rendering in here", &[path], BUDGET).is_none());
+    }
+
+    #[test]
+    fn a_default_stream_segment_is_read_where_it_sits_under_its_day() {
+        let journal = tempfile::tempdir().unwrap();
+        let segment = journal.path().join("chronicle/20261103/120000_300");
+        fs::create_dir_all(&segment).unwrap();
+        let (_directory, path, transcript) = written(&format!(
+            "{}\n{}\n",
+            long_page("oldest", 3000),
+            long_page("newest", 3000)
+        ));
+        fs::copy(&path, segment.join("browser_pages.jsonl")).unwrap();
+        let mut config = Map::new();
+        for (key, value) in [
+            ("day", "20261103"),
+            ("stream", "_default"),
+            ("segment", "120000_300"),
+            ("prompt", "Read."),
+        ] {
+            config.insert(key.into(), json!(value));
+        }
+        config.insert("max_output_tokens".into(), json!(6912));
+        config.insert("transcript".into(), json!(transcript));
+        assert!(floor_reading(&config, journal.path()).is_some());
     }
 
     #[test]

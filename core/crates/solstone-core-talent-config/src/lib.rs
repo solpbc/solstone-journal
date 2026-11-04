@@ -389,8 +389,10 @@ pub fn get_output_path(
         get_output_name(key),
         output_extension(output_format)
     );
+    // `_default` spells the direct layout (`<day>/<segment>`), as the journal's
+    // segment resolvers read it; it never names a `_default` stream directory.
     let root = match segment {
-        Some(segment) => match stream {
+        Some(segment) => match stream.filter(|stream| *stream != "_default") {
             Some(stream) => day_dir.join(stream).join(segment),
             None => day_dir.join(segment),
         },
@@ -683,6 +685,22 @@ mod tests {
         assert_eq!(plain.metadata["color"], "#6c757d");
         assert!(!plain.metadata.contains_key("access_tier"));
         assert!(!plain.metadata.contains_key("cwd"));
+    }
+
+    #[test]
+    fn default_stream_output_lands_in_the_direct_segment() {
+        let day = Path::new("day");
+        assert_eq!(
+            get_output_path(
+                day,
+                "screen",
+                Some("120000_300"),
+                Some("json"),
+                None,
+                Some("_default")
+            ),
+            PathBuf::from("day/120000_300/talents/screen.json")
+        );
     }
 
     #[test]

@@ -256,6 +256,14 @@ fn run_supervisor(
         }
     };
     #[cfg(unix)]
+    if solstone_core_system::storage_privacy::drive_cannot_run_journal(&journal) {
+        eprintln!(
+            "{}",
+            solstone_core_system::storage_privacy::DRIVE_CANNOT_RUN
+        );
+        return ExitCode::from(EXIT_UNAVAILABLE);
+    }
+    #[cfg(unix)]
     solstone_core_system::storage_privacy::apply_private_root(&journal);
     #[cfg(unix)]
     let _service_capture = match service_capture::start_if_managed(&journal, options.hosted_parent)
