@@ -6643,7 +6643,7 @@ async function showCloseLocalAccess() {
     intro.textContent = 'nothing on this computer has reached your journal without a browser since it started.';
   }
   const bookmarks = document.createElement('p');
-  bookmarks.textContent = `a bookmark to ${window.location.host} shows a page asking you to open your journal from Journal.app or with solstone journal open. this browser stays open to you.`;
+  bookmarks.textContent = `a bookmark to ${window.location.host} shows a page asking you to open your journal from Journal.app or with solstone journal open. this browser stays open to you; any other browser needs opening again.`;
   detail.appendChild(bookmarks);
   showLocalAccessConfirm('close local access to this computer?', 'close local access', 'keep it open', false);
 }
