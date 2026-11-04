@@ -20,6 +20,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+from urllib.parse import urlsplit
 
 _STARTUP_RE = re.compile(
     r"forwarding 127\.0\.0\.1:([0-9]+) -> .+ "
@@ -288,6 +289,7 @@ class LinkBridge:
         stdout_limit: int,
         stderr_limit: int,
         timeout: float,
+        environment: dict[str, str] | None = None,
     ) -> tuple[int | None, bytes, bytes, str | None]:
         process: subprocess.Popen[bytes] | None = None
         selector = selectors.DefaultSelector()
@@ -300,7 +302,7 @@ class LinkBridge:
             try:
                 process = subprocess.Popen(
                     [str(executable), *args],
-                    env=self._env(),
+                    env=environment if environment is not None else self._env(),
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -715,7 +717,13 @@ class LinkBridge:
                 self._lines.put_nowait(line)
 
     def start(self) -> str:
+        if self._process is not None:
+            raise LinkProcessError("native bridge is already running")
+        self._startup_complete.clear()
+        self._lines = queue.Queue(maxsize=256)
+        self.base_url = None
         self.ensure_paired()
+        self._pair_code = None  # A consumed link is never needed for reconnect.
         command = [
             self._native_executable(),
             "link",
@@ -776,6 +784,18 @@ class LinkBridge:
                 return self.base_url
         raise LinkProcessError(
             "solstone link serve did not report its bound port in time"
+        )
+
+    def run_cli(self, args: list[str]) -> tuple[int | None, bytes, bytes, str | None]:
+        """Run the native API client through this bridge, never the owner's socket."""
+        if self.base_url is None or self._process is None:
+            raise LinkProcessError("native bridge is not running")
+        environment = self._env()
+        environment["SOLSTONE_CONVEY_PORT"] = str(urlsplit(self.base_url).port)
+        return self._run_bounded_native_probe(
+            Path(self._native_executable()), args,
+            stdout_limit=64 * 1024, stderr_limit=64 * 1024,
+            timeout=self._startup_timeout, environment=environment,
         )
 
     def stop(self) -> None:

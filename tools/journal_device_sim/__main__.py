@@ -70,59 +70,62 @@ def _parser() -> argparse.ArgumentParser:
     pair.add_argument("--convey-port", type=_port)
     pair.add_argument("--request-timeout", type=float, default=90.0)
 
-    run = subparsers.add_parser("run", help="run one fixture profile")
-    run.add_argument("--manifest", type=Path, required=True)
-    run.add_argument("--fixture-root", type=Path)
-    run.add_argument("--profile", required=True)
-    run.add_argument("--carrier", choices=("direct", "relay"), required=True)
-    connection = run.add_mutually_exclusive_group(required=True)
-    connection.add_argument(
-        "--bridge-url", help="already-running loopback solstone link bridge"
-    )
-    connection.add_argument(
-        "--pair-code", help="pair-link URL; never written to state or evidence"
-    )
-    connection.add_argument(
-        "--paired",
-        action="store_true",
-        help="use the credential bundle already stored under state-dir",
-    )
-    run.add_argument(
-        "--mark",
-        help="the two words of the disposable journal's mark; pairing has no terminal to ask on",
-    )
-    run.add_argument(
-        "--solstone-bin",
-        default=None,
-        help=(
-            "absolute native solstone path (bare/relative paths are rejected); defaults to source-built "
-            "core/target/debug/solstone (run make build first)"
-        ),
-    )
-    run.add_argument("--relay-url")
-    run.add_argument("--convey-port", type=_port)
-    run.add_argument("--state-dir", type=Path)
-    run.add_argument("--evidence", type=Path)
-    run.add_argument("--date-mode", choices=("shift", "preserve"), default="shift")
-    run.add_argument("--anchor-day")
-    run.add_argument(
-        "--journal-root",
-        type=Path,
-        help="optional read-only sandbox journal root for server-authored/derived output proof",
-    )
-    run.add_argument(
-        "--expected-cid",
-        help="authenticated sha256: device CID required for external-bridge white-box proof",
-    )
-    run.add_argument("--request-timeout", type=float, default=90.0)
-    run.add_argument("--processing-timeout", type=float, default=0.0)
-    run.add_argument("--poll-interval", type=float, default=1.0)
-    run.add_argument("--max-attempts", type=int, default=3)
-    run.add_argument(
-        "--keep-credentials",
-        action="store_true",
-        help="retain isolated link credentials after a passing run for debugging",
-    )
+    for name, help_text in (("run", "run one fixture profile"), ("exercise", "exercise a disposable device: uploads, dashboard, CLI, reconnect, then self-unpair")):
+        run = subparsers.add_parser(name, help=help_text)
+        run.add_argument("--manifest", type=Path, required=True)
+        run.add_argument("--fixture-root", type=Path)
+        run.add_argument("--profile", required=True)
+        run.add_argument("--carrier", choices=("direct", "relay"), required=True)
+        connection = run.add_mutually_exclusive_group(required=True)
+        run.set_defaults(bridge_url=None)
+        if name == "run":
+            connection.add_argument(
+                "--bridge-url", help="already-running loopback solstone link bridge"
+            )
+        connection.add_argument(
+            "--pair-code", help="pair-link URL; never written to state or evidence"
+        )
+        connection.add_argument(
+            "--paired",
+            action="store_true",
+            help="use the credential bundle already stored under state-dir",
+        )
+        run.add_argument(
+            "--mark",
+            help="the two words of the disposable journal's mark; pairing has no terminal to ask on",
+        )
+        run.add_argument(
+            "--solstone-bin",
+            default=None,
+            help=(
+                "absolute native solstone path (bare/relative paths are rejected); defaults to source-built "
+                "core/target/debug/solstone (run make build first)"
+            ),
+        )
+        run.add_argument("--relay-url")
+        run.add_argument("--convey-port", type=_port)
+        run.add_argument("--state-dir", type=Path)
+        run.add_argument("--evidence", type=Path)
+        run.add_argument("--date-mode", choices=("shift", "preserve"), default="shift")
+        run.add_argument("--anchor-day")
+        run.add_argument(
+            "--journal-root",
+            type=Path,
+            help="optional read-only sandbox journal root for server-authored/derived output proof",
+        )
+        run.add_argument(
+            "--expected-cid",
+            help="authenticated sha256: device CID required for external-bridge white-box proof",
+        )
+        run.add_argument("--request-timeout", type=float, default=90.0)
+        run.add_argument("--processing-timeout", type=float, default=0.0)
+        run.add_argument("--poll-interval", type=float, default=1.0)
+        run.add_argument("--max-attempts", type=int, default=3)
+        run.add_argument(
+            "--keep-credentials",
+            action="store_true",
+            help="retain isolated credential files for debugging; exercise still unpairs its device",
+        )
     return parser
 
 
@@ -238,6 +241,8 @@ def _run(args: argparse.Namespace) -> int:
             poll_interval=args.poll_interval,
             max_attempts=args.max_attempts,
             keep_credentials=args.keep_credentials,
+            exercise=args.command == "exercise",
+            progress=True,
         )
     )
     outcome = simulator.run()

@@ -201,7 +201,7 @@ pub struct UreqHttpTransport {
 impl UreqHttpTransport {
     #[must_use]
     pub fn new(port: i64) -> Self {
-        Self::with_base_url(format!("http://localhost:{port}"))
+        Self::with_base_url(format!("http://127.0.0.1:{port}"))
     }
 
     #[must_use]
@@ -688,6 +688,24 @@ pub fn memory_sse_stream(chunks: Vec<Vec<u8>>, policy: TimeoutPolicy) -> SseStre
 mod tests {
     use super::*;
     use std::io;
+
+    #[test]
+    fn loopback_api_authority_is_admitted_by_the_native_device_bridge() {
+        let port = 49152;
+        let transport = UreqHttpTransport::new(port);
+        let uri = build_url(&transport.base_url, "/app/network/api/identity", &[])
+            .parse::<ureq::http::Uri>()
+            .expect("API URI");
+        let raw = format!(
+            "GET /app/network/api/identity HTTP/1.1\r\nHost: {}\r\n\r\n",
+            uri.authority().expect("API authority")
+        );
+        let request = spl_core::bridge::parse_request_head(raw.as_bytes()).expect("request head");
+        assert_eq!(
+            spl_core::bridge::check_loopback_host(&request.head, port as u16),
+            Ok(())
+        );
+    }
 
     #[test]
     fn query_encoding_preserves_order_and_repeats() {

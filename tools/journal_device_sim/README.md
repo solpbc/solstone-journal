@@ -9,6 +9,58 @@ The simulator does not implement PL, SPL, TLS, pairing, or journal storage.
 Those remain native product boundaries. It also does not replace each platform
 client's own integration tests.
 
+## Exercise a disposable device
+
+Use `exercise` for a finite client smoke test, or `run` below for fixture
+delivery alone. Both use the same native pairing, bridge and ingest runner.
+
+```bash
+python3 -m tools.journal_device_sim exercise \
+  --manifest tools/journal_device_sim/fixtures/smoke/manifest.json \
+  --profile smoke --carrier direct \
+  --pair-code 'PAIR-LINK-URL' --mark 'WORD WORD' \
+  --solstone-bin /absolute/matching/build/solstone \
+  --convey-port JOURNAL_CONVEY_PORT \
+  --journal-root /path/to/disposable/journal \
+  --state-dir /path/to/private/new-device-state
+```
+
+Build the native launcher before minting a fresh **observer** pairing window.
+The two mark words come from that journal's network page. For an already paired
+simulator, use `--paired --state-dir ...` in place of `--pair-code` and `--mark`.
+The link selects the pairing transport; `--carrier` selects the data transport.
+Use `--carrier relay` to require relay data traffic even on the same LAN.
+
+After fixture delivery, `exercise` checks:
+
+- the journal identity, authenticated client CID and native device description;
+- dashboard HTML, its shell API, and a complete connected event on its SSE stream;
+- `solstone call link status` through the paired bridge;
+- bridge restart using the saved certificate, then identity, metadata, CLI and
+  segment listing through the restarted connection;
+- removal of this exact client CID through the native CLI, followed by the
+  bridge's explicit TLS access-denied state.
+
+**Exercise unpairs its device.** Use a disposable journal and a fresh device
+state for each successful exercise. `--keep-credentials` keeps files for
+diagnosis; it does not keep a revoked device authorized. Use `run` and the
+native `link serve` command for an ongoing debugging session.
+
+Both `run` and `exercise` emit structured progress on stderr and save a private
+`events-*.jsonl` under its state directory. Final `evidence.json` names that log,
+records each device check and its result, and preserves safe CLI byte counts,
+exit codes and digests. It contains no raw CLI output or SSE event content.
+An interrupted run is inconclusive; inspect its last step and reconcile before
+retrying. A lost self-unpair reply is accepted only when the same live bridge
+reports the journal identity, `state: unpaired` and `tls-access-denied`.
+
+This smoke test establishes device transport and API behavior. Model-backed
+processing uses the profiles and providers described below. Native app
+recording, background execution, credential migration and rendered UI checks
+remain separate platform tests. The JSON-driven [network qualification
+client](../mobile-serving/client/README.md) adds deliberate request/reply loss
+and retained-connection checks without another transport implementation.
+
 ## Quick start
 
 Validate the bundled text-only smoke corpus without starting a journal:

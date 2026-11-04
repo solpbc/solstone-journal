@@ -809,7 +809,7 @@ fn bridge_policy(tracker: Arc<StatusTracker>) -> BridgePolicy {
             if head.path() != STATUS_PATH {
                 return None;
             }
-            let body = status_body(&tracker.snapshot(*status));
+            let body = status_body(&tracker.snapshot(*status), status.terminal_reason);
             Some(LocalResponse {
                 status: 200,
                 content_type: "application/json".to_string(),
@@ -828,8 +828,27 @@ pub fn bridge_policy_for_port(port: u16, tracker: Arc<StatusTracker>) -> BridgeP
     }
 }
 
-fn status_body(snapshot: &LinkServeStatusSnapshot) -> Vec<u8> {
+fn status_body(
+    snapshot: &LinkServeStatusSnapshot,
+    terminal_reason: Option<journal_bridge::JournalBridgeTerminalReason>,
+) -> Vec<u8> {
     let mut root = Map::new();
+    root.insert(
+        "terminal_reason".to_string(),
+        terminal_reason.map_or(Value::Null, |reason| {
+            Value::String(
+                match reason {
+                    journal_bridge::JournalBridgeTerminalReason::TlsAccessDenied => {
+                        "tls-access-denied"
+                    }
+                    journal_bridge::JournalBridgeTerminalReason::RefusalsExhausted => {
+                        "refusals-exhausted"
+                    }
+                }
+                .to_string(),
+            )
+        }),
+    );
     root.insert(
         "active_requests".to_string(),
         Value::Number(snapshot.active_requests.into()),
@@ -2504,10 +2523,17 @@ mod tests {
     fn a_stopped_bridge_reports_unpaired_and_a_refusal_alone_does_not() {
         use spl_transport::journal_bridge::{JournalBridgeFailure, JournalBridgeTerminalReason};
 
-        let tracker = StatusTracker::new(Arc::new(FixedStatusClock::new(10.0)));
-        for stop in [
-            JournalBridgeTerminalReason::TlsAccessDenied,
-            JournalBridgeTerminalReason::RefusalsExhausted,
+        let tracker = Arc::new(StatusTracker::new(Arc::new(FixedStatusClock::new(10.0))));
+        let policy = bridge_policy(Arc::clone(&tracker));
+        for (stop, expected) in [
+            (
+                JournalBridgeTerminalReason::TlsAccessDenied,
+                "tls-access-denied",
+            ),
+            (
+                JournalBridgeTerminalReason::RefusalsExhausted,
+                "refusals-exhausted",
+            ),
         ] {
             let status = JournalBridgeStatus {
                 terminal_reason: Some(stop),
@@ -2516,6 +2542,11 @@ mod tests {
             let snapshot = tracker.snapshot(status);
             assert_eq!(snapshot.state, "unpaired", "{stop:?}");
             assert_eq!(snapshot.health, "unhealthy", "{stop:?}");
+            let response = (policy.local_response)(&request_head(STATUS_PATH), &status)
+                .expect("local status response");
+            let body: Value = serde_json::from_slice(&response.body).expect("status JSON");
+            assert_eq!(body["terminal_reason"], expected);
+            assert_eq!(body["last_failure"], Value::Null);
         }
         for failure in [
             JournalBridgeFailure::TlsCertificateUnknown,
@@ -2533,6 +2564,10 @@ mod tests {
                 "disconnected",
                 "{failure:?}"
             );
+            let response = (policy.local_response)(&request_head(STATUS_PATH), &status)
+                .expect("local status response");
+            let body: Value = serde_json::from_slice(&response.body).expect("status JSON");
+            assert_eq!(body["terminal_reason"], Value::Null);
         }
     }
 
@@ -3116,6 +3151,7 @@ mod tests {
                 .cloned()
                 .collect::<Vec<_>>(),
             vec![
+                "terminal_reason",
                 "active_requests",
                 "ca_fp_prefix",
                 "connected_age_seconds",
@@ -3346,7 +3382,7 @@ mod tests {
                 jid: Some("f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string()),
             }],
         };
-        let bytes = status_body(&snapshot);
+        let bytes = status_body(&snapshot, None);
         let val: Value = serde_json::from_slice(&bytes).expect("json parse");
         let list = val
             .get("unknown_journals")

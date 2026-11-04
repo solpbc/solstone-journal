@@ -544,6 +544,9 @@ class LinkBridgeTests(unittest.TestCase):
                         (bundle / "cert.pem").write_text(__FIXED_CERTIFICATE__, encoding="utf-8")
                         (bundle / "peer.json").write_text(json.dumps({"instance_id": "home-test", "home_label": "Test Home"}), encoding="utf-8")
                         raise SystemExit(0)
+                    if sys.argv[1:3] == ["call", "link"]:
+                        print(json.dumps({"port": os.environ["SOLSTONE_CONVEY_PORT"], "xdg": os.environ["XDG_CONFIG_HOME"]}))
+                        raise SystemExit(0)
                     if sys.argv[1:3] == ["link", "serve"]:
                         if os.environ.get("SOLSTONE_CONVEY_PORT") != "6200":
                             raise SystemExit(10)
@@ -577,6 +580,12 @@ class LinkBridgeTests(unittest.TestCase):
                 self.assertEqual(bridge.start(), "http://127.0.0.1:43127")
                 self.assertTrue(bridge.credential_dir.is_dir())
                 provenance = bridge.provenance
+                code, output, _, failure = bridge.run_cli(["call", "link", "status"])
+                self.assertEqual((code, failure), (0, None))
+                self.assertEqual(json.loads(output), {"port": "43127", "xdg": str(bridge.credential_dir)})
+                bridge.stop()
+                self.assertEqual(bridge.start(), "http://127.0.0.1:43127")
+                self.assertEqual(bridge.provenance["credentials"], provenance["credentials"])
             finally:
                 bridge.stop()
             self.assertEqual(

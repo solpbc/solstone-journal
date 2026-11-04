@@ -12,6 +12,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import time
 import uuid
 from contextlib import ExitStack, contextmanager
@@ -36,6 +37,7 @@ from .manifest import (
     ProcessingExpectation,
 )
 from .process import LinkBridge, LinkProcessError
+from .exercise import DeviceExercise, ExerciseFailure
 
 STATE_SCHEMA = "solstone.journal-device-sim.state.v1"
 EVIDENCE_SCHEMA = "solstone.journal-device-sim.evidence.v2"
@@ -109,6 +111,8 @@ class SimulatorConfig:
     poll_interval: float = 1.0
     max_attempts: int = 3
     keep_credentials: bool = False
+    exercise: bool = False
+    progress: bool = False
 
 
 def _utc_now() -> str:
@@ -638,6 +642,8 @@ class Simulator:
             raise ManifestError("convey_port must be an integer from 1 to 65535")
         if config.bridge_url and config.convey_port is not None:
             raise ManifestError("convey_port applies only to a simulator-owned bridge")
+        if config.exercise and config.bridge_url:
+            raise ManifestError("exercise requires a simulator-owned native bridge")
         if config.max_attempts < 1:
             raise ManifestError("max_attempts must be positive")
         if not math.isfinite(config.request_timeout) or config.request_timeout <= 0:
@@ -737,6 +743,7 @@ class Simulator:
             "finished_at": None,
             "result": None,
             "error": None,
+            "mode": "exercise" if config.exercise else "run",
             "profile": config.profile,
             "verification": self.profile.verification,
             "carrier": config.carrier,
@@ -761,7 +768,27 @@ class Simulator:
             "contract_reads": [],
             "http_receipts": [],
             "upload_receipts": [],
+            "device_checks": [],
         }
+        self.events_path = self.state_dir / f"events-{uuid.uuid4().hex[:12]}.jsonl"
+        self._events_started = False
+        if config.progress:
+            self.evidence["events_path"] = str(self.events_path)
+
+    def _event(self, event: str, **fields: Any) -> None:
+        if not self.config.progress:
+            return
+        record = {"ts": _utc_now(), "event": event, **fields}
+        try:
+            if not self._events_started:
+                descriptor = os.open(self.events_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.close(descriptor)
+                self._events_started = True
+            with self.events_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+            print(json.dumps(record, sort_keys=True), file=sys.stderr, flush=True)
+        except OSError as error:
+            raise SimulationFailure(f"progress log write failed: {type(error).__name__}") from error
 
     def _load_or_create_state(self) -> dict[str, Any]:
         try:
@@ -2465,14 +2492,19 @@ class Simulator:
         self._persist_evidence(f"terminal {outcome.value}")
 
     def _run_with_client(self, client: BridgeHttpClient) -> RunOutcome:
+        self._event("receiver.connecting")
         self._bind_receiver(client)
+        self._event("receiver.connected", instance_id=self.state["receiver_instance_id"])
         for segment in self.segments:
+            self._event("segment.started", fixture_id=segment.fixture_id)
             self.evidence["segments"].append(self._upload_one(client, segment))
+            self._event("segment.finished", fixture_id=segment.fixture_id)
         self._contract_reads(client)
         return RunOutcome.PASS
 
     def run(self) -> RunOutcome:
         self._persist_evidence("initial")
+        self._event("run.started", carrier=self.config.carrier, profile=self.config.profile)
         bridge: LinkBridge | None = None
         outcome: RunOutcome | None = None
         error: str | None = None
@@ -2490,7 +2522,9 @@ class Simulator:
                     convey_port=self.config.convey_port,
                     startup_timeout=self.config.request_timeout,
                 )
+                self._event("bridge.starting")
                 base_url = bridge.start()
+                self._event("bridge.started", base_url=base_url)
                 self.evidence["bridge"]["carrier_assurance"] = (
                     "native-direct-only"
                     if self.config.carrier == "direct"
@@ -2511,9 +2545,19 @@ class Simulator:
                 self.evidence["bridge"]["provenance"] = bridge_provenance
             client = BridgeHttpClient(base_url, timeout=self.config.request_timeout)
             outcome = self._run_with_client(client)
+            if self.config.exercise:
+                assert bridge is not None and self.expected_cid is not None
+                exercise = DeviceExercise(
+                    bridge, client, instance_id=self.state["receiver_instance_id"],
+                    cid=self.expected_cid, timeout=self.config.request_timeout,
+                    poll_interval=self.config.poll_interval,
+                    receipts=self.evidence["device_checks"], progress=self._event,
+                )
+                exercise.run(self._contract_reads)
+                client = exercise.client
             if bridge is not None:
                 self._verify_local_bridge_status(client)
-        except (ManifestError, SimulationFailure, HttpResponseError) as caught:
+        except (ManifestError, SimulationFailure, HttpResponseError, ExerciseFailure) as caught:
             outcome = RunOutcome.FAIL
             error = str(caught)
         except LinkProcessError as caught:
@@ -2522,6 +2566,9 @@ class Simulator:
         except (SimulationInconclusive, HttpRequestError) as caught:
             outcome = RunOutcome.INCONCLUSIVE
             error = str(caught)
+        except KeyboardInterrupt:
+            outcome = RunOutcome.INCONCLUSIVE
+            error = "simulator interrupted; inspect progress and reconcile before retrying"
         finally:
             if bridge:
                 try:
@@ -2539,5 +2586,6 @@ class Simulator:
                 if provenance is not None:
                     self.evidence["bridge"]["provenance"] = provenance
         assert outcome is not None
+        self._event("run.finished", result=outcome.value)
         self._write_evidence(outcome, error)
         return outcome

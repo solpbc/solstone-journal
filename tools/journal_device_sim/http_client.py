@@ -9,6 +9,7 @@ import hashlib
 import http.client
 import json
 import secrets
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Iterable
@@ -242,6 +243,67 @@ class BridgeHttpClient:
             raise HttpRequestError(
                 f"GET {path} failed: {type(error).__name__}"
             ) from error
+        finally:
+            connection.close()
+
+    def check_dashboard(self) -> dict[str, Any]:
+        """Check actual shell bytes without retaining page content in evidence."""
+        connection = self._connection()
+        try:
+            connection.request("GET", self._prefix + "/app/home/", headers={"Accept": "text/html"})
+            response = connection.getresponse()
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if (response.status != 200 or len(raw) > MAX_RESPONSE_BYTES
+                    or "text/html" not in (response.getheader("Content-Type") or "")
+                    or b"<html" not in raw.lower()):
+                raise HttpResponseError("dashboard did not return its HTML shell",
+                                        status=response.status, reason_category="dashboard_shell")
+            return {"status": response.status, "bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest()}
+        except (OSError, http.client.HTTPException) as error:
+            raise HttpRequestError(f"dashboard request failed: {type(error).__name__}") from error
+        finally:
+            connection.close()
+
+    def check_events(self) -> dict[str, Any]:
+        """Require connected continuity from the dashboard's actual SSE stream."""
+        connection = self._connection()
+        deadline = time.monotonic() + self._timeout
+        received = bytearray()
+        frame = bytearray()
+        try:
+            connection.connect()
+            stream_socket = connection.sock
+            connection.request("GET", self._prefix + "/sse/events", headers={"Accept": "text/event-stream"})
+            response = connection.getresponse()
+            if response.status != 200 or "text/event-stream" not in (response.getheader("Content-Type") or ""):
+                raise HttpResponseError("dashboard event stream was refused",
+                                        status=response.status, reason_category="sse_headers")
+            while time.monotonic() < deadline and len(received) <= 64 * 1024:
+                assert stream_socket is not None
+                stream_socket.settimeout(max(0.001, deadline - time.monotonic()))
+                chunk = response.read1(4096)
+                if not chunk:
+                    break
+                received.extend(chunk)
+                if len(received) > 64 * 1024:
+                    raise HttpRequestError("dashboard event stream exceeded the SSE byte bound")
+                frame.extend(chunk)
+                frame = bytearray(frame.replace(b"\r\n", b"\n"))
+                while b"\n\n" in frame:
+                    current, _, rest = frame.partition(b"\n\n")
+                    frame = bytearray(rest)
+                    fields = current.decode("utf-8").splitlines()
+                    kind = next((line[6:].strip() for line in fields if line.startswith("event:")), None)
+                    data = "\n".join(line[5:].lstrip() for line in fields if line.startswith("data:"))
+                    if kind == "continuity" and data:
+                        value = json.loads(data)
+                        if isinstance(value, dict) and value.get("state") == "connected":
+                            return {"status": 200, "event": kind, "state": "connected",
+                                    "bytes": len(received), "sha256": hashlib.sha256(received).hexdigest()}
+            raise HttpRequestError("no connected continuity event within the SSE byte/time bound")
+        except (OSError, http.client.HTTPException, UnicodeError, ValueError) as error:
+            raise HttpRequestError(f"dashboard event stream failed: {type(error).__name__}") from error
         finally:
             connection.close()
 
