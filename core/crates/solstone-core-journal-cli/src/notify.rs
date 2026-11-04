@@ -48,7 +48,7 @@ pub(crate) fn notify(owner_argv: &[OsString]) -> Outcome {
     command_output(notify_handler::notify(CommandContext {
         args: &args,
         env: &env,
-        stdin: "",
+        stdin: "".into(),
         transport: &transport,
         clock: None,
         files: None,

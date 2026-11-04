@@ -294,7 +294,7 @@ fn serve_refusal(config: &Path) -> Option<CommandOutput> {
     handler(solstone_core_sol_client::command::CommandContext {
         args: &args,
         env: &env,
-        stdin: "",
+        stdin: "".into(),
         transport: &transport,
         clock: None,
         files: None,
@@ -422,7 +422,7 @@ fn serve_with_real_check(config: &Path) -> CommandOutput {
     let refused = handler(solstone_core_sol_client::command::CommandContext {
         args: &args,
         env: &env,
-        stdin: "",
+        stdin: "".into(),
         transport: &transport,
         clock: None,
         files: None,

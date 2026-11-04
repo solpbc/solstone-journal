@@ -41,7 +41,7 @@ fn run(path: &[&str], args: &[&str], responses: Vec<(&'static str, Value)>) -> C
     let output = handler(CommandContext {
         args: &args,
         env: &BTreeMap::new(),
-        stdin: "",
+        stdin: "".into(),
         transport: &transport,
         clock: None,
         files: None,

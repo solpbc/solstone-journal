@@ -2807,7 +2807,7 @@ mod tests {
         let output = confirm_owner(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,
@@ -2841,7 +2841,7 @@ mod tests {
         let output = confirm_owner(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,
@@ -2869,7 +2869,7 @@ mod tests {
             let output = confirm_owner(CommandContext {
                 args: &args,
                 env: &env,
-                stdin: "",
+                stdin: "".into(),
                 transport: &transport,
                 clock: None,
                 files: None,
@@ -2904,7 +2904,7 @@ mod tests {
         let output = reject_owner(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,
@@ -3032,7 +3032,7 @@ mod tests {
         let ctx = CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -3098,7 +3098,7 @@ mod tests {
         let ctx = CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -3164,7 +3164,7 @@ mod tests {
         let ctx = CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -3211,7 +3211,7 @@ mod tests {
         command(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: Some(clock),
             files: None,

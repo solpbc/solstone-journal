@@ -223,7 +223,11 @@ pub fn create(ctx: CommandContext<'_>) -> CommandOutput {
         insert_optional_string(&mut body, "details", parsed.value("--details"));
         (body, activity.to_string())
     } else {
-        match stdin_create_payload(ctx.stdin, source) {
+        let raw = match ctx.stdin.read() {
+            Ok(raw) => raw,
+            Err(output) => return output,
+        };
+        match stdin_create_payload(&raw, source) {
             Ok(result) => result,
             Err(output) => return output,
         }
@@ -301,7 +305,11 @@ pub fn update(ctx: CommandContext<'_>) -> CommandOutput {
         insert_optional_string(&mut patch, "details", parsed.value("--details"));
         patch
     } else {
-        match stdin_update_patch(ctx.stdin) {
+        let raw = match ctx.stdin.read() {
+            Ok(raw) => raw,
+            Err(output) => return output,
+        };
+        match stdin_update_patch(&raw) {
             Ok(patch) => patch,
             Err(output) => return output,
         }
@@ -841,7 +849,7 @@ mod tests {
         let output = list(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,

@@ -2018,7 +2018,7 @@ mod tests {
         link_join(CommandContext {
             args: &argv,
             env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: Some(clock),
             files: None,
@@ -2041,7 +2041,7 @@ mod tests {
         link_serve(CommandContext {
             args: argv,
             env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,
@@ -3376,7 +3376,7 @@ mod tests {
         link_status(CommandContext {
             args: argv,
             env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,
@@ -3417,7 +3417,7 @@ mod tests {
         let output = link_status(CommandContext {
             args: argv,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,

@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 use serde_json::json;
-use solstone_core_sol_client::command::{CommandContext, CommandOutput};
+use solstone_core_sol_client::command::{CommandContext, CommandOutput, Stdin, StdinSource};
 use solstone_core_sol_client::resident::{ResidentHandler, ShutdownSignal};
 use solstone_core_sol_client::seam::{
     BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
@@ -492,14 +492,8 @@ fn run_top_level_link_with_runtime(
         Err(output) => return render_output(output),
     };
     let transport = transport_factory(port);
-    let stdin = match stdin_provider.read_if_piped() {
-        Ok(Some(value)) => value,
-        Ok(None) => String::new(),
-        Err(error) => {
-            eprintln!("native solstone stdin read failed: {error}");
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
+    let body = ProviderBody(stdin_provider);
+    let stdin = Stdin::Source(&body);
     let clock = SystemClock::default();
     let files = RealFileProvider;
     let link_probe = UreqLinkStatusProbe;
@@ -507,7 +501,7 @@ fn run_top_level_link_with_runtime(
         &dispatch_args,
         TopLevelLinkRuntime {
             env,
-            stdin: &stdin,
+            stdin,
             transport: transport.as_ref(),
             clock: &clock,
             files: &files,
@@ -525,7 +519,7 @@ fn run_top_level_link_with_runtime(
             let context = CommandContext {
                 args: &resident_args,
                 env,
-                stdin: &stdin,
+                stdin,
                 transport: transport.as_ref(),
                 clock: Some(&clock),
                 files: Some(&files),
@@ -543,7 +537,7 @@ fn run_top_level_link_with_runtime(
 
 struct TopLevelLinkRuntime<'a> {
     env: &'a BTreeMap<String, String>,
-    stdin: &'a str,
+    stdin: Stdin<'a>,
     transport: &'a dyn HttpTransport,
     clock: &'a dyn Clock,
     files: &'a dyn FileProvider,
@@ -617,14 +611,8 @@ fn run_dispatched_with_runtime(
         Err(output) => return render_output(output),
     };
     let transport = transport_factory(port);
-    let stdin = match stdin_provider.read_if_piped() {
-        Ok(Some(value)) => value,
-        Ok(None) => String::new(),
-        Err(error) => {
-            eprintln!("native solstone stdin read failed: {error}");
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
+    let body = ProviderBody(stdin_provider);
+    let stdin = Stdin::Source(&body);
     let files = RealFileProvider;
     let build_identity = RealBuildIdentityProvider;
     let client_item_ids = RealClientItemIdProvider;
@@ -632,7 +620,7 @@ fn run_dispatched_with_runtime(
         Outcome::Migrated { .. } | Outcome::MovedStub { .. } => dispatch_sol_call_with_seams(
             &args,
             env,
-            &stdin,
+            stdin,
             DispatchSeams {
                 transport: transport.as_ref(),
                 clock: None,
@@ -645,7 +633,7 @@ fn run_dispatched_with_runtime(
         Outcome::Import { .. } => dispatch_sol_import_with_seams(
             &args,
             env,
-            &stdin,
+            stdin,
             DispatchSeams {
                 transport: transport.as_ref(),
                 clock: None,
@@ -658,7 +646,7 @@ fn run_dispatched_with_runtime(
         Outcome::Status { .. } => dispatch_sol_status_with_seams(
             &args,
             env,
-            &stdin,
+            stdin,
             DispatchSeams {
                 transport: transport.as_ref(),
                 clock: None,
@@ -851,6 +839,15 @@ fn render_output(output: CommandOutput) -> ExitCode {
 
 trait StdinProvider {
     fn read_if_piped(&self) -> IoResult<Option<String>>;
+}
+
+/// Reads the piped body through the provider only when a command asks for it.
+struct ProviderBody<'a>(&'a dyn StdinProvider);
+
+impl StdinSource for ProviderBody<'_> {
+    fn read_body(&self) -> IoResult<String> {
+        Ok(self.0.read_if_piped()?.unwrap_or_default())
+    }
 }
 
 struct RealStdinProvider;
@@ -1322,6 +1319,7 @@ mod tests {
         );
     }
 
+    use solstone_core_sol_client::error::ClientError;
     use solstone_core_sol_client::link_credentials::StoreLoadOutcome;
     use solstone_core_sol_client::seam::{
         ExpectedLinkServeCall, ExpectedLinkServeSession, LinkServeBundle, LinkServeCarrierPolicy,
@@ -1342,6 +1340,54 @@ mod tests {
     impl StdinProvider for FailingStdinProvider {
         fn read_if_piped(&self) -> IoResult<Option<String>> {
             Err(io::Error::other("deliberate stdin failure"))
+        }
+    }
+
+    /// Counts reads, and answers each with the body a caller piped.
+    struct PipedStdinProvider {
+        body: &'static str,
+        reads: std::cell::Cell<usize>,
+    }
+
+    impl PipedStdinProvider {
+        fn new(body: &'static str) -> Self {
+            Self {
+                body,
+                reads: std::cell::Cell::new(0),
+            }
+        }
+    }
+
+    impl StdinProvider for PipedStdinProvider {
+        fn read_if_piped(&self) -> IoResult<Option<String>> {
+            self.reads.set(self.reads.get() + 1);
+            Ok(Some(self.body.to_string()))
+        }
+    }
+
+    /// A journal that is not there: every request is refused.
+    struct RefusingTransport;
+
+    impl HttpTransport for RefusingTransport {
+        fn request(
+            &self,
+            _request: solstone_core_sol_client::transport::ApiRequest,
+        ) -> Result<solstone_core_sol_client::transport::HttpResponse, ClientError> {
+            Err(ClientError::unreachable(None))
+        }
+
+        fn upload(
+            &self,
+            _request: solstone_core_sol_client::transport::UploadRequest,
+        ) -> Result<solstone_core_sol_client::transport::HttpResponse, ClientError> {
+            Err(ClientError::unreachable(None))
+        }
+
+        fn open_sse(
+            &self,
+            _request: solstone_core_sol_client::transport::SseRequest,
+        ) -> Result<solstone_core_sol_client::transport::SseStream, ClientError> {
+            Err(ClientError::unreachable(None))
         }
     }
 
@@ -1402,32 +1448,32 @@ mod tests {
         let ports = std::cell::RefCell::new(Vec::new());
         let factory = |port| {
             ports.borrow_mut().push(port);
-            Box::new(ScriptedHttpTransport::new(vec![])) as Box<dyn HttpTransport>
+            Box::new(RefusingTransport) as Box<dyn HttpTransport>
         };
         let pairing = ScriptedLinkJoinPairingSeam::new(vec![]);
         let runner = ScriptedLinkServeRunner::new(vec![]);
 
-        assert_eq!(
+        assert_ne!(
             run_dispatched_with_runtime(
                 &os_args(&["status"]),
                 &[],
-                &FailingStdinProvider,
+                &PanicStdinProvider,
                 env,
                 &factory,
             ),
-            ExitCode::from(EXIT_TEMPFAIL)
+            ExitCode::SUCCESS
         );
-        assert_eq!(
+        assert_ne!(
             run_top_level_link_with_runtime(
                 &os_args(&["link", "join", "--code", "not-a-code"]),
                 &os_args(&["join", "--code", "not-a-code"]),
-                &FailingStdinProvider,
+                &PanicStdinProvider,
                 env,
                 &factory,
                 &pairing,
                 &runner,
             ),
-            ExitCode::from(EXIT_TEMPFAIL)
+            ExitCode::SUCCESS
         );
         pairing.assert_done();
         runner.assert_done();
@@ -1679,7 +1725,7 @@ mod tests {
             &args,
             TopLevelLinkRuntime {
                 env: &env,
-                stdin: "",
+                stdin: "".into(),
                 transport: &transport,
                 clock: &clock,
                 files: &files,
@@ -1854,6 +1900,98 @@ mod tests {
         ] {
             let _ = run_with_stdin_provider("sol", args, &provider);
         }
+    }
+
+    #[test]
+    fn routes_that_take_no_body_never_read_stdin() {
+        // A caller that holds stdin open and never writes would block any read.
+        let env = BTreeMap::new();
+        let factory = |_port| Box::new(RefusingTransport) as Box<dyn HttpTransport>;
+        for (all_args, command_args) in [
+            (os_args(&["status"]), vec![]),
+            (
+                os_args(&["call", "journal", "search", "anything"]),
+                os_args(&["journal", "search", "anything"]),
+            ),
+            (
+                os_args(&[
+                    "call",
+                    "activities",
+                    "create",
+                    "--facet",
+                    "work",
+                    "--day",
+                    "20261104",
+                    "--title",
+                    "t",
+                    "--activity",
+                    "meeting",
+                ]),
+                os_args(&[
+                    "activities",
+                    "create",
+                    "--facet",
+                    "work",
+                    "--day",
+                    "20261104",
+                    "--title",
+                    "t",
+                    "--activity",
+                    "meeting",
+                ]),
+            ),
+        ] {
+            let _ = run_dispatched_with_runtime(
+                &all_args,
+                &command_args,
+                &PanicStdinProvider,
+                &env,
+                &factory,
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_that_takes_a_body_reads_its_pipe_once() {
+        let env = BTreeMap::new();
+        let factory = |_port| Box::new(RefusingTransport) as Box<dyn HttpTransport>;
+        let all_args = os_args(&[
+            "call",
+            "activities",
+            "create",
+            "--facet",
+            "work",
+            "--day",
+            "20261104",
+        ]);
+        let command_args = os_args(&[
+            "activities",
+            "create",
+            "--facet",
+            "work",
+            "--day",
+            "20261104",
+        ]);
+
+        // A JSON array is read and then refused as not an object, before any request.
+        let piped = PipedStdinProvider::new("[]");
+        assert_eq!(
+            run_dispatched_with_runtime(&all_args, &command_args, &piped, &env, &factory),
+            ExitCode::from(1)
+        );
+        assert_eq!(piped.reads.get(), 1);
+
+        // A failed read still ends the command the way it always has.
+        assert_eq!(
+            run_dispatched_with_runtime(
+                &all_args,
+                &command_args,
+                &FailingStdinProvider,
+                &env,
+                &factory,
+            ),
+            ExitCode::from(EXIT_TEMPFAIL)
+        );
     }
 
     #[test]

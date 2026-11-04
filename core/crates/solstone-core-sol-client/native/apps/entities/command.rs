@@ -2316,7 +2316,7 @@ mod tests {
         let output = handler(CommandContext {
             args: &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
             env: &BTreeMap::new(),
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,

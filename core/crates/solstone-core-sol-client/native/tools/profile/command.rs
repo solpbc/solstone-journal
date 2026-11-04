@@ -317,7 +317,7 @@ mod tests {
         CommandContext {
             args,
             env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,

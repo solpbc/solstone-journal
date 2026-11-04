@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use solstone_core_sol_client::aggregate;
-use solstone_core_sol_client::command::{CommandContext, CommandOutput};
+use solstone_core_sol_client::command::{CommandContext, CommandOutput, Stdin};
 use solstone_core_sol_client::resident::ResidentHandler;
 use solstone_core_sol_client::seam::{
     BuildIdentityProvider, ClientItemIdProvider, Clock, FileProvider, HttpTransport,
@@ -79,10 +79,10 @@ pub fn evaluate_args(args: &[OsString]) -> Outcome {
 }
 
 #[must_use]
-pub fn dispatch_sol_import_with_seams(
+pub fn dispatch_sol_import_with_seams<'a>(
     args: &[String],
     env: &BTreeMap<String, String>,
-    stdin: &str,
+    stdin: impl Into<Stdin<'a>>,
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-import", &[String::from("import")])
@@ -92,7 +92,7 @@ pub fn dispatch_sol_import_with_seams(
     handler(CommandContext {
         args,
         env,
-        stdin,
+        stdin: stdin.into(),
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -106,10 +106,10 @@ pub fn dispatch_sol_import_with_seams(
 }
 
 #[must_use]
-pub fn dispatch_sol_status_with_seams(
+pub fn dispatch_sol_status_with_seams<'a>(
     args: &[String],
     env: &BTreeMap<String, String>,
-    stdin: &str,
+    stdin: impl Into<Stdin<'a>>,
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler)) = match_generated_surface_path("sol-status", &[String::from("status")])
@@ -119,7 +119,7 @@ pub fn dispatch_sol_status_with_seams(
     handler(CommandContext {
         args,
         env,
-        stdin,
+        stdin: stdin.into(),
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -133,10 +133,10 @@ pub fn dispatch_sol_status_with_seams(
 }
 
 #[must_use]
-pub fn dispatch_sol_link_with_seams(
+pub fn dispatch_sol_link_with_seams<'a>(
     args: &[String],
     env: &BTreeMap<String, String>,
-    stdin: &str,
+    stdin: impl Into<Stdin<'a>>,
     seams: LinkDispatchSeams<'_>,
 ) -> LinkDispatch {
     let Some((path, remaining)) = link_lookup_path(args) else {
@@ -154,7 +154,7 @@ pub fn dispatch_sol_link_with_seams(
     LinkDispatch::Buffered(handler(CommandContext {
         args: remaining,
         env,
-        stdin,
+        stdin: stdin.into(),
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,
@@ -187,10 +187,10 @@ fn evaluate_call(args: &[OsString]) -> Outcome {
 }
 
 #[must_use]
-pub fn dispatch_sol_call(
+pub fn dispatch_sol_call<'a>(
     args: &[String],
     env: &BTreeMap<String, String>,
-    stdin: &str,
+    stdin: impl Into<Stdin<'a>>,
     transport: &dyn HttpTransport,
 ) -> CommandOutput {
     dispatch_sol_call_with_seams(
@@ -209,10 +209,10 @@ pub fn dispatch_sol_call(
 }
 
 #[must_use]
-pub fn dispatch_sol_call_with_seams(
+pub fn dispatch_sol_call_with_seams<'a>(
     args: &[String],
     env: &BTreeMap<String, String>,
-    stdin: &str,
+    stdin: impl Into<Stdin<'a>>,
     seams: DispatchSeams<'_>,
 ) -> CommandOutput {
     let Some((_, handler, len)) = match_generated_str_path(args) else {
@@ -222,7 +222,7 @@ pub fn dispatch_sol_call_with_seams(
     handler(CommandContext {
         args: &remaining,
         env,
-        stdin,
+        stdin: stdin.into(),
         transport: seams.transport,
         clock: seams.clock,
         files: seams.files,

@@ -1014,7 +1014,7 @@ mod tests {
         let output = confidential_enable(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: Some(&clock),
             files: None,
@@ -1093,7 +1093,7 @@ mod tests {
         let output = confidential_enable(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: Some(&clock),
             files: None,

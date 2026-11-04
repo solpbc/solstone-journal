@@ -271,7 +271,7 @@ mod tests {
         notify(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,

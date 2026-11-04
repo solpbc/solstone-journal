@@ -584,7 +584,7 @@ mod tests {
         search(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,
@@ -603,7 +603,7 @@ mod tests {
         handler(CommandContext {
             args: &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
             env: &BTreeMap::new(),
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,
@@ -747,7 +747,7 @@ mod tests {
         handler(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,

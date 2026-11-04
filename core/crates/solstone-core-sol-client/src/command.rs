@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 pub struct CommandContext<'a> {
     pub args: &'a [String],
     pub env: &'a BTreeMap<String, String>,
-    pub stdin: &'a str,
+    pub stdin: Stdin<'a>,
     pub transport: &'a dyn HttpTransport,
     pub clock: Option<&'a dyn Clock>,
     pub files: Option<&'a dyn FileProvider>,
@@ -25,6 +25,40 @@ pub struct CommandContext<'a> {
     pub link_pairing: Option<&'a dyn LinkJoinPairingSeam>,
     pub link_serve: Option<&'a dyn LinkServeRunner>,
     pub link_status_probe: Option<&'a dyn LinkStatusProbe>,
+}
+
+/// Where a command's piped body comes from.
+pub trait StdinSource {
+    /// Reads the whole body. Called at most once, and only by a command that
+    /// takes one.
+    fn read_body(&self) -> std::io::Result<String>;
+}
+
+/// A command's piped body. Nothing reads it until a command asks with
+/// [`Stdin::read`], so a command that takes no body never waits on a pipe
+/// its caller holds open.
+#[derive(Clone, Copy)]
+pub enum Stdin<'a> {
+    Text(&'a str),
+    Source(&'a dyn StdinSource),
+}
+
+impl<'a> From<&'a str> for Stdin<'a> {
+    fn from(text: &'a str) -> Self {
+        Self::Text(text)
+    }
+}
+
+impl Stdin<'_> {
+    /// The body, read now. A read failure is the command's output.
+    pub fn read(self) -> Result<String, CommandOutput> {
+        match self {
+            Self::Text(text) => Ok(text.to_owned()),
+            Self::Source(source) => source.read_body().map_err(|error| {
+                CommandOutput::failure(format!("native solstone stdin read failed: {error}\n"), 75)
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,7 +147,7 @@ mod tests {
         CommandContext {
             args: &[],
             env,
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,

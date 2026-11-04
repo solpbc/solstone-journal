@@ -166,7 +166,7 @@ mod tests {
         handler(CommandContext {
             args: &argv(args),
             env: &BTreeMap::new(),
-            stdin: "",
+            stdin: "".into(),
             transport,
             clock: None,
             files: None,

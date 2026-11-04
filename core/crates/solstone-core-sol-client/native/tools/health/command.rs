@@ -495,7 +495,7 @@ mod tests {
         let output = summary(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,
@@ -540,7 +540,7 @@ mod tests {
         let output = pipeline(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,
@@ -635,7 +635,7 @@ mod tests {
         let output = pipeline(CommandContext {
             args: &args,
             env: &env,
-            stdin: "",
+            stdin: "".into(),
             transport: &transport,
             clock: None,
             files: None,

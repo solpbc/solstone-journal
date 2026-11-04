@@ -695,7 +695,7 @@ mod tests {
             CommandContext {
                 args: &args,
                 env: &env,
-                stdin: "",
+                stdin: "".into(),
                 transport,
                 clock: None,
                 files: Some(files),
@@ -740,7 +740,7 @@ mod tests {
             let context = CommandContext {
                 args: &args,
                 env: &env,
-                stdin: "",
+                stdin: "".into(),
                 transport: &transport,
                 clock: None,
                 files: None,
