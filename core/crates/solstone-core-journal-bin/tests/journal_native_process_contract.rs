@@ -561,6 +561,12 @@ const PROBES: &[Probe] = &[
         stderr_anchor: None,
     },
     Probe {
+        token: "open",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: solstone journal open [-h] [--print-url] [PATH]\n"),
+    },
+    Probe {
         token: "importer",
         argv: &["--nonsense"],
         expected_exit: 2,

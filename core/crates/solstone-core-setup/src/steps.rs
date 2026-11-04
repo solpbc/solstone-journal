@@ -1294,19 +1294,34 @@ fn narrate_success(context: &SetupContext<'_>, manifest: &SetupManifest) {
         std::env::var("SOLSTONE_INSTALLER_NO_HANDOFF").as_deref() == Ok("1");
     let close = determine_setup_close(context.args.skip_service, installer_owns_handoff, complete);
     let url = journal_url(&context.journal_path, effective_port(context));
+    // macOS and Linux open the journal with a one-time link from the command
+    // that mints it; the bare address only works while local access is open.
+    let unix = cfg!(any(target_os = "linux", target_os = "macos"));
     match close {
         SetupClose::SkipService => {
             println!();
-            println!("once your journal is running, open it at {url}");
+            if unix {
+                println!("once your journal is running, open it with: solstone journal open");
+            } else {
+                println!("once your journal is running, open it at {url}");
+            }
         }
         SetupClose::HeldByInstaller => {}
         SetupClose::OpenJournal => {
             println!();
-            println!("open your journal: {url}");
+            if unix {
+                println!("open your journal: solstone journal open");
+            } else {
+                println!("open your journal: {url}");
+            }
         }
         SetupClose::FinishSetup => {
             println!();
-            println!("finish setup: {url}/init");
+            if unix {
+                println!("finish setup: solstone journal open /init");
+            } else {
+                println!("finish setup: {url}/init");
+            }
         }
     }
 }

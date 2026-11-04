@@ -928,33 +928,39 @@ write_one_profile() {
 }
 
 # The umbrella installer owns the handoff when it delegates this bootstrap.
+# The journal opens itself with a one-time link (solstone journal open); the
+# bare browser address only works while local access is open, so none is printed.
 finish_journal_install() {
 	[ "$ROLE" = journal ] && [ "$UPGRADE" -eq 0 ] && [ "$NO_START" -eq 0 ] || return 0
 	[ "${SOLSTONE_INSTALLER_NO_HANDOFF:-0}" != 1 ] || return 0
-	if ! _handoff_status=$(run_journal_at "$CURRENT" "$VERSION" settings convey status --json); then
-		printf 'finish setup: http://localhost:5015/init\n'
-		return 0
+	_handoff_port=
+	if _handoff_status=$(run_journal_at "$CURRENT" "$VERSION" settings convey status --json); then
+		_handoff_url=$(printf '%s\n' "$_handoff_status" | sed -n 's/^[[:space:]]*"dashboard_url"[[:space:]]*:[[:space:]]*"\(http:\/\/localhost:[0-9][0-9]*\)"[[:space:]]*$/\1/p')
+		_handoff_port=${_handoff_url##*:}
+		case "$_handoff_port" in ''|*[!0-9]*|??????*) _handoff_port= ;; esac
+		if [ -n "$_handoff_port" ] && { [ "$_handoff_port" -lt 1 ] || [ "$_handoff_port" -gt 65535 ]; }; then
+			_handoff_port=
+		fi
 	fi
-	_handoff_url=$(printf '%s\n' "$_handoff_status" | sed -n 's/^[[:space:]]*"dashboard_url"[[:space:]]*:[[:space:]]*"\(http:\/\/localhost:[0-9][0-9]*\)"[[:space:]]*$/\1/p')
-	_handoff_port=${_handoff_url##*:}
-	case "$_handoff_port" in ''|*[!0-9]*|??????*) _handoff_port=0 ;; esac
-	if [ "$_handoff_port" -lt 1 ] || [ "$_handoff_port" -gt 65535 ]; then
-		printf 'finish setup: http://localhost:5015/init\n'
-		return 0
-	fi
-	printf 'finish setup: %s/init\n' "$_handoff_url"
-	if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then
-		if ! xdg-open "$_handoff_url/init" </dev/null >/dev/null 2>&1; then
-			printf 'the browser could not open. open the setup link above.\n'
+	if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+		if run_journal_at "$CURRENT" "$VERSION" open /init </dev/null >/dev/null 2>&1; then
+			printf 'finish setup in the browser that just opened. if you close it, run: solstone journal open /init\n'
+		else
+			printf 'finish setup: solstone journal open /init\n'
+			printf 'the browser could not open. run the command above.\n'
 		fi
 	else
-		# The agent door is 7659 because convey status does not report it.
-		printf "from another computer, forward the journal's ports over SSH:\n"
-		printf '  ssh -N -L %s:127.0.0.1:%s -L 7659:127.0.0.1:7659 YOUR_LOGIN@JOURNAL_COMPUTER\n' "$_handoff_port" "$_handoff_port"
-		printf 'replace YOUR_LOGIN and JOURNAL_COMPUTER with this computer\047s SSH login and address. keep that terminal open, then open %s/init on the other computer.\n' "$_handoff_url"
+		printf 'finish setup: solstone journal open /init\n'
+		if [ -n "$_handoff_port" ]; then
+			# The agent door is 7659 because convey status does not report it.
+			printf "from another computer, forward the journal's ports over SSH:\n"
+			printf '  ssh -N -L %s:127.0.0.1:%s -L 7659:127.0.0.1:7659 YOUR_LOGIN@JOURNAL_COMPUTER\n' "$_handoff_port" "$_handoff_port"
+			printf 'replace YOUR_LOGIN and JOURNAL_COMPUTER with this computer\047s SSH login and address, and keep that terminal open.\n'
+			printf 'then run solstone journal open /init --print-url on this computer, and open the link it prints on the other computer within a minute.\n'
+		fi
 	fi
 	printf 'next: add the solstone app on this computer.\n'
-	printf 'after setup, open %s/app/network/ and choose pair a device to make its pairing link.\n' "$_handoff_url"
+	printf 'after setup, run solstone journal open /app/network/ and choose pair a device to make its pairing link.\n'
 	printf 'linux app setup: https://github.com/solpbc/solstone-linux/blob/main/INSTALL.md\n'
 }
 

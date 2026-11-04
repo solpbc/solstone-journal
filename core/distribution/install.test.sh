@@ -122,6 +122,10 @@ if [ "\${1:-}" = settings ]; then
     printf '{\n  "dashboard_url": "http://localhost:%s"\n}\n' "\${SOLSTONE_FIXTURE_PORT:-6123}"
     exit 0
 fi
+if [ "\${1:-}" = open ]; then
+    [ -z "\${SOLSTONE_OPEN_LOG:-}" ] || printf "%s\n" "\$@" >>"\$SOLSTONE_OPEN_LOG"
+    exit "\${SOLSTONE_OPEN_EXIT:-0}"
+fi
 [ -z "\${SOLSTONE_HANDOFF_FLAG_LOG:-}" ] || printf "%s\n" "\${SOLSTONE_INSTALLER_NO_HANDOFF:-}" >"\$SOLSTONE_HANDOFF_FLAG_LOG"
 [ -z "\${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "\$@" >"\$SOLSTONE_SETUP_ARGS_LOG"
 [ -z "\${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "\$PATH" >"\$SOLSTONE_SETUP_PATH_LOG"
@@ -175,6 +179,10 @@ if [ "\${1:-}" = journal ]; then
     if [ "\${1:-}" = settings ]; then
 	printf '{\n  "dashboard_url": "http://localhost:%s"\n}\n' "\${SOLSTONE_FIXTURE_PORT:-6123}"
 	exit 0
+    fi
+    if [ "\${1:-}" = open ]; then
+	[ -z "\${SOLSTONE_OPEN_LOG:-}" ] || printf "%s\n" "\$@" >>"\$SOLSTONE_OPEN_LOG"
+	exit "\${SOLSTONE_OPEN_EXIT:-0}"
     fi
     [ -z "\${SOLSTONE_HANDOFF_FLAG_LOG:-}" ] || printf "%s\n" "\${SOLSTONE_INSTALLER_NO_HANDOFF:-}" >"\$SOLSTONE_HANDOFF_FLAG_LOG"
     [ -z "\${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "\$@" >"\$SOLSTONE_SETUP_ARGS_LOG"
@@ -554,28 +562,44 @@ HANDOFF_FLAG_LOG=$BASE/handoff-flag.log
 mkdir -p "$HANDOFF_BIN"
 printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$@" >> "$HANDOFF_OPENED"' 'exit "${HANDOFF_OPEN_EXIT:-0}"' >"$HANDOFF_BIN/xdg-open"
 chmod 755 "$HANDOFF_BIN/xdg-open"
+HANDOFF_OPEN_LOG=$BASE/handoff-open.log
 export HANDOFF_OPENED
-rm -f "$HANDOFF_OPENED" "$HANDOFF_FLAG_LOG"
+rm -f "$HANDOFF_OPENED" "$HANDOFF_FLAG_LOG" "$HANDOFF_OPEN_LOG"
 if env PATH="$HANDOFF_BIN:$PATH" DISPLAY=:1 HOME="$BASE/handoff-home" \
-	SOLSTONE_HANDOFF_FLAG_LOG="$HANDOFF_FLAG_LOG" \
+	SOLSTONE_HANDOFF_FLAG_LOG="$HANDOFF_FLAG_LOG" SOLSTONE_OPEN_LOG="$HANDOFF_OPEN_LOG" \
 	"$INSTALL" --prefix "$BASE/handoff-prefix" --no-path --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >"$BASE/handoff.out" \
-	&& [ "$(cat "$HANDOFF_OPENED")" = 'http://localhost:6123/init' ] \
-	&& [ "$(grep -c -F 'finish setup:' "$BASE/handoff.out" || true)" -eq 1 ] \
+	&& [ "$(cat "$HANDOFF_OPEN_LOG")" = "$(printf 'open\n/init')" ] \
+	&& [ ! -e "$HANDOFF_OPENED" ] \
+	&& ! grep -F 'http://localhost' "$BASE/handoff.out" >/dev/null \
+	&& [ "$(grep -c -F 'finish setup in the browser' "$BASE/handoff.out" || true)" -eq 1 ] \
 	&& [ "$(cat "$HANDOFF_FLAG_LOG")" = '1' ]; then
-	pass "graphical install opens setup on the journal's published port once"
+	pass "graphical install opens setup once through the journal's one-time link"
 else
-	fail "graphical install did not open setup once"
+	fail "graphical install did not open setup once through the journal"
 fi
-rm -f "$HANDOFF_OPENED" "$HANDOFF_FLAG_LOG"
+rm -f "$HANDOFF_OPENED" "$HANDOFF_FLAG_LOG" "$HANDOFF_OPEN_LOG"
+if env PATH="$HANDOFF_BIN:$PATH" DISPLAY=:1 HOME="$BASE/handoff-home" \
+	SOLSTONE_HANDOFF_FLAG_LOG="$HANDOFF_FLAG_LOG" SOLSTONE_OPEN_LOG="$HANDOFF_OPEN_LOG" SOLSTONE_OPEN_EXIT=69 \
+	"$INSTALL" --prefix "$BASE/handoff-failed-prefix" --no-path --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >"$BASE/handoff-failed.out" \
+	&& grep -F 'finish setup: solstone journal open /init' "$BASE/handoff-failed.out" >/dev/null \
+	&& ! grep -F 'http://localhost' "$BASE/handoff-failed.out" >/dev/null \
+	&& [ ! -e "$HANDOFF_OPENED" ]; then
+	pass "a browser that cannot open leaves the open command, never a bare address"
+else
+	fail "a failed browser open fell back to a bare address"
+fi
+rm -f "$HANDOFF_OPENED" "$HANDOFF_FLAG_LOG" "$HANDOFF_OPEN_LOG"
 if env PATH="$HANDOFF_BIN:$PATH" HOME="$BASE/handoff-headless-home" \
-	SOLSTONE_HANDOFF_FLAG_LOG="$HANDOFF_FLAG_LOG" \
+	SOLSTONE_HANDOFF_FLAG_LOG="$HANDOFF_FLAG_LOG" SOLSTONE_OPEN_LOG="$HANDOFF_OPEN_LOG" \
 	"$INSTALL" --prefix "$BASE/handoff-headless-prefix" --no-path --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >"$BASE/handoff-headless.out" \
 	&& grep -F -- '-L 6123:127.0.0.1:6123' "$BASE/handoff-headless.out" >/dev/null \
 	&& grep -F -- '-L 7659:127.0.0.1:7659' "$BASE/handoff-headless.out" >/dev/null \
-	&& grep -F 'http://localhost:6123/app/network/' "$BASE/handoff-headless.out" >/dev/null \
+	&& grep -F 'solstone journal open /init --print-url' "$BASE/handoff-headless.out" >/dev/null \
+	&& grep -F 'solstone journal open /app/network/' "$BASE/handoff-headless.out" >/dev/null \
+	&& ! grep -F 'http://localhost' "$BASE/handoff-headless.out" >/dev/null \
 	&& [ "$(grep -c -F 'finish setup:' "$BASE/handoff-headless.out" || true)" -eq 1 ] \
 	&& [ "$(cat "$HANDOFF_FLAG_LOG")" = '1' ] \
-	&& [ ! -e "$HANDOFF_OPENED" ]; then
+	&& [ ! -e "$HANDOFF_OPENED" ] && [ ! -e "$HANDOFF_OPEN_LOG" ]; then
 	pass "headless install prints the setup tunnel and pairing next step"
 else
 	fail "headless install lost its next step"

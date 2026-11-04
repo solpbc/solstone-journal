@@ -103,7 +103,38 @@ pub async fn serve_connection<I>(
 where
     I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let router = router
+    serve_with_layers(io, common_layers(router).layer(Extension(identity)), builder).await
+}
+
+/// Serve one HTTP/1 connection with no accept-time identity.
+///
+/// The router must supply an [`AccessBasis`] per request, after its own
+/// admission check; a route reached without one has no basis.
+pub async fn serve_connection_unstamped<I>(
+    io: I,
+    router: Router,
+    builder: &http1::Builder,
+) -> Result<(), hyper::Error>
+where
+    I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    serve_with_layers(io, common_layers(router), builder).await
+}
+
+async fn serve_with_layers<I>(
+    io: I,
+    router: Router,
+    builder: &http1::Builder,
+) -> Result<(), hyper::Error>
+where
+    I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let service = TowerToHyperService::new(router);
+    builder.serve_connection(TokioIo::new(io), service).await
+}
+
+fn common_layers(router: Router) -> Router {
+    router
         .layer(axum::middleware::map_response(refuse_framing))
         // Every convey page and API answer crosses the relay as-is otherwise; a
         // journal-sized JSON state is ten times smaller gzipped. Only clients
@@ -116,10 +147,6 @@ where
                 .compress_when(SizeAbove::new(COMPRESSION_MIN_BYTES).and(compressible)),
         )
         .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
-        .layer(Extension(identity));
-    let service = TowerToHyperService::new(router);
-
-    builder.serve_connection(TokioIo::new(io), service).await
 }
 
 async fn refuse_framing(mut response: Response) -> Response {

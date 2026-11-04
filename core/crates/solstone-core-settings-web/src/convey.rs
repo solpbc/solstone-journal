@@ -14,9 +14,16 @@ pub async fn status(journal_root: std::path::PathBuf) -> Response {
     let port = read_port(&journal_root).unwrap_or(DEFAULT_PORT);
     let dashboard_url = format!("http://localhost:{port}");
     let bind = format!("127.0.0.1:{port}");
+    // `dashboard_url` is a read contract. The human line names the command
+    // that opens the journal where the browser port can be closed.
+    let open_line = if cfg!(any(target_os = "linux", target_os = "macos")) {
+        "open it with:      solstone journal open".to_owned()
+    } else {
+        format!("dashboard url:     {dashboard_url}")
+    };
     json_response(json!({
         "dashboard_url": dashboard_url,
-        "status_text": format!("convey\n  bind:              {bind}\n  dashboard url:     {dashboard_url}"),
+        "status_text": format!("convey\n  bind:              {bind}\n  {open_line}"),
     }))
 }
 

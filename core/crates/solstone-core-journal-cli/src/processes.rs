@@ -220,6 +220,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["navigate"],
     },
     NativeProcessSpec {
+        token: "open",
+        binary: "solstone-core",
+        preset_argv: &["open"],
+    },
+    NativeProcessSpec {
         token: "importer",
         binary: "solstone-core",
         preset_argv: &["importer"],
@@ -480,6 +485,12 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "navigate",
         module: "solstone.think.tools.navigate",
+        preset_argv: EMPTY,
+        kind: ProcessKind::Service,
+    },
+    ProcessSpec {
+        token: "open",
+        module: "solstone.think.open",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },

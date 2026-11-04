@@ -70,13 +70,22 @@ fn print_status(journal: &Path, json: bool) -> ExitCode {
         }
     };
     if json {
+        // A read contract: the installer parses exactly this shape.
         println!("{{\n  \"dashboard_url\": \"http://localhost:{port}\"\n}}");
     } else {
-        println!(
-            "convey\n  bind:              127.0.0.1:{port}\n  dashboard url:     http://localhost:{port}"
-        );
+        println!("convey\n  bind:              127.0.0.1:{port}\n  {}", open_line(port));
     }
     ExitCode::SUCCESS
+}
+
+/// How the owner opens the journal. A read verb never mints a link, so on
+/// macOS and Linux it names the command that does.
+fn open_line(port: i64) -> String {
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
+        "open it with:      solstone journal open".to_owned()
+    } else {
+        format!("dashboard url:     http://localhost:{port}")
+    }
 }
 
 /// Where the owner opens this journal: the port convey published, or the default when it has not.

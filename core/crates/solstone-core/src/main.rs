@@ -37,7 +37,7 @@ use solstone_core_cli::{
     JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
     JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
     MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
-    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, OPEN_HELP, OPEN_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
     SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
     SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
     SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
@@ -68,6 +68,7 @@ mod install_provider;
 #[cfg(unix)]
 mod journal_route;
 mod navigate;
+mod open;
 #[cfg(unix)]
 mod service;
 #[cfg(unix)]
@@ -265,6 +266,14 @@ fn run_supervisor(
     }
     #[cfg(unix)]
     solstone_core_system::storage_privacy::apply_private_root(&journal);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if !options.no_convey && browser_port_in_use(options.port) {
+        eprintln!(
+            "your journal can't start because port {} on this computer is already in use, usually by a journal running under another account. only one journal can run on this computer at a time.",
+            options.port
+        );
+        return ExitCode::from(EXIT_UNAVAILABLE);
+    }
     #[cfg(unix)]
     let _service_capture = match service_capture::start_if_managed(&journal, options.hosted_parent)
     {
@@ -292,6 +301,24 @@ fn run_supervisor(
         #[cfg(windows)]
         installed_task,
     )))
+}
+
+/// Whether something already holds the browser port. A bind conflict proves
+/// the port is busy, not who holds it, so nothing here names or probes it.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn browser_port_in_use(port: u16) -> bool {
+    use std::net::{Ipv4Addr, Ipv6Addr, TcpListener};
+    port != 0
+        && [
+            TcpListener::bind((Ipv4Addr::LOCALHOST, port)),
+            TcpListener::bind((Ipv6Addr::LOCALHOST, port)),
+        ]
+        .iter()
+        .any(|bound| {
+            bound
+                .as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::AddrInUse)
+        })
 }
 
 #[cfg(any(unix, windows))]
@@ -967,6 +994,16 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::Service(outcome)) => run_service(outcome),
+        Ok(Command::Open { path, print_url }) => open::run(path, print_url),
+        Ok(Command::OpenHelp) => {
+            print!("{OPEN_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::OpenUsage) => {
+            eprint!("{OPEN_USAGE}");
+            eprintln!("solstone journal open: error: invalid arguments");
+            ExitCode::from(2)
+        }
         Ok(Command::Navigate { path }) => navigate::run(path),
         Ok(Command::NavigateHelp) => {
             print!("{NAVIGATE_HELP}");

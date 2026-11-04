@@ -2175,6 +2175,9 @@ button:focus:not(:focus-visible) {
         <option value="storage">storage</option>
         <option value="facets">facets</option>
       </optgroup>
+      <optgroup label="this computer" id="navSelectLocalAccess" hidden>
+        <option value="localaccess">local access</option>
+      </optgroup>
       <optgroup label="help">
         <option value="support">support</option>
       </optgroup>
@@ -2206,6 +2209,10 @@ button:focus:not(:focus-visible) {
       <button class="settings-nav-item" data-section="sync" id="tab-sync" role="tab" aria-selected="false" aria-controls="section-sync" tabindex="-1">sync</button>
       <button class="settings-nav-item" data-section="storage" id="tab-storage" role="tab" aria-selected="false" aria-controls="section-storage" tabindex="-1">storage</button>
       <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
+    </div>
+    <div class="settings-nav-group" id="navGroupLocalAccess" hidden>
+      <div class="settings-nav-label">this computer</div>
+      <button class="settings-nav-item" data-section="localaccess" id="tab-localaccess" role="tab" aria-selected="false" aria-controls="section-localaccess" tabindex="-1">local access</button>
     </div>
   </nav>
 
@@ -2587,6 +2594,35 @@ button:focus:not(:focus-visible) {
           </div>
         </div>
       </div>
+      </form>
+    </section>
+
+    <!-- Local access Section (macOS and Linux only; hidden unless the journal answers) -->
+    <section class="settings-section" id="section-localaccess" role="tabpanel" aria-labelledby="tab-localaccess">
+      <h2>local access</h2>
+      <p class="settings-section-desc">whether other accounts and programs on this computer can open your journal without a link from you.</p>
+      <div id="localAccessLoadState" class="settings-load-state" aria-live="polite">loading…</div>
+      <form class="settings-form" onsubmit="return false;" id="localAccessForm" hidden>
+        <div class="settings-field">
+          <label for="field-local-access-open">open to this computer</label>
+          <div style="display: flex; align-items: center; gap: 1em;">
+            <label class="toggle-switch toggle-positive">
+              <input type="checkbox" id="field-local-access-open">
+              <span class="slider"></span>
+            </label>
+            <span id="localAccessState" style="color: var(--ink-soft); font-size: 0.9em;"></span>
+          </div>
+        </div>
+        <p id="localAccessUnavailable" hidden style="color: var(--ink-faint); font-size: 0.9em;"></p>
+        <div id="localAccessConfirm" hidden role="group" aria-labelledby="localAccessConfirmTitle" style="margin-top: 1em; padding: 1em; background: var(--warn-wash); border-radius: 4px;">
+          <p id="localAccessConfirmTitle" style="margin-top: 0;"></p>
+          <div id="localAccessConfirmDetail" style="font-size: 0.9em;"></div>
+          <div style="display: flex; gap: 0.75em; margin-top: 1em;">
+            <button type="button" id="localAccessConfirmYes"></button>
+            <button type="button" id="localAccessConfirmNo"></button>
+          </div>
+        </div>
+        <p id="localAccessResult" role="status" aria-live="polite" style="font-size: 0.9em;"></p>
       </form>
     </section>
 
@@ -3066,7 +3102,7 @@ setupModalAccessibility('cleanupModal');
 setupModalAccessibility('facetCreateModal');
 
 // ========== NAVIGATION ==========
-const VALID_SECTIONS = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'support', 'facets'];
+const VALID_SECTIONS = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'support', 'facets', 'localaccess'];
 
 let settingsAbout = '';
 let settingsAboutLoad = null;
@@ -6547,6 +6583,122 @@ async function initSettingsWorkspace() {
   }
 }
 
+// ========== LOCAL ACCESS ==========
+// macOS and Linux only: the journal answers this route where its browser port
+// can be closed. Elsewhere it is absent and the section stays hidden.
+const LOCAL_ACCESS_ROUTE = '/app/settings/api/local-access';
+let localAccess = null;
+
+async function loadLocalAccess() {
+  let response;
+  try {
+    response = await fetch(LOCAL_ACCESS_ROUTE, { cache: 'no-store' });
+  } catch (_) {
+    return;
+  }
+  if (response.status === 404) return;
+  document.getElementById('navGroupLocalAccess').hidden = false;
+  document.getElementById('navSelectLocalAccess').hidden = false;
+  if (!response.ok) {
+    document.getElementById('localAccessLoadState').textContent = 'this setting could not be read. try again shortly.';
+    return;
+  }
+  renderLocalAccess(await response.json());
+}
+
+function renderLocalAccess(state) {
+  localAccess = state;
+  document.getElementById('localAccessLoadState').hidden = true;
+  document.getElementById('localAccessForm').hidden = false;
+  document.getElementById('localAccessConfirm').hidden = true;
+  const toggle = document.getElementById('field-local-access-open');
+  toggle.checked = !!state.open;
+  toggle.disabled = !state.available;
+  const unavailable = document.getElementById('localAccessUnavailable');
+  unavailable.hidden = !!state.available;
+  unavailable.textContent = state.message || '';
+  document.getElementById('localAccessState').textContent = state.open
+    ? `open: anyone signed in to this computer, and any program running on it, can open your journal at ${window.location.host}. this is how your journal has always worked.`
+    : 'closed: only you can open your journal, from Journal.app or with solstone journal open. other accounts on this computer see a page that names nothing.';
+}
+
+async function showCloseLocalAccess() {
+  const detail = document.getElementById('localAccessConfirmDetail');
+  detail.replaceChildren();
+  const intro = document.createElement('p');
+  intro.textContent = 'these programs reached your journal without a browser since it started, and stop working until they\'re updated:';
+  detail.appendChild(intro);
+  const list = document.createElement('ul');
+  try {
+    const census = await window.apiJson('/app/health/api/local-programs');
+    for (const item of census.items || []) {
+      const row = document.createElement('li');
+      row.textContent = item.program;
+      list.appendChild(row);
+    }
+  } catch (_) {}
+  if (list.children.length) {
+    detail.appendChild(list);
+  } else {
+    intro.textContent = 'nothing on this computer has reached your journal without a browser since it started.';
+  }
+  const bookmarks = document.createElement('p');
+  bookmarks.textContent = `a bookmark to ${window.location.host} shows a page asking you to open your journal from Journal.app or with solstone journal open. this browser stays open to you.`;
+  detail.appendChild(bookmarks);
+  showLocalAccessConfirm('close local access to this computer?', 'close local access', 'keep it open', false);
+}
+
+function showOpenLocalAccess() {
+  const detail = document.getElementById('localAccessConfirmDetail');
+  detail.replaceChildren();
+  const risk = document.createElement('p');
+  risk.textContent = 'anyone signed in to this computer, and any program running on it, will be able to open your journal, read it and change it, without a link from you.';
+  detail.appendChild(risk);
+  showLocalAccessConfirm('open your journal to everyone on this computer?', 'yes, open it', 'keep it closed', true);
+}
+
+function showLocalAccessConfirm(title, yes, no, open) {
+  document.getElementById('localAccessConfirmTitle').textContent = title;
+  const yesButton = document.getElementById('localAccessConfirmYes');
+  const noButton = document.getElementById('localAccessConfirmNo');
+  yesButton.textContent = yes;
+  noButton.textContent = no;
+  yesButton.onclick = () => saveLocalAccess(open);
+  noButton.onclick = () => renderLocalAccess(localAccess);
+  document.getElementById('localAccessConfirm').hidden = false;
+  noButton.focus();
+}
+
+async function saveLocalAccess(open) {
+  const result = document.getElementById('localAccessResult');
+  result.textContent = '';
+  try {
+    const response = await fetch(LOCAL_ACCESS_ROUTE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(open ? { open: true, consent: true } : { open: false }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      result.textContent = body.error || 'your choice could not be saved. please try again.';
+      renderLocalAccess(localAccess);
+      return;
+    }
+    renderLocalAccess(body);
+    result.textContent = open ? 'local access is open.' : 'local access is closed.';
+  } catch (_) {
+    result.textContent = 'your choice could not be saved. please try again.';
+    renderLocalAccess(localAccess);
+  }
+}
+
+document.getElementById('field-local-access-open').addEventListener('change', (event) => {
+  // Nothing changes until the owner confirms.
+  event.target.checked = !!localAccess?.open;
+  if (localAccess?.open) showCloseLocalAccess();
+  else showOpenLocalAccess();
+});
+
 function initSettings() {
   if (settingsInitialized) return;
   settingsInitialized = true;
@@ -6555,6 +6707,7 @@ function initSettings() {
   loadVision();
   loadSync();
   loadStorage();
+  loadLocalAccess();
   setupAutoSave();
   setupStorageListeners();
 

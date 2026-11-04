@@ -50,7 +50,7 @@ const STATUS_HELP: &str = concat!(
     "  --json      Print machine-readable status.\n",
 );
 const STATUS_5051: &str =
-    "convey\n  bind:              127.0.0.1:5051\n  dashboard url:     http://localhost:5051\n";
+    "convey\n  bind:              127.0.0.1:5051\n  open it with:      solstone journal open\n";
 const JSON_5051: &str = "{\n  \"dashboard_url\": \"http://localhost:5051\"\n}\n";
 const JSON_5015: &str = "{\n  \"dashboard_url\": \"http://localhost:5015\"\n}\n";
 

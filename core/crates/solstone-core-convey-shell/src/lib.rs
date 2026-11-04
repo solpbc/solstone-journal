@@ -78,6 +78,8 @@
 //! shell entry point.
 
 #[cfg(all(feature = "host", any(target_os = "linux", target_os = "macos")))]
+mod browser_access;
+#[cfg(all(feature = "host", any(target_os = "linux", target_os = "macos")))]
 mod local_endpoint;
 
 #[cfg(feature = "host")]
@@ -988,11 +990,23 @@ pub async fn bind_with_authorization(
             socket_path.as_deref(),
         );
         let live_record = Arc::new(std::sync::Mutex::new(record.clone()));
-        let router = loopback_router.merge(local_endpoint::routes(
-            programs.clone(),
-            live_record.clone(),
-        ));
-        let socket = local_endpoint::start(&options.journal_root, &record, router.clone());
+        let access =
+            browser_access::BrowserAccess::load(&options.journal_root, loopback_ipv4.port());
+        let router = loopback_router
+            .merge(local_endpoint::routes(
+                programs.clone(),
+                live_record.clone(),
+            ))
+            .merge(browser_access::setting_routes(access.clone()));
+        // Minting a link is the socket's alone: only the owner's account reaches it.
+        let socket = local_endpoint::start(
+            &options.journal_root,
+            &record,
+            router
+                .clone()
+                .merge(browser_access::socket_routes(access.clone())),
+        );
+        access.set_socket_live(socket.is_some());
         if socket.is_none() {
             live_record
                 .lock()
@@ -1000,10 +1014,15 @@ pub async fn bind_with_authorization(
                 .socket_path = PathBuf::new();
         }
         (
-            router.layer(axum::middleware::from_fn_with_state(
-                programs,
-                local_endpoint::count_tcp,
-            )),
+            router
+                .layer(axum::middleware::from_fn_with_state(
+                    access,
+                    browser_access::gate,
+                ))
+                .layer(axum::middleware::from_fn_with_state(
+                    programs,
+                    local_endpoint::count_tcp,
+                )),
             socket,
         )
     };
@@ -1033,10 +1052,9 @@ async fn serve_loopback(
     listeners: solstone_core_convey_http::listener::LoopbackListeners,
     router: Router,
 ) {
-    use solstone_core_convey_http::identity::AccessBasis;
-    use solstone_core_convey_http::serve::{serve_connection, tcp_builder};
-    // Every connection here is `Localhost`, the owner. The guard is layered on
-    // this listener alone; the door serves the shared routes without it.
+    use solstone_core_convey_http::serve::tcp_builder;
+    // The guard is layered on this listener alone; the door serves the shared
+    // routes without it.
     let router = loopback_guard::apply_layer(router);
     loop {
         let Ok((stream, _)) = listeners.accept().await else {
@@ -1045,9 +1063,23 @@ async fn serve_loopback(
         let router = router.clone();
         tokio::spawn(async move {
             let builder = tcp_builder();
-            if let Err(error) =
-                serve_connection(stream, router, AccessBasis::Localhost, &builder).await
-            {
+            // macOS and Linux: the browser-authorization gate supplies the
+            // owner basis per request, after admission. Elsewhere every
+            // connection here is `Localhost`, the owner.
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            let served = solstone_core_convey_http::serve::serve_connection_unstamped(
+                stream, router, &builder,
+            )
+            .await;
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+            let served = solstone_core_convey_http::serve::serve_connection(
+                stream,
+                router,
+                solstone_core_convey_http::identity::AccessBasis::Localhost,
+                &builder,
+            )
+            .await;
+            if let Err(error) = served {
                 log::debug!("convey loopback connection failed: {error}");
             }
         });

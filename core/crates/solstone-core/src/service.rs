@@ -817,10 +817,14 @@ fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
     // The rest of setup, pairing included, happens in the browser, and an owner who brought the
     // journal up from a terminal was never told where that is.
     println!();
-    println!(
-        "open your journal: {}",
-        crate::settings::journal_url(&journal)
-    );
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
+        println!("open your journal: solstone journal open");
+    } else {
+        println!(
+            "open your journal: {}",
+            crate::settings::journal_url(&journal)
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
 

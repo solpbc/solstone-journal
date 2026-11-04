@@ -117,6 +117,22 @@ pub const NAVIGATE_HELP: &str = concat!(
     "  -h, --help            show this help message and exit\n",
 );
 
+pub const OPEN_USAGE: &str = "usage: solstone journal open [-h] [--print-url] [PATH]\n";
+
+/// `journal open --help` in the owner-facing command vocabulary.
+pub const OPEN_HELP: &str = concat!(
+    "usage: solstone journal open [-h] [--print-url] [PATH]\n",
+    "\n",
+    "Open your journal in your browser with a one-time link.\n",
+    "\n",
+    "positional arguments:\n",
+    "  PATH          page to open (default: /)\n",
+    "\n",
+    "options:\n",
+    "  -h, --help    show this help message and exit\n",
+    "  --print-url   print the one-time link instead of opening a browser\n",
+);
+
 pub const SETTINGS_USAGE: &str = "usage: solstone journal settings [-h] [-v] [-d] {convey} ...\n";
 
 pub const SETTINGS_HELP: &str = concat!(
@@ -794,6 +810,12 @@ pub enum Command {
     NavigateUsage,
     NavigateFacetRetired(&'static str),
     NavigateHelp,
+    Open {
+        path: String,
+        print_url: bool,
+    },
+    OpenUsage,
+    OpenHelp,
     Settings(SettingsCommand),
     SettingsHelp,
     SettingsConveyHelp,
@@ -1567,6 +1589,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
             }
             Ok(parse_navigate(rest).unwrap_or(Command::NavigateUsage))
         }
+        [command, rest @ ..] if command == OsStr::new("open") => Ok(parse_open(rest)),
         [command, rest @ ..] if command == OsStr::new("settings") => parse_settings(rest),
         [command, rest @ ..] if command == OsStr::new("contract") => parse_contract(rest),
         [command, rest @ ..] if command == OsStr::new("transcribe") => parse_transcribe(rest),
@@ -1891,6 +1914,27 @@ fn parse_journal_brain_owner(args: &[OsString]) -> JournalBrainOwnerCommand {
             }
         }
         _ => JournalBrainOwnerCommand::Usage,
+    }
+}
+
+fn parse_open(args: &[OsString]) -> Command {
+    if args.iter().any(is_help) {
+        return Command::OpenHelp;
+    }
+    let mut path = None;
+    let mut print_url = false;
+    for argument in args {
+        match argument.to_str() {
+            Some("--print-url") => print_url = true,
+            Some(value) if !value.starts_with('-') && !value.is_empty() && path.is_none() => {
+                path = Some(value.to_owned());
+            }
+            _ => return Command::OpenUsage,
+        }
+    }
+    Command::Open {
+        path: path.unwrap_or_else(|| "/".to_owned()),
+        print_url,
     }
 }
 

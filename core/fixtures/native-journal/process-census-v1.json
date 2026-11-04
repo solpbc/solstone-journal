@@ -42,6 +42,7 @@
     { "token": "spl", "module": "solstone.think.spl_native", "preset_argv": [], "surface": "service" },
     { "token": "mcp", "module": "solstone.think.mcp_endpoint", "preset_argv": [], "surface": "service" },
     { "token": "navigate", "module": "solstone.think.tools.navigate", "preset_argv": [], "surface": "service" },
+    { "token": "open", "module": "solstone.think.open", "preset_argv": [], "surface": "service" },
     { "token": "heartbeat", "module": "solstone.think.heartbeat", "preset_argv": [], "surface": "service" },
     { "token": "convey", "module": "solstone.convey.cli", "preset_argv": [], "surface": "service" },
     { "token": "service", "module": "solstone.think.service", "preset_argv": [], "surface": "service" },
