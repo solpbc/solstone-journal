@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.67 (build 116)] - 2026-11-03
+
+### Changed
+
+- updated the bundled journal to [2.0.67](https://solstone.app/releases#v2.0.67) →
+
 ### Fixed
 
-- on shared macs, the journal app checks that it is showing your journal. your mark stays in your own dock, and older custom icons are removed from the journal app shared by everyone on the mac.
-
+- on shared macs, the journal app checks that it is showing your journal.
+- the journal app no longer puts your journal's mark on the app itself, which everyone on the mac shares, and removes the one earlier versions put there. your journal's mark shows in the dock while the journal app is open.
 - your journal's mark now has the same colors and layout on this mac as in your journal's network app: darker words, its own colors around each icon. when your journal's mark can't be read, it shows as unavailable.
+- VoiceOver now reads your journal's mark, its colors and then its words, in setup, in the journal app's window and when you pair a device. before, it read nothing there.
 
 ## [2.0.66 (build 115)] - 2026-11-02
 
