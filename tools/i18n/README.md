@@ -77,7 +77,7 @@ node tools/i18n/verify-esm.mjs /var/tmp/i18n-target-resources \
   tools/i18n/fixtures/runtime-contract/expected-esm.json
 ```
 
-Run process-based generated API checks explicitly; routine `make ci` keeps compiler tests in process:
+No `make` target runs the compiler's tests, so run them with the commands at the top of this guide. The process-based generated API checks sit behind a feature:
 
 ```sh
 cargo test --manifest-path tools/i18n/Cargo.toml --locked --offline --features full-tests
