@@ -5,7 +5,6 @@
 
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use solstone_core_generate::{
     GenerateRequest, SessionClient, SessionCloseError, SessionCompletion, SessionLaunchError,
@@ -14,9 +13,13 @@ use solstone_core_generate::{
 
 pub const WIRE_PATH_ENV: &str = "SOLSTONE_DESCRIBE_GENERATE_WIRE";
 
+/// Describe keeps no clock of its own on a request. Each lane bounds its own
+/// requests, with room for the model's thinking, and answers a timeout with a
+/// retryable refusal that describe handles per frame; the process as a whole is
+/// bounded by its caller.
 pub trait DescribeSession {
     fn submit(&self, request: GenerateRequest) -> Result<(), SessionSubmitError>;
-    fn recv_timeout(&self, timeout: Duration) -> Result<SessionCompletion, SessionReceiveError>;
+    fn recv(&self) -> Result<SessionCompletion, SessionReceiveError>;
     fn close(&self) -> Result<(), SessionCloseError>;
 }
 
@@ -24,8 +27,8 @@ impl DescribeSession for SessionClient {
     fn submit(&self, request: GenerateRequest) -> Result<(), SessionSubmitError> {
         Self::submit(self, request)
     }
-    fn recv_timeout(&self, timeout: Duration) -> Result<SessionCompletion, SessionReceiveError> {
-        Self::recv_timeout(self, timeout)
+    fn recv(&self) -> Result<SessionCompletion, SessionReceiveError> {
+        Self::recv(self)
     }
     fn close(&self) -> Result<(), SessionCloseError> {
         Self::close(self)

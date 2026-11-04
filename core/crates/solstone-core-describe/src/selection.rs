@@ -4,7 +4,6 @@
 //! Phase-two frame selection shared by the native describe pipeline.
 
 use std::collections::{BTreeMap, HashSet};
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use solstone_core_generate::{
@@ -140,9 +139,7 @@ pub fn select(
     session
         .submit(request)
         .map_err(|_| SelectionError::Session)?;
-    let completion = session
-        .recv_timeout(Duration::from_secs(120))
-        .map_err(|_| SelectionError::Session)?;
+    let completion = session.recv().map_err(|_| SelectionError::Session)?;
     let SessionCompletion::Response(response) = completion else {
         return Err(SelectionError::Session);
     };
@@ -509,7 +506,6 @@ fn extraction_guidance(overrides: &BTreeMap<String, CategoryOverride>) -> String
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::collections::BTreeMap;
-    use std::time::Duration;
 
     use crate::session::DescribeSession;
     use serde::Deserialize;
@@ -555,7 +551,7 @@ mod tests {
             Ok(())
         }
 
-        fn recv_timeout(&self, _: Duration) -> Result<SessionCompletion, SessionReceiveError> {
+        fn recv(&self) -> Result<SessionCompletion, SessionReceiveError> {
             Ok(SessionCompletion::Response(self.0.clone()))
         }
 
@@ -746,7 +742,7 @@ mod tests {
             panic!("a single categorized frame must not reach the selection model");
         }
 
-        fn recv_timeout(&self, _: Duration) -> Result<SessionCompletion, SessionReceiveError> {
+        fn recv(&self) -> Result<SessionCompletion, SessionReceiveError> {
             panic!("a single categorized frame must not reach the selection model");
         }
 

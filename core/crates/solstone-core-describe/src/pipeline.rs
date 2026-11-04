@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde_json::{Map, Value, json};
 use solstone_core_generate::{GenerateResponse, RefusalReason, SessionCompletion};
@@ -692,7 +692,7 @@ fn run_prepared(
                 );
             }
             let completion = session
-                .recv_timeout(Duration::from_secs(120))
+                .recv()
                 .map_err(|_| blocked(options.journal, work_key, None))?;
             let SessionCompletion::Response(response) = completion else {
                 return Err(blocked(options.journal, work_key, None));
@@ -1443,9 +1443,7 @@ fn extract_category(
         session
             .submit(request)
             .map_err(|_| ExtractionError::Session)?;
-        let completion = session
-            .recv_timeout(Duration::from_secs(120))
-            .map_err(|_| ExtractionError::Session)?;
+        let completion = session.recv().map_err(|_| ExtractionError::Session)?;
         let SessionCompletion::Response(response) = completion else {
             return Err(ExtractionError::Session);
         };

@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
 - importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
 - thinking now shows the model your own endpoint serves, not the local model, and the local model's name no longer repeats `local/`.
+- one frame that takes the model more than two minutes no longer stops a whole screen video from being described. that frame is tried again, the rest of the video is described either way, and with your own model a frame now gets the extra time your thinking setting allows.
 - fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.

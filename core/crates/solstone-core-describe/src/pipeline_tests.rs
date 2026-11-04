@@ -72,7 +72,7 @@ impl DescribeSession for ScriptedSession {
         Ok(())
     }
 
-    fn recv_timeout(&self, _timeout: Duration) -> Result<SessionCompletion, SessionReceiveError> {
+    fn recv(&self) -> Result<SessionCompletion, SessionReceiveError> {
         self.responses
             .lock()
             .expect("test response lock")
