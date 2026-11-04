@@ -60,9 +60,9 @@ const MAX_OUTSTANDING_LINKS: usize = 32;
 const MAX_SESSIONS: usize = 64;
 const MAX_PATH_BYTES: usize = 2048;
 
-const CLOSED_PROGRAM_MESSAGE: &str = "the journal on this computer doesn't answer programs here anymore. if it's yours, run solstone journal open to open it in a browser, or update this program.";
+const CLOSED_PROGRAM_MESSAGE: &str = "programs on this computer can no longer open this journal here. if it's yours, run solstone journal open to open it in a browser, or update this program.";
 const CONSENT_NEEDED: &str = "opening local access lets any account on this computer, and any program running here, open your journal without asking. confirm to turn it on.";
-const UNAVAILABLE: &str = "this choice needs your journal's private connection on this computer, which isn't running right now. your journal stays open to this computer until it is.";
+const UNAVAILABLE: &str = "this choice needs your journal's private connection on this computer, which isn't running right now. local access stays open until it is.";
 const SAVE_FAILED: &str = "your choice could not be saved. please try again.";
 
 /// Live browser-authorization state for one running journal.
@@ -330,7 +330,7 @@ fn landing(link_refused: bool) -> Response {
 }
 
 const LANDING_HEAD: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>journal</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;line-height:1.5;color:#222;background:#fafaf8}code{background:#eee;padding:.1rem .3rem;border-radius:.2rem}@media(prefers-color-scheme:dark){body{color:#ddd;background:#1b1b1a}code{background:#333}}</style></head><body><h1>open your journal</h1>";
-const LANDING_TAIL: &str = "<p>open your journal from Journal.app, or run <code>solstone journal open</code> in a terminal.</p></body></html>";
+const LANDING_TAIL: &str = "<p>open your journal from the journal app on a mac, or run <code>solstone journal open</code> in a terminal.</p></body></html>";
 
 /// Routes only the owner socket serves.
 pub(crate) fn socket_routes(access: Arc<BrowserAccess>) -> Router {

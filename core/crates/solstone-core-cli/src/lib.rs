@@ -123,7 +123,7 @@ pub const OPEN_USAGE: &str = "usage: solstone journal open [-h] [--print-url] [P
 pub const OPEN_HELP: &str = concat!(
     "usage: solstone journal open [-h] [--print-url] [PATH]\n",
     "\n",
-    "Open your journal in your browser with a one-time link.\n",
+    "open your journal in your browser with a one-time link.\n",
     "\n",
     "positional arguments:\n",
     "  PATH          page to open (default: /)\n",

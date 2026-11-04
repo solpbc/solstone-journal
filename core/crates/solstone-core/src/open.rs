@@ -103,7 +103,7 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
         200 => body["url"]
             .as_str()
             .map(str::to_owned)
-            .ok_or_else(|| "your journal's answer could not be read. try again.".to_owned()),
+            .ok_or_else(|| "the response from your journal could not be read. try again.".to_owned()),
         404 => Err("your running journal is older than this command. restart it with solstone journal down, then solstone journal up, and try again.".to_owned()),
         _ => Err(body["error"]
             .as_str()

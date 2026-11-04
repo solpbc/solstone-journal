@@ -6618,15 +6618,15 @@ function renderLocalAccess(state) {
   unavailable.hidden = !!state.available;
   unavailable.textContent = state.message || '';
   document.getElementById('localAccessState').textContent = state.open
-    ? `open: anyone signed in to this computer, and any program running on it, can open your journal at ${window.location.host}. this is how your journal has always worked.`
-    : 'closed: only you can open your journal, from Journal.app or with solstone journal open. other accounts on this computer see a page that names nothing.';
+    ? `open: anyone using this computer, and any program running on it, can open your journal at ${window.location.host}. this is how your journal has always worked.`
+    : 'closed: to open your journal in a browser, use a one-time link from the journal app on a mac or from solstone journal open. other accounts on this computer see a page that shows nothing from your journal.';
 }
 
 async function showCloseLocalAccess() {
   const detail = document.getElementById('localAccessConfirmDetail');
   detail.replaceChildren();
   const intro = document.createElement('p');
-  intro.textContent = 'these programs reached your journal without a browser since it started, and stop working until they\'re updated:';
+  intro.textContent = 'these programs reached your journal without a browser since it started, and will stop working until they\'re updated:';
   detail.appendChild(intro);
   const list = document.createElement('ul');
   try {
@@ -6643,7 +6643,7 @@ async function showCloseLocalAccess() {
     intro.textContent = 'nothing on this computer has reached your journal without a browser since it started.';
   }
   const bookmarks = document.createElement('p');
-  bookmarks.textContent = `a bookmark to ${window.location.host} shows a page asking you to open your journal from Journal.app or with solstone journal open. this browser stays open to you; any other browser needs opening again.`;
+  bookmarks.textContent = `a bookmark to ${window.location.host} shows a page asking you to open your journal from the journal app or with solstone journal open. this browser keeps access until your journal restarts; any other browser needs a new one-time link.`;
   detail.appendChild(bookmarks);
   showLocalAccessConfirm('close local access to this computer?', 'close local access', 'keep it open', false);
 }
@@ -6652,7 +6652,7 @@ function showOpenLocalAccess() {
   const detail = document.getElementById('localAccessConfirmDetail');
   detail.replaceChildren();
   const risk = document.createElement('p');
-  risk.textContent = 'anyone signed in to this computer, and any program running on it, will be able to open your journal, read it and change it, without a link from you.';
+  risk.textContent = 'anyone using this computer, and any program running on it, will be able to open your journal, read it and change it, without a link from you.';
   detail.appendChild(risk);
   showLocalAccessConfirm('open your journal to everyone on this computer?', 'yes, open it', 'keep it closed', true);
 }
