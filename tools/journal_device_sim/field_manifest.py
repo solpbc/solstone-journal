@@ -124,10 +124,10 @@ def _raw_files(
     root: Path, tracked: set[str], day: str, stream: str, segment: str
 ) -> list[Path]:
     directory = root / "journal" / day / stream / segment
-    if stream == "field.audio":
+    if stream in {"field.audio", "verona.audio"}:
         prefix = "audio"
         extensions = _AUDIO_EXTENSIONS
-    elif stream == "field.screen":
+    elif stream in {"field.screen", "verona.screen"}:
         prefix = "screen"
         extensions = _SCREEN_EXTENSIONS
     else:
@@ -212,7 +212,7 @@ def build_field_manifest(root: Path) -> dict[str, Any]:
             ) from error
         files = _raw_files(field_root, tracked, day, stream, segment)
         selected_paths.update(path.relative_to(field_root).as_posix() for path in files)
-        modality = "audio" if stream == "field.audio" else "screen"
+        modality = "audio" if stream in {"field.audio", "verona.audio"} else "screen"
         handler = "transcribe" if modality == "audio" else "describe"
         output = f"{modality}.jsonl"
         for path in files:

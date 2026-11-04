@@ -16,10 +16,15 @@ from tools.journal_device_sim.manifest import ManifestError
 
 class FieldManifestTests(unittest.TestCase):
     def test_generator_uses_only_tracked_closed_raw_paths(self) -> None:
+        for namespace in ("field", "verona"):
+            with self.subTest(namespace=namespace):
+                self._assert_tracked_closed_raw_paths(namespace)
+
+    def _assert_tracked_closed_raw_paths(self, namespace: str) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            audio_dir = root / "journal/20260201/field.audio/080000_600"
-            screen_dir = root / "journal/20260201/field.screen/090000_60"
+            audio_dir = root / f"journal/20260201/{namespace}.audio/080000_600"
+            screen_dir = root / f"journal/20260201/{namespace}.screen/090000_60"
             audio_dir.mkdir(parents=True)
             screen_dir.mkdir(parents=True)
             audio = audio_dir / "audio.wav"
@@ -41,7 +46,7 @@ class FieldManifestTests(unittest.TestCase):
                         "segments": [
                             {
                                 "day": "20260201",
-                                "stream": "field.audio",
+                                "stream": f"{namespace}.audio",
                                 "segment": "080000_600",
                                 "source": "chime6",
                                 "source_id": "S01",
@@ -50,7 +55,7 @@ class FieldManifestTests(unittest.TestCase):
                             },
                             {
                                 "day": "20260201",
-                                "stream": "field.screen",
+                                "stream": f"{namespace}.screen",
                                 "segment": "090000_60",
                                 "source": "screen-source",
                                 "source_id": "screen-1",
