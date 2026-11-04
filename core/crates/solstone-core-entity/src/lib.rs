@@ -75,9 +75,9 @@ pub use store::{
     read_merge_log, read_named_identity_groups, read_prepared_history, read_retired_entities,
     read_visible_history, reconcile_prepared_history, reconcile_prepared_history_reporting,
     record_ambiguity_choice, record_ambiguity_group_choice, record_ambiguity_observation,
-    record_ambiguity_observation_checked, record_deleted_entity, record_merge_candidate,
-    record_merge_candidate_checked, record_observation_ops_strict, record_seeded_deletion,
-    recover_interrupted_entity_merge, refresh_identity_map_cache,
+    record_ambiguity_observation_checked, record_ambiguity_observations, record_deleted_entity,
+    record_merge_candidate, record_merge_candidate_checked, record_observation_ops_strict,
+    record_seeded_deletion, recover_interrupted_entity_merge, refresh_identity_map_cache,
     remove_entity_ambiguity_references, remove_voiceprints_by_key, repair_entity_identities,
     rescope_facet_ambiguities, resolve_observation_entity_dir, restore_journal_entity_version,
     restore_review, retired_record_damage, retired_record_hold, retired_state, retry_add_for_test,
@@ -98,10 +98,10 @@ pub use trust_lock::{
 pub use store::test_counters::test_instrumentation;
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::test_counters::test_instrumentation::{
-    CacheFailMode, CacheFailureGuard, entities_dir_listing_count, increment_entities_dir_listing,
-    increment_relationship_read, increment_visible_history_read, relationship_read_count_for_path,
-    reset_test_counters, set_write_resolved_cache_failure_hook, total_relationship_read_count,
-    total_visible_history_read_count, visible_history_read_count,
+    CacheFailMode, CacheFailureGuard, ambiguity_rewrite_count, entities_dir_listing_count,
+    increment_entities_dir_listing, increment_relationship_read, increment_visible_history_read,
+    relationship_read_count_for_path, reset_test_counters, set_write_resolved_cache_failure_hook,
+    total_relationship_read_count, total_visible_history_read_count, visible_history_read_count,
 };
 
 #[cfg(test)]

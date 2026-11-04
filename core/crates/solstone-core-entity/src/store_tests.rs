@@ -3959,3 +3959,64 @@ fn save_entity_identity_with_map_matches_public_save() {
         assert_eq!(v_pub, v_map);
     }
 }
+
+#[test]
+fn batched_ambiguity_observations_rewrite_once_and_match_one_at_a_time() {
+    // Every fourth observation repeats an earlier name from another origin, so
+    // the batch both creates rows and updates rows it created itself.
+    let observations = (0..40)
+        .map(|index| {
+            let query = format!("person {}", if index % 4 == 3 { index - 3 } else { index });
+            AmbiguityObservation {
+                scope: json!({"kind": "journal"}),
+                query: query.clone(),
+                normalized_query: query,
+                observed_tier: 5,
+                ranked_candidates: ["a", "b"]
+                    .into_iter()
+                    .map(|id| json!({"id": id, "name": id, "tier": 5, "score": 1.0}))
+                    .collect(),
+                origin: json!({"lane": "archive_merge", "source_entity_id": format!("source_{index}")}),
+            }
+        })
+        .collect::<Vec<_>>();
+    let one_at_a_time = TempDir::new();
+    crate::reset_test_counters();
+    for observation in &observations {
+        record_ambiguity_observation(one_at_a_time.path(), observation).unwrap();
+    }
+    assert_eq!(crate::ambiguity_rewrite_count(), observations.len());
+    let batched = TempDir::new();
+    crate::reset_test_counters();
+    let rows = crate::record_ambiguity_observations(batched.path(), &observations).unwrap();
+    assert_eq!(crate::ambiguity_rewrite_count(), 1);
+    assert_eq!(rows.len(), observations.len());
+    // The two journals are written moments apart; compare all but the clock.
+    fn without_times(value: &mut Value) {
+        match value {
+            Value::Object(object) => {
+                for key in [
+                    "at",
+                    "first_seen",
+                    "last_seen",
+                    "resolved_at",
+                    "replaced_at",
+                    "completed_at",
+                ] {
+                    object.remove(key);
+                }
+                object.values_mut().for_each(without_times);
+            }
+            Value::Array(items) => items.iter_mut().for_each(without_times),
+            _ => {}
+        }
+    }
+    let settled = |root: &Path| {
+        let mut rows = read_ambiguities(root, MalformedPolicy::Raise).unwrap();
+        rows.iter_mut().for_each(without_times);
+        rows
+    };
+    let expected = settled(one_at_a_time.path());
+    assert_eq!(expected.len(), 30);
+    assert_eq!(settled(batched.path()), expected);
+}

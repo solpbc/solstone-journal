@@ -809,6 +809,34 @@ pub fn record_ambiguity_observation_checked(
     observation: &AmbiguityObservation,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<Value, EntityWriteError> {
+    let mut rows = record_ambiguity_observations_checked(
+        journal_root,
+        std::slice::from_ref(observation),
+        checkpoint,
+    )?;
+    Ok(rows.pop().expect("one row per observation"))
+}
+
+/// Create or update several ambiguity observations, in order, with one read
+/// and one rewrite of the ambiguity file under one hold of the trust and file
+/// locks. Each observation applies exactly as `record_ambiguity_observation`
+/// would after the ones before it: recording an observation changes only the
+/// ambiguity rows, never the entity census or facet links the policy reads.
+pub fn record_ambiguity_observations(
+    journal_root: &Path,
+    observations: &[AmbiguityObservation],
+) -> Result<Vec<Value>, EntityWriteError> {
+    record_ambiguity_observations_checked(journal_root, observations, &|| Ok(()))
+}
+
+fn record_ambiguity_observations_checked(
+    journal_root: &Path,
+    observations: &[AmbiguityObservation],
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<Vec<Value>, EntityWriteError> {
+    if observations.is_empty() {
+        return Ok(Vec::new());
+    }
     let _trust = hold_entity_trust_lock(journal_root)?;
     let census =
         super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
@@ -817,122 +845,137 @@ pub fn record_ambiguity_observation_checked(
         config_read.as_ref().and_then(|r| r.config.as_ref()),
     );
     mutate_ambiguities_checked(journal_root, checkpoint, |rows| {
-        let scope_key = ambiguity_scope_key(&observation.scope)?;
-        let key = format!("{scope_key}|{}", observation.normalized_query);
-        let origin_key = origin_key(&observation.origin)?;
-        let now = ambiguity_now_iso();
-        let existing = rows.iter_mut().find(|row| {
-            row.get("normalized_query").and_then(Value::as_str)
-                == Some(observation.normalized_query.as_str())
-                && row
-                    .get("scope")
-                    .is_some_and(|scope| scope_key_for_row(scope).as_deref() == Some(&scope_key))
-        });
-        if let Some(row) = existing {
-            let object = row.as_object_mut().expect("strict rows are objects");
-            object.insert(
-                "latest_query".to_owned(),
-                Value::String(observation.query.clone()),
-            );
-            object.insert(
-                "observed_tier".to_owned(),
-                Value::from(observation.observed_tier),
-            );
-            object.insert(
-                "ranked_candidates".to_owned(),
-                Value::Array(observation.ranked_candidates.clone()),
-            );
-            let origin_keys = object
-                .get_mut("origin_keys")
-                .and_then(Value::as_array_mut)
-                .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
-                    detail: "ambiguity row has invalid origin_keys".to_owned(),
-                })?;
-            if !origin_keys
-                .iter()
-                .any(|item| item.as_str() == Some(&origin_key))
-            {
-                origin_keys.push(Value::String(origin_key));
-                object
-                    .get_mut("origins")
-                    .and_then(Value::as_array_mut)
-                    .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
-                        detail: "ambiguity row has invalid origins".to_owned(),
-                    })?
-                    .push(observation.origin.clone());
-                let count = object
-                    .get("occurrence_count")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(0)
-                    .checked_add(1)
-                    .ok_or_else(|| EntityWriteError::AmbiguityCountOverflow {
-                        ambiguity_id: object
-                            .get("ambiguity_id")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned(),
-                    })?;
-                object.insert("occurrence_count".to_owned(), Value::from(count));
-                object.insert("last_seen".to_owned(), Value::String(now.clone()));
-            }
-            let allow_typo = super::review_policy::typo_scope_is_current(
-                journal_root,
-                object,
-                &census,
-                typo_enabled,
-            )?;
-            super::review_policy::apply_ambiguity_review_policy(object, &census, allow_typo, &now);
-            return Ok(row.clone());
-        }
+        observations
+            .iter()
+            .map(|observation| {
+                apply_ambiguity_observation(journal_root, rows, observation, &census, typo_enabled)
+            })
+            .collect()
+    })
+}
 
-        let mut row = Map::new();
-        row.insert("schema_version".to_owned(), Value::from(1));
-        row.insert("ambiguity_id".to_owned(), Value::String(ambiguity_id(&key)));
-        row.insert("scope".to_owned(), observation.scope.clone());
-        row.insert(
-            "normalized_query".to_owned(),
-            Value::String(observation.normalized_query.clone()),
-        );
-        row.insert(
-            "original_query".to_owned(),
-            Value::String(observation.query.clone()),
-        );
-        row.insert(
+fn apply_ambiguity_observation(
+    journal_root: &Path,
+    rows: &mut Vec<Value>,
+    observation: &AmbiguityObservation,
+    census: &super::census::IdentityCensus,
+    typo_enabled: bool,
+) -> Result<Value, EntityWriteError> {
+    let scope_key = ambiguity_scope_key(&observation.scope)?;
+    let key = format!("{scope_key}|{}", observation.normalized_query);
+    let origin_key = origin_key(&observation.origin)?;
+    let now = ambiguity_now_iso();
+    let existing = rows.iter_mut().find(|row| {
+        row.get("normalized_query").and_then(Value::as_str)
+            == Some(observation.normalized_query.as_str())
+            && row
+                .get("scope")
+                .is_some_and(|scope| scope_key_for_row(scope).as_deref() == Some(&scope_key))
+    });
+    if let Some(row) = existing {
+        let object = row.as_object_mut().expect("strict rows are objects");
+        object.insert(
             "latest_query".to_owned(),
             Value::String(observation.query.clone()),
         );
-        row.insert(
+        object.insert(
             "observed_tier".to_owned(),
             Value::from(observation.observed_tier),
         );
-        row.insert(
+        object.insert(
             "ranked_candidates".to_owned(),
             Value::Array(observation.ranked_candidates.clone()),
         );
-        row.insert(
-            "origins".to_owned(),
-            Value::Array(vec![observation.origin.clone()]),
-        );
-        row.insert(
-            "origin_keys".to_owned(),
-            Value::Array(vec![Value::String(origin_key)]),
-        );
-        row.insert("first_seen".to_owned(), Value::String(now.clone()));
-        row.insert("last_seen".to_owned(), Value::String(now.clone()));
-        row.insert("occurrence_count".to_owned(), Value::from(1));
-        row.insert("status".to_owned(), Value::String("open".to_owned()));
-        row.insert("resolved_entity_id".to_owned(), Value::Null);
-        row.insert("resolved_at".to_owned(), Value::Null);
-        let mut audit = Map::new();
-        audit.insert("prior_choices".to_owned(), Value::Array(Vec::new()));
-        row.insert("audit".to_owned(), Value::Object(audit));
-        let allow_typo =
-            super::review_policy::typo_scope_is_current(journal_root, &row, &census, typo_enabled)?;
-        super::review_policy::apply_ambiguity_review_policy(&mut row, &census, allow_typo, &now);
-        let row = Value::Object(row);
-        rows.push(row.clone());
-        Ok(row)
-    })
+        let origin_keys = object
+            .get_mut("origin_keys")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
+                detail: "ambiguity row has invalid origin_keys".to_owned(),
+            })?;
+        if !origin_keys
+            .iter()
+            .any(|item| item.as_str() == Some(&origin_key))
+        {
+            origin_keys.push(Value::String(origin_key));
+            object
+                .get_mut("origins")
+                .and_then(Value::as_array_mut)
+                .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
+                    detail: "ambiguity row has invalid origins".to_owned(),
+                })?
+                .push(observation.origin.clone());
+            let count = object
+                .get("occurrence_count")
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or_else(|| EntityWriteError::AmbiguityCountOverflow {
+                    ambiguity_id: object
+                        .get("ambiguity_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                })?;
+            object.insert("occurrence_count".to_owned(), Value::from(count));
+            object.insert("last_seen".to_owned(), Value::String(now.clone()));
+        }
+        let allow_typo = super::review_policy::typo_scope_is_current(
+            journal_root,
+            object,
+            census,
+            typo_enabled,
+        )?;
+        super::review_policy::apply_ambiguity_review_policy(object, census, allow_typo, &now);
+        return Ok(row.clone());
+    }
+
+    let mut row = Map::new();
+    row.insert("schema_version".to_owned(), Value::from(1));
+    row.insert("ambiguity_id".to_owned(), Value::String(ambiguity_id(&key)));
+    row.insert("scope".to_owned(), observation.scope.clone());
+    row.insert(
+        "normalized_query".to_owned(),
+        Value::String(observation.normalized_query.clone()),
+    );
+    row.insert(
+        "original_query".to_owned(),
+        Value::String(observation.query.clone()),
+    );
+    row.insert(
+        "latest_query".to_owned(),
+        Value::String(observation.query.clone()),
+    );
+    row.insert(
+        "observed_tier".to_owned(),
+        Value::from(observation.observed_tier),
+    );
+    row.insert(
+        "ranked_candidates".to_owned(),
+        Value::Array(observation.ranked_candidates.clone()),
+    );
+    row.insert(
+        "origins".to_owned(),
+        Value::Array(vec![observation.origin.clone()]),
+    );
+    row.insert(
+        "origin_keys".to_owned(),
+        Value::Array(vec![Value::String(origin_key)]),
+    );
+    row.insert("first_seen".to_owned(), Value::String(now.clone()));
+    row.insert("last_seen".to_owned(), Value::String(now.clone()));
+    row.insert("occurrence_count".to_owned(), Value::from(1));
+    row.insert("status".to_owned(), Value::String("open".to_owned()));
+    row.insert("resolved_entity_id".to_owned(), Value::Null);
+    row.insert("resolved_at".to_owned(), Value::Null);
+    let mut audit = Map::new();
+    audit.insert("prior_choices".to_owned(), Value::Array(Vec::new()));
+    row.insert("audit".to_owned(), Value::Object(audit));
+    let allow_typo =
+        super::review_policy::typo_scope_is_current(journal_root, &row, census, typo_enabled)?;
+    super::review_policy::apply_ambiguity_review_policy(&mut row, census, allow_typo, &now);
+    let row = Value::Object(row);
+    rows.push(row.clone());
+    Ok(row)
 }
 
 /// Record or replace a resolved ambiguity choice.
@@ -1428,13 +1471,13 @@ where
     mutate_ambiguities_checked(journal_root, &|| Ok(()), mutate)
 }
 
-fn mutate_ambiguities_checked<F>(
+fn mutate_ambiguities_checked<F, T>(
     journal_root: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,
     mutate: F,
-) -> Result<Value, EntityWriteError>
+) -> Result<T, EntityWriteError>
 where
-    F: FnOnce(&mut Vec<Value>) -> Result<Value, EntityWriteError>,
+    F: FnOnce(&mut Vec<Value>) -> Result<T, EntityWriteError>,
 {
     let path = ambiguities_path(journal_root)?;
     let _lock = hold_lock(
@@ -1456,6 +1499,8 @@ where
     }
     let contents = serialize_ambiguity_rows(&rows).map_err(EntityWriteError::AmbiguityWrite)?;
     checkpoint().map_err(EntityWriteError::PublicationRefused)?;
+    #[cfg(any(test, feature = "test-hooks"))]
+    super::test_counters::test_instrumentation::increment_ambiguity_rewrite();
     write_text(&path, &contents, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(EntityWriteError::AmbiguityWrite)?;
     Ok(result)

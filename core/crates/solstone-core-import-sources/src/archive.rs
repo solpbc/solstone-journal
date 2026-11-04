@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use solstone_core_entity::{
     AmbiguityObservation, EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
     every_journal_entity, live_journal_entities, read_journal_principal,
-    record_ambiguity_observation, record_entity_resolution_from_name_evidence,
+    record_ambiguity_observations, record_entity_resolution_from_name_evidence,
     rewrite_identity_map_cache,
 };
 use solstone_core_entity_matching::normalize_resolution_query;
@@ -3164,14 +3164,14 @@ fn publish_pending_ambiguities(
             });
         }
     }
-    for observation in &state.pending_ambiguities {
-        record_ambiguity_observation(target, observation).map_err(|error| {
-            ImportSourcesError::MergePublishFailed {
-                detail: error.to_string(),
-                mutation,
-            }
-        })?;
-    }
+    // One read and one rewrite for every observation; a rewrite per
+    // observation made a large archive's publication quadratic.
+    record_ambiguity_observations(target, &state.pending_ambiguities).map_err(|error| {
+        ImportSourcesError::MergePublishFailed {
+            detail: error.to_string(),
+            mutation,
+        }
+    })?;
     Ok(())
 }
 
@@ -5614,5 +5614,71 @@ mod tests {
             .filter(|path| !path.ends_with(".lock"))
             .collect::<Vec<_>>();
         assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn archive_merge_records_every_uncertain_name_in_one_ambiguity_rewrite() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        let source = tree.path.join("source");
+        fs::create_dir(&target).unwrap();
+        fs::create_dir(&source).unwrap();
+        let save = |root: &Path, id: &str, name: &str| {
+            solstone_core_entity::save_entity_identity(
+                root,
+                id,
+                &json!({"id": id, "name": name, "type": "Person"}),
+                None,
+            )
+            .unwrap();
+        };
+        // Each bare first name matches two people here only by first word,
+        // and the archive names each twice.
+        let firsts = ["Sam", "Alex", "Robin", "Morgan"];
+        for first in firsts {
+            let lower = first.to_lowercase();
+            for last in ["Alpha", "Beta"] {
+                save(
+                    &target,
+                    &format!("{lower}-{}", last.to_lowercase()),
+                    &format!("{first} {last}"),
+                );
+            }
+            for copy in 0..2 {
+                save(&source, &format!("source-{lower}-{copy}"), first);
+            }
+        }
+        let files = walk_files(&source)
+            .into_iter()
+            .map(|path| {
+                let name = path
+                    .strip_prefix(&source)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                (name, fs::read(path).unwrap())
+            })
+            .collect::<Vec<_>>();
+        let members = files
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), bytes.as_slice()))
+            .collect::<Vec<_>>();
+        let archive = write_zip(&tree.path, &members);
+
+        solstone_core_entity::reset_test_counters();
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+
+        assert_eq!(solstone_core_entity::ambiguity_rewrite_count(), 1);
+        let rows = solstone_core_entity::read_ambiguities(
+            &target,
+            solstone_core_journal_io::MalformedPolicy::Raise,
+        )
+        .unwrap();
+        assert_eq!(rows.len(), firsts.len());
+        assert!(
+            rows.iter().all(|row| row["occurrence_count"] == 2),
+            "{rows:?}"
+        );
     }
 }

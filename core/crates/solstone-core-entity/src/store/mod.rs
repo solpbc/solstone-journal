@@ -131,8 +131,8 @@ pub use write::{
     PreparedIdentityChange, PreparedReconcileFailure, dismiss_ambiguity, prepare_identity_changes,
     publish_identity_change, reconcile_prepared_history, reconcile_prepared_history_reporting,
     record_ambiguity_choice, record_ambiguity_observation, record_ambiguity_observation_checked,
-    refresh_identity_map_cache, rewrite_identity_map_cache, save_entity_identity,
-    save_entity_identity_with_map, write_resolved_identity_map_cache,
+    record_ambiguity_observations, refresh_identity_map_cache, rewrite_identity_map_cache,
+    save_entity_identity, save_entity_identity_with_map, write_resolved_identity_map_cache,
 };
 
 #[cfg(test)]

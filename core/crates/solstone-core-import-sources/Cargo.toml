@@ -67,6 +67,7 @@ solstone-core-system.workspace = true
 
 [dev-dependencies]
 pulldown-cmark.workspace = true
+solstone-core-entity = { workspace = true, features = ["test-hooks"] }
 solstone-core-journal-archive.workspace = true
 serde_json.workspace = true
 solstone-core-format.workspace = true
