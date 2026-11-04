@@ -2,6 +2,7 @@
 
 this file records third-party materials used by solstone, including model
 weights, tokenizer data and place names bundled with solstone, place data an owner may download for the map app, the map app's renderer, the
+icons and word list the journal's pages and mark use, the
 restic, rclone, nvattest and CED components bundled in every package, provider artifacts downloaded at runtime into the
 journal provider cache, and test fixtures derived from permissively licensed
 sources.
@@ -46,7 +47,7 @@ FireRedVAD attribution and source details ship in `share/licenses/models/NOTICE.
 ## bundled place names (area tier)
 
 `lib/solstone_journal_models/assets/geo/area-tier.bin` (SHA-256
-`8c704d95d270c7c18c11f827c572eb2ac5ed50bbe3101d29e49a2df59c617087`) names a
+`fca4287415ca3807ae7d477d23aef2ee9cc81adc195536159164c8058b0800df`) names a
 location reading after a nearby town, and gives the map app its country and
 state borders. The journal reads it on the owner's own computer; nothing is
 looked up anywhere. It is built by `scripts/build_location_area_tier.py` from
@@ -172,6 +173,72 @@ project https://leafletjs.com
 
 License notice: BSD 2-Clause License (BSD-2-Clause). The licence text ships
 beside the library as `vendor/leaflet/LICENSE`.
+
+## icons and the journal mark (Lucide, Feather, EFF word list)
+
+The journal's pages draw icons from Lucide, served from the journal at
+`/static/icons/`. The journal mark draws its 60 icons from the same set and
+its words from the EFF long word list; the mark is compiled into the
+journal.
+
+### Lucide
+
+Source: https://github.com/lucide-icons/lucide (lucide-static)
+
+License notice: ISC License. The icons Lucide derives from Feather are under
+the MIT License, listed in `/static/icons/LICENSE`; five of the mark's icons
+are among them: `feather`, `key`, `lock`, `music` and `tv`. Both texts
+follow, and also ship beside the icons in that file.
+
+```text
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+```text
+The MIT License (MIT) (for the icons listed above)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### EFF long word list
+
+Source: https://www.eff.org/dice ("EFF's Long Wordlist", 2016), Electronic
+Frontier Foundation
+
+License notice: Creative Commons Attribution 3.0 United States
+(CC BY 3.0 US), https://creativecommons.org/licenses/by/3.0/us/
 
 ## Windows time zone names (Unicode CLDR)
 
