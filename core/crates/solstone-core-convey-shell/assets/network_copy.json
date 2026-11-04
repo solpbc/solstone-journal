@@ -33,7 +33,7 @@
   "SUCCESS_VERIFY_NOTE_ANYWHERE": "on that device, check it shows this same mark, then answer there. it can reach your journal from anywhere. didn't pair it?",
   "SUCCESS_VERIFY_NOTE_THIS_COMPUTER": "if the solstone app asks, check it shows this same mark, then answer there. didn't pair it?",
   "SUCCESS_REMOVE_LABEL": "unpair this device",
-  "SUCCESS_REMOVED": "unpaired. it can't reach your journal until it's paired again.",
+  "SUCCESS_REMOVED": "unpaired. the device can't reach your journal until it's paired again.",
   "SUCCESS_REMOVE_FAIL": "couldn't unpair this device. try again, or unpair it under devices.",
   "STATUS_SENTENCES": {
     "direct_online": "your journal is reachable on your network.",

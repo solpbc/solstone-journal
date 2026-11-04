@@ -172,6 +172,8 @@ enum AXID {
                 static let status = "journal.devices.pairing.status"
                 static let statusState = "journal.devices.pairing.status.state"
                 static let reopen = "journal.devices.pairing.reopen"
+                static let unpair = "journal.devices.pairing.unpair"
+                static let unpairState = "journal.devices.pairing.unpair.state"
             }
 
             enum RevokeConfirm {

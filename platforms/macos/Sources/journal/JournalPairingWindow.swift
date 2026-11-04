@@ -13,8 +13,10 @@ struct JournalPairingWindow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(DevicesCopy.pairingTitle)
-                .font(.title2.weight(.semibold))
+            if !pairedAndRemoved {
+                Text(title)
+                    .font(.title2.weight(.semibold))
+            }
 
             // Shown continuously alongside the QR/link, the whole time the owner is pairing a
             // new device — matching the connecting device's own confirm dialog, which shows the
@@ -32,8 +34,8 @@ struct JournalPairingWindow: View {
                     openingContent
                 case let .open(link, qr, _, _):
                     openContent(link: link, qr: qr)
-                case .paired:
-                    EmptyView()
+                case let .paired(device, relay):
+                    pairedContent(device: device, relay: relay)
                 case .expired:
                     expiredContent
                 case let .openFailed(detail):
@@ -48,7 +50,7 @@ struct JournalPairingWindow: View {
 
             HStack {
                 Spacer()
-                Button(DevicesCopy.close) {
+                Button(isPaired ? DevicesCopy.pairedDone : DevicesCopy.close) {
                     model.closePairing()
                 }
             }
@@ -60,6 +62,49 @@ struct JournalPairingWindow: View {
         .onDisappear {
             copyResetTask?.cancel()
             copyResetTask = nil
+        }
+    }
+
+    private var isPaired: Bool {
+        if case .paired = model.pairingState { return true }
+        return false
+    }
+
+    private var pairedAndRemoved: Bool {
+        isPaired && model.pairedUnpairState == .removed
+    }
+
+    private var title: String {
+        guard case let .paired(device, _) = model.pairingState else { return DevicesCopy.pairingTitle }
+        let label = device?.displayLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return label.isEmpty ? DevicesCopy.pairedHeadingUnnamed : DevicesCopy.pairedHeading(label)
+    }
+
+    private func pairedContent(device: NonceStatusResponse.Device?, relay: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if model.pairedUnpairState == .removed {
+                Text(DevicesCopy.pairedRemoved)
+            } else {
+                Text(relay ? DevicesCopy.pairedNoteAnywhere : DevicesCopy.pairedNote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.pairedUnpairState == .failed {
+                    Text(DevicesCopy.pairedRemoveFailed)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if device != nil {
+                    Button(DevicesCopy.pairedUnpair, role: .destructive) {
+                        Task { await model.unpairPairedDevice() }
+                    }
+                    .disabled(model.pairedUnpairState == .busy)
+                    .accessibilityIdentifier(AXID.Journal.Devices.Pairing.unpair)
+                }
+            }
+            AXStateCompanion(
+                id: AXID.Journal.Devices.Pairing.unpairState,
+                value: model.pairedUnpairState.axToken
+            )
         }
     }
 

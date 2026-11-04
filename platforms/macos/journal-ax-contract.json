@@ -80,6 +80,8 @@
       "journal.devices.pairing.sheet",
       "journal.devices.pairing.status",
       "journal.devices.pairing.status.state",
+      "journal.devices.pairing.unpair",
+      "journal.devices.pairing.unpair.state",
       "journal.devices.peerJournals.count.state",
       "journal.devices.peerJournals.header",
       "journal.devices.revokeConfirm.cancel",
@@ -209,6 +211,10 @@
     "journal.devices.pairing.status.state" : {
       "kind" : "enum",
       "vocabulary" : "JournalDevicesPairingState"
+    },
+    "journal.devices.pairing.unpair.state" : {
+      "kind" : "enum",
+      "vocabulary" : "JournalPairedUnpairState"
     },
     "journal.devices.peerJournals.count.state" : {
       "kind" : "numeric"
@@ -407,6 +413,12 @@
       "none",
       "delivering",
       "delivered",
+      "failed"
+    ],
+    "JournalPairedUnpairState" : [
+      "idle",
+      "busy",
+      "removed",
       "failed"
     ],
     "JournalRitualOperationToken" : [

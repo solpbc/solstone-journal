@@ -19,7 +19,7 @@ enum PairingState {
     case idle
     case opening
     case open(link: String, qr: NSImage, deadline: Duration, nonce: String)
-    case paired
+    case paired(device: NonceStatusResponse.Device?, relay: Bool)
     case expired(previousLink: String)
     case openFailed(detail: String)
 }
@@ -29,8 +29,10 @@ extension PairingState: @unchecked Sendable {}
 extension PairingState: Equatable {
     static func == (lhs: PairingState, rhs: PairingState) -> Bool {
         switch (lhs, rhs) {
-        case (.idle, .idle), (.opening, .opening), (.paired, .paired):
+        case (.idle, .idle), (.opening, .opening):
             return true
+        case let (.paired(lhsDevice, lhsRelay), .paired(rhsDevice, rhsRelay)):
+            return lhsDevice == rhsDevice && lhsRelay == rhsRelay
         case let (.open(lhsLink, _, lhsDeadline, lhsNonce), .open(rhsLink, _, rhsDeadline, rhsNonce)):
             return lhsLink == rhsLink && lhsDeadline == rhsDeadline && lhsNonce == rhsNonce
         case let (.expired(lhsLink), .expired(rhsLink)):
@@ -68,6 +70,7 @@ final class JournalDevicesModel {
     var revokeError: String?
     var isPairingPresented = false
     var pairingState: PairingState = .idle
+    var pairedUnpairState: JournalPairedUnpairState = .idle
     var pairingNow: Duration = .zero
     // This journal's own mark presentation, so the pairing window can show "this is your journal"
     // the whole time an owner is pairing a new device — mirrors the connecting device's own
@@ -203,6 +206,7 @@ final class JournalDevicesModel {
         pairingTask?.cancel()
         pairingNow = clock.now()
         pairingState = .opening
+        pairedUnpairState = .idle
         isPairingPresented = true
 
         pairingTask = Task { @MainActor [weak self] in
@@ -216,7 +220,28 @@ final class JournalDevicesModel {
         pairingTask = nil
         isPairingPresented = false
         pairingState = .idle
+        pairedUnpairState = .idle
         pairingNow = clock.now()
+    }
+
+    /// Removes the device a used link just added, from the view that still shows the mark.
+    func unpairPairedDevice() async {
+        guard case let .paired(device?, _) = pairingState,
+              pairedUnpairState != .busy, pairedUnpairState != .removed else { return }
+        pairedUnpairState = .busy
+        do {
+            _ = try await client.unpairDevice(fingerprint: device.cid)
+        } catch is CancellationError {
+            pairedUnpairState = .idle
+            return
+        } catch {
+            guard isPairedDeviceNotFound(error) else {
+                pairedUnpairState = .failed
+                return
+            }
+        }
+        pairedUnpairState = .removed
+        await loadDevices()
     }
 
     func copyOpenPairingLink() {
@@ -252,7 +277,13 @@ final class JournalDevicesModel {
                 }
 
                 if tick > 0 && tick % 2 == 0 {
-                    await pollPairingNonce(pair.nonce, deadline: deadline, attemptID: attemptID, previousLink: pair.pairLink)
+                    await pollPairingNonce(
+                        pair.nonce,
+                        deadline: deadline,
+                        attemptID: attemptID,
+                        previousLink: pair.pairLink,
+                        relay: pair.relay == true
+                    )
                     guard isActive(attemptID), !Task.isCancelled else { return }
                     if case .paired = pairingState { return }
                     if case .expired = pairingState { return }
@@ -274,7 +305,8 @@ final class JournalDevicesModel {
         _ nonce: String,
         deadline: Duration,
         attemptID: UUID,
-        previousLink: String
+        previousLink: String,
+        relay: Bool
     ) async {
         do {
             let status = try await client.nonceStatus(nonce: nonce)
@@ -285,8 +317,9 @@ final class JournalDevicesModel {
                 return
             }
             if status.used {
-                pairingState = .paired
-                isPairingPresented = false
+                // The other device now asks its owner to compare this journal's mark, so the
+                // mark stays on screen until the owner closes this view.
+                pairingState = .paired(device: status.device, relay: relay)
                 activeAttemptID = nil
                 pairingTask = nil
                 await loadDevices()

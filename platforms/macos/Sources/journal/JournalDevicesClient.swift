@@ -81,6 +81,7 @@ struct PairStartResponse: Decodable, Equatable, Sendable {
     var expiresIn: Int
     var deviceLabel: String
     var caFingerprint: String
+    var relay: Bool?
 
     enum CodingKeys: String, CodingKey {
         case nonce
@@ -88,12 +89,25 @@ struct PairStartResponse: Decodable, Equatable, Sendable {
         case expiresIn = "expires_in"
         case deviceLabel = "device_label"
         case caFingerprint = "ca_fingerprint"
+        case relay
     }
 }
 
 struct NonceStatusResponse: Decodable, Equatable, Sendable {
+    /// The device a used link added, when the journal still holds it.
+    struct Device: Decodable, Equatable, Sendable {
+        var cid: String
+        var displayLabel: String?
+
+        enum CodingKeys: String, CodingKey {
+            case cid
+            case displayLabel = "display_label"
+        }
+    }
+
     var present: Bool
     var used: Bool
+    var device: Device?
 }
 
 struct UnpairResponse: Decodable, Equatable, Sendable {

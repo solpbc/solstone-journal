@@ -72,7 +72,7 @@ struct JournalDevicesSnapshotTests {
         try await renderDevicesNotRunning()
         try await renderDevicesNotReady()
         try await renderPairingOpen()
-        try await renderPairingPairedDismissed()
+        try await renderPairingPaired()
         try await renderPairingExpired()
     }
 
@@ -137,21 +137,17 @@ struct JournalDevicesSnapshotTests {
         try await renderSheet(model, to: "journal-devices-pairing-open.png")
     }
 
-    private func renderPairingPairedDismissed() async throws {
-        let model = paneModel(
-            state: .loaded,
-            devices: [
-                DeviceRow(
-                    displayLabel: "new device",
-                    role: "phone",
-                    network: "local",
-                    fingerprint: "new-phone"
-                ),
-            ]
-        )
-        model.pairingState = .paired
-        model.isPairingPresented = false
-        try await renderPane(model, to: "journal-devices-pairing-paired-dismissed.png")
+    private func renderPairingPaired() async throws {
+        let model = pairingModel()
+        let device = NonceStatusResponse.Device(cid: "new-phone", displayLabel: "studio phone")
+        model.pairingState = .paired(device: device, relay: false)
+        try await renderSheet(model, to: "journal-devices-pairing-paired.png")
+        model.pairingState = .paired(device: device, relay: true)
+        try await renderSheet(model, to: "journal-devices-pairing-paired-relay.png")
+        model.pairedUnpairState = .failed
+        try await renderSheet(model, to: "journal-devices-pairing-paired-unpair-failed.png")
+        model.pairedUnpairState = .removed
+        try await renderSheet(model, to: "journal-devices-pairing-paired-unpaired.png")
     }
 
     private func renderPairingExpired() async throws {

@@ -253,6 +253,8 @@
       if (ceremony.sameMachine) verifyNote = 'SUCCESS_VERIFY_NOTE_THIS_COMPUTER';
       else if (ceremony.material?.relay === true) verifyNote = 'SUCCESS_VERIFY_NOTE_ANYWHERE';
       elements.successVerify.textContent = copy(verifyNote);
+      elements.successHeading.hidden = false;
+      elements.successVerify.hidden = false;
       elements.remove.hidden = !ceremony.pairedDevice?.cid;
       elements.remove.disabled = false;
       elements.removeResult.hidden = true;
@@ -280,6 +282,9 @@
       if (generation !== ceremony.generation || ceremony.state !== 'complete') return;
       elements.remove.hidden = removed;
       elements.remove.disabled = false;
+      // Unpaired: the heading and the note describe a device that can no longer reach it.
+      elements.successHeading.hidden = removed;
+      elements.successVerify.hidden = removed;
       elements.removeResult.textContent = copy(removed ? 'SUCCESS_REMOVED' : 'SUCCESS_REMOVE_FAIL');
       elements.removeResult.hidden = false;
       if (removed) options.onDeviceRemoved?.();

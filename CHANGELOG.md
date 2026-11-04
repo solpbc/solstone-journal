@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, the journal app's pairing view now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
 - importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
 - importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
 - fixed another android permission error when downloading a journal archive.

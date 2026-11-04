@@ -430,6 +430,7 @@ for (const id of ids) {
 
 const calls = [];
 const inbox = [];
+let pairingStatusAnswer = { used: false };
 const statusPlan = [];
 const startPlan = [];
 const syncPlan = [];
@@ -633,7 +634,7 @@ window.chrome = {
         return;
       }
       if (cmd === 'pairingStatus') {
-        send(id, true, { value: { used: false } });
+        send(id, true, { value: pairingStatusAnswer });
         return;
       }
       if (cmd === 'flow') {
@@ -1711,6 +1712,38 @@ if (thisPcCalls.some(c => c.cmd === 'flow' && c.args?.intent === 'continue-solst
   throw new Error('this-pc click added continue-solstone call');
 }
 pass('continue in solstone app and download offer');
+
+// A used link keeps the journal's mark up while the device asks, and offers to unpair it.
+pairingStatusAnswer = { present: true, used: true, device: { cid: 'sha256:new-device', display_label: 'studio' } };
+const pairingTick = [...intervals.values()].at(-1);
+await pairingTick();
+await pairingTick();
+await flush();
+const pairedPane = $('pane').querySelector('.pairing');
+if (!pairedPane) throw new Error('the pairing view closed when a device arrived');
+if (!pairedPane.querySelector('.mark-card') && !pairedPane.querySelector('[class*="mark"]')) {
+  throw new Error('the mark left the pairing view when a device arrived');
+}
+if (!pairedPane.querySelector('[data-pairing="paired-note"]')) throw new Error('no note about answering on the device');
+const unpairBtn = pairedPane.querySelector('[data-pairing="unpair"]');
+if (!unpairBtn) throw new Error('no way to unpair the device that just arrived');
+const callsBeforeUnpair = calls.length;
+unpairBtn.click();
+await flush();
+await flush();
+const unpairCall = calls.slice(callsBeforeUnpair).find(c => c.cmd === 'convey' && c.args?.path === '/app/network/unpair');
+if (unpairCall?.args?.body?.fingerprint !== 'sha256:new-device') {
+  throw new Error(`expected unpair of the new device, got: ${JSON.stringify(unpairCall)}`);
+}
+const unpairedPane = $('pane').querySelector('.pairing');
+if (!unpairedPane?.querySelector('[data-pairing="unpaired"]')) throw new Error('unpairing did not say so');
+if (unpairedPane.querySelector('[data-pairing="paired-note"]')) throw new Error('the note outlived the pairing');
+if (unpairedPane.querySelector('[data-pairing="unpair"]')) throw new Error('unpair stayed offered after it worked');
+click('done');
+await flush();
+if ($('pane').querySelector('.pairing')) throw new Error('done left the pairing view open');
+pairingStatusAnswer = { used: false };
+pass('a used link keeps the mark up and offers to unpair');
 
 inbox.length = 0;
 

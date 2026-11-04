@@ -563,10 +563,7 @@ pub fn link_serve(ctx: CommandContext<'_>) -> Result<ResidentCommand<'_>, Comman
         Ok(selection) => selection,
         Err(error) => return Err(CommandOutput::failure(format!("{error}\n"), 1)),
     };
-    let ca_jid = match ctx.link_serve {
-        Some(runner) => runner.pinned_ca_jid(&selection.bundle.ca_chain_pem),
-        None => crate::seam::head_ca_jid(&selection.bundle.ca_chain_pem),
-    };
+    let ca_jid = pinned_ca_jid(&ctx, &selection.bundle.ca_chain_pem);
     if bundle_is_held(&selection, ca_jid.as_deref()) {
         return Err(CommandOutput::failure(held_lines(&selection.label), 5));
     }
@@ -730,7 +727,7 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}{unpaired_note}",
         selection.label, state_str, version_str
     );
-    let ca_jid = crate::seam::head_ca_jid(&selection.bundle.ca_chain_pem);
+    let ca_jid = pinned_ca_jid(&ctx, &selection.bundle.ca_chain_pem);
     if bundle_is_held(&selection, ca_jid.as_deref()) {
         output.push_str(&held_lines(&selection.label));
     }
@@ -743,6 +740,14 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         }
     }
     CommandOutput::success(output)
+}
+
+/// The journal id of the CA a stored chain pins, checked the way `serve` checks it.
+fn pinned_ca_jid(ctx: &CommandContext<'_>, ca_chain_pem: &[String]) -> Option<String> {
+    match ctx.link_serve {
+        Some(runner) => runner.pinned_ca_jid(ca_chain_pem),
+        None => crate::seam::head_ca_jid(ca_chain_pem),
+    }
 }
 
 fn mark_words_from_jid(jid: &str) -> Result<String, spl_core::mark::MarkError> {
@@ -3382,6 +3387,49 @@ mod tests {
             link_serve: None,
             link_status_probe: probe,
         })
+    }
+
+    struct UnreadablePinRunner;
+
+    impl crate::seam::LinkServeRunner for UnreadablePinRunner {
+        fn start(
+            &self,
+            _request: crate::seam::LinkServeRequest,
+        ) -> Result<Box<dyn crate::seam::LinkServeSession>, crate::seam::LinkServeError> {
+            unreachable!("status never starts a session")
+        }
+
+        fn pinned_ca_jid(&self, _ca_chain_pem: &[String]) -> Option<String> {
+            None
+        }
+    }
+
+    // Falsified by status reading the chain's head itself: a certificate that copies a key
+    // reads as the journal there while serve and confirm refuse it.
+    #[test]
+    fn status_holds_a_pairing_serve_would_hold() {
+        let temp = temp_dir("status-same-check-as-serve");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+        let argv = Box::leak(string_args(&["--label", "alpha"]).into_boxed_slice());
+        let transport = Box::leak(Box::new(ScriptedHttpTransport::new(vec![])));
+        let output = link_status(CommandContext {
+            args: argv,
+            env: &env,
+            stdin: "",
+            transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: Some(&UnreadablePinRunner),
+            link_status_probe: None,
+        });
+        assert_eq!(output.exit, 0);
+        assert!(output.stdout.contains(&held_lines("alpha")));
     }
 
     #[test]

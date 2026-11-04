@@ -33,6 +33,17 @@ enum DevicesCopy {
     static let openFreshLink = "open a fresh link"
     static let pairingFailedTitle = "couldn't open pairing"
     static let close = "close"
+    static let pairedHeadingUnnamed = "a new device can now reach your journal"
+    static let pairedNote = "on that device, check it shows this same mark, then answer there. didn't pair it?"
+    static let pairedNoteAnywhere = "on that device, check it shows this same mark, then answer there. it can reach your journal from anywhere. didn't pair it?"
+    static let pairedDone = "done"
+    static let pairedUnpair = "unpair this device"
+    static let pairedRemoved = "unpaired. the device can't reach your journal until it's paired again."
+    static let pairedRemoveFailed = "couldn't unpair this device. try again, or remove it under devices."
+
+    static func pairedHeading(_ label: String) -> String {
+        "\"\(label)\" can now reach your journal"
+    }
 
     static func revokeTitle(_ name: String) -> String {
         "remove \(name)?"

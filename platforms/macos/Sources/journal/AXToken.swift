@@ -118,6 +118,19 @@ extension PairingState {
     }
 }
 
+enum JournalPairedUnpairState: String, CaseIterable, Sendable {
+    case idle
+    case busy
+    case removed
+    case failed
+
+    static let axTokens = allCases.map(\.rawValue)
+
+    var axToken: String {
+        rawValue
+    }
+}
+
 extension JournalDevicesCopiedState {
     static let axTokens = ["idle", "copied"]
 

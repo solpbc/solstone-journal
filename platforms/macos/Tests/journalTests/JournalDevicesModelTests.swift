@@ -234,12 +234,17 @@ struct JournalDevicesModelTests {
         #expect(await client.listCallCount() == 2)
     }
 
-    @Test func pairOpenThenUsedDismissesAndRefreshes() async throws {
+    @Test func pairOpenThenUsedKeepsTheViewUpAndRefreshes() async throws {
         let clock = ManualDevicesClock()
         let client = FakeDevicesClient(
             listResults: [.success([device(label: "paired", fingerprint: "p")])],
             pairResults: [.success(pair(nonce: "n", link: "https://go.solstone.app/p#abc", expiresIn: 30))],
-            nonceResults: [.success(NonceStatusResponse(present: true, used: true))]
+            nonceResults: [.success(NonceStatusResponse(
+                present: true,
+                used: true,
+                device: .init(cid: "p", displayLabel: "paired")
+            ))],
+            unpairResults: [.success(UnpairResponse(unpaired: "p"))]
         )
         let model = JournalDevicesModel(client: client, clock: clock)
 
@@ -251,10 +256,20 @@ struct JournalDevicesModelTests {
         clock.advance(by: .seconds(1))
         try await waitUntil { clock.sleepCallCount() >= 2 }
         clock.advance(by: .seconds(1))
-        try await waitUntil { model.isPairingPresented == false && model.loadState == .loaded }
+        try await waitUntil { model.loadState == .loaded && model.pairingStatusToken == "paired" }
 
+        #expect(model.isPairingPresented)
         #expect(model.devices.first?.displayLabel == "paired")
         #expect(await client.nonceRequests() == ["n"])
+
+        await model.unpairPairedDevice()
+        #expect(model.pairedUnpairState == .removed)
+        #expect(await client.unpairRequests() == ["p"])
+        #expect(model.isPairingPresented)
+
+        model.closePairing()
+        #expect(model.isPairingPresented == false)
+        #expect(model.pairedUnpairState == .idle)
     }
 
     @Test func pairStartFailureRendersOpenFailed() async throws {

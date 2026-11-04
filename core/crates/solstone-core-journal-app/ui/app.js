@@ -84,6 +84,15 @@ const COPY = {
   linkExpiredBody: 'open a fresh pairing link to pair a device.',
   openFreshLink: 'open a fresh pairing link',
   pairingFailedTitle: "couldn't open pairing",
+  pairedHeading: label => `"${label}" can now reach your journal`,
+  pairedHeadingUnnamed: 'a new device can now reach your journal',
+  pairedNote: "on that device, check it shows this same mark, then answer there. didn't pair it?",
+  pairedNoteAnywhere: "on that device, check it shows this same mark, then answer there. it can reach your journal from anywhere. didn't pair it?",
+  pairedNoteThisPc: "if the solstone app asks, check it shows this same mark, then answer there. didn't pair it?",
+  pairedDone: 'done',
+  pairedUnpair: 'unpair this device',
+  pairedRemoved: "unpaired. the device can't reach your journal until it's paired again.",
+  pairedRemoveFailed: "couldn't unpair this device. try again, or remove it under devices.",
   pairingClosed: "your journal is closed to devices on your network, so another device can't reach it directly yet. open your journal to devices on your network, or turn on your private network to pair from anywhere. the solstone app on this PC can still pair.",
   relaySetup: 'turn on your private network in your journal →',
   // whether the journal is open to devices on the network (the journal's own words)
@@ -1925,7 +1934,8 @@ function renderDevices() {
 
 // One link at a time. `phase` is null while no link is open; `generation`
 // retires the answers to a link the owner has moved past.
-const pairing = { generation: 0, kind: null, phase: null, link: null, nonce: null, deadline: 0, copied: false };
+const pairing = { generation: 0, kind: null, phase: null, link: null, nonce: null, deadline: 0, copied: false,
+  relay: false, device: null, unpair: null };
 let pairingTimer = null;
 
 function stopPairingTimer() {
@@ -1936,7 +1946,8 @@ function stopPairingTimer() {
 function closePairing() {
   stopPairingTimer();
   pairing.generation += 1;
-  Object.assign(pairing, { kind: null, phase: null, link: null, nonce: null, copied: false });
+  Object.assign(pairing, { kind: null, phase: null, link: null, nonce: null, copied: false,
+    relay: false, device: null, unpair: null });
 }
 
 function remainingSeconds() {
@@ -1946,7 +1957,8 @@ function remainingSeconds() {
 async function openPairing(kind) {
   stopPairingTimer();
   const generation = ++pairing.generation;
-  Object.assign(pairing, { kind, phase: 'opening', link: null, nonce: null, copied: false });
+  Object.assign(pairing, { kind, phase: 'opening', link: null, nonce: null, copied: false,
+    relay: false, device: null, unpair: null });
   render(true);
   let material;
   try {
@@ -1966,7 +1978,7 @@ async function openPairing(kind) {
     return;
   }
   Object.assign(pairing, { phase: 'open', link: material.pair_link, nonce: material.nonce,
-    deadline: Date.now() + material.expires_in * 1000 });
+    deadline: Date.now() + material.expires_in * 1000, relay: material.relay === true });
   render(true);
   // The link for this PC is copied at once: the solstone app is where it goes.
   if (kind === 'this-pc') {
@@ -1992,13 +2004,61 @@ async function openPairing(kind) {
       const status = await call('pairingStatus', { nonce: pairing.nonce, port: port() });
       if (generation !== pairing.generation || pairing.phase !== 'open') return;
       // The other device used the link. It asks its owner to confirm this
-      // journal's mark before it sends anything.
+      // journal's mark before it sends anything, so the mark stays on screen.
       if (status?.used) {
-        closePairing();
+        stopPairingTimer();
+        Object.assign(pairing, { phase: 'paired', link: null, nonce: null, device: pairedDevice(status) });
+        render(true);
         await loadDevices();
       }
     } catch { /* the next tick asks again */ }
   }, 1000);
+}
+
+// The device a used link added, when the journal still holds it.
+function pairedDevice(status) {
+  const device = status.device;
+  if (!device || typeof device.cid !== 'string' || !device.cid) return null;
+  return { cid: device.cid, label: typeof device.display_label === 'string' ? device.display_label.trim() : '' };
+}
+
+async function unpairPairedDevice() {
+  const generation = pairing.generation;
+  pairing.unpair = 'busy';
+  render(true);
+  let removed = true;
+  try {
+    await call('convey', { method: 'POST', path: '/app/network/unpair', port: port(),
+      body: { fingerprint: pairing.device.cid } });
+  } catch (error) {
+    // Already gone is what the owner asked for.
+    removed = error.code === 'paired_device_not_found';
+  }
+  if (generation !== pairing.generation) return;
+  pairing.unpair = removed ? 'removed' : 'failed';
+  render(true);
+  if (removed) await loadDevices();
+}
+
+function pairedPanel(panel, markBox) {
+  const removed = pairing.unpair === 'removed';
+  const label = pairing.device?.label;
+  let note = COPY.pairedNote;
+  if (pairing.kind === 'this-pc') note = COPY.pairedNoteThisPc;
+  else if (pairing.relay) note = COPY.pairedNoteAnywhere;
+  put(panel,
+    removed ? null : el('h2', { tabindex: '-1' }, label ? COPY.pairedHeading(label) : COPY.pairedHeadingUnnamed),
+    markBox,
+    removed ? null : el('p', { class: 'muted', 'data-pairing': 'paired-note' }, note),
+    removed ? el('p', { role: 'status', 'data-pairing': 'unpaired' }, COPY.pairedRemoved) : null,
+    pairing.unpair === 'failed' ? el('p', { class: 'error', role: 'alert' }, COPY.pairedRemoveFailed) : null,
+    el('div', { class: 'pair-actions' },
+      el('button', { type: 'button', class: 'primary', on: { click: () => { closePairing(); loadDevices(); } } }, COPY.pairedDone),
+      pairing.device && !removed
+        ? el('button', { type: 'button', class: 'danger', 'data-pairing': 'unpair', disabled: pairing.unpair === 'busy',
+          on: { click: unpairPairedDevice } }, COPY.pairedUnpair)
+        : null));
+  return panel;
 }
 
 // The journal's own QR code maker, drawn as shapes rather than markup.
@@ -2050,6 +2110,7 @@ function pairingPanel() {
   const markBox = el('div');
   renderMarkCard(markBox, state.mark, COPY.confirmedLine, state.markUnavailable);
   const closeButton = el('button', { type: 'button', on: { click: () => { closePairing(); loadDevices(); } } }, COPY.close);
+  if (pairing.phase === 'paired') return pairedPanel(panel, markBox);
   put(panel, el('h2', { tabindex: '-1' }, thisPc ? COPY.pairThisPc : COPY.addDevice));
   if (pairing.phase === 'opening') {
     put(panel, markBox, el('p', { class: 'muted' }, COPY.pairingOpening));

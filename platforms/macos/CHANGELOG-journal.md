@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- the pairing window now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
+
 ## [2.0.67 (build 116)] - 2026-11-03
 
 ### Changed
