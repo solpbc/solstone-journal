@@ -5033,6 +5033,61 @@ mod tests {
     }
 
     #[test]
+    fn rerun_completes_a_merge_whose_undo_died_after_a_partial_publish() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let segments = [
+            "chronicle/20260311/120000_60/value",
+            "chronicle/20260311/121000_60/value",
+            "chronicle/20260311/122000_60/value",
+        ];
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (segments[0], b"first"),
+                (segments[1], b"second"),
+                (segments[2], b"third"),
+                (
+                    "entities/new-person/entity.json",
+                    br#"{"id":"new-person","name":"Qxjvplmzt","type":"Person"}"#,
+                ),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let options = ArchiveMergeOptions {
+            working_root: tree.path.join("work"),
+            ..ArchiveMergeOptions::default()
+        };
+        inject_publish_fail_after(Some(2));
+        inject_undo_crash_after(Some(1));
+        let panicked = catch_unwind(AssertUnwindSafe(|| {
+            merge_journal_archive(&archive, &target, &options, None)
+        }));
+        assert!(panicked.is_err());
+        let present = |relative: &str| target.join(relative).exists();
+        let left = segments.iter().filter(|segment| present(segment)).count();
+        assert!(
+            (1..segments.len()).contains(&left),
+            "the failed run must leave the journal half-merged, found {left} segments"
+        );
+
+        inject_publish_fail_after(None);
+        inject_undo_crash_after(None);
+        let rerun = merge_journal_archive(&archive, &target, &options, None).unwrap();
+        for (segment, value) in segments.iter().zip(["first", "second", "third"]) {
+            assert_eq!(fs::read_to_string(target.join(segment)).unwrap(), value);
+        }
+        assert!(present("entities/new-person/entity.json"));
+        assert_eq!(rerun.merge_summary.segments_skipped, left);
+        assert_eq!(rerun.merge_summary.segments_copied, segments.len() - left);
+        assert!(rerun.segment_dispositions.iter().all(|row| matches!(
+            row.disposition,
+            SegmentDispositionKind::Copied | SegmentDispositionKind::IdenticalExisting
+        )));
+    }
+
+    #[test]
     fn failed_undo_is_carried_in_merge_publish_failed_detail() {
         let _reset = FaultReset;
         let tree = PlanTree::new();
