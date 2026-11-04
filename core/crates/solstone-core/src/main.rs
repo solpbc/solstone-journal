@@ -266,8 +266,12 @@ fn run_supervisor(
     }
     #[cfg(unix)]
     solstone_core_system::storage_privacy::apply_private_root(&journal);
+    // This journal already running keeps its own plain refusal, further on.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    if !options.no_convey && browser_port_in_use(options.port) {
+    if !options.no_convey
+        && browser_port_in_use(options.port)
+        && !solstone_core_local_endpoint::journal_is_up(&journal)
+    {
         eprintln!(
             "your journal can't start because port {} on this computer is already in use, usually by a journal running under another account. only one journal can run on this computer at a time.",
             options.port
