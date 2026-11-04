@@ -13,13 +13,24 @@ const PROMPT: &str = include_str!("../assets/describe.md");
 const SCHEMA: &str = include_str!("../assets/describe.schema.json");
 pub fn system_instruction(redact_rules: &[String], phone: Option<PhoneScreen>) -> String {
     let categories = render_categories();
-    let mut prompt = PROMPT.replace("$categories", &categories).trim().to_owned();
+    let mut prompt = prompt_body(PROMPT)
+        .replace("$categories", &categories)
+        .trim()
+        .to_owned();
     if let Some(phone) = phone {
         prompt.push_str("\n\n");
         prompt.push_str(&phone.describe_note());
     }
     append_redaction(&mut prompt, redact_rules);
     prompt
+}
+
+/// The asset's frontmatter is authoring metadata; only the body is the model's instruction.
+fn prompt_body(prompt: &str) -> &str {
+    prompt
+        .strip_prefix("---\n")
+        .and_then(|prompt| prompt.split_once("\n---\n").map(|(_, body)| body))
+        .expect("embedded categorization prompt has frontmatter")
 }
 
 pub fn append_redaction(base: &mut String, redact_rules: &[String]) {
@@ -82,7 +93,19 @@ pub fn request(
 
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
-    use super::render_categories;
+    use super::{render_categories, system_instruction};
+
+    #[test]
+    fn instruction_sent_to_the_model_carries_no_frontmatter() {
+        let instruction = system_instruction(&[], None);
+        assert!(
+            instruction.starts_with("You have one job:"),
+            "{instruction:.80}"
+        );
+        assert!(!instruction.contains("context: observe.describe.frame"));
+        assert!(!instruction.contains("label: Screen Categorization"));
+        assert!(instruction.contains("- browsing: General web browsing"));
+    }
 
     #[test]
     fn category_rendering_uses_embedded_metadata() {
