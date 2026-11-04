@@ -73,6 +73,9 @@ pub struct OwnerIntent {
     pub owner_stopped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebuild: Option<RebuildProgress>,
+    /// This request already started over once after its run was abandoned.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub restarted: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -193,6 +196,7 @@ pub fn register(journal: &Path, day: &str, from_scratch: bool) -> Result<OwnerIn
         state: IntentState::Queued,
         owner_stopped: false,
         rebuild: None,
+        restarted: false,
     };
     mutate(journal, |days| {
         days.insert(day.to_owned(), intent.clone());
@@ -310,9 +314,44 @@ pub fn stop_rebuilds(journal: &Path) -> Result<(), String> {
     })
 }
 
+/// The owner's ordinary process-now ask for the same day, replacing a
+/// from-scratch request whose forced work has ended. Discovery finishes the
+/// day through each work kind's own retry owner and retires the ask once the
+/// day is current.
+fn demote(intent: &mut OwnerIntent) {
+    intent.from_scratch = false;
+    intent.state = IntentState::Queued;
+    intent.rebuild = None;
+    intent.restarted = false;
+}
+
+fn run_path(journal: &Path, day: &str) -> Result<PathBuf, String> {
+    if !valid_day(day) {
+        return Err("invalid work day".into());
+    }
+    Ok(journal
+        .join("health")
+        .join(format!("from-scratch-{day}.lock")))
+}
+
+fn run_lease(journal: &Path, day: &str) -> Result<FileLock, String> {
+    hold_lock(
+        run_path(journal, day)?,
+        LockOptions {
+            timeout: Duration::ZERO,
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|_| "requested day is owned by another executor".into())
+}
+
 /// No destructive work may start unless this write succeeds. A claimed intent
-/// remains held after a crash; it cannot be automatically claimed again.
-pub fn claim_from_scratch(journal: &Path, day: &str, id: &str) -> Result<(), String> {
+/// is never automatically claimed again. The returned lease shows the claim is
+/// live: the run keeps it until it has recorded its outcome, and a crash or
+/// cancellation releases it, so discovery can hand an abandoned claim back to
+/// ordinary work ([`recover_interrupted`]).
+pub fn claim_from_scratch(journal: &Path, day: &str, id: &str) -> Result<FileLock, String> {
+    let lease = run_lease(journal, day)?;
     mutate(journal, |days| {
         let intent = days
             .get_mut(day)
@@ -325,6 +364,44 @@ pub fn claim_from_scratch(journal: &Path, day: &str, id: &str) -> Result<(), Str
             .ok_or("destructive request is no longer waiting")?;
         intent.state = IntentState::Claimed;
         Ok(())
+    })?;
+    Ok(lease)
+}
+
+/// Recover a from-scratch request no run holds any more. A claim abandoned by
+/// a crash, a shutdown or a cancellation starts over once, since its forced
+/// work never reached the whole day; abandoned again, or left `Failed` by an
+/// earlier build, it becomes the owner's ordinary ask. An owner Stop and a
+/// sealed rebuild, which its host resumes, stay as they are. Returns whether
+/// it changed the request.
+pub fn recover_interrupted(
+    journal: &Path,
+    day: &str,
+    id: &str,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<bool, String> {
+    let (Ok(_run), Ok(_execution)) = (run_lease(journal, day), execution_lease(journal, day))
+    else {
+        return Ok(false);
+    };
+    mutate_checked(journal, checkpoint, |days| {
+        let Some(intent) = days.get_mut(day).filter(|intent| {
+            intent.id == id
+                && intent.from_scratch
+                && matches!(intent.state, IntentState::Claimed | IntentState::Failed)
+                && !intent.owner_stopped
+                && intent.rebuild.as_ref().is_none_or(|p| p.segments.is_none())
+        }) else {
+            return Ok(false);
+        };
+        if intent.state == IntentState::Claimed && !intent.restarted {
+            intent.state = IntentState::Queued;
+            intent.rebuild = None;
+            intent.restarted = true;
+        } else {
+            demote(intent);
+        }
+        Ok(true)
     })
 }
 
@@ -354,7 +431,13 @@ pub fn finish_from_scratch_checked(
             if success {
                 days.remove(day);
             } else {
-                intent.state = IntentState::Failed;
+                // The forced work ran; what it left unfinished is held by its
+                // own retry owners (segment repair, talent and activity retry,
+                // daily units). The day becomes the owner's ordinary
+                // process-now ask, which discovery finishes through those
+                // owners and retires when the day is current. Holding it for
+                // review instead suppressed every one of them for that day.
+                demote(intent);
             }
         }
         Ok(())
@@ -593,7 +676,7 @@ mod tests {
     fn claimed_attempt_never_repeats_and_old_terminal_cannot_remove_new_intent() {
         let root = tempfile::tempdir().unwrap();
         let first = register(root.path(), "20260101", true).unwrap();
-        claim_from_scratch(root.path(), "20260101", &first.id).unwrap();
+        let first_lease = claim_from_scratch(root.path(), "20260101", &first.id).unwrap();
         assert!(claim_from_scratch(root.path(), "20260101", &first.id).is_err());
         assert_eq!(
             read(root.path()).unwrap()["20260101"].state,
@@ -601,21 +684,64 @@ mod tests {
         );
         let second = register(root.path(), "20260101", true).unwrap();
         finish_from_scratch(root.path(), "20260101", &first.id, true).unwrap();
+        drop(first_lease);
         assert_eq!(read(root.path()).unwrap()["20260101"], second);
-        claim_from_scratch(root.path(), "20260101", &second.id).unwrap();
+        let lease = claim_from_scratch(root.path(), "20260101", &second.id).unwrap();
         finish_from_scratch(root.path(), "20260101", &second.id, false).unwrap();
+        drop(lease);
         assert!(claim_from_scratch(root.path(), "20260101", &second.id).is_err());
-        assert_eq!(
-            read(root.path()).unwrap()["20260101"].state,
-            IntentState::Failed
-        );
+        // An unsuccessful finish hands the day to ordinary work, never a hold.
+        let after = &read(root.path()).unwrap()["20260101"];
+        assert_eq!(after.id, second.id);
+        assert!(!after.from_scratch);
+        assert_eq!(after.state, IntentState::Queued);
+        assert_eq!(after.rebuild, None);
+    }
+
+    #[test]
+    fn only_an_abandoned_claim_is_handed_to_ordinary_work() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20260101";
+        let intent = register(root.path(), day, true).unwrap();
+        let lease = claim_from_scratch(root.path(), day, &intent.id).unwrap();
+        // A live run keeps its claim.
+        assert!(!recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        assert_eq!(read(root.path()).unwrap()[day].state, IntentState::Claimed);
+        drop(lease);
+        // Its process ended without recording an outcome: it starts over once.
+        assert!(recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        let after = &read(root.path()).unwrap()[day];
+        assert!(after.from_scratch && after.restarted);
+        assert_eq!(after.state, IntentState::Queued);
+        // Abandoned again, it becomes the ordinary ask.
+        drop(claim_from_scratch(root.path(), day, &intent.id).unwrap());
+        assert!(recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        let after = &read(root.path()).unwrap()[day];
+        assert!(!after.from_scratch);
+        assert_eq!(after.state, IntentState::Queued);
+        // A request an earlier build left failed is handed over the same way.
+        let failed = register(root.path(), day, true).unwrap();
+        mutate(root.path(), |days| {
+            days.get_mut(day).unwrap().state = IntentState::Failed;
+            Ok(())
+        })
+        .unwrap();
+        assert!(recover_interrupted(root.path(), day, &failed.id, &|| Ok(())).unwrap());
+        assert!(!read(root.path()).unwrap()[day].from_scratch);
+        // A stale id, or an ordinary ask, is left alone.
+        assert!(!recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        let stopped = register(root.path(), day, true).unwrap();
+        drop(claim_from_scratch(root.path(), day, &stopped.id).unwrap());
+        stop_rebuilds(root.path()).unwrap();
+        assert!(!recover_interrupted(root.path(), day, &stopped.id, &|| Ok(())).unwrap());
+        assert!(read(root.path()).unwrap()[day].owner_stopped);
     }
 
     #[test]
     fn interrupted_from_scratch_finish_stays_claimed() {
         let root = tempfile::tempdir().unwrap();
         let intent = register(root.path(), "20260101", true).unwrap();
-        claim_from_scratch(root.path(), "20260101", &intent.id).unwrap();
+        let _lease = claim_from_scratch(root.path(), "20260101", &intent.id).unwrap();
         let error = finish_from_scratch_checked(root.path(), "20260101", &intent.id, true, &|| {
             Err("stopped".into())
         })

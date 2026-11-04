@@ -800,6 +800,9 @@ fn execute_parsed_command(
     let (mut log, run) = open_run_log(parsed, &context.journal, context.now_ms, &context.day);
     let mut rebuild_context = context.clone();
     let mut rebuild_args = parsed.clone();
+    // Held until the outcome is recorded below: a released lease on a claimed
+    // request is how discovery tells an abandoned run from a live one.
+    let mut _run_lease = None;
     if let Some(id) = &parsed.work_intent {
         let claimed = if context.rebuild_recovery {
             solstone_core_journal_io::JournalRoot::open(&context.journal)
@@ -822,6 +825,7 @@ fn execute_parsed_command(
                 &context.day,
                 id,
             )
+            .map(|lease| _run_lease = Some(lease))
         };
         if let Err(error) = claimed {
             return logged_mode_outcome(log, run, Err(error));
@@ -7527,12 +7531,14 @@ mod tests {
                 fs::remove_file(journal.path().join("health/work-intent.json")).unwrap();
                 fs::create_dir(journal.path().join("health/work-intent.json")).unwrap();
             } else {
-                solstone_core_system::work_intent::claim_from_scratch(
-                    journal.path(),
-                    day,
-                    &intent.id,
-                )
-                .unwrap();
+                drop(
+                    solstone_core_system::work_intent::claim_from_scratch(
+                        journal.path(),
+                        day,
+                        &intent.id,
+                    )
+                    .unwrap(),
+                );
             }
             let run = run_at(
                 journal.path(),

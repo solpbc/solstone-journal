@@ -1059,6 +1059,10 @@ fn inspect_day(
                 held(report, day, None, p.band, "thinking_unavailable");
             }
         } else {
+            // A claim no run holds was abandoned by a crash, shutdown or
+            // cancellation: it starts over once, then becomes the ordinary ask.
+            // A failed one becomes the ordinary ask. The next pass takes it.
+            work_intent::recover_interrupted(journal, day, &intent.id, checkpoint)?;
             held(
                 report,
                 day,
@@ -3590,7 +3594,8 @@ mod tests {
         let root = fixture("local");
         segment(root.path(), "19990101", "120000_60");
         let intent = work_intent::register(root.path(), "19990101", true).unwrap();
-        work_intent::claim_from_scratch(root.path(), "19990101", &intent.id).unwrap();
+        // The run is live: it holds its claim's lease.
+        let _lease = work_intent::claim_from_scratch(root.path(), "19990101", &intent.id).unwrap();
         let queue = queue(root.path());
         reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
         let report = solstone_core_system::work_inventory::read(root.path())

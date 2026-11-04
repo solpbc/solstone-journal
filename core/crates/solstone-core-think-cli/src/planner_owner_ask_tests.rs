@@ -669,19 +669,20 @@ fn owner_intents_leave_asks_alone_and_hold_them_until_they_end() {
             .any(|p| p.id == ask.id && p.waiting_on == reason)
     };
     assert!(waiting("from_scratch"));
-    work_intent::claim_from_scratch(root.path(), &day, &rebuild.id).unwrap();
-    work_intent::finish_from_scratch(root.path(), &day, &rebuild.id, false).unwrap();
-    assert_eq!(store(), saved);
+    let lease = work_intent::claim_from_scratch(root.path(), &day, &rebuild.id).unwrap();
     plan(root.path(), &queue);
-    assert!(waiting("from_scratch"));
+    assert!(waiting("from_scratch"), "a live rebuild holds the ask");
     work_intent::stop_rebuilds(root.path()).unwrap();
+    drop(lease);
     assert_eq!(store(), saved);
     plan(root.path(), &queue);
     assert!(waiting("owner_stopped"));
     assert!(!work_record(root.path(), &day, &asked).exists());
     let next = work_intent::register(root.path(), &day, true).unwrap();
-    work_intent::claim_from_scratch(root.path(), &day, &next.id).unwrap();
-    work_intent::finish_from_scratch(root.path(), &day, &next.id, true).unwrap();
+    let lease = work_intent::claim_from_scratch(root.path(), &day, &next.id).unwrap();
+    // An unsuccessful rebuild becomes the ordinary ask, which holds no ask.
+    work_intent::finish_from_scratch(root.path(), &day, &next.id, false).unwrap();
+    drop(lease);
     assert_eq!(store(), saved);
     plan(root.path(), &queue);
     assert!(work_record(root.path(), &day, &asked).exists());

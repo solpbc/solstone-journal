@@ -210,6 +210,8 @@ fn run_with_phase_process(
     let day_had_work = !lifecycle_blockers.is_empty() || force_all_repairs;
     let daily_did_work = std::cell::Cell::new(false);
     let halted = std::cell::Cell::new(false);
+    // A resumed rebuild sealed its segment phase in an earlier run.
+    let rebuild_sealed = std::cell::Cell::new(args.daily_only);
     let PhaseOutcomes {
         mut total,
         mut day_scoped,
@@ -397,6 +399,7 @@ fn run_with_phase_process(
                                 });
                                 return result;
                             }
+                            rebuild_sealed.set(true);
                         }
                     }
                     segment_outcome.borrow().result.clone()
@@ -483,7 +486,10 @@ fn run_with_phase_process(
             }
         },
         |phase| match phase {
-            "daily" => daily_dependency_skip(&segment_outcome.borrow()),
+            "daily" => daily_dependency_skip(
+                &segment_outcome.borrow(),
+                context.rebuild.is_some() && !rebuild_sealed.get(),
+            ),
             "indexer" | "journal_stats" if !day_had_work && !daily_did_work.get() => {
                 Some(SKIP_NOTHING_CHANGED)
             }
@@ -1037,21 +1043,29 @@ fn blocker_progress(
     (baseline.difference(remaining).count(), remaining.len())
 }
 
-fn daily_dependency_skip(repair: &SegmentPhaseOutcome) -> Option<&'static str> {
-    if repair.blockers.is_none() {
-        return Some(SKIP_READINESS_UNAVAILABLE);
+/// Whether the daily phase may run, decided by the day's readiness alone.
+///
+/// Daily thinking depends on the day's segments, so the post-repair readiness
+/// scan is the dependency: a failure that leaves a segment unthought shows up
+/// there as a blocker. A failure that leaves every segment ready (an activity
+/// talent, a settle or replay follow-up) belongs to its own retry owner and is
+/// not a dependency of the day's daily units -- the planner's `--daily-only`
+/// path already decides the same way. The repair failure is still reported and
+/// still withholds the day's completion marker.
+///
+/// `unsealed_rebuild` is the one exception: a fresh owner rebuild continues to
+/// its daily targets only from a sealed segment phase, and the seal needs a
+/// clean repair.
+fn daily_dependency_skip(
+    repair: &SegmentPhaseOutcome,
+    unsealed_rebuild: bool,
+) -> Option<&'static str> {
+    match &repair.blockers {
+        None => Some(SKIP_READINESS_UNAVAILABLE),
+        Some(blockers) if !blockers.is_empty() => Some(SKIP_BLOCKED),
+        Some(_) if unsealed_rebuild => Some(SKIP_SEGMENT_REPAIR_FAILED),
+        Some(_) => None,
     }
-    if repair.result.failed != 0 || repair.result.timed_out {
-        return Some(SKIP_SEGMENT_REPAIR_FAILED);
-    }
-    if repair
-        .blockers
-        .as_ref()
-        .is_some_and(|blockers| !blockers.is_empty())
-    {
-        return Some(SKIP_BLOCKED);
-    }
-    None
 }
 
 fn skipped_phase(phase: &str, reason: &'static str) -> ModeResult {
@@ -2397,7 +2411,7 @@ mod tests {
             },
             |phase| {
                 if phase == "daily" {
-                    daily_dependency_skip(&repair.borrow())
+                    daily_dependency_skip(&repair.borrow(), false)
                 } else {
                     None
                 }
@@ -2440,28 +2454,31 @@ mod tests {
 
     #[test]
     fn daily_dependency_skip_reasons_are_stable() {
-        assert_eq!(daily_dependency_skip(&succeeded_repair()), None);
-        assert_eq!(daily_dependency_skip(&blocked_repair()), Some(SKIP_BLOCKED));
-        assert_eq!(
-            daily_dependency_skip(&failed_repair(false)),
-            Some(SKIP_SEGMENT_REPAIR_FAILED)
-        );
-        assert_eq!(
-            daily_dependency_skip(&failed_repair(true)),
-            Some(SKIP_SEGMENT_REPAIR_FAILED)
-        );
-        assert_eq!(
-            daily_dependency_skip(&unread_repair("missing")),
-            Some(SKIP_READINESS_UNAVAILABLE)
-        );
-        assert_eq!(
-            daily_dependency_skip(&unread_repair("malformed")),
-            Some(SKIP_READINESS_UNAVAILABLE)
-        );
-        assert_eq!(
-            daily_dependency_skip(&unread_repair("unreadable")),
-            Some(SKIP_READINESS_UNAVAILABLE)
-        );
+        for unsealed_rebuild in [false, true] {
+            assert_eq!(
+                daily_dependency_skip(&blocked_repair(), unsealed_rebuild),
+                Some(SKIP_BLOCKED)
+            );
+            for detail in ["missing", "malformed", "unreadable"] {
+                assert_eq!(
+                    daily_dependency_skip(&unread_repair(detail), unsealed_rebuild),
+                    Some(SKIP_READINESS_UNAVAILABLE)
+                );
+            }
+        }
+        assert_eq!(daily_dependency_skip(&succeeded_repair(), false), None);
+        // A failure that leaves every segment ready does not hold the day's
+        // daily units; it holds only an owner rebuild's unsealed continuation.
+        for timed_out in [false, true] {
+            assert_eq!(
+                daily_dependency_skip(&failed_repair(timed_out), false),
+                None
+            );
+            assert_eq!(
+                daily_dependency_skip(&failed_repair(timed_out), true),
+                Some(SKIP_SEGMENT_REPAIR_FAILED)
+            );
+        }
     }
 
     #[test]
@@ -2732,7 +2749,6 @@ mod tests {
             let context = context(journal.path());
             let mut log = log(journal.path());
             let daily_result = daily.clone();
-            let expect_daily = daily_dependency_skip(&repair).is_none();
             let mut daily_calls = 0;
             let (total, _total_day_scoped, invoked) =
                 policy_run(&context, &mut log, repair, |phase| {
@@ -2746,14 +2762,8 @@ mod tests {
                 invoked.ends_with(&["indexer".to_owned(), "journal_stats".to_owned()]),
                 "{label}: {invoked:?}"
             );
-            assert_eq!(daily_calls, usize::from(expect_daily), "{label}");
-            if !expect_daily {
-                assert_eq!(
-                    total.skipped_names,
-                    ["daily (segment_repair_failed)"],
-                    "{label}"
-                );
-            }
+            // Every case leaves the day's segments ready, so daily runs.
+            assert_eq!(daily_calls, 1, "{label}");
             assert_eq!(total.failed, 1, "{label}");
             assert_eq!(
                 total
@@ -4650,8 +4660,12 @@ mod tests {
                 assert_eq!(daily["success"], true);
             } else {
                 assert!(result.failed != 0, "{label}: keep failure");
+                assert!(
+                    !blocked_segments(&ctx).unwrap().is_empty(),
+                    "{label}: the failed screen talent leaves its segment unthought"
+                );
                 assert_eq!(daily["skipped"], true);
-                assert_eq!(daily["reason_code"], SKIP_SEGMENT_REPAIR_FAILED);
+                assert_eq!(daily["reason_code"], SKIP_BLOCKED);
             }
             assert!(
                 cortex.script.lock().unwrap().is_empty(),
@@ -4741,11 +4755,7 @@ mod tests {
                     .exists()
             );
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(daily_dependency_skip(&outcome), None);
+            assert_eq!(result.failed, 0);
         }
 
         // Case 2: retry rejected / fails (no 3rd dispatch, skip Some)
@@ -4790,14 +4800,8 @@ mod tests {
             let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
             assert_eq!(dispatches.len(), 2, "must not attempt 3rd dispatch");
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(
-                daily_dependency_skip(&outcome),
-                Some(SKIP_SEGMENT_REPAIR_FAILED)
-            );
+            // The failure stays reported; readiness, not this count, gates daily.
+            assert_ne!(result.failed, 0);
         }
 
         // Case 3: non-retryable reason (1 dispatch, skip Some)
@@ -4843,14 +4847,8 @@ mod tests {
                 "non-retryable error must dispatch exactly once"
             );
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(
-                daily_dependency_skip(&outcome),
-                Some(SKIP_SEGMENT_REPAIR_FAILED)
-            );
+            // The failure stays reported; readiness, not this count, gates daily.
+            assert_ne!(result.failed, 0);
         }
 
         // Case 4: local_capacity_exhausted with retryable absent (1 dispatch, skip Some)
@@ -4896,14 +4894,8 @@ mod tests {
                 "unspecified retryable must dispatch once"
             );
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(
-                daily_dependency_skip(&outcome),
-                Some(SKIP_SEGMENT_REPAIR_FAILED)
-            );
+            // The failure stays reported; readiness, not this count, gates daily.
+            assert_ne!(result.failed, 0);
         }
 
         // Case 5: local_capacity_exhausted with retryable == false (1 dispatch, skip Some)
@@ -4945,14 +4937,8 @@ mod tests {
             let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
             assert_eq!(dispatches.len(), 1, "retryable: false must dispatch once");
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(
-                daily_dependency_skip(&outcome),
-                Some(SKIP_SEGMENT_REPAIR_FAILED)
-            );
+            // The failure stays reported; readiness, not this count, gates daily.
+            assert_ne!(result.failed, 0);
         }
 
         // Case 6: timeout (1 dispatch, skip Some)
@@ -4994,14 +4980,8 @@ mod tests {
             let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
             assert_eq!(dispatches.len(), 1, "timeout must dispatch once");
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(
-                daily_dependency_skip(&outcome),
-                Some(SKIP_SEGMENT_REPAIR_FAILED)
-            );
+            // The failure stays reported; readiness, not this count, gates daily.
+            assert_ne!(result.failed, 0);
         }
 
         // Case 7: Non-terminal error event with UseEndState::Error (1 dispatch, skip Some)
@@ -5043,14 +5023,8 @@ mod tests {
             let dispatches = cortex.dispatched_uses.lock().unwrap().clone();
             assert_eq!(dispatches.len(), 1, "non-terminal error must dispatch once");
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(
-                daily_dependency_skip(&outcome),
-                Some(SKIP_SEGMENT_REPAIR_FAILED)
-            );
+            // The failure stays reported; readiness, not this count, gates daily.
+            assert_ne!(result.failed, 0);
         }
 
         // Case 8: sibling (screen retried and succeeds, entities:detection once, failed == 0)
@@ -5119,11 +5093,7 @@ mod tests {
                 "entities:detection must be dispatched once"
             );
 
-            let outcome = SegmentPhaseOutcome {
-                result,
-                blockers: Some(BTreeSet::new()),
-            };
-            assert_eq!(daily_dependency_skip(&outcome), None);
+            assert_eq!(result.failed, 0);
         }
     }
 }

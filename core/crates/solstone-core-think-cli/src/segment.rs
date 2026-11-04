@@ -3778,7 +3778,7 @@ fn from_scratch_floor_retry_consumes_one_durable_owner_cause() {
     );
     for _ in 0..2 {
         let intent = work_intent::register(root.path(), day, true).unwrap();
-        work_intent::claim_from_scratch(root.path(), day, &intent.id).unwrap();
+        let _lease = work_intent::claim_from_scratch(root.path(), day, &intent.id).unwrap();
         assert!(
             floor_retry_attempt(&context, &unit, false)
                 .unwrap()
