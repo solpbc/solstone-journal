@@ -1627,6 +1627,9 @@ fn stage_entities(
         })?;
     // One entity per id, in the folder the owner resolves it to: a name
     // match on a collision loser must never write to the winner's folder.
+    // Names are matched only against what this journal held before the
+    // merge: the source journal already kept its own entities apart, so two
+    // of them are never folded into, or set aside against, each other.
     let mut target_entities =
         live_journal_entities(target).map_err(|error| ImportSourcesError::EntityMerge {
             entity_id: "target".to_owned(),
@@ -1637,6 +1640,9 @@ fn stage_entities(
             entity_id: "principal".to_owned(),
             detail: error.to_string(),
         })?;
+    // Ids this merge creates, so a second archive entity claiming one is an
+    // id collision.
+    let mut created_ids = std::collections::HashSet::new();
     for source_entity in source_entities {
         let source_id = source_entity.id.clone();
         let source_value = source_entity.value;
@@ -1803,7 +1809,7 @@ fn stage_entities(
                         ),
                     });
                 }
-                // Taken by a live entity, by an earlier entity of this archive,
+                // Taken by a live entity, by an entity this merge created,
                 // or by any identity file at the folder of that name, even a
                 // damaged one: all are left as they are.
                 let occupied =
@@ -1813,6 +1819,7 @@ fn stage_entities(
                             detail: error.to_string(),
                         })?;
                 if occupied
+                    || created_ids.contains(&source_id)
                     || target_entities
                         .iter()
                         .any(|(_, entity)| entity.id == source_id)
@@ -1866,13 +1873,7 @@ fn stage_entities(
                     "entities",
                     json!({"source_id": source_id, "create": true}),
                 )?;
-                target_entities.push((
-                    source_id.clone(),
-                    solstone_core_entity::JournalEntity {
-                        id: source_id.clone(),
-                        value: created,
-                    },
-                ));
+                created_ids.insert(source_id.clone());
                 state.entity_units.insert(relative, PublishUnit::File);
                 state.summary.entities_created += 1;
                 state.writes += 1;
@@ -2273,10 +2274,11 @@ fn merge_facet_relationships(
 
 /// What an imported facet link to `entity_id` becomes.
 enum LinkGate {
-    /// The id is live here, or new: imported as it is.
+    /// The id is live here, new, or held for the owner: imported as it is.
+    /// An id shared with this journal is read as the same entity.
     Keep,
-    /// The id is merged or deleted here, and the import matched its entity to
-    /// this live one.
+    /// The import matched the archive's entity by name to this live one,
+    /// under another id.
     Remap(String),
     /// The id is merged or deleted here, with nothing it could point to: a
     /// link would sit where nothing lists it.
@@ -2289,22 +2291,28 @@ fn link_gate(
     facet: &str,
     entity_id: &str,
 ) -> Result<LinkGate, ImportSourcesError> {
+    // The archive's entity went into a live one here, so its links do too,
+    // whatever this journal holds under the archive's id.
+    if let Some(resolved) = state
+        .entity_dispositions
+        .iter()
+        .find(|disposition| disposition.source_id == entity_id)
+        .and_then(|disposition| disposition.target_id.clone())
+        .filter(|resolved| resolved != entity_id)
+    {
+        return Ok(LinkGate::Remap(resolved));
+    }
     let retired = solstone_core_entity::retired_state(target, entity_id).map_err(|detail| {
         ImportSourcesError::FacetMerge {
             facet: facet.to_owned(),
             detail,
         }
     })?;
-    if retired.is_none() {
-        return Ok(LinkGate::Keep);
-    }
-    let resolved = state
-        .entity_dispositions
-        .iter()
-        .find(|disposition| disposition.source_id == entity_id)
-        .and_then(|disposition| disposition.target_id.clone())
-        .filter(|resolved| resolved != entity_id);
-    Ok(resolved.map_or(LinkGate::Skip, LinkGate::Remap))
+    Ok(if retired.is_none() {
+        LinkGate::Keep
+    } else {
+        LinkGate::Skip
+    })
 }
 
 fn skip_link(
@@ -2330,9 +2338,10 @@ fn skip_link_because(
     Ok(())
 }
 
-/// Apply the link gate to a facet copied whole into staging: a link to a
-/// merged or deleted id is repointed at its matched entity, or left out
-/// with its folder, and a second link to one entity is left out.
+/// Apply the link gate to a facet copied whole into staging: a link to an
+/// entity matched by name to another id here is repointed at it, a link to a
+/// merged or deleted id with no match is left out with its folder, and a
+/// second link to one entity is left out.
 fn gate_staged_facet_links(
     target: &Path,
     facet: &str,

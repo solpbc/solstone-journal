@@ -1165,6 +1165,94 @@ fn two_archive_links_to_a_deleted_id_become_one_link_to_the_entity_it_matched() 
     assert_eq!(result.merge_summary.entity_links_skipped, 0);
 }
 
+#[test]
+fn an_archives_entities_are_never_matched_against_each_other() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (id, name) in [("javier", "Javier"), ("javier_garcia", "Javier Garcia")] {
+        save_entity_identity(
+            &source,
+            id,
+            &json!({"id": id, "name": name, "type": "Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert_eq!(
+        result.merge_summary.entities_created, 2,
+        "{:?}",
+        result.entity_dispositions
+    );
+    assert_eq!(result.merge_summary.entities_staged, 0);
+    let mut names: Vec<String> = load_all_journal_entities(&target)
+        .unwrap()
+        .into_iter()
+        .map(|entity| entity.value["name"].as_str().unwrap().to_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Javier", "Javier Garcia"]);
+
+    // The same archive again finds each entity it brought, and adds nothing.
+    let again = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert_eq!(again.merge_summary.entities_created, 0);
+    assert_eq!(again.merge_summary.entities_staged, 0);
+    assert_eq!(load_all_journal_entities(&target).unwrap().len(), 2);
+}
+
+#[test]
+fn a_link_follows_its_entity_into_the_one_it_matched_by_name() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    save_entity_identity(
+        &source,
+        "ada",
+        &json!({"id":"ada","name":"Qqxq Ada","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    // Here, "Qqxq Ada" is `countess`, and `ada` is somebody else.
+    save_entity_identity(
+        &target,
+        "countess",
+        &json!({"id":"countess","name":"Qqxq Ada","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &target,
+        "ada",
+        &json!({"id":"ada","name":"Wrbnkq Zorp","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    // `work` is a facet here too; `fresh` arrives with the archive.
+    save_facet_entity_link(&target, "work", "existing", "existing", &Map::new()).unwrap();
+    linked_with_note(&source, "work", "ada", "ada");
+    linked_with_note(&source, "fresh", "ada", "ada");
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    for facet in ["work", "fresh"] {
+        let link: Value = serde_json::from_slice(
+            &fs::read(target.join(format!("facets/{facet}/entities/countess/entity.json")))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(link["entity_id"], "countess", "{facet}");
+        assert!(
+            !target.join(format!("facets/{facet}/entities/ada")).exists(),
+            "{facet}: the archive's note must not reach this journal's `ada`"
+        );
+        assert_eq!(notes_at(&target, facet, "countess").len(), 1, "{facet}");
+    }
+    assert_eq!(result.merge_summary.entity_links_skipped, 0);
+}
+
 fn notes_at(root: &Path, facet: &str, folder: &str) -> Vec<Value> {
     fs::read_to_string(root.join(format!(
         "facets/{facet}/entities/{folder}/observations.jsonl"
