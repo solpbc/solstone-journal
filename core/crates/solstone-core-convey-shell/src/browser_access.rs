@@ -265,7 +265,7 @@ pub(crate) async fn gate(
     next: Next,
 ) -> Response {
     if let Some(token) = auth_token(&request) {
-        return bootstrap(&access, token);
+        return bootstrap(&access, request.headers(), token);
     }
     if !access.closed() || access.admitted(request.headers()) {
         request.extensions_mut().insert(AccessBasis::Localhost);
@@ -285,12 +285,13 @@ pub(crate) async fn gate(
     response
 }
 
-fn bootstrap(access: &BrowserAccess, token: &str) -> Response {
+fn bootstrap(access: &BrowserAccess, headers: &HeaderMap, token: &str) -> Response {
     let spent = access.spend(token, Instant::now());
     let (path, session) = match spent {
         Some(path) => (path, access.new_session()),
-        None if access.closed() => return landing(true),
-        // Open: the port serves the owner anyway, so a spent link just goes home.
+        None if access.closed() && !access.admitted(headers) => return landing(true),
+        // Open, or a browser that already has access (a link it queued past
+        // its lifetime, or one reopened from history): a spent link goes home.
         None => ("/".to_owned(), None),
     };
     let mut response = Response::builder()
@@ -553,6 +554,20 @@ mod tests {
         .await;
         assert_eq!(again.status(), StatusCode::FORBIDDEN);
         assert!(again.headers().get(SET_COOKIE).is_none());
+
+        // The browser that spent it already has access, so the spent link goes home.
+        let again_admitted = call(
+            &app,
+            HttpRequest::get(format!("/?auth={}", token_of(&url)))
+                .header("accept", "text/html")
+                .header("cookie", pair.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(again_admitted.status(), StatusCode::FOUND);
+        assert_eq!(again_admitted.headers()[LOCATION], "/");
+        assert!(again_admitted.headers().get(SET_COOKIE).is_none());
 
         let admitted = call(
             &app,
