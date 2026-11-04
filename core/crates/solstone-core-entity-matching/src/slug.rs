@@ -11,13 +11,40 @@
 use unicode_normalization::UnicodeNormalization;
 use unidecode::unidecode;
 
+use crate::normalize_resolution_query;
+
 pub const MAX_ENTITY_SLUG_LENGTH: usize = 200;
 
 pub fn entity_slug(name: &str) -> String {
     if name.trim().is_empty() {
         return String::new();
     }
+    let slug = transliterated_slug(name);
+    if slug.is_empty() {
+        return unmapped_name_slug(name);
+    }
+    slug
+}
 
+/// A name with letters or digits always gets a slug, so that two such names
+/// never share the empty one. Case folding reaches a mapped form where there
+/// is one: all-caps Georgian folds to the Mkhedruli letters transliteration
+/// knows. Anything else, a rare Han extension character say, takes a digest of
+/// the written form. A name of only punctuation or symbols stays empty.
+fn unmapped_name_slug(name: &str) -> String {
+    if !name.chars().any(char::is_alphanumeric) {
+        return String::new();
+    }
+    let written = normalize_resolution_query(name);
+    let folded = transliterated_slug(&written);
+    if !folded.is_empty() {
+        return folded;
+    }
+    let digest = format!("{:x}", md5::compute(written.as_bytes()));
+    format!("name_{}", &digest[..8])
+}
+
+fn transliterated_slug(name: &str) -> String {
     let mut text = replace_quote_runs_with_dash(name);
     text = nfkd(&text);
     text = unidecode(&text);
@@ -456,6 +483,23 @@ mod tests {
         assert_eq!(entity_slug("José García"), "jose_garcia");
         assert_eq!(entity_slug(""), "");
         assert_eq!(entity_slug("   "), "");
+    }
+
+    #[test]
+    fn a_name_with_letters_never_slugs_to_empty() {
+        // All-caps Georgian folds to the Mkhedruli form of the same name.
+        assert_eq!(entity_slug("ᲒᲘᲝᲠᲒᲘ"), entity_slug("გიორგი"));
+        assert_eq!(entity_slug("ᲜᲘᲜᲝ"), "nino");
+        // Letters transliteration has no mapping for at all stay apart.
+        let schwa = entity_slug("Ə");
+        let rare_han = entity_slug("𠀋");
+        assert!(schwa.starts_with("name_") && rare_han.starts_with("name_"));
+        assert_ne!(schwa, rare_han);
+        // A case difference is still one name.
+        assert_eq!(schwa, entity_slug("ə"));
+        // No letters, no slug.
+        assert_eq!(entity_slug("---"), "");
+        assert_eq!(entity_slug("🙂"), "");
     }
 
     #[test]

@@ -133,6 +133,7 @@ pub fn daily_summary_lines(
     facets: &[Map<String, Value>],
 ) -> Vec<String> {
     let slug = solstone_core_entity_matching::entity_slug(name);
+    let key = solstone_core_entity_matching::normalize_resolution_query(name);
     let mut lines = Vec::new();
     for row in facets {
         let Some(facet) = row.get("facet").and_then(Value::as_str) else {
@@ -141,30 +142,29 @@ pub fn daily_summary_lines(
         let Ok(entities) = solstone_core_facets::read_detected_entities(journal, facet, day) else {
             continue;
         };
-        for entity in entities {
-            let id = entity
-                .get("id")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    solstone_core_entity_matching::entity_slug(
-                        entity
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                    )
-                });
-            if id != slug {
-                continue;
-            }
-            if let Some(description) = entity
-                .get("description")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-            {
-                lines.push(format!("Summary so far today in {facet}: {description}"));
-            }
-            break;
+        let row_name = |entity: &Value| {
+            solstone_core_entity_matching::normalize_resolution_query(
+                entity
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            )
+        };
+        // The row for this name as written, else a row that shares its slug.
+        let entity = entities
+            .iter()
+            .find(|entity| row_name(entity) == key)
+            .or_else(|| {
+                entities
+                    .iter()
+                    .find(|entity| entity.get("id").and_then(Value::as_str) == Some(slug.as_str()))
+            });
+        if let Some(description) = entity
+            .and_then(|entity| entity.get("description"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(format!("Summary so far today in {facet}: {description}"));
         }
     }
     if lines.is_empty() {
@@ -515,25 +515,36 @@ fn apply_detections(
         .into_iter()
         .filter_map(|row| row.get("facet").and_then(Value::as_str).map(str::to_owned))
         .collect::<BTreeSet<_>>();
-    let types = sense
+    // A detection takes the type sense gave that name as written, or failing
+    // that, the type of a name sharing its slug: the model may respell a name.
+    let mut written_types = BTreeMap::new();
+    let mut slug_types = BTreeMap::new();
+    for row in sense
         .get("entities")
         .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
         .into_iter()
-        .filter_map(|row| {
-            let name = row.get("name")?.as_str()?.trim();
-            (!name.is_empty()).then(|| {
-                (
-                    solstone_core_entity_matching::entity_slug(name),
-                    row.get("type")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                )
-            })
-        })
-        .collect::<BTreeMap<_, _>>();
+        .flatten()
+    {
+        let Some(name) = row.get("name").and_then(Value::as_str).map(str::trim) else {
+            continue;
+        };
+        if name.is_empty() {
+            continue;
+        }
+        let entity_type = row
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        written_types.insert(
+            solstone_core_entity_matching::normalize_resolution_query(name),
+            entity_type.clone(),
+        );
+        slug_types.insert(
+            solstone_core_entity_matching::entity_slug(name),
+            entity_type,
+        );
+    }
     let Ok(Value::Object(value)) = serde_json::from_str(output) else {
         return (counts, error);
     };
@@ -560,8 +571,11 @@ fn apply_detections(
             counts.dropped += 1;
             continue;
         }
-        let Some(entity_type) = types
-            .get(&solstone_core_entity_matching::entity_slug(name))
+        let Some(entity_type) = written_types
+            .get(&solstone_core_entity_matching::normalize_resolution_query(
+                name,
+            ))
+            .or_else(|| slug_types.get(&solstone_core_entity_matching::entity_slug(name)))
             .cloned()
         else {
             counts.dropped += 1;
@@ -622,6 +636,49 @@ mod tests {
         );
         assert_eq!(centrality_cue(&Value::String("other".to_owned())), None);
     }
+    #[test]
+    fn a_name_reads_its_own_row_and_type_where_two_share_a_slug() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let segment = root.path().join("chronicle/20260101/default/090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(
+            segment.join("talents/sense.json"),
+            r#"{"facets":[{"facet":"work"}],"entities":[{"name":"张三","type":"Person"},{"name":"章三","type":"Company"}]}"#,
+        )
+        .unwrap();
+        let output = r#"{"detections":[
+            {"name":"张三","facet":"work","description":"the person"},
+            {"name":"章三","facet":"work","description":"the company"}]}"#;
+        let (counts, error) = apply_detections(
+            root.path(),
+            output,
+            "20260101",
+            &segment,
+            &solstone_core_generate::Cancellation::never(),
+        );
+        assert_eq!(error, None);
+        assert_eq!(counts.wrote, 2);
+        let rows =
+            solstone_core_facets::read_detected_entities(root.path(), "work", "20260101").unwrap();
+        let row = |name: &str| rows.iter().find(|row| row["name"] == name).unwrap();
+        assert_eq!(row("张三")["type"], "Person");
+        assert_eq!(row("章三")["type"], "Company");
+        let facets = [Map::from_iter([(
+            "facet".to_owned(),
+            Value::String("work".to_owned()),
+        )])];
+        assert_eq!(
+            daily_summary_lines(root.path(), "20260101", "章三", &facets),
+            ["Summary so far today in work: the company"]
+        );
+        // A spelling with no row of its own still reads the row sharing its slug.
+        assert_eq!(
+            daily_summary_lines(root.path(), "20260101", "Zhang San", &facets),
+            ["Summary so far today in work: the company"]
+        );
+    }
+
     #[test]
     fn reads_sense_and_selects_reference_rows() {
         // Derived from solstone/apps/entities/talent/detection.py:44-78.

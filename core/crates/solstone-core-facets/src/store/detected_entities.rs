@@ -163,8 +163,12 @@ fn strict_row_error(
 
 /// Reconcile one segment's kept detections into the facet/day detected store.
 ///
-/// Existing rows match their stored ID first, falling back to a slug from their current name only
-/// when the ID is absent.
+/// A row is one written name, up to case, compatibility forms and whitespace:
+/// the same test `save_detected_entity` refuses a duplicate on. Two names that
+/// only share a slug keep their own rows, so neither one's description replaces
+/// the other's. The shared slug stays their `id`, which is how entity review
+/// still weighs them together. A row whose stored id is not its name's slug
+/// also matches a detection of that id, as a renamed row always has.
 pub fn upsert_detection_segment(
     journal_root: &Path,
     facet_dir: &str,
@@ -174,25 +178,29 @@ pub fn upsert_detection_segment(
 ) -> Result<DetectionUpsertReport, FacetEntityWriteError> {
     let mut kept = Vec::new();
     for detection in detections {
-        let slug = entity_slug(&detection.name);
-        if let Some(index) = kept.iter().position(|(key, _)| key == &slug) {
-            kept[index] = (slug, detection);
+        let key = normalize_resolution_query(&detection.name);
+        if key.is_empty() {
+            continue;
+        }
+        if let Some(index) = kept.iter().position(|(existing, _)| existing == &key) {
+            kept[index] = (key, detection);
         } else {
-            kept.push((slug, detection));
+            kept.push((key, detection));
         }
     }
     let mut wrote = 0;
 
     modify_detected_entities(journal_root, facet_dir, day, |rows| {
         for row in rows.iter_mut() {
-            let slug = row
+            let name = row.get("name").and_then(Value::as_str).unwrap_or_default();
+            let key = normalize_resolution_query(name);
+            let renamed_id = row
                 .get("id")
                 .and_then(Value::as_str)
-                .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    entity_slug(row.get("name").and_then(Value::as_str).unwrap_or_default())
-                });
-            let Some(index) = kept.iter().position(|(key, _)| key == &slug) else {
+                .filter(|id| *id != entity_slug(name));
+            let Some(index) = kept.iter().position(|(existing, detection)| {
+                existing == &key || renamed_id == Some(entity_slug(&detection.name).as_str())
+            }) else {
                 continue;
             };
             let (_, detection) = kept.remove(index);
@@ -224,9 +232,9 @@ pub fn upsert_detection_segment(
             wrote += 1;
         }
 
-        for (slug, detection) in kept.drain(..) {
+        for (_, detection) in kept.drain(..) {
             rows.push(json!({
-                "id": slug,
+                "id": entity_slug(&detection.name),
                 "type": detection.entity_type,
                 "name": detection.name,
                 "description": detection.description,

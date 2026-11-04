@@ -531,6 +531,124 @@ fn upsert_appends_each_distinct_new_detection_once() {
 }
 
 #[test]
+fn upsert_keeps_each_written_name_when_two_share_a_slug() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for (first, second) in [("张三", "章三"), ("Muñoz", "Munoz"), ("Əli", "Li")] {
+        assert_eq!(
+            solstone_core_entity_matching::entity_slug(first),
+            solstone_core_entity_matching::entity_slug(second)
+        );
+        // In one segment, then across two.
+        upsert_detection_segment(
+            temporary.path(),
+            "scope",
+            "20260101",
+            "a",
+            &[
+                input("Person", first, "first note"),
+                input("Person", second, "second note"),
+            ],
+        )
+        .unwrap();
+        upsert_detection_segment(
+            temporary.path(),
+            "scope",
+            "20260102",
+            "a",
+            &[input("Person", first, "first note")],
+        )
+        .unwrap();
+        upsert_detection_segment(
+            temporary.path(),
+            "scope",
+            "20260102",
+            "b",
+            &[input("Person", second, "second note")],
+        )
+        .unwrap();
+        for day in ["20260101", "20260102"] {
+            let rows = read_detected_entities(temporary.path(), "scope", day).unwrap();
+            for (name, note) in [(first, "first note"), (second, "second note")] {
+                let row = rows.iter().find(|row| row["name"] == name).unwrap();
+                assert_eq!(row["description"], note);
+                assert_eq!(row["id"], solstone_core_entity_matching::entity_slug(name));
+            }
+        }
+    }
+}
+
+#[test]
+fn upsert_keeps_one_row_for_one_written_name() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for (segment, name) in [("a", "Weiß"), ("b", "WEISS"), ("c", "Ｗｅｉｓｓ")] {
+        upsert_detection_segment(
+            temporary.path(),
+            "scope",
+            "20260101",
+            segment,
+            &[input("Person", name, segment)],
+        )
+        .unwrap();
+    }
+    let rows = read_detected_entities(temporary.path(), "scope", "20260101").unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["segments"], json!(["a", "b", "c"]));
+}
+
+#[test]
+fn upsert_has_no_empty_id_for_a_name_with_letters_and_drops_a_blank_name() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    let report = upsert_detection_segment(
+        temporary.path(),
+        "scope",
+        "20260101",
+        "a",
+        &[
+            input("Person", "ᲒᲘᲝᲠᲒᲘ", "first note"),
+            input("Person", "ᲜᲘᲜᲝ", "second note"),
+            input("Person", "Ə", "third note"),
+            input("Person", "   ", "blank"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(report.wrote, 3);
+    let rows = read_detected_entities(temporary.path(), "scope", "20260101").unwrap();
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|row| row["id"] != ""));
+}
+
+#[test]
+fn upsert_leaves_a_row_collapsed_before_this_store_as_it_is() {
+    // A row written when one slug meant one row stays, under the name it kept.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    write_detected(
+        temporary.path(),
+        "scope",
+        "20260101",
+        &[
+            json!({"id":"jose","type":"Person","name":"José","description":"old","segments":["a","b"]}),
+        ],
+    );
+    upsert_detection_segment(
+        temporary.path(),
+        "scope",
+        "20260101",
+        "c",
+        &[input("Person", "Jose", "new")],
+    )
+    .unwrap();
+    let rows = read_detected_entities(temporary.path(), "scope", "20260101").unwrap();
+    assert_eq!(rows.len(), 2);
+    let kept = rows.iter().find(|row| row["name"] == "José").unwrap();
+    assert_eq!(kept["description"], "old");
+    assert_eq!(kept["segments"], json!(["a", "b"]));
+}
+
+#[test]
 fn upsert_uses_existing_id_before_deriving_a_slug_from_the_old_name() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "scope");

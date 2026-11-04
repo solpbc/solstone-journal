@@ -1386,6 +1386,148 @@ mod tests {
         .unwrap();
     }
 
+    #[test]
+    fn names_sharing_a_slug_keep_their_notes_and_stay_one_review_candidate() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        // Different people to the reader, then one person spelled two ways: the
+        // store can't tell these apart, so both stay whole and review weighs them.
+        for (left, right) in [("张三", "章三"), ("José", "Jose")] {
+            for day in ["20260108", "20260109"] {
+                solstone_core_facets::upsert_detection_segment(
+                    root.path(),
+                    "work",
+                    day,
+                    "090000_300",
+                    &[left, right].map(|name| solstone_core_facets::DetectedEntityInput {
+                        entity_type: "Person".to_owned(),
+                        name: name.to_owned(),
+                        description: format!("note about {name}"),
+                    }),
+                )
+                .unwrap();
+            }
+        }
+        let inputs = build_review_inputs(root.path(), "work", "20260110").unwrap();
+        assert_eq!(inputs.eligible.len(), 2);
+        for (slug, names) in [("zhang_san", ["张三", "章三"]), ("jose", ["José", "Jose"])] {
+            let candidate = inputs
+                .eligible
+                .iter()
+                .find(|item| item["slug"] == slug)
+                .unwrap();
+            for name in names {
+                assert!(
+                    candidate["contexts"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|context| context["description"]
+                            == format!("note about {name}").as_str()),
+                    "{candidate}"
+                );
+            }
+        }
+    }
+
+    /// The store and the review, scored over every pair of the name trap catalog.
+    ///
+    /// A pair of different people must not share a row unless the two are
+    /// written identically, which no name-only key can tell apart. A pair of one
+    /// person that the slug joined must stay joined in review, so moving the
+    /// store off the slug adds no split. The bars are the slug-keyed store's own
+    /// join count and the identical-spelling rows of the catalog.
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn identity_traps_score_merges_and_splits() {
+        let traps = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/entity_identity_traps.jsonl"
+        ));
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let days = ["20260108", "20260109"];
+        let input = |name: &str, description: &str| solstone_core_facets::DetectedEntityInput {
+            entity_type: "Person".to_owned(),
+            name: name.to_owned(),
+            description: description.to_owned(),
+        };
+        let (mut pairs, mut merged_different, mut lost_evidence) = (0, 0, 0);
+        let (mut joined_same, mut split_same) = (0, 0);
+        for line in traps.lines() {
+            let trap: Value = serde_json::from_str(line).unwrap();
+            let (a, b) = (trap["a"].as_str().unwrap(), trap["b"].as_str().unwrap());
+            let reading = trap["reading"].as_str().unwrap();
+            let same_written = solstone_core_entity_matching::normalize_resolution_query(a)
+                == solstone_core_entity_matching::normalize_resolution_query(b);
+            pairs += 1;
+            for day in days {
+                let path = root
+                    .path()
+                    .join(format!("facets/work/entities/{day}.jsonl"));
+                if path.exists() {
+                    std::fs::remove_file(path).unwrap();
+                }
+            }
+            // One segment naming both, then two segments naming one each.
+            solstone_core_facets::upsert_detection_segment(
+                root.path(),
+                "work",
+                days[0],
+                "090000_300",
+                &[input(a, "note a"), input(b, "note b")],
+            )
+            .unwrap();
+            for (segment, name, note) in [("090000_300", a, "note a"), ("100000_300", b, "note b")]
+            {
+                solstone_core_facets::upsert_detection_segment(
+                    root.path(),
+                    "work",
+                    days[1],
+                    segment,
+                    &[input(name, note)],
+                )
+                .unwrap();
+            }
+            for day in days {
+                let rows =
+                    solstone_core_facets::read_detected_entities(root.path(), "work", day).unwrap();
+                let both_notes = ["note a", "note b"]
+                    .iter()
+                    .all(|note| rows.iter().any(|row| row["description"] == *note));
+                if !same_written {
+                    assert!(both_notes, "{a} / {b} lost a note on {day}: {rows:?}");
+                }
+                if reading == "different" && rows.len() == 1 {
+                    merged_different += 1;
+                    assert!(same_written, "{a} / {b} share a row on {day}: {rows:?}");
+                }
+                if !both_notes {
+                    lost_evidence += 1;
+                }
+            }
+            if reading == "same" {
+                let inputs = build_review_inputs(root.path(), "work", "20260110").unwrap();
+                if inputs.eligible.len() == 1 {
+                    joined_same += 1;
+                } else {
+                    split_same += 1;
+                }
+            }
+        }
+        eprintln!(
+            "identity traps: {pairs} pairs; different people on one row {merged_different} \
+             (over two writes each); notes lost {lost_evidence}; one person joined in review \
+             {joined_same}; split {split_same}"
+        );
+        assert_eq!(pairs, 1239);
+        // Identical spellings of two people, one row for each of the two writes.
+        assert!(merged_different <= 2 * 15, "{merged_different}");
+        // The slug-keyed store joined 227 of the 675 one-person pairs.
+        assert!(joined_same >= 227, "{joined_same}");
+        assert!(split_same <= 448, "{split_same}");
+    }
+
     /// Save a journal entity, so a pair naming it can be asked.
     fn save(root: &Path, name: &str, entity_type: &str) {
         let id = solstone_core_entity_matching::entity_slug(name);
