@@ -15,8 +15,12 @@ target = "x86_64-pc-windows-msvc"
 # adds one member and one library (140/133 -> 141/134).
 # Re-derived on 2026-10-24 with the same metadata join: possible-names adds
 # one member and one library (141/134 -> 142/135).
-workspace_packages = 142
-library_packages = 135
+# Re-derived on 2026-11-03 with the same metadata join: local-endpoint adds
+# one member and one library (142/135 -> 143/136). It is desktop Unix only:
+# its crate root is cfg(linux, macos), every dependent gates it the same way,
+# and on Windows it builds as an empty library.
+workspace_packages = 143
+library_packages = 136
 
 [[exclusions]]
 package = "ring"
