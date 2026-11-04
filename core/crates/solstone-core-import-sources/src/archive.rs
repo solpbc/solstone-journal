@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
+use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
@@ -28,9 +29,10 @@ use solstone_core_facets::{
 use solstone_core_import::ImportPreview;
 use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockError, LockOptions, PathOrDay, RecordIdentity, Segment,
-    StagedDirOptions, StreamLocation, append_jsonl, atomic_replace, contained_path, hold_lock,
-    iter_segments, publish_staged_dir, realpath_non_strict, write_bytes_exclusive,
+    AtomicWriteOptions, DirectoryIdentityWitness, JournalRootError, LockError, LockOptions,
+    PathOrDay, RecordIdentity, Segment, StagedDirOptions, StreamLocation, append_jsonl,
+    atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
+    realpath_non_strict, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
 use zip::ZipArchive;
@@ -1222,14 +1224,42 @@ struct UndoRecord {
 
 // Retain the staged object through its known same-parent publication. Reopening
 // the live name only compares identity; it never establishes rollback ownership.
+// The retained root keeps its identity from being reused until the merge ends.
 struct PublishedSegment {
     root: solstone_core_journal_io::JournalRoot,
-    ancestors: Vec<solstone_core_journal_io::DirectoryIdentityWitness>,
+    ancestors: Vec<Rc<DirectoryIdentityWitness>>,
     live_path: PathBuf,
 }
 
+/// One retained witness per directory above the published segments, shared by
+/// every segment beneath it. A witness pins one directory object and checks one
+/// canonical path against that object, so sharing it is the same check as a
+/// copy per segment; descriptors then grow with distinct directories, not with
+/// segments times path depth.
+#[derive(Default)]
+struct AncestorWitnesses(BTreeMap<PathBuf, Rc<DirectoryIdentityWitness>>);
+
+impl AncestorWitnesses {
+    fn bind(&mut self, path: &Path) -> Result<Rc<DirectoryIdentityWitness>, JournalRootError> {
+        if let Some(witness) = self.0.get(path) {
+            // The name must still resolve to the directory an earlier segment
+            // retained. A replaced ancestor refuses rather than starting a
+            // second binding the earlier segments' undo could not honour.
+            witness.revalidate_canonical_binding()?;
+            return Ok(Rc::clone(witness));
+        }
+        let witness = Rc::new(DirectoryIdentityWitness::open(path)?);
+        self.0.insert(path.to_path_buf(), Rc::clone(&witness));
+        Ok(witness)
+    }
+}
+
 impl PublishedSegment {
-    fn capture(staging: &Path, destination: &Path) -> io::Result<Self> {
+    fn capture(
+        staging: &Path,
+        destination: &Path,
+        witnesses: &mut AncestorWitnesses,
+    ) -> io::Result<Self> {
         let refusal =
             |error: solstone_core_journal_io::JournalRootError| io::Error::other(error.to_string());
         let root = solstone_core_journal_io::JournalRoot::open(staging).map_err(refusal)?;
@@ -1244,9 +1274,7 @@ impl PublishedSegment {
             .canonical_path()
             .ancestors()
             .skip(1)
-            .map(|path| {
-                solstone_core_journal_io::DirectoryIdentityWitness::open(path).map_err(refusal)
-            })
+            .map(|path| witnesses.bind(path).map_err(refusal))
             .collect::<io::Result<Vec<_>>>()?;
         root.revalidate_canonical_binding().map_err(refusal)?;
         Ok(Self {
@@ -1273,6 +1301,72 @@ impl PublishedSegment {
     }
 }
 
+/// Descriptors set aside before segments publish and released when undo
+/// starts. Every published segment keeps its root open until the merge ends,
+/// so a large archive can exhaust the open-file limit mid-publication; undo
+/// must still be able to open what it needs to remove each segment.
+#[derive(Default)]
+struct UndoReserve {
+    #[cfg(unix)]
+    _held: Vec<File>,
+}
+
+impl UndoReserve {
+    #[cfg(unix)]
+    fn hold(seed: &Path, count: usize) -> io::Result<Self> {
+        let seed = File::open(seed)?;
+        let mut held = Vec::with_capacity(count);
+        for _ in 1..count {
+            held.push(seed.try_clone()?);
+        }
+        held.push(seed);
+        Ok(Self { _held: held })
+    }
+
+    // Windows has no comparably small per-process handle ceiling.
+    #[cfg(not(unix))]
+    fn hold(_seed: &Path, _count: usize) -> io::Result<Self> {
+        Ok(Self {})
+    }
+}
+
+/// Descriptors undo needs at once for the most demanding staged unit. Undoing
+/// a segment admits it and its ancestry twice (output discovery, then the live
+/// directory binding), locks each output it holds, and walks paths; the rest is
+/// headroom for short path walks and the owned-file undo.
+fn undo_reserve_size(target: &Path, state: &MergeState) -> io::Result<usize> {
+    let target_depth = fs::canonicalize(target)?.components().count();
+    let mut widest = 0;
+    for relative in state.chronicle_units.keys() {
+        let ancestors = target_depth + relative.split('/').count() - 1;
+        let outputs = fs::read_dir(state.staged_publish.join(relative))?.count();
+        widest = widest.max(2 * (ancestors + 1) + outputs);
+    }
+    Ok(widest + 16)
+}
+
+/// Raise the soft open-file limit by `extra`, within the hard limit. A merge
+/// keeps one descriptor per published segment until it commits or undoes; the
+/// default soft limit is a compatibility ceiling, not a resource bound. If the
+/// platform refuses, the limit stays as it was and the undo reserve still lets
+/// an exhausted publication undo cleanly.
+#[cfg(unix)]
+fn raise_open_file_limit(extra: usize) {
+    use nix::sys::resource::{Resource, getrlimit, setrlimit};
+    let Ok((soft, hard)) = getrlimit(Resource::RLIMIT_NOFILE) else {
+        return;
+    };
+    let wanted = soft
+        .saturating_add(u64::try_from(extra).unwrap_or(u64::MAX))
+        .min(hard);
+    if wanted > soft {
+        let _ = setrlimit(Resource::RLIMIT_NOFILE, wanted, hard);
+    }
+}
+
+#[cfg(not(unix))]
+fn raise_open_file_limit(_extra: usize) {}
+
 struct MergeState {
     summary: MergeSummary,
     entity_dispositions: Vec<EntityDisposition>,
@@ -1289,6 +1383,8 @@ struct MergeState {
     import_units: PublishUnits,
     pending_ambiguities: Vec<AmbiguityObservation>,
     published: Vec<UndoRecord>,
+    ancestor_witnesses: AncestorWitnesses,
+    undo_reserve: UndoReserve,
     published_entity_json: bool,
     writes: usize,
     has_conflict: bool,
@@ -1318,6 +1414,8 @@ impl MergeState {
             import_units: PublishUnits::new(),
             pending_ambiguities: Vec::new(),
             published: Vec::new(),
+            ancestor_witnesses: AncestorWitnesses::default(),
+            undo_reserve: UndoReserve::default(),
             published_entity_json: false,
             writes: 0,
             has_conflict: false,
@@ -2662,6 +2760,15 @@ fn stage_and_publish(
         })?;
     let chronicle_units = state.chronicle_units.clone();
     let import_units = state.import_units.clone();
+    let not_mutated = |error: io::Error| ImportSourcesError::MergePublishFailed {
+        detail: error.to_string(),
+        mutation: MergeMutationState::NotMutated,
+    };
+    let reserve = undo_reserve_size(target, state).map_err(not_mutated)?;
+    // Each segment's root, at most one shared ancestor witness per segment,
+    // the reserve, and as much again for publication's own transient use.
+    raise_open_file_limit(2 * (chronicle_units.len() + reserve));
+    state.undo_reserve = UndoReserve::hold(target, reserve).map_err(not_mutated)?;
     if let Err(error) = publish_units(target, state, &chronicle_units)
         .and_then(|()| publish_units(target, state, &import_units))
     {
@@ -2853,7 +2960,11 @@ fn publish_one(
                             staging,
                             LockOptions::default(),
                         )?;
-                    segment_binding = Some(PublishedSegment::capture(staging, &destination)?);
+                    segment_binding = Some(PublishedSegment::capture(
+                        staging,
+                        &destination,
+                        &mut state.ancestor_witnesses,
+                    )?);
                     live_name = Some(
                         solstone_core_segment::output_attempt::SegmentMutation::acquire(
                             &destination,
@@ -3071,6 +3182,7 @@ fn undo_publish(
 ) -> Vec<String> {
     #[cfg(test)]
     maybe_drop_undo_preimages(state);
+    state.undo_reserve = UndoReserve::default();
     let mut failures = Vec::new();
     let mut undone = 0_usize;
     let mut release_owned = Some(release_owned);
@@ -4687,7 +4799,9 @@ mod tests {
         let segment = target.join("chronicle").join("20260311").join("120000_60");
         fs::create_dir_all(&segment).unwrap();
         fs::write(segment.join("audio.flac"), b"synthetic audio").unwrap();
-        let authority = PublishedSegment::capture(&segment, &segment).unwrap();
+        let authority =
+            PublishedSegment::capture(&segment, &segment, &mut AncestorWitnesses::default())
+                .unwrap();
         let original = tree.path.join("original-journal");
         if let Err(error) = fs::rename(&target, &original) {
             // Retained descendant authority can itself prevent this forged
@@ -5389,5 +5503,116 @@ mod tests {
             validate_zip_archive(&collision, &ArchiveMergeOptions::default()),
             Err(ImportSourcesError::ArchiveInvalid { .. })
         ));
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[cfg(unix)]
+    #[test]
+    fn archive_merge_fits_and_undoes_within_a_low_open_file_limit() {
+        // The limit is process-wide, so lower it only in a fresh process.
+        if std::env::var_os("SOLSTONE_ARCHIVE_NOFILE_CHILD").is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "archive::tests::archive_merge_fits_and_undoes_within_a_low_open_file_limit",
+                    "--test-threads=1",
+                ])
+                .env("SOLSTONE_ARCHIVE_NOFILE_CHILD", "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "isolated open-file-limit merge failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout)
+                    .contains("test result: ok. 1 passed; 0 failed;"),
+                "isolated assertion did not execute"
+            );
+            return;
+        }
+        use nix::sys::resource::{Resource, setrlimit};
+        const LIMIT: u64 = 256;
+        // Lower the hard limit too: the merge must fit, not raise its way out.
+        setrlimit(Resource::RLIMIT_NOFILE, LIMIT, LIMIT).unwrap();
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let segment = |index: usize| {
+            format!(
+                "chronicle/20260311/{:02}{:02}{:02}_60/audio.flac",
+                index / 3600,
+                index / 60 % 60,
+                index % 60
+            )
+        };
+        let archive_of = |count: usize| {
+            let names = (0..count).map(segment).collect::<Vec<_>>();
+            let members = names
+                .iter()
+                .map(|name| (name.as_str(), &b"synthetic audio"[..]))
+                .collect::<Vec<_>>();
+            write_zip(&tree.path, &members)
+        };
+
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let fits = 100;
+        // Keeping a directory per ancestor per segment would need far more.
+        let ancestors = fs::canonicalize(&target).unwrap().components().count() + 2;
+        assert!((fits * ancestors) as u64 > LIMIT);
+        merge_journal_archive(&archive_of(fits), &target, &merge_options(&tree), None).unwrap();
+        for index in 0..fits {
+            assert_eq!(
+                fs::read(target.join(segment(index))).unwrap(),
+                b"synthetic audio"
+            );
+        }
+
+        // Publication fails with no descriptor left anywhere in the process,
+        // as an exhausted merge does. Undo must still remove what it published.
+        let exhausted = tree.path.join("exhausted");
+        fs::create_dir(&exhausted).unwrap();
+        let hoard = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let held = hoard.clone();
+        let seed = tree.path.clone();
+        AFTER_RAW_PIVOT.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || {
+                loop {
+                    match File::open(&seed) {
+                        Ok(file) => held.borrow_mut().push(file),
+                        Err(error) => {
+                            assert_eq!(
+                                error.raw_os_error(),
+                                Some(nix::errno::Errno::EMFILE as i32)
+                            );
+                            break;
+                        }
+                    }
+                }
+            }))
+        });
+        let error = merge_journal_archive(&archive_of(3), &exhausted, &merge_options(&tree), None)
+            .unwrap_err();
+        assert!(!hoard.borrow().is_empty());
+        drop(hoard);
+        assert!(
+            matches!(
+                error,
+                ImportSourcesError::MergePublishFailed {
+                    mutation: MergeMutationState::MayHaveMutated,
+                    ..
+                }
+            ),
+            "{error}"
+        );
+        assert!(!error.to_string().contains("undo incomplete"), "{error}");
+        // Only the persistent live-name lock entries may remain.
+        let left = journal_family_snapshot(&exhausted)
+            .into_keys()
+            .filter(|path| !path.ends_with(".lock"))
+            .collect::<Vec<_>>();
+        assert!(left.is_empty(), "{left:?}");
     }
 }
