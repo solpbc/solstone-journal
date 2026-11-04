@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "51e1124506dba0edb5f9ae8b4aefb75bc35363ed00d4429ad4a1f15b88796404",
+  "cargo_lock_sha256": "a1df5243b01cb4f5d959615e083bb0d3be4e8657c44f40bd85e68d573a68bcd2",
   "filter_platform": "aarch64-apple-darwin",
   "notice_texts": [
     {
@@ -16222,7 +16222,7 @@
       ]
     },
     {
-      "identity": "spl-core@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.12.0#1135c45d86851ce796631f66c778bd51bd96fdd4)",
+      "identity": "spl-core@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f)",
       "license_expression": "AGPL-3.0-only",
       "notice_references": [
         {
@@ -16232,14 +16232,14 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "1135c45d86851ce796631f66c778bd51bd96fdd4",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/1135c45d86851ce796631f66c778bd51bd96fdd4/LICENSE"
+            "revision": "df60337f81e2a85d488169944856e4a8a629509f",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/df60337f81e2a85d488169944856e4a8a629509f/LICENSE"
           }
         }
       ]
     },
     {
-      "identity": "spl-home@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.12.0#1135c45d86851ce796631f66c778bd51bd96fdd4)",
+      "identity": "spl-home@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f)",
       "license_expression": "AGPL-3.0-only",
       "notice_references": [
         {
@@ -16249,14 +16249,14 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "1135c45d86851ce796631f66c778bd51bd96fdd4",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/1135c45d86851ce796631f66c778bd51bd96fdd4/LICENSE"
+            "revision": "df60337f81e2a85d488169944856e4a8a629509f",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/df60337f81e2a85d488169944856e4a8a629509f/LICENSE"
           }
         }
       ]
     },
     {
-      "identity": "spl-transport@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.12.0#1135c45d86851ce796631f66c778bd51bd96fdd4)",
+      "identity": "spl-transport@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f)",
       "license_expression": "AGPL-3.0-only",
       "notice_references": [
         {
@@ -16266,8 +16266,8 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "1135c45d86851ce796631f66c778bd51bd96fdd4",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/1135c45d86851ce796631f66c778bd51bd96fdd4/LICENSE"
+            "revision": "df60337f81e2a85d488169944856e4a8a629509f",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/df60337f81e2a85d488169944856e4a8a629509f/LICENSE"
           }
         }
       ]

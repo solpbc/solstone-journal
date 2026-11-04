@@ -8,44 +8,16 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on macos and linux, health now shows which programs reach your journal through the older local connection.
-- the agents app now shows what each agent has saved, newest first, and you can delete any of it there. a search result for a memory opens it there too.
-- each agent now shows a short id beside its name, so two agents with the same name are easy to tell apart.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
-- you can pause any agent from its page and resume it later. it keeps its memories and what it may see.
-- if you set an agent up again, you can connect it again from its page, or from the earlier agents list, and it keeps its memories.
-- activity now names each agent by its name and short id.
-
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- an agent you paired with your journal now stays connected while it's in use. after 30 days unused it pauses instead of disconnecting, and you resume it from its page in the agents app, which also shows whether it tried to reach your journal while paused.
-- `solstone link join` now asks whether the mark matches your journal before it saves anything. at a terminal you answer yes or no. in a script, give the mark's two words with `--mark`. with neither, it stops and says what to do, and your pairing link isn't used up.
-- a show, podcast or other recording playing near you, with nothing on your screen showing it, is now a media activity instead of video, and so is one you import as an audio file. imported recordings are no longer summarized as something you watched, and a show playing nearby is a little less often mistaken for a conversation. activities already in your journal keep their type unless your journal processes those recordings again.
-
 ### Fixed
 
-- this is a security fix. someone who got you to use a pairing link they had swapped could link this computer to something that isn't your journal, while `solstone link join` printed your own journal's mark. what this computer then sent through `solstone link serve` would have gone to them instead of your journal. `solstone link join` now refuses a link when what answers claims to be a different journal from the one the link points to, before it asks you anything or saves anything. a swapped link that doesn't claim that reaches the mark question showing its own mark, so if it doesn't match your journal's, answer no. once you've installed this update, if you linked a computer before it, restart `solstone link serve` and compare the mark it names with the one in your journal's network app. if they don't match, that computer isn't linked to your journal, and what it sends keeps going to whatever it's linked to until you link it again: stop `solstone link serve`, delete that pairing's folder under `~/.config/solstone-observer/spl/`, run `solstone link join` with a fresh pairing link, then start `solstone link serve` again. if `solstone link serve` says it's waiting for you to confirm your journal's mark, run `solstone link confirm`. if `confirm` says it couldn't verify, type cancel, then run `solstone link join` with a fresh pairing link.
 - importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
 - importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
-- search now finds a number with or without commas or periods, so `1200` also finds `1,200` and `1.200`, and `1,200` also finds `1200`.
-- a name that only appeared in a window's title, like a shop named after a person, open in your browser, is now listed as on screen: not heard, and not someone mentioned. before, a window's title counted as heard whenever there was speech at the time. activities already in your journal keep their people as they are. thanks @dvanduzer for the report.
-- on linux, journals on FAT or exFAT drives, common on USB sticks and external drives, can now start and save entries after you accept the storage warning. agents can still connect using your other routes, but not directly on the same computer.
-- a story no longer swaps words from a recording for a possible name when those words are already solstone or sol pbc, or the name of someone or something else in your facets. your transcript and search are unchanged.
-- from this update on, an activity's list of people and things keeps every name from each part of it, not only the last few minutes. stories, your agents and the daily briefing read that list.
-- an agent that can no longer reach your journal, because you changed or removed your journal's address on your own domain or revoked it from the command line, now drops out of the agents app instead of showing as connected.
-- `solstone journal importer --facet` now files an audio or text file under the facet you name, so a connection limited to that facet can read its transcript and activities if you've let it see those. a muted or missing facet, or an import `--facet` does not apply to, is refused before anything is imported.
-- five minutes of browsing too long for the local model to read whole now reaches it with every page you had in front of you, by name, and each page's opening, its newest text and the start of some of its sections. before, only the last part was read, so the summary missed more of the earlier pages and their titles. a model with room for all of it still reads it whole.
-- a page that is one long list of names, like a live changes feed, no longer leaves five minutes of your day without a summary. to make that possible, the summary of any five minutes, or of a document you import, now lists at most 40 names and 12 topics.
-- a PDF too long for the local model to read whole is now read from its first and last pages, where its parties, dates and signatures usually are, plus the opening lines of some pages in between. before, only its last pages were read, so its summary could miss its title and who it named. a model with room for the whole PDF still reads every page.
-- the card after you pair a device now shows your journal's mark. it no longer shows a fingerprint or says the pairing is finished before you've answered on that device.
-- on windows, the journal app shows your journal's mark as unavailable when it can't read it, instead of saying your journal isn't set up.
 - fixed another android permission error when downloading a journal archive.
-- notifications no longer stop reaching a phone that hasn't connected to your journal for 30 days.
-- when everything indexed so far is dated after today, a search by you or your agents now finds no matches, rather than saying there's nothing indexed yet.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
 - the journal on iphone keeps its folder permissions private when opening a new or existing journal.
@@ -64,6 +36,42 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.67] - 2026-11-04
+
+### Added
+
+- on macos and linux, health now shows which programs reach your journal through the older local connection.
+- the agents app now shows what each agent has saved, newest first, and you can delete any of it there. a search result for a memory opens it there too.
+- each agent now shows a short id beside its name, so two agents with the same name are easy to tell apart.
+- you can pause any agent from its page and resume it later. it keeps its memories and what it may see.
+- if you set an agent up again, you can connect it again from its page, or from the earlier agents list, and it keeps its memories.
+- activity now names each agent by its name and short id.
+
+### Changed
+
+- an agent you paired with your journal now stays connected while it's in use. after 30 days unused it pauses instead of disconnecting, and you resume it from its page in the agents app, which also shows whether it tried to reach your journal while paused.
+- `solstone link join` now asks whether the mark it shows is your journal's before it saves anything. at a terminal you answer yes or no. in a script, give your journal's mark, its two words, with `--mark`. with neither, it stops and says what to do, and your pairing link isn't used up.
+- a show, podcast or audiobook you import as an audio file is now a media activity instead of video, and a show, podcast or other recording playing near you, with nothing on your screen showing it, can now be a media activity too. imported recordings are now much less often summarized as something you watched, and a show playing nearby is a little less often mistaken for a conversation. activities already in your journal keep their type unless your journal processes those recordings again.
+
+### Fixed
+
+- this is a security fix. someone who got you to use a pairing link they had swapped could link this computer to something that isn't your journal, while `solstone link join` printed your own journal's mark. what this computer then sent through `solstone link serve` would have gone to them instead of your journal. `solstone link join` now refuses a link when what answers claims to be a different journal from the one the link points to, before it asks you anything or saves anything. a swapped link whose journal doesn't pretend to be yours reaches the mark question showing its own mark, so if it doesn't match your journal's, answer no. once you've installed this update, if you linked a computer before it, restart `solstone link serve` and compare the mark it names with the one in your journal's network app. if they don't match, that computer isn't linked to your journal, and what it sends keeps going to whatever it's linked to until you link it again: stop `solstone link serve`, delete that pairing's folder under `~/.config/solstone-observer/spl/`, run `solstone link join` with a fresh pairing link, then start `solstone link serve` again. if `solstone link serve` says it's waiting for you to confirm your journal's mark, run `solstone link confirm`. if `confirm` says it couldn't verify, type cancel, then run `solstone link join` with a fresh pairing link.
+- search now finds a number with or without commas or periods, so `1200` also finds `1,200` and `1.200`, and `1,200` also finds `1200`.
+- a name that only appeared in a window's title, like a shop in your browser named after a person, is now listed as on screen, not as heard or as someone mentioned. before, a window's title counted as heard whenever there was speech at the time. activities already in your journal keep their people as they are. thanks @dvanduzer for the report.
+- on linux, journals on FAT or exFAT drives, common on USB sticks and external drives, can now start and save entries after you accept the storage warning. agents can't connect to these journals on the same computer, on your network or through your own domain, and may not be able to connect through solstone.me.
+- a story no longer swaps words from a recording for a possible name when those words are already solstone or sol pbc, or the name of someone or something else in your facets. your transcript and search are unchanged.
+- from this update on, an activity's list of people and things keeps every name from each part of it, not only the last few minutes. stories, your agents and the daily briefing read that list.
+- from this update on, an agent that can no longer reach your journal, because you changed or removed your journal's address on your own domain or revoked it from the command line, drops out of the agents app instead of showing as connected. one left from before this update stays listed until you disconnect it.
+- `solstone journal importer --facet` now files an audio or text file under the facet you name, so a connection limited to that facet can read its transcript and activities if you've let it see those. a muted or missing facet, or an import `--facet` does not apply to, is refused before anything is imported.
+- five minutes of browsing too long for the local model to read whole now reaches it with every page you had in front of you, by name, and each page's opening, its newest text and the start of some of its sections. before, only the last part was read, so the summary missed more of the earlier pages and their titles. a model with room for all of it still reads it whole.
+- a page that is one long list of names, like a live changes feed, no longer leaves five minutes of your day without a summary. to make that possible, the summary of any five minutes, or of a document you import, now lists at most 40 names and 12 topics.
+- a PDF too long for the local model to read whole is now read from its first and last pages, where its parties, dates and signatures usually are, plus the opening lines of some pages in between. before, only its last pages were read, so its summary could miss its title and who it named. a model with room for the whole PDF still reads every page.
+- the card after you pair a device now shows your journal's mark. it no longer shows a fingerprint or says the pairing is finished before you've answered on that device.
+- on windows, the journal app shows your journal's mark as unavailable when it can't read it, instead of saying your journal isn't set up.
+- on windows, the journal app now draws your journal's mark whole. before, some marks were missing parts of their icons.
+- notifications no longer stop reaching a phone that hasn't connected to your journal for 30 days.
+- when everything indexed so far is dated after today, a search by you or your agents now finds no matches, rather than saying there's nothing indexed yet.
 
 ## [2.0.66] - 2026-11-03
 
