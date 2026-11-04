@@ -5,7 +5,11 @@ synth.notes.label = tr label { $name }
 synth.notes.gate = tr gate { $open }
 
 synth.notes.span = { $count ->
+    [zero] tr span other { $count }
     [one] tr span one { $count }
+    [two] tr span other { $count }
+    [few] tr span other { $count }
+    [many] tr span other { $count }
    *[other] tr span other { $count }
 }
 
@@ -13,6 +17,7 @@ synth.notes.forms = { $count ->
     [zero] forms zero { $count }
     [one] forms one { $count }
     [two] forms two { $count }
+    [few] tr-other { $count }
     [many] forms many { $count }
    *[other] tr-other { $count }
 }

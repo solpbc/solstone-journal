@@ -479,11 +479,19 @@ pub fn validate_admitted_message(
     if !is_source && let Some(src) = source_msg {
         match meta.format_intent {
             FormatIntent::Cardinal => {
-                // Check the source categories this locale can select are present
-                for src_b in &src.branches {
-                    if let Some(key) = &src_b.key
-                        && family.is_none_or(|family| family.can_show(key))
-                        && !msg.branches.iter().any(|b| b.key.as_deref() == Some(key))
+                // Every category the family selects needs its own form, or it falls
+                // to the default and reads wrong. With no family, the source decides.
+                let required: Vec<&str> = match family {
+                    Some(family) => family.categories(),
+                    None => src
+                        .branches
+                        .iter()
+                        .filter_map(|b| b.key.as_deref())
+                        .collect(),
+                };
+                for key in required {
+                    if !msg.branches.iter().any(|b| b.key.as_deref() == Some(key))
+                        && (family.is_none() || key != "other")
                     {
                         faults.push(Fault::new("cardinal-branch-missing", locale, msg_id));
                     }
