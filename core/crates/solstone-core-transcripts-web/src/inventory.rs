@@ -795,6 +795,8 @@ fn emit_notification(journal_root: &Path, _identity: ObjectIdentity, kind: &str,
     test_support::record_notification(_identity, kind, key);
 
     let sock_path = journal_root.join("health/callosum.sock");
+    // On Windows the bus is a named pipe, so this path is logical and never exists on disk.
+    #[cfg(unix)]
     if !sock_path.exists() {
         return;
     }
@@ -3770,6 +3772,16 @@ mod tests {
             let bad_seg = stream_dir.join(bad_os);
             fs::create_dir_all(&bad_seg).unwrap();
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::{OsStrExt, OsStringExt};
+            let mut bad_name = std::ffi::OsStr::new("120000_60")
+                .encode_wide()
+                .collect::<Vec<_>>();
+            bad_name.push(0xD800);
+            let bad_seg = stream_dir.join(std::ffi::OsString::from_wide(&bad_name));
+            fs::create_dir_all(&bad_seg).unwrap();
+        }
 
         solstone_core_journal_io::bump_stream_marker(temp.path(), target_day).unwrap();
 
@@ -5208,8 +5220,10 @@ mod tests {
         // Event 4: solstone_core_segment::relocate_segment across two days
         let before_4_src = walk3.get("20260101").copied().unwrap_or(0);
         let before_4_dst = walk3.get("20260102").copied().unwrap_or(0);
-        let src_dir = temp.path().join("chronicle/20260101/field/100000_60");
-        let dst_dir = temp.path().join("chronicle/20260102/field/100000_60");
+        // A move names its ends under the journal's canonical spelling, which differs on Windows.
+        let canonical = fs::canonicalize(temp.path()).unwrap();
+        let src_dir = canonical.join("chronicle/20260101/field/100000_60");
+        let dst_dir = canonical.join("chronicle/20260102/field/100000_60");
         let source = solstone_core_segment::RelocationEnd {
             day: "20260101".to_string(),
             segment: "100000_60".to_string(),
