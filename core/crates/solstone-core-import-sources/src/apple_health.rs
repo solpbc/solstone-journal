@@ -588,11 +588,15 @@ pub(crate) fn number_events(workout: &str, events: Vec<BodyRow>) -> Vec<BodyRow>
     let mut by_identity: BTreeMap<(String, String), BTreeMap<String, BodyRow>> = BTreeMap::new();
     for event in events {
         let content = serde_json::to_string(&event).expect("a body row serializes");
+        // By its instant, so an export rendering another offset is the same event.
+        let at = event.start.as_deref().map_or_else(String::new, |start| {
+            parse_source_time(start).map_or_else(
+                || start.to_owned(),
+                |time| time.timestamp_millis().to_string(),
+            )
+        });
         by_identity
-            .entry((
-                event.record_type.clone(),
-                event.start.clone().unwrap_or_default(),
-            ))
+            .entry((event.record_type.clone(), at))
             .or_default()
             .insert(content, event);
     }
@@ -836,6 +840,35 @@ pub struct Decision {
     pub unchanged_rows: u64,
 }
 
+/// A value with every time in it as its instant, so two renderings of one time at
+/// different offsets read alike.
+fn at_instants(value: &mut Value) {
+    match value {
+        Value::String(text) => {
+            if let Some(time) = parse_source_time(text) {
+                *value = json!(time.timestamp_millis());
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(at_instants),
+        Value::Object(items) => items.values_mut().for_each(at_instants),
+        _ => {}
+    }
+}
+
+/// Whether two rows state the same thing. An export rendering another offset states
+/// the same times, so what's stored stays as it is.
+fn same_row(new: &BodyRow, stored: &BodyRow) -> bool {
+    if new == stored {
+        return true;
+    }
+    let plain = |row: &BodyRow| {
+        let mut value = serde_json::to_value(row).expect("a body row serializes");
+        at_instants(&mut value);
+        value
+    };
+    plain(new) == plain(stored)
+}
+
 /// Merge one window's rows from this run into what it holds. A row takes the
 /// stored row's place by id and keeps the run that first wrote it; the rest are
 /// kept, because an export that omits a record isn't a deletion. `run` marks rows
@@ -863,7 +896,7 @@ pub fn decide(
     for row in &mut merged_rows {
         if let Some(mut new) = incoming.remove(&row.id) {
             new.run.clone_from(&row.run);
-            if new == *row {
+            if same_row(&new, row) {
                 decision.unchanged_rows += 1;
             } else {
                 decision.updated_rows += 1;
@@ -912,22 +945,19 @@ fn key_length(key: &str) -> Option<i64> {
 /// A reading has two places on its day: its hour, and the grid slot of a session
 /// from its own source that covers it. Which one depends on the export, so it can
 /// change between imports. A reading already saved in its other place stays
-/// there, so no reading is ever in two windows. One whose other place the owner
-/// deleted isn't added, because a tombstone says which files it removed, not which
-/// readings, and a deleted reading must not come back. For a reading bound for its
-/// hour, the slot only counts when no session at all covers it here
-/// (`covered_any`): a slot a session still holds was that session's tile, which a
-/// reading from another source was never in. An other place whose file can't be
-/// read as rows holds the reading back too, as `decide` leaves such a window alone.
-/// A place the journal can't be asked about at all stops the day, as a write there
-/// would. Returns the windows, without any this left with nothing, and how many
-/// readings were held back.
+/// there, so no reading is ever in two windows. One not saved anywhere whose other
+/// place the owner deleted isn't added, because a tombstone says which files it
+/// removed, not which readings, and a deleted reading must not come back. That
+/// holds back a new reading in a deleted slot too, and the count says so. An other
+/// place whose file can't be read as rows holds the reading back too, as `decide`
+/// leaves such a window alone. A place the journal can't be asked about at all
+/// stops the day, as a write there would. Returns the windows, without any this
+/// left with nothing, and how many readings were held back.
 pub fn settle_readings(
     journal: &Path,
     day: &str,
     zone: Tz,
     windows: DayRows,
-    covered_any: &BTreeSet<String>,
 ) -> Result<(DayRows, u64), String> {
     let mut by_key: BTreeMap<String, BTreeMap<String, BodyRow>> = windows
         .into_iter()
@@ -949,6 +979,8 @@ pub fn settle_readings(
                 .map(|rows| rows.into_iter().map(|row| row.id).collect())
                 .map_err(|_| ()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
+            // Bytes that aren't text are a file that can't be read as rows.
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Err(()),
             Err(error) => return Err(format!("{}: {error}", path.display())),
         };
         stored.insert(key.to_owned(), found.clone());
@@ -991,9 +1023,6 @@ pub fn settle_readings(
                     moves.push((key.clone(), id.clone(), None));
                     continue;
                 }
-            }
-            if length == HOUR_SECONDS && covered_any.contains(id) {
-                continue;
             }
             let gone = match deleted.get(&other) {
                 Some(gone) => *gone,

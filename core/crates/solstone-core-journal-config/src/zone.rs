@@ -31,6 +31,15 @@ pub fn host_zone() -> Tz {
         .unwrap_or(Tz::UTC)
 }
 
+/// The zone an import source fixed at its first import, which placed its windows.
+/// `None` when it has no such record, or one that can't be read.
+#[must_use]
+pub fn placed_zone(journal: &std::path::Path, source: &str) -> Option<Tz> {
+    let bytes = std::fs::read(journal.join(format!("imports/.{source}-zone.json"))).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    parse_zone(value.get("zone")?.as_str()?)
+}
+
 /// The IANA zone `name` names, ignoring surrounding whitespace; `None` for
 /// anything that is not one.
 pub fn parse_zone(name: &str) -> Option<Tz> {

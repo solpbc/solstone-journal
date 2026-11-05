@@ -116,6 +116,17 @@ pub fn bind_import_record(
     requested: &Timestamp,
     source: Option<&Path>,
 ) -> Result<BoundImport, ImportError> {
+    bind_import_record_where(journal_root, requested, source, &|_| true)
+}
+
+/// As [`bind_import_record`], reusing a matching record only if `may_reuse` says
+/// so. A record it refuses stays as it is, and these bytes get a fresh one.
+pub fn bind_import_record_where(
+    journal_root: &Path,
+    requested: &Timestamp,
+    source: Option<&Path>,
+    may_reuse: &dyn Fn(&str) -> bool,
+) -> Result<BoundImport, ImportError> {
     let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use(
         journal_root,
     )
@@ -128,6 +139,7 @@ pub fn bind_import_record(
     };
     if let Some(hash) = &source_hash
         && let Some(import_id) = matching_record_id(journal_root, requested, hash)?
+        && may_reuse(import_id.as_str())
     {
         // A saved record may have appeared or changed while an independently
         // admitted request waited. Revoke at the final binding as well.
