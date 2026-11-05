@@ -22,7 +22,9 @@
     "key": {
       "theft_honesty": "anyone with your recovery key can read everything in your backup. store it like a master password.",
       "pm_caution": "only store your recovery key in a password manager you trust. sol pbc doesn't recommend a specific one.",
-      "save_password_manager": "save to my password manager",
+      "save_key": "save recovery key",
+      "save_failed": "couldn't save your recovery key. copy it or write it down before continuing.",
+      "copy_failed": "couldn't copy your recovery key. save it to a file or write it down before continuing.",
       "copy_label": "copy",
       "continue": "continue",
       "clipboard_caveat": "copying puts your recovery key on the clipboard. clear it after you save it."
@@ -2248,8 +2250,35 @@
   }
 
   async function copyRecoveryKey() {
-    if (!currentRecoveryDisplay || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(currentRecoveryDisplay);
+    if (!currentRecoveryDisplay) return;
+    try {
+      if (!navigator.clipboard) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(currentRecoveryDisplay);
+    } catch (_) {
+      throw { error: copy.key.copy_failed };
+    }
+  }
+
+  async function saveRecoveryKey() {
+    if (!currentRecoveryDisplay) return;
+    const file = new File([currentRecoveryDisplay + '\n'], 'journal-recovery-key.txt', { type: 'text/plain' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+      } catch (error) {
+        if (error.name !== 'AbortError') throw { error: copy.key.save_failed };
+      }
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Let the browser accept the download before retiring its source.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function syncBackendFields(prefix) {
@@ -2537,8 +2566,13 @@
           await revealRecoveryKey();
           showPanel('display');
         }
-        if (action === 'copy-key' || action === 'save-password-manager') {
+        if (action === 'copy-key') {
+          showMessage('[data-recovery-error]', '');
           await copyRecoveryKey();
+        }
+        if (action === 'save-key') {
+          showMessage('[data-recovery-error]', '');
+          await saveRecoveryKey();
         }
         if (action === 'enable-backup') {
           await startOperation('/app/backup/enable');
@@ -2635,7 +2669,9 @@
         if (['offload-restore-day', 'teardown-restore-first', 'switch-restore-first'].includes(action)) {
           showMessage('[data-offload-restore-status]', '');
         }
-        if (action && action.startsWith('teardown-')) {
+        if (['copy-key', 'save-key'].includes(action)) {
+          showError('[data-recovery-error]', err);
+        } else if (action && action.startsWith('teardown-')) {
           showError('[data-teardown-status]', err);
         } else if (action && action.startsWith('offload-')) {
           showMessage('[data-offload-config-status]', offloadActionError(err));

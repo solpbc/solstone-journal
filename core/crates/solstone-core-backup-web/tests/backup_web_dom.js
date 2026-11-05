@@ -195,6 +195,18 @@ class Element {
 
   focus() { this.ownerDocument.activeElement = this; }
 
+  click() {
+    if (this.tagName === 'A' && this.download) this.ownerDocument.downloads.push({ url: this.href, name: this.download });
+    this.dispatchEvent(event('click', { bubbles: true }));
+  }
+
+  remove() {
+    if (this.parentElement) {
+      this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+      this.parentElement = null;
+    }
+  }
+
   get isConnected() {
     let node = this;
     while (node && node !== this.ownerDocument) node = node.parentElement;
@@ -204,6 +216,7 @@ class Element {
 
 class Document {
   constructor() {
+    this.downloads = [];
     this.readyState = 'complete';
     this.documentElement = new Element('html', this);
     this.body = new Element('body', this);
@@ -293,6 +306,11 @@ function fixture(document) {
   const intro = add(panels, 'article', { 'data-backup-panel': 'intro', hidden: '' });
   const showRestore = add(intro, 'button', { 'data-action': 'show-restore' });
   const generateKey = add(intro, 'button', { 'data-action': 'understand' });
+  const display = add(panels, 'article', { 'data-backup-panel': 'display', hidden: '' });
+  add(display, 'button', { 'data-action': 'save-key' });
+  add(display, 'button', { 'data-action': 'copy-key' });
+  add(display, 'div', { 'data-recovery-grid': '' });
+  add(display, 'p', { 'data-recovery-error': '', hidden: '' });
   const management = add(panels, 'article', { 'data-backup-panel': 'management', hidden: '' });
   const pausedSection = add(management, 'section', { 'data-paused-section': '', hidden: '' });
   const resume = add(pausedSection, 'button', { 'data-action': 'resume' });
@@ -453,7 +471,7 @@ function createHarness(options = {}) {
     set href(val) { this.assigned = val; },
     assign(val) { this.assigned = val; },
   };
-  const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)' };
+  const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)', ...options.navigator };
   const window = {
     crypto: require('crypto').webcrypto,
     document,
@@ -496,7 +514,7 @@ function createHarness(options = {}) {
   }
   window.window = window;
   window.top = window;
-  const context = vm.createContext({ window, document, console, fetch, URL, navigator, location, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout });
+  const context = vm.createContext({ window, document, console, fetch, URL, File, navigator, location, setTimeout: window.setTimeout, clearTimeout: window.clearTimeout });
   const shellAssets = path.resolve(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static');
   const hostJs = fs.readFileSync(path.join(shellAssets, 'journal-web-host.js'), 'utf8');
   const navJs = fs.readFileSync(path.join(shellAssets, 'external-navigation.js'), 'utf8');
@@ -513,6 +531,7 @@ function createHarness(options = {}) {
   vm.runInContext(source, context, { filename: 'backup.js' });
   return {
     ...elements,
+    document,
     calls,
     timers,
     popups,
@@ -2441,6 +2460,64 @@ asyncCase('saving and enabling preserve exact configured offload byte limits', a
     assert.deepStrictEqual(posted, [{ budget_bytes: budget, floor_bytes: floor }]);
     harness.detach();
   }
+});
+
+async function keyHarness(navigator = {}) {
+  const harness = createHarness({ navigator, respond(call) {
+    if (call.url === '/app/backup/keys/generate') return response({ recovery_key_display: 'test key words' });
+  } });
+  await ready(harness);
+  click(harness.generateKey);
+  await settle();
+  return harness;
+}
+
+asyncCase('saving a key downloads its bytes without using the clipboard or confirming it', async () => {
+  let copied = false;
+  const h = await keyHarness({ clipboard: { writeText() { copied = true; } } });
+  h.clearCalls();
+  click(h.root.querySelector('[data-action="save-key"]'));
+  await settle();
+  assert.strictEqual(h.document.downloads.length, 1);
+  const download = h.document.downloads[0];
+  assert.strictEqual(download.name, 'journal-recovery-key.txt');
+  assert.strictEqual(await (await fetch(download.url)).text(), 'test key words\n');
+  assert.strictEqual(copied, false);
+  assert.strictEqual(h.calls.length, 0, 'saving does not confirm recovery possession');
+  await h.runTimer(1000);
+  await assert.rejects(fetch(download.url));
+  h.detach();
+});
+
+asyncCase('native key sharing handles cancel and failure without confirming the key', async () => {
+  for (const outcome of ['success', 'cancel', 'failure']) {
+    let received;
+    const h = await keyHarness({ canShare: () => true, async share({ files }) {
+      received = files[0];
+      if (outcome === 'cancel') throw Object.assign(new Error('cancelled'), { name: 'AbortError' });
+      if (outcome === 'failure') throw new Error('destination unavailable');
+    } });
+    h.clearCalls();
+    click(h.root.querySelector('[data-action="save-key"]'));
+    await settle();
+    assert.strictEqual(await received.text(), 'test key words\n');
+    assert.strictEqual(h.document.downloads.length, 0);
+    assert.strictEqual(h.calls.length, 0);
+    const error = h.root.querySelector('[data-recovery-error]');
+    assert.strictEqual(error.hidden, outcome !== 'failure');
+    if (outcome === 'failure') assert.ok(error.textContent.length > 0);
+    h.detach();
+  }
+});
+
+asyncCase('an unavailable clipboard leaves a visible recovery path', async () => {
+  const h = await keyHarness();
+  click(h.root.querySelector('[data-action="copy-key"]'));
+  await settle();
+  const error = h.root.querySelector('[data-recovery-error]');
+  assert.strictEqual(error.hidden, false);
+  assert.ok(error.textContent.length > 0);
+  h.detach();
 });
 
 async function runAsyncCases() {

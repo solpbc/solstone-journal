@@ -137,9 +137,15 @@ final class OwnerRead: @unchecked Sendable {
   private struct Slot { let read: OwnerRead; let task: WKURLSchemeTask }
   private let owner: OwnerJournal
   let uploads: OwnerUploadBridge
+  private lazy var downloads = OwnerDownloads(presenter: { [weak self] in self?.topController() },
+    failed: { [weak self] in
+      self?.alert("couldn't save this file. try again from its page.", confirm: false) { _ in }
+    })
   private var requests: [ObjectIdentifier: Slot] = [:]
   private weak var web: WKWebView?
   private var mainNavigation: URL
+  private var mainRequest: URLRequest?
+  private var downloadNavigationCancelled = false
   private var redirects = 0
   private let workers: OperationQueue = {
     let queue = OperationQueue()
@@ -154,6 +160,7 @@ final class OwnerRead: @unchecked Sendable {
   }
   func close() {
     uploads.close()
+    downloads.close()
     for request in requests.values { request.read.cancel() }
     requests.removeAll()
     workers.cancelAllOperations()
@@ -232,18 +239,50 @@ final class OwnerRead: @unchecked Sendable {
   func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
     guard let url = action.request.url else { decisionHandler(.cancel); return }
+    if action.shouldPerformDownload {
+      let trusted = action.sourceFrame.isMainFrame
+        && action.sourceFrame.request.url.flatMap { try? OwnerOrigin.admit($0) } != nil
+      if trusted && (try? OwnerOrigin.admit(url)) != nil {
+        decisionHandler(.cancel)
+        downloads.receive(action.request)
+      } else if trusted && url.scheme == "blob" {
+        downloadNavigationCancelled = true
+        decisionHandler(.download)
+      } else { decisionHandler(.cancel) }
+      return
+    }
     if (try? OwnerOrigin.admit(url)) != nil {
       if action.targetFrame?.isMainFrame == true {
         mainNavigation = url
+        mainRequest = action.request
         decisionHandler(.allow)
       } else {
         decisionHandler(.cancel)
-        if action.targetFrame == nil { mainNavigation = url; webView.load(action.request) }
+        if action.targetFrame == nil { mainNavigation = url; mainRequest = action.request; webView.load(action.request) }
       }
     } else {
       decisionHandler(.cancel)
       if action.targetFrame == nil || action.targetFrame?.isMainFrame == true { external(url) }
     }
+  }
+  func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
+               decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+    guard response.isForMainFrame, let url = response.response.url,
+          (try? OwnerOrigin.admit(url)) != nil else { decisionHandler(.allow); return }
+    let disposition = (response.response as? HTTPURLResponse)?
+      .value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
+    if disposition.hasPrefix("attachment") || !response.canShowMIMEType {
+      downloadNavigationCancelled = true
+      decisionHandler(.cancel)
+      if let request = mainRequest, request.url == url { downloads.receive(request) }
+      else { downloads.receive(URLRequest(url: url)) }
+    } else { decisionHandler(.allow) }
+  }
+  func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+    downloads.receive(download)
+  }
+  func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+    downloads.receive(download)
   }
   func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -251,12 +290,18 @@ final class OwnerRead: @unchecked Sendable {
     return nil
   }
   func webView(_: WKWebView, didStartProvisionalNavigation _: WKNavigation!) {
+    downloadNavigationCancelled = false
     uploads.rotateDocument()
   }
   func webView(_: WKWebView, didCommit _: WKNavigation!) {
     uploads.commitDocument()
   }
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    if downloadNavigationCancelled {
+      downloadNavigationCancelled = false
+      uploads.abandonProvisionalDocument()
+      return
+    }
     if (error as NSError).code != NSURLErrorCancelled {
       uploads.abandonProvisionalDocument()
       owner.pageFailed()
