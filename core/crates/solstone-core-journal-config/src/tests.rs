@@ -13,7 +13,8 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::defaults::{
-    IdentityError, IdentitySource, IdentitySourceGuard, fallback_identity, install_identity_source,
+    IdentityError, IdentitySource, IdentitySourceGuard, account_owner_name, fallback_identity,
+    install_identity_source,
 };
 use crate::read::{ReadSource, install_read_source};
 use crate::test_support::TempDir;
@@ -37,6 +38,22 @@ const UNICODE_REAL_PADDED: &str = "  Ada Löveläce 好  ";
 const UNICODE_REAL: &str = "Ada Löveläce 好";
 const UNICODE_USER_PADDED: &str = "\u{001c}  adá  \u{001f}";
 const UNICODE_USER: &str = "adá";
+
+#[test]
+fn ios_process_account_does_not_supply_owner_names() {
+    let identity = fallback_identity(
+        account_owner_name(ok("Mobile User"), true),
+        account_owner_name(ok("mobile"), true),
+        ok(TZ),
+    );
+    assert_eq!(identity, (String::new(), String::new(), TZ.to_owned()));
+    let desktop = fallback_identity(
+        account_owner_name(ok(REAL), false),
+        account_owner_name(ok(USER), false),
+        ok(TZ),
+    );
+    assert_eq!(desktop, (REAL.to_owned(), USER.to_owned(), TZ.to_owned()));
+}
 
 type ScriptedResult = Result<String, IdentityError>;
 
@@ -386,8 +403,14 @@ fn defaults_do_not_add_setup() {
 #[ignore = "live OS identity oracle; run on Windows/MSVC and macOS"]
 #[test]
 fn materialized_defaults_match_live_os_identity_oracle() {
-    let real_name = whoami::realname().map_err(IdentityError::from);
-    let user_name = whoami::username().map_err(IdentityError::from);
+    let real_name = account_owner_name(
+        whoami::realname().map_err(IdentityError::from),
+        cfg!(target_os = "ios"),
+    );
+    let user_name = account_owner_name(
+        whoami::username().map_err(IdentityError::from),
+        cfg!(target_os = "ios"),
+    );
     let timezone = iana_time_zone::get_timezone().map_err(IdentityError::from);
     let (name, preferred, zone) = fallback_identity(real_name, user_name, timezone);
     let materialized = materialized_defaults();

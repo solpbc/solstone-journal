@@ -1056,6 +1056,42 @@ fn adoption_changes_nothing_when_the_owner_match_is_ambiguous_or_unconfigured() 
 }
 
 #[test]
+fn empty_initial_profile_waits_for_the_owner_before_creating_a_principal() {
+    let journal = TempDir::new();
+    write_identity_config(journal.path(), json!({"name":"","preferred":""}));
+    assert_eq!(
+        crate::ensure_configured_principal(journal.path()).unwrap(),
+        None
+    );
+    assert!(read_journal_principal(journal.path()).unwrap().is_none());
+
+    // The profile autosaves one field at a time. The full name is sufficient;
+    // a later preferred-name save must preserve the established Person.
+    write_identity_config(
+        journal.path(),
+        json!({"name":"Juliet Capulet","preferred":""}),
+    );
+    let id = crate::ensure_configured_principal(journal.path())
+        .unwrap()
+        .unwrap();
+    let principal = read_journal_principal(journal.path()).unwrap().unwrap();
+    assert_eq!(principal["id"], id);
+    assert_eq!(principal["name"], "Juliet Capulet");
+    write_identity_config(
+        journal.path(),
+        json!({"name":"Juliet Capulet","preferred":"Juliet"}),
+    );
+    assert_eq!(
+        crate::ensure_configured_principal(journal.path()).unwrap(),
+        None
+    );
+    assert_eq!(
+        read_journal_principal(journal.path()).unwrap(),
+        Some(principal)
+    );
+}
+
+#[test]
 fn profile_save_creates_one_principal_and_preserves_it_after_a_name_change() {
     let journal = TempDir::new();
     write_identity_config(

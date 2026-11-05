@@ -192,13 +192,28 @@ pub(crate) fn fallback_identity(
 
 struct SystemIdentitySource;
 
+pub(crate) fn account_owner_name(
+    name: Result<String, IdentityError>,
+    is_ios: bool,
+) -> Result<String, IdentityError> {
+    // iOS runs apps as a shared system account, not the journal's owner.
+    // Leave fresh names empty until the owner supplies a profile.
+    if is_ios { Ok(String::new()) } else { name }
+}
+
 impl IdentitySource for SystemIdentitySource {
     fn real_name(&self) -> Result<String, IdentityError> {
-        whoami::realname().map_err(IdentityError::from)
+        account_owner_name(
+            whoami::realname().map_err(IdentityError::from),
+            cfg!(target_os = "ios"),
+        )
     }
 
     fn user_name(&self) -> Result<String, IdentityError> {
-        whoami::username().map_err(IdentityError::from)
+        account_owner_name(
+            whoami::username().map_err(IdentityError::from),
+            cfg!(target_os = "ios"),
+        )
     }
 
     fn timezone(&self) -> Result<String, IdentityError> {
