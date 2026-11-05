@@ -12,6 +12,14 @@ build = "build.rs"
 
 [features]
 full-tests = []
+test-hooks = []
+
+# The restore test parks a fold after its identity read. That barrier is not
+# in the production graph, so this target asks for it explicitly.
+[[test]]
+name = "calendar_restore"
+path = "tests/calendar_restore.rs"
+required-features = ["test-hooks"]
 
 [lints]
 workspace = true

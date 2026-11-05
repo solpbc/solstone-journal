@@ -15,10 +15,11 @@ use serde_json::Value;
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_convey_shell::recovery_drain::{pause_admitted_work, register_recovery_hooks};
 use solstone_core_journal_io::JournalRoot;
-use solstone_core_journal_io::whole_journal_restore::{
-    begin_target_use_bound, install_target_use_wait_hook,
+use solstone_core_journal_io::whole_journal_restore::install_target_use_wait_hook;
+use solstone_core_transcripts_web::{
+    Clock, install_calendar_identity_barrier, release_calendar_identity_barrier,
+    reset_calendar_while_held,
 };
-use solstone_core_transcripts_web::{Clock, reset_calendar_while_held};
 use tower::ServiceExt;
 
 fn copy_dir_all(src: &Path, dst: &Path) {
@@ -44,36 +45,81 @@ fn setup_fixture_journal() -> (tempfile::TempDir, Arc<JournalRoot>) {
     (temp, root)
 }
 
+fn write_analyzed_audio(dir: &Path, text: &str) {
+    fs::create_dir_all(dir).unwrap();
+    fs::write(
+        dir.join("mic_audio.jsonl"),
+        format!(
+            "{{\"_solstone_processing\":{{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}}}\n{{\"start\":\"10:00:00\",\"end\":\"10:00:01\",\"text\":\"{text}\"}}\n"
+        ),
+    )
+    .unwrap();
+}
+
+fn write_browser_segment(journal: &Path, day: &str, key: &str) {
+    let seg = journal
+        .join("chronicle")
+        .join(day)
+        .join("workstation.browser")
+        .join(key);
+    fs::create_dir_all(&seg).unwrap();
+    fs::write(
+        seg.join("stream.json"),
+        b"{\"stream\":\"workstation.browser\",\"seq\":1}\n",
+    )
+    .unwrap();
+    fs::write(
+        seg.join("browser_page.jsonl"),
+        b"{\"t\":\"segment_start\",\"ts\":1783006230000,\"rel\":30000,\"site\":\"example.com\",\"url\":\"https://example.com\",\"title\":\"Test\",\"adapter\":\"docs\",\"ctx\":\"doc\",\"n\":1,\"blocks\":[]}\n",
+    )
+    .unwrap();
+}
+
 #[tokio::test]
 async fn test_barrier_restore_ordering() {
-    let (temp, root) = setup_fixture_journal();
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("config")).unwrap();
+    fs::write(
+        temp.path().join("config/journal.json"),
+        br#"{"identity":{"timezone":"UTC"},"convey":{"password_hash":"","secret":"sec","trust_localhost":true}}"#,
+    )
+    .unwrap();
+    let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+    let identity = root.identity();
+    let day = "20260101";
+    write_analyzed_audio(
+        &temp
+            .path()
+            .join("chronicle")
+            .join(day)
+            .join("field/100000_60"),
+        "seed",
+    );
 
-    let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
-    let clock = Clock::fixed(now);
+    let now_ref = Arc::new(Mutex::new(
+        Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+    ));
+    let now_c = now_ref.clone();
+    let clock = Clock::new(move || *now_c.lock().unwrap());
     let app = solstone_core_transcripts_web::router(temp.path().to_path_buf(), clock, || {
         axum::response::Response::new(Body::empty())
     });
 
-    // Old day with no stream.updated
-    let target_day = "20260101";
-    let marker = temp
-        .path()
-        .join("chronicle")
-        .join(target_day)
-        .join("health/stream.updated");
-    let _ = fs::remove_file(&marker);
-
-    // Seed with complete read first
-    let req = Request::get("/app/transcripts/api/index")
-        .extension(root.clone())
-        .body(Body::empty())
+    let seeded = app
+        .clone()
+        .oneshot(
+            Request::get("/app/transcripts/api/index")
+                .extension(root.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
         .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    let body: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(body["freshness"]["complete"], true);
-    let old_count = body["months"]["202601"].as_u64().unwrap();
+    assert_eq!(seeded.status(), StatusCode::OK);
+    let seeded_body: Value =
+        serde_json::from_slice(&to_bytes(seeded.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(seeded_body["freshness"]["complete"], true);
+    let old_count = seeded_body["months"]["202601"].as_u64().unwrap();
 
     let _recovery_hooks = register_recovery_hooks(
         "test-barrier-restore-ordering",
@@ -82,8 +128,19 @@ async fn test_barrier_restore_ordering() {
         |_| Ok(()),
     );
 
-    // Hold admitted use to simulate in-flight read/fold
-    let admission = begin_target_use_bound(Arc::clone(&root)).unwrap();
+    let (park_tx, park_rx) = std::sync::mpsc::channel();
+    let park_tx = Arc::new(Mutex::new(Some(park_tx)));
+    let day_s = day.to_string();
+    install_calendar_identity_barrier(identity, move |folded| {
+        if folded == day_s {
+            if let Some(tx) = park_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            true
+        } else {
+            false
+        }
+    });
 
     struct WaitHookGuard;
     impl Drop for WaitHookGuard {
@@ -93,46 +150,73 @@ async fn test_barrier_restore_ordering() {
     }
     let _hook_guard = WaitHookGuard;
 
-    let (wait_tx, wait_rx) = std::sync::mpsc::channel();
-    let wait_tx = Arc::new(Mutex::new(Some(wait_tx)));
-    install_target_use_wait_hook(Some(Arc::new(move |_| {
-        if let Some(tx) = wait_tx.lock().unwrap().take() {
-            let _ = tx.send(());
-        }
-    })));
+    // The parked read is itself a full pass, so a reset-before-drain can stamp.
+    *now_ref.lock().unwrap() += chrono::Duration::hours(2);
 
-    let root_drain = Arc::clone(&root);
-    let pause_thread = std::thread::spawn(move || pause_admitted_work(root_drain));
+    let root_coord = Arc::clone(&root);
+    let (paused_tx, paused_rx) = std::sync::mpsc::channel();
+    let coordinator = std::thread::spawn(move || {
+        park_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("fold parked after its identity read");
+        let (wait_tx, wait_rx) = std::sync::mpsc::channel();
+        let wait_tx = Arc::new(Mutex::new(Some(wait_tx)));
+        install_target_use_wait_hook(Some(Arc::new(move |_| {
+            if let Some(tx) = wait_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+        })));
+        let pause_thread = std::thread::spawn(move || pause_admitted_work(root_coord));
+        wait_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("restore is waiting on the parked fold");
+        release_calendar_identity_barrier(identity);
+        let paused = pause_thread.join().expect("pause thread").expect("pause");
+        paused_tx.send(paused).expect("paused result");
+    });
 
-    // Wait until pause_admitted_work is confirmed waiting for in-flight admitted use
-    wait_rx.recv().unwrap();
+    let parked = tokio::time::timeout(Duration::from_secs(5), async {
+        app.clone()
+            .oneshot(
+                Request::get("/app/transcripts/api/index")
+                    .extension(root.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    })
+    .await
+    .expect("parked index read finished");
+    assert_eq!(parked.status(), StatusCode::OK);
 
-    // Drop admission so pause_admitted_work proceeds to reset_calendar_while_held
-    drop(admission);
-    let paused = pause_thread.join().unwrap().unwrap();
+    let paused = paused_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("restore drained the parked fold");
+    coordinator.join().unwrap();
 
-    // While paused, restore different files on target day
-    let seg = temp.path().join("chronicle/20260101/field/180000_60");
-    fs::create_dir_all(&seg).unwrap();
-    fs::write(
-        seg.join("mic_audio.jsonl"),
-        b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"18:00:00\",\"end\":\"18:00:01\",\"text\":\"c_new\"}\n",
-    )
-    .unwrap();
-
+    // The fold stored the pre-swap count. Swap only after that store and the reset.
+    write_browser_segment(temp.path(), day, "235000_60");
+    install_calendar_identity_barrier(identity, |_| false);
     paused.resume(&|| false).unwrap();
 
-    let req2 = Request::get("/app/transcripts/api/index")
-        .extension(root.clone())
-        .body(Body::empty())
+    let next = app
+        .clone()
+        .oneshot(
+            Request::get("/app/transcripts/api/index")
+                .extension(root.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
         .unwrap();
-    let resp2 = app.clone().oneshot(req2).await.unwrap();
-    assert_eq!(resp2.status(), StatusCode::OK);
-    let bytes2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
-    let body2: Value = serde_json::from_slice(&bytes2).unwrap();
-    assert_eq!(body2["freshness"]["complete"], true);
-    let new_count = body2["months"]["202601"].as_u64().unwrap();
+    assert_eq!(next.status(), StatusCode::OK);
+    let next_body: Value =
+        serde_json::from_slice(&to_bytes(next.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(next_body["freshness"]["complete"], true);
+    let new_count = next_body["months"]["202601"].as_u64().unwrap();
     assert_ne!(new_count, old_count);
+    assert_eq!(new_count, old_count + 1);
 
     reset_calendar_while_held(temp.path());
 }

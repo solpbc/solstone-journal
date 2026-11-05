@@ -342,15 +342,31 @@ fn get_or_create_inventory(
     inv_arc
 }
 
-/// Every listed day was refolded to a stored count for this pass.
-/// A failed fold keeps its generation but is not a finished pass.
+/// Every listed day was folded in this pass.
+/// A failed row folded in this pass is settled: it stays reported in `failed`
+/// and retries on its own backoff, and it does not block the pass.
 fn listed_days_refolded(inv: &JournalInventory, listed_days: &[String], req_gen: u64) -> bool {
     !listed_days.is_empty()
         && listed_days.iter().all(|day| {
             inv.rows.get(day).is_some_and(|row| {
-                row.fold_generation >= req_gen && matches!(row.state, DayFoldState::Computed(_))
+                row.fold_generation >= req_gen
+                    && matches!(
+                        row.state,
+                        DayFoldState::Computed(_) | DayFoldState::Failed(_)
+                    )
             })
         })
+}
+
+/// Stat `chronicle/` before listing. NotFound is an empty journal. Any other
+/// stat or read error must not look like an empty listing.
+fn list_chronicle_days(journal: &Path) -> Result<HashMap<String, PathBuf>, String> {
+    let chronicle = journal.join("chronicle");
+    match fs::metadata(&chronicle) {
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(HashMap::new()),
+        Err(err) => Err(format!("{}: {err}", chronicle.display())),
+        Ok(_) => day_dirs(journal).map_err(|err| err.to_string()),
+    }
 }
 
 fn run_worker_loop(
@@ -383,7 +399,7 @@ fn run_worker_loop(
         let now = clock.now();
         let req_gen = next_generation();
 
-        let listed_days_map = match day_dirs(&journal_path) {
+        let listed_days_map = match list_chronicle_days(&journal_path) {
             Ok(m) => m,
             Err(_) => {
                 let mut inv = inv_arc.lock().expect("inventory lock");
@@ -454,7 +470,16 @@ fn run_worker_loop(
 
             if need_fold {
                 let is_live = live_set.contains(day);
-                let _ = fold_single_day(&root, &journal_path, day, is_live, now, req_gen, &inv_arc);
+                let _ = fold_single_day(
+                    &root,
+                    &journal_path,
+                    day,
+                    is_live,
+                    now,
+                    req_gen,
+                    &inv_arc,
+                    false,
+                );
             }
         }
 
@@ -463,8 +488,8 @@ fn run_worker_loop(
             let mut inv = inv_arc.lock().expect("inventory lock");
             if listed_days_refolded(&inv, &listed_days, req_gen) {
                 inv.last_full_pass_finish = Some(finish_now);
-                inv.in_full_pass = false;
             }
+            inv.in_full_pass = false;
         }
 
         if worker.stop.load(Ordering::SeqCst) {
@@ -598,19 +623,6 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
             ctrl.generation.fetch_add(1, Ordering::SeqCst);
             ctrl.cv.notify_all();
         }
-    }
-}
-
-#[allow(dead_code)]
-pub fn tick(journal: &Path, clock: &Clock) {
-    if let Ok(root) = JournalRoot::open(journal) {
-        let root = Arc::new(root);
-        let identity = root.identity();
-        let watchers = WATCHERS.lock().expect("watchers lock");
-        if let Some(ctrl) = watchers.get(&identity) {
-            *ctrl.clock.lock().unwrap() = clock.clone();
-        }
-        tick_journal(&root, clock);
     }
 }
 
@@ -898,6 +910,7 @@ enum FoldAborted {
     TargetUseRefused,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fold_single_day(
     root: &Arc<JournalRoot>,
     journal: &Path,
@@ -906,19 +919,29 @@ fn fold_single_day(
     now: DateTime<Utc>,
     req_gen: u64,
     inv_arc: &Arc<Mutex<JournalInventory>>,
+    mut retry_earlier_failure: bool,
 ) -> Result<DayIdentity, FoldAborted> {
-    let in_flight_entry = {
-        let mut inv = inv_arc.lock().expect("inventory lock");
-        if let Some(entry) = inv.in_flight.get(day) {
-            Some(entry.clone())
-        } else {
-            let entry = Arc::new((Mutex::new(false), Condvar::new(), req_gen));
-            inv.in_flight.insert(day.to_string(), entry);
-            None
-        }
-    };
+    loop {
+        let claimed = {
+            let mut inv = inv_arc.lock().expect("inventory lock");
+            if let Some(entry) = inv.in_flight.get(day) {
+                Err(entry.clone())
+            } else {
+                let entry = Arc::new((Mutex::new(false), Condvar::new(), req_gen));
+                inv.in_flight.insert(day.to_string(), entry.clone());
+                Ok(entry)
+            }
+        };
 
-    if let Some(entry) = in_flight_entry {
+        let entry = match claimed {
+            Ok(entry) => {
+                return fold_single_day_exec(
+                    root, journal, day, is_live, now, req_gen, inv_arc, entry,
+                );
+            }
+            Err(entry) => entry,
+        };
+
         let (lock, cv, starter_req_gen) = &*entry;
         let starter_req_gen = *starter_req_gen;
         {
@@ -935,7 +958,7 @@ fn fold_single_day(
 
         let stored_marker = {
             let inv = inv_arc.lock().expect("inventory lock");
-            inv.rows.get(day).map(|r| r.identity.marker().clone())
+            inv.rows.get(day).map(|row| row.identity.marker().clone())
         };
         let disk_identity = read_day_identity(
             journal,
@@ -947,28 +970,28 @@ fn fold_single_day(
         let (matches_stored, is_failed) = {
             let inv = inv_arc.lock().expect("inventory lock");
             match inv.rows.get(day) {
-                Some(r) => (
-                    r.identity == disk_identity,
-                    matches!(r.state, DayFoldState::Failed(_)),
+                Some(row) => (
+                    row.identity == disk_identity,
+                    matches!(row.state, DayFoldState::Failed(_)),
                 ),
                 None => (false, false),
             }
         };
 
-        if is_failed && starter_req_gen < req_gen {
-            return fold_single_day_exec(root, journal, day, is_live, now, req_gen, inv_arc);
+        // One retry, and only for the month route: a fold that started before
+        // this request arrived does not count as its retry of a failed day.
+        // The retry claims again at the top of this loop.
+        if retry_earlier_failure && is_failed && starter_req_gen < req_gen {
+            retry_earlier_failure = false;
+            continue;
         }
-
         if matches_stored {
             return Ok(disk_identity);
-        } else {
-            return fold_single_day_exec(root, journal, day, is_live, now, req_gen, inv_arc);
         }
     }
-
-    fold_single_day_exec(root, journal, day, is_live, now, req_gen, inv_arc)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fold_single_day_exec(
     root: &Arc<JournalRoot>,
     journal: &Path,
@@ -977,33 +1000,34 @@ fn fold_single_day_exec(
     now: DateTime<Utc>,
     req_gen: u64,
     inv_arc: &Arc<Mutex<JournalInventory>>,
+    claimed: Arc<(Mutex<bool>, Condvar, u64)>,
 ) -> Result<DayIdentity, FoldAborted> {
-    {
-        let mut inv = inv_arc.lock().expect("inventory lock");
-        inv.in_flight
-            .entry(day.to_string())
-            .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new(), req_gen)));
-    }
-
     struct InFlightGuard {
         day: String,
+        entry: Arc<(Mutex<bool>, Condvar, u64)>,
         inv_arc: Arc<Mutex<JournalInventory>>,
     }
 
     impl Drop for InFlightGuard {
         fn drop(&mut self) {
             let mut inv = self.inv_arc.lock().expect("inventory lock");
-            if let Some(entry) = inv.in_flight.remove(&self.day) {
-                let (lock, cv, _) = &*entry;
-                let mut done = lock.lock().unwrap();
-                *done = true;
-                cv.notify_all();
+            if inv
+                .in_flight
+                .get(&self.day)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.entry))
+            {
+                inv.in_flight.remove(&self.day);
             }
+            let (lock, cv, _) = &*self.entry;
+            let mut done = lock.lock().unwrap();
+            *done = true;
+            cv.notify_all();
         }
     }
 
     let in_flight_guard = InFlightGuard {
         day: day.to_string(),
+        entry: claimed,
         inv_arc: inv_arc.clone(),
     };
 
@@ -1028,8 +1052,8 @@ fn fold_single_day_exec(
         root.identity(),
     );
 
-    #[cfg(test)]
-    test_support::run_barrier_after_identity_read(root.identity(), day);
+    #[cfg(any(test, feature = "test-hooks"))]
+    identity_barrier::run(root.identity(), day);
 
     #[cfg(test)]
     test_support::inc_compute_starts(root.identity());
@@ -1059,7 +1083,7 @@ fn fold_single_day_exec(
                 }
 
                 match &prev_row {
-                    None => emit = false,
+                    None => emit = inv.last_full_pass_finish.is_some(),
                     Some(prev) => match prev.state {
                         DayFoldState::Computed(old) => {
                             if old != count {
@@ -1092,7 +1116,7 @@ fn fold_single_day_exec(
                 }
 
                 match &prev_row {
-                    None => emit = false,
+                    None => emit = inv.last_full_pass_finish.is_some(),
                     Some(prev) => {
                         if matches!(prev.state, DayFoldState::Computed(_)) {
                             emit = true;
@@ -1201,7 +1225,7 @@ fn read_inventory_inner(
     #[cfg(test)]
     test_support::inc_chronicle_lists(identity);
 
-    let listed_days_map = match day_dirs(journal_path) {
+    let listed_days_map = match list_chronicle_days(journal_path) {
         Ok(m) => m,
         Err(_) => {
             let mut inv = inv_arc.lock().expect("inventory lock");
@@ -1264,6 +1288,7 @@ fn read_inventory_inner(
                 now,
                 req_gen,
                 &inv_arc,
+                false,
             );
             if res.is_err() {
                 both_ok = false;
@@ -1278,6 +1303,7 @@ fn read_inventory_inner(
                 now,
                 req_gen,
                 &inv_arc,
+                false,
             );
             if res.is_err() {
                 both_ok = false;
@@ -1386,9 +1412,16 @@ fn read_inventory_inner(
                 break;
             }
             let is_live = live_set.contains(day);
-            if let Ok(new_id) =
-                fold_single_day(&root, journal_path, day, is_live, now, req_gen, &inv_arc)
-            {
+            if let Ok(new_id) = fold_single_day(
+                &root,
+                journal_path,
+                day,
+                is_live,
+                now,
+                req_gen,
+                &inv_arc,
+                false,
+            ) {
                 day_identities.insert(day.clone(), new_id);
             }
             #[cfg(test)]
@@ -1518,7 +1551,7 @@ pub(crate) fn fold_month_days(
     let inv_arc = get_or_create_inventory(&root, identity);
     let req_gen = next_generation();
 
-    let listed_days_map = day_dirs(journal_path).map_err(|e| e.to_string())?;
+    let listed_days_map = list_chronicle_days(journal_path)?;
 
     let dropped_days: Vec<String> = {
         let mut inv = inv_arc.lock().expect("inventory lock");
@@ -1567,7 +1600,16 @@ pub(crate) fn fold_month_days(
             }
         };
         if need_fold {
-            match fold_single_day(&root, journal_path, day, is_live, now, req_gen, &inv_arc) {
+            match fold_single_day(
+                &root,
+                journal_path,
+                day,
+                is_live,
+                now,
+                req_gen,
+                &inv_arc,
+                true,
+            ) {
                 Ok(new_id) => {
                     day_identities.insert(day.clone(), new_id);
                 }
@@ -1605,6 +1647,89 @@ pub(crate) fn fold_month_days(
     }
 
     Ok(month_counts)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+mod identity_barrier {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Condvar, LazyLock, Mutex};
+
+    use solstone_core_journal_io::ObjectIdentity;
+
+    struct BarrierEntry {
+        hook: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+        gate: Arc<(Mutex<bool>, Condvar)>,
+    }
+
+    static BARRIERS: LazyLock<Mutex<HashMap<ObjectIdentity, BarrierEntry>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    pub(crate) fn install(
+        identity: ObjectIdentity,
+        hook: impl Fn(&str) -> bool + Send + Sync + 'static,
+    ) {
+        BARRIERS.lock().unwrap().insert(
+            identity,
+            BarrierEntry {
+                hook: Arc::new(hook),
+                gate: Arc::new((Mutex::new(false), Condvar::new())),
+            },
+        );
+    }
+
+    pub(crate) fn run(identity: ObjectIdentity, day: &str) {
+        let entry = BARRIERS
+            .lock()
+            .unwrap()
+            .get(&identity)
+            .map(|entry| (entry.hook.clone(), entry.gate.clone()));
+        if let Some((hook, gate)) = entry {
+            if hook(day) {
+                let (lock, cv) = &*gate;
+                let mut released = lock.lock().unwrap();
+                while !*released {
+                    released = cv.wait(released).unwrap();
+                }
+                *released = false;
+            }
+        }
+    }
+
+    pub(crate) fn release(identity: ObjectIdentity) {
+        let barriers = BARRIERS.lock().unwrap();
+        if let Some(entry) = barriers.get(&identity) {
+            let (lock, cv) = &*entry.gate;
+            let mut released = lock.lock().unwrap();
+            *released = true;
+            cv.notify_all();
+        }
+    }
+
+    // The integration target builds this module without cfg(test). The lib
+    // tests are the caller; that build still needs the function.
+    #[allow(dead_code)]
+    pub(crate) fn clear(identity: ObjectIdentity) {
+        let entry = BARRIERS.lock().unwrap().remove(&identity);
+        if let Some(entry) = entry {
+            let (lock, cv) = &*entry.gate;
+            let mut released = lock.lock().unwrap();
+            *released = true;
+            cv.notify_all();
+        }
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+pub fn install_calendar_identity_barrier(
+    identity: ObjectIdentity,
+    hook: impl Fn(&str) -> bool + Send + Sync + 'static,
+) {
+    identity_barrier::install(identity, hook);
+}
+
+#[cfg(feature = "test-hooks")]
+pub fn release_calendar_identity_barrier(identity: ObjectIdentity) {
+    identity_barrier::release(identity);
 }
 
 #[cfg(test)]
@@ -1746,7 +1871,6 @@ pub(crate) mod test_support {
 
     #[derive(Default)]
     struct BarrierState {
-        after_identity_read: HashMap<ObjectIdentity, BarrierEntry>,
         after_compute: HashMap<ObjectIdentity, BarrierEntry>,
         injected_compute_errors: HashMap<(ObjectIdentity, String), String>,
         hold_background_fills: HashMap<ObjectIdentity, Arc<HoldBarrier>>,
@@ -1762,13 +1886,7 @@ pub(crate) mod test_support {
         identity: ObjectIdentity,
         hook: impl Fn(&str) -> bool + Send + Sync + 'static,
     ) {
-        BARRIERS.lock().unwrap().after_identity_read.insert(
-            identity,
-            BarrierEntry {
-                hook: Arc::new(hook),
-                gate: Arc::new((Mutex::new(false), Condvar::new())),
-            },
-        );
+        super::identity_barrier::install(identity, hook);
     }
 
     pub(crate) fn install_barrier_after_compute(
@@ -1782,25 +1900,6 @@ pub(crate) mod test_support {
                 gate: Arc::new((Mutex::new(false), Condvar::new())),
             },
         );
-    }
-
-    pub(crate) fn run_barrier_after_identity_read(identity: ObjectIdentity, day: &str) {
-        let entry = BARRIERS
-            .lock()
-            .unwrap()
-            .after_identity_read
-            .get(&identity)
-            .map(|e| (e.hook.clone(), e.gate.clone()));
-        if let Some((hook, gate)) = entry {
-            if hook(day) {
-                let (lock, cv) = &*gate;
-                let mut released = lock.lock().unwrap();
-                while !*released {
-                    released = cv.wait(released).unwrap();
-                }
-                *released = false;
-            }
-        }
     }
 
     pub(crate) fn run_barrier_after_compute(identity: ObjectIdentity, day: &str) {
@@ -1823,13 +1922,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn release_identity_barrier(identity: ObjectIdentity) {
-        let b = BARRIERS.lock().unwrap();
-        if let Some(entry) = b.after_identity_read.get(&identity) {
-            let (lock, cv) = &*entry.gate;
-            let mut released = lock.lock().unwrap();
-            *released = true;
-            cv.notify_all();
-        }
+        super::identity_barrier::release(identity);
     }
 
     pub(crate) fn release_compute_barrier(identity: ObjectIdentity) {
@@ -1975,13 +2068,8 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn reset(identity: ObjectIdentity) {
+        super::identity_barrier::clear(identity);
         let mut b = BARRIERS.lock().unwrap();
-        if let Some(entry) = b.after_identity_read.remove(&identity) {
-            let (lock, cv) = &*entry.gate;
-            let mut released = lock.lock().unwrap();
-            *released = true;
-            cv.notify_all();
-        }
         if let Some(entry) = b.after_compute.remove(&identity) {
             let (lock, cv) = &*entry.gate;
             let mut released = lock.lock().unwrap();
@@ -2011,7 +2099,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::Path;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -2094,6 +2182,67 @@ mod tests {
         .unwrap();
     }
 
+    fn setup_minimal_journal() -> (tempfile::TempDir, Arc<JournalRoot>) {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"},"convey":{"password_hash":"","secret":"sec","trust_localhost":true}}"#,
+        )
+        .unwrap();
+        let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+        (temp, root)
+    }
+
+    fn write_lying_stats(journal: &Path, day: &str, sentinel: u64) {
+        let mut scan = solstone_core_journal_stats_cli::DayScan::default();
+        scan.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
+        scan.stats.transcript_ranges = sentinel;
+        let stats_path = journal.join("chronicle").join(day).join("stats.json");
+        solstone_core_journal_io::write_json(
+            &stats_path,
+            &scan,
+            solstone_core_journal_io::JsonWriteOptions::default(),
+        )
+        .unwrap();
+        let future = filetime::FileTime::from_system_time(
+            std::time::SystemTime::now() + std::time::Duration::from_secs(100),
+        );
+        filetime::set_file_mtime(&stats_path, future).unwrap();
+    }
+
+    fn stats_free_walk(journal: &Path, now: DateTime<Utc>) -> BTreeMap<String, u64> {
+        let mut aside = Vec::new();
+        if let Ok(entries) = fs::read_dir(journal.join("chronicle")) {
+            for entry in entries.flatten() {
+                let stats_path = entry.path().join("stats.json");
+                let aside_path = entry.path().join("stats.json.aside");
+                if stats_path.is_file() {
+                    fs::rename(&stats_path, &aside_path).unwrap();
+                    aside.push((stats_path, aside_path));
+                }
+            }
+        }
+        let walk = crate::calendar::counts_by_walk(journal, now).unwrap();
+        for (stats_path, aside_path) in aside {
+            fs::rename(&aside_path, &stats_path).unwrap();
+        }
+        walk
+    }
+
+    fn month_sum(walk: &BTreeMap<String, u64>, month: &str) -> u64 {
+        walk.iter()
+            .filter(|(day, _)| day.starts_with(month))
+            .map(|(_, count)| *count)
+            .sum()
+    }
+
+    async fn index_month(app: &axum::Router, root: &Arc<JournalRoot>, month: &str) -> u64 {
+        index_body(app, root).await["months"][month]
+            .as_u64()
+            .unwrap_or(0)
+    }
+
     fn write_analyzed_audio(dir: &Path, text: &str) {
         fs::create_dir_all(dir).unwrap();
         fs::write(
@@ -2141,7 +2290,9 @@ mod tests {
         delete_stats_json(temp.path());
 
         let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
-        let clock = Clock::fixed(now);
+        let now_ref = Arc::new(Mutex::new(now));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
         let walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
 
         let app = crate::router(temp.path().to_path_buf(), clock.clone(), || {
@@ -2238,18 +2389,49 @@ mod tests {
             assert_eq!(m2_bytes, month_bytes_map[month]);
         }
 
-        // One fixture-day change at a time. A cache hit must not hide either one.
-        let day = walk.keys().next().cloned().expect("fixture day");
+        // One fixture-day change at a time, with no marker bump. Each stays
+        // hidden until the hourly refold, and each refold moves the count.
+        // Newest fixture day is folded first in a full pass, before the inline budget.
+        let day = walk.keys().next_back().cloned().expect("fixture day");
         let month = &day[..6];
-        let before = month_day_count(&app, &root, month, &day).await;
+        let before = index_month(&app, &root, month).await;
         write_browser_segment(temp.path(), &day, "235000_60");
-        solstone_core_journal_io::bump_stream_marker(temp.path(), &day).unwrap();
-        let after_first = month_day_count(&app, &root, month, &day).await;
+        let hidden_first = index_month(&app, &root, month).await;
+        assert_eq!(hidden_first, before);
+        let walked_first = month_sum(
+            &crate::calendar::counts_by_walk(temp.path(), now).unwrap(),
+            month,
+        );
+        assert_ne!(before, walked_first);
+        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        let after_first = index_month(&app, &root, month).await;
         assert_ne!(after_first, before);
+        assert_eq!(
+            after_first,
+            month_sum(
+                &crate::calendar::counts_by_walk(temp.path(), *now_ref.lock().unwrap()).unwrap(),
+                month
+            )
+        );
+
         write_browser_segment(temp.path(), &day, "235100_60");
-        solstone_core_journal_io::bump_stream_marker(temp.path(), &day).unwrap();
-        let after_second = month_day_count(&app, &root, month, &day).await;
+        let hidden_second = index_month(&app, &root, month).await;
+        assert_eq!(hidden_second, after_first);
+        let walked_second_hidden = month_sum(
+            &crate::calendar::counts_by_walk(temp.path(), *now_ref.lock().unwrap()).unwrap(),
+            month,
+        );
+        assert_ne!(after_first, walked_second_hidden);
+        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        let after_second = index_month(&app, &root, month).await;
         assert_ne!(after_second, after_first);
+        assert_eq!(
+            after_second,
+            month_sum(
+                &crate::calendar::counts_by_walk(temp.path(), *now_ref.lock().unwrap()).unwrap(),
+                month
+            )
+        );
     }
 
     #[tokio::test]
@@ -2388,6 +2570,137 @@ mod tests {
             .map(|(_, c)| *c)
             .sum();
         assert_eq!(body["months"]["202603"], expected_sum);
+
+        let next = index_body(&app, &root).await;
+        assert_eq!(next["freshness"]["complete"], true);
+        assert_eq!(next["months"]["202603"], expected_sum);
+    }
+
+    #[tokio::test]
+    async fn test_barrier_today_raw_media() {
+        let (temp, root) = setup_fixture_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let config_path = temp.path().join("config/journal.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["identity"]["timezone"] = json!("UTC");
+        fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let clock = Clock::fixed(now);
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+        let today = "20260801";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(today)
+                .join("field/100000_60"),
+            "today",
+        );
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["complete"], true);
+        let before = seeded["months"]["202608"].as_u64().unwrap();
+
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let held_tx = Arc::new(Mutex::new(Some(held_tx)));
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_c = fired.clone();
+        let today_s = today.to_string();
+        test_support::install_barrier_after_identity_read(identity, move |day| {
+            if day == today_s && !fired_c.swap(true, Ordering::SeqCst) {
+                if let Some(tx) = held_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+                true
+            } else {
+                false
+            }
+        });
+
+        let today_path = temp.path().join("chronicle").join(today);
+        let note = today_path.join("field/100000_60/note.txt");
+        fs::write(&note, b"tree").unwrap();
+        std::thread::spawn(move || {
+            held_rx.recv().unwrap();
+            let raw = today_path.join("field/180000_60");
+            fs::create_dir_all(&raw).unwrap();
+            fs::write(raw.join("mic.flac"), b"raw today").unwrap();
+            test_support::release_identity_barrier(identity);
+        });
+
+        let body = index_body(&app, &root).await;
+        let walk = stats_free_walk(temp.path(), now);
+        let expected = month_sum(&walk, "202608");
+        assert_ne!(expected, before);
+        assert_eq!(body["months"]["202608"], expected);
+        let next = index_body(&app, &root).await;
+        assert_eq!(next["months"]["202608"], expected);
+        assert_eq!(next["freshness"]["complete"], true);
+    }
+
+    #[tokio::test]
+    async fn test_barrier_hourly_refold() {
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("field/100000_60"),
+            "seed",
+        );
+        let now_ref = Arc::new(Mutex::new(
+            Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+        ));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["complete"], true);
+        let before = seeded["months"]["202601"].as_u64().unwrap();
+
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let held_tx = Arc::new(Mutex::new(Some(held_tx)));
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_c = fired.clone();
+        let day_s = day.to_string();
+        test_support::install_barrier_after_identity_read(identity, move |day_name| {
+            if day_name == day_s && !fired_c.swap(true, Ordering::SeqCst) {
+                if let Some(tx) = held_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+                true
+            } else {
+                false
+            }
+        });
+
+        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        let journal = temp.path().to_path_buf();
+        std::thread::spawn(move || {
+            held_rx.recv().unwrap();
+            write_browser_segment(&journal, day, "235000_60");
+            test_support::release_identity_barrier(identity);
+        });
+
+        let body = index_body(&app, &root).await;
+        let walk = stats_free_walk(temp.path(), *now_ref.lock().unwrap());
+        let expected = month_sum(&walk, "202601");
+        assert_ne!(expected, before);
+        assert_eq!(body["months"]["202601"], expected);
+        let next = index_body(&app, &root).await;
+        assert_eq!(next["months"]["202601"], expected);
+        assert_eq!(next["freshness"]["complete"], true);
     }
 
     // A mutant that treats a fold started before arrival as current would return the pre-bump count.
@@ -2458,6 +2771,7 @@ mod tests {
                 now,
                 next_generation(),
                 &inv_arc_c,
+                false,
             );
         });
         held_rx.recv().unwrap();
@@ -2836,17 +3150,10 @@ mod tests {
         .unwrap();
         fs::write(named_seg.join("mic.raw"), b"raw bytes").unwrap();
 
-        // After each edit, write a fresh stats.json that does not contain the new count
-        fs::write(
-            today_path.join("stats.json"),
-            b"{\"stats\":{\"transcript_ranges\":0,\"percept_ranges\":0,\"browser_segments\":0}}\n",
-        )
-        .unwrap();
-        fs::write(
-            yesterday_path.join("stats.json"),
-            b"{\"stats\":{\"transcript_ranges\":0,\"percept_ranges\":0,\"browser_segments\":0}}\n",
-        )
-        .unwrap();
+        // A real fresh cache that lies. The inventory must not read it.
+        let sentinel = 1_000_000;
+        write_lying_stats(temp.path(), "20260801", sentinel);
+        write_lying_stats(temp.path(), "20260731", sentinel);
 
         let resp = app
             .clone()
@@ -2863,10 +3170,13 @@ mod tests {
             serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
         assert_eq!(b["freshness"]["complete"], true);
 
-        let walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
-        let today_count = walk.get("20260801").copied().unwrap_or(0);
-        assert_eq!(b["months"]["202608"], today_count);
-        assert!(today_count > 0, "count must have changed");
+        let walk = stats_free_walk(temp.path(), now);
+        let today_month = month_sum(&walk, "202608");
+        let yesterday_month = month_sum(&walk, "202607");
+        assert_eq!(b["months"]["202608"], today_month);
+        assert_eq!(b["months"]["202607"], yesterday_month);
+        assert_ne!(today_month, sentinel);
+        assert!(today_month > 0, "count must have changed");
         assert!(
             walk.get("20260731").copied().unwrap_or(0) > 0,
             "yesterday count changed"
@@ -2874,7 +3184,8 @@ mod tests {
 
         // The next read keeps the count the edit read stored.
         let again = index_body(&app, &root).await;
-        assert_eq!(again["months"]["202608"], today_count);
+        assert_eq!(again["months"]["202608"], today_month);
+        assert_eq!(again["months"]["202607"], yesterday_month);
         assert_eq!(again["freshness"]["complete"], true);
 
         // Today raw-media variant: a raw file with no transcript, then the read after that.
@@ -2883,7 +3194,7 @@ mod tests {
         fs::write(raw_only.join("mic.flac"), b"raw today bytes").unwrap();
         let with_raw = index_body(&app, &root).await;
         let raw_month = with_raw["months"]["202608"].as_u64().unwrap();
-        assert_ne!(raw_month, today_count);
+        assert_ne!(raw_month, today_month);
         let after_raw = index_body(&app, &root).await;
         assert_eq!(after_raw["months"]["202608"], raw_month);
         assert_eq!(after_raw["freshness"]["complete"], true);
@@ -3663,9 +3974,16 @@ mod tests {
             .unwrap();
         assert_eq!(index_body(&app, &root).await["months"]["202608"], count);
 
+        let placed = today.join("field/100000_60");
+        fs::write(placed.join("p0000_0123456789abcdef.flac"), b"raw-part").unwrap();
         fs::write(
-            today.join("field/100000_60/placement.json"),
-            br#"{"version":1,"parts":[]}"#,
+            placed.join("p0000_0123456789abcdef.jsonl"),
+            b"{\"note\":\"no terminal proof\"}\n",
+        )
+        .unwrap();
+        fs::write(
+            placed.join("placement.json"),
+            br#"{"version":1,"parts":[{"stored_name":"p0000_0123456789abcdef.flac","original_occurrence":"rec","origin_ms":0,"offset_ms":0,"length_ms":1000}]}"#,
         )
         .unwrap();
         assert_eq!(index_body(&app, &root).await["months"]["202608"], count);
@@ -3747,6 +4065,335 @@ mod tests {
         let next = index_body(&app, &root).await;
         assert_eq!(next["months"]["202601"], changed["months"]["202601"]);
         assert!(test_support::recorded_notifications(identity).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_failed_day_does_not_block_hourly_refold() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let good_day = "20260101";
+        let bad_day = "20260102";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(good_day)
+                .join("field/100000_60"),
+            "good",
+        );
+        let bad_stream = temp.path().join("chronicle").join(bad_day).join("field");
+        fs::create_dir_all(&bad_stream).unwrap();
+        let mut bad_name = b"120000_60".to_vec();
+        bad_name.push(0xFF);
+        fs::create_dir_all(bad_stream.join(OsStr::from_bytes(&bad_name))).unwrap();
+
+        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now_ref = Arc::new(Mutex::new(t0));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["complete"], false);
+        assert_eq!(seeded["freshness"]["failed"].as_u64(), Some(1));
+        let before = seeded["months"]["202601"].as_u64().unwrap();
+        assert_eq!(
+            before,
+            crate::calendar::day_range_count(temp.path(), good_day, t0).unwrap()
+        );
+        let stamped = full_pass_finish(identity).expect("failed day still settles the pass");
+
+        write_browser_segment(temp.path(), good_day, "235000_60");
+        *now_ref.lock().unwrap() = t0 + chrono::Duration::seconds(1800);
+        let hidden = index_body(&app, &root).await;
+        assert_eq!(hidden["months"]["202601"].as_u64(), Some(before));
+        assert_eq!(hidden["freshness"]["failed"].as_u64(), Some(1));
+        assert_eq!(full_pass_finish(identity), Some(stamped));
+
+        *now_ref.lock().unwrap() = t0 + chrono::Duration::seconds(3700);
+        let corrected = index_body(&app, &root).await;
+        let expected =
+            crate::calendar::day_range_count(temp.path(), good_day, *now_ref.lock().unwrap())
+                .unwrap();
+        assert_ne!(expected, before);
+        assert_eq!(corrected["months"]["202601"].as_u64(), Some(expected));
+        assert_eq!(corrected["freshness"]["complete"], false);
+        assert_eq!(corrected["freshness"]["failed"].as_u64(), Some(1));
+        assert!(full_pass_finish(identity).unwrap() > stamped);
+
+        let next = index_body(&app, &root).await;
+        assert_eq!(next["months"]["202601"].as_u64(), Some(expected));
+        assert_eq!(next["freshness"]["failed"].as_u64(), Some(1));
+    }
+
+    #[test]
+    fn test_two_waiters_one_further_fold() {
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("field/100000_60"),
+            "seed",
+        );
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let inv_arc = get_or_create_inventory(&root, identity);
+
+        let hooks = Arc::new(AtomicUsize::new(0));
+        let (parked_tx, parked_rx) = std::sync::mpsc::sync_channel(8);
+        let hooks_c = hooks.clone();
+        let day_s = day.to_string();
+        test_support::install_barrier_after_identity_read(identity, move |name| {
+            if name == day_s {
+                let n = hooks_c.fetch_add(1, Ordering::SeqCst) + 1;
+                let _ = parked_tx.send(n);
+                true
+            } else {
+                false
+            }
+        });
+
+        let owner_root = root.clone();
+        let owner_journal = temp.path().to_path_buf();
+        let owner_inv = inv_arc.clone();
+        let owner_day = day.to_string();
+        let owner = std::thread::spawn(move || {
+            assert!(
+                fold_single_day(
+                    &owner_root,
+                    &owner_journal,
+                    &owner_day,
+                    false,
+                    now,
+                    next_generation(),
+                    &owner_inv,
+                    false,
+                )
+                .is_ok(),
+                "owner fold aborted"
+            );
+        });
+        assert_eq!(
+            parked_rx.recv_timeout(Duration::from_secs(5)).unwrap(),
+            1,
+            "first fold parks after its identity read"
+        );
+
+        let spawn_waiter = || {
+            let waiter_root = root.clone();
+            let waiter_journal = temp.path().to_path_buf();
+            let waiter_inv = inv_arc.clone();
+            let waiter_day = day.to_string();
+            std::thread::spawn(move || {
+                assert!(
+                    fold_single_day(
+                        &waiter_root,
+                        &waiter_journal,
+                        &waiter_day,
+                        false,
+                        now,
+                        next_generation(),
+                        &waiter_inv,
+                        false,
+                    )
+                    .is_ok(),
+                    "waiter fold aborted"
+                );
+            })
+        };
+        let waiter_a = spawn_waiter();
+        let waiter_b = spawn_waiter();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while test_support::waiter_counter(identity) < 2 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "waiters did not park: {}",
+                test_support::waiter_counter(identity)
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        write_browser_segment(temp.path(), day, "235000_60");
+        solstone_core_journal_io::bump_stream_marker(temp.path(), day).unwrap();
+        test_support::release_identity_barrier(identity);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let n = hooks.load(Ordering::SeqCst);
+            assert!(n <= 2, "more than one further fold started: {n}");
+            if n == 2 && test_support::waiter_counter(identity) == 1 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "second fold did not single-flight: hooks={n} waiters={}",
+                test_support::waiter_counter(identity)
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        test_support::release_identity_barrier(identity);
+        owner.join().unwrap();
+        waiter_a.join().unwrap();
+        waiter_b.join().unwrap();
+        assert_eq!(hooks.load(Ordering::SeqCst), 2);
+        assert_eq!(test_support::compute_starts(identity), 2);
+    }
+
+    #[tokio::test]
+    async fn test_warm_inventory_publishes_new_day_envelope() {
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let first_day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(first_day)
+                .join("field/100000_60"),
+            "seed",
+        );
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let app = crate::router(temp.path().to_path_buf(), Clock::fixed(now), || {
+            Response::new(Body::empty())
+        });
+
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["complete"], true);
+        assert!(full_pass_finish(identity).is_some());
+        assert!(
+            test_support::recorded_notifications(identity).is_empty(),
+            "cold fill publishes no day envelope"
+        );
+
+        let new_day = "20260102";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(new_day)
+                .join("field/100000_60"),
+            "arrived",
+        );
+        test_support::clear_recorded_notifications(identity);
+        let body = index_body(&app, &root).await;
+        assert!(
+            body["months"]["202601"].as_u64().unwrap()
+                > seeded["months"]["202601"].as_u64().unwrap()
+        );
+        assert_eq!(
+            test_support::recorded_notifications(identity),
+            vec![("day".to_string(), new_day.to_string())]
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_chronicle_stat_error_is_not_an_empty_listing() {
+        use std::os::unix::fs::symlink;
+
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("field/100000_60"),
+            "seed",
+        );
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let app = crate::router(temp.path().to_path_buf(), Clock::fixed(now), || {
+            Response::new(Body::empty())
+        });
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["complete"], true);
+        let real_count = seeded["months"]["202601"].as_u64().unwrap();
+        let poisoned = 424_242;
+        assert_ne!(real_count, poisoned);
+        {
+            let reg = INVENTORIES.lock().expect("inventories lock");
+            let mut inv = reg
+                .get(&identity)
+                .expect("inventory")
+                .lock()
+                .expect("inventory lock");
+            inv.rows.get_mut(day).expect("day row").state = DayFoldState::Computed(poisoned);
+        }
+        let stamped = full_pass_finish(identity);
+
+        struct RestoreChronicle {
+            journal: std::path::PathBuf,
+            armed: bool,
+        }
+        impl Drop for RestoreChronicle {
+            fn drop(&mut self) {
+                if !self.armed {
+                    return;
+                }
+                let chronicle = self.journal.join("chronicle");
+                let bak = self.journal.join("chronicle.bak");
+                let _ = fs::remove_file(&chronicle);
+                if bak.exists() {
+                    let _ = fs::rename(&bak, &chronicle);
+                }
+            }
+        }
+        let chronicle = temp.path().join("chronicle");
+        let bak = temp.path().join("chronicle.bak");
+        let mut restore = RestoreChronicle {
+            journal: temp.path().to_path_buf(),
+            armed: false,
+        };
+        fs::rename(&chronicle, &bak).unwrap();
+        symlink("chronicle", &chronicle).unwrap();
+        restore.armed = true;
+
+        let broken = index_body(&app, &root).await;
+        assert_eq!(broken["freshness"]["complete"], false);
+        assert_eq!(full_pass_finish(identity), stamped);
+
+        let month = app
+            .clone()
+            .oneshot(
+                Request::get("/app/transcripts/api/stats/202601")
+                    .extension(root.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(month.status(), StatusCode::OK);
+
+        fs::remove_file(&chronicle).unwrap();
+        fs::rename(&bak, &chronicle).unwrap();
+        restore.armed = false;
+
+        let after = index_body(&app, &root).await;
+        assert_eq!(
+            after["months"]["202601"].as_u64(),
+            Some(poisoned),
+            "a chronicle stat error must not delete rows"
+        );
     }
 
     async fn index_month_stats(app: &axum::Router, root: &Arc<JournalRoot>, month: &str) -> Value {
