@@ -99,6 +99,13 @@
       if (window.isLoopbackRefusal?.(response)) {
         window.recoverFromLoopbackRefusal?.();
       }
+      if (response.redirected) {
+        // A fragment route redirects only when the whole page belongs
+        // elsewhere (first-run setup, for one). Follow it as a page; never
+        // mount the page it lands on as if it were this view's fragment.
+        window.location.href = response.url;
+        return;
+      }
       if (!response.ok) {
         const error = new Error(`Request failed (HTTP ${response.status})`);
         error.status = response.status;

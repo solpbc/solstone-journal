@@ -473,6 +473,8 @@ function createHarness(options = {}) {
     return Promise.resolve({
       ok: fixture.ok !== undefined ? fixture.ok : (status >= 200 && status < 300),
       status,
+      redirected: Boolean(fixture.redirected),
+      url: fixture.url || requested,
       text() { return typeof fixture.text === 'function' ? fixture.text() : Promise.resolve(body); },
       json() { return typeof fixture.json === 'function' ? fixture.json() : Promise.resolve().then(() => JSON.parse(body)); },
     });
@@ -1745,6 +1747,18 @@ asyncCase('view readiness reports once per mount, re-arms, and rejects stale rep
   marks = h.marks.filter(entry => entry.name === 'view:ready');
   assert.strictEqual(marks.length, 2);
   assert.strictEqual(marks[1].detail.state, 'content');
+});
+
+asyncCase('a redirected fragment is followed as a page, never mounted', async () => {
+  const h = createHarness({boot: true, fetchResponses: {
+    '/app/home/workspace': {status: 200, redirected: true, url: 'http://localhost/init', body: '<html><body>setup</body></html>'},
+  }});
+  const target = h.document.getElementById('main-content');
+  const before = target ? target.innerHTML : null;
+  await h.window.mountWorkspaceFragment('/app/home/workspace', {appName: 'home'});
+  assert.strictEqual(h.window.location.href, 'http://localhost/init');
+  if (target) assert.strictEqual(target.innerHTML, before, 'the setup page is not mounted as the view');
+  assert.strictEqual(h.marks.filter(entry => entry.name === 'view:ready').length, 0);
 });
 
 function mapStorage(seed = {}) {
