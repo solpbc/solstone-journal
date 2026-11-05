@@ -75,7 +75,7 @@ curl -fsSL https://solstone.app/install.sh | sh
 
 On windows, download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest), or [solstone.app/download/journal/windows/arm64/latest](https://solstone.app/download/journal/windows/arm64/latest) on an arm64 PC, and run it. Then open a new terminal window and run `solstone journal setup`. Details are in [INSTALL.md](INSTALL.md#install-on-windows).
 
-Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and both migration paths are in [INSTALL.md](INSTALL.md). Linux setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Open **http://localhost:5015**. On mac, open the journal app instead. First run sets your identity and lets you choose a provider.
+Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and both migration paths are in [INSTALL.md](INSTALL.md). Linux setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Run **`solstone journal open`** to open your journal in the browser. On mac, open the journal app instead. First run sets your identity and lets you choose a provider.
 
 On linux, check whether a computer is ready for the local models after the tree is on PATH:
 

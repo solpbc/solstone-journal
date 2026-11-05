@@ -15,7 +15,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- when redoing a day from scratch runs past its six-hour limit, your journal now finishes the rest of that day as an ordinary reprocess straight away. before, it started the whole day over once more, which stopped at the same point six hours later.
+- the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
+- on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.
+- on a mac or linux computer, when `solstone journal open` can't open a browser, it now says how to reach the link from another computer over SSH.
+- when redoing a day from scratch runs past its six-hour limit, your journal now moves straight on to an ordinary reprocess of that day, and the parts it hadn't reached keep their earlier results. before, it started the whole day over once more, which stopped at the same point six hours later.
 - with your own endpoint or confidential processing, each new run on the thinking page now names the model that did the work, not the default local model.
 - the iphone development journal uses less memory when working through speech.
 - new journals create your identity from the name you enter during setup, and speaker corrections work in the phone dashboard.
