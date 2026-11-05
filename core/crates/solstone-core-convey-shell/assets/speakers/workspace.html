@@ -1651,6 +1651,7 @@
       initSpeakers();
     } catch (err) {
       renderSpeakersStateError(err);
+      reportSpeakersReady('error');
     }
   }
 
@@ -2952,6 +2953,7 @@
     return SPK_COPY.SPK_OVERVIEW_CARD_SEGMENTS_LABEL || '';
   }
 
+  const reportSpeakersReady = window.createViewReady('speakers');
   function loadSegments(options) {
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = segmentsRequestSeq + 1;
@@ -2972,6 +2974,7 @@
         segmentsComplete = segments.length >= segmentTotal;
         renderSegmentList();
         updateLoadMore();
+        reportSpeakersReady(segments.length ? 'content' : 'empty');
 	        if (window.location.hash && window.location.hash.slice(1) !== OWNER_TEACH_HASH) {
 	          const hashKey = window.location.hash.slice(1);
 	          const found = selectSegmentByHash(hashKey);
@@ -2996,6 +2999,7 @@
         } else {
           setSegmentsStatus("couldn't reload segments. showing the last loaded segments.", err.serverMessage);
         }
+        reportSpeakersReady('error');
         if (throwOnError) throw err;
         return false;
       });
@@ -4934,6 +4938,7 @@
     });
   }
 
+  const reportSpeakersReady = window.createViewReady('speakers');
   function loadKnown(options) {
     const throwOnError = Boolean(options?.throwOnError);
     const requestSeq = knownRequestSeq + 1;
@@ -4943,6 +4948,7 @@
       .then((data) => {
         if (requestSeq !== knownRequestSeq) return false;
         renderKnown(data);
+        reportSpeakersReady((data.speakers || []).length ? 'content' : 'empty');
         return true;
       })
       .catch((err) => {
@@ -4960,6 +4966,7 @@
         });
         sortSelect.hidden = true;
         knownFilter.hidden = true;
+        reportSpeakersReady('error');
         if (throwOnError) throw err;
         return false;
       });
@@ -5497,6 +5504,7 @@
       init();
     } catch (err) {
       renderOverviewStateError(err);
+      reportSpeakersReady('error');
     }
   }
 

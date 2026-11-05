@@ -46,7 +46,7 @@ function harness(crateDir, source = 'obsidian') {
     document: { visibilityState: 'visible', removeEventListener() {} },
     sessionStorage: { setItem(key, value) { storage.set(key, value); }, getItem(key) { return storage.get(key) ?? null; } },
     crypto: { randomUUID: () => 'connection-reference' },
-    window: { location: { href: 'https://journal.invalid/app/import/', assign(value) { calls.push({ navigation: value }); } }, AppServices: { escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }, removeEventListener() {} },
+    window: { createViewReady: () => () => {}, location: { href: 'https://journal.invalid/app/import/', assign(value) { calls.push({ navigation: value }); } }, AppServices: { escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;') }, removeEventListener() {} },
     fetch: async (url, options) => {
       calls.push({ url, options });
       const value = options?.method === 'POST' ? { source, accepted: true, submitted: true, reused: false, request_id: JSON.parse(options.body).request_id, reference: 'accepted-sync' }

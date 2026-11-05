@@ -97,7 +97,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
     clipboard: { writeText: async () => {} },
   };
-  const window = {
+  const window = { createViewReady: () => () => {},
     location,
     top: null,
     AppServices: {

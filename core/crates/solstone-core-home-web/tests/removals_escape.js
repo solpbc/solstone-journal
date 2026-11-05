@@ -132,7 +132,7 @@ async function boot(source, lists, responses, labels = null) {
   const listResponses = Array.isArray(lists) ? lists : [lists];
   let listIndex = 0;
   const calls = [];
-  const window = {
+  const window = { createViewReady: () => () => {},
     setTimeout(callback) { const id = ++nextTimer; timers.set(id, callback); return id; },
     clearTimeout(id) { timers.delete(id); },
     apiJson(url, options) {
@@ -319,7 +319,7 @@ async function assertStaysOff(source, pathname) {
   const root = new Element();
   const calls = [];
   const listeners = {};
-  const window = {
+  const window = { createViewReady: () => () => {},
     location: { pathname },
     apiJson(url) { calls.push(url); return new Promise(() => {}); },
     setTimeout() { return 1; },

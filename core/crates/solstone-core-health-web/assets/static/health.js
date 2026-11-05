@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 (function(){
+  const reportHealthReady = window.createViewReady('health');
+
   const HEALTH_LOGS_COPY = {
     "LOGS_LEVEL_FILTER_LABEL": "level",
     "LOGS_LEVEL_OPTION_ALL": "all levels",
@@ -912,8 +914,10 @@
       state.searchIndex = payload.search_index || null;
       renderBacklogState(payload.backlog, payload.search_index);
       renderAgentErrorsState(payload.agent_errors);
+      reportHealthReady('content');
     } catch (error) {
       renderHealthStateError(error);
+      reportHealthReady('error');
     } finally {
       // This independent detail must not compete with the initial index read.
       loadMediaBacklog();

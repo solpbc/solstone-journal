@@ -2989,6 +2989,8 @@ button:focus:not(:focus-visible) {
 </div>
 
 <script>
+  const reportSettingsReady = window.createViewReady('settings');
+
 let INSTALL_COPY = {};
 const IN_FLIGHT_INSTALL_STATES = ['resolving', 'downloading', 'verifying', 'installing'];
 const settingsStateGate = document.getElementById('settings-state-gate');
@@ -6570,16 +6572,19 @@ async function initSettingsWorkspace() {
       applySettingsState(state || {});
       hydrateFacetDetail(facet || {});
       revealFacetDetail();
+      reportSettingsReady('content');
       return;
     }
 
     const state = await loadSettingsState();
     applySettingsState(state || {});
     revealSettingsIndex();
+    reportSettingsReady('content');
     initSettings();
   } catch (err) {
     window.logError?.(err, { context: 'settings: state load failed' });
     showSettingsStateError(err);
+    reportSettingsReady('error');
   }
 }
 

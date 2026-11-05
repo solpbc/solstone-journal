@@ -271,7 +271,7 @@ function createEnvironment() {
   const doc = createStatsDOM();
   const context = vm.createContext({
     document: doc,
-    window: {
+    window: { createViewReady: () => () => {},
       JournalFormat: { day: (d) => `Apr 3, 2026` },
       location: { href: '' },
     },

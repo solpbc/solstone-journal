@@ -213,7 +213,7 @@ async function teachingReachesPastDays(workspace) {
     day: '20261011',
     OWNER_TEACH_RECENT_DAYS: 14,
     OWNER_TEACH_TARGET_STATEMENTS: 40,
-    window: { logError() {} },
+    window: { createViewReady: () => () => {}, logError() {} },
     todayDayKey: () => '20261011',
     asked: [],
   };
@@ -243,7 +243,7 @@ async function overviewFailuresStayUnavailable(workspace) {
   const calls = [];
   const failed = new Error('read failed');
   const context = {
-    window: { apiJson: async () => { throw failed; }, SurfaceState: {
+    window: { createViewReady: () => () => {}, apiJson: async () => { throw failed; }, SurfaceState: {
       error: () => 'unavailable', serverMessageFrom: () => '',
     }, CONVEY_COPY: { RELOAD_HINT: 'reload' } },
     qualityRequestSeq: 0,

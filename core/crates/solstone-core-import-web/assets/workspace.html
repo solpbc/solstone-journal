@@ -690,6 +690,8 @@
 </div>
 
 <script>
+  const reportImportReady = window.createViewReady('import');
+
 // Keep diagnostic detail out of the message shown to the owner.
 function importErrorMessage(data, fallback) {
   if (data?.reason_code === 'invalid_operation_for_state') {
@@ -1287,6 +1289,7 @@ async function loadImports() {
         desc: 'import from any source above.',
         action: '<a href="#" onclick="scrollToGrid(); return false;" style="color: var(--orange-text-aa); font-weight: 600;">choose a source →</a>'
       });
+      reportImportReady('empty');
       return;
     }
 
@@ -1320,6 +1323,7 @@ async function loadImports() {
     }
     const restoreFilterFocus = document.activeElement?.id === 'importSourceFilter';
     container.innerHTML = html;
+    reportImportReady(imports.length ? 'content' : 'empty');
 
     const sourceFilter = document.getElementById('importSourceFilter');
     if (sourceFilter) {
@@ -1345,6 +1349,7 @@ async function loadImports() {
       serverMessage: window.SurfaceState.serverMessageFrom(err),
       detail: err,
     }));
+    reportImportReady('error');
   } finally {
     if (generation === historyRequestGeneration) historyLoading = false;
   }

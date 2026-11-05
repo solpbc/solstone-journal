@@ -483,7 +483,7 @@ const dateFormatSource = fs.readFileSync(path.join(crateDir, '../solstone-core-c
 // are synthetic and never contain the stream name they stand for, so a test
 // can tell the label from the id it must keep reachable.
 function seededJournalFormat(labels, says = {}) {
-  const context = { window: {}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console };
+  const context = { window: { createViewReady: () => () => {},}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console };
   vm.createContext(context);
   vm.runInContext(dateFormatSource, context);
   const format = context.window.JournalFormat;
@@ -655,7 +655,7 @@ async function createEnvironment(
   let nextIntervalId = 1;
 
   const windowListeners = {};
-  const windowObj = {
+  const windowObj = { createViewReady: () => () => {},
     addEventListener(type, listener) { (windowListeners[type] ||= []).push(listener); },
     removeEventListener(type, listener) {
       if (windowListeners[type]) {

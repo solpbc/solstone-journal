@@ -564,6 +564,7 @@ button.map-month-row:hover { background: var(--cream); }
 <script>
 (() => {
   "use strict";
+  const reportMapReady = window.createViewReady('map');
 
   const DAY_RE = /^\d{8}$/;
   const MONTH_RE = /^\d{6}$/;
@@ -1146,11 +1147,14 @@ button.map-month-row:hover { background: var(--cream); }
       if (!asArray(data.entries).length && !asArray(data.devices).length) {
         if (data.journal_has_location) renderDayEmpty(data, day);
         else renderJournalEmpty();
+        reportMapReady('empty');
         return;
       }
       renderDay(data);
+      reportMapReady('content');
     } catch (err) {
       showError(err, () => loadDay(day));
+      reportMapReady('error');
     }
   }
 
@@ -2639,8 +2643,10 @@ button.map-month-row:hover { background: var(--cream); }
         return;
       }
       renderJournalEmpty();
+      reportMapReady('empty');
     } catch (err) {
       showError(err, start);
+      reportMapReady('error');
     }
   }
 

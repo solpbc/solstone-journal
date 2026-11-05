@@ -18,7 +18,7 @@ function scriptFromWorkspace() {
 }
 
 function makeContext(globals) {
-  const context = vm.createContext({ importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
+  const context = vm.createContext({ reportImportReady() {}, importEvents: {}, guidedFolderBusy: false, document: { getElementById: () => null, addEventListener: () => {} }, showError: message => { throw new Error(message); }, setTimeout: () => 0, clearTimeout: () => {}, ...globals });
   const source = scriptFromWorkspace();
   vm.runInContext(`
     const importPreviews = { guided: null, quick: null };
@@ -294,7 +294,7 @@ function makeHarness(ids) {
     requests.push({ url, options });
     return { ok: true, async json() { return url.endsWith('/preview') ? { preview_token: 'preview-1', size: { recordings: 2, days: 1, skipped: 0 } } : {}; } };
   };
-  const window = {
+  const window = { createViewReady: () => () => {},
     _quickClientItemId: null,
     _quickSaved: null,
     _guidedClientItemId: null,
@@ -483,7 +483,7 @@ function runHistoryHeaderSummary() {
     "let importSourceOptions = [];",
     "const sourceMetadataByName = {};",
     "let currentSourceFilter = '';",
-    "const window = {};",
+    "const window = { createViewReady: () => () => {},};",
   ].join('\n'), context);
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
@@ -515,7 +515,7 @@ function runHistoryHeaderSummary() {
 function runImportRowColumns() {
   const context = makeContext({ console });
   vm.runInContext([
-    "const window = {",
+    "const window = { createViewReady: () => () => {},",
     "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
     "};",
     "const sourceIconSvgByName = {};",
@@ -652,7 +652,7 @@ function runProgressPanelUpdatesOnCompletion() {
   const guideSteps = new Element();
   const context = makeContext({ console });
   vm.runInContext([
-    "const window = {",
+    "const window = { createViewReady: () => () => {},",
     "  location: { hash: '#progress/1700000000' },",
     "  CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },",
     "};",
@@ -770,7 +770,7 @@ function runReloadedPanelAgreesWithItsOwnSummary() {
   const guideSteps = new Element();
   const context = makeContext({ console });
   vm.runInContext([
-    "const window = {",
+    "const window = { createViewReady: () => () => {},",
     "  location: { hash: '#progress/1700000000' },",
     "  CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },",
     "};",
@@ -2445,7 +2445,7 @@ function runEveryOwnerSinkEscapes() {
   // --- the history table: row error detail, source cell, filter options ---
   const historyContext = makeContext({ console });
   vm.runInContext([
-    "const window = {",
+    "const window = { createViewReady: () => () => {},",
     "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
     "};",
     "const sourceIconSvgByName = {};",
@@ -3070,7 +3070,7 @@ function runImportIdSelectorsEscapeQuotes() {
 function runOwnerSinksEscapeServerDerivedPayloads() {
   const rowContext = makeContext({ console });
   vm.runInContext([
-    "const window = {",
+    "const window = { createViewReady: () => () => {},",
     "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
     "};",
     "const sourceIconSvgByName = {};",
@@ -3418,7 +3418,7 @@ async function runThinkingRefreshKeepsControlsAndFocus() {
     clearTimeout: () => {},
     importEvents: { id: {} },
     document: { activeElement: control, querySelector: () => panel },
-    window: { location: { hash: '#progress/id' }, apiJson: async () => ({ thinking: { status: 'current', recordings: 3, ready: 1, waiting: 1, held: 1, unreadable: 0 } }) },
+    window: { createViewReady: () => () => {}, location: { hash: '#progress/id' }, apiJson: async () => ({ thinking: { status: 'current', recordings: 3, ready: 1, waiting: 1, held: 1, unreadable: 0 } }) },
   });
   installRealEscapeHtml(context);
   context.scheduleThinkingProgress();
@@ -3442,7 +3442,7 @@ async function runHistoryFilterPaginationRaces() {
   const tbody = { insertAdjacentHTML() {} };
   const context = makeContext({
     document: { getElementById: id => nodes[id] || null, querySelector: () => tbody },
-    window: {
+    window: { createViewReady: () => () => {},
       apiJson: url => new Promise(resolve => requests.push({ url, resolve })),
       SurfaceState: { replaceLoading() { throw new Error('unexpected read error'); }, error: x => x, serverMessageFrom: () => '' },
       CONVEY_COPY: {},
@@ -3667,7 +3667,7 @@ async function runNativeFolderSelectionAndReturnRead() {
       crypto: { randomUUID: () => 'selected-reference' },
       sessionStorage: { getItem: key => storage.get(key), setItem: (key,value) => storage.set(key,value) },
       loadImports: async () => {},
-      window: { JournalOwnerFolders: { choose(source,reference,phase) {
+      window: { createViewReady: () => () => {}, JournalOwnerFolders: { choose(source,reference,phase) {
         assert.strictEqual(source,'obsidian'); assert.strictEqual(reference,'selected-reference');
         selected=phase; return new Promise(done => { resolve=done; });
       } } },
@@ -3746,7 +3746,7 @@ async function runArchiveReturnRestoresReviewedOptionsWithoutOverwritingEdits() 
   const fields = Object.fromEntries(['guidedFolderStatus', 'guidedArchiveZone', 'guidedArchiveManifest'].map(id => [id, new Element()]));
   const context = makeContext({
     document: {getElementById: id => fields[id] || null},
-    window: {},
+    window: { createViewReady: () => () => {},},
     folderSelection: () => ({client_item_id:'archive-selection'}), folderControls() {},
     fetch: async url => ({ok:true,json:async()=>url.includes('/list?')
       ? {imports:[{timestamp:'20261014_090000',client_item_id:'archive-selection'}]}

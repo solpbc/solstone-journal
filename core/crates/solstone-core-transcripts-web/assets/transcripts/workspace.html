@@ -2623,6 +2623,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
 <script>
 (() => {
+  const reportTranscriptsReady = window.createViewReady('transcripts');
+
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
   // An audio line's words as captured, with each possible name the journal
   // suggests shown right after the words it may refer to, as tentative.
@@ -6750,6 +6752,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       allSegments = data.segments || [];
       dayLoad = 'ready';
       updateZoom();
+      reportTranscriptsReady(allSegments.length ? 'content' : 'empty');
       refreshUnselectedLocation(null);
 
       // Check for hash fragment to auto-select segment
@@ -6779,6 +6782,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	      });
 	      const retry = panel.querySelector('.surface-state-retry');
 	      if (retry) retry.addEventListener('click', loadDayData);
+	      reportTranscriptsReady('error');
 	      refreshUnselectedLocation(null);
 	    });
 	  }

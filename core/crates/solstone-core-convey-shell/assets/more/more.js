@@ -17,6 +17,8 @@ const MORE_STATE_FIELDS = [
 ];
 
 (function () {
+  const reportMoreReady = window.createViewReady('more');
+
   const GROUPS = [
     ['keeps', 'what your journal keeps', 'your days, as your journal holds them'],
     ['shape', 'what you shape', 'fix and tidy what it keeps'],
@@ -306,6 +308,7 @@ const MORE_STATE_FIELDS = [
     rememberApps(root, shell);
     installFilter(root);
     installPins(root, shell);
+    reportMoreReady('content');
     return loadStates(root, timeout).then(() => root);
   }
 

@@ -26,7 +26,7 @@ const document = {
   addEventListener() {},
   querySelector() { return null; },
 };
-const window = { location: { href: '' }, document, addEventListener() {} };
+const window = { createViewReady: () => () => {}, location: { href: '' }, document, addEventListener() {} };
 window.window = window;
 document.defaultView = window;
 

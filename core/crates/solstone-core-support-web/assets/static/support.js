@@ -2,10 +2,13 @@
 // Copyright (c) 2026 sol pbc
 
 (function() {
+  const reportSupportReady = window.createViewReady('support');
+
   document.getElementById('make-report')?.addEventListener('click', () => {
     const report = window.parent?.convey?.reportError;
     if (typeof report === 'function') {
       report({ source: 'support-page' });
     }
   });
+  reportSupportReady('content');
 })();

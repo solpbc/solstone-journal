@@ -22,7 +22,7 @@ const document = {
   addEventListener() {},
   querySelector() { return null; },
 };
-const window = {
+const window = { createViewReady: () => () => {},
   location,
   document,
   addEventListener() {},

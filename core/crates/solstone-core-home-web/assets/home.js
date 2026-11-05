@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
+  const reportHomeReady = window.createViewReady('home');
+
   const PULSE_URL = '/app/home/api/pulse';
   const BRIEFING_URL = '/app/home/api/briefing';
   const FIRST_MINUTES_URL = '/app/home/api/first-minutes';
@@ -245,6 +247,7 @@
         if (read < pulseAppliedVersion) return;
         pulseAppliedVersion = read;
         renderPulse(data);
+        reportHomeReady(data.home_state === 'welcome' ? 'empty' : 'content');
       })
       .catch(function (error) {
         if (read < pulseAppliedVersion) return;
@@ -252,6 +255,7 @@
         logError(error, 'home: loadPulse failed');
         surface.innerHTML = surfaceError(error, "Couldn't load pulse");
         bindSurfaceRetry();
+        reportHomeReady('error');
       });
   }
 

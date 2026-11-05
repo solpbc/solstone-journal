@@ -579,7 +579,7 @@ class CustomEvent {
 function createEnvironment(pathname = '/app/home/week/20260308', evalWeek = true) {
   const doc = new Document();
   const DOMPurify = createDOMPurify();
-  const win = {
+  const win = { createViewReady: () => () => {},
     document: doc,
     location: {
       pathname: pathname,
@@ -997,6 +997,7 @@ async function runTests() {
     }
 
     const searchWin = {
+      createViewReady: () => () => {},
       document: searchDoc,
       location: { search: '' },
       URLSearchParams: URLSearchParams,

@@ -590,7 +590,7 @@ async function main() {
   };
 
   const openedWindows = [];
-  const window = {
+  const window = { createViewReady: () => () => {},
     location: {
       hash: '',
       href: 'http://127.0.0.1:7658/app/thinking/',
@@ -606,7 +606,7 @@ async function main() {
     },
     sessionStorage,
     open(url, target, features) {
-      const win = {
+      const win = { createViewReady: () => () => {},
         location: { href: url || 'about:blank' },
         opener: null,
         closed: false,

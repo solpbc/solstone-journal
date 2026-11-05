@@ -49,6 +49,7 @@
 <script>
 (() => {
   'use strict';
+  const reportAgentsReady = window.createViewReady('agents');
   const view = document.getElementById('agents-view');
   const esc = value => window.AppServices.escapeHtml(String(value ?? ''));
   const PORTAL = 'https://services.solstone.app/services/solstone-me';
@@ -1083,8 +1084,9 @@
       if (relayAvailable() && !state.enabled && usesConsentFlow()) await checkEnableOp();
       else enableOp = null;
       render();
+      reportAgentsReady('content');
     }
-    catch (error) { errorPage(error.message || 'the journal did not return its agent state.'); }
+    catch (error) { errorPage(error.message || 'the journal did not return its agent state.'); reportAgentsReady('error'); }
   }
   async function applyActivityFilters(filters) {
     const params = new URLSearchParams();

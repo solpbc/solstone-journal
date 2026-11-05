@@ -1078,6 +1078,7 @@ a.body-day-cell:focus-visible {
 <script>
 (() => {
   "use strict";
+  const reportBodyReady = window.createViewReady('body');
 
   const DAY_RE = /^\d{8}$/;
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
@@ -1597,8 +1598,10 @@ a.body-day-cell:focus-visible {
       document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
       reveal(renderOverview(status));
       initRecentCarousel();
+      reportBodyReady(hasData ? 'content' : 'empty');
     } catch (err) {
       showError("couldn't load your body data", err, initBodyOverview);
+      reportBodyReady('error');
     }
   }
 
@@ -1960,8 +1963,10 @@ a.body-day-cell:focus-visible {
     try {
       const bodyDay = await window.apiJson(`/app/body/api/day/${encodeURIComponent(day)}`);
       reveal(renderDayView(bodyDay));
+      reportBodyReady(bodyDay.has_data ? 'content' : 'empty');
     } catch (err) {
       showError("couldn't load body day", err, () => initBodyDay());
+      reportBodyReady('error');
     }
   }
 

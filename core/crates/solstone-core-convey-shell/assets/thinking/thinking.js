@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 (() => {
+  const reportThinkingReady = window.createViewReady('thinking');
+
   const state = {
     providers: {},
     keys: {},
@@ -1041,6 +1043,7 @@
       return true;
     } catch (err) {
       renderInitialError(err);
+      reportThinkingReady('error');
       return false;
     }
   }
@@ -5556,6 +5559,7 @@
 
     renderAll();
     routeThinkingHash('reload');
+    reportThinkingReady('content');
     refreshDevicesInvite();
     try {
       if (!bundledLocalUnavailable()) {

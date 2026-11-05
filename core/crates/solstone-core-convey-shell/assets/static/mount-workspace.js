@@ -2,6 +2,22 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
+  let activeMount = null;
+
+  // Capture this mount before starting asynchronous reads. A late completion
+  // from an earlier mount cannot mark the replacement view ready.
+  window.createViewReady = function (view) {
+    const mount = activeMount;
+    return function (state) {
+      if (!mount || mount !== activeMount || mount.ready || mount.view !== view) return;
+      if (!['content', 'empty', 'error'].includes(state)) {
+        throw new TypeError('Unknown view readiness state');
+      }
+      mount.ready = true;
+      performance.mark('view:ready', { detail: { view, state } });
+    };
+  };
+
   function getTarget(options) {
     if (options && options.target) return options.target;
     return document.getElementById('main-content');
@@ -67,6 +83,8 @@
       throw new Error('mountWorkspaceFragment requires a target');
     }
 
+    activeMount = { view: options.appName || null, ready: false };
+    const reportReady = window.createViewReady(activeMount.view);
     const retry = () => {
       mountWorkspaceFragment(url, options).catch((error) => {
         if (window.logError) {
@@ -90,7 +108,9 @@
       }
       const html = await response.text();
       target.innerHTML = html;
+      performance.mark('workspace:inserted');
       await replayScripts(target);
+      performance.mark('view:scripts-loaded');
       document.dispatchEvent(
         new CustomEvent('workspace:mounted', {
           detail: { appName: options.appName || null, url: url }
@@ -98,6 +118,7 @@
       );
     } catch (error) {
       renderFailure(target, retry, error);
+      reportReady('error');
       if (typeof options.onRetry === 'function') {
         options.onRetry(error);
       }

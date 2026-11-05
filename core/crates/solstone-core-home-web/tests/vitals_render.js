@@ -32,7 +32,7 @@ const document = {
   getElementById() { return null; },
   querySelectorAll() { return []; },
 };
-const window = {
+const window = { createViewReady: () => () => {},
   location,
   document,
   addEventListener() {},

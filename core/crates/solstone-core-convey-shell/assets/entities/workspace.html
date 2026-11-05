@@ -2326,6 +2326,8 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
 </div>
 
 <script>
+  const reportEntitiesReady = window.createViewReady('entities');
+
 let ENT_COPY = {};
 let ATTENDANCE_KINDS = new Set();
 let currentFacet = null;
@@ -5535,6 +5537,7 @@ async function loadEntitiesState() {
     document
       .querySelector('#entities-loading .surface-state-retry')
       ?.addEventListener('click', initEntities);
+    reportEntitiesReady('error');
     return false;
   }
 }
@@ -5594,6 +5597,7 @@ async function loadEntityScopeMetadata() {
     document
       .querySelector('#entities-loading .surface-state-retry')
       ?.addEventListener('click', () => (entitiesInitialized ? loadEntities() : initEntities()));
+    reportEntitiesReady('error');
     return false;
   }
 }
@@ -5705,6 +5709,7 @@ async function loadEntities() {
   if (hasEmptySelectedFacet()) {
     document.getElementById('entities-loading').style.display = 'none';
     showListView();
+    reportEntitiesReady('empty');
     return;
   }
 
@@ -5727,6 +5732,7 @@ async function loadEntities() {
 
     detectedPage = 1;
     renderEntities();
+    reportEntitiesReady(entitiesData.attached.length || entitiesData.detected.length ? 'content' : 'empty');
   } catch (err) {
     window.logError(err, { context: 'entities: loadEntities failed' });
     window.SurfaceState.replaceLoading('entities-loading', window.SurfaceState.error({
@@ -5735,6 +5741,7 @@ async function loadEntities() {
       serverMessage: entityErrorMessage(err),
       detail: err,
     }));
+    reportEntitiesReady('error');
   }
 }
 
@@ -5750,6 +5757,7 @@ function renderLoadedJournalEntities() {
   }
 
   renderJournalEntities();
+  reportEntitiesReady((journalSummary?.items || []).length ? 'content' : 'empty');
 }
 
 /// The count line above the grid is not enough signal on its own: G2-32 found
@@ -5821,6 +5829,7 @@ async function loadJournalEntities({refresh = false, silent = false, queryChange
       serverMessage: entityErrorMessage(err),
       detail: err,
     }));
+    reportEntitiesReady('error');
   }
 }
 

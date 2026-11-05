@@ -270,6 +270,8 @@ let CUR_COPY = {};
 window.CUR_COPY = CUR_COPY;
 
 (function() {
+  const reportCurationReady = window.createViewReady('curation');
+
   const root = document.querySelector('[data-curation-root]');
   if (!root) return;
   const escapeHtml = window.AppServices.escapeHtml;
@@ -714,6 +716,7 @@ window.CUR_COPY = CUR_COPY;
       }
       refreshGroupCounts();
     });
+    reportCurationReady(empty ? 'empty' : 'content');
   }
 
   async function refreshCurationState() {
@@ -726,6 +729,7 @@ window.CUR_COPY = CUR_COPY;
       renderState(await window.apiJson(CURATION_STATE_PATH, curationRequestOptions()));
     } catch (err) {
       renderError(err, loadInitialState);
+      reportCurationReady('error');
     }
   }
 

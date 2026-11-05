@@ -318,10 +318,11 @@ const healthCode = extractRenderFunctions(loadHealthSource());
 function createEnvironment() {
   const doc = createHealthDOM();
   const context = vm.createContext({
+    reportHealthReady() {},
     document: doc,
     state: {},
     renderHeldWork: () => {},
-    window: {
+    window: { createViewReady: () => () => {},
       location: { href: '' },
     },
     console,
@@ -431,7 +432,8 @@ function extractGlanceFunction(source) {
 }
 
 function glanceFor(crashed, staleHeartbeats, searchIndex = null, attention = {}) {
-  const context = vm.createContext({ Array, Object, String, Number, Math, Set, Map });
+  const context = vm.createContext({
+    reportHealthReady() {}, Array, Object, String, Number, Math, Set, Map });
   context.crashedEntries = crashed;
   context.staleHeartbeats = staleHeartbeats;
   context.searchIndex = searchIndex;
@@ -599,8 +601,9 @@ function createDeviceEnvironment() {
     backupView: { tone: 'neutral' },
   };
   const context = vm.createContext({
+    reportHealthReady() {},
     document: doc, elements, state, Date: ControlledDate, clock, console: { warn() {} },
-    window: { location: { hash: '' } },
+    window: { createViewReady: () => () => {}, location: { hash: '' } },
     requestAnimationFrame: fn => fn(), CustomEvent: class { constructor(type) { this.type = type; } },
     STALE_MS: 30000, brainSnapshot: null, connectError: false, updateClients() {},
     serviceName: value => value, relativeTime: value => String(value), ageAgo: value => String(value),
@@ -1499,8 +1502,9 @@ function createSpeechEnvironment(applicable = true) {
   const loggedErrors = [];
 
   const context = vm.createContext({
+    reportHealthReady() {},
     document: doc,
-    window: {
+    window: { createViewReady: () => () => {},
       location: { hash: '' },
       addEventListener: () => {},
       removeEventListener: () => {},

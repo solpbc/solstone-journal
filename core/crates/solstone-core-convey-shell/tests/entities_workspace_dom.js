@@ -169,7 +169,7 @@ async function main() {
   const errorEnd = workspace.indexOf('function entityTrustIdentitySummary', errorStart);
   check(errorStart !== -1 && errorEnd !== -1, 'workspace exposes the entities error-message helper');
   const errorContext = {
-    window: {SurfaceState: {serverMessageFrom: (err) => err?.serverMessage || ''}},
+    window: { createViewReady: () => () => {},SurfaceState: {serverMessageFrom: (err) => err?.serverMessage || ''}},
     ENT_COPY: {},
   };
   vm.runInNewContext(
@@ -209,7 +209,7 @@ async function main() {
     ...errorContext,
     currentDetailEntity: {name: 'source'},
     ENT_COPY: {ENT_TRUST_ACTION_FAILED: 'failure fallback'},
-    window: {
+    window: { createViewReady: () => () => {},
       ...errorContext.window,
       confirm: () => true,
       apiJson: async () => { calls += 1; throw mergeFailure; },
@@ -228,7 +228,7 @@ async function main() {
   const curationStart = curation.indexOf('  function repairRequired(');
   const curationEnd = curation.indexOf('  function postJson(', curationStart);
   const curationContext = {
-    window: {SurfaceState: {serverMessageFrom: (err) => err.serverMessage}},
+    window: { createViewReady: () => () => {},SurfaceState: {serverMessageFrom: (err) => err.serverMessage}},
     CUR_COPY: {CUR_REPAIR_REQUIRED: '{detail} {remediation}'},
     copyFormat: (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => values[key]),
     setBusy: (control, busy) => { control.disabled = busy; },
@@ -293,7 +293,7 @@ async function main() {
   );
 
   const windowListeners = {};
-  const window = {
+  const window = { createViewReady: () => () => {},
     location: {pathname: '/app/entities', search: '', hash: ''},
     history: {
       pushed: [],
@@ -691,7 +691,7 @@ async function main() {
       groupedCount: (n) => String(n),
       renderJournalEntities: () => {},
       loadJournalEntities: async () => {},
-      window: {
+      window: { createViewReady: () => () => {},
         logError: () => {},
         crypto: {getRandomValues: (bytes) => bytes.fill(7)},
         sessionStorage: {

@@ -44,7 +44,7 @@ const document = {
   querySelectorAll() { return []; },
   getElementById() { return null; },
 };
-const window = {
+const window = { createViewReady: () => () => {},
   location,
   document,
   addEventListener() {},
