@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the date picker on the transcripts page says when your journal is still counting days, and fills in on its own.
 - fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
