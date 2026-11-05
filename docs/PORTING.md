@@ -101,8 +101,9 @@ The first native Windows substrate gate is available to configured operators
 as `WIN_REMOTE_HOST=user@host SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=account make win-host-ci`.
 It transfers an exact, source-bound Git snapshot, verifies the workspace lockfile
 digest on the Windows checkout, runs the ordinary-owner journal inventory control
-through an interactive limited-token scheduled task, and can opt into Cloud Files
-and the ReFS enumeration/revalidation/archive matrix. It also carries its own
+through an interactive limited-token scheduled task, runs the Cloud Files
+registration test unless `JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0`, and can opt into
+the ReFS enumeration/revalidation/archive matrix. It also carries its own
 FFmpeg build toolchain: the build host has MSVC but deliberately no ambient
 MSYS2 shell, GNU make, NASM or libclang, so the gate runs `solstone-distribution
 acquire ffmpeg-windows-tools` on the host and stages the four pinned archives

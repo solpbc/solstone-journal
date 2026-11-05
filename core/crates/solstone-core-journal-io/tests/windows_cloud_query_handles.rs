@@ -3,7 +3,9 @@
 
 #![cfg(windows)]
 
-use solstone_core_journal_io::JournalRoot;
+use solstone_core_journal_io::{
+    JournalRoot, WindowsAcquisitionPrimitive, run_with_windows_acquisition_trace,
+};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
 
 const CHECKS: u32 = 2_000;
@@ -23,7 +25,14 @@ fn process_handle_count() -> u32 {
 fn checking_an_ordinary_root_does_not_grow_process_handles() {
     let temporary = tempfile::tempdir().expect("temporary journal root");
     let root = JournalRoot::open(temporary.path()).expect("admit ordinary root");
-    root.revalidate().expect("first revalidation");
+    let (result, trace) = run_with_windows_acquisition_trace(|| root.revalidate());
+    result.expect("first revalidation");
+    assert!(
+        trace
+            .successful
+            .contains(&WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle),
+        "this control needs an NTFS fixture, where the Cloud Files query runs"
+    );
 
     let before = process_handle_count();
     for _ in 0..CHECKS {

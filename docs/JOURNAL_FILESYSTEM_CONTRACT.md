@@ -72,12 +72,20 @@ Live classification sends the control behind `CfGetSyncRootInfoByHandle`
 (`0x000903BC`) directly to the retained handle, on every admission and every
 `revalidate()`. The exported `CfGetSyncRootInfoBy*` functions cannot be called
 at that rate: their telemetry opens a process handle on every failing result and
-never closes it, and "not a sync root" is a failing result. That control has no
-published contract, so each process also asks `CfGetSyncRootInfoByPath` during
-admission until it first agrees the root is outside Cloud Files, at a cost of
-one handle per process, and `windows_cloud_sync_root_registration` proves the
-control against real registrations on every native Windows gate. Drop the direct
-control if Windows fixes the exported functions.
+never closes it, and "not a sync root" is a failing result.
+
+That control has no published contract, so each process also asks
+`CfGetSyncRootInfoByPath` the first time it admits a root on a volume and refuses
+unless both give the identical HRESULT. The comparison ends for that volume once
+they match, which costs one handle per volume per process, plus one per attempt
+while the documented API keeps failing and admission keeps refusing.
+`windows_cloud_sync_root_registration` proves the control against real
+registrations on the native Windows gate unless that gate is run with
+`JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0`. `revalidate()` relies on the direct
+control alone between comparisons. On a volume with no Cloud Files filter attached
+both queries return `ERROR_INVALID_FUNCTION`, so the comparison cannot tell a
+changed control from an unfiltered volume there. Drop the direct control if
+Windows fixes the exported functions.
 
 > **Known windows gate-1 limitation:** the Win32 surface used here has no
 > descriptor-relative open equivalent to Unix's `openat` + `O_NOFOLLOW` chain,

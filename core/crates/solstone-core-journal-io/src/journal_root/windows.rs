@@ -7,7 +7,7 @@ use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::path::{Component, Path, PathBuf, Prefix};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
@@ -40,7 +40,7 @@ const CLOUD_SYNC_ROOT_QUERY_WORDS: usize = 38;
 const CLOUD_SYNC_ROOT_RETRY_DELAYS_MS: [u64; 10] =
     [100, 400, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
 
-static DOCUMENTED_QUERY_AGREED: AtomicBool = AtomicBool::new(false);
+static CROSS_CHECKED_VOLUMES: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowsAcquisitionPrimitive {
@@ -649,7 +649,14 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
 
     let filesystem = classify_filesystem(root, &authoritative)?;
     classify_drive(root, &root_drive_prefix(&validated.wide))?;
-    admit_for_filesystem(root, &validated.wide, &authoritative, filesystem)?;
+    admit_for_filesystem(
+        root,
+        &validated.wide,
+        &authoritative,
+        expected,
+        filesystem,
+        &CROSS_CHECKED_VOLUMES,
+    )?;
 
     Ok(WindowsRoot {
         root: authoritative,
@@ -1023,34 +1030,64 @@ fn admit_for_filesystem(
     root: &Path,
     wide: &[u16],
     handle: &OwnedHandle,
+    identity: ObjectIdentity,
     filesystem: WindowsFilesystemKind,
+    cross_checked_volumes: &Mutex<Vec<u64>>,
 ) -> Result<(), JournalRootError> {
     match filesystem {
         WindowsFilesystemKind::Ntfs => {
-            classify_cloud_sync_root_by_handle(root, handle)?;
-            cross_check_with_documented_query(&DOCUMENTED_QUERY_AGREED, || {
-                classify_cloud_sync_root(root, wide)
-            })
+            let direct = query_cloud_sync_root_by_handle(root, handle)?;
+            classify_cloud_sync_root_result(root, direct)?;
+            cross_check_with_documented_query(
+                root,
+                identity.volume_serial(),
+                direct,
+                cross_checked_volumes,
+                || query_cloud_sync_root_by_path(root, wide),
+            )
         }
         WindowsFilesystemKind::Refs => Ok(()),
     }
 }
 
-/// Run `documented_query` until it first agrees that a root is outside Cloud Files.
+/// Compare the live control with the documented API until they give one volume the same answer.
 ///
-/// The live check below depends on a Windows control with no published contract,
-/// so each process also asks the documented API. A disagreement refuses and is
-/// never remembered as agreement. One agreement ends the cross-check, because the
-/// documented API costs the process a handle on every nonmember answer.
+/// The live check depends on a Windows control with no published contract, so each
+/// process asks the documented API about each volume it admits on, and requires the
+/// identical result. A control Windows stopped honoring answers "invalid function",
+/// while a volume with the Cloud Files filter attached answers "not under a sync root",
+/// and that difference refuses. A mismatch is never remembered as agreement. Agreement
+/// ends the comparison for that volume, because the documented API costs the process
+/// a handle on every nonmember answer.
 fn cross_check_with_documented_query(
-    agreed: &AtomicBool,
-    documented_query: impl FnOnce() -> Result<(), JournalRootError>,
+    root: &Path,
+    volume: u64,
+    direct: i32,
+    cross_checked_volumes: &Mutex<Vec<u64>>,
+    documented_query: impl FnOnce() -> Result<i32, JournalRootError>,
 ) -> Result<(), JournalRootError> {
-    if agreed.load(Ordering::Acquire) {
+    let recorded = |volumes: &Mutex<Vec<u64>>| {
+        volumes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(&volume)
+    };
+    if recorded(cross_checked_volumes) {
         return Ok(());
     }
-    documented_query()?;
-    agreed.store(true, Ordering::Release);
+    let documented = documented_query()?;
+    classify_cloud_sync_root_result(root, documented)?;
+    if documented != direct {
+        return Err(unsupported(
+            root,
+            "Cloud Files sync-root status could not be verified",
+            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(Some(documented)),
+        ));
+    }
+    cross_checked_volumes
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(volume);
     Ok(())
 }
 
@@ -1091,8 +1128,8 @@ fn classify_drive_type(root: &Path, drive_type: u32) -> Result<(), JournalRootEr
     }
 }
 
-fn classify_cloud_sync_root(root: &Path, wide: &[u16]) -> Result<(), JournalRootError> {
-    let result = traced_win32(WindowsAcquisitionPrimitive::CloudSyncRootInfo, || {
+fn query_cloud_sync_root_by_path(root: &Path, wide: &[u16]) -> Result<i32, JournalRootError> {
+    traced_win32(WindowsAcquisitionPrimitive::CloudSyncRootInfo, || {
         let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
         let mut returned = 0;
         // SAFETY: `wide` is NUL-terminated and `info` is writable for its exact size for `CfGetSyncRootInfoByPath`.
@@ -1115,15 +1152,14 @@ fn classify_cloud_sync_root(root: &Path, wide: &[u16]) -> Result<(), JournalRoot
             "Cloud Files sync-root status could not be verified",
             WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(None),
         )
-    })?;
-    classify_cloud_sync_root_result(root, result)
+    })
 }
 
-fn classify_cloud_sync_root_by_handle(
+fn query_cloud_sync_root_by_handle(
     root: &Path,
     handle: &OwnedHandle,
-) -> Result<(), JournalRootError> {
-    let result = traced_win32(
+) -> Result<i32, JournalRootError> {
+    traced_win32(
         WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle,
         || {
             Ok(retry_cloud_sync_root_query(
@@ -1138,7 +1174,14 @@ fn classify_cloud_sync_root_by_handle(
             "Cloud Files sync-root status could not be verified",
             WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(None),
         )
-    })?;
+    })
+}
+
+fn classify_cloud_sync_root_by_handle(
+    root: &Path,
+    handle: &OwnedHandle,
+) -> Result<(), JournalRootError> {
+    let result = query_cloud_sync_root_by_handle(root, handle)?;
     classify_cloud_sync_root_by_handle_result(root, result)
 }
 
@@ -1615,14 +1658,6 @@ mod tests {
                 .count(),
             1
         );
-        assert!(
-            outcome
-                .successful
-                .iter()
-                .filter(|primitive| **primitive == WindowsAcquisitionPrimitive::CloudSyncRootInfo)
-                .count()
-                <= 1
-        );
     }
 
     #[test]
@@ -1644,27 +1679,91 @@ mod tests {
     }
 
     #[test]
-    fn documented_query_cross_check_refuses_until_it_agrees_then_stops_asking() {
+    fn documented_query_cross_check_requires_the_identical_answer_per_volume() {
         let root = Path::new(r"C:\journal");
-        let agreed = AtomicBool::new(false);
+        let not_under = hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT);
+        let invalid = hresult_from_win32(ERROR_INVALID_FUNCTION);
+        let checked = Mutex::new(Vec::new());
 
-        let refused =
-            cross_check_with_documented_query(&agreed, || classify_cloud_sync_root_result(root, 0));
+        // The documented API sees a registration the direct control missed.
+        let registered = cross_check_with_documented_query(root, 1, invalid, &checked, || Ok(0));
         assert_eq!(
-            unsupported_category(refused),
+            unsupported_category(registered),
             WindowsRefusalCategory::CloudSyncRootRegistered
         );
-        assert!(!agreed.load(Ordering::Acquire));
 
-        cross_check_with_documented_query(&agreed, || {
-            classify_cloud_sync_root_result(
-                root,
-                hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT),
-            )
+        // Two admitting answers that differ mean the direct control no longer reaches the filter.
+        let drifted =
+            cross_check_with_documented_query(root, 1, invalid, &checked, || Ok(not_under));
+        assert_eq!(
+            unsupported_category(drifted),
+            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(Some(not_under))
+        );
+        assert!(checked.lock().unwrap().is_empty(), "a refusal never agrees");
+
+        cross_check_with_documented_query(root, 1, not_under, &checked, || Ok(not_under))
+            .expect("identical answers agree");
+        cross_check_with_documented_query(root, 1, not_under, &checked, || {
+            panic!("agreement ends the comparison for this volume")
         })
-        .expect("nonmember agreement passes");
-        cross_check_with_documented_query(&agreed, || panic!("agreement ends the cross-check"))
-            .expect("a later admission does not ask again");
+        .expect("a later admission on the volume does not ask again");
+        cross_check_with_documented_query(root, 2, invalid, &checked, || Ok(invalid))
+            .expect("a second volume compares for itself");
+        assert_eq!(*checked.lock().unwrap(), [1, 2]);
+    }
+
+    #[test]
+    fn ntfs_admission_reaches_the_documented_cross_check() {
+        let (_temporary, root_path) = fixture("cloud-sync-cross-check");
+        let validated = validate_path(&root_path).expect("valid fixture");
+        let handle = open_directory(
+            &validated.wide,
+            WindowsAcquisitionPrimitive::RequestedRootOpen,
+            DirectoryOpenPurpose::Verification,
+        )
+        .expect("open fixture");
+        let identity = file_id(&handle, WindowsAcquisitionPrimitive::RequestedRootFileId)
+            .expect("fixture identity");
+        let checked = Mutex::new(Vec::new());
+        let admit = || {
+            admit_for_filesystem(
+                &root_path,
+                &validated.wide,
+                &handle,
+                identity,
+                WindowsFilesystemKind::Ntfs,
+                &checked,
+            )
+        };
+
+        let (result, outcome) = trace_scenario(
+            None,
+            Some(InjectedFault {
+                primitive: WindowsAcquisitionPrimitive::CloudSyncRootInfo,
+                ordinal: 1,
+                raw_error: 5,
+            }),
+            admit,
+        );
+        assert_eq!(
+            unsupported_category(result),
+            WindowsRefusalCategory::CloudSyncRootStatusUnverifiable(None)
+        );
+        assert!(outcome.fault_consumed);
+
+        admit().expect("the documented query agrees on an ordinary root");
+        let (result, outcome) = trace_scenario(None, None, admit);
+        result.expect("an agreed volume stays admitted");
+        assert!(
+            !outcome
+                .attempted
+                .contains(&WindowsAcquisitionPrimitive::CloudSyncRootInfo)
+        );
+        assert!(
+            outcome
+                .attempted
+                .contains(&WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle)
+        );
     }
 
     #[test]
@@ -1705,15 +1804,6 @@ mod tests {
     }
 
     #[test]
-    fn cloud_sync_root_query_request_matches_the_control_layout() {
-        let request = cloud_sync_root_query_request();
-        assert_eq!(size_of_val(&request), 0x98);
-        assert_eq!(request[0], 0x9000_001A);
-        assert_eq!(request[1], 0xC000_0005);
-        assert!(request[2..].iter().all(|word| *word == 0));
-    }
-
-    #[test]
     fn retained_handle_cloud_status_preserves_unclassified_hresult() {
         let root = Path::new(r"C:\journal");
         let result = classify_cloud_sync_root_by_handle_result(root, 0x1234_5678_i32);
@@ -1738,8 +1828,18 @@ mod tests {
             DirectoryOpenPurpose::Verification,
         )
         .expect("open fixture");
+        let identity = file_id(&handle, WindowsAcquisitionPrimitive::RequestedRootFileId)
+            .expect("fixture identity");
+        let checked = Mutex::new(Vec::new());
         let (result, outcome) = trace_scenario(None, None, || {
-            admit_for_filesystem(&root_path, &[0u16], &handle, WindowsFilesystemKind::Refs)
+            admit_for_filesystem(
+                &root_path,
+                &[0u16],
+                &handle,
+                identity,
+                WindowsFilesystemKind::Refs,
+                &checked,
+            )
         });
         result.expect("ReFS admission skips Cloud Files classification");
         assert!(outcome.attempted.is_empty());

@@ -4,7 +4,8 @@
 ::
 :: First native Windows journal gate. It proves the source-bound MSVC transport,
 :: the portable journal substrate, and the registry-selected Windows integration suites.
-:: The ordinary-owner inventory control is mandatory; backup and Cloud Files stay opt-in.
+:: The ordinary-owner inventory control is mandatory; backup stays opt-in. win-host-ci
+:: turns on the Cloud Files registration test unless the caller sets it to 0.
 :: The mandatory native receipt children prove NTFS and ReFS publication and
 :: stale-heartbeat cleanup. Their source-originated output is captured and
 :: validated from child logs; the runner never synthesizes receipt markers.

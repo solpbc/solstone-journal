@@ -3758,6 +3758,7 @@ platforms = ["windows"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
+required_features = ["test-hooks"]
 runtime = "none"
 
 [suites.windows]
