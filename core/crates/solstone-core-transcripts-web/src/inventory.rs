@@ -60,7 +60,8 @@ fn extract_file_stat(meta: &fs::Metadata) -> FileStat {
         len: meta.len(),
         mtime: (meta.last_write_time() as i64, 0),
         ctime: (meta.creation_time() as i64, 0),
-        // The file index is not on stable Rust. Size and the two 100 ns times decide.
+        // The file index is not on stable Rust; `read_marker_identity` fills
+        // this with the marker's generation instead.
         file_id: 0,
     }
 }
@@ -829,29 +830,54 @@ fn read_marker_identity(
                 MarkerIdentity::StatError(err.kind())
             }
         }
-        Ok(meta) => {
-            let stat = extract_file_stat(&meta);
-            if let Some(MarkerIdentity::Present {
-                stat: stored_stat,
-                malformed,
-            }) = stored_marker
-                && stored_stat == &stat
-            {
-                return MarkerIdentity::Present {
-                    stat,
-                    malformed: *malformed,
-                };
-            }
-            let malformed = match fs::read_to_string(&path) {
-                Ok(content) => {
-                    serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content)
-                        .is_err()
-                }
-                Err(_) => false,
-            };
-            MarkerIdentity::Present { stat, malformed }
-        }
+        Ok(meta) => present_marker_identity(&path, &meta, stored_marker),
     }
+}
+
+#[cfg(unix)]
+fn present_marker_identity(
+    path: &Path,
+    meta: &fs::Metadata,
+    stored_marker: Option<&MarkerIdentity>,
+) -> MarkerIdentity {
+    let stat = extract_file_stat(meta);
+    if let Some(MarkerIdentity::Present {
+        stat: stored_stat,
+        malformed,
+    }) = stored_marker
+        && stored_stat == &stat
+    {
+        return MarkerIdentity::Present {
+            stat,
+            malformed: *malformed,
+        };
+    }
+    let malformed = match fs::read_to_string(path) {
+        Ok(content) => {
+            serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content).is_err()
+        }
+        Err(_) => false,
+    };
+    MarkerIdentity::Present { stat, malformed }
+}
+
+// Without an inode, two bumps inside one clock tick can leave the marker's
+// size and times unchanged, so its generation stands in for the file id.
+#[cfg(not(unix))]
+fn present_marker_identity(
+    path: &Path,
+    meta: &fs::Metadata,
+    _stored_marker: Option<&MarkerIdentity>,
+) -> MarkerIdentity {
+    let marker = fs::read_to_string(path)
+        .ok()
+        .map(|content| serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content));
+    let mut stat = extract_file_stat(meta);
+    if let Some(Ok(marker)) = &marker {
+        stat.file_id = marker.generation;
+    }
+    let malformed = matches!(marker, Some(Err(_)));
+    MarkerIdentity::Present { stat, malformed }
 }
 
 fn read_tree_digest(journal: &Path, day: &str, _identity: ObjectIdentity) -> TreeDigest {
