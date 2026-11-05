@@ -2061,6 +2061,58 @@ mod tests {
         assert!(!staged.exists());
     }
 
+    /// A run that stopped after emptying the set-aside folder is settled from its
+    /// tombstone, never reported as kept.
+    #[test]
+    fn a_resume_from_an_emptied_set_aside_folder_ends_deleted() {
+        let root = TempDir::new().expect("journal");
+        let day = "20260805";
+        let key = "070000_17";
+        setup_direct_and_named(root.path(), day, key, "field.audio");
+        let live = root.path().join(format!("chronicle/{day}/{key}"));
+        let manifest = SegmentManifest::of(&live).unwrap();
+        let target = Target {
+            day: day.into(),
+            stream: "_default".into(),
+            dir: key.into(),
+        };
+        door::remove_segments(
+            root.path(),
+            &[target],
+            "2026-08-05T12:00:00Z",
+            RemovalReason::OwnerSegmentDelete,
+            "cid-test",
+        );
+        let pending_id = "4".repeat(32);
+        let record = Record::pending(
+            pending_id.clone(),
+            SegmentTarget {
+                day: day.to_string(),
+                stream: solstone_core_journal_io::DEFAULT_STREAM.to_string(),
+                key: key.to_string(),
+                manifest,
+            },
+            Duration::from_secs(10),
+        );
+        STORE.write(root.path(), &record).expect("write record");
+        let staged = staged_dir(root.path(), &record);
+        fs::rename(&live, &staged).unwrap();
+
+        commit_delete(root.path(), &pending_id, true);
+        let first = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_ne!(first.state, DeleteState::NotDeleted);
+        assert!(live.join(TOMBSTONE_NAME).is_file());
+        assert!(!staged.exists());
+
+        commit_delete(root.path(), &pending_id, true);
+        let settled = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(settled.state, DeleteState::Deleted);
+    }
+
     #[test]
     fn changed_flac_refuses_on_resume() {
         let root = TempDir::new().expect("journal");
