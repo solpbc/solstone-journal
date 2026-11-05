@@ -44,7 +44,15 @@
     'Dec'
   ];
 
+  // While an index says it is still counting, re-read it on these delays and
+  // then stop: a wait has an end, and a `change` envelope still wakes the view.
+  const FRESHNESS_REREAD_DELAYS_MS = [2000, 4000, 8000, 16000, 30000, 30000, 30000];
+  const CHANGE_SETTLE_MS = 500;
+
   let mountAbort = null;
+  let freshnessTimer = null;
+  let freshnessRereads = 0;
+  let changeSettleTimer = null;
   let scopedMount = null;
   let parsedDayInitialized = false;
 
@@ -73,6 +81,7 @@
     indexLoaded: false,
     indexInflight: null,
     indexError: null,
+    freshness: null,
     monthCache: new Map(),
     monthInflight: new Map(),
     monthError: new Map(),
@@ -322,7 +331,8 @@
   function normalizeIndexPayload(payload) {
     return {
       coverage: payload?.coverage || null,
-      months: payload?.months || {}
+      months: payload?.months || {},
+      freshness: payload?.freshness || null
     };
   }
 
@@ -346,10 +356,12 @@
         }
         state.coverage = payload.coverage;
         state.months = payload.months;
+        state.freshness = payload.freshness;
         state.indexLoaded = true;
         state.indexError = null;
         state.warningVisible = false;
         updateLabels();
+        syncIndexFreshness();
         return { data: payload, error: null };
       } catch (error) {
         if (gen !== state.fetchGeneration) {
@@ -358,6 +370,7 @@
         state.indexError = error;
         state.warningVisible = true;
         updateLabels();
+        syncIndexFreshness();
         logDateNavError(error, {
           context: 'date-nav:index',
           url: `${apiBase()}api/index${search}`
@@ -444,6 +457,101 @@
     });
   }
 
+  function clearFreshnessTimers() {
+    if (freshnessTimer !== null) window.clearTimeout(freshnessTimer);
+    if (changeSettleTimer !== null) window.clearTimeout(changeSettleTimer);
+    freshnessTimer = null;
+    changeSettleTimer = null;
+    freshnessRereads = 0;
+  }
+
+  function freshnessNote() {
+    const freshness = state.freshness;
+    if (!freshness || freshness.complete !== false) return '';
+    if (freshness.behind > 0) return 'still counting days…';
+    if (freshness.failed > 0) {
+      return freshness.failed === 1
+        ? "couldn't count 1 day. still trying."
+        : `couldn't count ${freshness.failed} days. still trying.`;
+    }
+    return '';
+  }
+
+  // Only an index that answers with `freshness` takes part, so every other
+  // date-nav view keeps its single read.
+  function syncIndexFreshness() {
+    if (state.freshnessNode) {
+      const note = freshnessNote();
+      state.freshnessNode.textContent = note;
+      state.freshnessNode.hidden = !note;
+    }
+    if (freshnessTimer !== null) window.clearTimeout(freshnessTimer);
+    freshnessTimer = null;
+    if (!(state.freshness?.complete === false && state.freshness.behind > 0)) {
+      freshnessRereads = 0;
+      return;
+    }
+    if (freshnessRereads >= FRESHNESS_REREAD_DELAYS_MS.length) return;
+    freshnessTimer = window.setTimeout(() => {
+      freshnessTimer = null;
+      rereadCalendar();
+    }, FRESHNESS_REREAD_DELAYS_MS[freshnessRereads]);
+    freshnessRereads += 1;
+  }
+
+  function calendarSnapshot() {
+    return JSON.stringify([state.coverage, state.months, state.monthCache.get(state.month)?.data]);
+  }
+
+  // A quiet re-read: what's on screen stays until the new answer arrives, and
+  // the panel redraws, keeping keyboard focus, only if the answer differs.
+  async function rereadCalendar() {
+    const signal = mountAbort?.signal;
+    if (!signal) return;
+    if (state.indexInflight) await state.indexInflight;
+    if (signal.aborted) return;
+    const before = calendarSnapshot();
+    const keepMonth = state.monthCache.has(state.month) ? state.month : null;
+    Array.from(state.monthCache.keys()).forEach((month) => {
+      if (month !== keepMonth) state.monthCache.delete(month);
+    });
+    await Promise.all([fetchIndex(true), keepMonth ? fetchMonth(keepMonth, true) : null]);
+    if (signal.aborted || calendarSnapshot() === before) return;
+    updateLabels();
+    if (!state.open) return;
+    const focused = state.grid?.contains(document.activeElement) ? document.activeElement.dataset.value : null;
+    renderPanel();
+    if (focused) {
+      state.grid.querySelector(`[data-date-nav-cell][data-value="${focused}"]:not(:disabled)`)?.focus();
+    }
+  }
+
+  function settleThenReread() {
+    if (!state.freshness) return;
+    freshnessRereads = 0;
+    if (changeSettleTimer !== null) window.clearTimeout(changeSettleTimer);
+    changeSettleTimer = window.setTimeout(() => {
+      changeSettleTimer = null;
+      rereadCalendar();
+    }, CHANGE_SETTLE_MS);
+  }
+
+  function handleChangeEnvelope(msg) {
+    if (msg?.kind === 'day' || (msg?.kind === 'system' && msg?.key === 'calendar')) settleThenReread();
+  }
+
+  function listenForCalendarChanges(signal) {
+    if (!window.appEvents) return;
+    const stopChange = window.appEvents.listen('change', handleChangeEnvelope);
+    signal.addEventListener('abort', stopChange, { once: true });
+    if (!window.appEvents.onConnectionState) return;
+    // A change can be missed across a reconnect or a bus gap.
+    const stopConnection = window.appEvents.onConnectionState(({ connected }) => {
+      if (connected) settleThenReread();
+    });
+    signal.addEventListener('abort', stopConnection, { once: true });
+  }
+
   function prefetchAdjacentMonths(month) {
     const previous = addMonths(month, -1);
     const next = addMonths(month, 1);
@@ -489,6 +597,7 @@
   function resetMountState() {
     if (mountAbort) mountAbort.abort();
     mountAbort = null;
+    clearFreshnessTimers();
     state.appName = null;
     state.config = null;
     state.day = null;
@@ -513,6 +622,8 @@
     state.indexLoaded = false;
     state.indexInflight = null;
     state.indexError = null;
+    state.freshness = null;
+    state.freshnessNode = null;
     state.monthCache = new Map();
     state.monthInflight = new Map();
     state.monthError = new Map();
@@ -551,6 +662,7 @@
       '<button class="date-nav-content__panel-arrow" type="button" data-date-nav-panel-next aria-label="next">›</button>' +
       '</div>' +
       '<div class="date-nav-content__grid" data-date-nav-grid role="grid"></div>' +
+      '<div class="date-nav-content__freshness" data-date-nav-freshness role="status" hidden></div>' +
       '</div>' +
       '</div>';
 
@@ -559,6 +671,7 @@
     state.warning = state.host.querySelector('[data-date-nav-warning]');
     state.popover = state.host.querySelector('[data-date-nav-popover]');
     state.grid = state.host.querySelector('[data-date-nav-grid]');
+    state.freshnessNode = state.host.querySelector('[data-date-nav-freshness]');
     state.title = state.host.querySelector('[data-date-nav-title]');
     state.prev = state.host.querySelector('[data-date-nav-prev]');
     state.next = state.host.querySelector('[data-date-nav-next]');
@@ -1226,6 +1339,7 @@
     state.root.addEventListener('click', handleRootClick, { signal: mountAbort.signal });
     state.root.addEventListener('keydown', handleGridKeydown, { signal: mountAbort.signal });
     document.addEventListener('click', handleDocumentClick, { signal: mountAbort.signal });
+    listenForCalendarChanges(mountAbort.signal);
     fetchIndex(true).then(() => {
       updateLabels();
       if (state.open) renderPanel();
