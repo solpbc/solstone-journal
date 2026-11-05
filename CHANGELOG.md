@@ -15,6 +15,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
+- fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
 - the iphone development journal uses less memory when working through speech.
 - new journals create your identity from the name you enter during setup, and speaker corrections work in the phone dashboard.
 - the iphone development journal can save its recovery key and journal exports through the native share sheet.

@@ -215,6 +215,8 @@ impl BacklogViewReader for EmptyBacklog {
         &self,
         _journal_root: &Path,
         _now: DateTime<Utc>,
+        _system_talent_root: &Path,
+        _apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
         Ok(empty_backlog())
     }
@@ -227,6 +229,8 @@ impl BacklogViewReader for FailingBacklog {
         &self,
         _journal_root: &Path,
         _now: DateTime<Utc>,
+        _system_talent_root: &Path,
+        _apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
         Err(HealthError::Source("injected backlog failure".to_owned()))
     }
@@ -982,6 +986,85 @@ fn ac10_backlog_reader_error_produces_degraded_view() {
 }
 
 #[test]
+fn saved_backlog_uses_the_supplied_payload_and_retains_coverage_errors() {
+    let journal = TempDir::new().unwrap();
+    let payload = TempDir::new().unwrap();
+    let root = journal.path();
+    let system = payload.path().join("talents");
+    let apps = payload.path().join("apps");
+    daily_talent(&system);
+    let segment = root.join("chronicle").join(DAY).join("phone/120000_60");
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(
+        segment.join("audio.jsonl"),
+        "{\"start\":\"12:00:00\",\"text\":\"a retained owner recording\"}\n",
+    )
+    .unwrap();
+    let reader = crate::FilesystemBacklogViewReader;
+    let run = || {
+        let result = crate::run_cli_with_cache_checked(
+            &[],
+            root,
+            now(),
+            &system,
+            &apps,
+            &reader,
+            &crate::FilesystemDocumentWriter,
+            &crate::FilesystemDayCacheWriter,
+            &|| Ok(()),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        serde_json::from_slice::<Value>(&fs::read(root.join("stats.json")).unwrap()).unwrap()
+    };
+    let saved = run();
+    let day = &saved["backlog"]["days"][0];
+    let units = day["daily_coverage"]["units"].as_array().unwrap();
+    assert_eq!(
+        units.len(),
+        1,
+        "must use the distinct supplied payload: {day}"
+    );
+    assert_eq!(units[0]["identity"]["name"], "morning_briefing");
+    let expected = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
+        root, DAY, &system, &apps,
+    )
+    .unwrap();
+    assert_eq!(
+        units[0]["contract_digest"], expected.units[0].contract_digest,
+        "saved coverage must describe the supplied talent definition"
+    );
+    assert_eq!(units[0]["state"], "outstanding", "unmade work remains owed");
+    assert_eq!(day["state"], "pending");
+    assert_eq!(saved["backlog"]["degraded"], false);
+
+    let before = fs::read(root.join("stats.json")).unwrap();
+    fs::write(system.join("morning_briefing.md"), [0xff, 0xfe]).unwrap();
+    let damaged = serde_json::to_value(
+        reader
+            .read_backlog_view(root, now(), &system, &apps)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        damaged["degraded"], true,
+        "unreadable supplied definitions stay unknown"
+    );
+    assert_eq!(damaged["days"][0]["state"], "unknown");
+    assert!(damaged["days"][0]["error"].is_object());
+    let refused = run_with(
+        root,
+        &system,
+        &apps,
+        &[],
+        &reader,
+        &crate::FilesystemDocumentWriter,
+    );
+    assert_eq!(refused.exit_code, 1);
+    assert_eq!(fs::read(root.join("stats.json")).unwrap(), before);
+    assert!(segment.join("audio.jsonl").is_file());
+}
+
+#[test]
 fn ac11_document_writer_failure_preserves_existing_bytes() {
     let (temporary, system, apps) = setup();
     let root = temporary.path();
@@ -1050,4 +1133,128 @@ fn ac13_segment_fold_failure_signal_is_top_level() {
 
     assert_eq!(document["segment_fold_failed_days"], json!([DAY]));
     assert!(document["days"][DAY].get("segment_fold_failed").is_none());
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn overlapping_summary_producers_serialize_before_scanning_and_publish_the_last_input() {
+    use std::sync::mpsc;
+    struct HeldBacklog {
+        entered: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    }
+    impl BacklogViewReader for HeldBacklog {
+        fn read_backlog_view(
+            &self,
+            _: &Path,
+            _: DateTime<Utc>,
+            _: &Path,
+            _: &Path,
+        ) -> Result<BacklogView, HealthError> {
+            self.entered.send(()).unwrap();
+            self.release.recv_timeout(Duration::from_secs(10)).unwrap();
+            Ok(empty_backlog())
+        }
+    }
+    let (temporary, system, apps) = setup();
+    let root = temporary.path();
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    std::thread::scope(|scope| {
+        let system = &system;
+        let apps = &apps;
+        let first = scope.spawn(move || {
+            run_with(
+                root,
+                system,
+                apps,
+                &[],
+                &HeldBacklog {
+                    entered: entered_tx,
+                    release: release_rx,
+                },
+                &crate::FilesystemDocumentWriter,
+            )
+        });
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // Probe the actual producer's retained sidecar while it is between
+        // scanning and publication. This fails deterministically if the scan
+        // lock is removed, without relying on the second thread's speed.
+        let held = solstone_core_journal_io::hold_lock(
+            root.join("stats.json"),
+            solstone_core_journal_io::LockOptions {
+                timeout: Duration::ZERO,
+                ..Default::default()
+            },
+        )
+        .is_err();
+        fs::create_dir_all(root.join("chronicle").join(OTHER_DAY)).unwrap();
+        let second = scope.spawn(move || {
+            run_with(
+                root,
+                system,
+                apps,
+                &[],
+                &EmptyBacklog,
+                &crate::FilesystemDocumentWriter,
+            )
+        });
+        release_tx.send(()).unwrap();
+        assert_eq!(first.join().unwrap().exit_code, 0);
+        assert_eq!(second.join().unwrap().exit_code, 0);
+        assert!(
+            held,
+            "the first producer must retain scan authority until publication"
+        );
+    });
+    let result: Value =
+        serde_json::from_slice(&fs::read(root.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(
+        result["day_count"], 2,
+        "the later scan includes input arriving during the first"
+    );
+}
+
+#[test]
+fn cancellation_while_waiting_for_summary_authority_preserves_the_previous_document() {
+    let (temporary, system, apps) = setup();
+    let root = temporary.path();
+    let destination = root.join("stats.json");
+    fs::write(&destination, b"previous summary").unwrap();
+    let held = solstone_core_journal_io::hold_lock(&destination, Default::default()).unwrap();
+    let checks = Cell::new(0);
+    let result = crate::run_cli_with_cache_checked(
+        &[],
+        root,
+        now(),
+        &system,
+        &apps,
+        &EmptyBacklog,
+        &crate::FilesystemDocumentWriter,
+        &crate::FilesystemDayCacheWriter,
+        &|| {
+            checks.set(checks.get() + 1);
+            if checks.get() >= 3 {
+                Err("stopped while waiting".into())
+            } else {
+                Ok(())
+            }
+        },
+    );
+    assert_eq!(result.exit_code, 1);
+    assert!(result.stderr.contains("stopped while waiting"));
+    assert_eq!(fs::read(&destination).unwrap(), b"previous summary");
+    drop(held);
+    assert_eq!(
+        run_with(
+            root,
+            &system,
+            &apps,
+            &[],
+            &EmptyBacklog,
+            &crate::FilesystemDocumentWriter
+        )
+        .exit_code,
+        0
+    );
 }

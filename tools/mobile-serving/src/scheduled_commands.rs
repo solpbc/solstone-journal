@@ -54,6 +54,55 @@ const HEARTBEAT_RECENCY_MS: i64 = 12 * 3_600_000;
 const DISCOVERY_MIN_CLUSTER_SIZE: usize = 5;
 const DISCOVERY_MIN_SAMPLES: usize = 3;
 
+/// Native journals can finish segment work without a whole-day pass. Reuse
+/// the shared scheduler and saved-summary writer instead of waiting for one.
+pub(super) fn register_stats_schedule(
+    root: Arc<JournalRoot>,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    solstone_core_system::schedule::mutate_schedule_entries_at_root_checked(
+        root,
+        checkpoint,
+        |raw| {
+            let changed = !raw.contains_key("journal-stats");
+            if changed {
+                raw.insert("journal-stats".into(), json!({
+                    "cmd": solstone_core_system::partition::canonical_journal_command(["journal-stats"]),
+                    "every": "5m", "enabled": true, "max_runtime": "10m"
+                }));
+            }
+            solstone_core_system::schedule::ScheduleMutation { changed, value: () }
+        },
+    ).map_err(|error| error.to_string())
+}
+
+fn journal_stats(hosted: &HostedCommand, checkpoint: &StopCheckpoint) -> i32 {
+    let deadline = Instant::now() + std::time::Duration::from_secs(600);
+    let admit = || {
+        checkpoint()?;
+        if Instant::now() >= deadline {
+            Err("summary deadline".to_owned())
+        } else {
+            Ok(())
+        }
+    };
+    let result = solstone_core_journal_stats_cli::run_cli_with_cache_checked(
+        &[],
+        &hosted.journal,
+        Utc::now(),
+        &hosted.talent_root,
+        &hosted.apps_root,
+        &solstone_core_journal_stats_cli::FilesystemBacklogViewReader,
+        &solstone_core_journal_stats_cli::FilesystemDocumentWriter,
+        &solstone_core_journal_stats_cli::FilesystemDayCacheWriter,
+        &admit,
+    );
+    if result.exit_code != 0 {
+        log::warn!("foreground summary: {}", result.stderr);
+    }
+    result.exit_code
+}
+
 pub(super) fn run(
     hosted: &HostedCommand,
     args: &[String],
@@ -61,6 +110,7 @@ pub(super) fn run(
     reference: &str,
 ) -> i32 {
     match args {
+        [command] if command == "journal-stats" => journal_stats(hosted, checkpoint),
         [command, verb] if command == "indexer" && verb == "drain" => {
             match solstone_core_indexer_store::todo::drain_with_checkpoint(
                 &hosted.journal,

@@ -6,7 +6,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use solstone_core_system_health::{
     BACKLOG_DEFAULT_WINDOW, BacklogView, FilesystemHealthLogSource, FilesystemSegmentSource,
-    HealthError, read_backlog_view,
+    HealthError, read_backlog_view_with_roots,
 };
 
 /// Reads the bounded journal processing backlog.
@@ -15,6 +15,8 @@ pub trait BacklogViewReader {
         &self,
         journal_root: &Path,
         now: DateTime<Utc>,
+        system_talent_root: &Path,
+        apps_root: &Path,
     ) -> Result<BacklogView, HealthError>;
 }
 
@@ -27,14 +29,18 @@ impl BacklogViewReader for FilesystemBacklogViewReader {
         &self,
         journal_root: &Path,
         now: DateTime<Utc>,
+        system_talent_root: &Path,
+        apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
         let health_source = FilesystemHealthLogSource::new(journal_root);
-        read_backlog_view(
+        read_backlog_view_with_roots(
             &health_source,
             &FilesystemSegmentSource,
             journal_root,
             BACKLOG_DEFAULT_WINDOW,
             now,
+            system_talent_root,
+            apps_root,
         )
     }
 }

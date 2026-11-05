@@ -15,6 +15,7 @@ processing = [
     "dep:sha2",
     "dep:solstone-core-sense",
     "dep:solstone-core-think-cli",
+    "dep:solstone-core-journal-stats-cli",
     "dep:solstone-core-depict",
     "dep:solstone-core-describe",
     "dep:solstone-core-system",
@@ -70,6 +71,7 @@ solstone-core-generate-wire = { path = "../../core/crates/solstone-core-generate
 sha2 = { version = "0.10", optional = true }
 solstone-core-sense = { path = "../../core/crates/solstone-core-sense", optional = true }
 solstone-core-think-cli = { path = "../../core/crates/solstone-core-think-cli", optional = true }
+solstone-core-journal-stats-cli = { path = "../../core/crates/solstone-core-journal-stats-cli", optional = true }
 solstone-core-depict = { path = "../../core/crates/solstone-core-depict", optional = true }
 solstone-core-describe = { path = "../../core/crates/solstone-core-describe", optional = true }
 solstone-core-system = { path = "../../core/crates/solstone-core-system", optional = true }

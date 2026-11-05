@@ -2714,6 +2714,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-journal-stats-cli",
  "solstone-core-linked-share",
  "solstone-core-local",
  "solstone-core-maintenance",

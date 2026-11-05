@@ -170,6 +170,31 @@ fn run<W: DayCacheWriter>(
 ) -> Result<(usize, Vec<String>), String> {
     let admit = || checkpoint.map_or(Ok(()), |checkpoint| checkpoint());
     admit()?;
+    // Daily processing and a scheduled summary can overlap. Hold the same
+    // retained-root lock from before the scan through final publication, so
+    // an older scan cannot replace a newer result after finishing later.
+    let root = solstone_core_journal_io::JournalRoot::open(journal_root)
+        .map_err(|error| error.to_string())?;
+    let checked = || {
+        admit()?;
+        root.revalidate_canonical_binding()
+            .map_err(|error| error.to_string())
+    };
+    let _scan = solstone_core_journal_io::hold_lock_bound_checked(
+        &root,
+        std::ffi::OsStr::new("stats.json"),
+        root.canonical_path(),
+        solstone_core_journal_io::LockOptions {
+            mode: Some(0o600),
+            ..Default::default()
+        },
+        false,
+        &checked,
+    )
+    .map_err(|error| error.to_string())?;
+    let checkpoint = Some(&checked as &dyn Fn() -> Result<(), String>);
+    let admit = || checked();
+    admit()?;
     let days = solstone_core_journal_io::day_dirs(journal_root)
         .map_err(|error| format!("Error enumerating journal days: {error}"))?;
     let mut days = days.into_iter().collect::<Vec<_>>();
@@ -244,7 +269,7 @@ fn run<W: DayCacheWriter>(
     }
 
     let backlog = backlog_reader
-        .read_backlog_view(journal_root, now)
+        .read_backlog_view(journal_root, now, system_talent_root, apps_root)
         .unwrap_or_else(|_| degraded_backlog_view());
     admit()?;
     let tokens =

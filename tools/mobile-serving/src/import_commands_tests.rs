@@ -377,6 +377,12 @@ fn preinstalled_imports_preserve_the_existing_rebuild_recovery_choice() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     for rebuild_recovery in [false, true] {
         let root = fixture_directory();
+        // This fixture isolates rebuild admission from optional summary caches.
+        fs::write(
+            root.path().join("config/schedules.json"),
+            br#"{"journal-stats":{"enabled":false}}"#,
+        )
+        .unwrap();
         let day = "20260104";
         fs::create_dir_all(root.path().join("chronicle").join(day)).unwrap();
         let bound = Arc::new(JournalRoot::open(root.path()).unwrap());
@@ -989,6 +995,12 @@ fn pre_argv_binding_preserves_original_deadline_host_stop_and_root_authority() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     for interrupt in ["deadline", "host", "root"] {
         let root = fixture_directory();
+        // Isolate pre-argv authority from unrelated startup summary work.
+        fs::write(
+            root.path().join("config/schedules.json"),
+            br#"{"journal-stats":{"enabled":false}}"#,
+        )
+        .unwrap();
         let host = open_import_fixture(
             root.path(),
             Arc::new(|_| panic!("refused pre-argv work cannot prepare")),
