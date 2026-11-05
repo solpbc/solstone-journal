@@ -439,23 +439,39 @@ fn source_count(counts: &solstone_core_transcripts::SourceCounts, source: &str) 
     }
 }
 
+/// The provider and the model a run's records name. On a local endpoint
+/// generation sends the endpoint's served model, never the configured active
+/// model, so the records name the served one.
 fn configured_brain(journal: &Path) -> (String, String) {
     let configured = read_journal_config(journal);
     let active = configured
         .as_ref()
         .and_then(|value| value.pointer("/providers/active"));
-    (
-        active
-            .and_then(|value| value.get("provider"))
-            .and_then(Value::as_str)
-            .unwrap_or("none")
-            .to_owned(),
+    let provider = active
+        .and_then(|value| value.get("provider"))
+        .and_then(Value::as_str)
+        .unwrap_or("none")
+        .to_owned();
+    let served = configured
+        .as_ref()
+        .and_then(Value::as_object)
+        .filter(|_| provider == "local")
+        .and_then(
+            |config| match solstone_core_local::resolve_local_endpoint(config) {
+                solstone_core_local::LocalEndpointResolution::Byo(endpoint) => {
+                    Some(endpoint.served_model_id)
+                }
+                solstone_core_local::LocalEndpointResolution::Bundled => None,
+            },
+        );
+    let model = served.unwrap_or_else(|| {
         active
             .and_then(|value| value.get("model"))
             .and_then(Value::as_str)
             .unwrap_or_default()
-            .to_owned(),
-    )
+            .to_owned()
+    });
+    (provider, model)
 }
 
 fn talent_overrides(journal: &Path) -> Option<Map<String, Value>> {
@@ -729,6 +745,41 @@ mod tests {
             .unwrap_err(),
             "Invalid config: 'segment' or 'span' requires 'day'"
         );
+    }
+
+    #[test]
+    fn run_records_name_the_model_generation_sends() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("config")).unwrap();
+        let endpoint = r#""local":{"endpoint_url":"https://endpoint.invalid/v1","served_model_id":"served-model"}"#;
+        for (config, expected) in [
+            (
+                r#"{"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}"#
+                    .to_owned(),
+                "local/qwen3.5-4b",
+            ),
+            (
+                format!(
+                    r#"{{"providers":{{"active":{{"provider":"local","model":"local/qwen3.5-4b"}},{endpoint}}}}}"#
+                ),
+                "served-model",
+            ),
+            (
+                format!(
+                    r#"{{"providers":{{"active":{{"provider":"local","model":"local/qwen3.5-4b"}},{endpoint}}},"services":{{"confidential":{{}}}}}}"#
+                ),
+                "served-model",
+            ),
+            (
+                format!(
+                    r#"{{"providers":{{"active":{{"provider":"google","model":"gemini-model"}},{endpoint}}}}}"#
+                ),
+                "gemini-model",
+            ),
+        ] {
+            fs::write(journal.path().join("config").join("journal.json"), &config).unwrap();
+            assert_eq!(configured_brain(journal.path()).1, expected, "{config}");
+        }
     }
 
     #[test]

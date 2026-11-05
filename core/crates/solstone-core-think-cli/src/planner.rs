@@ -585,6 +585,11 @@ fn daily_priority(
     priority
 }
 
+/// The queue reference of a from-scratch request's run.
+fn from_scratch_reference(day: &str, id: &str) -> String {
+    format!("supervisor-work-{day}-{id}")
+}
+
 fn task(
     day: &str,
     segment: Option<(&str, &str)>,
@@ -610,19 +615,16 @@ fn task(
     } else {
         tail.push("--daily-only".into());
     }
-    let suffix = segment
-        .map(|(segment, stream)| format!("{stream}-{segment}"))
-        .unwrap_or_else(|| {
-            intent
-                .filter(|i| i.from_scratch)
-                .map(|i| i.id.clone())
-                .unwrap_or_else(|| "daily".into())
-        });
+    let reference = match (segment, intent.filter(|i| i.from_scratch)) {
+        (Some((segment, stream)), _) => format!("supervisor-work-{day}-{stream}-{segment}"),
+        (None, Some(intent)) => from_scratch_reference(day, &intent.id),
+        (None, None) => format!("supervisor-work-{day}-daily"),
+    };
     DiscoveredTask {
         request: BusTaskRequest {
             cmd: TaskArgv::from_wire(canonical_journal_command(tail))
                 .expect("nonempty journal command"),
-            reference: format!("supervisor-work-{day}-{suffix}"),
+            reference,
             day: Some(day.into()),
             scheduler_name: None,
             queue_if_active_cmd_differs: false,
@@ -1061,8 +1063,24 @@ fn inspect_day(
         } else {
             // A claim no run holds was abandoned by a crash, shutdown or
             // cancellation: it starts over once, then becomes the ordinary ask.
-            // A failed one becomes the ordinary ask. The next pass takes it.
-            work_intent::recover_interrupted(journal, day, &intent.id, checkpoint)?;
+            // One the queue stopped at its time cap becomes the ordinary ask at
+            // once, since a restart stops at the same point. A failed one
+            // becomes the ordinary ask. The next pass takes it. Until the queue
+            // has reaped the run, its outcome is not known yet.
+            let reference = from_scratch_reference(day, &intent.id);
+            if !queue.contains_reference(&reference) {
+                let cap_reached = queue.history().iter().any(|record| {
+                    record.reference == reference
+                        && record.exit_status == solstone_core_system::queue::TIMEOUT_EXIT_STATUS
+                });
+                work_intent::recover_interrupted(
+                    journal,
+                    day,
+                    &intent.id,
+                    cap_reached,
+                    checkpoint,
+                )?;
+            }
             held(
                 report,
                 day,

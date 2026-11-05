@@ -467,7 +467,7 @@ fn range_segment_count(days: &[RangeDay]) -> usize {
 fn range_plan(days: &[RangeDay]) -> String {
     let count = data_days(days).len();
     format!(
-        "from-scratch reprocess plan:\n{count} days with data ({} segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; interrupted from-scratch attempts wait for your review.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n",
+        "from-scratch reprocess plan:\n{count} days with data ({} segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n",
         range_segment_count(days)
     )
 }
@@ -1280,7 +1280,7 @@ mod tests {
         assert_eq!(calls, 0);
         assert_eq!(
             result.stdout,
-            "from-scratch reprocess plan:\n1 days with data (0 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; interrupted from-scratch attempts wait for your review.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
+            "from-scratch reprocess plan:\n1 days with data (0 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
         );
     }
 
@@ -1318,7 +1318,7 @@ mod tests {
         assert_eq!(calls, 0);
         assert_eq!(
             range.stdout,
-            "from-scratch reprocess plan:\n1 days with data (1 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; interrupted from-scratch attempts wait for your review.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
+            "from-scratch reprocess plan:\n1 days with data (1 segments) will be queued. Progress will be visible in solstone journal top or solstone journal health. Requests survive a supervisor restart; a day that cannot finish from scratch finishes as an ordinary reprocess.\nThese days can take hours; today's work goes first between tasks.\nre-run with --yes to proceed\n"
         );
     }
 

@@ -378,13 +378,16 @@ pub fn claim_from_scratch(journal: &Path, day: &str, id: &str) -> Result<FileLoc
 /// Recover a from-scratch request no run holds any more. A claim abandoned by
 /// a crash, a shutdown or a cancellation starts over once, since its forced
 /// work never reached the whole day; abandoned again, or left `Failed` by an
-/// earlier build, it becomes the owner's ordinary ask. An owner Stop and a
+/// earlier build, it becomes the owner's ordinary ask. A run stopped at its
+/// time cap (`cap_reached`) becomes the ordinary ask at once: starting over
+/// would spend the same time and stop at the same point. An owner Stop and a
 /// sealed rebuild, which its host resumes, stay as they are. Returns whether
 /// it changed the request.
 pub fn recover_interrupted(
     journal: &Path,
     day: &str,
     id: &str,
+    cap_reached: bool,
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<bool, String> {
     let (Ok(_run), Ok(_execution)) = (run_lease(journal, day), execution_lease(journal, day))
@@ -401,7 +404,7 @@ pub fn recover_interrupted(
         }) else {
             return Ok(false);
         };
-        if intent.state == IntentState::Claimed && !intent.restarted {
+        if intent.state == IntentState::Claimed && !intent.restarted && !cap_reached {
             intent.state = IntentState::Queued;
             intent.rebuild = None;
             intent.restarted = true;
@@ -712,17 +715,17 @@ mod tests {
         let intent = register(root.path(), day, true).unwrap();
         let lease = claim_from_scratch(root.path(), day, &intent.id).unwrap();
         // A live run keeps its claim.
-        assert!(!recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        assert!(!recover_interrupted(root.path(), day, &intent.id, false, &|| Ok(())).unwrap());
         assert_eq!(read(root.path()).unwrap()[day].state, IntentState::Claimed);
         drop(lease);
         // Its process ended without recording an outcome: it starts over once.
-        assert!(recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        assert!(recover_interrupted(root.path(), day, &intent.id, false, &|| Ok(())).unwrap());
         let after = &read(root.path()).unwrap()[day];
         assert!(after.from_scratch && after.restarted);
         assert_eq!(after.state, IntentState::Queued);
         // Abandoned again, it becomes the ordinary ask.
         drop(claim_from_scratch(root.path(), day, &intent.id).unwrap());
-        assert!(recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        assert!(recover_interrupted(root.path(), day, &intent.id, false, &|| Ok(())).unwrap());
         let after = &read(root.path()).unwrap()[day];
         assert!(!after.from_scratch);
         assert_eq!(after.state, IntentState::Queued);
@@ -733,15 +736,28 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        assert!(recover_interrupted(root.path(), day, &failed.id, &|| Ok(())).unwrap());
+        assert!(recover_interrupted(root.path(), day, &failed.id, false, &|| Ok(())).unwrap());
         assert!(!read(root.path()).unwrap()[day].from_scratch);
         // A stale id, or an ordinary ask, is left alone.
-        assert!(!recover_interrupted(root.path(), day, &intent.id, &|| Ok(())).unwrap());
+        assert!(!recover_interrupted(root.path(), day, &intent.id, false, &|| Ok(())).unwrap());
         let stopped = register(root.path(), day, true).unwrap();
         drop(claim_from_scratch(root.path(), day, &stopped.id).unwrap());
         stop_rebuilds(root.path()).unwrap();
-        assert!(!recover_interrupted(root.path(), day, &stopped.id, &|| Ok(())).unwrap());
+        assert!(!recover_interrupted(root.path(), day, &stopped.id, false, &|| Ok(())).unwrap());
         assert!(read(root.path()).unwrap()[day].owner_stopped);
+    }
+
+    #[test]
+    fn a_claim_stopped_at_its_cap_becomes_the_ordinary_ask_without_starting_over() {
+        let root = tempfile::tempdir().unwrap();
+        let day = "20260101";
+        let intent = register(root.path(), day, true).unwrap();
+        drop(claim_from_scratch(root.path(), day, &intent.id).unwrap());
+        assert!(recover_interrupted(root.path(), day, &intent.id, true, &|| Ok(())).unwrap());
+        let after = &read(root.path()).unwrap()[day];
+        assert_eq!(after.id, intent.id);
+        assert!(!after.from_scratch && !after.restarted);
+        assert_eq!(after.state, IntentState::Queued);
     }
 
     #[test]
