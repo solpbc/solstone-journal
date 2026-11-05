@@ -21,6 +21,7 @@ use crate::{AppState, TranscriptError, legacy_error_response};
 
 const SERVER_TIMING: HeaderName = HeaderName::from_static("server-timing");
 
+/// `complete: true` covers every change whose stream-marker bump committed before the read, and every change to a live day. A change on an older day whose producer committed but did not bump appears within about an hour of it while the calendar is in use.
 pub(crate) async fn index(
     State(state): State<Arc<AppState>>,
     admitted: Option<Extension<Arc<JournalRoot>>>,
@@ -35,9 +36,10 @@ pub(crate) async fn index(
     match delivery {
         Delivery::Ready {
             counts,
+            freshness,
             disposition,
         } => {
-            let mut response = Json(date_nav_index(&counts)).into_response();
+            let mut response = Json(date_nav_index(&counts, freshness)).into_response();
             let val = if disposition == Disposition::Immediate {
                 HeaderValue::from_static("coalesced;desc=\"immediate\"")
             } else {
@@ -61,6 +63,7 @@ pub(crate) async fn index(
     }
 }
 
+/// `complete: true` covers every change whose stream-marker bump committed before the read, and every change to a live day. A change on an older day whose producer committed but did not bump appears within about an hour of it while the calendar is in use.
 pub(crate) async fn stats(
     State(state): State<Arc<AppState>>,
     admitted: Option<Extension<Arc<JournalRoot>>>,
@@ -76,29 +79,40 @@ pub(crate) async fn stats(
         .into_response();
     }
     let delivery = counts_flight::execute(
-        admitted.map(|Extension(r)| r),
+        admitted.as_ref().map(|Extension(r)| Arc::clone(r)),
         &state.journal_root,
         &state.clock,
         RequestRole::MonthStats,
     )
     .await;
     match delivery {
-        Delivery::Ready {
-            counts,
-            disposition,
-        } => {
-            let filtered: BTreeMap<_, _> = counts
-                .iter()
-                .filter(|(day, count)| day.starts_with(&month) && **count > 0)
-                .map(|(day, count)| (day.clone(), *count))
-                .collect();
-            let mut response = Json(filtered).into_response();
+        Delivery::Ready { disposition, .. } => {
+            let fold_start = std::time::Instant::now();
+            let journal_path = admitted
+                .as_ref()
+                .map(|Extension(r)| r.canonical_path().to_path_buf())
+                .unwrap_or_else(|| (*state.journal_root).clone());
+            let fold_res = crate::inventory::fold_month_days(
+                admitted.map(|Extension(r)| r),
+                &journal_path,
+                &month,
+                &state.clock,
+            );
+            if let Err(err) = fold_res {
+                return TranscriptError::display(err).response();
+            }
+            let month_counts = crate::inventory::get_month_counts(&journal_path, &month);
+            let dur_ms = fold_start.elapsed().as_millis();
+            let mut response = Json(month_counts).into_response();
             let val = if disposition == Disposition::Immediate {
                 HeaderValue::from_static("coalesced;desc=\"immediate\"")
             } else {
                 HeaderValue::from_static("coalesced;desc=\"queued\"")
             };
             response.headers_mut().append(SERVER_TIMING, val);
+            if let Ok(timing_val) = HeaderValue::from_str(&format!("month-fold;dur={dur_ms}")) {
+                response.headers_mut().append(SERVER_TIMING, timing_val);
+            }
             response
         }
         Delivery::Failed {
@@ -115,7 +129,8 @@ pub(crate) async fn stats(
         }
     }
 }
-pub(crate) fn counts(
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn counts_by_walk(
     root: &Path,
     now: DateTime<Utc>,
 ) -> Result<BTreeMap<String, u64>, TranscriptError> {
@@ -125,6 +140,8 @@ pub(crate) fn counts(
         .map(|day| Ok((day.clone(), day_range_count(root, &day, now)?)))
         .collect()
 }
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn day_range_count(
     root: &Path,
     day: &str,
@@ -145,7 +162,7 @@ pub(crate) fn day_range_count(
             .filter(|segment| segment.types.iter().any(|kind| kind == "browser"))
             .count() as u64)
 }
-fn date_nav_index(counts: &BTreeMap<String, u64>) -> Value {
+pub(crate) fn date_nav_index(counts: &BTreeMap<String, u64>, freshness: Value) -> Value {
     let positive = counts
         .iter()
         .filter(|(_, count)| **count > 0)
@@ -158,7 +175,7 @@ fn date_nav_index(counts: &BTreeMap<String, u64>) -> Value {
         .first()
         .zip(positive.last())
         .map(|((start, _), (end, _))| json!({"start": start, "end": end}));
-    json!({"coverage": coverage, "months": months})
+    json!({"coverage": coverage, "months": months, "freshness": freshness})
 }
 fn valid_month(month: &str) -> bool {
     month.len() == 6 && month.bytes().all(|byte| byte.is_ascii_digit())

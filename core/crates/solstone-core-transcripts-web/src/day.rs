@@ -142,7 +142,7 @@ pub fn day_segment_list(
         .collect())
 }
 
-fn from_native(segment: DaySegment) -> TranscriptSegment {
+pub(crate) fn from_native(segment: DaySegment) -> TranscriptSegment {
     TranscriptSegment {
         key: segment.key,
         stream: segment.stream,

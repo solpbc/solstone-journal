@@ -1308,6 +1308,26 @@ mod tests {
     #[tokio::test]
     async fn corpus_replay_matches_recorded_json_for_each_migrated_api_case() {
         let root = seeded_root();
+
+        // Stats-free walk from a copy of the seeded journal with all stats.json removed
+        let stats_free_root = seeded_root();
+        fn delete_all_stats_json(dir: &Path) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        delete_all_stats_json(&p);
+                    } else if p.file_name() == Some(std::ffi::OsStr::new("stats.json")) {
+                        let _ = fs::remove_file(&p);
+                    }
+                }
+            }
+        }
+        delete_all_stats_json(&stats_free_root);
+        let clock_now = Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap();
+        let stats_free_walk = crate::calendar::counts_by_walk(&stats_free_root, clock_now).unwrap();
+        let _ = fs::remove_dir_all(&stats_free_root);
+
         let corpus: Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../fixtures/convey_records_corpus.json"
@@ -1332,19 +1352,48 @@ mod tests {
                 )
             )
         }) {
-            let (status, _, body) = response(router.clone(), case["path"].as_str().unwrap()).await;
+            let path_str = case["path"].as_str().unwrap();
+            let (status, _, body) = response(router.clone(), path_str).await;
             assert_eq!(
                 status.as_u16(),
                 case["status"].as_u64().unwrap() as u16,
                 "{}",
-                case["path"]
+                path_str
             );
-            assert_eq!(
-                serde_json::from_slice::<Value>(&body).unwrap(),
-                case["json"],
-                "{}",
-                case["path"]
-            );
+
+            if path_str == "/app/transcripts/api/index" {
+                let mut body_val: Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(body_val["freshness"], json!({"complete": true}));
+                body_val.as_object_mut().unwrap().remove("freshness");
+
+                let mut expected_index =
+                    crate::calendar::date_nav_index(&stats_free_walk, Value::Null);
+                expected_index.as_object_mut().unwrap().remove("freshness");
+                assert_eq!(body_val, expected_index, "{}", path_str);
+            } else if path_str == "/app/transcripts/api/stats/202607"
+                || path_str == "/app/transcripts/api/stats/202608"
+                || path_str == "/app/transcripts/api/stats/202609"
+            {
+                let month = &path_str[path_str.len() - 6..];
+                let expected_days: BTreeMap<String, u64> = stats_free_walk
+                    .iter()
+                    .filter(|(d, c)| d.starts_with(month) && **c > 0)
+                    .map(|(d, c)| (d.clone(), *c))
+                    .collect();
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&body).unwrap(),
+                    serde_json::to_value(&expected_days).unwrap(),
+                    "{}",
+                    path_str
+                );
+            } else {
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&body).unwrap(),
+                    case["json"],
+                    "{}",
+                    path_str
+                );
+            }
         }
         fs::remove_dir_all(root).expect("seeded corpus cleanup");
     }
@@ -1868,17 +1917,29 @@ mod tests {
             filetime::FileTime::from_system_time(UNIX_EPOCH + Duration::from_secs(4_102_444_800)),
         )
         .unwrap();
+
+        let walk = crate::calendar::counts_by_walk(root.path(), Utc::now()).unwrap();
+        assert_eq!(walk[DAY], 43);
+
+        let path_aside = root.path().join("chronicle/20260731/stats.json.aside");
+        fs::rename(&path, &path_aside).unwrap();
+        let file_count = crate::calendar::day_range_count(root.path(), DAY, Utc::now()).unwrap();
+        fs::rename(&path_aside, &path).unwrap();
+
         let app = app(root.path());
         let (_, _, cached) = response(app.clone(), "/app/transcripts/api/stats/202607").await;
         let (_, _, uncached) = response(app.clone(), "/app/transcripts/api/stats/202608").await;
-        assert_eq!(serde_json::from_slice::<Value>(&cached).unwrap()[DAY], 43);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&cached).unwrap()[DAY],
+            file_count
+        );
         assert_eq!(
             serde_json::from_slice::<Value>(&uncached).unwrap()["20260801"],
             1
         );
         let (_, _, index) = response(app.clone(), "/app/transcripts/api/index").await;
         let index: Value = serde_json::from_slice(&index).unwrap();
-        assert_eq!(index["months"]["202607"], 43);
+        assert_eq!(index["months"]["202607"], file_count);
         let (status, _, impossible) =
             response(app.clone(), "/app/transcripts/api/stats/999999").await;
         assert_eq!(status, StatusCode::OK);

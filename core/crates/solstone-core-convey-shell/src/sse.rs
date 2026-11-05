@@ -44,6 +44,7 @@ enum Received {
 // Dropping the body drops the connection and signals its transport task to stop.
 struct LiveEvents {
     next: Option<NextEvent>,
+    journal: Option<PathBuf>,
 }
 
 fn next_event(
@@ -109,14 +110,27 @@ impl LiveEvents {
     fn new(
         mut connection: CallosumSocketConnection,
         capture: Option<Arc<BrainStartupCapture>>,
+        journal: Option<PathBuf>,
     ) -> Self {
         connection.start();
+        if let Some(ref j) = journal {
+            solstone_core_transcripts_web::note_dashboard_stream(j, true);
+        }
         let startup = capture.map(|capture| StartupReader {
             capture,
             cursor: BrainStartupCursor::default(),
         });
         Self {
             next: Some(next_event(connection, startup)),
+            journal,
+        }
+    }
+}
+
+impl Drop for LiveEvents {
+    fn drop(&mut self) {
+        if let Some(ref j) = self.journal {
+            solstone_core_transcripts_web::note_dashboard_stream(j, false);
         }
     }
 }
@@ -146,7 +160,7 @@ pub async fn events(
 ) -> axum::response::Response {
     let connection =
         CallosumSocketConnection::new(journal_root.join("health/callosum.sock"), Map::new());
-    let mut response = Sse::new(LiveEvents::new(connection, capture))
+    let mut response = Sse::new(LiveEvents::new(connection, capture, Some(journal_root)))
         .keep_alive(
             KeepAlive::new()
                 .interval(Duration::from_secs(15))
@@ -186,7 +200,7 @@ mod tests {
             1,
             Box::new(ClosedRetries),
         );
-        let response = Sse::new(LiveEvents::new(connection, None)).into_response();
+        let response = Sse::new(LiveEvents::new(connection, None, None)).into_response();
         let mut body = response.into_body().into_data_stream();
         let wire = tokio::time::timeout(Duration::from_secs(1), async {
             let mut wire = String::new();
@@ -219,7 +233,7 @@ mod tests {
             Box::new(ClosedRetries),
         );
         let response =
-            Sse::new(LiveEvents::new(connection, Some(Arc::clone(&capture)))).into_response();
+            Sse::new(LiveEvents::new(connection, Some(Arc::clone(&capture)), None)).into_response();
         let mut body = response.into_body().into_data_stream();
         let first = String::from_utf8(body.next().await.unwrap().unwrap().to_vec()).unwrap();
         assert!(first.contains("event: brain_startup\n"));

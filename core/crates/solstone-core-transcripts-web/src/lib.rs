@@ -23,6 +23,7 @@ mod capture_zone;
 mod counts_flight;
 mod day;
 mod delete;
+mod inventory;
 mod line_label;
 mod location;
 mod media_removal;
@@ -37,6 +38,8 @@ mod strava_delete;
 
 #[cfg(test)]
 mod corpus;
+
+pub use inventory::{note_dashboard_stream, reset_calendar_while_held};
 
 #[derive(Clone)]
 pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
