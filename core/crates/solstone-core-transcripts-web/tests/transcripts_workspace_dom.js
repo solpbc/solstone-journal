@@ -2452,7 +2452,7 @@ test('naming a voice everywhere stays as it was, and unticking it offers the lin
 // A phone records its screen at 15 frames a second, so a frame id is not a
 // second. The page seeks to the time each frame was recorded at, and falls
 // back to the one-frame-a-second reading only for a frame with no time.
-function loadFrameCaptureClass(seeks) {
+function loadFrameCaptureClass(seeks, options = {}) {
   const start = scriptSource.indexOf('class FrameCapture {');
   assert.ok(start >= 0, 'FrameCapture class found');
   let depth = 0;
@@ -2472,22 +2472,49 @@ function loadFrameCaptureClass(seeks) {
         return canvas;
       }
       const listeners = {};
+      const callbacks = new Map();
+      let callbackId = 0;
+      let presentedFrames = 0;
+      let currentTime = 0;
       const video = {
-        videoWidth: 1080,
-        videoHeight: 2400,
+        videoWidth: 1080, videoHeight: 2400, readyState: 0, seeking: false,
         pixels: null,
         addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
         removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((l) => l !== fn); },
-        set src(_url) { setTimeout(() => video.onloadedmetadata(), 0); },
+        emit(type) { for (const fn of [...(listeners[type] || [])]) fn(); },
+        listenerCount() { return Object.values(listeners).reduce((n, values) => n + values.length, 0); },
+        callbackCount() { return callbacks.size; },
+        requestVideoFrameCallback(fn) { callbacks.set(++callbackId, fn); return callbackId; },
+        cancelVideoFrameCallback(id) { callbacks.delete(id); },
+        present(mediaTime = currentTime) {
+          video.pixels = `frame at ${mediaTime}`;
+          presentedFrames++;
+          const pending = [...callbacks.values()]; callbacks.clear();
+          for (const fn of pending) fn(0, { presentedFrames, mediaTime });
+        },
+        metadata() { video.readyState = 1; video.emit('loadedmetadata'); },
+        data() { video.readyState = 2; video.emit('loadeddata'); },
+        seeked() { video.seeking = false; video.emit('seeked'); },
+        set src(url) {
+          if (!url || options.manual) return;
+          setTimeout(() => { video.metadata(); video.data(); video.present(); }, 0);
+        },
         load() {},
+        get currentTime() { return currentTime; },
         set currentTime(value) {
-          seeks.push(value);
-          setTimeout(() => {
-            video.pixels = `frame at ${value}`;
-            (listeners.seeked || []).forEach((fn) => fn());
+          if (options.throwSeek) throw new Error('seek assignment failed');
+          currentTime = value; video.seeking = true; seeks.push(value);
+          if (!options.manual) setTimeout(() => {
+            // Model the real failure: seeked can precede the new pixels.
+            // Browsers without rVFC retain the ordinary seeked fallback.
+            if (options.noFrameCallback) video.present();
+            video.seeked();
+            if (!options.noFrameCallback) setTimeout(() => video.present(), 0);
           }, 0);
         },
       };
+      if (options.noFrameCallback) delete video.requestVideoFrameCallback;
+      options.videos?.push(video);
       return video;
     },
   };
@@ -2496,7 +2523,9 @@ function loadFrameCaptureClass(seeks) {
     // Reproduce the observed WebView boundary: this path retains old pixels
     // even though seeked has fired and the video itself has the new frame.
     createImageBitmap: async () => ({ width: 1080, height: 2400, pixels: 'frame at 0' }),
-    MediaError: {}, console,
+    MediaError: { MEDIA_ERR_SRC_NOT_SUPPORTED: 4 }, console,
+    setTimeout: options.setTimeout || setTimeout,
+    clearTimeout: options.clearTimeout || clearTimeout,
   };
   vm.createContext(context);
   return vm.runInContext(`(${scriptSource.slice(start, end)})`, context);
@@ -2544,7 +2573,114 @@ test('queued thumbnails and full frames snapshot distinct selected pixels', asyn
   const cached = await capture.captureThumbnail('/screen.mp4', 1, 120, 68);
   assert.strictEqual(cached, first);
   assert.strictEqual(cached.pixels, 'frame at 0', 'later seeks do not alter earlier snapshots');
-  assert.deepStrictEqual(seeks, [0, 56.4, 56.4]);
+  assert.deepStrictEqual(seeks, [56.4], 'confirmed positions do not wait for a callback that will not fire');
+});
+
+test('alternating frame selections wait for actual presentation in either event order', async () => {
+  for (const frameFirst of [false, true]) {
+    const videos = [];
+    const capture = new (loadFrameCaptureClass([], { manual: true, videos }))();
+    const loaded = capture.loadVideo('/screen.mp4');
+    const v = videos[0];
+    if (frameFirst) v.present();
+    v.metadata(); v.data();
+    if (!frameFirst) v.present();
+    await loaded;
+    capture.noteFrameTime('/screen.mp4', 1, 0);
+    capture.noteFrameTime('/screen.mp4', 565, 56.4);
+    for (const [frame, time] of [[565, 56.4], [1, 0], [565, 56.4]]) {
+      let completed = false;
+      const result = capture.captureFullFrame('/screen.mp4', frame).then(value => { completed = true; return value; });
+      await new Promise(setImmediate);
+      if (frameFirst) v.present(); else v.seeked();
+      await new Promise(setImmediate);
+      assert.strictEqual(completed, false, 'both readiness boundaries are required');
+      if (frameFirst) v.seeked(); else v.present();
+      assert.strictEqual((await result).pixels, `frame at ${time}`);
+      assert.strictEqual(v.listenerCount(), 0);
+      assert.strictEqual(v.callbackCount(), 0);
+    }
+    assert.strictEqual((await capture.captureFullFrame('/screen.mp4', 565)).pixels, 'frame at 56.4');
+    capture.clear();
+  }
+});
+
+test('initial media and presentation readiness are both required', async () => {
+  for (const frameFirst of [false, true]) {
+    const videos = [];
+    const capture = new (loadFrameCaptureClass([], { manual: true, videos }))();
+    let completed = false;
+    const loaded = capture.loadVideo('/screen.mp4').then(value => { completed = true; return value; });
+    const v = videos[0];
+    if (frameFirst) v.present(); else { v.metadata(); v.data(); }
+    await new Promise(setImmediate);
+    assert.strictEqual(completed, false);
+    if (frameFirst) { v.metadata(); v.data(); } else v.present();
+    await loaded;
+    assert.strictEqual(v.listenerCount(), 0);
+    assert.strictEqual(v.callbackCount(), 0);
+    capture.clear();
+  }
+});
+
+test('missing frame-callback support retains bounded current-data seeking', async () => {
+  const capture = new (loadFrameCaptureClass([], { noFrameCallback: true }))();
+  capture.noteFrameTime('/screen.mp4', 565, 56.4);
+  assert.strictEqual((await capture.captureFullFrame('/screen.mp4', 565)).pixels, 'frame at 56.4');
+  capture.clear();
+});
+
+test('failed or cancelled frame readiness cleans up and never caches a thumbnail', async () => {
+  for (const failure of ['timeout', 'error', 'clear', 'assignment']) {
+    const videos = [], timers = new Set();
+    const options = { manual: true, videos,
+      setTimeout(fn) { timers.add(fn); return fn; }, clearTimeout(fn) { timers.delete(fn); } };
+    const capture = new (loadFrameCaptureClass([], options))();
+    const loaded = capture.loadVideo('/screen.mp4');
+    const v = videos[0]; v.metadata(); v.data(); v.present(); await loaded;
+    if (failure === 'assignment') options.throwSeek = true;
+    capture.noteFrameTime('/screen.mp4', 565, 56.4);
+    const pending = capture.captureThumbnail('/screen.mp4', 565, 120, 68);
+    const rejected = assert.rejects(pending);
+    await new Promise(setImmediate);
+    if (failure === 'timeout') for (const fn of [...timers]) fn();
+    else if (failure === 'error') v.emit('error');
+    else if (failure === 'clear') capture.clear();
+    await rejected;
+    v.present(); v.seeked();
+    assert.strictEqual(v.listenerCount(), 0);
+    assert.strictEqual(v.callbackCount(), 0);
+    assert.strictEqual(timers.size, 0);
+    assert.strictEqual(capture.pendingThumbs.size, 0);
+    assert.strictEqual(capture.videos.get('/screen.mp4')?.thumbs.size || 0, 0);
+    capture.clear();
+  }
+});
+
+test('a timed-out decoder cannot supply late pixels to queued or retried selections', async () => {
+  const videos = [], timers = new Set();
+  const capture = new (loadFrameCaptureClass([], { manual: true, videos,
+    setTimeout(fn) { timers.add(fn); return fn; }, clearTimeout(fn) { timers.delete(fn); } }))();
+  const loaded = capture.loadVideo('/screen.mp4');
+  const old = videos[0]; old.metadata(); old.data(); old.present(); await loaded;
+  capture.noteFrameTime('/screen.mp4', 565, 56.4);
+  const failed = assert.rejects(capture.captureFullFrame('/screen.mp4', 565), /timed out/);
+  const queued = assert.rejects(capture.captureFullFrame('/screen.mp4', 1), /cancelled/);
+  await new Promise(setImmediate);
+  for (const fn of [...timers]) fn();
+  await Promise.all([failed, queued]);
+  assert.strictEqual(capture.videos.size, 0);
+  let completed = false;
+  const retry = capture.captureFullFrame('/screen.mp4', 1).then(value => { completed = true; return value; });
+  old.present(56.4); old.seeked();
+  await new Promise(setImmediate);
+  assert.strictEqual(completed, false, 'old presentation cannot complete a fresh decoder');
+  const fresh = videos[1]; fresh.metadata(); fresh.data(); fresh.present();
+  assert.strictEqual((await retry).pixels, 'frame at 0');
+  assert.strictEqual(old.callbackCount(), 0);
+  assert.strictEqual(old.listenerCount(), 0);
+  assert.strictEqual(timers.size, 0);
+  capture.clear();
 });
 
 test('frame selection distinguishes video frames sharing a raw path and still images', () => {
@@ -2588,8 +2724,18 @@ test('full-frame temporary pixels are released after drawing and after a draw fa
   }
 });
 
+let completedRun = false;
+let runningTest = null;
+process.on('beforeExit', () => {
+  if (!completedRun) {
+    console.error(`FAILED: unfinished asynchronous test: ${runningTest}`);
+    process.exitCode = 1;
+  }
+});
+
 async function run() {
   for (const t of tests) {
+    runningTest = t.name;
     try {
       await t.fn();
     } catch (err) {
@@ -2598,6 +2744,7 @@ async function run() {
       process.exit(1);
     }
   }
+  completedRun = true;
   console.log(`DOM CASES: ${tests.length} passed`);
 }
 
