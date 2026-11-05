@@ -121,6 +121,11 @@ async fn require_session(
                 return redirect_to_init();
             };
             request.extensions_mut().insert(target_use.root());
+            request
+                .extensions_mut()
+                .insert(solstone_core_convey_http::coalesce::CoalesceScope(
+                    state.journal_root.clone(),
+                ));
             solstone_core_convey_http::request::run_admitted(target_use, request, next).await
         }
         SessionState::Unestablished => redirect_to_init(),

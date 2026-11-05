@@ -106,6 +106,12 @@ impl<S> Layer<S> for CoalesceLayer {
     }
 }
 
+/// The journal a request was admitted to. The session gate inserts it; a request
+/// without one runs alone, so one journal's answer can never reach a request for
+/// another, even in a process that serves more than one.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CoalesceScope(pub std::path::PathBuf);
+
 #[derive(Clone)]
 pub struct CoalesceService<S> {
     inner: S,
@@ -113,6 +119,7 @@ pub struct CoalesceService<S> {
 
 #[derive(Clone, PartialEq, Eq)]
 struct CoalesceKey {
+    scope: CoalesceScope,
     path: String,
     query: Option<String>,
     basis: AccessBasis,
@@ -123,6 +130,7 @@ struct CoalesceKey {
 
 impl Hash for CoalesceKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.scope.hash(state);
         self.path.hash(state);
         self.query.hash(state);
         hash_basis(&self.basis, state);
@@ -370,10 +378,11 @@ where
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Response, S::Error>> + Send>> {
         let method = request.method().clone();
         let basis = request.extensions().get::<AccessBasis>().cloned();
+        let scope = request.extensions().get::<CoalesceScope>().cloned();
         let notice = request.extensions().get::<JoinNotice>().cloned();
 
-        // Bypass: non-GET or no AccessBasis
-        if method != Method::GET || basis.is_none() {
+        // Bypass: non-GET, no AccessBasis, or no admitted journal
+        if method != Method::GET || basis.is_none() || scope.is_none() {
             let mut inner = self.inner.clone();
             return Box::pin(async move {
                 if let Some(n) = &notice {
@@ -392,6 +401,7 @@ where
         }
 
         let basis = basis.expect("checked is_some");
+        let scope = scope.expect("checked is_some");
         let path = request.uri().path().to_string();
         let query = request.uri().query().map(|q| q.to_string());
         let if_none_match = extract_header_values(request.headers(), header::IF_NONE_MATCH);
@@ -399,6 +409,7 @@ where
         let range = extract_header_values(request.headers(), header::RANGE);
 
         let key = CoalesceKey {
+            scope,
             path,
             query,
             basis,
@@ -813,6 +824,7 @@ mod tests {
         let app1 = app.clone();
         let task1 = tokio::spawn(async move {
             let req = Request::get("/test/burst")
+                .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                 .extension(AccessBasis::Localhost)
                 .extension(JoinNotice::new(move |event| {
                     if let JoinEvent::Registered(d) = event
@@ -841,6 +853,7 @@ mod tests {
             let q_not = all_queued_notify.clone();
             let task = tokio::spawn(async move {
                 let req = Request::get("/test/burst")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .extension(JoinNotice::new(move |event| {
                         if let JoinEvent::Registered(Disposition::Queued) = event
@@ -922,6 +935,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/generation_gated")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .body(Body::empty())
                         .unwrap(),
@@ -940,6 +954,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/generation_gated")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1004,6 +1019,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/gen_leak")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .body(Body::empty())
                         .unwrap(),
@@ -1022,6 +1038,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/gen_leak")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1056,6 +1073,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/gen_leak")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1123,6 +1141,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/panic")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .body(Body::empty())
                         .unwrap(),
@@ -1141,6 +1160,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/panic")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1165,6 +1185,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/panic")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1205,6 +1226,7 @@ mod tests {
         let resp4 = app
             .oneshot(
                 Request::get("/test/panic")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1263,6 +1285,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/drop_opener")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .body(Body::empty())
                         .unwrap(),
@@ -1281,6 +1304,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/drop_opener")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1305,6 +1329,7 @@ mod tests {
             async move {
                 app.oneshot(
                     Request::get("/test/drop_opener")
+                        .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                         .extension(AccessBasis::Localhost)
                         .extension(JoinNotice::new(move |event| {
                             if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1344,6 +1369,7 @@ mod tests {
         let resp3 = app
             .oneshot(
                 Request::get("/test/drop_opener")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1401,6 +1427,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::get("/test/key?q=a")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1411,6 +1438,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::get("/test/key?q=b")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1427,6 +1455,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::get("/test/key?q=basis")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1437,6 +1466,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::get("/test/key?q=basis")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::PairingPeer {
                         carrier: Carrier::Direct,
                     })
@@ -1454,6 +1484,7 @@ mod tests {
             .oneshot(
                 Request::get("/test/key?q=tag")
                     .header(header::IF_NONE_MATCH, "\"tag1\"")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1465,6 +1496,7 @@ mod tests {
             .oneshot(
                 Request::get("/test/key?q=tag")
                     .header(header::IF_NONE_MATCH, "\"tag2\"")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1482,6 +1514,7 @@ mod tests {
             .oneshot(
                 Request::get("/test/key?q=headers")
                     .header(header::RANGE, "bytes=0-100")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1493,6 +1526,7 @@ mod tests {
             .oneshot(
                 Request::get("/test/key?q=headers")
                     .header(header::IF_MODIFIED_SINCE, "Wed, 21 Oct 2026 07:28:00 GMT")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1532,6 +1566,7 @@ mod tests {
                 Request::builder()
                     .method(Method::HEAD)
                     .uri("/test/key?q=head")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1544,6 +1579,7 @@ mod tests {
                 Request::builder()
                     .method(Method::HEAD)
                     .uri("/test/key?q=head")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1603,6 +1639,7 @@ mod tests {
         let app0 = app.clone();
         let task0 = tokio::spawn(async move {
             let req = Request::get("/test/compression")
+                .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                 .extension(AccessBasis::Localhost)
                 .body(Body::empty())
                 .unwrap();
@@ -1619,6 +1656,7 @@ mod tests {
         let task1 = tokio::spawn(async move {
             let req = Request::get("/test/compression")
                 .header(header::ACCEPT_ENCODING, "gzip")
+                .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                 .extension(AccessBasis::Localhost)
                 .extension(JoinNotice::new(move |event| {
                     if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1639,6 +1677,7 @@ mod tests {
         let app2 = app.clone();
         let task2 = tokio::spawn(async move {
             let req = Request::get("/test/compression")
+                .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                 .extension(AccessBasis::Localhost)
                 .extension(JoinNotice::new(move |event| {
                     if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1688,6 +1727,7 @@ mod tests {
         let resp = app
             .oneshot(
                 Request::get("/test/timing")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1769,6 +1809,7 @@ mod tests {
         let task0 = tokio::spawn(async move {
             app0.oneshot(
                 Request::get("/test/oversized")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .body(Body::empty())
                     .unwrap(),
@@ -1786,6 +1827,7 @@ mod tests {
         let task1 = tokio::spawn(async move {
             app1.oneshot(
                 Request::get("/test/oversized")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .extension(JoinNotice::new(move |event| {
                         if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1808,6 +1850,7 @@ mod tests {
         let task2 = tokio::spawn(async move {
             app2.oneshot(
                 Request::get("/test/oversized")
+                    .extension(CoalesceScope(std::path::PathBuf::from("/journal")))
                     .extension(AccessBasis::Localhost)
                     .extension(JoinNotice::new(move |event| {
                         if let JoinEvent::Registered(Disposition::Queued) = event
@@ -1843,5 +1886,74 @@ mod tests {
         let json: Value = serde_json::from_slice(&body1).unwrap();
         assert_eq!(json["reason_code"], "coalesced_response_too_large");
         assert!(!body1.starts_with(b"AAAA"));
+    }
+
+    #[tokio::test]
+    async fn identical_requests_for_different_journals_never_share_a_run() {
+        let entered = Arc::new(AtomicUsize::new(0));
+        let entered_notify = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let app = axum::Router::new().route(
+            "/test/scope",
+            get({
+                let entered = entered.clone();
+                let entered_notify = entered_notify.clone();
+                let release = release.clone();
+                move |req: Request<Body>| {
+                    let entered = entered.clone();
+                    let entered_notify = entered_notify.clone();
+                    let release = release.clone();
+                    async move {
+                        let journal = req
+                            .extensions()
+                            .get::<CoalesceScope>()
+                            .map(|scope| scope.0.display().to_string())
+                            .unwrap_or_default();
+                        entered.fetch_add(1, Ordering::SeqCst);
+                        entered_notify.notify_waiters();
+                        release.notified().await;
+                        journal
+                    }
+                }
+            })
+            .layer(layer()),
+        );
+        let request = |journal: &str| {
+            Request::get("/test/scope")
+                .extension(CoalesceScope(std::path::PathBuf::from(journal)))
+                .extension(AccessBasis::Localhost)
+                .body(Body::empty())
+                .unwrap()
+        };
+        let wait_for = |count: usize| {
+            let entered = entered.clone();
+            let entered_notify = entered_notify.clone();
+            async move {
+                loop {
+                    let notified = entered_notify.notified();
+                    if entered.load(Ordering::SeqCst) >= count {
+                        return;
+                    }
+                    notified.await;
+                }
+            }
+        };
+        let first = tokio::spawn(app.clone().oneshot(request("/journal-a")));
+        wait_for(1).await;
+        // Same path, query and basis, other journal, while the first run is held:
+        // it must start its own run rather than queue behind journal A's.
+        let second = tokio::spawn(app.clone().oneshot(request("/journal-b")));
+        tokio::time::timeout(std::time::Duration::from_secs(10), wait_for(2))
+            .await
+            .expect("a request for another journal queued behind this journal's run");
+        release.notify_waiters();
+        let a = to_bytes(first.await.unwrap().unwrap().into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let b = to_bytes(second.await.unwrap().unwrap().into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&a[..], b"/journal-a");
+        assert_eq!(&b[..], b"/journal-b");
     }
 }
