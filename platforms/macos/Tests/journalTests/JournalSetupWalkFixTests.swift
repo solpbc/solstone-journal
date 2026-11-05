@@ -165,7 +165,14 @@ struct JournalSetupWalkFixTests {
         host.appearance = NSAppearance(named: .aqua)
         host.frame = NSRect(origin: .zero, size: size)
         host.layoutSubtreeIfNeeded()
-        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        // Keep pixel assertions independent of the build host's display scale. A
+        // mini spinner has fewer dark pixels on a 1x display than on a Retina one.
+        let rep = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        rep.size = size
         host.cacheDisplay(in: host.bounds, to: rep)
         // Count dark pixels in the footer's right third, outside the orange primary: the
         // spinner's spokes are grey on the light footer fill.

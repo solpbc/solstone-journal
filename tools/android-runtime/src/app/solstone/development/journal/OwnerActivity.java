@@ -586,6 +586,19 @@ public final class OwnerActivity extends ServingActivity {
         Map<String,String> responseHeaders=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         responseHeaders.putAll(stream.headers);
         InputStream body=stream;
+        if(stream.status==206 && "GET".equals(request.getMethod()) && (mime.startsWith("video/") || mime.startsWith("audio/"))) {
+            String range=null;
+            for(Map.Entry<String,String> header:request.getRequestHeaders().entrySet())
+                if("range".equalsIgnoreCase(header.getKey())) range=header.getValue();
+            try {
+                OwnerMediaBody media=OwnerMediaBody.adapt(stream,range,responseHeaders.get("content-range"),responseHeaders.get("content-length"));
+                if(media!=null) {
+                    body=media;
+                    // WebView supplies these from the MIME and full-size stream.
+                    responseHeaders.remove("content-length");responseHeaders.remove("content-type");
+                }
+            } catch(Exception error) {stream.close();throw error;}
+        }
         if (request.isForMainFrame() && mime.equals("text/html")) {
             byte[] bytes;
             try { bytes=OwnerTransport.readBounded(stream,4*1024*1024); } finally { stream.close(); }

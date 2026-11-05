@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.
 - on a mac or linux computer, when `solstone journal open` can't open a browser, it now says how to reach the link from another computer over SSH.
