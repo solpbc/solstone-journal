@@ -3749,6 +3749,21 @@ control = "JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST"
 requires = ["cloud-files-api"]
 
 [[suites]]
+id = "solstone-core-journal-io::windows_cloud_query_handles"
+package = "solstone-core-journal-io"
+target = "windows_cloud_query_handles"
+set = "component"
+areas = ["journal"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+runtime = "none"
+
+[suites.windows]
+satisfaction = "cargo"
+
+[[suites]]
 id = "solstone-core-journal-io::windows_atomic_detailed"
 package = "solstone-core-journal-io"
 target = "windows_atomic_detailed"

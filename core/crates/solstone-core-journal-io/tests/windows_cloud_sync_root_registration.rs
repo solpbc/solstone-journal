@@ -359,6 +359,75 @@ fn registered_cloud_sync_root_and_ordinary_child_are_refused_without_mutation() 
     assert_eq!(capture_tree(temporary.path()), before_tree);
 
     registered_cloud_sync_root_guard_cleans_up_during_unwind();
+    retained_root_refuses_late_registration_and_recovers_after_unregistering();
+    retained_root_refuses_a_move_under_a_registered_root();
+}
+
+fn assert_retained_refusal(result: Result<(), JournalRootError>) {
+    assert!(matches!(
+        result,
+        Err(JournalRootError::Unsupported {
+            category: Some(WindowsRefusalCategory::CloudSyncRootRegistered),
+            ..
+        })
+    ));
+}
+
+fn retained_root_refuses_late_registration_and_recovers_after_unregistering() {
+    let temporary = tempfile::tempdir().expect("temporary sync root");
+    let child = temporary.path().join("ordinary-child");
+    fs::create_dir(&child).expect("create ordinary child");
+    let root = JournalRoot::open(temporary.path()).expect("admit before registration");
+    let retained_child = JournalRoot::open(&child).expect("admit child before registration");
+    root.revalidate().expect("unregistered root revalidates");
+    retained_child
+        .revalidate()
+        .expect("unregistered child revalidates");
+
+    let registered = register_sync_root(temporary.path());
+    let during = catch_unwind(AssertUnwindSafe(|| {
+        (root.revalidate(), retained_child.revalidate())
+    }));
+    assert_eq!(registered.unregister(), 0, "unregister late registration");
+    let (root_during, child_during) = match during {
+        Ok(result) => result,
+        Err(payload) => resume_unwind(payload),
+    };
+    assert_retained_refusal(root_during);
+    assert_retained_refusal(child_during);
+
+    root.revalidate().expect("unregistering restores the root");
+    retained_child
+        .revalidate()
+        .expect("unregistering restores the child");
+}
+
+fn retained_root_refuses_a_move_under_a_registered_root() {
+    let temporary = tempfile::tempdir().expect("temporary namespace");
+    let sync_root = temporary.path().join("sync-root");
+    let journal = temporary.path().join("journal");
+    let moved = sync_root.join("journal");
+    fs::create_dir(&sync_root).expect("create future sync root");
+    fs::create_dir(&journal).expect("create journal root");
+    let root = JournalRoot::open(&journal).expect("admit journal root");
+
+    let registered = register_sync_root(&sync_root);
+    let during = catch_unwind(AssertUnwindSafe(|| {
+        root.revalidate()
+            .expect("a sibling registration is outside");
+        fs::rename(&journal, &moved).expect("move journal under the sync root");
+        let inside = root.revalidate();
+        fs::rename(&moved, &journal).expect("move journal back out");
+        inside
+    }));
+    assert_eq!(registered.unregister(), 0, "unregister move fixture");
+    let inside = match during {
+        Ok(result) => result,
+        Err(payload) => resume_unwind(payload),
+    };
+    assert_retained_refusal(inside);
+    root.revalidate()
+        .expect("moving back out restores the root");
 }
 
 fn registered_cloud_sync_root_guard_cleans_up_during_unwind() {

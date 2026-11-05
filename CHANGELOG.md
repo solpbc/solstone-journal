@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, the journal no longer builds up open system handles while it runs, which used to keep growing for as long as the journal stayed open.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.

@@ -40,7 +40,7 @@ if [ "$backup_test" -eq 1 ]; then
 fi
 
 case "$cloud_sync_test" in
-  '') cloud_sync_test=0 ;;
+  '') cloud_sync_test=1 ;;
   0|1) ;;
   *)
     echo "ERROR: win-host-ci: JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST must be unset, empty, 0, or 1" >&2

@@ -7,14 +7,15 @@ use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{AsHandle, AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle};
 use std::path::{Component, Path, PathBuf, Prefix};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
     ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT, ERROR_INVALID_FUNCTION, ERROR_NOT_A_CLOUD_FILE,
-    INVALID_HANDLE_VALUE,
+    ERROR_RETRY, GetLastError, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::CloudFilters::{
-    CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByHandle,
-    CfGetSyncRootInfoByPath,
+    CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
@@ -23,6 +24,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_SHARE_WRITE, FILE_TRAVERSE, FileAttributeTagInfo, FileIdInfo, GetDriveTypeW,
     GetFileInformationByHandleEx, GetVolumeInformationByHandleW, OPEN_EXISTING,
 };
+use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::WindowsProgramming::{
     DRIVE_CDROM, DRIVE_FIXED, DRIVE_RAMDISK, DRIVE_REMOTE, DRIVE_REMOVABLE,
 };
@@ -30,6 +32,15 @@ use windows_sys::Win32::System::WindowsProgramming::{
 use super::backend::Backend;
 use super::{JournalRootError, ObjectIdentity, WindowsRefusalCategory};
 use crate::check_portable_component;
+
+const FSCTL_CLOUD_SYNC_ROOT_QUERY: u32 = 0x0009_03BC;
+const CLOUD_SYNC_ROOT_QUERY_TAG: u32 = 0x9000_001A;
+const CLOUD_SYNC_ROOT_QUERY_BASIC: u32 = 0xC000_0005;
+const CLOUD_SYNC_ROOT_QUERY_WORDS: usize = 38;
+const CLOUD_SYNC_ROOT_RETRY_DELAYS_MS: [u64; 10] =
+    [100, 400, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000];
+
+static DOCUMENTED_QUERY_AGREED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowsAcquisitionPrimitive {
@@ -638,7 +649,7 @@ pub(crate) fn acquire(root: &Path) -> Result<WindowsRoot, JournalRootError> {
 
     let filesystem = classify_filesystem(root, &authoritative)?;
     classify_drive(root, &root_drive_prefix(&validated.wide))?;
-    admit_for_filesystem(root, &validated.wide, filesystem)?;
+    admit_for_filesystem(root, &validated.wide, &authoritative, filesystem)?;
 
     Ok(WindowsRoot {
         root: authoritative,
@@ -1011,12 +1022,36 @@ fn classify_filesystem_name(
 fn admit_for_filesystem(
     root: &Path,
     wide: &[u16],
+    handle: &OwnedHandle,
     filesystem: WindowsFilesystemKind,
 ) -> Result<(), JournalRootError> {
     match filesystem {
-        WindowsFilesystemKind::Ntfs => classify_cloud_sync_root(root, wide),
+        WindowsFilesystemKind::Ntfs => {
+            classify_cloud_sync_root_by_handle(root, handle)?;
+            cross_check_with_documented_query(&DOCUMENTED_QUERY_AGREED, || {
+                classify_cloud_sync_root(root, wide)
+            })
+        }
         WindowsFilesystemKind::Refs => Ok(()),
     }
+}
+
+/// Run `documented_query` until it first agrees that a root is outside Cloud Files.
+///
+/// The live check below depends on a Windows control with no published contract,
+/// so each process also asks the documented API. A disagreement refuses and is
+/// never remembered as agreement. One agreement ends the cross-check, because the
+/// documented API costs the process a handle on every nonmember answer.
+fn cross_check_with_documented_query(
+    agreed: &AtomicBool,
+    documented_query: impl FnOnce() -> Result<(), JournalRootError>,
+) -> Result<(), JournalRootError> {
+    if agreed.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    documented_query()?;
+    agreed.store(true, Ordering::Release);
+    Ok(())
 }
 
 fn classify_drive(root: &Path, wide: &[u16]) -> Result<(), JournalRootError> {
@@ -1091,20 +1126,10 @@ fn classify_cloud_sync_root_by_handle(
     let result = traced_win32(
         WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle,
         || {
-            let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
-            let mut returned = 0;
-            // SAFETY: `handle` is the retained admitted root and `info` is writable for the exact buffer size documented by `CfGetSyncRootInfoByHandle`.
-            #[allow(unsafe_code)]
-            let result = unsafe {
-                CfGetSyncRootInfoByHandle(
-                    handle.as_raw_handle(),
-                    CF_SYNC_ROOT_INFO_BASIC,
-                    (&mut info as *mut CF_SYNC_ROOT_BASIC_INFO).cast(),
-                    size_of::<CF_SYNC_ROOT_BASIC_INFO>() as u32,
-                    &mut returned,
-                )
-            };
-            Ok(result)
+            Ok(retry_cloud_sync_root_query(
+                || issue_cloud_sync_root_query(handle),
+                std::thread::sleep,
+            ))
         },
     )
     .map_err(|_| {
@@ -1115,6 +1140,65 @@ fn classify_cloud_sync_root_by_handle(
         )
     })?;
     classify_cloud_sync_root_by_handle_result(root, result)
+}
+
+/// Ask the Cloud Files filter about a retained handle without the exported wrapper.
+///
+/// `CfGetSyncRootInfoByHandle` and `CfGetSyncRootInfoByPath` issue this same control,
+/// then record the call in telemetry. On a failing result that telemetry opens the
+/// current process and never closes the handle, and "not a sync root" is a failing
+/// result, so an ordinary journal root would leak one handle per check. Both results
+/// classify the same way; anything unexpected stays a refusal.
+fn issue_cloud_sync_root_query(handle: &OwnedHandle) -> i32 {
+    let request = cloud_sync_root_query_request();
+    let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
+    let mut returned = 0;
+    // SAFETY: `handle` is open and synchronous, `request` and `info` are readable and
+    // writable for their exact supplied sizes, and no OVERLAPPED is passed.
+    #[allow(unsafe_code)]
+    let succeeded = unsafe {
+        DeviceIoControl(
+            handle.as_raw_handle(),
+            FSCTL_CLOUD_SYNC_ROOT_QUERY,
+            request.as_ptr().cast(),
+            size_of_val(&request) as u32,
+            (&mut info as *mut CF_SYNC_ROOT_BASIC_INFO).cast(),
+            size_of::<CF_SYNC_ROOT_BASIC_INFO>() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if succeeded != 0 {
+        return 0;
+    }
+    // SAFETY: reads the calling thread's last-error value immediately after the failure.
+    #[allow(unsafe_code)]
+    let error = unsafe { GetLastError() };
+    hresult_from_win32(error)
+}
+
+const fn cloud_sync_root_query_request() -> [u32; CLOUD_SYNC_ROOT_QUERY_WORDS] {
+    let mut request = [0; CLOUD_SYNC_ROOT_QUERY_WORDS];
+    request[0] = CLOUD_SYNC_ROOT_QUERY_TAG;
+    request[1] = CLOUD_SYNC_ROOT_QUERY_BASIC;
+    request
+}
+
+/// The filter's documented wrappers retry `ERROR_RETRY` on this schedule; exhausting it
+/// returns the retry error, which classifies as unverifiable.
+fn retry_cloud_sync_root_query(
+    mut query: impl FnMut() -> i32,
+    mut sleep: impl FnMut(Duration),
+) -> i32 {
+    let mut result = query();
+    for delay_ms in CLOUD_SYNC_ROOT_RETRY_DELAYS_MS {
+        if result != hresult_from_win32(ERROR_RETRY) {
+            break;
+        }
+        sleep(Duration::from_millis(delay_ms));
+        result = query();
+    }
+    result
 }
 
 fn classify_cloud_sync_root_by_handle_result(
@@ -1525,9 +1609,19 @@ mod tests {
             outcome
                 .successful
                 .iter()
-                .filter(|primitive| **primitive == WindowsAcquisitionPrimitive::CloudSyncRootInfo)
+                .filter(|primitive| {
+                    **primitive == WindowsAcquisitionPrimitive::CloudSyncRootInfoByHandle
+                })
                 .count(),
             1
+        );
+        assert!(
+            outcome
+                .successful
+                .iter()
+                .filter(|primitive| **primitive == WindowsAcquisitionPrimitive::CloudSyncRootInfo)
+                .count()
+                <= 1
         );
     }
 
@@ -1550,6 +1644,76 @@ mod tests {
     }
 
     #[test]
+    fn documented_query_cross_check_refuses_until_it_agrees_then_stops_asking() {
+        let root = Path::new(r"C:\journal");
+        let agreed = AtomicBool::new(false);
+
+        let refused =
+            cross_check_with_documented_query(&agreed, || classify_cloud_sync_root_result(root, 0));
+        assert_eq!(
+            unsupported_category(refused),
+            WindowsRefusalCategory::CloudSyncRootRegistered
+        );
+        assert!(!agreed.load(Ordering::Acquire));
+
+        cross_check_with_documented_query(&agreed, || {
+            classify_cloud_sync_root_result(
+                root,
+                hresult_from_win32(ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT),
+            )
+        })
+        .expect("nonmember agreement passes");
+        cross_check_with_documented_query(&agreed, || panic!("agreement ends the cross-check"))
+            .expect("a later admission does not ask again");
+    }
+
+    #[test]
+    fn cloud_sync_root_query_retries_only_the_retry_result_and_stays_bounded() {
+        let retry = hresult_from_win32(ERROR_RETRY);
+        let mut answers = [retry, retry, 0].into_iter();
+        let mut delays = Vec::new();
+        let result = retry_cloud_sync_root_query(
+            || answers.next().expect("query answer"),
+            |delay| delays.push(delay.as_millis()),
+        );
+        assert_eq!(result, 0);
+        assert_eq!(delays, [100, 400]);
+
+        let mut calls = 0;
+        let mut sleeps = 0;
+        let result = retry_cloud_sync_root_query(
+            || {
+                calls += 1;
+                retry
+            },
+            |_| sleeps += 1,
+        );
+        assert_eq!(result, retry);
+        assert_eq!((calls, sleeps), (11, 10));
+        assert!(classify_cloud_sync_root_result(Path::new(r"C:\journal"), result).is_err());
+
+        let mut calls = 0;
+        let invalid = hresult_from_win32(ERROR_INVALID_FUNCTION);
+        let result = retry_cloud_sync_root_query(
+            || {
+                calls += 1;
+                invalid
+            },
+            |_| panic!("only the retry result waits"),
+        );
+        assert_eq!((result, calls), (invalid, 1));
+    }
+
+    #[test]
+    fn cloud_sync_root_query_request_matches_the_control_layout() {
+        let request = cloud_sync_root_query_request();
+        assert_eq!(size_of_val(&request), 0x98);
+        assert_eq!(request[0], 0x9000_001A);
+        assert_eq!(request[1], 0xC000_0005);
+        assert!(request[2..].iter().all(|word| *word == 0));
+    }
+
+    #[test]
     fn retained_handle_cloud_status_preserves_unclassified_hresult() {
         let root = Path::new(r"C:\journal");
         let result = classify_cloud_sync_root_by_handle_result(root, 0x1234_5678_i32);
@@ -1567,12 +1731,15 @@ mod tests {
 
     #[test]
     fn refs_admission_skips_cloud_sync_root_query() {
+        let (_temporary, root_path) = fixture("cloud-sync-refs");
+        let handle = open_directory(
+            &validate_path(&root_path).expect("valid fixture").wide,
+            WindowsAcquisitionPrimitive::RequestedRootOpen,
+            DirectoryOpenPurpose::Verification,
+        )
+        .expect("open fixture");
         let (result, outcome) = trace_scenario(None, None, || {
-            admit_for_filesystem(
-                Path::new(r"C:\journal"),
-                &[0u16],
-                WindowsFilesystemKind::Refs,
-            )
+            admit_for_filesystem(&root_path, &[0u16], &handle, WindowsFilesystemKind::Refs)
         });
         result.expect("ReFS admission skips Cloud Files classification");
         assert!(outcome.attempted.is_empty());
