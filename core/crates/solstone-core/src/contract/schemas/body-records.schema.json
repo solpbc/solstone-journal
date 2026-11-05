@@ -25,11 +25,12 @@
     "experience": { "type": "string", "enum": ["workout", "sleep", "mindfulness"] },
     "assembled": { "type": "string", "description": "The rule an experience the source didn't report as one was assembled by, in words." },
     "of": { "type": "string", "description": "The id of the experience this row belongs to." },
+    "run": { "type": "string", "description": "The import that first wrote this row. Set once, kept through edits, outside identity, never indexed." },
     "index": { "type": "integer", "minimum": 1 },
     "count": { "type": "integer", "minimum": 1 },
     "fields": { "type": "object", "description": "Every other field the source gave. Read by agents, never indexed." },
     "values": { "type": "object", "description": "Values the source's reader restated for search.", "additionalProperties": { "type": "string" } },
-    "words": { "type": "array", "items": { "type": "string" }, "description": "The owner's own words on this record." }
+    "words": { "type": "array", "items": { "type": "string" }, "description": "Words the source recorded on this row, such as a workout's or a food's name." }
   },
   "x-journal-contract": {
     "format_id": "body-records",

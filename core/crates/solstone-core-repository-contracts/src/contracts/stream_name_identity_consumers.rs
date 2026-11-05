@@ -301,6 +301,12 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
         ),
         // Strava placement reads the fixed stream name import.strava
         ("solstone-core-import-sources/src/strava.rs", "place"),
+        // Apple body repair reads the fixed stream name import.apple_health and
+        // moves its record up to its own windows' marker tail
+        (
+            "solstone-core-import-host/src/body_segments.rs",
+            "reconcile_stream",
+        ),
         // operator CLI move seam; name comes from the relocation request
         ("solstone-core-segment-cli/src/move.rs", "relocate"),
         // shared forward-pointer resolution; name is the marker/argv stream token

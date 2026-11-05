@@ -631,6 +631,7 @@ fn list_transcripts_input_schema(context: &SchemaContext<'_>) -> Value {
             "time_from": { "type": "string", "description": "Start of a time range within day, as HH:MM." },
             "time_to": { "type": "string", "description": "End of a time range within day, as HH:MM." },
             "source": { "type": "string", "minLength": 1, "maxLength": 256, "description": "A body source's label, exactly as other_sources or that day's body document gives it. Needs day, and can't be combined with facet." },
+            "kind": { "type": "string", "minLength": 1, "maxLength": 256, "description": "One kind of entry from that body source, such as resting heart rate, workout or sleep, as its entries name it. Needs source. The list then holds only windows with that kind, and a span read from it returns only those entries." },
         }
     });
     with_scoped_facet(schema, context)

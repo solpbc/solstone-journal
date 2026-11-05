@@ -35,6 +35,12 @@ const MAX_APPLE_EXPORT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_APPLE_SOURCE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_APPLE_EVENT_BYTES: usize = 1024 * 1024;
 const MAX_APPLE_XML_EVENTS_SCANNED: u64 = 50_000_000;
+/// The scan path holds nothing per record, so its only whole-export bound is
+/// bytes, and it is its own, well past any real history.
+const MAX_APPLE_SCAN_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+/// One element's children (metadata, statistics, events) on the scan path. An
+/// element past it is refused, so one element can't grow without limit.
+pub const MAX_APPLE_SCAN_CHILDREN: usize = 10_000;
 const MAX_APPLE_RECORDS_SCANNED: u64 = 50_000_000;
 const MAX_APPLE_SELECTED_ROWS: usize = 100_000;
 const MAX_APPLE_SELECTED_BYTES: usize = 128 * 1024 * 1024;
@@ -442,32 +448,43 @@ pub enum AppleItem {
     Workout(AppleElement),
     /// An element this reader doesn't open, by name.
     NotRead(String),
+    /// A record or workout the scan refused, by stage. Nothing of it is held.
+    Refused(&'static str),
 }
 
 /// Stream an Apple export's elements to `visit` without holding them, under the
-/// same containment, archive and XML bounds as a bundle save.
+/// same containment and archive checks as a bundle save. Nothing is held per
+/// record, so there is no record or event count: the bounds are one event's
+/// bytes, one element's children, and `MAX_APPLE_SCAN_BYTES` for the export.
 pub fn scan_apple_export(
     source: &Path,
     visit: &mut dyn FnMut(AppleItem),
 ) -> Result<(), BodyIngestError> {
-    let export = find_export(source)?;
-    with_export(source, &export, |reader| {
-        scan_elements(reader, MAX_APPLE_XML_EVENTS_SCANNED, visit)
+    let export = find_export_within(source, MAX_APPLE_SCAN_BYTES)?;
+    with_export_within(source, &export, MAX_APPLE_SCAN_BYTES, |reader| {
+        scan_elements(reader, MAX_APPLE_SCAN_CHILDREN, visit)
     })
+}
+
+/// The scan path's whole-export bound, for a message that names it.
+#[must_use]
+pub const fn apple_scan_byte_bound() -> u64 {
+    MAX_APPLE_SCAN_BYTES
 }
 
 fn scan_elements(
     reader: &mut dyn BufRead,
-    event_limit: u64,
+    child_limit: usize,
     visit: &mut dyn FnMut(AppleItem),
 ) -> Result<(), BodyIngestError> {
     let mut xml = Reader::from_reader(EventCappedReader::new(reader));
     xml.config_mut().trim_text(true);
     let mut buffer = Vec::new();
-    let mut events_scanned = 0_u64;
-    let mut records = 0_u64;
     // The open `Record` or `Workout`, and how deep an unread subtree has gone.
     let mut open: Option<(bool, AppleElement)> = None;
+    // The open element passed `child_limit`: its children are dropped, and it
+    // is refused when it closes.
+    let mut oversized = false;
     let mut unread_depth = 0_u32;
     loop {
         let event = match xml.read_event_into(&mut buffer) {
@@ -476,12 +493,6 @@ fn scan_elements(
             Err(_) => return Err(source_error("xml")),
         };
         xml.get_mut().reset();
-        if !matches!(&event, Event::Eof) {
-            events_scanned = events_scanned
-                .checked_add(1)
-                .filter(|count| *count <= event_limit)
-                .ok_or_else(|| source_error("xml_event_count_limit"))?;
-        }
         let (start, is_empty) = match event {
             Event::Eof => break,
             Event::Start(start) => (start, false),
@@ -492,7 +503,9 @@ fn scan_elements(
                 } else if matches!(end.name().as_ref(), b"Record" | b"Workout")
                     && let Some((workout, element)) = open.take()
                 {
-                    visit(if workout {
+                    visit(if std::mem::take(&mut oversized) {
+                        AppleItem::Refused("children")
+                    } else if workout {
                         AppleItem::Workout(element)
                     } else {
                         AppleItem::Record(element)
@@ -511,18 +524,30 @@ fn scan_elements(
         if unread_depth > 0 {
             unread_depth += u32::from(!is_empty);
         } else if let Some((_, element)) = open.as_mut() {
-            match name {
-                b"MetadataEntry" => {
-                    let entry = attributes(&xml, &start)?;
-                    if let (Some(key), Some(value)) = (entry.get("key"), entry.get("value")) {
-                        element.metadata.insert(key.clone(), value.clone());
-                    }
+            let children = element.metadata.len() + element.statistics.len() + element.events.len();
+            let child = matches!(
+                name,
+                b"MetadataEntry" | b"WorkoutStatistics" | b"WorkoutEvent"
+            );
+            if child && (oversized || children >= child_limit) {
+                if !oversized {
+                    oversized = true;
+                    *element = AppleElement::default();
                 }
-                b"WorkoutStatistics" => element.statistics.push(attributes(&xml, &start)?),
-                b"WorkoutEvent" => element.events.push(attributes(&xml, &start)?),
-                _ => visit(AppleItem::NotRead(
-                    String::from_utf8_lossy(name).into_owned(),
-                )),
+            } else {
+                match name {
+                    b"MetadataEntry" => {
+                        let entry = attributes(&xml, &start)?;
+                        if let (Some(key), Some(value)) = (entry.get("key"), entry.get("value")) {
+                            element.metadata.insert(key.clone(), value.clone());
+                        }
+                    }
+                    b"WorkoutStatistics" => element.statistics.push(attributes(&xml, &start)?),
+                    b"WorkoutEvent" => element.events.push(attributes(&xml, &start)?),
+                    _ => visit(AppleItem::NotRead(
+                        String::from_utf8_lossy(name).into_owned(),
+                    )),
+                }
             }
             if !is_empty {
                 unread_depth = 1;
@@ -530,10 +555,6 @@ fn scan_elements(
         } else {
             match name {
                 b"Record" | b"Workout" => {
-                    records = records
-                        .checked_add(1)
-                        .filter(|count| *count <= MAX_APPLE_RECORDS_SCANNED)
-                        .ok_or_else(|| source_error("record_count_limit"))?;
                     let workout = name == b"Workout";
                     let element = AppleElement {
                         attributes: attributes(&xml, &start)?,
@@ -834,6 +855,10 @@ fn parse_cli_day(value: &str) -> Result<String, BodyIngestError> {
 }
 
 fn find_export(source: &Path) -> Result<String, BodyIngestError> {
+    find_export_within(source, MAX_APPLE_SOURCE_BYTES)
+}
+
+fn find_export_within(source: &Path, source_limit: u64) -> Result<String, BodyIngestError> {
     if fs::symlink_metadata(source).is_ok_and(|metadata| metadata.file_type().is_dir()) {
         for candidate in ["export.xml", "apple_health_export/export.xml"] {
             match open_descendant_file(source, candidate) {
@@ -850,7 +875,7 @@ fn find_export(source: &Path) -> Result<String, BodyIngestError> {
         .is_some_and(|value| value.eq_ignore_ascii_case("zip"))
     {
         let mut file = open_nofollow(source).map_err(|_| source_error("archive"))?;
-        preflight_zip(&mut file)?;
+        preflight_zip_within(&mut file, source_limit)?;
         let archive = zip::ZipArchive::new(file).map_err(|_| source_error("archive"))?;
         let (_archive, names) =
             crate::zip_names::prove_open_zip(archive).map_err(|_| source_error("archive"))?;
@@ -883,16 +908,27 @@ fn with_export<T>(
     export: &str,
     operation: impl FnOnce(&mut dyn BufRead) -> Result<T, BodyIngestError>,
 ) -> Result<T, BodyIngestError> {
+    with_export_within(source, export, MAX_APPLE_EXPORT_BYTES, operation)
+}
+
+/// `limit` bounds `export.xml`, and an archive holding it when it's larger
+/// than the ordinary source bound.
+fn with_export_within<T>(
+    source: &Path,
+    export: &str,
+    limit: u64,
+    operation: impl FnOnce(&mut dyn BufRead) -> Result<T, BodyIngestError>,
+) -> Result<T, BodyIngestError> {
     if fs::symlink_metadata(source).is_ok_and(|metadata| metadata.file_type().is_dir()) {
         let file = open_descendant_file(source, export).map_err(|_| source_error("export_xml"))?;
         let metadata = file.metadata().map_err(|_| source_error("export_xml"))?;
-        if !metadata.file_type().is_file() || metadata.len() > MAX_APPLE_EXPORT_BYTES {
+        if !metadata.file_type().is_file() || metadata.len() > limit {
             return Err(source_error("export_size_limit"));
         }
-        return with_capped_reader(file, MAX_APPLE_EXPORT_BYTES, operation);
+        return with_capped_reader(file, limit, operation);
     }
     let mut file = open_nofollow(source).map_err(|_| source_error("archive"))?;
-    preflight_zip(&mut file)?;
+    preflight_zip_within(&mut file, limit.max(MAX_APPLE_SOURCE_BYTES))?;
     let archive = zip::ZipArchive::new(file).map_err(|_| source_error("archive"))?;
     let (mut archive, names) =
         crate::zip_names::prove_open_zip(archive).map_err(|_| source_error("archive"))?;
@@ -903,10 +939,10 @@ fn with_export<T>(
     let entry = archive
         .by_index(index)
         .map_err(|_| source_error("archive"))?;
-    if entry.size() > MAX_APPLE_EXPORT_BYTES {
+    if entry.size() > limit {
         return Err(source_error("export_size_limit"));
     }
-    with_capped_reader(entry, MAX_APPLE_EXPORT_BYTES, operation)
+    with_capped_reader(entry, limit, operation)
 }
 
 struct CappedReader<R> {
@@ -967,8 +1003,12 @@ fn missing_or_not_directory(error: &io::Error) -> bool {
 }
 
 fn preflight_zip(file: &mut File) -> Result<(), BodyIngestError> {
+    preflight_zip_within(file, MAX_APPLE_SOURCE_BYTES)
+}
+
+fn preflight_zip_within(file: &mut File, limit: u64) -> Result<(), BodyIngestError> {
     let length = file.metadata().map_err(|_| source_error("archive"))?.len();
-    if length > MAX_APPLE_SOURCE_BYTES {
+    if length > limit {
         return Err(source_error("source_size_limit"));
     }
     let tail_length = usize::try_from(length)

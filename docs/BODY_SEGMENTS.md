@@ -15,10 +15,13 @@ chronicle/<day>/body.md                                              the day's d
 chronicle/<day>/health/body.json                                     what body.md was built from
 chronicle/<day>/health/body.updated                                  moves when body records change
 imports/<id>/summary.md                                              the import's summary
+imports/<id>/body-touched.jsonl                                      what the import touched, per window
+imports/<id>/body-progress.json                                      how far a run has got
 imports/.<source>-zone.json                                          the zone fixed at first import
+imports/.<source>-run/state.json                                     a run that hasn't finished
 ```
 
-A **window** is one segment on a civil grid, floored to 300 seconds. Only windows holding a row exist. Every row states its own exact times, so nothing reads meaning from the key: the window length is one constant used for placement, and a source or kind could use longer windows beside 300-second tiles without changing a reader.
+A **window** is one segment on a civil grid, floored to its length. A workout or a mindfulness session takes 300 seconds: its first row, its tiles, its events, and every reading from its own source inside its span, so deleting it takes its own series with it. Everything else with a time takes 3,600 seconds: a night and its stages, readings no session of their source covers, counts and logged entries. Only windows holding a row exist. Every row states its own exact times, so nothing reads meaning from the key: the length is used for placement and nothing else.
 
 The zone is fixed at a source's first import, so importing again under a later owner zone writes the same coordinates. **Known limit:** a morning run on a trip can land on another civil day from the one lived. A row keeps its own offset, so its exact time stays true, and matching across streams must use instants, never window keys.
 
@@ -32,17 +35,19 @@ A window whose directory holds older content, live or deleted (Apple's retired d
 |---|---|---|
 | `experience` | the window of its start | a workout, a night's sleep or a mindfulness session, whole: `start`, `end`, `by`, `label`, every field the source gave in `fields`, `values`, `words` |
 | `experience_tile` | every later window of its span | `of`, `index`, `count`, the whole span, `label`, `by`. No name, no totals, so nothing sums across tiles, and each day reads its own tiles |
-| `stage`, `event` | the window of its start | a series inside an experience, with `of` |
-| `reading` | the window of `at` | one point reading: exact time, value, unit, source |
+| `stage`, `event` | the window of its start | a sleep stage or a workout's event, with `of` |
+| `reading` | the window of `at`: its session's slot when a workout or mindfulness session from the same `by` covers it, its hour otherwise | one point reading: exact time, value, unit, source |
 | `count` | the window of its start | an interval count, its source interval unsplit |
-| `logged` | the window of its start | something the owner logged, by the shape the source gave: `start` alone or `start` and `end` |
+| `logged` | the window of its start | an entry or event the source recorded, by the shape it gave: `start` alone or `start` and `end`. `by` says who recorded it |
 | `dated` | `000000_86400` of its date | a daily score or summary: `date`, no time at all. A whole-day segment reads `00:00-23:59`, because a midnight window would read as something that happened at midnight |
 
-`value` is the source's exact string. `by` is the app or device's own name. Device strings, uuids and sync ids stay in `fields`, readable by an agent and never indexed.
+`value` is the source's exact string. `by` is the app or device's own name. Device strings, uuids and sync ids stay in `fields`, readable by an agent and never indexed. Every row also carries `run`, the import that first wrote it: set once, kept through edits, outside identity and never indexed.
 
 ## What is read
 
-One table per source, in code: `read_kind` in `solstone-core-import-sources/src/apple_health.rs` for Apple. Any other type or element is counted and named in `imports/<id>/summary.md`, and its values are never held. A record that can't be read is counted by stage, with no value in the message. A row over 32 KiB, an experience over 14 days or an `end` before its `start` is refused the same way.
+One table per source, in code: `read_kind` in `solstone-core-import-sources/src/apple_health.rs` for Apple. Any other type or element is counted and named in `imports/<id>/summary.md`, and its values are never held. A record that can't be read is counted by stage, with no value in the message. A row over 32 KiB, an experience over 14 days, an `end` before its `start` or one element with more than 10,000 children is refused the same way.
+
+An export is read in bounded memory, so there's no count of records or rows. Its bounds are size, an `export.xml` over 64 GiB, and one XML tag over 1 MiB; either refuses the export, and the import says which.
 
 ## Identity and re-import
 
@@ -55,7 +60,11 @@ Importing again, under one lock per source:
 - **A record an export omits** stays. An export isn't a deletion.
 - **A window the owner deleted** stays deleted, counted in the summary. A tombstone's manifest says what it removed. One that shows older content isn't a window the owner deleted, so new rows land beside it and it stays deleted. One that can't say counts as a deleted window, so nothing comes back on a guess.
 - **A window that can't be parsed** is left as it is and counted.
-- **A run that didn't finish** leaves `imports/.<source>-publishing`, and the next run publishes every window in the stream, in its export or not. The marker goes only when the attempt completed and `imports/<id>/imported.json` says `success`.
+- **A reading has two places on its day,** its hour and the slot of a session that covers it, and a later export can add, edit or drop that session. So a reading already saved in either place stays there, and is never in both. One the owner may have deleted doesn't come back: when its other place was deleted, it isn't added, because a tombstone names the files it removed, not the readings. For a reading bound for its hour, a deleted slot counts only when no session in the export covers it, since a slot a session still holds was that session's, which another source's reading was never in. When its other place can't be parsed, it isn't added either. The summary counts these beside "stayed deleted". A workout written by another app, such as Strava, has another `by`, so the watch's series during it stays on hours.
+- **A run that didn't finish** leaves `imports/.<source>-run/state.json`. It records the last day done and, while a day is being written, that day's decisions, in one file replaced at once. The next run with the same export and facet carries on from there under the same import, and publishes the half-done day's windows even where their bytes already match. A run with another export first publishes that day, then starts fresh.
+- **A window that can't be published** is retried by the next run, with any export, and named in the summary until it is. Later days don't wait for it, and the import reads as partly failed: `imported.json` lists exactly the windows still failing.
+- **A run whose state can't be read**, or whose sorted staging is missing (as after a restore, since staging is left out of backups and the state isn't), publishes every window already in the stream, day by day, after bringing the stream's record level with its windows' markers.
+- **What an import touched** is kept in `imports/<id>/body-touched.jsonl`, one line per day: each window it touched, with how many of its rows were new, updated and unchanged. With each row's `run`, this is what a later delete or preview can be built from.
 
 **Known limits.** Apple gives no record id, so time is identity: a record moved in time is a new row, and the old one stays. Deleting one of two same-second records in Apple Health can leave the survivor stored twice.
 
@@ -68,7 +77,7 @@ Apple gives sleep stages, not nights. Per source name, ordered by start, stage i
 ## What is indexed
 
 - **One entry per experience**, from the `experience` row: label, name and owner's words, times, `by`, and the `values` its reader chose. `fields` never reaches this text, so a key nobody listed can't reach search.
-- **One entry per day**, `chronicle/<day>/body.md`: experiences, each kind's count and first and last time, logged kinds, the owner's words on logged rows, dated values. It's deterministic and rebuilt from the windows that survive, on the `location.md` pattern. It holds no reading values.
+- **One entry per day**, `chronicle/<day>/body.md`: experiences, each kind's count and first and last time, logged entries grouped under who recorded them, the words the source recorded on them, dated values. An entry reads as the owner's only where the source marks it as entered by the owner (Apple's `HKWasUserEntered`). It's deterministic and rebuilt from the windows that survive, on the `location.md` pattern. It holds no reading values.
 - **One entry per import**, `imports/<id>/summary.md`: names and counts.
 - **Nothing else.** Readings, counts, stages and tiles produce no search entry.
 
@@ -81,7 +90,7 @@ A segment is **body-only** by what it holds, never by its stream alone: it sits 
 A body-only segment isn't processed by Sense and owes no daily work, at any age:
 
 - Publication emits no observed, drain or enrichment event for it, and moves `body.updated` rather than `stream.updated`, whose completion would stay open with no daily work to close it. Other writers of the stream marker still move it, so a day whose body window was deleted reads as updated in the journal health report. A deleted body window stays body-only, so one delete doesn't make a day owed. Any other tombstone, or one that can't say what it removed, keeps its behaviour, so deleting older content owes its day's daily work as it always has.
-- Its coordinates carry `body_only` in `imported.json`, so an import asks no thinking or spending for them.
+- An import publishes its windows a day at a time and lists none of them in `imported.json` (it lists only those still failing), so an import asks no thinking or spending for them, and discovery never reads a record the size of a whole history.
 - `scan_day` finds no modality and skips it, as with a location-only segment.
 - A day holding only such segments, or calendar notes, owes no work. Daily evidence, the schedule's active times, weekly reflection, reprocessing and both active-facet walks leave them out, so they neither hold nor change a day's daily work.
 
@@ -101,9 +110,11 @@ Through the MCP surface, with no new tool and no stream name in any response:
    - **`gaps`:** stretches with no window this connection can read. A gap means no window, not no reading. A whole-day segment and a tombstoned window aren't coverage. A clock-change day can show a false hour.
    - **`span_reference`:** pass it to `get_transcript`.
    - **`gaps_note`:** present when this connection can also read other content from the source that day, which these gaps don't describe.
-4. `get_transcript` on a `span_reference` pages entries in time order, each attributed, across windows. A page is whole segment pages, up to 100 entries, and a call visits at most 24 windows, so a page can be short. Windows outside this connection's scope and deleted windows are skipped, and one that can't be read is counted in `unreadable`. Only the window being paged is bound to its version: one that changes before the walk reaches it reads as it now is.
+4. `get_transcript` on a `span_reference` pages the span's entries, each attributed, in time order by the clock time each row states, across windows of every length, up to 100 a page. A call serves from at most 24 windows, so a page can be short; under a kind, a window without it doesn't count. Only what belongs to the span comes back: a timed entry inside it, an interval or experience overlapping it, and a dated entry always. Windows outside this connection's scope and deleted windows are skipped, and one that can't be read is counted in `unreadable`. The cursor is a place in that order, so a window that changes under it reads as it now is from there on.
 
-`source` matches only `import.apple_health` and `import.oura` labels. Another label, or nothing readable that day, gets no `gaps` and a note saying so. A span crossing midnight is two lists. There's no kind filter yet, so one kind over a month walks every entry of that source; the walk and its cursor can take a filter and skip windows without changing the format.
+`source` matches only `import.apple_health` and `import.oura` labels. Another label, or nothing readable that day, gets no `gaps` and a note saying so. A span crossing midnight is two lists.
+
+`kind` (needs `source`) narrows both to one kind of entry, by the name its entry gives it: a reading's or count's name such as `resting heart rate`, or `workout`, `sleep` or `mindfulness`, case aside. The list holds only windows with that kind in the range, and its `span_reference` returns only those entries, so a sparse kind such as `resting heart rate` over a month is about one list and one read a day. `gaps` still describe the source, not the kind. When the source holds entries in the range but none of that kind, the empty list says so, apart from a range with nothing readable at all.
 
 ## How Strava relates
 
