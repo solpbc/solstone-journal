@@ -119,7 +119,9 @@ impl ToolError {
             Self::ReferenceNotFound => {
                 "the reference or cursor did not resolve to anything this connection may read; pass one unchanged from a fresh result"
             }
-            Self::SourceArguments => "source needs a day, and can't be combined with facet",
+            Self::SourceArguments => {
+                "source needs a day and can't be combined with facet, and kind needs source"
+            }
         }
     }
 }

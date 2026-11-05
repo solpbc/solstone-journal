@@ -539,6 +539,7 @@ fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
             insert_present(&mut arguments, "time_from", request.time_from.as_deref());
             insert_present(&mut arguments, "time_to", request.time_to.as_deref());
             insert_present(&mut arguments, "source", request.source.as_deref());
+            insert_present(&mut arguments, "kind", request.kind.as_deref());
             if let Some(cursor) = request.cursor.as_deref() {
                 arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
             }
@@ -2516,6 +2517,7 @@ fn list_transcripts(
                 || cursor.time_to != request.time_to
                 || cursor.facet != request.facet_id
                 || cursor.source != request.source
+                || cursor.kind != request.kind
             {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             }
@@ -2759,6 +2761,7 @@ fn list_transcripts(
                             time_to: request.time_to.clone(),
                             facet: request.facet_id.clone(),
                             source: None,
+                            kind: None,
                             last_day,
                             last_stream,
                             last_name,

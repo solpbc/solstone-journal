@@ -572,6 +572,60 @@ function sourceBlock(source, startToken, endToken) {
   return source.slice(start, end);
 }
 
+function vitalsSweepEnvironment() {
+  const source = loadHealthSource();
+  const timers = [];
+  const handlers = [];
+  const context = vm.createContext({
+    sweeps: 0,
+    window: {
+      appEvents: {
+        listen() {},
+        onConnectionState(fn) {
+          handlers.push(fn);
+          fn({ connected: false, state: 'disconnected' });
+        },
+      },
+    },
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+  });
+  vm.runInContext(`
+    let timeoutFired = false;
+    function sweepUnresolvedSkeletons() { if (timeoutFired) return; timeoutFired = true; sweeps += 1; }
+    function invalidateRealtime() {}
+    function wireBacklogReprocessActions() {}
+    function handleEvent() {}
+    ${sourceBlock(source, '// The supervisor reports status every 5 s', '// Utility functions')}
+    ${sourceBlock(source, 'function initHealthRealtime() {', 'function initHealth() {')}
+    initHealthRealtime();
+  `, context);
+  const emit = (state) => handlers.forEach((fn) => fn({ connected: state === 'connected', state }));
+  return { context, timers, emit };
+}
+
+test('vitals stay loading while the stream opens, and time out 7 s after it connects', async () => {
+  const env = vitalsSweepEnvironment();
+  assert.strictEqual(env.timers.length, 0, 'no clock before the stream is attempted');
+  env.emit('connecting');
+  assert.strictEqual(env.timers.length, 0, 'a slow stream open is still loading');
+  assert.strictEqual(env.context.sweeps, 0);
+  env.emit('connected');
+  assert.strictEqual(env.timers.length, 1);
+  assert.strictEqual(env.timers[0].ms, 7000);
+  env.emit('connected');
+  assert.strictEqual(env.timers.length, 1, 'armed once');
+  env.timers[0].fn();
+  assert.strictEqual(env.context.sweeps, 1);
+});
+
+test('vitals turn unavailable at once when the stream fails', async () => {
+  const env = vitalsSweepEnvironment();
+  env.emit('connecting');
+  env.emit('disconnected');
+  assert.strictEqual(env.context.sweeps, 1, 'a failed stream leaves nothing on its way');
+  assert.strictEqual(env.timers.length, 0);
+});
+
 function createDeviceEnvironment() {
   const source = loadHealthSource();
   const doc = new Document();

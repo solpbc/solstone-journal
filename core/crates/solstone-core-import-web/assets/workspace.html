@@ -905,8 +905,7 @@ function handleHashChange() {
 
 async function loadSourceGrid() {
   if (!cachedSources.length) {
-    const res = await fetch('/app/import/api/sources');
-    const payload = await res.json();
+    const payload = await window.apiJson('/app/import/api/sources');
     cachedSources = payload.items || [];
     sourceMetadataByName = Object.fromEntries(cachedSources.map(source => [source.name, source]));
     sourceIconSvgByName = Object.fromEntries(cachedSources.map(source => [source.name, source.icon_svg || '']));
@@ -1266,9 +1265,11 @@ async function loadImports() {
   currentPage = 1;
   loadingMoreGeneration = null;
   const url = `/app/import/api/list?page=1&per_page=${IMPORT_PAGE_SIZE}&source=${encodeURIComponent(currentSourceFilter)}`;
-  await loadSourceGrid();
-  if (generation !== historyRequestGeneration) return;
   try {
+    // A source list that can't load ends in the history's error state below,
+    // not in a loading spinner that never resolves.
+    await loadSourceGrid();
+    if (generation !== historyRequestGeneration) return;
     const data = await window.apiJson(url);
     if (generation !== historyRequestGeneration) return;
     if (!Array.isArray(data.imports) || !Array.isArray(data.source_options) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {

@@ -2766,6 +2766,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   if (initialEmptyIcon) {
     initialEmptyIcon.innerHTML = window.ConveyIcons.svg('clock');
   }
+  // The "pick a stretch of the day" invitation is for a day that has loaded.
+  // While the day is read the panel says so; on a slow link the invitation
+  // read as an empty day.
+  const dayInvitationHtml = panel ? panel.innerHTML : '';
 
   function emptyIconForModality(modality) {
     switch (modality) {
@@ -2919,83 +2923,119 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return seconds === undefined ? Math.max(0, frameId - 1) : seconds;
     }
 
-    // Load video and wait for metadata
+    // Consume the initial presentation before any queued seek. A newly
+    // registered frame callback can otherwise report an older presentation.
     loadVideo(url) {
-      if (this.videos.has(url)) {
-        const entry = this.videos.get(url);
-        if (entry.ready) return Promise.resolve(entry);
-        return entry.promise;
-      }
-
+      if (this.videos.has(url)) return this.videos.get(url).promise;
       const video = document.createElement('video');
-      video.preload = 'metadata';
+      video.preload = 'auto';
       video.muted = true;
       video.playsInline = true;
       video.crossOrigin = 'anonymous';
-
-      const promise = new Promise((resolve, reject) => {
-        video.onloadedmetadata = () => {
-          const entry = this.videos.get(url);
+      const entry = {
+        url, video, ready: false, unsupported: false, errorCode: null,
+        width: 0, height: 0, thumbs: new Map(), queue: Promise.resolve(),
+        confirmedTime: null, confirmedTarget: null, presentedFrames: 0, disposed: false, cancelPending: null
+      };
+      this.videos.set(url, entry);
+      entry.promise = this._waitForFrame(entry, null, () => { video.src = url; })
+        .then(() => {
           entry.ready = true;
           entry.width = video.videoWidth;
           entry.height = video.videoHeight;
-          resolve(entry);
-        };
-        video.onerror = () => {
-          const mediaError = video.error;
-          if (mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-            const entry = this.videos.get(url);
+          return entry;
+        }).catch((error) => {
+          if (!entry.disposed && video.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
             entry.unsupported = true;
-            entry.errorCode = mediaError.code;
+            entry.errorCode = video.error.code;
             entry.ready = true;
             if (!this.warnedUrls.has(url)) {
               this.warnedUrls.add(url);
               console.warn(`Video format not supported by this browser: ${url}`);
             }
-            resolve(entry);
-            return;
+            return entry;
           }
-          reject(new Error(`Failed to load video: ${url}`));
-        };
-        video.src = url;
-      });
-
-      this.videos.set(url, {
-        video,
-        ready: false,
-        unsupported: false,
-        errorCode: null,
-        width: 0,
-        height: 0,
-        promise,
-        thumbs: new Map(),
-        queue: Promise.resolve()
-      });
-      return promise;
+          this._retireVideo(entry);
+          throw error;
+        });
+      return entry.promise;
     }
 
     async _withVideoQueue(videoUrl, task) {
       const entry = await this.loadVideo(videoUrl);
-      const run = entry.queue.then(task, task);
+      const admitted = () => {
+        if (entry.disposed) throw new Error('Video capture cancelled');
+        return task();
+      };
+      const run = entry.queue.then(admitted, admitted);
       entry.queue = run.catch(() => {});
       return run;
     }
 
-    async _seekTo(video, timestamp) {
+    _waitForFrame(entry, timestamp, start) {
+      const video = entry.video;
+      const initial = timestamp === null;
+      if (entry.disposed) return Promise.reject(new Error('Video capture cancelled'));
+      // The browser may round a requested time. Keep that request separate
+      // from its confirmed readback so reopening it does not seek again.
+      if (!initial && entry.confirmedTarget === timestamp && video.currentTime === entry.confirmedTime
+          && !video.seeking && video.readyState >= 2) return Promise.resolve();
+      entry.confirmedTime = null;
+      entry.confirmedTarget = null;
       return new Promise((resolve, reject) => {
-        const onSeeked = () => {
+        let seekComplete = initial;
+        let presented = typeof video.requestVideoFrameCallback !== 'function';
+        let callbackId = null;
+        let settled = false;
+        const baseline = entry.presentedFrames;
+        const cleanup = () => {
+          clearTimeout(timer);
+          for (const name of ['loadedmetadata', 'loadeddata']) video.removeEventListener(name, check);
           video.removeEventListener('seeked', onSeeked);
           video.removeEventListener('error', onError);
-          resolve();
+          if (callbackId !== null) video.cancelVideoFrameCallback(callbackId);
+          entry.cancelPending = null;
         };
-        const onError = () => {
-          video.removeEventListener('seeked', onSeeked);
-          video.removeEventListener('error', onError);
-          reject(new Error('Video seek failed'));
+        const finish = (error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          if (error) {
+            // A late presentation from a failed seek must never satisfy the
+            // next request. Retire this decoder, including its queued work.
+            if (!initial) this._retireVideo(entry);
+            reject(error);
+          } else {
+            entry.confirmedTime = video.currentTime;
+            entry.confirmedTarget = initial ? video.currentTime : timestamp;
+            resolve();
+          }
         };
+        const check = () => {
+          if (seekComplete && presented && video.readyState >= 2 && !video.seeking) finish();
+        };
+        const onSeeked = () => { seekComplete = true; check(); };
+        const onError = () => finish(new Error('Video frame could not be decoded'));
+        const onFrame = (_now, metadata) => {
+          callbackId = null;
+          if (settled) return;
+          if (metadata.presentedFrames > baseline) {
+            entry.presentedFrames = metadata.presentedFrames;
+            presented = true;
+            check();
+          } else callbackId = video.requestVideoFrameCallback(onFrame);
+        };
+        const timer = setTimeout(() => finish(new Error('Video frame timed out')), 30000);
+        entry.cancelPending = () => finish(new Error('Video capture cancelled'));
+        for (const name of ['loadedmetadata', 'loadeddata']) video.addEventListener(name, check);
         video.addEventListener('seeked', onSeeked);
         video.addEventListener('error', onError);
-        video.currentTime = timestamp;
+        if (!presented) callbackId = video.requestVideoFrameCallback(onFrame);
+        try {
+          if (initial) start();
+          else video.currentTime = timestamp;
+          check();
+        } catch (error) { finish(error); }
       });
     }
 
@@ -3015,7 +3055,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const pending = this._withVideoQueue(videoUrl, async () => {
         const video = entry.video;
         const timestamp = this.frameSeconds(videoUrl, frameId);
-        await this._seekTo(video, timestamp);
+        await this._waitForFrame(entry, timestamp);
+        if (entry.disposed) throw new Error('Video capture cancelled');
 
         const canvas = this._snapshot(video, width, height);
         entry.thumbs.set(frameId, canvas);
@@ -3026,7 +3067,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       try {
         return await pending;
       } finally {
-        this.pendingThumbs.delete(cacheKey);
+        if (this.pendingThumbs.get(cacheKey) === pending) this.pendingThumbs.delete(cacheKey);
       }
     }
 
@@ -3036,14 +3077,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return this._withVideoQueue(videoUrl, async () => {
         const video = entry.video;
         const timestamp = this.frameSeconds(videoUrl, frameId);
-        await this._seekTo(video, timestamp);
+        await this._waitForFrame(entry, timestamp);
+        if (entry.disposed) throw new Error('Video capture cancelled');
         return this._snapshot(video);
       });
     }
 
     _snapshot(video, width, height) {
-      // Android WebView can reuse the preceding frame for createImageBitmap
-      // after seeked. Drawing the video directly reads its current frame.
+      // Draw only after frame readiness; seeked alone can still expose old
+      // pixels on Android, and createImageBitmap can retain an older image.
       const canvas = document.createElement('canvas');
       canvas.width = width || video.videoWidth;
       canvas.height = height || video.videoHeight;
@@ -3067,15 +3109,23 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return this.videos.get(videoUrl);
     }
 
+    _retireVideo(entry) {
+      if (entry.disposed) return;
+      entry.disposed = true;
+      entry.cancelPending?.();
+      entry.thumbs.clear();
+      if (this.videos.get(entry.url) === entry) this.videos.delete(entry.url);
+      entry.video.src = '';
+      entry.video.load();
+    }
+
     // Clear all loaded videos and cached thumbnails
     clear() {
       for (const canvas of [...this.unsupportedPlaceholderCanvases]) {
         this._clearUnsupportedPlaceholder(canvas);
       }
       for (const entry of this.videos.values()) {
-        entry.thumbs.clear();
-        entry.video.src = '';
-        entry.video.load();
+        this._retireVideo(entry);
       }
       this.videos.clear();
       this.pendingThumbs.clear();
@@ -6622,6 +6672,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
 	  // Load combined transcript data
 	  function loadDayData() {
+	    dayLoad = 'pending';
+	    if (!selectedSegment) {
+	      panel.innerHTML = window.SurfaceState.loading({ text: 'loading this day…' });
+	    }
 	    fetch(`/app/transcripts/api/day/${day}`)
 	    .then(async r => {
 	      if (!r.ok) {
@@ -6751,6 +6805,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       // Store segments and update zoom
       allSegments = data.segments || [];
       dayLoad = 'ready';
+      if (allSegments.length && !selectedSegment) {
+        panel.innerHTML = dayInvitationHtml;
+      }
       updateZoom();
       reportTranscriptsReady(allSegments.length ? 'content' : 'empty');
       refreshUnselectedLocation(null);
@@ -7371,7 +7428,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       incomplete: 'Some of it may already be gone.',
       pending: 'Your journal will try again the next time it starts.'
     }[state] || 'It\'s still in your journal.';
-    const message = [label, asSentence(reason) || fallback].filter(Boolean).join(' ');
+    const retry = state === 'pending' && reason ? fallback : '';
+    const message = [label, asSentence(reason) || fallback, retry].filter(Boolean).join(' ');
     window.AppServices.notifications.show({
       app: 'transcripts',
       icon: 'triangle-alert',
@@ -7382,6 +7440,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
   }
 
+  const DELETE_WATCH_FAST_ATTEMPTS = 20;
+  const DELETE_WATCH_ATTEMPTS = DELETE_WATCH_FAST_ATTEMPTS + 180;
+
   // The delete runs after its cancel window, so the answer to the DELETE is
   // only that it was accepted. Ask what happened once the window has passed,
   // so a refusal reaches the page and not just the journal's log.
@@ -7389,7 +7450,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await wait(Math.max(0, commitAtLocalMs - Date.now()) + 500);
     let unknown = false;
-    for (let attempt = 0; attempt < 20; attempt++) {
+    let saidStillDeleting = false;
+    for (let attempt = 0; attempt < DELETE_WATCH_ATTEMPTS; attempt++) {
       let data = null;
       try {
         const response = await fetch(`/app/transcripts/api/delete-status/${pendingId}`);
@@ -7430,7 +7492,25 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
         return;
       }
-      await wait(1000);
+      // A delete still pending with a reason has stopped until the next start.
+      if (data?.state === 'pending' && data.reason) {
+        showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
+        return;
+      }
+      // A large journal takes minutes, so keep watching at a slower pace and
+      // say so once, rather than leave the result to a reload.
+      if (attempt >= DELETE_WATCH_FAST_ATTEMPTS - 1 && data?.state === 'pending' && !saidStillDeleting && !shownOutcomes.has(pendingId)) {
+        saidStillDeleting = true;
+        window.AppServices.notifications.show({
+          app: 'transcripts',
+          icon: 'timer',
+          title: 'Still deleting',
+          message: 'This can take a while on a large journal. The result will show here.',
+          dismissible: true,
+          autoDismiss: 10000
+        });
+      }
+      await wait(attempt < DELETE_WATCH_FAST_ATTEMPTS ? 1000 : 5000);
     }
     if (shownOutcomes.has(pendingId)) return;
     shownOutcomes.add(pendingId);

@@ -145,6 +145,16 @@ impl Tally {
     }
 }
 
+/// Apple marks an entry the owner typed in themselves; nothing else counts as
+/// the owner's.
+fn user_entered(row: &BodyRow) -> bool {
+    row.fields
+        .get("metadata")
+        .and_then(|metadata| metadata.get("HKWasUserEntered"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|value| value == "1")
+}
+
 fn by_words(row: &BodyRow) -> String {
     row.by
         .as_deref()
@@ -163,7 +173,9 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
         .collect();
     let mut experiences = Vec::new();
     let mut continuing = BTreeSet::new();
-    let mut tallies: BTreeMap<(u8, String, String), Tally> = BTreeMap::new();
+    // Logged entries sort under who recorded them, and say the owner entered one
+    // only where the source says so.
+    let mut tallies: BTreeMap<(u8, String, String, bool), Tally> = BTreeMap::new();
     let mut dated = Vec::new();
     let mut words = BTreeSet::new();
     for row in rows {
@@ -203,16 +215,14 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
             }
             RowKind::Event => {}
             RowKind::Stage | RowKind::Reading | RowKind::Count | RowKind::Logged => {
-                let (order, name) = match row.kind {
-                    RowKind::Stage => (0, format!("sleep stage {}", row.label)),
-                    RowKind::Reading => (1, row.label.clone()),
-                    RowKind::Count => (2, row.label.clone()),
-                    _ => (3, row.label.clone()),
+                let by = row.by.clone().unwrap_or_default();
+                let key = match row.kind {
+                    RowKind::Stage => (0, format!("sleep stage {}", row.label), by, false),
+                    RowKind::Reading => (1, row.label.clone(), by, false),
+                    RowKind::Count => (2, row.label.clone(), by, false),
+                    _ => (3, by, row.label.clone(), user_entered(row)),
                 };
-                tallies
-                    .entry((order, name, row.by.clone().unwrap_or_default()))
-                    .or_default()
-                    .add(row);
+                tallies.entry(key).or_default().add(row);
                 if row.kind == RowKind::Logged {
                     words.extend(row.words.iter().cloned());
                 }
@@ -224,12 +234,20 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
     lines.extend(continuing.into_iter().map(|(_, line)| line));
     dated.sort();
     lines.extend(dated);
-    for ((order, name, by), tally) in &tallies {
-        let noun = match order {
-            0 | 2 => "intervals",
-            1 => "readings",
-            _ => "logged",
-        };
+    for ((order, first, second, entered), tally) in &tallies {
+        if *order == 3 {
+            let (by, name) = (first, second);
+            let who = match (*entered, by.is_empty()) {
+                (true, true) => " (entered by the owner)".to_owned(),
+                (true, false) => format!(" (entered by the owner in {by})"),
+                (false, true) => String::new(),
+                (false, false) => format!(" (recorded by {by})"),
+            };
+            lines.push(format!("- {name}: entries {}{who}", tally.words()));
+            continue;
+        }
+        let (name, by) = (first, second);
+        let noun = if *order == 1 { "readings" } else { "intervals" };
         let by = if by.is_empty() {
             String::new()
         } else {
@@ -239,7 +257,7 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
     }
     if !words.is_empty() {
         let words = words.into_iter().collect::<Vec<_>>().join(", ");
-        lines.push(format!("- logged, in the source's words: {words}"));
+        lines.push(format!("- in the source's words: {words}"));
     }
     lines.push(String::new());
 }
@@ -463,6 +481,37 @@ mod tests {
         assert!(!text.contains("4817"));
         assert!(!text.contains("312"));
         assert!(record_path(root, "20261010").is_file());
+    }
+
+    #[test]
+    fn an_entry_is_the_owners_only_where_the_source_says_so() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        let mut watch = logged("w", "2026-10-10 08:00:00 -0600", "handwashing event", &[]);
+        watch.by = Some("Synthetic Watch".into());
+        let mut typed = logged("t", "2026-10-10 09:00:00 -0600", "dietary water", &[]);
+        typed.by = Some("Health".into());
+        typed.fields.insert(
+            "metadata".into(),
+            serde_json::json!({"HKWasUserEntered": "1"}),
+        );
+        window(root, "20261010", "080000_300", &[watch, typed]);
+        let mut days = BodyDays::default();
+        days.reconcile(root);
+        let text = document(root, "20261010").unwrap();
+        assert!(
+            text.contains("- handwashing event: entries 1, 08:00 (recorded by Synthetic Watch)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("- dietary water: entries 1, 09:00 (entered by the owner in Health)"),
+            "{text}"
+        );
+        assert_eq!(text.matches("the owner").count(), 1, "{text}");
+        assert!(
+            text.find("dietary water") < text.find("handwashing"),
+            "grouped by who recorded them"
+        );
     }
 
     #[test]

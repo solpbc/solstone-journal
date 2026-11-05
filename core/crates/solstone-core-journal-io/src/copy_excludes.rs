@@ -60,6 +60,10 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "backup/**/*.lock",
     "backup/**/*.tmp",
     "backup/**/.tmp*",
+    // A body import's sorted staging is rebuilt from its export. Its state file
+    // is carried, so a restored journal still knows the run didn't finish.
+    "imports/.apple_health-run/scan",
+    "imports/.apple_health-run/placed",
 ];
 
 /// Whether a slash-separated journal-relative path is operational copy state.
@@ -132,6 +136,14 @@ fn component_matches(pattern: &str, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{copy_excluded, copy_file_excluded};
+
+    #[test]
+    fn a_body_runs_staging_is_left_out_and_its_state_is_carried() {
+        assert!(copy_excluded("imports/.apple_health-run/scan/000001.run"));
+        assert!(copy_excluded("imports/.apple_health-run/placed/000000.run"));
+        assert!(!copy_excluded("imports/.apple_health-run/state.json"));
+        assert!(!copy_excluded("imports/20261104_120000/body-touched.jsonl"));
+    }
 
     #[test]
     fn database_files_match_only_exact_operational_slots() {

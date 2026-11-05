@@ -13,8 +13,8 @@ mod oura_sync;
 mod zip_names;
 
 pub use apple::{
-    AppleElement, AppleImportOptions, AppleItem, detect_apple_source, hold_apple_ingest_lock,
-    preview_apple, save_apple, scan_apple_export,
+    AppleElement, AppleImportOptions, AppleItem, apple_scan_byte_bound, detect_apple_source,
+    hold_apple_ingest_lock, preview_apple, save_apple, scan_apple_export,
 };
 pub use approval::{OURA_CHECKLIST, OURA_PATH, oura_approval};
 pub use bundle::{BodyIngestError, BodyIngestErrorKind, BodyIngestReport};

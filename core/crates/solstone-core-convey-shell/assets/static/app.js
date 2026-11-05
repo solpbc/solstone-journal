@@ -570,6 +570,36 @@ function configureMarkdownSanitizer() {
   markdownSanitizerReady = true;
 }
 
+// Notification text can name files or people, so it lives only for the
+// browser session (sessionStorage), never in persistent web storage. Copies an
+// earlier version wrote to localStorage are removed on load, best effort.
+const SESSION_NOTIFICATION_HISTORY_KEY = 'solstone:notification_history';
+const SESSION_QUIET_NOTIFS_KEY = 'solstone:quiet_notifs';
+
+function readSessionList(key) {
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(key) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeSessionList(key, list) {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(list));
+  } catch (_) {
+    // Storage may be full or unavailable; the in-memory list still works.
+  }
+}
+
+try {
+  window.localStorage.removeItem(SESSION_NOTIFICATION_HISTORY_KEY);
+  window.localStorage.removeItem(SESSION_QUIET_NOTIFS_KEY);
+} catch (_) {
+  // Storage unavailable: nothing persisted to remove.
+}
+
 window.AppServices = {
   services: {},
   _tasks: {},
@@ -729,7 +759,7 @@ window.AppServices = {
    */
   notifications: {
     _stack: [],
-    _history: JSON.parse(localStorage.getItem('solstone:notification_history') || '[]'),
+    _history: readSessionList(SESSION_NOTIFICATION_HISTORY_KEY),
     _nextId: 1,
     _container: null,
     _dismissTimers: {},
@@ -1013,13 +1043,7 @@ window.AppServices = {
         this._history = this._history.slice(-10);
       }
 
-      // Persist to localStorage
-      try {
-        localStorage.setItem('solstone:notification_history', JSON.stringify(this._history));
-      } catch (e) {
-        // localStorage may be full or disabled
-        console.warn('[Notifications] Failed to persist history:', e);
-      }
+      writeSessionList(SESSION_NOTIFICATION_HISTORY_KEY, this._history);
     },
 
     /**
@@ -1308,9 +1332,7 @@ window.AppServices = {
   },
 
   quietNotifs: (() => {
-    let stored;
-    try { stored = JSON.parse(localStorage.getItem('solstone:quiet_notifs') || '[]'); }
-    catch(e) { stored = []; }
+    const stored = readSessionList(SESSION_QUIET_NOTIFS_KEY);
     return {
       _notifs: stored,
       _unviewed: stored.length,
@@ -1339,9 +1361,7 @@ window.AppServices = {
       },
 
       _persist() {
-        try {
-          localStorage.setItem('solstone:quiet_notifs', JSON.stringify(this._notifs));
-        } catch(e) {}
+        writeSessionList(SESSION_QUIET_NOTIFS_KEY, this._notifs);
       },
 
       _updateBadge() {

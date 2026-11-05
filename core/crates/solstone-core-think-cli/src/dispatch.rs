@@ -463,7 +463,15 @@ fn collect_segment_keys(directory: &std::path::Path, keys: &mut Vec<String>) {
             .split_once('_')
             .is_some_and(|(_, duration)| duration.parse::<u64>().is_ok())
         {
-            keys.push(name.to_owned());
+            // A body window is a record of the body, not a recording: it adds
+            // no time here, as it adds none to the day's other inputs.
+            let stream = directory
+                .file_name()
+                .and_then(|stream| stream.to_str())
+                .unwrap_or_default();
+            if !solstone_core_segment::is_body_only_dir(stream, &path) {
+                keys.push(name.to_owned());
+            }
         } else {
             collect_segment_keys(&path, keys);
         }
@@ -655,6 +663,21 @@ mod tests {
         assert_eq!(
             day_input_summary(day.path()),
             "Light activity: 1 segment, ~3.8 hours"
+        );
+    }
+
+    #[test]
+    fn day_input_summary_counts_no_time_for_body_windows() {
+        let day = tempfile::tempdir().expect("day directory");
+        fs::create_dir_all(day.path().join("default/090000_300")).expect("segment directory");
+        for key in ["090000_3600", "000000_86400", "100000_300"] {
+            let window = day.path().join("import.apple_health").join(key);
+            fs::create_dir_all(&window).expect("window directory");
+            fs::write(window.join("body.jsonl"), "{}\n").expect("body file");
+        }
+        assert_eq!(
+            day_input_summary(day.path()),
+            "Light activity: 1 segment, ~5 minutes"
         );
     }
 

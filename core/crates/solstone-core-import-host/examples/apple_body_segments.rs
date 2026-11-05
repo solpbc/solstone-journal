@@ -19,11 +19,11 @@ fn main() {
         eprintln!("usage: apple_body_segments <journal> <export> <YYYYMMDD_HHMMSS> [facet]");
         std::process::exit(2);
     };
-    let request = AppleSegmentsRequest {
-        source: Path::new(source),
+    let request = AppleSegmentsRequest::new(
+        Path::new(source),
         timestamp,
-        facet: rest.first().map(String::as_str),
-    };
+        rest.first().map(String::as_str),
+    );
     match run_apple_health_segments(Path::new(journal), &request) {
         Ok(outcome) => {
             println!(

@@ -70,6 +70,10 @@ pub struct BodyRow {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub of: Option<String>,
+    /// The import that first wrote this row. Set once, kept through edits,
+    /// outside identity, never indexed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<String>,
@@ -105,6 +109,7 @@ impl BodyRow {
             kind,
             label,
             of: None,
+            run: None,
             source: source.to_owned(),
             start: None,
             record_type: record_type.to_owned(),

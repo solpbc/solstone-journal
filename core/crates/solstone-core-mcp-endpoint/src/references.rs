@@ -148,64 +148,27 @@ pub(crate) struct TranscriptListCursor {
     /// A body source's label, for a list of that source alone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// One kind of body entry, for a source's list of the windows holding it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     pub last_day: String,
     pub last_stream: String,
     pub last_name: String,
 }
 
-/// Where a body source's span read stands: a window, and how far into it.
+/// Where a body source's span read stands: the first row not yet served, by its
+/// place in time order. `at_ms` is milliseconds into the day on the rows' own
+/// clock, then the window and the row break ties. A window that changes under an
+/// open cursor reads as it now is, from this place on.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct SourceSpanPosition {
+    pub at_ms: i64,
     pub segment: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_index: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub byte_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub statement_ordinal: Option<u64>,
+    pub row: String,
 }
 
-impl SourceSpanPosition {
-    pub(crate) fn at_start(segment: &str) -> Self {
-        Self {
-            segment: segment.to_owned(),
-            version: None,
-            source_index: None,
-            byte_offset: None,
-            statement_ordinal: None,
-        }
-    }
-
-    pub(crate) fn within(
-        segment: &str,
-        cursor: &solstone_core_transcripts::SegmentTranscriptCursor,
-    ) -> Self {
-        Self {
-            segment: segment.to_owned(),
-            version: Some(cursor.version.fingerprint()),
-            source_index: Some(cursor.source_index),
-            byte_offset: Some(cursor.byte_offset),
-            statement_ordinal: Some(cursor.statement_ordinal),
-        }
-    }
-
-    /// The segment cursor this stands for, when it stands inside a window.
-    pub(crate) fn inside(&self) -> Option<solstone_core_transcripts::SegmentTranscriptCursor> {
-        Some(solstone_core_transcripts::SegmentTranscriptCursor {
-            source_index: self.source_index?,
-            byte_offset: self.byte_offset?,
-            statement_ordinal: self.statement_ordinal?,
-            version: solstone_core_transcripts::SegmentTranscriptVersion::from_fingerprint(
-                self.version?,
-            ),
-        })
-    }
-}
-
-/// One body source's windows over a span of a day, read in order. Its walk is
-/// shaped to take a kind filter and to skip windows without a format change.
+/// One body source's windows over a span of a day, read in order, of one kind of
+/// entry when `kind` is given.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct SourceSpanReference {
     pub day: String,
@@ -214,6 +177,8 @@ pub(crate) struct SourceSpanReference {
     pub time_from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub time_to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<SourceSpanPosition>,
 }

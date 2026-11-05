@@ -274,9 +274,9 @@ fn an_agent_goes_from_a_search_hit_to_the_experience_and_pages_a_span() {
     let (from_next, _) = every_entry(root, next["span_reference"].as_str().unwrap());
     assert_eq!(from_first, from_next);
 
-    // 31 + 80 + 5 entries, whole window pages, at most 100 on one.
+    // 31 + 80 + 5 entries in time order, 100 to a page.
     assert_eq!(from_first.len(), 116);
-    assert_eq!(pages, vec![31, 85]);
+    assert_eq!(pages, vec![100, 16]);
     let unique: std::collections::BTreeSet<_> = from_first.iter().collect();
     assert_eq!(unique.len(), from_first.len(), "each entry once");
     assert!(from_first[0].contains("Apple Health, Synthetic Watch"));
@@ -285,7 +285,9 @@ fn an_agent_goes_from_a_search_hit_to_the_experience_and_pages_a_span() {
             .iter()
             .all(|entry| entry.contains("Apple Health"))
     );
-    assert!(from_first[1].contains("distinctive-version-11"));
+    assert!(from_first[0].contains("distinctive-version-11"));
+    // The workout starts on the second of its first reading, and sorts beside it.
+    assert!(from_first[1].contains("running"), "{:?}", &from_first[..3]);
 
     // A cursor can't change what it lists.
     for other in [
@@ -635,5 +637,179 @@ fn a_facet_limited_connection_reads_only_what_its_facet_holds() {
             .unwrap()
             .len(),
         1
+    );
+}
+
+fn hour_reading(id: &str, at: &str) -> BodyRow {
+    reading(id, &format!("2026-10-10 {at} -0600"), "60")
+}
+
+fn times(entries: &[String]) -> Vec<String> {
+    entries
+        .iter()
+        .map(|entry| entry.get(11..19).unwrap_or_default().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_span_reads_in_time_order_across_overlapping_windows_and_only_inside_it() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    // An hour window, and two grid windows inside it holding a workout's own series.
+    let hour: Vec<BodyRow> = ["06:05:00", "06:31:30", "06:36:30", "06:41:00", "06:59:00"]
+        .iter()
+        .enumerate()
+        .map(|(n, at)| hour_reading(&format!("h{n}"), at))
+        .collect();
+    window(root, DAY, "060000_3600", &hour, None);
+    let mut first = vec![workout(), hour_reading("g0", "06:32:00")];
+    first.push(hour_reading("g1", "06:34:59"));
+    window(root, DAY, "063000_300", &first, None);
+    let mut tile = workout();
+    tile.kind = RowKind::ExperienceTile;
+    tile.id = "workout-1".into();
+    tile.of = Some("workout".into());
+    tile.index = Some(1);
+    tile.count = Some(10);
+    window(
+        root,
+        DAY,
+        "063500_300",
+        &[tile, hour_reading("g2", "06:35:10")],
+        None,
+    );
+    let span = |from: &str, to: &str| {
+        let list = call(
+            root,
+            "list_transcripts",
+            json!({"day": DAY, "time_from": from, "time_to": to, "source": LABEL}),
+        );
+        list["span_reference"].as_str().unwrap().to_owned()
+    };
+
+    let (whole, _) = every_entry(root, &span("06:00", "07:00"));
+    let clock = times(&whole);
+    let timed: Vec<&String> = clock.iter().filter(|time| time.contains(':')).collect();
+    let mut sorted = timed.clone();
+    sorted.sort();
+    assert_eq!(timed, sorted, "{whole:#?}");
+    assert_eq!(whole.len(), 10, "{whole:#?}");
+
+    // A ten-minute span: the readings inside it and the workout it overlaps, nothing else.
+    let (narrow, _) = every_entry(root, &span("06:30", "06:40"));
+    assert_eq!(narrow.len(), 7, "{narrow:#?}");
+    assert!(narrow.iter().any(|entry| entry.contains("running")));
+    assert!(narrow.iter().any(|entry| entry.contains("part 2 of 10")));
+    assert!(
+        !narrow
+            .iter()
+            .any(|entry| entry.contains("06:05:00") || entry.contains("06:41:00"))
+    );
+}
+
+#[test]
+fn a_kind_lists_only_the_windows_holding_it_and_says_when_none_do() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    let mut resting = hour_reading("r0", "07:00:00");
+    resting.label = "resting heart rate".into();
+    resting.record_type = "HKQuantityTypeIdentifierRestingHeartRate".into();
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &[hour_reading("h0", "06:10:00")],
+        None,
+    );
+    window(
+        root,
+        DAY,
+        "070000_3600",
+        &[resting, hour_reading("h1", "07:10:00")],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "kind": "Resting Heart Rate"}),
+    );
+    let listed = list["transcripts"].as_array().unwrap();
+    assert_eq!(listed.len(), 1, "{list}");
+    assert_eq!(listed[0]["time"], "07:00-08:00");
+    let (entries, pages) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(pages, vec![1]);
+    assert!(entries[0].contains("resting heart rate"), "{entries:?}");
+
+    // Nothing of that kind reads differently from nothing recorded.
+    let absent = empty_note(
+        root,
+        json!({"day": DAY, "source": LABEL, "kind": "blood oxygen"}),
+    );
+    assert!(absent.contains("none of the kind"), "{absent}");
+    let nothing = empty_note(
+        root,
+        json!({"day": "20261011", "source": LABEL, "kind": "blood oxygen"}),
+    );
+    assert!(nothing.starts_with("No body source"), "{nothing}");
+    // A range with no window at all reads as it would without a kind.
+    let quiet = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "kind": "blood oxygen", "time_from": "12:00", "time_to": "13:00"}),
+    );
+    assert!(
+        quiet["transcripts"].as_array().unwrap().is_empty(),
+        "{quiet}"
+    );
+    let quiet_note = empty_note(
+        root,
+        json!({"day": DAY, "source": LABEL, "kind": "blood oxygen", "time_from": "12:00", "time_to": "13:00"}),
+    );
+    assert!(!quiet_note.starts_with("No body source"), "{quiet_note}");
+
+    // A window overlapping the range with no entry inside it isn't "entries in that time".
+    let overlap = empty_note(
+        root,
+        json!({"day": DAY, "source": LABEL, "kind": "blood oxygen", "time_from": "06:30", "time_to": "06:45"}),
+    );
+    assert!(!overlap.contains("none of the kind"), "{overlap}");
+
+    // Windows without the kind don't use up a read: one call over many of them.
+    for hour in 8..20 {
+        for slot in [0, 5, 10] {
+            window(
+                root,
+                DAY,
+                &format!("{hour:02}{slot:02}00_300"),
+                &[hour_reading(
+                    &format!("x{hour}{slot}"),
+                    &format!("{hour:02}:{slot:02}:30"),
+                )],
+                None,
+            );
+        }
+    }
+    let mut late = hour_reading("r1", "19:59:00");
+    late.label = "resting heart rate".into();
+    window(root, DAY, "195500_300", &[late], None);
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "kind": "resting heart rate"}),
+    );
+    let (entries, pages) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(pages, vec![2], "{entries:?}");
+
+    // A kind needs a source.
+    assert!(
+        run_mcp_probe(
+            root,
+            CONNECTION,
+            "list_transcripts",
+            &json!({"day": DAY, "kind": "sleep"}),
+        )
+        .is_err()
     );
 }

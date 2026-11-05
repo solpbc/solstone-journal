@@ -682,6 +682,7 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
         "facet-candidates",
         "rebuild-edges",
         "search-catch-all",
+        "journal-stats",
     ] {
         raw.insert(name.into(), json!({"enabled":false}));
     }
@@ -897,6 +898,17 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
         .path()
         .join("chronicle/20200101/health")
         .join(held.leaf_name());
+    // Retention measures modification time too: both records must actually
+    // be old so only the live writer lease protects the held one.
+    let old_time = std::time::UNIX_EPOCH + Duration::from_secs(old_at.timestamp() as u64);
+    for path in [&old_path, &held_path] {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(old_time))
+            .unwrap();
+    }
     let (status, prune) = owner_request(
         &service,
         "POST",

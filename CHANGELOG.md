@@ -16,8 +16,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - on windows, the journal no longer holds on to more and more system resources the longer it runs.
+- deleting a segment on a large journal is much faster and no longer stops partway when your journal starts a new day. if your journal is busy with another job, the transcripts page says so and your journal keeps the segment so you can try again. a slow delete shows its result when it finishes.
+- on a large journal, search health no longer stays on "search is catching up with your journal" for a very long time.
+- the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
-- opening a screen frame from a recording now selects that frame instead of the first one. on android, later frames also show the picture from that point in the recording.
+- opening a screen frame from a recording now selects that frame instead of the first one. on android, moving between frames waits for the selected picture to finish decoding.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.

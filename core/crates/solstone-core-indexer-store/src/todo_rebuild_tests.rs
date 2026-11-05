@@ -96,7 +96,7 @@ impl Journal {
         let log = self
             .path()
             .join("chronicle")
-            .join(chrono::Utc::now().format("%Y%m%d").to_string())
+            .join(chrono::Local::now().format("%Y%m%d").to_string())
             .join("health/indexer.jsonl");
         fs::read_to_string(log)
             .unwrap_or_default()

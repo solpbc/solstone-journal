@@ -175,15 +175,15 @@ fn a_night_is_this_sources_adjacent_stages_and_says_so() {
 
     let journal = tempfile::tempdir().unwrap();
     let plan = plan(journal.path(), &export, Denver, None, false).unwrap();
-    // Crosses midnight, tiled on both days, with a stage where it starts.
-    let first = rows_of(&plan, "20261010", "224000_300");
+    // Crosses midnight, tiled on both days' hours, with a stage where it starts.
+    let first = rows_of(&plan, "20261010", "220000_3600");
     assert!(first.iter().any(|row| row.kind == RowKind::Experience));
     assert!(
         first
             .iter()
             .any(|row| row.kind == RowKind::Stage && row.label == "asleep core")
     );
-    let next_day = rows_of(&plan, "20261011", "000000_300");
+    let next_day = rows_of(&plan, "20261011", "000000_3600");
     assert!(
         next_day
             .iter()
@@ -196,7 +196,7 @@ fn counts_stay_unsplit_and_logged_rows_keep_their_shape_and_words() {
     let export = read(&fixture());
     let journal = tempfile::tempdir().unwrap();
     let plan = plan(journal.path(), &export, Denver, None, false).unwrap();
-    let count = rows_of(&plan, "20261010", "065500_300");
+    let count = rows_of(&plan, "20261010", "060000_3600");
     let count = count.iter().find(|row| row.kind == RowKind::Count).unwrap();
     assert_eq!(count.value.as_deref(), Some("1200"));
     assert_eq!(count.end.as_deref(), Some("2026-10-10 07:12:00 -0600"));
@@ -208,14 +208,14 @@ fn counts_stay_unsplit_and_logged_rows_keep_their_shape_and_words() {
             == 1
     );
 
-    let point = rows_of(&plan, "20261010", "120000_300");
+    let point = rows_of(&plan, "20261010", "120000_3600");
     let point = point
         .iter()
         .find(|row| row.kind == RowKind::Logged)
         .unwrap();
     assert!(point.end.is_none());
     assert_eq!(point.words, ["Oatmeal"]);
-    let interval = rows_of(&plan, "20261010", "140000_300");
+    let interval = rows_of(&plan, "20261010", "140000_3600");
     let interval = interval
         .iter()
         .find(|row| row.kind == RowKind::Logged)
@@ -263,7 +263,7 @@ fn the_same_data_in_another_order_is_the_same_bytes() {
     let backward = plan(journal.path(), &export, Denver, None, false).unwrap();
     assert_eq!(forward.files, backward.files);
 
-    let lunch = rows_of(&forward, "20261010", "120000_300");
+    let lunch = rows_of(&forward, "20261010", "120000_3600");
     let foods: Vec<_> = lunch.iter().flat_map(|row| row.words.clone()).collect();
     for food in ["Oatmeal", "Toast", "Butter"] {
         assert_eq!(
@@ -337,7 +337,7 @@ fn a_tombstone_that_cant_say_what_it_removed_stays_deleted() {
     let window = root
         .join("chronicle/20261010")
         .join(STREAM)
-        .join("000000_300");
+        .join("000000_3600");
     fs::create_dir_all(&window).unwrap();
     fs::write(window.join("tombstone.json"), "{}").unwrap();
     let export = read(&[heart("2026-10-10 00:01:00 -0600", "70")]);
@@ -356,9 +356,17 @@ fn a_window_lands_beside_older_content_and_stays_there() {
         .join("000000_300");
     fs::create_dir_all(&card).unwrap();
     fs::write(card.join("day_summary_transcript.md"), "a card\n").unwrap();
-    let export = read(&[heart("2026-10-10 00:01:00 -0600", "70")]);
+    // A session at midnight, and its own reading, sit on the grid slot the card holds.
+    let export = read(&[
+        format!(
+            r#"<Record type="HKCategoryTypeIdentifierMindfulSession" {WATCH} startDate="2026-10-10 00:00:30 -0600" endDate="2026-10-10 00:04:00 -0600" value="HKCategoryValueNotApplicable"/>"#
+        ),
+        heart("2026-10-10 00:01:00 -0600", "70"),
+    ]);
     let planned = plan(root, &export, Denver, None, false).unwrap();
+    assert_eq!(planned.files.len(), 1);
     assert_eq!(planned.files[0].segment, "000000_301");
+    assert!(planned.files[0].contents.contains(r#""value":"70""#));
 
     // Once it's there, the card going away doesn't move it back.
     let beside = root
@@ -380,7 +388,7 @@ fn a_window_that_cant_be_read_is_left_alone_and_counted() {
     let dir = root
         .join("chronicle/20261010")
         .join(STREAM)
-        .join("063000_300");
+        .join("060000_3600");
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join(BODY_RECORDS_FILE), "{broken\n").unwrap();
     let export = read(&[heart("2026-10-10 06:31:10 -0600", "70")]);
@@ -394,10 +402,17 @@ fn the_summary_names_and_counts_and_holds_no_value() {
     let export = read(&fixture());
     let journal = tempfile::tempdir().unwrap();
     let planned = plan(journal.path(), &export, Denver, None, false).unwrap();
-    let summary = summary_text(&export, &planned, 3, None, Denver);
+    let summary = summary_text(&SummaryCounts::of(&export, &planned, 3), None, Denver);
     assert!(summary.contains("HKQuantityTypeIdentifierActiveEnergyBurned: 1"));
     assert!(summary.contains("end_before_start: 2"));
     assert!(summary.contains("no facet"));
     assert!(!summary.contains("4817"));
-    assert!(summary_text(&export, &planned, 3, Some("health"), Denver).contains("health facet"));
+    assert!(
+        summary_text(
+            &SummaryCounts::of(&export, &planned, 3),
+            Some("health"),
+            Denver
+        )
+        .contains("health facet")
+    );
 }

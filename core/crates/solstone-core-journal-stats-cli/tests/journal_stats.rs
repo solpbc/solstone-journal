@@ -1134,3 +1134,127 @@ fn ac13_segment_fold_failure_signal_is_top_level() {
     assert_eq!(document["segment_fold_failed_days"], json!([DAY]));
     assert!(document["days"][DAY].get("segment_fold_failed").is_none());
 }
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn overlapping_summary_producers_serialize_before_scanning_and_publish_the_last_input() {
+    use std::sync::mpsc;
+    struct HeldBacklog {
+        entered: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    }
+    impl BacklogViewReader for HeldBacklog {
+        fn read_backlog_view(
+            &self,
+            _: &Path,
+            _: DateTime<Utc>,
+            _: &Path,
+            _: &Path,
+        ) -> Result<BacklogView, HealthError> {
+            self.entered.send(()).unwrap();
+            self.release.recv_timeout(Duration::from_secs(10)).unwrap();
+            Ok(empty_backlog())
+        }
+    }
+    let (temporary, system, apps) = setup();
+    let root = temporary.path();
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    std::thread::scope(|scope| {
+        let system = &system;
+        let apps = &apps;
+        let first = scope.spawn(move || {
+            run_with(
+                root,
+                system,
+                apps,
+                &[],
+                &HeldBacklog {
+                    entered: entered_tx,
+                    release: release_rx,
+                },
+                &crate::FilesystemDocumentWriter,
+            )
+        });
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // Probe the actual producer's retained sidecar while it is between
+        // scanning and publication. This fails deterministically if the scan
+        // lock is removed, without relying on the second thread's speed.
+        let held = solstone_core_journal_io::hold_lock(
+            root.join("stats.json"),
+            solstone_core_journal_io::LockOptions {
+                timeout: Duration::ZERO,
+                ..Default::default()
+            },
+        )
+        .is_err();
+        fs::create_dir_all(root.join("chronicle").join(OTHER_DAY)).unwrap();
+        let second = scope.spawn(move || {
+            run_with(
+                root,
+                system,
+                apps,
+                &[],
+                &EmptyBacklog,
+                &crate::FilesystemDocumentWriter,
+            )
+        });
+        release_tx.send(()).unwrap();
+        assert_eq!(first.join().unwrap().exit_code, 0);
+        assert_eq!(second.join().unwrap().exit_code, 0);
+        assert!(
+            held,
+            "the first producer must retain scan authority until publication"
+        );
+    });
+    let result: Value =
+        serde_json::from_slice(&fs::read(root.join("stats.json")).unwrap()).unwrap();
+    assert_eq!(
+        result["day_count"], 2,
+        "the later scan includes input arriving during the first"
+    );
+}
+
+#[test]
+fn cancellation_while_waiting_for_summary_authority_preserves_the_previous_document() {
+    let (temporary, system, apps) = setup();
+    let root = temporary.path();
+    let destination = root.join("stats.json");
+    fs::write(&destination, b"previous summary").unwrap();
+    let held = solstone_core_journal_io::hold_lock(&destination, Default::default()).unwrap();
+    let checks = Cell::new(0);
+    let result = crate::run_cli_with_cache_checked(
+        &[],
+        root,
+        now(),
+        &system,
+        &apps,
+        &EmptyBacklog,
+        &crate::FilesystemDocumentWriter,
+        &crate::FilesystemDayCacheWriter,
+        &|| {
+            checks.set(checks.get() + 1);
+            if checks.get() >= 3 {
+                Err("stopped while waiting".into())
+            } else {
+                Ok(())
+            }
+        },
+    );
+    assert_eq!(result.exit_code, 1);
+    assert!(result.stderr.contains("stopped while waiting"));
+    assert_eq!(fs::read(&destination).unwrap(), b"previous summary");
+    drop(held);
+    assert_eq!(
+        run_with(
+            root,
+            &system,
+            &apps,
+            &[],
+            &EmptyBacklog,
+            &crate::FilesystemDocumentWriter
+        )
+        .exit_code,
+        0
+    );
+}

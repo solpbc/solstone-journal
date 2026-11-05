@@ -122,7 +122,8 @@ pub struct DrainReport {
 }
 
 fn record_attempt(journal: &Path, entry: &Entry, outcome: &str, cause: Option<&str>) {
-    let now = chrono::Utc::now();
+    // Filed under the owner's today: a UTC day makes a folder dated tomorrow.
+    let now = chrono::Local::now();
     let relative = solstone_core_journal_io::durability::artifact(
         solstone_core_journal_io::durability::ArtifactId::IndexAttempts,
     )

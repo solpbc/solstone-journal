@@ -1069,8 +1069,14 @@
     renderBrainHealth();
   }
 
+  // The supervisor reports status every 5 s, so a vital still pending 7 s
+  // after the live stream connects is unavailable. The clock starts at the
+  // connection, not at page load: on a slow link the stream can take longer
+  // than that to open, and a value that is still on its way is "loading".
+  let skeletonTimer = null;
   function armSkeletonTimeout() {
-    setTimeout(sweepUnresolvedSkeletons, 7000);
+    if (timeoutFired || skeletonTimer) return;
+    skeletonTimer = setTimeout(sweepUnresolvedSkeletons, 7000);
   }
 
   // Utility functions
@@ -4062,12 +4068,25 @@
 	    wireBacklogReprocessActions();
 	    if (window.appEvents) {
 	      window.appEvents.listen('*', handleEvent);
-          window.appEvents.onConnectionState?.(({ connected }) => {
-            if (!connected) invalidateRealtime();
+          let streamAttempted = false;
+          window.appEvents.onConnectionState?.(({ connected, state: streamState }) => {
+            if (connected) {
+              streamAttempted = true;
+              armSkeletonTimeout();
+              return;
+            }
+            invalidateRealtime();
+            if (streamState === 'connecting') {
+              streamAttempted = true;
+            } else if (streamAttempted) {
+              // The stream opened or tried to and then failed: nothing pending
+              // is still on its way.
+              sweepUnresolvedSkeletons();
+            }
           });
+    } else {
+      armSkeletonTimeout();
     }
-
-	    armSkeletonTimeout();
 	  }
 
 	  function initHealth() {

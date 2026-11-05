@@ -31,11 +31,14 @@ use serde_json::Value;
 use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_io::activity::{ActivityAdmissionError, ActivityLease};
 use solstone_core_journal_io::activity_obligations::{
-    is_stage_namespace_name, observe_obligations, observe_with_carrier,
+    RecoveryObservationError, RecoveryObservationFailure, is_stage_namespace_name,
+    observe_obligations, observe_with_carrier,
 };
 use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::entry::{Removed, remove_file, rename_within, sync_dir};
-use solstone_core_journal_io::media::{RootActivityCarrier, retire_orphan_root_carriers};
+use solstone_core_journal_io::media::{
+    RootActivityCarrier, exclusive_local_activity, retire_orphan_root_carriers,
+};
 use solstone_core_journal_io::operational_log::{
     LeaseProbe, catalog_oplogs, probe_retained_oplog_lease,
 };
@@ -164,7 +167,7 @@ pub fn release_raw(
         );
     }
     match admit_whole_segment_activity(journal) {
-        Ok(activity) => release_raw_with_activity(&activity, None, proven, class, at),
+        Ok(admitted) => release_raw_with_activity(&admitted.activity, None, proven, class, at),
         Err(reason) => release_raw_guarded(None, Some(reason), proven, class, at),
     }
 }
@@ -178,7 +181,7 @@ pub fn release_raw_with_activity(
     class: RawReleaseClass,
     at: DateTime<Utc>,
 ) -> (Outcome, EvidenceTally) {
-    let guard = WholeSegmentActivity { activity, carrier };
+    let guard = WholeSegmentActivity::borrowed(activity, carrier);
     let refusal = if proven.is_empty() {
         None
     } else {
@@ -399,9 +402,13 @@ pub fn remove_segments(
         };
     }
     match admit_whole_segment_activity(journal) {
-        Ok(activity) => {
-            remove_segments_with_activity(&activity, None, targets, deleted_at, reason, cid)
-        }
+        Ok(admitted) => remove_segments_guarded(
+            &WholeSegmentActivity::admitted(&admitted),
+            targets,
+            deleted_at,
+            reason,
+            cid,
+        ),
         Err(reason) => {
             let mut outcome = Outcome {
                 targets: Vec::new(),
@@ -432,9 +439,24 @@ pub fn remove_segments_with_activity(
     reason: RemovalReason,
     cid: &str,
 ) -> Outcome {
+    remove_segments_guarded(
+        &WholeSegmentActivity::borrowed(activity, carrier),
+        targets,
+        deleted_at,
+        reason,
+        cid,
+    )
+}
+
+fn remove_segments_guarded(
+    guard: &WholeSegmentActivity<'_>,
+    targets: &[Target],
+    deleted_at: &str,
+    reason: RemovalReason,
+    cid: &str,
+) -> Outcome {
     // A borrowed activity may refer to a root that has since been replaced.
     // Refuse it before creating even a coordination sidecar in that replacement.
-    let guard = WholeSegmentActivity { activity, carrier };
     if let Err(reason) = guard.revalidate() {
         let mut outcome = Outcome {
             targets: Vec::new(),
@@ -449,7 +471,7 @@ pub fn remove_segments_with_activity(
         }
         return outcome;
     }
-    let _admission = match hold_daily_location_admission(activity.journal_root().canonical_path()) {
+    let _admission = match hold_daily_location_admission(guard.journal()) {
         Ok(lock) => lock,
         Err(_) => {
             let mut outcome = Outcome {
@@ -478,9 +500,9 @@ pub fn remove_segments_with_activity(
             continue;
         }
         seen.push(target);
-        let (mut row, mutated) = remove_one(&guard, target, deleted_at, reason, cid);
+        let (mut row, mutated) = remove_one(guard, target, deleted_at, reason, cid);
         if mutated {
-            dirty_whole_segment_day(&guard, &mut row);
+            dirty_whole_segment_day(guard, &mut row);
         }
         outcome.targets.push(row);
     }
@@ -786,46 +808,126 @@ pub fn compact_log_checked(
 
 const WHOLE_ACTIVITY_HOLD: &str =
     "another journal operation needs attention before this removal can continue";
-const WHOLE_BINDING_HOLD: &str = "the journal could not be checked, so this removal is on hold";
+pub const WHOLE_BUSY: &str = "your journal is busy with another job";
+pub const WHOLE_BINDING_HOLD: &str = "your journal couldn't be checked, so this delete stopped";
 const WHOLE_RESERVATION_HOLD: &str =
     "this location is reserved for a journal operation and cannot be removed";
 
-fn admit_whole_segment_activity(journal: &Path) -> Result<Arc<ActivityLease>, String> {
-    let root = JournalRoot::open(journal).map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
+/// How many whole-journal censuses one check may take when new directories keep
+/// appearing, as the restore path allows.
+const CENSUS_ATTEMPTS: usize = 3;
+
+/// A hold the owner reads in one line, with what actually failed kept in the log.
+fn binding_hold(during: &str, cause: impl std::fmt::Display) -> String {
+    log::warn!("removal held: the journal check failed during {during}: {cause}");
+    WHOLE_BINDING_HOLD.to_owned()
+}
+
+/// Repeat a census that saw a new directory arrive, such as the first folder of a
+/// new day, as its error invites. Only a complete census answers, and every other
+/// refusal stands.
+fn settled_census<T>(
+    mut observe: impl FnMut() -> Result<T, RecoveryObservationError>,
+) -> Result<T, RecoveryObservationError> {
+    let mut attempt = 1;
+    loop {
+        match observe() {
+            Err(error)
+                if error.failure == RecoveryObservationFailure::DirectoryAdded
+                    && attempt < CENSUS_ATTEMPTS =>
+            {
+                log::info!("journal census attempt {attempt} repeated: {error}");
+                attempt = attempt.saturating_add(1);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            other => return other,
+        }
+    }
+}
+
+/// A freshly acquired lease, and whether a census under it already found nothing.
+struct AdmittedActivity {
+    activity: Arc<ActivityLease>,
+    census_clear: bool,
+}
+
+/// Whether one census can answer for the whole of this operation. Holding a fresh
+/// lease on exclusive storage keeps every cooperating owner out until it is
+/// released, so nothing can create a stage or an intent after a census under it
+/// finds none. Each recovery acts only on what its own census finds, so a clear
+/// answer leaves them nothing to do.
+fn census_clear_for_exclusive_lease(activity: &Arc<ActivityLease>) -> bool {
+    matches!(exclusive_local_activity(activity), Ok(true))
+        && settled_census(|| observe_obligations(activity.journal_root()))
+            .is_ok_and(|census| census.entries().is_empty())
+}
+
+fn admit_whole_segment_activity(journal: &Path) -> Result<AdmittedActivity, String> {
+    let root = JournalRoot::open(journal).map_err(|error| binding_hold("open", error))?;
     let activity = ActivityLease::try_acquire(Arc::new(root)).map_err(|error| match error {
-        ActivityAdmissionError::Busy => WHOLE_ACTIVITY_HOLD.to_owned(),
-        ActivityAdmissionError::Unavailable(_) => WHOLE_BINDING_HOLD.to_owned(),
+        ActivityAdmissionError::Busy => WHOLE_BUSY.to_owned(),
+        error @ ActivityAdmissionError::Unavailable(_) => binding_hold("admission", error),
     })?;
+    if census_clear_for_exclusive_lease(&activity) {
+        return Ok(AdmittedActivity {
+            activity,
+            census_clear: true,
+        });
+    }
     // An owner deletion must not wait on what an ended owner left behind: an
     // interrupted removal, a restore that never published, then empty
     // reservations. Each phase's fresh census still decides.
     crate::remove_marked::recover_interrupted_removals(&activity)
-        .map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
+        .map_err(|error| binding_hold("interrupted-removal recovery", error))?;
     crate::restore_intent::recover_abandoned_restores(&activity)
-        .map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
-    retire_orphan_root_carriers(&activity).map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
-    Ok(activity)
+        .map_err(|error| binding_hold("abandoned-restore recovery", error))?;
+    retire_orphan_root_carriers(&activity)
+        .map_err(|error| binding_hold("reservation cleanup", error))?;
+    Ok(AdmittedActivity {
+        activity,
+        census_clear: false,
+    })
 }
 
 pub(crate) fn admit_legacy_raw_activity(journal: &Path) -> Result<Arc<ActivityLease>, String> {
-    admit_whole_segment_activity(journal)
+    admit_whole_segment_activity(journal).map(|admitted| admitted.activity)
 }
 
 pub(crate) fn require_legacy_raw_target(
     activity: &Arc<ActivityLease>,
     target: &Target,
 ) -> Result<(), String> {
-    WholeSegmentActivity {
-        activity,
-        carrier: None,
-    }
-    .before_phase(target)
+    WholeSegmentActivity::borrowed(activity, None).before_phase(target)
 }
 
 // A phase-local borrow, never a certificate or a substitute for creator exclusion.
+// Only a lease this operation acquired for itself on exclusive storage may reuse a
+// census; `census_clear` is never set for a borrowed activity.
 struct WholeSegmentActivity<'a> {
     activity: &'a Arc<ActivityLease>,
     carrier: Option<&'a RootActivityCarrier>,
+    census_clear: bool,
+}
+
+impl<'a> WholeSegmentActivity<'a> {
+    fn borrowed(
+        activity: &'a Arc<ActivityLease>,
+        carrier: Option<&'a RootActivityCarrier>,
+    ) -> Self {
+        Self {
+            activity,
+            carrier,
+            census_clear: false,
+        }
+    }
+
+    fn admitted(admitted: &'a AdmittedActivity) -> Self {
+        Self {
+            activity: &admitted.activity,
+            carrier: None,
+            census_clear: admitted.census_clear,
+        }
+    }
 }
 
 impl WholeSegmentActivity<'_> {
@@ -836,33 +938,37 @@ impl WholeSegmentActivity<'_> {
     fn revalidate(&self) -> Result<(), String> {
         self.activity
             .revalidate()
-            .map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
+            .map_err(|error| binding_hold("lease check", error))?;
         self.activity
             .journal_root()
             .revalidate_canonical_binding()
-            .map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
+            .map_err(|error| binding_hold("root check", error))?;
         if let Some(carrier) = self.carrier {
             if !Arc::ptr_eq(self.activity, carrier.activity())
                 || !Arc::ptr_eq(self.activity.journal_root(), carrier.journal_root())
             {
-                return Err(WHOLE_BINDING_HOLD.to_owned());
+                return Err(binding_hold("carrier check", "another activity's carrier"));
             }
             carrier
                 .revalidate()
-                .map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
+                .map_err(|error| binding_hold("carrier check", error))?;
         }
         Ok(())
     }
 
     fn population(&self) -> Result<(), String> {
         self.revalidate()?;
+        if self.census_clear {
+            return Ok(());
+        }
         let root = self.activity.journal_root();
         let clear = match self.carrier {
-            Some(carrier) => observe_with_carrier(root, carrier.observation())
+            Some(carrier) => settled_census(|| observe_with_carrier(root, carrier.observation()))
                 .map(|population| population.unresolved_entries().next().is_none()),
-            None => observe_obligations(root).map(|population| population.entries().is_empty()),
+            None => settled_census(|| observe_obligations(root))
+                .map(|population| population.entries().is_empty()),
         }
-        .map_err(|_| WHOLE_BINDING_HOLD.to_owned())?;
+        .map_err(|error| binding_hold("census", error))?;
         if !clear {
             return Err(WHOLE_ACTIVITY_HOLD.to_owned());
         }
@@ -1008,11 +1114,12 @@ fn remove_one(
     let _lock = match hold_lock(journal.join(&live), LockOptions::default()) {
         Ok(lock) => lock,
         Err(error) => {
+            log::warn!("removal refused: the segment lock was not available: {error}");
             return (
                 refused(
                     target,
                     live,
-                    format!("another process is working on this segment ({error})"),
+                    "another process is working on this segment".to_owned(),
                 ),
                 false,
             );
@@ -1374,7 +1481,7 @@ fn finish_staged(
 /// definition must keep its derived output.
 pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, cid: &str) -> Outcome {
     match admit_whole_segment_activity(journal) {
-        Ok(activity) => recover_with_activity(&activity, None, deleted_at, reason, cid),
+        Ok(admitted) => recover_with_activity(&admitted.activity, None, deleted_at, reason, cid),
         Err(reason) => Outcome {
             targets: Vec::new(),
             halted: Some(RunHalt { reason }),
@@ -1391,7 +1498,7 @@ pub fn recover_with_activity(
     reason: RemovalReason,
     cid: &str,
 ) -> Outcome {
-    let guard = WholeSegmentActivity { activity, carrier };
+    let guard = WholeSegmentActivity::borrowed(activity, carrier);
     let journal = guard.journal();
     let mut outcome = Outcome {
         targets: Vec::new(),
@@ -1469,9 +1576,13 @@ pub fn recover_segment(
     cid: &str,
 ) -> Option<TargetOutcome> {
     match admit_whole_segment_activity(journal) {
-        Ok(activity) => {
-            recover_segment_with_activity(&activity, None, target, deleted_at, reason, cid)
-        }
+        Ok(admitted) => recover_segment_guarded(
+            &WholeSegmentActivity::admitted(&admitted),
+            target,
+            deleted_at,
+            reason,
+            cid,
+        ),
         Err(reason) => Some(refused_staged(
             target,
             format!("{}/{}", parent_rel(target), staged_name(&target.dir)),
@@ -1490,7 +1601,22 @@ pub fn recover_segment_with_activity(
     reason: RemovalReason,
     cid: &str,
 ) -> Option<TargetOutcome> {
-    let guard = WholeSegmentActivity { activity, carrier };
+    recover_segment_guarded(
+        &WholeSegmentActivity::borrowed(activity, carrier),
+        target,
+        deleted_at,
+        reason,
+        cid,
+    )
+}
+
+fn recover_segment_guarded(
+    guard: &WholeSegmentActivity<'_>,
+    target: &Target,
+    deleted_at: &str,
+    reason: RemovalReason,
+    cid: &str,
+) -> Option<TargetOutcome> {
     let journal = guard.journal();
     let staged = format!("{}/{}", parent_rel(target), staged_name(&target.dir));
     if let Err(reason) = guard.target(target) {
@@ -1521,8 +1647,8 @@ pub fn recover_segment_with_activity(
         Ok(true) => {}
         Err(error) => return Some(refused_staged(target, staged, owner_reason(&error))),
     }
-    let mut row = finish_staged(&guard, target, &staged, deleted_at, reason, cid);
-    dirty_whole_segment_day(&guard, &mut row);
+    let mut row = finish_staged(guard, target, &staged, deleted_at, reason, cid);
+    dirty_whole_segment_day(guard, &mut row);
     Some(row)
 }
 
@@ -1724,6 +1850,50 @@ mod tests {
     fn proof(day: &str, stream: &str, dir: &str, name: &str, size: u64) -> ProvenRaw {
         let classifier: &dyn MediaClassifier = &media_only;
         ProvenRaw::for_test(classifier, day, stream, dir, name, size).unwrap()
+    }
+
+    fn census_failure(failure: RecoveryObservationFailure) -> RecoveryObservationError {
+        RecoveryObservationError {
+            failure,
+            relative: PathBuf::from("chronicle/20261105"),
+            source: None,
+        }
+    }
+
+    #[test]
+    fn a_census_repeats_only_for_a_new_directory_and_only_a_complete_one_answers() {
+        let mut calls = 0;
+        let settled = settled_census(|| {
+            calls += 1;
+            if calls < CENSUS_ATTEMPTS {
+                Err(census_failure(RecoveryObservationFailure::DirectoryAdded))
+            } else {
+                Ok("complete")
+            }
+        });
+        assert_eq!(settled.unwrap(), "complete");
+
+        let mut calls = 0;
+        let exhausted = settled_census::<()>(|| {
+            calls += 1;
+            Err(census_failure(RecoveryObservationFailure::DirectoryAdded))
+        });
+        assert!(exhausted.is_err());
+        assert_eq!(calls, CENSUS_ATTEMPTS);
+
+        for failure in [
+            RecoveryObservationFailure::Changed,
+            RecoveryObservationFailure::Io,
+            RecoveryObservationFailure::NotDirectory,
+        ] {
+            let mut calls = 0;
+            let refused = settled_census::<()>(|| {
+                calls += 1;
+                Err(census_failure(failure))
+            });
+            assert!(refused.is_err());
+            assert_eq!(calls, 1);
+        }
     }
 
     #[test]
