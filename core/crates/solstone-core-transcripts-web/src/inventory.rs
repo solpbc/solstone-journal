@@ -3667,6 +3667,46 @@ mod tests {
         let before_import = walk6.get(created_day.as_str()).copied().unwrap_or(0);
         let after_import = walk_import.get(created_day.as_str()).copied().unwrap_or(0);
         assert_ne!(before_import, after_import);
+
+        // Archive merge: merge_journal_archive publishes one new counted segment
+        let before_merge = walk_import.get("20260102").copied().unwrap_or(0);
+        let archive_zip_path = temp.path().join("archive_merge.zip");
+        {
+            use std::io::Write;
+            use zip::CompressionMethod;
+            use zip::ZipWriter;
+            use zip::write::SimpleFileOptions;
+
+            let file = fs::File::create(&archive_zip_path).unwrap();
+            let mut zip = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file(
+                "chronicle/20260102/field/170000_60/mic_audio.jsonl",
+                options,
+            )
+            .unwrap();
+            zip.write_all(b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"17:00:00\",\"end\":\"17:00:01\",\"text\":\"merged\"}\n").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let archive_work = temp.path().join("archive-work");
+        fs::create_dir_all(&archive_work).unwrap();
+        let merge_options = solstone_core_import_sources::archive::ArchiveMergeOptions {
+            working_root: archive_work,
+            ..solstone_core_import_sources::archive::ArchiveMergeOptions::default()
+        };
+        solstone_core_import_sources::archive::merge_journal_archive(
+            &archive_zip_path,
+            temp.path(),
+            &merge_options,
+            None,
+        )
+        .unwrap();
+
+        let walk_merge = assert_matches(&app, &root, temp.path(), now).await;
+        let after_merge = walk_merge.get("20260102").copied().unwrap_or(0);
+        assert_ne!(before_merge, after_merge);
     }
 
     #[cfg(feature = "full-tests")]

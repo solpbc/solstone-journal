@@ -51,6 +51,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 filetime = "0.2.29"
+solstone-core-import-sources.workspace = true
 solstone-core-journal-io = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 jsonschema.workspace = true

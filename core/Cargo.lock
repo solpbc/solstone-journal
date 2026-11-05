@@ -6956,6 +6956,7 @@ dependencies = [
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-import",
+ "solstone-core-import-sources",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
