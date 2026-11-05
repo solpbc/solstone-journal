@@ -2169,6 +2169,33 @@ async function runCompletionThenAQuietReadShowsThePartialNotice() {
   assert.strictEqual(down.failure.textContent, "couldn't check status. reload to try again.", 'an asked-for read still does');
 }
 
+async function runSourceListFailureEndsInTheHistoryErrorState() {
+  cases += 1;
+  const replaced = [];
+  const ready = [];
+  const context = makeContext({
+    document: { getElementById: () => null, querySelector: () => null },
+    window: {
+      createViewReady: () => (state) => ready.push(state),
+      apiJson: () => Promise.reject(new Error('history read must not start')),
+      SurfaceState: { replaceLoading: (id, state) => replaced.push({ id, state }), error: x => x, serverMessageFrom: () => '' },
+      CONVEY_COPY: { RELOAD_HINT: 'hint' },
+    },
+    loadSourceGrid: () => Promise.reject(new Error('sources unavailable')),
+    clearImportListErrors() {}, pruneImportGenerationFloor() {},
+  });
+  vm.runInContext(`let currentPage = 1, historyRequestGeneration = 0, loadingMoreGeneration = null;
+    let historyLoading = false, currentSourceFilter = '';
+    const IMPORT_PAGE_SIZE = 100;
+    const reportImportReady = window.createViewReady('import');`, context);
+  vm.runInContext(functionSource(workspace, 'loadImports'), context);
+  await context.loadImports();
+  assert.strictEqual(replaced.length, 1, 'the loading state is replaced');
+  assert.strictEqual(replaced[0].id, 'importListContent');
+  assert.deepStrictEqual(ready, ['error'], 'the view reports an error, not a spinner');
+  assert.strictEqual(vm.runInContext('historyLoading', context), false);
+}
+
 async function runCanonicalReadOutranksTheGenerationFloor() {
   const guideSteps = new Element();
   const statusCell = new Element();
@@ -2899,18 +2926,17 @@ async function runSourceCardsCarryNoInlineHandler() {
   const grid = new Element();
   const context = makeContext({ console, Promise });
   context.document = { getElementById: (id) => (id === 'importGrid' ? grid : null) };
-  context.window = {};
-  context.cachedSources = [];
-  context.sourceMetadataByName = {};
-  context.sourceIconSvgByName = {};
-  context.fetch = async () => ({
-    json: async () => ({
+  context.window = {
+    apiJson: async () => ({
       items: [
         { name: ESCAPE_PAYLOAD, display_name: 'Odd source', description: 'a source with a name like that' },
         { name: 'quick', display_name: 'Quick import', description: 'paste or drop' },
       ],
     }),
-  });
+  };
+  context.cachedSources = [];
+  context.sourceMetadataByName = {};
+  context.sourceIconSvgByName = {};
   installRealEscapeHtml(context);
   assertEscaperIsReal(context);
   vm.runInContext(functionSource(workspace, 'loadSourceGrid'), context);
@@ -3925,6 +3951,7 @@ Promise.resolve()
   .then(runAuthoritativeRunningReadKeepsACompletedImportComplete)
   .then(runRunningReadKeepsKnownFacts)
   .then(runCanonicalReadOutranksTheGenerationFloor)
+  .then(runSourceListFailureEndsInTheHistoryErrorState)
   .then(runCompletionThenAQuietReadShowsThePartialNotice)
   .then(runImporterStatusAfterTerminalDoesNotReArmPendingTimer)
   .then(runImporterEventsReadTheRecordAfterATerminalEvent)
