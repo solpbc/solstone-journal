@@ -568,10 +568,38 @@ pub fn wait_for_target_use_to_end(journal: &Path) {
     wait_for_use_key(&key);
 }
 
+#[cfg(feature = "test-hooks")]
+static TARGET_USE_WAIT_HOOK: Mutex<Option<Arc<dyn Fn(&Path) + Send + Sync>>> = Mutex::new(None);
+
+/// Install or clear a hook called once when `wait_for_use_key` sees flight count > 0.
+/// The hook must not call back into target-use.
+#[cfg(feature = "test-hooks")]
+pub fn install_target_use_wait_hook(hook: Option<Arc<dyn Fn(&Path) + Send + Sync>>) {
+    *TARGET_USE_WAIT_HOOK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = hook;
+}
+
 fn wait_for_use_key(key: &Path) {
-    let (flights, wake) = target_flights();
-    let mut flights = lock_map(flights);
+    let (flights_mutex, wake) = target_flights();
+    let mut flights = lock_map(flights_mutex);
+    #[cfg(feature = "test-hooks")]
+    let mut hook_called = false;
     while flights.get(key).copied().unwrap_or(0) > 0 {
+        #[cfg(feature = "test-hooks")]
+        if !hook_called {
+            let hook = TARGET_USE_WAIT_HOOK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            if let Some(hook) = hook {
+                hook_called = true;
+                drop(flights);
+                hook(key);
+                flights = lock_map(flights_mutex);
+                continue;
+            }
+        }
         flights = wake
             .wait(flights)
             .unwrap_or_else(|poisoned| poisoned.into_inner());

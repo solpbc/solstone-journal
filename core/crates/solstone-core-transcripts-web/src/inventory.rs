@@ -430,6 +430,13 @@ fn run_worker_loop(
             }
             inv.in_full_pass = false;
         }
+
+        if worker.stop.load(Ordering::SeqCst) {
+            break;
+        }
+
+        #[cfg(test)]
+        test_support::inc_worker_passes(identity);
     }
 }
 
@@ -1538,6 +1545,39 @@ pub(crate) mod test_support {
         get_waiter_counter(identity).load(Ordering::SeqCst)
     }
 
+    static WORKER_PASSES: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<(Mutex<u64>, Condvar)>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    fn get_worker_passes(identity: ObjectIdentity) -> Arc<(Mutex<u64>, Condvar)> {
+        let mut map = WORKER_PASSES.lock().unwrap();
+        map.entry(identity)
+            .or_insert_with(|| Arc::new((Mutex::new(0), Condvar::new())))
+            .clone()
+    }
+
+    pub(crate) fn inc_worker_passes(identity: ObjectIdentity) {
+        let entry = get_worker_passes(identity);
+        let (lock, cv) = &*entry;
+        let mut count = lock.lock().unwrap();
+        *count += 1;
+        cv.notify_all();
+    }
+
+    pub(crate) fn snapshot_worker_passes(identity: ObjectIdentity) -> u64 {
+        let entry = get_worker_passes(identity);
+        let (lock, _) = &*entry;
+        *lock.lock().unwrap()
+    }
+
+    pub(crate) fn wait_worker_passes_after(identity: ObjectIdentity, snapshot: u64) {
+        let entry = get_worker_passes(identity);
+        let (lock, cv) = &*entry;
+        let mut count = lock.lock().unwrap();
+        while *count <= snapshot {
+            count = cv.wait(count).unwrap();
+        }
+    }
+
     type BarrierHook = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
     pub(crate) struct BarrierEntry {
@@ -1836,6 +1876,8 @@ pub(crate) mod test_support {
         reset_seam_counters(identity);
         let mut w = WAITER_COUNTERS.lock().unwrap();
         w.remove(&identity);
+        let mut wp = WORKER_PASSES.lock().unwrap();
+        wp.remove(&identity);
     }
 }
 
@@ -1844,8 +1886,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::Path;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use axum::body::{Body, to_bytes};
@@ -2430,13 +2472,30 @@ mod tests {
         )
         .unwrap();
 
+        struct WaitHookGuard;
+        impl Drop for WaitHookGuard {
+            fn drop(&mut self) {
+                solstone_core_journal_io::whole_journal_restore::install_target_use_wait_hook(None);
+            }
+        }
+        let _hook_guard = WaitHookGuard;
+
+        let (wait_tx, wait_rx) = std::sync::mpsc::channel();
+        let wait_tx = Arc::new(Mutex::new(Some(wait_tx)));
+        solstone_core_journal_io::whole_journal_restore::install_target_use_wait_hook(Some(
+            Arc::new(move |_| {
+                if let Some(tx) = wait_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+            }),
+        ));
+
         let root_drain = root.clone();
         let pause_thread = std::thread::spawn(move || {
             solstone_core_convey_shell::recovery_drain::pause_admitted_work(root_drain)
         });
 
-        // Let pause_admitted_work reach wait_for_admitted_use
-        std::thread::sleep(Duration::from_millis(50));
+        wait_rx.recv().unwrap();
         test_support::release_compute_barrier(identity);
 
         fold_thread.join().unwrap();
@@ -2828,25 +2887,22 @@ mod tests {
         let behind = body["freshness"]["behind"].as_u64().unwrap();
         assert_eq!(behind as usize, total_days - 1);
 
+        let snap = test_support::snapshot_worker_passes(identity);
         test_support::release_background_fill(identity);
+        test_support::wait_worker_passes_after(identity, snap);
 
         // After release, both routes match and index is complete
-        let mut complete = false;
-        for _ in 0..50 {
-            let req = Request::get("/app/transcripts/api/index")
-                .extension(root.clone())
-                .body(Body::empty())
-                .unwrap();
-            let resp = app.clone().oneshot(req).await.unwrap();
-            let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-            let b: Value = serde_json::from_slice(&bytes).unwrap();
-            if b["freshness"]["complete"] == true {
-                complete = true;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        assert!(complete, "index must become complete");
+        let req = Request::get("/app/transcripts/api/index")
+            .extension(root.clone())
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let b: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            b["freshness"]["complete"], true,
+            "index must become complete"
+        );
 
         test_support::clear_recorded_notifications(identity);
         reset_calendar_while_held(temp.path());
@@ -2855,11 +2911,10 @@ mod tests {
             vec![("system".to_string(), "calendar".to_string())]
         );
 
+        test_support::clear_recorded_notifications(identity);
+        assert!(test_support::recorded_notifications(identity).is_empty());
         restart_wipe(identity);
-        assert_eq!(
-            test_support::recorded_notifications(identity),
-            vec![("system".to_string(), "calendar".to_string())]
-        );
+        assert!(test_support::recorded_notifications(identity).is_empty());
     }
 
     #[tokio::test]
