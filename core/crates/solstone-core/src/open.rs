@@ -50,8 +50,16 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
             return ExitCode::SUCCESS;
         }
         eprintln!(
-            "a browser could not be opened here. run solstone journal open --print-url and open the link it prints within a minute."
+            "a browser could not be opened here. run this command again with --print-url, and open the link it prints within a minute."
         );
+        if let Some(port) = link_port(&url) {
+            eprintln!(
+                "to open it from another computer, first forward the journal's ports over SSH, and keep that terminal open:"
+            );
+            eprintln!(
+                "  ssh -N -L {port}:127.0.0.1:{port} -L 7659:127.0.0.1:7659 YOUR_LOGIN@JOURNAL_COMPUTER"
+            );
+        }
         ExitCode::FAILURE
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -66,8 +74,22 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+// A mac journal runs inside the journal app, so the app is what starts it.
+#[cfg(target_os = "macos")]
+const NOT_RUNNING: &str = "your journal isn't running for this account on this computer, so there is nothing to open. open the journal app to start it.";
+#[cfg(target_os = "linux")]
 const NOT_RUNNING: &str = "your journal isn't running for this account on this computer, so there is nothing to open. start it with solstone journal up.";
+#[cfg(target_os = "macos")]
+const OLDER_JOURNAL: &str = "your running journal is older than this command. quit the journal app, open it again, and try again.";
+#[cfg(target_os = "linux")]
+const OLDER_JOURNAL: &str = "your running journal is older than this command. restart it with solstone journal down, then solstone journal up, and try again.";
+
+/// The port of a minted link, for the SSH forwarding line.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn link_port(url: &str) -> Option<&str> {
+    let port = url.strip_prefix("http://localhost:")?.split('/').next()?;
+    (!port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())).then_some(port)
+}
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
@@ -100,11 +122,10 @@ fn mint(journal: &std::path::Path, path: &str) -> Result<String, String> {
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default();
     match status {
-        200 => body["url"]
-            .as_str()
-            .map(str::to_owned)
-            .ok_or_else(|| "the response from your journal could not be read. try again.".to_owned()),
-        404 => Err("your running journal is older than this command. restart it with solstone journal down, then solstone journal up, and try again.".to_owned()),
+        200 => body["url"].as_str().map(str::to_owned).ok_or_else(|| {
+            "the response from your journal could not be read. try again.".to_owned()
+        }),
+        404 => Err(OLDER_JOURNAL.to_owned()),
         _ => Err(body["error"]
             .as_str()
             .map(|error| format!("your journal could not make a link: {error}"))

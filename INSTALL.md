@@ -184,7 +184,7 @@ The status should read `Valid`, and the signer certificate's subject should star
 
 ## Finish setup on linux
 
-The installer above already runs journal setup. Follow the setup page it prints; do not run setup a second time. If you installed a `.deb` or `.rpm` directly, or are repairing setup, run:
+The installer above already runs journal setup. Follow the setup step it prints; do not run setup a second time. If you installed a `.deb` or `.rpm` directly, or are repairing setup, run:
 
 ```bash
 solstone journal setup
@@ -192,7 +192,7 @@ solstone journal setup
 
 This runs the setup readiness doctor battery and sets up your selected journal (`~/journal` by default). It fetches the local transcription model (~1 GB), installs the `solstone` skill for Claude Code, Codex, and Gemini when their configuration folders are already present, and installs the journal-side `solstone` and `journal` router skills so your agents can help tend your journal. It then starts a systemd user service listening on http://localhost:5015. The default port is shared across logins. A second journal on that port, including one started under another login, cannot bind it.
 
-Let your human know: **open http://localhost:5015/init in a browser on the journal's computer**. The first-run wizard walks them through setting their identity and choosing a provider. If the computer has no browser, use the SSH command the installer prints and open the setup page from the other computer; it forwards the journal and the agent door.
+Let your human know: **run `solstone journal open /init` on the journal's computer**. It opens the setup page in the browser with a one-time link. The first-run wizard walks them through setting their identity and choosing a provider. If the computer has no browser, use the SSH command the installer or `solstone journal open` prints. It forwards the journal and the port an agent on the journal's computer uses to finish connecting. Then run `solstone journal open /init --print-url` and open the link it prints on the other computer within a minute.
 
 ⚠ **The tree carries the binaries the journal needs to run, not the transcription stack.** The Parakeet transcription helper and its model are fetched during setup, by `solstone journal install-models`. `solstone journal doctor --readiness` runs the actual binary before reporting it ready, and on linux it gives the exact package-manager command when the system OpenMP runtime is missing.
 
@@ -338,7 +338,7 @@ To remove the separate solstone app, turn off its launch-at-login setting, quit 
 
 ## Done
 
-Once it is running, the solstone app takes in what you share with it and all of it goes into your journal. Conversations are transcribed, people and projects are surfaced, a knowledge graph is built, and you can search indexed journal content at http://localhost:5015. Your journal is one folder per day on a device you own. See [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it.
+Once it is running, the solstone app takes in what you share with it and all of it goes into your journal. Conversations are transcribed, people and projects are surfaced, a knowledge graph is built, and you can search it in your journal (`solstone journal open`, or the journal app on a mac). Your journal is one folder per day on a device you own. See [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it.
 
 Source code: https://github.com/solpbc/solstone-journal
 company: https://solpbc.org
