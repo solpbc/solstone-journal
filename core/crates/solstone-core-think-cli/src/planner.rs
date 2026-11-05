@@ -4100,6 +4100,94 @@ mod tests {
         queue.shutdown();
     }
 
+    /// Discovery's verdict on a from-scratch claim whose run ended by itself
+    /// (`run` exits) or that the queue stopped at its cap (`run` stays up).
+    #[cfg(all(unix, feature = "full-tests"))]
+    fn intent_after_run_ends(stop_at_cap: bool) -> OwnerIntent {
+        use solstone_core_system::lifecycle::{
+            CoordinatorBootstrap, DeclaredParent, ParentLossCoordinator,
+        };
+        use solstone_core_system::queue::SystemProcessStateProbe;
+        use std::os::unix::fs::PermissionsExt;
+        let day = "19990101";
+        let root = fixture("local");
+        segment(root.path(), day, "120000_60");
+        let parent = DeclaredParent::capture_current().unwrap();
+        let (_coordinator, _) = ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+            journal: root.path().into(),
+            supervisor: parent.instance(),
+            enabled: Vec::new(),
+            supervisor_heartbeat_filename: format!(
+                "solstone-v2-cap-test-{}-{stop_at_cap}.check",
+                std::process::id()
+            ),
+            capability: format!("cap-test-{}", root.path().display()).into_bytes(),
+        })
+        .unwrap();
+        let bin = tempfile::tempdir().unwrap();
+        let started = bin.path().join("started");
+        let run = bin.path().join("run");
+        let tail = if stop_at_cap {
+            "exec sleep 300"
+        } else {
+            "exit 0"
+        };
+        std::fs::write(
+            &run,
+            format!("#!/bin/sh\ntouch '{}'\n{tail}\n", started.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let queue = TaskQueue::new(TaskQueueOptions {
+            journal_root: root.path().into(),
+            cap_resolver: Arc::new(solstone_core_system::cap::DefaultCapResolver::default()),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: true,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+            task_binary: Some(run),
+        });
+        let intent = work_intent::register(root.path(), day, true).unwrap();
+        let reference = from_scratch_reference(day, &intent.id);
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        let wait = |done: &dyn Fn() -> bool| {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while !done() {
+                assert!(Instant::now() < deadline, "the run did not reach its state");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        wait(&|| started.exists());
+        // The fixture stands in for the run: it claims, and its lease ends with it.
+        drop(work_intent::claim_from_scratch(root.path(), day, &intent.id).unwrap());
+        if stop_at_cap {
+            // A dead lease alone proves nothing while the queue still holds the run.
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+            let held = &work_intent::read(root.path()).unwrap()[day];
+            assert_eq!(held.state, IntentState::Claimed);
+            assert!(held.from_scratch && !held.restarted);
+            queue.enforce_deadlines(Instant::now() + Duration::from_secs(30 * 86_400));
+        }
+        wait(&|| !queue.contains_reference(&reference));
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        let after = work_intent::read(root.path()).unwrap()[day].clone();
+        queue.shutdown();
+        after
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn a_run_stopped_at_its_cap_becomes_the_ordinary_ask_and_any_other_end_starts_over() {
+        let cut = intent_after_run_ends(true);
+        assert!(!cut.from_scratch && !cut.restarted);
+        assert_eq!(cut.state, IntentState::Queued);
+        let ended = intent_after_run_ends(false);
+        assert!(ended.from_scratch && ended.restarted);
+        assert_eq!(ended.state, IntentState::Queued);
+    }
+
     /// The queue admits a few discovered tasks at a time. As they finish, the
     /// pass's next ranked work is admitted in their place, newest first, well
     /// before the automatic rest would start another pass.

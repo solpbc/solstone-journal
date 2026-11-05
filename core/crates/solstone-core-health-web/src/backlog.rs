@@ -108,7 +108,7 @@ pub fn copy() -> Value {
         "day_badge": "stuck",
         "action_process_now": "prioritize day",
         "action_redo_scratch": "redo from scratch",
-        "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
+        "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer.",
         "queued_feedback": "request saved; today's work goes first",
         "unfinished_template_one": solstone_core_system_health::UNFINISHED_TEMPLATE_ONE,
         "unfinished_template_many_one_day": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY,
