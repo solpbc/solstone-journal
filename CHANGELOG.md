@@ -8,41 +8,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on a mac or linux computer, `solstone journal open` opens your journal in your browser with a one-time link. a new local access setting decides whether other accounts and programs on the computer can open your journal without one. local access stays open, as it always has been, until you close it in settings.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- ultrawide screens you share are now described from a larger image. with the local model, small text on a 3440×1440 screen is misread about half as often. when the model runs on your own computer, each of these screens takes longer to describe, longest on a smaller graphics card. with your own model, some providers' newest models count more of each image toward your usage. other screen shapes are described as before.
-- recordings you play from your journal's dashboard start sooner, because they now stream instead of loading whole first, and your browser no longer keeps a copy of them. skipping ahead starts sooner too.
-- when the transcripts calendar, speakers, health or search takes a while, reloading the page or asking again no longer piles more of the same work onto your journal. requests that arrive together share one fresh answer, and no answer is older than your request.
-
 ### Fixed
 
-- search results no longer show the formatting marks that start a line in your journal's notes, such as `##` before a heading or `-` before a list item, in the text under each result.
-- importing a journal archive no longer sets aside someone from the archive to ask you about because their name is close to another name in the same archive, such as Javier and Javier Garcia. names are checked only against the people and things already in your journal.
-- when importing a journal archive matches someone in it to a person or thing already in your journal, the facets the archive had them in now list them. before, those facets could leave them out, or list someone else in their place.
-- when you reprocess a day, or redo it from scratch, and part of it can't finish on its own, such as an entity review that conflicts with a change already in your journal, your journal no longer runs that day again as soon as each try ends. it now waits between tries, as it does for any other day.
-- `solstone status` and other `solstone` commands that take no input no longer wait forever when you run them over ssh without a terminal, or from a script that leaves their input open. commands that read input you pipe in, such as `solstone call activities create`, still read it.
-- operational logs from reprocessing or importing an older day now stay for your log retention period, counted from when that work ran. before, the next cleanup removed them because the day itself was older than the period.
-- when you redo a day from scratch and one part of it fails, such as one activity taking too long to process, the rest of the day now finishes and your journal tries that part again on its own. before, the day's briefing and its other daily results were skipped, and the day stayed on hold until you asked again. if redoing a day from scratch is interrupted partway, for example when your journal closes or updates, your journal now starts that day over on its own instead of waiting for you.
-- command-line requests through a paired journal connection now reach your journal.
-- days whose recordings sit directly in the day's folder no longer stall when your journal revisits them, so the day's summaries now finish.
-- older days with a screen description written by an earlier version of the journal no longer stall when your journal revisits them. that description stays in your journal as it was, and the day's summaries now finish.
-- two names that look or sound alike, such as Muñoz and Munoz, no longer share one entry in detected entities, where one's description replaced the other's. entries already in your journal stay as they are, and your transcripts were never affected.
-- on windows, the journal app's pairing view now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
-- on a mac, a journal on an exFAT or FAT drive now says plainly that it can't run there and to use a mac-formatted drive. before, it failed without saying why.
-- a full search rebuild your journal runs on its own, such as after a restore, no longer keeps what you save out of search until it's done. it works in short turns, newest days first, and new saves go ahead of it.
-- if the search index itself is damaged, search now rebuilds it from your journal on its own, newest days first, after checking the damage is real. what you save waits to reach search while it checks, then keeps reaching it during the rebuild. the health page says when it's checking.
-- `solstone journal indexer --reset --rescan-full` now works on a damaged search index. it used to fail on the damage it was meant to clear.
-- importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
-- importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
-- thinking now shows the model your own endpoint serves, not the local model, and the local model's name no longer repeats `local/`.
-- one frame that takes the model more than two minutes no longer stops a whole screen video from being described. that frame is tried again, the rest of the video is described either way, and with your own model a frame now gets the extra time your thinking setting allows.
-- importing a journal archive now adds the people and things whose names don't closely match anyone or anything already in your journal. before, it set most of them aside to ask you about, each with a long list of unrelated possible matches.
 - fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
@@ -62,6 +34,42 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.68] - 2026-11-05
+
+### Added
+
+- on linux, `solstone journal open` opens your journal in your browser with a one-time link, and setup, `solstone journal up` and the installer now point you to it instead of printing your journal's web address. on a mac or linux computer, a new local access setting decides whether other accounts on the computer, and programs there that use your journal's web address, can open your journal without a link. programs running under your own account can still reach your journal through a connection only your account can use. local access stays open, as it always has been, until you close it in settings.
+
+### Changed
+
+- recordings you play from your journal's dashboard start sooner, because they now stream instead of loading whole first. skipping ahead starts sooner too. your journal now tells your browser not to save a copy of a recording. a copy your browser saved before this update stays until your browser clears it.
+- ultrawide screens you share are now described from a larger image. with the local model, text on a 3440×1440 screen is misread about half as often. when the model runs on your own computer, each of these screens takes longer to describe, longest on a smaller graphics card. with your own model, some providers' newest models count more of each image toward your usage. other screen shapes are described as before.
+- when the transcripts calendar, speakers, health or search takes a while, reloading the page or asking again no longer piles more of the same work onto your journal. requests that arrive together share one fresh answer, and no answer is older than your request.
+
+### Fixed
+
+- search results no longer show the formatting marks that start a line in your journal's notes, such as `##` before a heading or `-` before a list item, in the text under each result.
+- importing a journal archive no longer sets aside someone from the archive to ask you about because their name is close to another name in the same archive, such as Javier and Javier Garcia. names are checked only against the people and things already in your journal.
+- when importing a journal archive matches someone in it to a person or thing already in your journal, the facets the archive had them in now list them. before, those facets could leave them out, or list someone else in their place.
+- when you reprocess a day, or redo it from scratch, and part of it can't finish on its own, such as an entity review that conflicts with a change already in your journal, your journal no longer runs that day again as soon as each try ends. it now waits between tries, as it does for any other day.
+- `solstone status` and other `solstone` commands that take no input no longer wait forever when you run them over ssh without a terminal, or from a script that leaves their input open. commands that read input you pipe in, such as `solstone call activities create`, still read it.
+- operational logs from reprocessing or importing an older day now stay for your log retention period, counted from when that work ran. before, the next cleanup removed them because the day itself was older than the period.
+- when you redo a day from scratch and one part of it fails, such as one activity taking too long to process, the rest of the day now finishes and your journal tries that part again on its own. before, the day's briefing and its other daily results were skipped, and the day stayed on hold until you asked again. if redoing a day from scratch is interrupted partway, for example when your journal closes or updates, your journal now starts that day over on its own instead of waiting for you.
+- `solstone` commands sent through `solstone link serve` now reach your journal. before, they were refused.
+- days whose recordings sit directly in the day's folder no longer stall when your journal revisits them, so the day's summaries now finish.
+- older days with a screen description written by an earlier version of the journal no longer stall when your journal revisits them. that description stays in your journal as it was, and the day's summaries now finish.
+- two names that look or sound alike, such as Muñoz and Munoz, no longer share one entry in detected entities, where one's description replaced the other's. entries already in your journal stay as they are, and your transcripts were never affected.
+- on windows, the journal app's pairing view now keeps your journal's mark on screen after a device uses the link, says to check the mark on that device, and offers to unpair it.
+- on a mac, a journal on an exFAT or FAT drive now says plainly that it can't run there and to use a mac-formatted drive. before, it failed without saying why.
+- a full search rebuild your journal runs on its own, such as after a restore, no longer keeps what you save out of search until it's done. it works in short turns, newest days first, and new saves go ahead of it.
+- if the search index itself is damaged, search now rebuilds it from your journal on its own, newest days first, after checking the damage is real. what you save waits to reach search while it checks, then keeps reaching it during the rebuild. the health page says when it's checking.
+- `solstone journal indexer --reset --rescan-full` now works on a damaged search index. it used to fail on the damage it was meant to clear.
+- importing a large journal archive no longer runs out of open files partway through and leaves part of the archive in your journal.
+- importing a journal archive with many people and things in it no longer slows to a crawl while it notes the names it couldn't match for sure.
+- thinking now shows the model your own endpoint serves, not the local model, and the local model's name no longer repeats `local/`.
+- one frame that takes the model more than two minutes no longer stops a whole screen video from being described. that frame is tried again, the rest of the video is described either way, and with your own model a frame now gets the extra time your thinking setting allows.
+- importing a journal archive now adds the people and things whose names don't closely match anyone or anything already in your journal. before, it set most of them aside to ask you about, each with a long list of unrelated possible matches.
 
 ## [2.0.67] - 2026-11-04
 
