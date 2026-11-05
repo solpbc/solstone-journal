@@ -516,8 +516,8 @@ function createHarness(options = {}) {
         position: element.style.position || 'static',
       };
     },
-    sessionStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
-    localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    sessionStorage: options.sessionStorage || { getItem() { return null; }, setItem() {}, removeItem() {} },
+    localStorage: options.localStorage || { getItem() { return null; }, setItem() {}, removeItem() {} },
     URL,
     addEventListener(type, listener) { (windowListeners[type] ||= []).push(listener); },
     removeEventListener(type, listener) {
@@ -1745,6 +1745,52 @@ asyncCase('view readiness reports once per mount, re-arms, and rejects stale rep
   marks = h.marks.filter(entry => entry.name === 'view:ready');
   assert.strictEqual(marks.length, 2);
   assert.strictEqual(marks[1].detail.state, 'content');
+});
+
+function mapStorage(seed = {}) {
+  const values = new Map(Object.entries(seed));
+  return {
+    values,
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: (key) => values.delete(key),
+  };
+}
+
+testCase('notification text stays out of persistent web storage', () => {
+  const localStorage = mapStorage({
+    'solstone:notification_history': JSON.stringify([{ title: 'old', message: 'old' }]),
+    'solstone:quiet_notifs': JSON.stringify([{ id: 1, source: 'old', message: 'old' }]),
+    'unrelated': 'kept',
+  });
+  const sessionStorage = mapStorage({
+    'solstone:notification_history': JSON.stringify([{ title: 'earlier this session', message: 'm' }]),
+  });
+  const harness = createHarness({ localStorage, sessionStorage });
+  assert.strictEqual(localStorage.values.has('solstone:notification_history'), false, 'old history removed');
+  assert.strictEqual(localStorage.values.has('solstone:quiet_notifs'), false, 'old quiet notices removed');
+  assert.strictEqual(localStorage.values.get('unrelated'), 'kept', 'other keys untouched');
+  const notifications = harness.window.AppServices.notifications;
+  assert.strictEqual(notifications.getHistory().length, 1, 'history carries over within the session');
+  notifications._addToHistory({ app: 'home', title: 'new', message: 'n', timestamp: 1 });
+  assert.strictEqual(JSON.parse(sessionStorage.values.get('solstone:notification_history')).length, 2);
+  assert.strictEqual(localStorage.values.has('solstone:notification_history'), false, 'never written back');
+  harness.window.AppServices.quietNotifs.add({ source: 'home', message: 'q' });
+  assert.strictEqual(JSON.parse(sessionStorage.values.get('solstone:quiet_notifs')).length, 1);
+  assert.strictEqual(localStorage.values.has('solstone:quiet_notifs'), false);
+});
+
+testCase('notification storage that throws leaves the shell starting', () => {
+  const throwing = {
+    getItem() { throw new Error('blocked'); },
+    setItem() { throw new Error('blocked'); },
+    removeItem() { throw new Error('blocked'); },
+  };
+  const harness = createHarness({ localStorage: throwing, sessionStorage: throwing });
+  const notifications = harness.window.AppServices.notifications;
+  assert.strictEqual(notifications.getHistory().length, 0);
+  notifications._addToHistory({ app: 'home', title: 't', message: 'm', timestamp: 1 });
+  assert.strictEqual(notifications.getHistory().length, 1, 'kept in memory');
 });
 
 async function runAsyncCases() {
