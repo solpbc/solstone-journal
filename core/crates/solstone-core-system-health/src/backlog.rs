@@ -70,6 +70,55 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     window: usize,
     now: DateTime<Utc>,
 ) -> Result<BacklogView, HealthError> {
+    read_backlog_view_using(
+        health_source,
+        segment_source,
+        journal,
+        window,
+        now,
+        &|day| solstone_core_system::daily_coverage::read_daily_coverage(journal, day),
+    )
+}
+
+/// Read coverage from the same packaged talents the calling runtime executes.
+/// Embedded hosts cannot discover these beside the operating system executable.
+pub fn read_backlog_view_with_roots<H: HealthLogSource, S: SegmentSource>(
+    health_source: &H,
+    segment_source: &S,
+    journal: &Path,
+    window: usize,
+    now: DateTime<Utc>,
+    talent_root: &Path,
+    apps_root: &Path,
+) -> Result<BacklogView, HealthError> {
+    read_backlog_view_using(
+        health_source,
+        segment_source,
+        journal,
+        window,
+        now,
+        &|day| {
+            solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
+                journal,
+                day,
+                talent_root,
+                apps_root,
+            )
+        },
+    )
+}
+
+fn read_backlog_view_using<H: HealthLogSource, S: SegmentSource>(
+    health_source: &H,
+    segment_source: &S,
+    journal: &Path,
+    window: usize,
+    now: DateTime<Utc>,
+    read_coverage: &dyn Fn(
+        &str,
+    )
+        -> Result<solstone_core_system::daily_coverage::DailyCoverage, String>,
+) -> Result<BacklogView, HealthError> {
     // A day holding only calendar notes or body records holds nothing the owner
     // did, so it is never pending.
     let mut days = solstone_core_journal_io::day_dirs(journal)?
@@ -94,7 +143,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     for day in days {
         let repair = read_segment_repair_summary(journal, &day);
         let repair_attempted = read_segment_repair_attempted(journal, &day);
-        let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, &day);
+        let coverage = read_coverage(&day);
         let completeness = day_is_complete_with(journal, &day, coverage.as_ref());
         coverage_by_day.insert(day.clone(), coverage);
         match completeness {
@@ -308,9 +357,10 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
 
     let today = solstone_core_system::daily_coverage::local_day(journal, now);
     for day in &mut backlog_days {
-        match coverage_by_day.remove(&day.day).unwrap_or_else(|| {
-            solstone_core_system::daily_coverage::read_daily_coverage(journal, &day.day)
-        }) {
+        match coverage_by_day
+            .remove(&day.day)
+            .unwrap_or_else(|| read_coverage(&day.day))
+        {
             Ok(mut coverage) => {
                 coverage.as_of_ms = now.timestamp_millis();
                 if coverage.state.is_owed() && day.state == BACKLOG_STATE_COMPLETE {
