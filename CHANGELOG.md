@@ -39,7 +39,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on linux, `solstone journal open` opens your journal in your browser with a one-time link, and setup, `solstone journal up` and the installer now point you to it instead of printing your journal's web address. on a mac or linux computer, a new local access setting decides whether other accounts on the computer, and programs there that use your journal's web address, can open your journal without a link. programs running under your own account can still reach your journal through a connection only your account can use. local access stays open, as it always has been, until you close it in settings.
+- on linux, `solstone journal open` opens your journal in your browser with a one-time link, and `solstone journal setup` and `solstone journal up` now point you to it instead of printing your journal's web address. on a mac or linux computer, a new local access setting decides whether other accounts on the computer, and programs there that use your journal's web address, can open your journal without a link. programs running under your own account can still reach your journal through a connection only your account can use. local access stays open, as it always has been, until you close it in settings.
 
 ### Changed
 
