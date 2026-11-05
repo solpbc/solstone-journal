@@ -474,7 +474,8 @@
         ? "couldn't count 1 day. still trying."
         : `couldn't count ${freshness.failed} days. still trying.`;
     }
-    return '';
+    // Not complete with nothing counted: the journal couldn't be read at all.
+    return "couldn't load which months have material.";
   }
 
   // Only an index that answers with `freshness` takes part, so every other
@@ -487,7 +488,9 @@
     }
     if (freshnessTimer !== null) window.clearTimeout(freshnessTimer);
     freshnessTimer = null;
-    if (!(state.freshness?.complete === false && state.freshness.behind > 0)) {
+    // Failed days retry on the server and announce themselves; anything else
+    // that isn't complete has only this timer to get it unstuck.
+    if (!(state.freshness?.complete === false && !(state.freshness.behind === 0 && state.freshness.failed > 0))) {
       freshnessRereads = 0;
       return;
     }

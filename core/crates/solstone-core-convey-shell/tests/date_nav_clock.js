@@ -920,6 +920,15 @@ async function run() {
   assert.strictEqual(noteNode().hidden, false, 'failed days show a note');
   assert.strictEqual(liveTimers().length, 0, 'failed days alone schedule no re-read');
 
+  // Not complete with nothing counted (the journal couldn't be read): labelled and retried.
+  await mountFreshness({ coverage: null, months: {}, freshness: { complete: false, behind: 0, failed: 0, oldest: 'x' } });
+  assert.strictEqual(noteNode().hidden, false, 'an unreadable journal shows a note');
+  assert.strictEqual(liveTimers().length, 1, 'an unreadable journal schedules a re-read');
+  nextIndex = { coverage, months: { '202610': 1 }, freshness: { complete: true } };
+  await fireTimers();
+  assert.strictEqual(noteNode().hidden, true, 'a readable journal clears the note');
+  assert.strictEqual(liveTimers().length, 0, 'a readable journal stops the re-reads');
+
   // A burst of envelopes settles into one read; other kinds and keys don't count.
   await mountFreshness({ coverage, months: { '202610': 1 }, freshness: { complete: true } });
   sendChange({ tract: 'change', event: 'changed', kind: 'entity', key: 'x' });
