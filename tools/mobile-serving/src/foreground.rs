@@ -1303,7 +1303,14 @@ fn think_admitted(args: &[String]) -> bool {
 
 fn exact_command(args: &[String]) -> bool {
     match args {
-        [command] if command == "heartbeat" || command == "facet-candidates" => true,
+        [command]
+            if matches!(
+                command.as_str(),
+                "heartbeat" | "facet-candidates" | "journal-stats"
+            ) =>
+        {
+            true
+        }
         [command, verb] if command == "brain" && verb == "refresh" => true,
         [command, flag]
             if command == "indexer"
@@ -1992,12 +1999,32 @@ impl ForegroundProcessingHost {
             let state = journal.join("health/scheduler.json");
             solstone_core_system::schedule::initialize_schedule_config(&config)
                 .map_err(|e| e.to_string())?;
+            // Let the existing tolerant loader handle damaged config first.
             let (mut engine, _) =
                 ScheduleEngine::init(&config, &state, now).map_err(|e| e.to_string())?;
             let mut fresh = BTreeSet::new();
             match engine.register_defaults() {
                 Ok(added) => fresh.extend(added),
                 Err(error) => log::warn!("foreground schedule defaults: {error}"),
+            }
+            // A summary is immediately useful, so keep this entry out of
+            // `fresh`: normal catch-up may run it on adoption. Existing owner
+            // edits and disable survive; optional registration cannot make a
+            // previously recoverable schedule problem prevent startup.
+            match scheduled_commands::register_stats_schedule(Arc::clone(&root), &|| {
+                if cancelled() {
+                    Err("thinking cancelled".into())
+                } else {
+                    Ok(())
+                }
+            }) {
+                Ok(()) => {
+                    engine = ScheduleEngine::init(&config, &state, now)
+                        .map_err(|e| e.to_string())?
+                        .0;
+                }
+                Err(error) if cancelled() => return Err(error),
+                Err(error) => log::warn!("foreground summary schedule: {error}"),
             }
             match solstone_core_maintenance::schedule_sync::sync(
                 &config,
@@ -2418,7 +2445,14 @@ impl ForegroundProcessingHost {
     /// the command must not be between its own claims during that read.
     #[cfg(all(test, feature = "full-tests"))]
     pub fn deliver_discovery_once(&self) {
-        let finished = self.queue.history().len();
+        let completed_discovery = || {
+            self.queue
+                .history()
+                .iter()
+                .filter(|record| record.reference.starts_with("supervisor-"))
+                .count()
+        };
+        let finished = completed_discovery();
         let promised = discovery_promise(&self.journal);
         hold_analysis(&self.journal, true);
         if let Some(discovery) = self.discovery.lock().unwrap().as_ref() {
@@ -2426,7 +2460,7 @@ impl ForegroundProcessingHost {
         }
         let discovered_by = Instant::now() + Duration::from_secs(10);
         loop {
-            if self.queue.history().len() > finished {
+            if completed_discovery() > finished {
                 break;
             }
             if discovery_promise(&self.journal).is_some_and(|promise| Some(promise) != promised) {
@@ -2445,7 +2479,7 @@ impl ForegroundProcessingHost {
             .any_reference(|reference| reference.starts_with("supervisor-"))
         {
             let finished_by = Instant::now() + Duration::from_secs(10);
-            while self.queue.history().len() <= finished {
+            while completed_discovery() <= finished {
                 assert!(
                     Instant::now() < finished_by,
                     "discovered command did not finish"
@@ -5664,6 +5698,7 @@ mod processing_proofs {
             .unwrap_or_else(|poison| poison.into_inner());
         for enabled in [false, true] {
             let (temp, payload) = journal_fixture();
+            write_schedules(temp.path(), quiet_entries());
             fs::write(
                 temp.path().join("config/journal.json"),
                 json!({
@@ -6029,13 +6064,19 @@ mod processing_proofs {
                     .is_some_and(|details| details.contains(&expected))
         }));
         assert_eq!(fs::read(pending).unwrap(), original);
+        let retained = solstone_core_system::work_intent::read(temp.path()).unwrap()[day].clone();
+        assert_eq!(retained.id, request.id);
         assert!(
-            solstone_core_system::work_intent::read(temp.path()).unwrap()[day]
-                .rebuild
-                .as_ref()
-                .unwrap()
-                .segments
-                .is_none()
+            !retained.from_scratch,
+            "failed forced work becomes ordinary process-now work"
+        );
+        assert_eq!(
+            retained.state,
+            solstone_core_system::work_intent::IntentState::Queued
+        );
+        assert!(
+            retained.rebuild.is_none(),
+            "no successful segment seal is retained"
         );
     }
 
@@ -6050,6 +6091,7 @@ mod processing_proofs {
                 "30m",
             ),
             ("cadence", &["think", "--cadence"][..], "5m", "10m"),
+            ("journal-stats", &["journal-stats"][..], "5m", "10m"),
             ("brain", &["brain", "refresh"][..], "daily", "5m"),
             (
                 "facet-candidates",
@@ -6279,6 +6321,102 @@ mod processing_proofs {
         ] {
             assert!(!admit_command(journal, &owned(args)), "{args:?}");
         }
+    }
+
+    #[test]
+    fn normal_summary_schedule_refreshes_on_adoption_and_after_new_input() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let saved = temp.path().join("stats.json");
+        fs::write(&saved, br#"{"generated_at":"old","day_count":99}"#).unwrap();
+        let now = Utc::now();
+        let host = open_host(temp.path(), &payload, now);
+        wait_until(|| {
+            scheduler_field(temp.path(), "journal-stats", "last_status").as_deref()
+                == Some("success")
+        });
+        let first = read_json(&saved);
+        assert_ne!(first["generated_at"], "old");
+        assert_eq!(first["day_count"], 0);
+        let day = (now - chrono::Duration::days(1))
+            .format("%Y%m%d")
+            .to_string();
+        let segment = temp
+            .path()
+            .join("chronicle")
+            .join(&day)
+            .join("phone/120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("audio.jsonl"),
+            "{\"start\":\"12:00:00\",\"text\":\"new owner recording\"}\n",
+        )
+        .unwrap();
+        fs::write(payload.join("solstone/talent/morning_briefing.md"),
+            "{\n\"type\":\"generate\",\"max_output_tokens\":1024,\"output\":\"json\",\"schedule\":\"daily\",\"priority\":50,\"hook\":{\"pre\":\"morning_briefing\"}\n}\nBrief the morning.").unwrap();
+        let report = host
+            .check_schedule(ScheduleNow::in_zone(
+                now + chrono::Duration::minutes(6),
+                chrono_tz::UTC,
+            ))
+            .unwrap();
+        assert!(report.submitted.iter().any(|name| name == "journal-stats"));
+        wait_until(|| read_json(&saved)["day_count"] == 1);
+        let refreshed = read_json(&saved);
+        assert!(refreshed["totals"]["day_bytes"].as_u64().unwrap() > 0);
+        let backlog = &refreshed["backlog"]["days"][0];
+        assert_eq!(
+            backlog["state"], "pending",
+            "unmade daily work must stay owed"
+        );
+        host.shutdown().unwrap();
+    }
+
+    #[test]
+    fn normal_summary_schedule_keeps_damaged_config_startup_recoverable() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        fs::write(temp.path().join("config/schedules.json"), b"{broken").unwrap();
+        let host = open_host(temp.path(), &payload, Utc::now());
+        wait_until(|| {
+            scheduler_field(temp.path(), "journal-stats", "last_status").as_deref()
+                == Some("success")
+        });
+        assert_eq!(read_json(&temp.path().join("stats.json"))["day_count"], 0);
+        let schedules = read_json(&temp.path().join("config/schedules.json"));
+        assert_eq!(schedules["daily_time"], "00:15");
+        assert_eq!(schedules["weekly_time"], "03:15");
+        host.shutdown().unwrap();
+    }
+
+    #[test]
+    fn normal_summary_schedule_preserves_owner_disable_and_edits() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (temp, payload) = journal_fixture();
+        let entry = json!({"cmd":["journal","journal-stats"],"every":"hourly","enabled":false,"max_runtime":"3m"});
+        write_schedules(
+            temp.path(),
+            [("journal-stats".into(), entry.clone())]
+                .into_iter()
+                .collect(),
+        );
+        let before = b"previous summary";
+        fs::write(temp.path().join("stats.json"), before).unwrap();
+        let now = Utc::now();
+        let host = open_host(temp.path(), &payload, now);
+        let report = host
+            .check_schedule(ScheduleNow::in_zone(
+                now + chrono::Duration::hours(2),
+                chrono_tz::UTC,
+            ))
+            .unwrap();
+        assert!(!report.submitted.iter().any(|name| name == "journal-stats"));
+        host.shutdown().unwrap();
+        assert_eq!(
+            read_json(&temp.path().join("config/schedules.json"))["journal-stats"],
+            entry
+        );
+        assert_eq!(fs::read(temp.path().join("stats.json")).unwrap(), before);
     }
 
     #[test]

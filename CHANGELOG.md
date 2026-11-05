@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
 - opening a screen frame from a recording now selects that frame instead of the first one. on android, moving between frames waits for the selected picture to finish decoding.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
