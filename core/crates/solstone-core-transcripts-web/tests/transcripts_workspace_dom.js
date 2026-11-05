@@ -575,6 +575,7 @@ function createTranscriptsDOM() {
 
   const panel = doc.createElement('div');
   panel.id = 'trPanel';
+  panel.innerHTML = '<div class="surface-state surface-state--empty" data-day-invitation="true"></div>';
   doc.body.appendChild(panel);
 
   const warningNotice = doc.createElement('div');
@@ -823,6 +824,9 @@ async function createEnvironment(
     if (urlStr.includes('/app/transcripts/api/day/')) {
       if (options.dayReject) {
         return Promise.reject(new Error('Day fetch rejected'));
+      }
+      if (options.dayHold) {
+        return options.dayHold.then(() => ({ ok: true, status: 200, json: async () => dayPayload }));
       }
       return Promise.resolve({
         ok: true,
@@ -1577,6 +1581,25 @@ test('empty timeline plus rows: section present, nothing-found absent, rows are 
   rows[0].dispatchEvent({ type: 'click' });
   assert.ok(h.window.location.hash.startsWith('#090000_60'));
   assert.ok(h.window.location.search.includes('stream=phone'));
+});
+
+test('while the day is read the panel says loading, then shows the invitation', async () => {
+  let release;
+  const dayHold = new Promise((resolve) => { release = resolve; });
+  const h = await createEnvironment(
+    'https://journal.example/app/transcripts/20200115?ref=keep',
+    'analyzed',
+    false,
+    null,
+    { dayHold }
+  );
+  const panel = h.doc.querySelector('#trPanel');
+  assert.ok(panel.querySelector('.surface-state--loading'), 'loading while the day is read');
+  assert.strictEqual(panel.querySelector('[data-day-invitation="true"]'), null, 'no invitation yet');
+  release();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(panel.querySelector('.surface-state--loading'), null);
+  assert.ok(panel.querySelector('[data-day-invitation="true"]'), 'the invitation once the day has loaded');
 });
 
 test('endpoint failure non-OK: day timeline renders, notice present, section absent', async () => {
