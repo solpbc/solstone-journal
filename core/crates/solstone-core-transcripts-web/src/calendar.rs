@@ -92,18 +92,32 @@ pub(crate) async fn stats(
                 .as_ref()
                 .map(|Extension(r)| r.canonical_path().to_path_buf())
                 .unwrap_or_else(|| (*state.journal_root).clone());
-            let fold_res = crate::inventory::fold_month_days(
-                admitted.map(|Extension(r)| r),
-                &journal_path,
-                &month,
-                &state.clock,
-            );
-            if let Err(err) = fold_res {
-                return TranscriptError::display(err).response();
-            }
-            let month_counts = crate::inventory::get_month_counts(&journal_path, &month);
+            let clock = state.clock.clone();
+            let root = admitted.map(|Extension(r)| r);
+            let month = month.clone();
+            let mut response = solstone_core_convey_http::owner_read::spawn_blocking_response(
+                solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsMonthStats,
+                move || {
+                    let notify_id = root.as_ref().map(|root| root.identity());
+                    let res =
+                        crate::inventory::fold_month_days(root, &journal_path, &month, &clock);
+                    let notify_id = notify_id.or_else(|| {
+                        JournalRoot::open(&journal_path)
+                            .ok()
+                            .map(|opened| opened.identity())
+                    });
+                    if let Some(notify_id) = notify_id {
+                        crate::inventory::notify_inventory_worker(notify_id);
+                    }
+                    match res {
+                        Ok(counts) => Json(counts).into_response(),
+                        Err(err) => TranscriptError::display(err).response(),
+                    }
+                },
+            )
+            .await;
+
             let dur_ms = fold_start.elapsed().as_millis();
-            let mut response = Json(month_counts).into_response();
             let val = if disposition == Disposition::Immediate {
                 HeaderValue::from_static("coalesced;desc=\"immediate\"")
             } else {

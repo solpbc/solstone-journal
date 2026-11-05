@@ -169,11 +169,11 @@ pub(crate) enum FileDigestEntry {
     DayEntry(String),
     SegmentDir {
         stream: String,
-        segment_key: String,
+        segment_dir: String,
     },
     Present {
         stream: String,
-        segment_key: String,
+        segment_dir: String,
         file_name: String,
         stat: FileStat,
     },
@@ -253,8 +253,8 @@ pub(crate) struct JournalInventory {
     pub(crate) active_streams: usize,
     /// Indicates whether a full pass (either initial fill or hourly claim) is currently in flight.
     pub(crate) in_full_pass: bool,
-    /// Per-day condvar map to guarantee single-flight folding per day.
-    pub(crate) in_flight: HashMap<String, Arc<(Mutex<bool>, Condvar)>>,
+    /// Per-day condvar map to guarantee single-flight folding per day, paired with request generation.
+    pub(crate) in_flight: HashMap<String, Arc<(Mutex<bool>, Condvar, u64)>>,
     pub(crate) pending_first_seen: HashMap<String, DateTime<Utc>>,
 }
 
@@ -342,6 +342,17 @@ fn get_or_create_inventory(
     inv_arc
 }
 
+/// Every listed day was refolded to a stored count for this pass.
+/// A failed fold keeps its generation but is not a finished pass.
+fn listed_days_refolded(inv: &JournalInventory, listed_days: &[String], req_gen: u64) -> bool {
+    !listed_days.is_empty()
+        && listed_days.iter().all(|day| {
+            inv.rows.get(day).is_some_and(|row| {
+                row.fold_generation >= req_gen && matches!(row.state, DayFoldState::Computed(_))
+            })
+        })
+}
+
 fn run_worker_loop(
     root: Arc<JournalRoot>,
     inv_arc: Arc<Mutex<JournalInventory>>,
@@ -372,7 +383,33 @@ fn run_worker_loop(
         let now = clock.now();
         let req_gen = next_generation();
 
-        let listed_days_map = day_dirs(&journal_path).unwrap_or_default();
+        let listed_days_map = match day_dirs(&journal_path) {
+            Ok(m) => m,
+            Err(_) => {
+                let mut inv = inv_arc.lock().expect("inventory lock");
+                inv.in_full_pass = false;
+                continue;
+            }
+        };
+
+        let dropped_days: Vec<String> = {
+            let mut inv = inv_arc.lock().expect("inventory lock");
+            let stale: Vec<String> = inv
+                .rows
+                .keys()
+                .filter(|d| !listed_days_map.contains_key(*d))
+                .cloned()
+                .collect();
+            for d in &stale {
+                inv.rows.remove(d);
+                inv.pending_first_seen.remove(d);
+            }
+            stale
+        };
+        for d in dropped_days {
+            emit_notification(&journal_path, identity, "day", &d);
+        }
+
         let mut listed_days: Vec<String> = listed_days_map.into_keys().collect();
         listed_days.sort_by(|a, b| b.cmp(a));
 
@@ -424,11 +461,10 @@ fn run_worker_loop(
         if is_full_pass {
             let finish_now = clock.now();
             let mut inv = inv_arc.lock().expect("inventory lock");
-            let all_attempted = listed_days.iter().all(|d| inv.rows.contains_key(d));
-            if all_attempted {
+            if listed_days_refolded(&inv, &listed_days, req_gen) {
                 inv.last_full_pass_finish = Some(finish_now);
+                inv.in_full_pass = false;
             }
-            inv.in_full_pass = false;
         }
 
         if worker.stop.load(Ordering::SeqCst) {
@@ -452,7 +488,15 @@ pub fn drop_inventory(identity: ObjectIdentity) {
     let mut watchers = WATCHERS.lock().expect("watchers lock");
     if let Some(w) = watchers.remove(&identity) {
         w.active.store(false, Ordering::SeqCst);
+        w.generation.fetch_add(1, Ordering::SeqCst);
         w.cv.notify_all();
+    }
+}
+
+pub(crate) fn notify_inventory_worker(identity: ObjectIdentity) {
+    let workers = WORKERS.lock().expect("workers lock");
+    if let Some(worker) = workers.get(&identity) {
+        worker.cv.notify_one();
     }
 }
 
@@ -486,6 +530,7 @@ pub(crate) fn restart_wipe(identity: ObjectIdentity) {
 
 struct WatcherControl {
     active: AtomicBool,
+    generation: AtomicU64,
     cv: Condvar,
     mu: Mutex<()>,
     clock: Mutex<Clock>,
@@ -518,22 +563,28 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
         let ctrl = watchers.entry(identity).or_insert_with(|| {
             Arc::new(WatcherControl {
                 active: AtomicBool::new(true),
+                generation: AtomicU64::new(0),
                 cv: Condvar::new(),
                 mu: Mutex::new(()),
                 clock: Mutex::new(Clock::system()),
             })
         });
         ctrl.active.store(true, Ordering::SeqCst);
+        let my_generation = ctrl.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let ctrl_c = ctrl.clone();
         let root_c = root.clone();
         std::thread::spawn(move || {
-            while ctrl_c.active.load(Ordering::SeqCst) {
+            while ctrl_c.active.load(Ordering::SeqCst)
+                && ctrl_c.generation.load(Ordering::SeqCst) == my_generation
+            {
                 let guard = ctrl_c.mu.lock().unwrap();
                 let _ = ctrl_c
                     .cv
                     .wait_timeout(guard, Duration::from_secs(10))
                     .unwrap();
-                if !ctrl_c.active.load(Ordering::SeqCst) {
+                if !ctrl_c.active.load(Ordering::SeqCst)
+                    || ctrl_c.generation.load(Ordering::SeqCst) != my_generation
+                {
                     break;
                 }
                 let clock = ctrl_c.clock.lock().unwrap().clone();
@@ -544,6 +595,7 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
         let watchers = WATCHERS.lock().expect("watchers lock");
         if let Some(ctrl) = watchers.get(&identity) {
             ctrl.active.store(false, Ordering::SeqCst);
+            ctrl.generation.fetch_add(1, Ordering::SeqCst);
             ctrl.cv.notify_all();
         }
     }
@@ -577,6 +629,7 @@ fn tick_journal(root: &Arc<JournalRoot>, clock: &Clock) {
 }
 
 fn emit_notification(journal_root: &Path, _identity: ObjectIdentity, kind: &str, key: &str) {
+    #[cfg(test)]
     test_support::record_notification(_identity, kind, key);
 
     let sock_path = journal_root.join("health/callosum.sock");
@@ -679,12 +732,12 @@ fn read_tree_digest(journal: &Path, day: &str, _identity: ObjectIdentity) -> Tre
             continue;
         }
 
-        if let Some(key) = segment_key_os(&file_name) {
+        if let Some(_key) = segment_key_os(&file_name) {
             entries.insert(FileDigestEntry::SegmentDir {
                 stream: String::new(),
-                segment_key: key.to_string(),
+                segment_dir: file_name_str.clone(),
             });
-            segment_dirs.push((String::new(), key.to_string(), path));
+            segment_dirs.push((String::new(), file_name_str.clone(), path));
             continue;
         }
 
@@ -697,12 +750,13 @@ fn read_tree_digest(journal: &Path, day: &str, _identity: ObjectIdentity) -> Tre
                     if !sub_path.is_dir() {
                         continue;
                     }
-                    if let Some(key) = segment_key_os(&sub_name) {
+                    if let Some(_key) = segment_key_os(&sub_name) {
+                        let sub_name_str = sub_name.to_string_lossy().to_string();
                         entries.insert(FileDigestEntry::SegmentDir {
                             stream: stream_name.clone(),
-                            segment_key: key.to_string(),
+                            segment_dir: sub_name_str.clone(),
                         });
-                        segment_dirs.push((stream_name.clone(), key.to_string(), sub_path));
+                        segment_dirs.push((stream_name.clone(), sub_name_str, sub_path));
                     }
                 }
             }
@@ -717,7 +771,7 @@ fn read_tree_digest(journal: &Path, day: &str, _identity: ObjectIdentity) -> Tre
         }
     }
 
-    for (stream, segment_key, seg_path) in segment_dirs {
+    for (stream, segment_dir, seg_path) in segment_dirs {
         let file_entries = match fs::read_dir(&seg_path) {
             Ok(fe) => fe,
             Err(err) => {
@@ -748,7 +802,7 @@ fn read_tree_digest(journal: &Path, day: &str, _identity: ObjectIdentity) -> Tre
                         let file_name = f_name.to_string_lossy().to_string();
                         entries.insert(FileDigestEntry::Present {
                             stream: stream.clone(),
-                            segment_key: segment_key.clone(),
+                            segment_dir: segment_dir.clone(),
                             file_name,
                             stat,
                         });
@@ -777,7 +831,14 @@ fn read_day_identity(
     identity: ObjectIdentity,
 ) -> DayIdentity {
     let marker = read_marker_identity(journal, day, stored_marker, identity);
-    if is_live {
+    let is_malformed = matches!(
+        marker,
+        MarkerIdentity::Present {
+            malformed: true,
+            ..
+        }
+    );
+    if is_live || is_malformed {
         let tree = read_tree_digest(journal, day, identity);
         DayIdentity::LiveTree { marker, tree }
     } else {
@@ -852,14 +913,15 @@ fn fold_single_day(
         if let Some(entry) = inv.in_flight.get(day) {
             Some(entry.clone())
         } else {
-            let entry = Arc::new((Mutex::new(false), Condvar::new()));
+            let entry = Arc::new((Mutex::new(false), Condvar::new(), req_gen));
             inv.in_flight.insert(day.to_string(), entry);
             None
         }
     };
 
     if let Some(entry) = in_flight_entry {
-        let (lock, cv) = &*entry;
+        let (lock, cv, starter_req_gen) = &*entry;
+        let starter_req_gen = *starter_req_gen;
         {
             #[cfg(test)]
             test_support::inc_waiter_counter(root.identity());
@@ -883,18 +945,45 @@ fn fold_single_day(
             stored_marker.as_ref(),
             root.identity(),
         );
-        let matches_stored = {
+        let (matches_stored, is_failed) = {
             let inv = inv_arc.lock().expect("inventory lock");
-            inv.rows
-                .get(day)
-                .map(|r| r.identity == disk_identity)
-                .unwrap_or(false)
+            match inv.rows.get(day) {
+                Some(r) => (
+                    r.identity == disk_identity,
+                    matches!(r.state, DayFoldState::Failed(_)),
+                ),
+                None => (false, false),
+            }
         };
+
+        if is_failed && starter_req_gen < req_gen {
+            return fold_single_day_exec(root, journal, day, is_live, now, req_gen, inv_arc);
+        }
+
         if matches_stored {
             return Ok(disk_identity);
         } else {
-            return fold_single_day(root, journal, day, is_live, now, req_gen, inv_arc);
+            return fold_single_day_exec(root, journal, day, is_live, now, req_gen, inv_arc);
         }
+    }
+
+    fold_single_day_exec(root, journal, day, is_live, now, req_gen, inv_arc)
+}
+
+fn fold_single_day_exec(
+    root: &Arc<JournalRoot>,
+    journal: &Path,
+    day: &str,
+    is_live: bool,
+    now: DateTime<Utc>,
+    req_gen: u64,
+    inv_arc: &Arc<Mutex<JournalInventory>>,
+) -> Result<DayIdentity, FoldAborted> {
+    {
+        let mut inv = inv_arc.lock().expect("inventory lock");
+        inv.in_flight
+            .entry(day.to_string())
+            .or_insert_with(|| Arc::new((Mutex::new(false), Condvar::new(), req_gen)));
     }
 
     struct InFlightGuard {
@@ -906,7 +995,7 @@ fn fold_single_day(
         fn drop(&mut self) {
             let mut inv = self.inv_arc.lock().expect("inventory lock");
             if let Some(entry) = inv.in_flight.remove(&self.day) {
-                let (lock, cv) = &*entry;
+                let (lock, cv, _) = &*entry;
                 let mut done = lock.lock().unwrap();
                 *done = true;
                 cv.notify_all();
@@ -914,14 +1003,17 @@ fn fold_single_day(
         }
     }
 
-    let _in_flight_guard = InFlightGuard {
+    let in_flight_guard = InFlightGuard {
         day: day.to_string(),
         inv_arc: inv_arc.clone(),
     };
 
     let admission = match begin_target_use_bound(Arc::clone(root)) {
         Ok(guard) => guard,
-        Err(TargetUseRefused) => return Err(FoldAborted::TargetUseRefused),
+        Err(TargetUseRefused) => {
+            drop(in_flight_guard);
+            return Err(FoldAborted::TargetUseRefused);
+        }
     };
 
     let stored_marker = {
@@ -956,27 +1048,29 @@ fn fold_single_day(
         let new_row = match compute_outcome {
             Ok(count) => {
                 inv.pending_first_seen.remove(day);
-                if let Some(ref prev) = prev_row {
-                    if let DayFoldState::Computed(old_count) = prev.state {
-                        if old_count != count
-                            && prev.identity.marker().stat_only()
-                                == identity_pre.marker().stat_only()
-                        {
-                            if let Ok(mut writer) = DailyLogWriter::new(
-                                journal,
-                                "calendar",
-                                "inventory",
-                                Some(day.to_string()),
-                            ) {
-                                writer.write(&format!("chronicle day {day}: missed producer\n"));
+                if !is_live {
+                    if let Some(ref prev) = prev_row {
+                        if let DayFoldState::Computed(old_count) = prev.state {
+                            if old_count != count
+                                && prev.identity.marker().stat_only()
+                                    == identity_pre.marker().stat_only()
+                            {
+                                if let Ok(mut writer) = DailyLogWriter::new(
+                                    journal,
+                                    "calendar",
+                                    "inventory",
+                                    Some(day.to_string()),
+                                ) {
+                                    writer
+                                        .write(&format!("chronicle day {day}: missed producer\n"));
+                                }
                             }
-                            emit = true;
                         }
                     }
                 }
 
                 match &prev_row {
-                    None => emit = true,
+                    None => emit = false,
                     Some(prev) => match prev.state {
                         DayFoldState::Computed(old) => {
                             if old != count {
@@ -1010,7 +1104,7 @@ fn fold_single_day(
                 }
 
                 match &prev_row {
-                    None => emit = true,
+                    None => emit = false,
                     Some(prev) => {
                         if matches!(prev.state, DayFoldState::Computed(_)) {
                             emit = true;
@@ -1045,6 +1139,7 @@ fn fold_single_day(
         emit
     };
 
+    drop(in_flight_guard);
     drop(admission);
 
     if emit_day {
@@ -1118,7 +1213,36 @@ fn read_inventory_inner(
     #[cfg(test)]
     test_support::inc_chronicle_lists(identity);
 
-    let listed_days_map = day_dirs(journal_path).unwrap_or_default();
+    let listed_days_map = match day_dirs(journal_path) {
+        Ok(m) => m,
+        Err(_) => {
+            let mut inv = inv_arc.lock().expect("inventory lock");
+            inv.in_full_pass = false;
+            return (
+                Arc::new(BTreeMap::new()),
+                json!({"complete": false, "behind": 0, "failed": 0, "oldest": now.to_rfc3339()}),
+            );
+        }
+    };
+
+    let dropped_days: Vec<String> = {
+        let mut inv = inv_arc.lock().expect("inventory lock");
+        let stale: Vec<String> = inv
+            .rows
+            .keys()
+            .filter(|d| !listed_days_map.contains_key(*d))
+            .cloned()
+            .collect();
+        for d in &stale {
+            inv.rows.remove(d);
+            inv.pending_first_seen.remove(d);
+        }
+        stale
+    };
+    for d in dropped_days {
+        emit_notification(journal_path, identity, "day", &d);
+    }
+
     let mut listed_days: Vec<String> = listed_days_map.into_keys().collect();
     listed_days.sort();
 
@@ -1255,36 +1379,22 @@ fn read_inventory_inner(
     #[cfg(test)]
     let mut fold_count = 0;
 
+    let mut remaining_pending_days: Vec<String> = Vec::new();
+
     if role == RequestRole::Index {
-        for day in &pending_days {
+        for (i, day) in pending_days.iter().enumerate() {
             #[cfg(test)]
             if let Some(limit) = fold_limit {
                 if fold_count >= limit {
                     budget_spent = true;
-                    let workers = WORKERS.lock().expect("workers lock");
-                    if let Some(w) = workers.get(&identity) {
-                        let mut req = w.request.lock().unwrap();
-                        req.need_pass = true;
-                        if run_full_pass {
-                            req.full_pass = true;
-                        }
-                        w.cv.notify_one();
-                    }
+                    remaining_pending_days.extend(pending_days[i..].iter().cloned());
                     break;
                 }
             }
 
             if start.elapsed() >= INLINE_FOLD_BUDGET {
                 budget_spent = true;
-                let workers = WORKERS.lock().expect("workers lock");
-                if let Some(w) = workers.get(&identity) {
-                    let mut req = w.request.lock().unwrap();
-                    req.need_pass = true;
-                    if run_full_pass {
-                        req.full_pass = true;
-                    }
-                    w.cv.notify_one();
-                }
+                remaining_pending_days.extend(pending_days[i..].iter().cloned());
                 break;
             }
             let is_live = live_set.contains(day);
@@ -1298,16 +1408,49 @@ fn read_inventory_inner(
                 fold_count += 1;
             }
         }
+    } else {
+        remaining_pending_days = pending_days.clone();
     }
 
-    if run_full_pass && !budget_spent {
+    if !remaining_pending_days.is_empty() {
+        let workers = WORKERS.lock().expect("workers lock");
+        if let Some(w) = workers.get(&identity) {
+            let mut req = w.request.lock().unwrap();
+            req.need_pass = true;
+            if run_full_pass {
+                req.full_pass = true;
+            }
+            // The month route folds its own days after this read returns.
+            // Waking now lets that pass claim the day before the route stores
+            // the count it read.
+            if role != RequestRole::MonthStats {
+                w.cv.notify_one();
+            }
+        }
+    }
+
+    if role == RequestRole::Index && run_full_pass && !budget_spent {
         let mut inv = inv_arc.lock().expect("inventory lock");
-        let all_attempted = listed_days.iter().all(|d| inv.rows.contains_key(d));
-        if all_attempted {
+        if listed_days_refolded(&inv, &listed_days, req_gen) {
             let finish_now = clock.now();
             inv.last_full_pass_finish = Some(finish_now);
+            inv.in_full_pass = false;
         }
-        inv.in_full_pass = false;
+    } else if role == RequestRole::Index && !run_full_pass {
+        // A failed full pass leaves the claim set. Release it once every listed
+        // day has a stored count again, so the next hour can run.
+        let mut inv = inv_arc.lock().expect("inventory lock");
+        let settled = !listed_days.is_empty()
+            && inv.in_flight.is_empty()
+            && listed_days.iter().all(|day| {
+                matches!(
+                    inv.rows.get(day).map(|row| &row.state),
+                    Some(DayFoldState::Computed(_))
+                )
+            });
+        if inv.in_full_pass && settled {
+            inv.in_full_pass = false;
+        }
     }
 
     // Build counts snapshot and freshness using stored day_identities (no extra stats)
@@ -1374,7 +1517,7 @@ pub(crate) fn fold_month_days(
     journal_path: &Path,
     month: &str,
     clock: &Clock,
-) -> Result<(), String> {
+) -> Result<BTreeMap<String, u64>, String> {
     let now = clock.now();
     let root = match root_opt {
         Some(r) => r,
@@ -1387,7 +1530,26 @@ pub(crate) fn fold_month_days(
     let inv_arc = get_or_create_inventory(&root, identity);
     let req_gen = next_generation();
 
-    let listed_days_map = day_dirs(journal_path).unwrap_or_default();
+    let listed_days_map = day_dirs(journal_path).map_err(|e| e.to_string())?;
+
+    let dropped_days: Vec<String> = {
+        let mut inv = inv_arc.lock().expect("inventory lock");
+        let stale: Vec<String> = inv
+            .rows
+            .keys()
+            .filter(|d| !listed_days_map.contains_key(*d))
+            .cloned()
+            .collect();
+        for d in &stale {
+            inv.rows.remove(d);
+            inv.pending_first_seen.remove(d);
+        }
+        stale
+    };
+    for d in dropped_days {
+        emit_notification(journal_path, identity, "day", &d);
+    }
+
     let mut month_days: Vec<String> = listed_days_map
         .into_keys()
         .filter(|d| d.starts_with(month))
@@ -1396,6 +1558,8 @@ pub(crate) fn fold_month_days(
 
     let (_today_date, _today_str, _yesterday_str, live_set) =
         compute_live_set(journal_path, &month_days, now);
+
+    let mut day_identities: HashMap<String, DayIdentity> = HashMap::new();
 
     for day in &month_days {
         let is_live = live_set.contains(day);
@@ -1415,51 +1579,51 @@ pub(crate) fn fold_month_days(
             }
         };
         if need_fold {
-            let _ = fold_single_day(&root, journal_path, day, is_live, now, req_gen, &inv_arc);
+            match fold_single_day(&root, journal_path, day, is_live, now, req_gen, &inv_arc) {
+                Ok(new_id) => {
+                    day_identities.insert(day.clone(), new_id);
+                }
+                Err(FoldAborted::TargetUseRefused) => {
+                    return Err(format!("chronicle day {day}: target use refused"));
+                }
+            }
+        } else {
+            day_identities.insert(day.clone(), current_id);
         }
     }
 
     let inv = inv_arc.lock().expect("inventory lock");
+    let mut month_counts = BTreeMap::new();
     for day in &month_days {
+        let expected_id = day_identities.get(day);
         match inv.rows.get(day) {
             None => return Err(format!("chronicle day {day}: missing count")),
             Some(row) => {
-                if matches!(row.state, DayFoldState::Failed(_)) {
-                    return Err(format!("chronicle day {day}: count failed"));
+                if Some(&row.identity) != expected_id {
+                    return Err(format!("chronicle day {day}: identity mismatch"));
+                }
+                match &row.state {
+                    DayFoldState::Computed(count) => {
+                        if *count > 0 {
+                            month_counts.insert(day.clone(), *count);
+                        }
+                    }
+                    DayFoldState::Failed(err) => {
+                        return Err(err.clone());
+                    }
                 }
             }
         }
     }
 
-    Ok(())
+    Ok(month_counts)
 }
 
-pub(crate) fn get_month_counts(journal_path: &Path, month: &str) -> BTreeMap<String, u64> {
-    let Ok(root) = JournalRoot::open(journal_path) else {
-        return BTreeMap::new();
-    };
-    let root = Arc::new(root);
-    let identity = root.identity();
-    let inv_arc = get_or_create_inventory(&root, identity);
-    let inv = inv_arc.lock().expect("inventory lock");
-    let mut map = BTreeMap::new();
-    for (day, row) in &inv.rows {
-        if day.starts_with(month) {
-            if let DayFoldState::Computed(count) = row.state {
-                if count > 0 {
-                    map.insert(day.clone(), count);
-                }
-            }
-        }
-    }
-    map
-}
-
+#[cfg(test)]
 #[allow(dead_code)]
 pub(crate) mod test_support {
     use solstone_core_journal_io::ObjectIdentity;
     use std::collections::HashMap;
-    use std::fs;
     use std::path::Path;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Condvar, LazyLock, Mutex};
@@ -1760,40 +1924,15 @@ pub(crate) mod test_support {
         }
     }
 
-    fn notification_file(identity: ObjectIdentity) -> std::path::PathBuf {
-        let obs = identity.observation_id().replace(':', "_");
-        std::env::temp_dir().join(format!("solstone_test_notifs_{obs}"))
-    }
-
     pub(crate) fn record_notification(identity: ObjectIdentity, kind: &str, key: &str) {
-        use std::io::Write;
         let mut b = BARRIERS.lock().unwrap();
         b.notifications
             .entry(identity)
             .or_default()
             .push((kind.to_string(), key.to_string()));
-        drop(b);
-        if let Ok(mut file) = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(notification_file(identity))
-        {
-            let _ = writeln!(file, "{kind}\t{key}");
-        }
     }
 
     pub(crate) fn recorded_notifications(identity: ObjectIdentity) -> Vec<(String, String)> {
-        if let Ok(content) = fs::read_to_string(notification_file(identity)) {
-            let mut list = Vec::new();
-            for line in content.lines() {
-                if let Some((kind, key)) = line.split_once('\t') {
-                    list.push((kind.to_string(), key.to_string()));
-                }
-            }
-            if !list.is_empty() {
-                return list;
-            }
-        }
         BARRIERS
             .lock()
             .unwrap()
@@ -1805,7 +1944,6 @@ pub(crate) mod test_support {
 
     pub(crate) fn clear_recorded_notifications(identity: ObjectIdentity) {
         BARRIERS.lock().unwrap().notifications.remove(&identity);
-        let _ = fs::remove_file(notification_file(identity));
     }
 
     pub(crate) fn hold_background_fill(identity: ObjectIdentity) -> Arc<HoldBarrier> {
@@ -1872,7 +2010,6 @@ pub(crate) mod test_support {
         b.before_file_stats.remove(&identity);
         b.notifications.remove(&identity);
         drop(b);
-        let _ = fs::remove_file(notification_file(identity));
         reset_seam_counters(identity);
         let mut w = WAITER_COUNTERS.lock().unwrap();
         w.remove(&identity);
@@ -1893,9 +2030,11 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use axum::http::{Request, StatusCode};
     use axum::response::Response;
-    use chrono::{TimeZone, Utc};
+    use chrono::{DateTime, TimeZone, Utc};
     use serde_json::{Value, json};
-    use solstone_core_journal_io::{JournalRoot, ObjectIdentity, day_dirs};
+    use solstone_core_journal_io::{
+        HealthMarkerKind, JournalRoot, ObjectIdentity, day_dirs, health_marker_path,
+    };
     use tower::ServiceExt;
 
     use super::*;
@@ -1946,6 +2085,63 @@ mod tests {
         copy_dir_all(&fixture, temp.path());
         let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
         (temp, root)
+    }
+
+    fn write_browser_segment(journal: &Path, day: &str, key: &str) {
+        let seg = journal
+            .join("chronicle")
+            .join(day)
+            .join("workstation.browser")
+            .join(key);
+        fs::create_dir_all(&seg).unwrap();
+        fs::write(
+            seg.join("stream.json"),
+            b"{\"stream\":\"workstation.browser\",\"seq\":1}\n",
+        )
+        .unwrap();
+        fs::write(
+            seg.join("browser_page.jsonl"),
+            b"{\"t\":\"segment_start\",\"ts\":1783006230000,\"rel\":30000,\"site\":\"example.com\",\"url\":\"https://example.com\",\"title\":\"Test\",\"adapter\":\"docs\",\"ctx\":\"doc\",\"n\":1,\"blocks\":[]}\n",
+        )
+        .unwrap();
+    }
+
+    fn write_analyzed_audio(dir: &Path, text: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("mic_audio.jsonl"),
+            format!(
+                "{{\"_solstone_processing\":{{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}}}\n{{\"start\":\"10:00:00\",\"end\":\"10:00:01\",\"text\":\"{text}\"}}\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    async fn month_day_count(
+        app: &axum::Router,
+        root: &Arc<JournalRoot>,
+        month: &str,
+        day: &str,
+    ) -> u64 {
+        let req = Request::get(format!("/app/transcripts/api/stats/{month}"))
+            .extension(root.clone())
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
+        body.get(day).and_then(Value::as_u64).unwrap_or(0)
+    }
+
+    async fn index_body(app: &axum::Router, root: &Arc<JournalRoot>) -> Value {
+        let req = Request::get("/app/transcripts/api/index")
+            .extension(root.clone())
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap()
     }
 
     #[tokio::test]
@@ -2015,7 +2211,9 @@ mod tests {
         );
         for (day, count) in &walk {
             let mut scan = solstone_core_journal_stats_cli::DayScan::default();
-            scan.stats.transcript_ranges = *count;
+            scan.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
+            scan.stats.transcript_ranges = count.saturating_add(1_000_000);
+            assert_ne!(scan.stats.transcript_ranges, *count);
             let dir = solstone_core_journal_io::day_path(temp2.path(), day, false).unwrap();
             let stats_path = dir.join("stats.json");
             solstone_core_journal_io::write_json(
@@ -2051,6 +2249,19 @@ mod tests {
             let m2_bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
             assert_eq!(m2_bytes, month_bytes_map[month]);
         }
+
+        // One fixture-day change at a time. A cache hit must not hide either one.
+        let day = walk.keys().next().cloned().expect("fixture day");
+        let month = &day[..6];
+        let before = month_day_count(&app, &root, month, &day).await;
+        write_browser_segment(temp.path(), &day, "235000_60");
+        solstone_core_journal_io::bump_stream_marker(temp.path(), &day).unwrap();
+        let after_first = month_day_count(&app, &root, month, &day).await;
+        assert_ne!(after_first, before);
+        write_browser_segment(temp.path(), &day, "235100_60");
+        solstone_core_journal_io::bump_stream_marker(temp.path(), &day).unwrap();
+        let after_second = month_day_count(&app, &root, month, &day).await;
+        assert_ne!(after_second, after_first);
     }
 
     #[tokio::test]
@@ -2102,10 +2313,25 @@ mod tests {
         let (_today_date, _today_str, _yesterday_str, live_set) =
             compute_live_set(temp.path(), &listed_days, now);
         let live_days_count = listed_days.iter().filter(|d| live_set.contains(*d)).count();
+        // A malformed stream marker is read as a live tree, including the
+        // fixture day whose marker is empty.
+        let malformed_days = listed_days
+            .iter()
+            .filter(|day| {
+                let path = health_marker_path(temp.path(), day, HealthMarkerKind::Stream);
+                match fs::read_to_string(&path) {
+                    Ok(content) => {
+                        serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content)
+                            .is_err()
+                    }
+                    Err(_) => false,
+                }
+            })
+            .count();
         assert_eq!(
             test_support::tree_descents(identity),
-            live_days_count,
-            "tree descent equals live days"
+            live_days_count + malformed_days,
+            "tree descent equals live days and malformed markers"
         );
     }
 
@@ -2403,127 +2629,6 @@ mod tests {
         assert_eq!(count2, post_target_count);
     }
 
-    // A reset before the wait would leave C_old current, because the marker is still absent.
-    #[tokio::test]
-    async fn test_barrier_restore_ordering() {
-        let (temp, root) = setup_fixture_journal();
-        let identity = root.identity();
-        let _guard = TestResetGuard(identity);
-
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
-        let clock = Clock::fixed(now);
-        let app = crate::router(temp.path().to_path_buf(), clock, || {
-            Response::new(Body::empty())
-        });
-
-        // Old day with no stream.updated
-        let target_day = "20260101";
-        let marker = health_marker_path(temp.path(), target_day, HealthMarkerKind::Stream);
-        let _ = fs::remove_file(&marker);
-
-        let _hooks = solstone_core_convey_shell::recovery_drain::register_recovery_hooks(
-            "test-barrier-restore-ordering",
-            root.clone(),
-            |_| Ok(()),
-            |_| Ok(()),
-        );
-
-        let (held_tx, held_rx) = std::sync::mpsc::channel();
-        let held_tx = Arc::new(Mutex::new(Some(held_tx)));
-        let fired = Arc::new(AtomicBool::new(false));
-        let fired_c = fired.clone();
-        let target_day_s = target_day.to_string();
-
-        test_support::install_barrier_after_compute(identity, move |day| {
-            if day == target_day_s && !fired_c.swap(true, Ordering::SeqCst) {
-                if let Some(tx) = held_tx.lock().unwrap().take() {
-                    let _ = tx.send(());
-                }
-                true
-            } else {
-                false
-            }
-        });
-
-        let inv_arc = get_or_create_inventory(&root, identity);
-        let root_c = root.clone();
-        let temp_c = temp.path().to_path_buf();
-        let target_day_c = target_day.to_string();
-        let inv_arc_c = inv_arc.clone();
-        let fold_thread = std::thread::spawn(move || {
-            let _ = fold_single_day(
-                &root_c,
-                &temp_c,
-                &target_day_c,
-                false,
-                now,
-                next_generation(),
-                &inv_arc_c,
-            );
-        });
-        held_rx.recv().unwrap();
-
-        // While held, change files to C_new
-        let seg = temp.path().join("chronicle/20260101/field/180000_60");
-        fs::create_dir_all(&seg).unwrap();
-        fs::write(
-            seg.join("mic_audio.jsonl"),
-            b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"18:00:00\",\"end\":\"18:00:01\",\"text\":\"c_new\"}\n",
-        )
-        .unwrap();
-
-        struct WaitHookGuard;
-        impl Drop for WaitHookGuard {
-            fn drop(&mut self) {
-                solstone_core_journal_io::whole_journal_restore::install_target_use_wait_hook(None);
-            }
-        }
-        let _hook_guard = WaitHookGuard;
-
-        let (wait_tx, wait_rx) = std::sync::mpsc::channel();
-        let wait_tx = Arc::new(Mutex::new(Some(wait_tx)));
-        solstone_core_journal_io::whole_journal_restore::install_target_use_wait_hook(Some(
-            Arc::new(move |_| {
-                if let Some(tx) = wait_tx.lock().unwrap().take() {
-                    let _ = tx.send(());
-                }
-            }),
-        ));
-
-        let root_drain = root.clone();
-        let pause_thread = std::thread::spawn(move || {
-            solstone_core_convey_shell::recovery_drain::pause_admitted_work(root_drain)
-        });
-
-        wait_rx.recv().unwrap();
-        test_support::release_compute_barrier(identity);
-
-        fold_thread.join().unwrap();
-        let paused = pause_thread.join().unwrap().unwrap();
-        paused.resume(&|| false).unwrap();
-
-        let resp = app
-            .clone()
-            .oneshot(
-                Request::get("/app/transcripts/api/index")
-                    .extension(root.clone())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-        let body: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(body["freshness"]["complete"], true);
-
-        let walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
-        assert_eq!(
-            body["months"]["202601"],
-            walk.get("20260101").copied().unwrap_or(0)
-        );
-    }
-
     #[tokio::test]
     async fn test_unbumped_older_day_correction() {
         let (temp, root) = setup_fixture_journal();
@@ -2581,7 +2686,7 @@ mod tests {
         // 3. Add a raw-only segment directory
         let raw_seg = day_path.join("field/190000_60");
         fs::create_dir_all(&raw_seg).unwrap();
-        fs::write(raw_seg.join("mic.raw"), b"raw audio bytes").unwrap();
+        fs::write(raw_seg.join("mic.flac"), b"raw audio bytes").unwrap();
 
         // A read 30 minutes later keeps the old count
         *now_ref.lock().unwrap() += chrono::Duration::minutes(30);
@@ -2624,6 +2729,22 @@ mod tests {
             .map(|(_, c)| *c)
             .sum();
         assert_eq!(b3["months"]["202601"], expected_sum);
+
+        // The read after the hourly refold keeps the corrected count.
+        let resp_next = app
+            .clone()
+            .oneshot(
+                Request::get("/app/transcripts/api/index")
+                    .extension(root.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let b_next: Value =
+            serde_json::from_slice(&to_bytes(resp_next.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(b_next["months"]["202601"], expected_sum);
 
         // Writes one missed producer line per day
         let mut found_missed_producer = false;
@@ -2755,18 +2876,29 @@ mod tests {
         assert_eq!(b["freshness"]["complete"], true);
 
         let walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
-        assert_eq!(
-            b["months"]["202608"],
-            walk.get("20260801").copied().unwrap_or(0)
-        );
-        assert!(
-            walk.get("20260801").copied().unwrap_or(0) > 0,
-            "count must have changed"
-        );
+        let today_count = walk.get("20260801").copied().unwrap_or(0);
+        assert_eq!(b["months"]["202608"], today_count);
+        assert!(today_count > 0, "count must have changed");
         assert!(
             walk.get("20260731").copied().unwrap_or(0) > 0,
             "yesterday count changed"
         );
+
+        // The next read keeps the count the edit read stored.
+        let again = index_body(&app, &root).await;
+        assert_eq!(again["months"]["202608"], today_count);
+        assert_eq!(again["freshness"]["complete"], true);
+
+        // Today raw-media variant: a raw file with no transcript, then the read after that.
+        let raw_only = today_path.join("field/180000_60");
+        fs::create_dir_all(&raw_only).unwrap();
+        fs::write(raw_only.join("mic.flac"), b"raw today bytes").unwrap();
+        let with_raw = index_body(&app, &root).await;
+        let raw_month = with_raw["months"]["202608"].as_u64().unwrap();
+        assert_ne!(raw_month, today_count);
+        let after_raw = index_body(&app, &root).await;
+        assert_eq!(after_raw["months"]["202608"], raw_month);
+        assert_eq!(after_raw["freshness"]["complete"], true);
     }
 
     #[tokio::test]
@@ -3371,6 +3503,272 @@ mod tests {
         let b: Value =
             serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
         assert_eq!(b["freshness"]["complete"], true);
+
+        let walk_before = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
+        let before_count = walk_before.get("20260416").copied().unwrap_or(0);
+
+        // Add an unbumped change on this old day with a malformed marker
+        let new_seg = temp.path().join("chronicle/20260416/field/190000_60");
+        fs::create_dir_all(&new_seg).unwrap();
+        fs::write(
+            new_seg.join("mic_audio.jsonl"),
+            b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"19:00:00\",\"end\":\"19:00:01\",\"text\":\"unbumped\"}\n",
+        )
+        .unwrap();
+
+        let resp2 = app
+            .clone()
+            .oneshot(
+                Request::get("/app/transcripts/api/index")
+                    .extension(root.clone())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp2.status(), StatusCode::OK);
+        let b2: Value =
+            serde_json::from_slice(&to_bytes(resp2.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(b2["freshness"]["complete"], true);
+
+        let walk_after = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
+        let after_count = walk_after.get("20260416").copied().unwrap_or(0);
+        assert_ne!(before_count, after_count);
+
+        let req_stats = Request::get("/app/transcripts/api/stats/202604")
+            .extension(root.clone())
+            .body(Body::empty())
+            .unwrap();
+        let resp_stats = app.clone().oneshot(req_stats).await.unwrap();
+        assert_eq!(resp_stats.status(), StatusCode::OK);
+        let stats_val: Value =
+            serde_json::from_slice(&to_bytes(resp_stats.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(stats_val["20260416"], json!(after_count));
+    }
+
+    fn full_pass_finish(identity: ObjectIdentity) -> Option<DateTime<Utc>> {
+        let reg = INVENTORIES.lock().expect("inventories lock");
+        let inv = reg
+            .get(&identity)
+            .expect("inventory")
+            .lock()
+            .expect("inventory lock");
+        inv.last_full_pass_finish
+    }
+
+    #[tokio::test]
+    async fn test_month_stats_does_not_stamp_without_folding() {
+        let (temp, root) = setup_fixture_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let now_ref = Arc::new(Mutex::new(
+            Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap(),
+        ));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+
+        let first = index_body(&app, &root).await;
+        assert_eq!(first["freshness"]["complete"], true);
+        let before = first["months"]["202601"].as_u64().unwrap();
+        let stamped = full_pass_finish(identity).expect("initial pass stamped");
+
+        *now_ref.lock().unwrap() += chrono::Duration::hours(2);
+        write_browser_segment(temp.path(), "20260101", "234000_60");
+
+        let _hold = test_support::hold_background_fill(identity);
+        let month = index_month_stats(&app, &root, "202603").await;
+        assert!(month.is_object());
+        assert_eq!(full_pass_finish(identity), Some(stamped));
+
+        let snap = test_support::snapshot_worker_passes(identity);
+        test_support::release_background_fill(identity);
+        test_support::wait_worker_passes_after(identity, snap);
+
+        let after = index_body(&app, &root).await;
+        assert_ne!(after["months"]["202601"].as_u64().unwrap(), before);
+        assert!(full_pass_finish(identity).unwrap() > stamped);
+    }
+
+    #[tokio::test]
+    async fn test_digest_uses_raw_segment_dir_names() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"},"convey":{"password_hash":"","secret":"sec","trust_localhost":true}}"#,
+        )
+        .unwrap();
+        let root = JournalRoot::open(temp.path()).unwrap();
+        let day = temp.path().join("chronicle/20200101");
+        fs::create_dir_all(day.join("120000_60")).unwrap();
+        fs::create_dir_all(day.join("120000_60_extra")).unwrap();
+        fs::write(day.join("120000_60/note.txt"), b"a").unwrap();
+        fs::write(day.join("120000_60_extra/note.txt"), b"a").unwrap();
+
+        let digest = read_tree_digest(temp.path(), "20200101", root.identity());
+        let segment_dirs: Vec<&str> = digest
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                FileDigestEntry::SegmentDir {
+                    stream,
+                    segment_dir,
+                } if stream.is_empty() => Some(segment_dir.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(segment_dirs.contains(&"120000_60"));
+        assert!(
+            segment_dirs.contains(&"120000_60_extra"),
+            "raw directory name must stay in the digest: {segment_dirs:?}"
+        );
+        assert!(digest.entries.iter().any(|entry| matches!(
+            entry,
+            FileDigestEntry::Present { segment_dir, .. } if segment_dir == "120000_60_extra"
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_ac4_markers_placement_and_clock() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"},"convey":{"password_hash":"","secret":"sec","trust_localhost":true}}"#,
+        )
+        .unwrap();
+        let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now_ref = Arc::new(Mutex::new(t0));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+
+        let today = temp.path().join("chronicle/20260801");
+        write_analyzed_audio(&today.join("field/100000_60"), "analyzed");
+        let raw = today.join("field/140000_60");
+        fs::create_dir_all(&raw).unwrap();
+        fs::write(raw.join("mic.flac"), b"raw").unwrap();
+        fs::write(raw.join(".analyzing_audio"), b"{}\n").unwrap();
+        let marker_time =
+            filetime::FileTime::from_unix_time(t0.timestamp(), t0.timestamp_subsec_nanos());
+        filetime::set_file_mtime(raw.join(".analyzing_audio"), marker_time).unwrap();
+
+        let baseline = index_body(&app, &root).await;
+        assert_eq!(baseline["freshness"]["complete"], true);
+        let count = baseline["months"]["202608"].as_u64().unwrap();
+        assert!(count > 0);
+
+        fs::write(today.join("field/100000_60/.analyzing_audio"), b"{}\n").unwrap();
+        filetime::set_file_mtime(today.join("field/100000_60/.analyzing_audio"), marker_time)
+            .unwrap();
+        assert_eq!(index_body(&app, &root).await["months"]["202608"], count);
+
+        fs::write(
+            today.join("field/100000_60/placement.json"),
+            br#"{"version":1,"parts":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(index_body(&app, &root).await["months"]["202608"], count);
+
+        let marker_only = today.join("field/130000_60");
+        fs::create_dir_all(&marker_only).unwrap();
+        fs::write(
+            marker_only.join("stream.json"),
+            b"{\"stream\":\"field\",\"seq\":1}\n",
+        )
+        .unwrap();
+        assert_eq!(index_body(&app, &root).await["months"]["202608"], count);
+
+        // Past analyzing-stale (1800s), modality-input age (12h), and the 3-day sense age.
+        *now_ref.lock().unwrap() = t0 + chrono::Duration::days(4);
+        let aged = index_body(&app, &root).await;
+        assert_eq!(aged["freshness"]["complete"], true);
+        assert_eq!(aged["months"]["202608"], count);
+        let next = index_body(&app, &root).await;
+        assert_eq!(next["months"]["202608"], count);
+    }
+
+    #[tokio::test]
+    async fn test_ac9_one_day_envelope_per_count_change() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("config")).unwrap();
+        fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"identity":{"timezone":"UTC"},"convey":{"password_hash":"","secret":"sec","trust_localhost":true}}"#,
+        )
+        .unwrap();
+        let root = Arc::new(JournalRoot::open(temp.path()).unwrap());
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("field/100000_60"),
+            "seed",
+        );
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let clock = Clock::fixed(now);
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+
+        let first = index_body(&app, &root).await;
+        assert_eq!(first["freshness"]["complete"], true);
+        let before = first["months"]["202601"].as_u64().unwrap();
+        assert!(
+            test_support::recorded_notifications(identity).is_empty(),
+            "cold fill publishes no day envelope"
+        );
+
+        solstone_core_journal_io::bump_stream_marker(temp.path(), day).unwrap();
+        test_support::clear_recorded_notifications(identity);
+        let unchanged = index_body(&app, &root).await;
+        assert_eq!(unchanged["months"]["202601"], before);
+        assert!(
+            test_support::recorded_notifications(identity).is_empty(),
+            "unchanged fold publishes no day envelope"
+        );
+
+        write_browser_segment(temp.path(), day, "150000_60");
+        solstone_core_journal_io::bump_stream_marker(temp.path(), day).unwrap();
+        test_support::clear_recorded_notifications(identity);
+        let changed = index_body(&app, &root).await;
+        assert_ne!(changed["months"]["202601"].as_u64().unwrap(), before);
+        assert_eq!(
+            test_support::recorded_notifications(identity),
+            vec![("day".to_string(), day.to_string())]
+        );
+
+        test_support::clear_recorded_notifications(identity);
+        let next = index_body(&app, &root).await;
+        assert_eq!(next["months"]["202601"], changed["months"]["202601"]);
+        assert!(test_support::recorded_notifications(identity).is_empty());
+    }
+
+    async fn index_month_stats(app: &axum::Router, root: &Arc<JournalRoot>, month: &str) -> Value {
+        let req = Request::get(format!("/app/transcripts/api/stats/{month}"))
+            .extension(root.clone())
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap()
     }
 
     // Offload does not change the count because raw removal leaves the jsonl, so modality state remains Analyzed.
@@ -3400,6 +3798,9 @@ mod tests {
         let a_seg = temp.path().join("chronicle/20260101/field/100000_60");
         fs::create_dir_all(&a_seg).unwrap();
         fs::write(a_seg.join("mic_audio.jsonl"), b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"10:00:00\",\"end\":\"10:00:01\",\"text\":\"a\"}\n").unwrap();
+        let retain_seg = temp.path().join("chronicle/20260101/field/120000_60");
+        fs::create_dir_all(&retain_seg).unwrap();
+        fs::write(retain_seg.join("mic_audio.jsonl"), b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"12:00:00\",\"end\":\"12:00:01\",\"text\":\"retain\"}\n").unwrap();
 
         // 20260102: screen
         let s_seg = temp.path().join("chronicle/20260102/field/110000_60");
@@ -3432,7 +3833,9 @@ mod tests {
         for d in days {
             let dir = temp.path().join("chronicle").join(d);
             let mut scan = solstone_core_journal_stats_cli::DayScan::default();
-            scan.stats.transcript_ranges = *walk.get(d).unwrap_or(&0);
+            scan.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
+            scan.stats.transcript_ranges =
+                walk.get(d).copied().unwrap_or(0).saturating_add(1_000_000);
             let stats_path = dir.join("stats.json");
             solstone_core_journal_io::write_json(
                 &stats_path,
@@ -3513,16 +3916,18 @@ mod tests {
         // An offload raw restore does not change day_range_count (a raw file removed and written back left the count unchanged), so this fixture does not run offload.
 
         let initial_walk = assert_matches(&app, &root, temp.path(), now).await;
+        assert!(initial_walk.get("20260702").copied().unwrap_or(0) > 0);
+        assert!(initial_walk.get("20260703").copied().unwrap_or(0) > 0);
 
-        // Event 1: a new raw-only segment and a browser segment (create the files and bump_stream_marker)
-        let before_1 = initial_walk.get("20260703").copied().unwrap_or(0);
-        let raw_seg = temp.path().join("chronicle/20260703/field/140000_60");
+        // Event 1: a new raw-only segment and a browser segment on an old day
+        let before_1 = initial_walk.get("20260102").copied().unwrap_or(0);
+        let raw_seg = temp.path().join("chronicle/20260102/field/140000_60");
         fs::create_dir_all(&raw_seg).unwrap();
-        fs::write(raw_seg.join("mic.raw"), b"raw audio bytes").unwrap();
+        fs::write(raw_seg.join("mic.flac"), b"raw audio bytes").unwrap();
 
         let new_b_seg = temp
             .path()
-            .join("chronicle/20260703/workstation.browser/150000_60");
+            .join("chronicle/20260102/workstation.browser/150000_60");
         fs::create_dir_all(&new_b_seg).unwrap();
         fs::write(
             new_b_seg.join("stream.json"),
@@ -3531,9 +3936,9 @@ mod tests {
         .unwrap();
         fs::write(new_b_seg.join("browser_page.jsonl"), b"{\"t\":\"segment_start\",\"ts\":1783006240000,\"rel\":40000,\"site\":\"example.com\",\"url\":\"https://example.com\",\"title\":\"T2\",\"adapter\":\"docs\",\"ctx\":\"doc\",\"n\":1,\"blocks\":[]}\n").unwrap();
         let mut scan1 = solstone_core_journal_stats_cli::DayScan::default();
-        scan1.stats.transcript_ranges = 1;
-        scan1.stats.browser_segments = 1;
-        let stats_path1 = temp.path().join("chronicle/20260703/stats.json");
+        scan1.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
+        scan1.stats.transcript_ranges = 999_999;
+        let stats_path1 = temp.path().join("chronicle/20260102/stats.json");
         solstone_core_journal_io::write_json(
             &stats_path1,
             &scan1,
@@ -3541,31 +3946,31 @@ mod tests {
         )
         .unwrap();
         filetime::set_file_mtime(&stats_path1, future_time).unwrap();
-        solstone_core_journal_io::bump_stream_marker(temp.path(), "20260703").unwrap();
+        solstone_core_journal_io::bump_stream_marker(temp.path(), "20260102").unwrap();
         let walk1 = assert_matches(&app, &root, temp.path(), now).await;
-        let after_1 = walk1.get("20260703").copied().unwrap_or(0);
+        let after_1 = walk1.get("20260102").copied().unwrap_or(0);
         assert_ne!(before_1, after_1);
 
         // Event 2: segment delete through DELETE /app/transcripts/api/segment/{day}/{stream}/{segment_key}
-        let before_2 = walk1.get("20260703").copied().unwrap_or(0);
+        let before_2 = walk1.get("20260102").copied().unwrap_or(0);
         let del_req = Request::builder()
             .method("DELETE")
-            .uri("/app/transcripts/api/segment/20260703/workstation.browser/150000_60")
+            .uri("/app/transcripts/api/segment/20260102/workstation.browser/150000_60")
             .extension(root.clone())
             .body(Body::empty())
             .unwrap();
         let del_resp = app.clone().oneshot(del_req).await.unwrap();
         assert!(del_resp.status().is_success());
         let walk2 = assert_matches(&app, &root, temp.path(), now).await;
-        let after_2 = walk2.get("20260703").copied().unwrap_or(0);
+        let after_2 = walk2.get("20260102").copied().unwrap_or(0);
         assert_ne!(before_2, after_2);
 
         // Event 3: retention removal through solstone_core_retention::door::remove_segments
-        let before_3 = walk2.get("20260702").copied().unwrap_or(0);
+        let before_3 = walk2.get("20260101").copied().unwrap_or(0);
         let target = solstone_core_retention::Target {
-            day: "20260702".to_owned(),
-            stream: "workstation.browser".to_owned(),
-            dir: "100000_60".to_owned(),
+            day: "20260101".to_owned(),
+            stream: "field".to_owned(),
+            dir: "120000_60".to_owned(),
         };
         let _ = solstone_core_retention::door::remove_segments(
             temp.path(),
@@ -3575,7 +3980,7 @@ mod tests {
             "sha256:abc",
         );
         let walk3 = assert_matches(&app, &root, temp.path(), now).await;
-        let after_3 = walk3.get("20260702").copied().unwrap_or(0);
+        let after_3 = walk3.get("20260101").copied().unwrap_or(0);
         assert_ne!(before_3, after_3);
 
         // Event 4: solstone_core_segment::relocate_segment across two days
@@ -3616,30 +4021,15 @@ mod tests {
         assert_ne!(before_4_src, after_4_src);
         assert_ne!(before_4_dst, after_4_dst);
 
-        // Event 5: whole-journal restore through pause_admitted_work
-        test_support::clear_recorded_notifications(identity);
-        let _hooks = solstone_core_convey_shell::recovery_drain::register_recovery_hooks(
-            "parity-test-restore",
-            root.clone(),
-            |_| Ok(()),
-            |_| Ok(()),
-        );
-        let paused =
-            solstone_core_convey_shell::recovery_drain::pause_admitted_work(root.clone()).unwrap();
-        paused.resume(&|| false).unwrap();
-        let restore_notifications = test_support::recorded_notifications(identity);
-        assert_eq!(
-            restore_notifications,
-            vec![("system".to_string(), "calendar".to_string())]
-        );
-        let walk5 = assert_matches(&app, &root, temp.path(), now).await;
-
-        // Event 6: restart_wipe leaves the count unchanged and emits nothing
+        // Restart leaves the count unchanged. Restore ordering is the integration
+        // test, where only one copy of this crate is linked.
         test_support::clear_recorded_notifications(identity);
         restart_wipe(identity);
         assert!(test_support::recorded_notifications(identity).is_empty());
-        let walk6 = assert_matches(&app, &root, temp.path(), now).await;
-        assert_eq!(walk5, walk6);
+        let walk_restart = assert_matches(&app, &root, temp.path(), now).await;
+        assert_eq!(walk4, walk_restart);
+        assert!(walk_restart.get("20260702").copied().unwrap_or(0) > 0);
+        assert!(walk_restart.get("20260703").copied().unwrap_or(0) > 0);
 
         // Host import: process_transcript in-process
         let sample_txt = temp.path().join("import_sample.txt");
@@ -3664,7 +4054,7 @@ mod tests {
         }
         let walk_import = assert_matches(&app, &root, temp.path(), now).await;
         let created_day = &outcome.created()[0].day;
-        let before_import = walk6.get(created_day.as_str()).copied().unwrap_or(0);
+        let before_import = walk_restart.get(created_day.as_str()).copied().unwrap_or(0);
         let after_import = walk_import.get(created_day.as_str()).copied().unwrap_or(0);
         assert_ne!(before_import, after_import);
 

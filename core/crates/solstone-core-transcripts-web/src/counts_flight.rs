@@ -426,6 +426,25 @@ mod tests {
         }
     }
 
+    fn stats_free_walk(journal: &Path) -> std::collections::BTreeMap<String, u64> {
+        let mut aside = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(journal.join("chronicle")) {
+            for entry in entries.flatten() {
+                let stats_path = entry.path().join("stats.json");
+                let aside_path = entry.path().join("stats.json.aside");
+                if stats_path.is_file() {
+                    std::fs::rename(&stats_path, &aside_path).unwrap();
+                    aside.push((stats_path, aside_path));
+                }
+            }
+        }
+        let walk = crate::calendar::counts_by_walk(journal, chrono::Utc::now()).unwrap();
+        for (stats_path, aside_path) in aside {
+            std::fs::rename(&aside_path, &stats_path).unwrap();
+        }
+        walk
+    }
+
     fn setup_temp_journal() -> (tempfile::TempDir, Arc<JournalRoot>) {
         let temp = tempfile::tempdir().unwrap();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
@@ -440,7 +459,8 @@ mod tests {
         for day in days.keys() {
             let count = day_range_count(temp.path(), day, Utc::now()).unwrap();
             let mut scan = DayScan::default();
-            scan.stats.transcript_ranges = count;
+            scan.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
+            scan.stats.transcript_ranges = count.saturating_add(1_000_000);
             scan.stats.percept_ranges = 0;
             scan.stats.browser_segments = 0;
             let dir = day_path(temp.path(), day, false).unwrap();
@@ -476,6 +496,15 @@ mod tests {
 
         assert!(body_a["months"].get("202603").is_some());
         assert!(body_a["months"].get("202608").is_none());
+        let index_total: u64 = body_a["months"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|value| value.as_u64().unwrap())
+            .sum();
+        let walk_total: u64 = stats_free_walk(temp.path()).values().sum();
+        assert_eq!(index_total, walk_total);
+        assert_ne!(index_total, walk_total.saturating_add(1_000_000));
 
         // Setup pauser for the first two successful runs only
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel::<()>();

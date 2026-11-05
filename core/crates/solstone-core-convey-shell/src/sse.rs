@@ -232,8 +232,12 @@ mod tests {
             1,
             Box::new(ClosedRetries),
         );
-        let response =
-            Sse::new(LiveEvents::new(connection, Some(Arc::clone(&capture)), None)).into_response();
+        let response = Sse::new(LiveEvents::new(
+            connection,
+            Some(Arc::clone(&capture)),
+            None,
+        ))
+        .into_response();
         let mut body = response.into_body().into_data_stream();
         let first = String::from_utf8(body.next().await.unwrap().unwrap().to_vec()).unwrap();
         assert!(first.contains("event: brain_startup\n"));
