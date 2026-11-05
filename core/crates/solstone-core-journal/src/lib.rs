@@ -256,7 +256,8 @@ pub fn resolve_checkout_root_from_executable_dir(executable_dir: &Path) -> Optio
 }
 
 pub fn resolve_installation_root_from_executable_dir(executable_dir: &Path) -> Option<PathBuf> {
-    installed_site_packages_from_executable_dir(executable_dir)
+    embedded_apple_payload(executable_dir)
+        .or_else(|| installed_site_packages_from_executable_dir(executable_dir))
         .or_else(|| {
             executable_dir
                 .ancestors()
@@ -345,11 +346,12 @@ fn versioned_prefix_via_resolved_version_dir(version_dir: &Path) -> Option<PathB
 
 /// Why [`resolve_installation_root_from_executable_dir`] returned `None`.
 ///
-/// Reuses the same three candidate predicates as the resolver. The text is for
+/// Reuses the same candidate predicates as the resolver. The text is for
 /// operators; it names the executable directory, a walked ancestor, the
 /// checkout / layout markers that were required, and a Cargo target directory
 /// the executable sits in when no checkout is above it.
 pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
+    let embedded = embedded_apple_payload(executable_dir);
     let site_packages = installed_site_packages_from_executable_dir(executable_dir);
     let checkout = executable_dir.ancestors().find_map(|candidate| {
         detect_checkout_root(candidate)
@@ -375,7 +377,8 @@ pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
          walked ancestor {}\n\
          site-packages candidate: {}\n\
          checkout candidate (pyproject.toml + .git): {}\n\
-         layout share anchors {}, {}, {}: {}",
+         layout share anchors {}, {}, {}: {}\n\
+         Apple bundle JournalPayload candidate: {}",
         executable_dir.display(),
         ancestor.display(),
         site_packages
@@ -390,6 +393,10 @@ pub fn describe_installation_root_miss(executable_dir: &Path) -> String {
         LAYOUT_LAYOUT_ANCHOR,
         LAYOUT_TEMPLATE_ANCHOR,
         layout
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_owned()),
+        embedded
             .as_ref()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_owned()),
@@ -436,6 +443,17 @@ pub fn describe_package_roots_miss(executable_dir: &Path) -> String {
 fn is_layout_install_root(prefix: &Path) -> Option<PathBuf> {
     let share = prefix.join("share");
     has_layout_anchors(&share).then_some(share)
+}
+
+fn embedded_apple_payload(executable_dir: &Path) -> Option<PathBuf> {
+    if !matches!(
+        executable_dir.extension().and_then(OsStr::to_str),
+        Some("app" | "appex")
+    ) {
+        return None;
+    }
+    let payload = executable_dir.join("JournalPayload");
+    has_layout_anchors(&payload).then_some(payload)
 }
 
 fn resolve_canonical_site_packages(candidates: &[PathBuf]) -> Option<PathBuf> {
@@ -908,6 +926,53 @@ mod tests {
             fs::create_dir_all(path.parent().expect("anchor parent")).expect("create anchor dir");
             fs::write(&path, relative).expect("write layout anchor");
         }
+    }
+
+    #[test]
+    fn embedded_apple_bundle_resolves_its_validated_payload() {
+        let root = unique_temp("apple-payload");
+        for name in ["JournalRuntimeDev.app", "JournalWorker.appex"] {
+            let bundle = root.join(name);
+            let payload = bundle.join("JournalPayload");
+            fs::create_dir_all(&bundle).unwrap();
+            assert_eq!(resolve_installation_root_from_executable_dir(&bundle), None);
+            write_layout_anchors(&payload);
+            assert_eq!(
+                resolve_installation_root_from_executable_dir(&bundle),
+                Some(payload.clone())
+            );
+            assert_eq!(
+                resolve_installation_root_from_executable_dir(&bundle.join("nested")),
+                None,
+                "an executable outside the bundle root must not borrow its payload"
+            );
+            for anchor in [
+                LAYOUT_BUNDLE_ANCHOR,
+                LAYOUT_LAYOUT_ANCHOR,
+                LAYOUT_TEMPLATE_ANCHOR,
+            ] {
+                let path = payload.join(anchor);
+                fs::remove_file(&path).unwrap();
+                assert_eq!(resolve_installation_root_from_executable_dir(&bundle), None);
+                fs::create_dir(&path).unwrap();
+                assert_eq!(resolve_installation_root_from_executable_dir(&bundle), None);
+                fs::remove_dir(&path).unwrap();
+                fs::write(path, anchor).unwrap();
+            }
+            let relocated = root.join(format!("Moved-{name}"));
+            fs::rename(&bundle, &relocated).unwrap();
+            assert_eq!(
+                resolve_installation_root_from_executable_dir(&relocated),
+                Some(relocated.join("JournalPayload"))
+            );
+        }
+        let unrelated = root.join("bin");
+        write_layout_anchors(&unrelated.join("JournalPayload"));
+        assert_eq!(
+            resolve_installation_root_from_executable_dir(&unrelated),
+            None
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
