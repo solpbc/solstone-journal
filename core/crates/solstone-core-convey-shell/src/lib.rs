@@ -115,7 +115,9 @@ use solstone_core_thinking::confidential::OperationRegistry;
 
 #[cfg(feature = "host")]
 mod agents_enable;
-mod assets;
+#[cfg(test)]
+mod asset_references;
+pub mod assets;
 #[cfg(feature = "host")]
 pub mod authorization_gate;
 mod body;
@@ -198,6 +200,7 @@ mod thinking_install;
 mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
 mod thinking_sol_reads_contract;
+mod timing;
 mod weekly_heads_up;
 #[cfg(feature = "host")]
 mod windows_firewall;
@@ -1833,7 +1836,9 @@ fn router_with_roots(
         .layer(Extension(HostedLaunchContext(hosted_parent)));
     let routes =
         session_gate::apply_layer_with_owner(routes, journal_root, include_agents, target_use);
-    form_body_guard::apply_layer(routes).fallback(not_found)
+    form_body_guard::apply_layer(routes)
+        .fallback(not_found)
+        .layer(axum::middleware::from_fn(timing::measure))
 }
 
 pub(crate) fn asset_response(path: &str) -> Response {

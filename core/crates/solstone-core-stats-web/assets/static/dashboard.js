@@ -4,6 +4,7 @@
 // Dashboard module for client-side rendering
 const Dashboard = (function() {
   'use strict';
+  const reportStatsReady = window.createViewReady('stats');
 
   const EXPECTED_SCHEMA_VERSION = 10;
   const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
@@ -1270,7 +1271,7 @@ const Dashboard = (function() {
           return response.json();
         })
         .then(data => {
-          if (data) render(data);
+          if (data) { render(data); reportStatsReady('content'); }
         })
         .catch(() => {
           document.getElementById('loading').style.display = 'none';
@@ -1285,6 +1286,7 @@ const Dashboard = (function() {
           notice.appendChild(el('div', {id: 'stats-read-error', className: 'alert alert-error', role: 'alert'}, [
             "couldn't load statistics. try again to refresh this view. ", retry
           ]));
+          reportStatsReady('error');
         });
     }
   };

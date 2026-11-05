@@ -17,6 +17,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 (function(){
+  const reportSearchReady = window.createViewReady('search');
+
  const root=document.getElementById('journal-search');
  const params=new URLSearchParams(location.search);
  const query=root.querySelector('[name=q]');const from=root.querySelector('[name=from]');const to=root.querySelector('[name=to]');
@@ -151,8 +153,8 @@
   empty_index:"there's nothing indexed yet."
  };
  async function load(){
-  if(!query.value.trim())return;
-  if(from.value&&to.value&&from.value>to.value){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');return;}
+  if(!query.value.trim()){reportSearchReady('content');return;}
+  if(from.value&&to.value&&from.value>to.value){status.textContent='choose an end date on or after the start date.';status.classList.add('search-error');reportSearchReady('error');return;}
   abortActive();const controller=new AbortController();activeController=controller;
   results.replaceChildren();paging.replaceChildren();
   status.classList.remove('search-error');status.textContent='searching your journal…';root.setAttribute('aria-busy','true');
@@ -181,6 +183,7 @@
    if(offset>0){const a=node('a','search-link','newer matching days');a.href=pageUrl({offset:String(Math.max(0,offset-20))});paging.append(a);}
    if(offset+data.days.length<data.total_days){const a=node('a','search-link','older matching days');a.href=pageUrl({offset:String(offset+20)});paging.append(a);}
    if(offset>0&&!data.days.length){const a=node('a','search-link','back to first results');a.href=pageUrl({offset:'0'});paging.append(a);}
+   reportSearchReady(data.total ? 'content' : 'empty');
   }catch(error){
    if(error&&error.name==='AbortError')return;
    if(!root.isConnected)return;
@@ -189,6 +192,7 @@
    status.textContent=reason?("couldn't search your journal: "+reason):("couldn't search your journal. "+String(error.serverMessage||error.message||'try again.'));
    if(error&&error.rawDetail){const disclosure=node('details');disclosure.append(node('summary','','details'),node('pre','search-source',String(error.rawDetail)));status.append(disclosure);}
    const button=node('button','','try again');button.type='button';button.onclick=()=>{status.classList.remove('search-error');load();};status.append(node('br'),button);
+   reportSearchReady('error');
   }finally{stopProgress();if(activeController===controller){root.removeAttribute('aria-busy');activeController=null;}}
  }
  query.addEventListener('input',abortActive);from.addEventListener('input',abortActive);to.addEventListener('input',abortActive);

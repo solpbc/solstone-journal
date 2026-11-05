@@ -16,7 +16,7 @@ source = source.replace(anchor, `  window.__backup = {observeBackup, renderVital
   seed: value => { lastPulse=value; observeBackup(value); pulseReadFailed=false; pulseObservedAt=Date.now(); pulseRequest=null; vitalsRequest=null; narrativeRequest=null; }};
 ${anchor}`);
 const document = {readyState:'loading',addEventListener(){},querySelector(){return null;},getElementById(){return null;},querySelectorAll(){return [];}};
-const window = {document,location:{href:''},addEventListener(){},setTimeout(){return 1;},clearTimeout(){},apiJson(){return new Promise(()=>{});}};
+const window = { createViewReady: () => () => {},document,location:{href:''},addEventListener(){},setTimeout(){return 1;},clearTimeout(){},apiJson(){return new Promise(()=>{});}};
 window.window=window;document.defaultView=window;
 vm.runInNewContext(source,{window,document,console,Date},{filename:'home.js'});
 const ui=window.__backup;

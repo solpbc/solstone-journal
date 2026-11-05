@@ -416,7 +416,7 @@ const activeTimers = new Map();
 let nextTimerId = 1;
 const timerLog = [];
 
-const win = {
+const win = { createViewReady: () => () => {},
   document: doc,
   location: { href: '/app/home/', pathname: '/app/home/' },
   addEventListener(type, fn) { doc.addEventListener(type, fn); },

@@ -564,6 +564,7 @@ button.map-month-row:hover { background: var(--cream); }
 <script>
 (() => {
   "use strict";
+  const reportMapReady = window.createViewReady('map');
 
   const DAY_RE = /^\d{8}$/;
   const MONTH_RE = /^\d{6}$/;
@@ -1146,11 +1147,14 @@ button.map-month-row:hover { background: var(--cream); }
       if (!asArray(data.entries).length && !asArray(data.devices).length) {
         if (data.journal_has_location) renderDayEmpty(data, day);
         else renderJournalEmpty();
+        reportMapReady('empty');
         return;
       }
       renderDay(data);
+      reportMapReady('content');
     } catch (err) {
       showError(err, () => loadDay(day));
+      reportMapReady('error');
     }
   }
 
@@ -1285,12 +1289,27 @@ button.map-month-row:hover { background: var(--cream); }
   async function loadPage(view) {
     setGate(window.SurfaceState.loading({ text: "loading…" }));
     try {
-      if (view.page === "places") renderPlaces(await window.apiJson("/app/map/api/places"));
-      else if (view.page === "place") renderPlace(await window.apiJson(`/app/map/api/place/${encodeURIComponent(view.id)}`));
-      else if (view.page === "month") await renderMonth(await window.apiJson(`/app/map/api/month/${encodeURIComponent(view.month)}`));
-      else renderWeek(await window.apiJson(`/app/map/api/week/${encodeURIComponent(view.day)}`));
+      let hasContent;
+      if (view.page === "places") {
+        const data = await window.apiJson("/app/map/api/places");
+        renderPlaces(data);
+        hasContent = asArray(data.places).length > 0;
+      } else if (view.page === "place") {
+        renderPlace(await window.apiJson(`/app/map/api/place/${encodeURIComponent(view.id)}`));
+        hasContent = true;
+      } else if (view.page === "month") {
+        const data = await window.apiJson(`/app/map/api/month/${encodeURIComponent(view.month)}`);
+        await renderMonth(data);
+        hasContent = asArray(data.days).some(day => day.has_location);
+      } else {
+        const data = await window.apiJson(`/app/map/api/week/${encodeURIComponent(view.day)}`);
+        renderWeek(data);
+        hasContent = asArray(data.days).some(day => day.readings || asArray(day.items).length);
+      }
+      reportMapReady(hasContent ? 'content' : 'empty');
     } catch (err) {
       showError(err, () => loadPage(view), view.page === "month" ? "couldn't open this month's location." : undefined);
+      reportMapReady('error');
     }
   }
 
@@ -2639,8 +2658,10 @@ button.map-month-row:hover { background: var(--cream); }
         return;
       }
       renderJournalEmpty();
+      reportMapReady('empty');
     } catch (err) {
       showError(err, start);
+      reportMapReady('error');
     }
   }
 

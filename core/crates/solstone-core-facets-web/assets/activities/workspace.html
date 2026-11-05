@@ -944,6 +944,8 @@
 // Copyright (c) 2026 sol pbc
 
 (() => {
+  const reportActivitiesReady = window.createViewReady('activities');
+
   // --- owner-facing strings ---
   const STRINGS = {
     'loading': 'loading activities…',
@@ -1253,6 +1255,7 @@
         if (item && !item.hidden) openCorrect(item);
       }
       scheduleUpdatingPoll();
+      reportActivitiesReady((data.items || []).length ? 'content' : 'empty');
     } catch (err) {
       if (seq !== state.fetchSequence) return;
       const stateArea = document.querySelector('[data-state-area]');
@@ -1261,6 +1264,7 @@
       if (!viewLoadedOnce) {
         stateArea.innerHTML = errorHtml;
         stateArea.setAttribute('data-state', 'error');
+        reportActivitiesReady('error');
         stateArea.querySelector('.surface-state-retry')?.addEventListener('click', () => {
           showLoading();
           fetchView();

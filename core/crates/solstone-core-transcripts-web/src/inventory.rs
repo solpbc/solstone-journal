@@ -60,7 +60,8 @@ fn extract_file_stat(meta: &fs::Metadata) -> FileStat {
         len: meta.len(),
         mtime: (meta.last_write_time() as i64, 0),
         ctime: (meta.creation_time() as i64, 0),
-        file_id: meta.file_index(),
+        // The file index is not on stable Rust. Size and the two 100 ns times decide.
+        file_id: 0,
     }
 }
 

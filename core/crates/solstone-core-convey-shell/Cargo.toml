@@ -228,9 +228,11 @@ solstone-core-update = { workspace = true }
 nix = { workspace = true, features = ["signal"] }
 
 [build-dependencies]
+sha2.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+regex.workspace = true
 solstone-core-callosum = { workspace = true, features = ["test-hooks"] }
 solstone-core-cortex.workspace = true
 solstone-core-generate.workspace = true

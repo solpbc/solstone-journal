@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) {
     println!("cargo:rerun-if-changed={}", directory.display());
@@ -187,14 +188,132 @@ fn main() {
     .expect("copy string serializes");
 
     let mut generated = String::from("pub(super) static GENERATED_ASSETS: &[EmbeddedAsset] = &[\n");
-    for (route, path) in assets {
+    for (route, path) in &assets {
         generated.push_str(&format!(
             "    EmbeddedAsset {{ path: {route:?}, content_type: {:?}, bytes: include_bytes!({:?}) }},\n",
-            content_type(&path),
+            content_type(path),
             path,
         ));
     }
     generated.push_str("];\n");
+    // Inventory sibling assets without changing which router serves them.
+    let crates = manifest.parent().expect("crate parent");
+    for (app, package, workspace, scripts) in [
+        (
+            "backup",
+            "backup-web",
+            "workspace.html",
+            &["backup.js", "backup-status.js", "backup.css"][..],
+        ),
+        (
+            "home",
+            "home-web",
+            "workspace.html",
+            &["home.js", "week.js", "removals.js"][..],
+        ),
+        (
+            "import",
+            "import-web",
+            "workspace.html",
+            &["source_connections.js", "import_detail.js"][..],
+        ),
+        (
+            "settings",
+            "settings-web",
+            "workspace.html",
+            &["settings.js"][..],
+        ),
+        (
+            "support",
+            "support-web",
+            "workspace.html",
+            &["static/support.js"][..],
+        ),
+        ("map", "map-web", "workspace.html", &[][..]),
+        ("search", "records-web", "search.html", &[][..]),
+        (
+            "transcripts",
+            "transcripts-web",
+            "transcripts/workspace.html",
+            &[][..],
+        ),
+        (
+            "activities",
+            "facets-web",
+            "activities/workspace.html",
+            &[][..],
+        ),
+        (
+            "curation",
+            "facets-web",
+            "curation/workspace.html",
+            &["curation/curation_evidence.js"][..],
+        ),
+        ("health", "health-web", "workspace.html", &[][..]),
+        ("stats", "stats-web", "workspace.html", &[][..]),
+    ] {
+        let directory = crates.join(format!("solstone-core-{package}/assets"));
+        assets.push((format!("/app/{app}/workspace"), directory.join(workspace)));
+        for script in scripts {
+            let name = Path::new(script)
+                .file_name()
+                .expect("asset name")
+                .to_string_lossy();
+            assets.push((format!("/app/{app}/static/{name}"), directory.join(script)));
+        }
+        if matches!(app, "health" | "stats") {
+            let directory = directory.join("static");
+            println!("cargo:rerun-if-changed={}", directory.display());
+            for entry in fs::read_dir(directory).expect("static directory") {
+                let path = entry.expect("static entry").path();
+                if path.is_file() {
+                    let name = path.file_name().expect("asset name").to_string_lossy();
+                    assets.push((format!("/app/{app}/static/{name}"), path));
+                }
+            }
+        }
+    }
+    for guide in [
+        "chatgpt",
+        "claude",
+        "gemini",
+        "ics",
+        "journal_archive",
+        "obsidian",
+        "strava",
+    ] {
+        assets.push((
+            format!("/app/import/api/guide/{guide}"),
+            crates.join(format!("solstone-core-import-web/assets/guides/{guide}.md")),
+        ));
+    }
+    assets.push((
+        "/init".to_owned(),
+        crates.join("solstone-core-sol-link/assets/init.html"),
+    ));
+    assets.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(
+        assets.windows(2).all(|pair| pair[0].0 != pair[1].0),
+        "duplicate asset path"
+    );
+    generated.push_str("pub static INVENTORY: &[AssetRecord] = &[\n");
+    for (route, path) in assets {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let bytes = fs::read(&path).expect("inventory asset readable");
+        let hash = format!("{:x}", Sha256::digest(&bytes));
+        let template = matches!(route.as_str(), "/init" | "/app/health/workspace");
+        let kind = if route.starts_with("/app/import/api/guide/") {
+            "text/markdown; charset=utf-8"
+        } else {
+            content_type(&path)
+        };
+        generated.push_str(&format!(
+            "    AssetRecord {{ path: {route:?}, content_type: {:?}, byte_len: {}, sha256: {hash:?}, template: {template}, #[cfg(test)] bytes: include_bytes!({path:?}) }},\n",
+            kind, bytes.len(),
+        ));
+    }
+    generated.push_str("];\n");
+
     generated.push_str(&format!(
         "pub(super) const SPEAKER_COPY_JSON: &str = {speaker_copy:?};\n"
     ));

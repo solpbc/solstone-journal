@@ -297,6 +297,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "asset_references",
+        include_str!("../../../solstone-core-convey-shell/src/asset_references.rs"),
+    ),
+    (
+        "convey",
         "assets",
         include_str!("../../../solstone-core-convey-shell/src/assets.rs"),
     ),
@@ -604,6 +609,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "convey",
         "thinking_sol_reads_contract",
         include_str!("../../../solstone-core-convey-shell/src/thinking_sol_reads_contract.rs"),
+    ),
+    (
+        "convey",
+        "timing",
+        include_str!("../../../solstone-core-convey-shell/src/timing.rs"),
     ),
     (
         "convey",

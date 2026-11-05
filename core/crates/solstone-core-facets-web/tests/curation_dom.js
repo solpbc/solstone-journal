@@ -167,7 +167,7 @@ function flush() {
 async function renderWorkspace(payload) {
   const root = new Element('section');
   root.setAttribute('data-curation-root', '');
-  const windowObj = {
+  const windowObj = { createViewReady: () => () => {},
     AppServices: { escapeHtml: escapeForTest },
     Drawer: { render: () => '', preserveOpen: (_root, render) => render() },
     apiJson: async () => JSON.parse(JSON.stringify(payload)),
@@ -255,7 +255,7 @@ function asyncTest(name, fn) {
 }
 
 function createCurationEnvironment() {
-  const windowObj = {
+  const windowObj = { createViewReady: () => () => {},
     AppServices: { escapeHtml: (s) => String(s ?? '') },
     location: { search: '' },
     addEventListener() {},

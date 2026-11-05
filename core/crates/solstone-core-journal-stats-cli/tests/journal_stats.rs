@@ -215,6 +215,8 @@ impl BacklogViewReader for EmptyBacklog {
         &self,
         _journal_root: &Path,
         _now: DateTime<Utc>,
+        _system_talent_root: &Path,
+        _apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
         Ok(empty_backlog())
     }
@@ -227,6 +229,8 @@ impl BacklogViewReader for FailingBacklog {
         &self,
         _journal_root: &Path,
         _now: DateTime<Utc>,
+        _system_talent_root: &Path,
+        _apps_root: &Path,
     ) -> Result<BacklogView, HealthError> {
         Err(HealthError::Source("injected backlog failure".to_owned()))
     }
@@ -979,6 +983,85 @@ fn ac10_backlog_reader_error_produces_degraded_view() {
     assert_eq!(document["backlog"]["degraded"], true);
     assert_eq!(document["backlog"]["malformed_line_count"], 0);
     assert_eq!(document["backlog"]["days"], json!([]));
+}
+
+#[test]
+fn saved_backlog_uses_the_supplied_payload_and_retains_coverage_errors() {
+    let journal = TempDir::new().unwrap();
+    let payload = TempDir::new().unwrap();
+    let root = journal.path();
+    let system = payload.path().join("talents");
+    let apps = payload.path().join("apps");
+    daily_talent(&system);
+    let segment = root.join("chronicle").join(DAY).join("phone/120000_60");
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(
+        segment.join("audio.jsonl"),
+        "{\"start\":\"12:00:00\",\"text\":\"a retained owner recording\"}\n",
+    )
+    .unwrap();
+    let reader = crate::FilesystemBacklogViewReader;
+    let run = || {
+        let result = crate::run_cli_with_cache_checked(
+            &[],
+            root,
+            now(),
+            &system,
+            &apps,
+            &reader,
+            &crate::FilesystemDocumentWriter,
+            &crate::FilesystemDayCacheWriter,
+            &|| Ok(()),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        serde_json::from_slice::<Value>(&fs::read(root.join("stats.json")).unwrap()).unwrap()
+    };
+    let saved = run();
+    let day = &saved["backlog"]["days"][0];
+    let units = day["daily_coverage"]["units"].as_array().unwrap();
+    assert_eq!(
+        units.len(),
+        1,
+        "must use the distinct supplied payload: {day}"
+    );
+    assert_eq!(units[0]["identity"]["name"], "morning_briefing");
+    let expected = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
+        root, DAY, &system, &apps,
+    )
+    .unwrap();
+    assert_eq!(
+        units[0]["contract_digest"], expected.units[0].contract_digest,
+        "saved coverage must describe the supplied talent definition"
+    );
+    assert_eq!(units[0]["state"], "outstanding", "unmade work remains owed");
+    assert_eq!(day["state"], "pending");
+    assert_eq!(saved["backlog"]["degraded"], false);
+
+    let before = fs::read(root.join("stats.json")).unwrap();
+    fs::write(system.join("morning_briefing.md"), [0xff, 0xfe]).unwrap();
+    let damaged = serde_json::to_value(
+        reader
+            .read_backlog_view(root, now(), &system, &apps)
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        damaged["degraded"], true,
+        "unreadable supplied definitions stay unknown"
+    );
+    assert_eq!(damaged["days"][0]["state"], "unknown");
+    assert!(damaged["days"][0]["error"].is_object());
+    let refused = run_with(
+        root,
+        &system,
+        &apps,
+        &[],
+        &reader,
+        &crate::FilesystemDocumentWriter,
+    );
+    assert_eq!(refused.exit_code, 1);
+    assert_eq!(fs::read(root.join("stats.json")).unwrap(), before);
+    assert!(segment.join("audio.jsonl").is_file());
 }
 
 #[test]

@@ -350,7 +350,7 @@ function createHarness() {
   const windowListeners = {};
   const historyEntries = [''];
   let historyIndex = 0;
-  const window = {
+  const window = { createViewReady: () => () => {},
     document,
     Element,
     HTMLInputElement,

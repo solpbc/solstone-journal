@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
+  const reportHomeReady = window.createViewReady('home');
   function esc(s) {
     return String(s ?? '')
       .replace(/&/g, '&amp;')
@@ -338,11 +339,13 @@
       })
       .then(function (model) {
         renderWeekPage(surface, model);
+        reportHomeReady('content');
       })
       .catch(function () {
         surface.innerHTML = '<div class="surface-state surface-state--error" role="alert">'
           + '<h2 class="surface-state-heading">couldn\'t load this week. reload to try again.</h2>'
           + '</div>';
+        reportHomeReady('error');
       });
   }
 

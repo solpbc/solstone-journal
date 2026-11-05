@@ -63,7 +63,7 @@ function renderEmptyStateHTML(workspace, copy) {
   assert.notStrictEqual(start, -1);
   assert.notStrictEqual(end, -1);
   const context = vm.createContext({
-    window: {
+    window: { createViewReady: () => () => {},
       LinkCopy: copy,
       NetworkRender: { resolve: (values, key) => values[key] || '' },
       SurfaceState: {
@@ -83,7 +83,7 @@ function localNetworkEnvironment(workspace, copy) {
   assert.notStrictEqual(end, -1);
   const nodes = new Map();
   const context = vm.createContext({
-    window: { LinkCopy: copy },
+    window: { createViewReady: () => () => {}, LinkCopy: copy },
     document: { getElementById(id) {
       if (!nodes.has(id)) nodes.set(id, { hidden: false, textContent: '' });
       return nodes.get(id);
@@ -432,7 +432,7 @@ function createEnvironment(manifestDir, options = {}) {
   const linkListeners = new Set();
   const clipboardWrites = [];
   const toasts = [];
-  const window = {
+  const window = { createViewReady: () => () => {},
     document,
     location: { pathname: options.pathname || '/app/network/workspace' },
     LinkCopy: {
@@ -760,7 +760,7 @@ async function main() {
       const section = { hidden: true, querySelector: () => disclosure };
       const context = vm.createContext({
         document: { getElementById: (id) => ({ 'link-identity-header': section, 'link-identity-id-value': idValue })[id] || null },
-        window: { apiJson: async () => body },
+        window: { createViewReady: () => () => {}, apiJson: async () => body },
         validMarkSpec: () => false,
         applyIdentityToAll() {},
       });
@@ -1066,7 +1066,7 @@ async function main() {
     const asked = [];
     const fetched = [];
     const context = vm.createContext({
-      window: { LinkCopy: copy },
+      window: { createViewReady: () => () => {}, LinkCopy: copy },
       confirm: (message) => { asked.push(message); return false; },
       fetch: async (url) => { fetched.push(url); return response({}); },
     });
@@ -1088,7 +1088,7 @@ async function main() {
     assert.notStrictEqual(end, -1);
     globalThis.relativeTime = () => '2 months';
     const context = vm.createContext({
-      window: { NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
+      window: { createViewReady: () => () => {}, NetworkRender: require(activeAsset), JournalFormat: { timestamp: () => 'Sep 1, 11:52 PM', day: () => 'Jul 2' } },
       clientsList: { addEventListener() {} },
       escapeHtml: (value) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
     });
@@ -1741,7 +1741,7 @@ async function main() {
     assert.notStrictEqual(start, -1);
     assert.notStrictEqual(end, -1);
     const context = vm.createContext({
-      window: { LinkCopy: copy },
+      window: { createViewReady: () => () => {}, LinkCopy: copy },
       document: { activeElement: null },
       ...elements,
     });
@@ -1793,7 +1793,7 @@ async function main() {
       set href(val) { this.assigned = val; },
       assign(val) { this.assigned = val; },
     };
-    const window = {
+    const window = { createViewReady: () => () => {},
       location,
       top: null,
       LinkCopy: {},

@@ -449,6 +449,8 @@ function createHarness(options = {}) {
   const logErrors = [];
   const backgroundFailures = [];
   const readyCalls = [];
+  const marks = [];
+  const warnings = [];
   const setTimeoutFn = options.setTimeout || setTimeout;
   const clearTimeoutFn = options.clearTimeout || clearTimeout;
   const fetch = (url) => {
@@ -563,7 +565,6 @@ function createHarness(options = {}) {
     location,
     localStorage: window.localStorage,
     MutationObserver: MutationObserverShim,
-    console,
     URL,
     URLSearchParams,
     setTimeout: setTimeoutFn,
@@ -573,6 +574,8 @@ function createHarness(options = {}) {
     CustomEvent: window.CustomEvent,
     fetch,
     AbortController,
+    console: { ...console, warn(message) { warnings.push(message); } },
+    performance: { mark(name, options) { marks.push({ name, detail: options?.detail }); } },
   });
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
   const surfaceStub = window.SurfaceState;
@@ -597,9 +600,9 @@ function createHarness(options = {}) {
     vm.runInContext(read('report-error.js'), context, { filename: 'report-error.js' });
   }
   vm.runInContext(read('date_format.js'), context, { filename: 'date_format.js' });
+  vm.runInContext(read('mount-workspace.js'), context, { filename: 'mount-workspace.js' });
   if (options.boot) {
     vm.runInContext(read('convey_copy.js'), context, { filename: 'convey_copy.js' });
-    vm.runInContext(read('mount-workspace.js'), context, { filename: 'mount-workspace.js' });
   }
   const bootSource = read('shell_boot.js').replace(
     /\s*boot\(\);\s*\}\)\(\);\s*$/,
@@ -632,6 +635,8 @@ function createHarness(options = {}) {
     logErrors,
     backgroundFailures,
     readyCalls,
+    marks,
+    warnings,
   };
 }
 
@@ -1712,6 +1717,34 @@ asyncCase('loopback refusal: a stamp older than the window allows one more reloa
   const { api, reloads } = loopbackApi([refused], { storage });
   await assert.rejects(api.apiJson('/app/home/api/pulse'));
   assert.strictEqual(reloads.length, 1);
+});
+
+asyncCase('view readiness reports once per mount, re-arms, and rejects stale reporters', async () => {
+  const h = createHarness({boot: true, fetchResponses: {
+    '/app/home/workspace': {status: 200, body: '<section></section>'},
+  }});
+  const mount = () => h.window.mountWorkspaceFragment('/app/home/workspace', {appName: 'home'});
+  await mount();
+  const old = h.window.createViewReady('home');
+  h.window.createViewReady('entities')('content');
+  old('empty');
+  old('error');
+  let marks = h.marks.filter(entry => entry.name === 'view:ready');
+  assert.strictEqual(marks.length, 1);
+  assert.strictEqual(marks[0].detail.view, 'home');
+  assert.strictEqual(marks[0].detail.state, 'empty');
+  assert.deepStrictEqual(Object.keys(marks[0].detail).sort(), ['state', 'view']);
+  await mount();
+  old('content');
+  assert.strictEqual(h.marks.filter(entry => entry.name === 'view:ready').length, 1);
+  const current = h.window.createViewReady('home');
+  assert.doesNotThrow(() => current('loading'));
+  assert.strictEqual(h.warnings.length, 1);
+  assert.strictEqual(h.marks.filter(entry => entry.name === 'view:ready').length, 1);
+  current('content');
+  marks = h.marks.filter(entry => entry.name === 'view:ready');
+  assert.strictEqual(marks.length, 2);
+  assert.strictEqual(marks[1].detail.state, 'content');
 });
 
 async function runAsyncCases() {

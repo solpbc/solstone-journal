@@ -8,6 +8,18 @@ pub struct EmbeddedAsset {
     pub bytes: &'static [u8],
 }
 
+/// Build-time metadata for a dashboard asset. Template hashes describe the source,
+/// before response-time substitutions. Routes continue to use their own handlers.
+pub struct AssetRecord {
+    pub path: &'static str,
+    pub content_type: &'static str,
+    pub byte_len: usize,
+    pub sha256: &'static str,
+    pub template: bool,
+    #[cfg(test)]
+    pub bytes: &'static [u8],
+}
+
 include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 
 pub fn lookup(path: &str) -> Option<&'static EmbeddedAsset> {

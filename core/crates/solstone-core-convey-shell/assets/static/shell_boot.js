@@ -259,6 +259,7 @@
   }
 
   async function boot() {
+    performance.mark('shell:scripts-loaded');
     const startedAt = Date.now();
     // The provenance table loads beside the shell API; the workspace mounts
     // once it settles or 1500 ms after boot began, whichever is first.
@@ -270,6 +271,7 @@
     applyChromeCopy();
     try {
       const shell = await window.apiJson('/api/shell');
+      performance.mark('shell:answered');
       const app = findApp(shell, context.appName);
       if (!app) {
         throw new Error('Unknown app');

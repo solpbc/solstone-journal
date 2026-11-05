@@ -97,7 +97,7 @@ function copyTable(source) {
 // its rule here: this restated the old strip-the-punctuation transform and went
 // stale the moment the formatter learned to parse the key (G1-203 / S-1).
 const FORMAT = (() => {
-  const host = {};
+  const host = { createViewReady: () => () => {} };
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'),
     { window: host },
@@ -132,7 +132,7 @@ async function boot(source, lists, responses, labels = null) {
   const listResponses = Array.isArray(lists) ? lists : [lists];
   let listIndex = 0;
   const calls = [];
-  const window = {
+  const window = { createViewReady: () => () => {},
     setTimeout(callback) { const id = ++nextTimer; timers.set(id, callback); return id; },
     clearTimeout(id) { timers.delete(id); },
     apiJson(url, options) {
@@ -319,7 +319,7 @@ async function assertStaysOff(source, pathname) {
   const root = new Element();
   const calls = [];
   const listeners = {};
-  const window = {
+  const window = { createViewReady: () => () => {},
     location: { pathname },
     apiJson(url) { calls.push(url); return new Promise(() => {}); },
     setTimeout() { return 1; },

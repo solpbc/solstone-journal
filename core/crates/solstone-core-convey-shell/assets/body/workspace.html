@@ -1078,6 +1078,7 @@ a.body-day-cell:focus-visible {
 <script>
 (() => {
   "use strict";
+  const reportBodyReady = window.createViewReady('body');
 
   const DAY_RE = /^\d{8}$/;
   const escapeHtml = (value) => window.AppServices.escapeHtml(value);
@@ -1597,8 +1598,10 @@ a.body-day-cell:focus-visible {
       document.querySelector(".body-shell")?.toggleAttribute("data-body-empty", !hasData);
       reveal(renderOverview(status));
       initRecentCarousel();
+      reportBodyReady(hasData ? 'content' : 'empty');
     } catch (err) {
       showError("couldn't load your body data", err, initBodyOverview);
+      reportBodyReady('error');
     }
   }
 
@@ -1960,8 +1963,10 @@ a.body-day-cell:focus-visible {
     try {
       const bodyDay = await window.apiJson(`/app/body/api/day/${encodeURIComponent(day)}`);
       reveal(renderDayView(bodyDay));
+      reportBodyReady(bodyDay.has_data ? 'content' : 'empty');
     } catch (err) {
       showError("couldn't load body day", err, () => initBodyDay());
+      reportBodyReady('error');
     }
   }
 
@@ -2312,6 +2317,7 @@ a.body-day-cell:focus-visible {
         retry: true,
       });
       statusCard.querySelector(".surface-state-retry")?.addEventListener("click", renderTrendsShell, { once: true });
+      reportBodyReady('error');
     }
 
     function renderTrends(payload) {
@@ -2333,6 +2339,7 @@ a.body-day-cell:focus-visible {
         statusCard.innerHTML = window.SurfaceState.empty({ heading: "no daily values in your journal yet." });
         statusCard.hidden = false;
         stack.hidden = true;
+        reportBodyReady('empty');
         return;
       }
       annotations.forEach((note) => {
@@ -2345,6 +2352,7 @@ a.body-day-cell:focus-visible {
       statusCard.hidden = true;
       stack.hidden = false;
       if (plotted.resting_hr && plotted.resting_hr.length) expandSignal("resting_hr");
+      reportBodyReady('content');
     }
 
     function loadTrends() {

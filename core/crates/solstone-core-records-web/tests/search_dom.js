@@ -99,7 +99,7 @@ function test(name, fn) {
 
 function createSearchEnvironment() {
   const location = { search: '' };
-  const windowObj = { location, addEventListener() {} };
+  const windowObj = { createViewReady: () => () => {}, location, addEventListener() {} };
   const doc = {
     createElement: (tag) => new Node(tag),
     createTextNode: (t) => {

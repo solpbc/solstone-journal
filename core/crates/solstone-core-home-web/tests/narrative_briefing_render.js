@@ -23,7 +23,7 @@ const document = {
   querySelector() { return null; },
   getElementById() { return null; },
 };
-const window = {
+const window = { createViewReady: () => () => {},
   location,
   document,
   addEventListener() {},

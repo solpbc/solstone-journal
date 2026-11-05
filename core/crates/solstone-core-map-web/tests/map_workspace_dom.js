@@ -390,7 +390,7 @@ async function run({ pathname, responses, withLeaflet = false }) {
   const replaced = [];
   const fetched = [];
   const leaflet = withLeaflet ? leafletRecorder() : null;
-  const window = {
+  const window = { createViewReady: () => () => {},
     AppServices: { escapeHtml },
     SurfaceState: {
       loading: ({ text }) => `<loading>${escapeHtml(text)}</loading>`,

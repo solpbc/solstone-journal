@@ -19,7 +19,7 @@ module.exports = async function savedStartCases(crateDir) {
   function harness(api) {
     const calls = [];
     const document = { activeElement: null, addEventListener() {} };
-    const window = { JournalFormat: { day: String }, Drawer: { render: () => '<div></div>' },
+    const window = { createViewReady: () => () => {}, JournalFormat: { day: String }, Drawer: { render: () => '<div></div>' },
       apiJson: async (url, options) => { calls.push({ url, body: JSON.parse(options.body) }); return api(url, options); } };
     const context = vm.createContext({ window, document });
     vm.runInContext(source, context);

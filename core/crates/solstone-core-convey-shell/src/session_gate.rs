@@ -106,6 +106,7 @@ async fn require_session(
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
+    let started = std::time::Instant::now();
     let path = request.uri().path();
     if is_exempt_with_agents(path, state.include_agents) {
         return next.run(request).await;
@@ -126,7 +127,13 @@ async fn require_session(
                 .insert(solstone_core_convey_http::coalesce::CoalesceScope(
                     state.journal_root.clone(),
                 ));
-            solstone_core_convey_http::request::run_admitted(target_use, request, next).await
+            let gate = started.elapsed();
+            let mut response =
+                solstone_core_convey_http::request::run_admitted(target_use, request, next).await;
+            if crate::timing::is_dashboard_response(&response) {
+                crate::timing::append(&mut response, "gate", gate);
+            }
+            response
         }
         SessionState::Unestablished => redirect_to_init(),
         SessionState::Corrupt { detail } => corrupt_response(path, detail),

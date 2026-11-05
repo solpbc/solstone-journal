@@ -295,7 +295,7 @@ async function createPage({ items, url = `https://journal.example/app/activities
   const requests = [];
   const env = { view: view(items), requests, doc };
   const winListeners = {};
-  const win = {
+  const win = { createViewReady: () => () => {},
     addEventListener(type, fn) { (winListeners[type] ||= []).push(fn); },
     removeEventListener() {},
     dispatchEvent(event) { (winListeners[event.type] || []).forEach((fn) => fn(event)); },

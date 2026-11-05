@@ -19,7 +19,7 @@ source = source.replace(
 let firstMinutesResponse = null;
 const requests = [];
 const connectionHandlers = [];
-const window = {
+const window = { createViewReady: () => () => {},
   location: { href: '' },
   document: { readyState: 'loading', addEventListener() {}, querySelector() { return null; }, getElementById() { return null; } },
   addEventListener() {},
@@ -119,7 +119,7 @@ async function main() {
 
   // A shell without the connection-state API keeps Home's event wiring working.
   const bareRequests = [];
-  const bare = {
+  const bare = { createViewReady: () => () => {},
     location: { href: '' },
     document: { readyState: 'loading', addEventListener() {}, querySelector() { return null; } },
     addEventListener() {},

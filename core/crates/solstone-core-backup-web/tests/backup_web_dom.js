@@ -472,7 +472,7 @@ function createHarness(options = {}) {
     assign(val) { this.assigned = val; },
   };
   const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)', ...options.navigator };
-  const window = {
+  const window = { createViewReady: () => () => {},
     crypto: require('crypto').webcrypto,
     document,
     console,

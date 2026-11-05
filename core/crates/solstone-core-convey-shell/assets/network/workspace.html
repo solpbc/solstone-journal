@@ -1027,6 +1027,7 @@ systemctl --user start solstone-linux</code></div>
 
 <script>
 (function () {
+  const reportNetworkReady = window.createViewReady('network');
   const workspaceRoot = document.getElementById('link-workspace-root');
   const stateGate = document.getElementById('link-state-gate');
   const dashboardContent = document.getElementById('link-dashboard-content');
@@ -1879,9 +1880,11 @@ systemctl --user start solstone-linux</code></div>
       await loadNetworkState();
       revealWorkspace();
       initLink();
+      reportNetworkReady('content');
     } catch (err) {
       window.logError?.(err, { context: 'link: state load failed' });
       showWorkspaceStateError(err);
+      reportNetworkReady('error');
     }
   }
 

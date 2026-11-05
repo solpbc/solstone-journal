@@ -36,7 +36,7 @@ mod terminal;
 mod types;
 mod vocabulary;
 
-pub use backlog::{daily_failure_capped, read_backlog_view};
+pub use backlog::{daily_failure_capped, read_backlog_view, read_backlog_view_with_roots};
 pub use backlog_copy::backlog_day_reason_copy;
 pub use catchup_state::{
     read_backoff_summary, read_daily_catchup_finished, read_segment_repair_attempted,

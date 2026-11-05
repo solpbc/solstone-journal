@@ -244,7 +244,7 @@ fn run<W: DayCacheWriter>(
     }
 
     let backlog = backlog_reader
-        .read_backlog_view(journal_root, now)
+        .read_backlog_view(journal_root, now, system_talent_root, apps_root)
         .unwrap_or_else(|_| degraded_backlog_view());
     admit()?;
     let tokens =

@@ -2,6 +2,8 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
+  const reportBackupReady = window.createViewReady('backup');
+
   const BACKUP_COPY = {
     "service_name": "encrypted backup",
     "brand_lock": "your journal is always private, only yours.",
@@ -2879,10 +2881,12 @@
       if (workspaceCurrent()) {
         const loading = root.querySelector('[data-backup-loading]');
         loading.textContent = "couldn't load backup settings. reload this page to try again.";
+        reportBackupReady('error');
       }
       return;
     }
     revealInitialStatus();
+    reportBackupReady('content');
   }
 
   if (document.readyState === 'loading') {
