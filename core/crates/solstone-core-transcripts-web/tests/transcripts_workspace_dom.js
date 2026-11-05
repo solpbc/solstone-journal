@@ -2463,24 +2463,41 @@ function loadFrameCaptureClass(seeks) {
     if (depth === 0) { end = i + 1; break; }
   }
   const document = {
-    createElement() {
+    createElement(tag) {
+      if (tag === 'canvas') {
+        const canvas = { width: 0, height: 0, pixels: null };
+        canvas.getContext = () => ({
+          drawImage(source) { canvas.pixels = source.pixels; },
+        });
+        return canvas;
+      }
       const listeners = {};
       const video = {
         videoWidth: 1080,
         videoHeight: 2400,
+        pixels: null,
         addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
         removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((l) => l !== fn); },
         set src(_url) { setTimeout(() => video.onloadedmetadata(), 0); },
         load() {},
         set currentTime(value) {
           seeks.push(value);
-          setTimeout(() => (listeners.seeked || []).forEach((fn) => fn()), 0);
+          setTimeout(() => {
+            video.pixels = `frame at ${value}`;
+            (listeners.seeked || []).forEach((fn) => fn());
+          }, 0);
         },
       };
       return video;
     },
   };
-  const context = { document, createImageBitmap: async () => ({}), MediaError: {}, console };
+  const context = {
+    document,
+    // Reproduce the observed WebView boundary: this path retains old pixels
+    // even though seeked has fired and the video itself has the new frame.
+    createImageBitmap: async () => ({ width: 1080, height: 2400, pixels: 'frame at 0' }),
+    MediaError: {}, console,
+  };
   vm.createContext(context);
   return vm.runInContext(`(${scriptSource.slice(start, end)})`, context);
 }
@@ -2507,6 +2524,68 @@ test('leaving a segment forgets its frame times', async () => {
   capture.clear();
   await capture.captureFullFrame('/screen.mp4', 300);
   assert.deepStrictEqual(seeks, [299]);
+});
+
+test('queued thumbnails and full frames snapshot distinct selected pixels', async () => {
+  const seeks = [];
+  const capture = new (loadFrameCaptureClass(seeks))();
+  capture.noteFrameTime('/screen.mp4', 1, 0);
+  capture.noteFrameTime('/screen.mp4', 565, 56.4);
+  const [first, later, full] = await Promise.all([
+    capture.captureThumbnail('/screen.mp4', 1, 120, 68),
+    capture.captureThumbnail('/screen.mp4', 565, 120, 68),
+    capture.captureFullFrame('/screen.mp4', 565),
+  ]);
+  assert.strictEqual(first.pixels, 'frame at 0');
+  assert.strictEqual(later.pixels, 'frame at 56.4');
+  assert.strictEqual(full.pixels, 'frame at 56.4');
+  assert.deepStrictEqual([later.width, later.height], [120, 68]);
+  assert.deepStrictEqual([full.width, full.height], [1080, 2400]);
+  const cached = await capture.captureThumbnail('/screen.mp4', 1, 120, 68);
+  assert.strictEqual(cached, first);
+  assert.strictEqual(cached.pixels, 'frame at 0', 'later seeks do not alter earlier snapshots');
+  assert.deepStrictEqual(seeks, [0, 56.4, 56.4]);
+});
+
+test('frame selection distinguishes video frames sharing a raw path and still images', () => {
+  const start = scriptSource.indexOf('  function findFrameIndex(chunk) {');
+  const end = scriptSource.indexOf('\n  // Get video URL', start);
+  assert.ok(start >= 0 && end > start);
+  const frame = (filename, frame_id, raw) => ({ source_ref: { filename, frame_id, raw } });
+  const first = frame('screen.mp4', 1, 'screen.mp4');
+  const later = frame('screen.mp4', 565, 'screen.mp4');
+  const other = frame('other.mp4', 565, 'other.mp4');
+  const still = { source_ref: { raw: 'photo.png' } };
+  const context = { allScreenFrames: [first, later, other, still, {}] };
+  vm.createContext(context);
+  const find = vm.runInContext(`(${scriptSource.slice(start, end)})`, context);
+  assert.strictEqual(find(later), 1);
+  assert.strictEqual(find(other), 2);
+  assert.strictEqual(find(still), 3);
+  assert.strictEqual(find(frame('screen.mp4', 99, 'screen.mp4')), -1);
+  assert.strictEqual(find(frame('screen.mp4', 565, 'different/screen.mp4')), -1);
+  assert.strictEqual(find({ source_ref: { raw: 'screen.mp4' } }), -1);
+  assert.strictEqual(find({}), -1);
+});
+
+test('full-frame temporary pixels are released after drawing and after a draw failure', async () => {
+  for (const fail of [false, true]) {
+    const capture = new (loadFrameCaptureClass([]))();
+    const frame = { width: 1080, height: 2400, pixels: 'selected frame' };
+    capture.captureFullFrame = async () => frame;
+    capture._applyOverlays = () => {};
+    let drawn;
+    const target = {
+      classList: { remove() {} },
+      getContext: () => ({ drawImage(source) {
+        if (fail) throw new Error('destination unavailable');
+        drawn = source.pixels;
+      } }),
+    };
+    assert.strictEqual(await capture.drawFull(target, '/screen.mp4', 1), !fail);
+    assert.deepStrictEqual([frame.width, frame.height], [0, 0]);
+    if (!fail) assert.strictEqual(drawn, 'selected frame');
+  }
 });
 
 async function run() {

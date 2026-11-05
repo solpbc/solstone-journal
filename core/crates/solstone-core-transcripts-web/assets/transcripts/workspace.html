@@ -3015,25 +3015,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         const timestamp = this.frameSeconds(videoUrl, frameId);
         await this._seekTo(video, timestamp);
 
-        let bitmap;
-        if (width && height) {
-          bitmap = await createImageBitmap(video, {
-            resizeWidth: width,
-            resizeHeight: height,
-            resizeQuality: 'high'
-          });
-        } else {
-          bitmap = await createImageBitmap(video);
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width || bitmap.width;
-        canvas.height = height || bitmap.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        if (bitmap && typeof bitmap.close === 'function') {
-          bitmap.close();
-        }
+        const canvas = this._snapshot(video, width, height);
         entry.thumbs.set(frameId, canvas);
         return canvas;
       });
@@ -3053,8 +3035,20 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         const video = entry.video;
         const timestamp = this.frameSeconds(videoUrl, frameId);
         await this._seekTo(video, timestamp);
-        return createImageBitmap(video);
+        return this._snapshot(video);
       });
+    }
+
+    _snapshot(video, width, height) {
+      // Android WebView can reuse the preceding frame for createImageBitmap
+      // after seeked. Drawing the video directly reads its current frame.
+      const canvas = document.createElement('canvas');
+      canvas.width = width || video.videoWidth;
+      canvas.height = height || video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas;
     }
 
     async prefetchThumbnails(videoUrl, frameIds, onProgress = null, signal = null) {
@@ -3215,10 +3209,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     // Draw full-resolution frame to canvas (no caching)
     async drawFull(canvas, videoUrl, frameId, options = {}) {
       const { boxCoords, participants, objects } = options;
+      let frame;
 
       try {
-        const bitmap = await this.captureFullFrame(videoUrl, frameId);
-        if (!bitmap) {
+        frame = await this.captureFullFrame(videoUrl, frameId);
+        if (!frame) {
           this._drawUnsupportedPlaceholder(
             canvas,
             640,
@@ -3228,24 +3223,24 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           return false;
         }
 
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
+        canvas.width = frame.width;
+        canvas.height = frame.height;
 
         this._clearUnsupportedPlaceholder(canvas);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
 
-        this._applyOverlays(ctx, canvas, bitmap.width, bitmap.height, { boxCoords, participants, objects });
+        this._applyOverlays(ctx, canvas, frame.width, frame.height, { boxCoords, participants, objects });
 
-        if (bitmap && typeof bitmap.close === 'function') {
-          bitmap.close();
-        }
         canvas.classList.remove('loading');
         return true;
       } catch (err) {
         canvas.classList.remove('loading');
         console.warn('Full frame draw failed:', err);
         return false;
+      } finally {
+        // This full-size snapshot is temporary; only thumbnails are cached.
+        if (frame) { frame.width = 0; frame.height = 0; }
       }
     }
 
@@ -6203,11 +6198,18 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function findFrameIndex(chunk) {
     // Find this chunk's index in allScreenFrames by matching source_ref
     const ref = chunk.source_ref;
+    if (!ref) return -1;
     const raw = ref?.raw || '';
-    return allScreenFrames.findIndex(f =>
-      (f.source_ref?.filename === ref?.filename && f.source_ref?.frame_id === ref?.frame_id && (!raw || (f.source_ref?.raw || '') === raw))
-      || (raw && f.source_ref?.raw === raw)
-    );
+    return allScreenFrames.findIndex(f => {
+      const source = f.source_ref;
+      if (!source) return false;
+      if (ref.frame_id != null) {
+        return source.filename === ref.filename && source.frame_id === ref.frame_id
+          && (!raw || source.raw === raw);
+      }
+      // A raw path alone identifies a still image, not a frame in a video.
+      return !!raw && source.frame_id == null && source.raw === raw;
+    });
   }
 
   // Get video URL for a chunk
