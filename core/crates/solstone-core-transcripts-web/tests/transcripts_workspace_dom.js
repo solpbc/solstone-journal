@@ -2526,13 +2526,17 @@ function loadFrameCaptureClass(seeks, options = {}) {
         get currentTime() { return currentTime; },
         set currentTime(value) {
           if (options.throwSeek) throw new Error('seek assignment failed');
-          currentTime = value; video.seeking = true; seeks.push(value);
+          const nextTime = options.roundTime ? options.roundTime(value) : value;
+          const unchanged = currentTime === nextTime;
+          currentTime = nextTime; video.seeking = true; seeks.push(value);
           if (!options.manual) setTimeout(() => {
             // Model the real failure: seeked can precede the new pixels.
             // Browsers without rVFC retain the ordinary seeked fallback.
             if (options.noFrameCallback) video.present();
             video.seeked();
-            if (!options.noFrameCallback) setTimeout(() => video.present(), 0);
+            if (!options.noFrameCallback && !(unchanged && options.suppressUnchangedPresentation)) {
+              setTimeout(() => video.present(), 0);
+            }
           }, 0);
         },
       };
@@ -2597,6 +2601,29 @@ test('queued thumbnails and full frames snapshot distinct selected pixels', asyn
   assert.strictEqual(cached, first);
   assert.strictEqual(cached.pixels, 'frame at 0', 'later seeks do not alter earlier snapshots');
   assert.deepStrictEqual(seeks, [56.4], 'confirmed positions do not wait for a callback that will not fire');
+});
+
+test('rounded seek readback reuses the confirmed request without awaiting another presentation', async () => {
+  const seeks = [];
+  const videos = [];
+  const capture = new (loadFrameCaptureClass(seeks, {
+    videos,
+    roundTime: value => Math.round(value * 1e6) / 1e6,
+    suppressUnchangedPresentation: true,
+    setTimeout: (fn, delay) => setTimeout(fn, delay === 30000 ? 100 : delay),
+  }))();
+  const later = 56.400000000000006;
+  capture.noteFrameTime('/screen.mp4', 1, 0);
+  capture.noteFrameTime('/screen.mp4', 565, later);
+  await capture.captureThumbnail('/screen.mp4', 565, 120, 68);
+  assert.strictEqual(videos[0].currentTime, 56.4);
+  assert.notStrictEqual(videos[0].currentTime, later);
+  assert.strictEqual((await capture.captureFullFrame('/screen.mp4', 565)).pixels, 'frame at 56.4');
+  assert.strictEqual((await capture.captureFullFrame('/screen.mp4', 1)).pixels, 'frame at 0');
+  assert.strictEqual((await capture.captureFullFrame('/screen.mp4', 565)).pixels, 'frame at 56.4');
+  assert.strictEqual((await capture.captureFullFrame('/screen.mp4', 565)).pixels, 'frame at 56.4');
+  assert.deepStrictEqual(seeks, [later, 0, later]);
+  capture.clear();
 });
 
 test('alternating frame selections wait for actual presentation in either event order', async () => {

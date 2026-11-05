@@ -2935,7 +2935,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const entry = {
         url, video, ready: false, unsupported: false, errorCode: null,
         width: 0, height: 0, thumbs: new Map(), queue: Promise.resolve(),
-        confirmedTime: null, presentedFrames: 0, disposed: false, cancelPending: null
+        confirmedTime: null, confirmedTarget: null, presentedFrames: 0, disposed: false, cancelPending: null
       };
       this.videos.set(url, entry);
       entry.promise = this._waitForFrame(entry, null, () => { video.src = url; })
@@ -2976,9 +2976,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const video = entry.video;
       const initial = timestamp === null;
       if (entry.disposed) return Promise.reject(new Error('Video capture cancelled'));
-      if (!initial && entry.confirmedTime === timestamp && video.currentTime === timestamp
+      // The browser may round a requested time. Keep that request separate
+      // from its confirmed readback so reopening it does not seek again.
+      if (!initial && entry.confirmedTarget === timestamp && video.currentTime === entry.confirmedTime
           && !video.seeking && video.readyState >= 2) return Promise.resolve();
       entry.confirmedTime = null;
+      entry.confirmedTarget = null;
       return new Promise((resolve, reject) => {
         let seekComplete = initial;
         let presented = typeof video.requestVideoFrameCallback !== 'function';
@@ -3004,6 +3007,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
             reject(error);
           } else {
             entry.confirmedTime = video.currentTime;
+            entry.confirmedTarget = initial ? video.currentTime : timestamp;
             resolve();
           }
         };
