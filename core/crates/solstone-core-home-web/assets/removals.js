@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
+  const reportHomeReady = window.createViewReady('home');
   const COPY = Object.freeze({
     "card.heading": "originals waiting on you",
     "card.subhead": "original audio and video marked for deletion, plus anything a deletion left unfinished. nothing marked here is deleted until you say so.",
@@ -563,6 +564,7 @@
     const markedIds = new Set(markedRows().map(function (row) { return row.id; }));
     selected = new Set(Array.from(selected).filter(function (id) { return markedIds.has(id); }));
     render();
+    reportHomeReady(trustworthy || oversized ? (rows.length ? 'content' : 'empty') : 'error');
     return trustworthy;
   }
 

@@ -191,7 +191,7 @@ fn main() {
     for (route, path) in &assets {
         generated.push_str(&format!(
             "    EmbeddedAsset {{ path: {route:?}, content_type: {:?}, bytes: include_bytes!({:?}) }},\n",
-            content_type(&path),
+            content_type(path),
             path,
         ));
     }

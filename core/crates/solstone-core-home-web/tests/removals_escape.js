@@ -97,7 +97,7 @@ function copyTable(source) {
 // its rule here: this restated the old strip-the-punctuation transform and went
 // stale the moment the formatter learned to parse the key (G1-203 / S-1).
 const FORMAT = (() => {
-  const host = {};
+  const host = { createViewReady: () => () => {} };
   vm.runInNewContext(
     fs.readFileSync(path.join(__dirname, '../../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8'),
     { window: host },

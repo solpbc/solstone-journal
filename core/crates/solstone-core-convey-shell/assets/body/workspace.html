@@ -2317,6 +2317,7 @@ a.body-day-cell:focus-visible {
         retry: true,
       });
       statusCard.querySelector(".surface-state-retry")?.addEventListener("click", renderTrendsShell, { once: true });
+      reportBodyReady('error');
     }
 
     function renderTrends(payload) {
@@ -2338,6 +2339,7 @@ a.body-day-cell:focus-visible {
         statusCard.innerHTML = window.SurfaceState.empty({ heading: "no daily values in your journal yet." });
         statusCard.hidden = false;
         stack.hidden = true;
+        reportBodyReady('empty');
         return;
       }
       annotations.forEach((note) => {
@@ -2350,6 +2352,7 @@ a.body-day-cell:focus-visible {
       statusCard.hidden = true;
       stack.hidden = false;
       if (plotted.resting_hr && plotted.resting_hr.length) expandSignal("resting_hr");
+      reportBodyReady('content');
     }
 
     function loadTrends() {
