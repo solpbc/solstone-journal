@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- opening a screen frame from a recording now selects that frame instead of the first one. on android, later frames also show the picture from that point in the recording.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.
