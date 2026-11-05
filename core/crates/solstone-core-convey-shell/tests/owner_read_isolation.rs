@@ -523,6 +523,13 @@ fn owner_read_role_classification_table_exhaustiveness() {
     );
 }
 
+fn shares_counts_run(role: OwnerReadRole) -> bool {
+    matches!(
+        role,
+        OwnerReadRole::TranscriptsIndex | OwnerReadRole::TranscriptsMonthStats
+    )
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn owner_read_homogeneous_isolation() {
     let _lock = TEST_LOCK.lock().await;
@@ -533,16 +540,22 @@ async fn owner_read_homogeneous_isolation() {
         test_hooks::reset();
         test_hooks::hold(role);
         let uri = role.probe_uri();
+        // Identical GETs on a coalesced route share one run, so only a distinct
+        // query is sure to hold a second blocking task. Transcript counts share
+        // one run per journal whatever the query, so those roles hold one.
+        let held_tasks = if shares_counts_run(role) { 1 } else { 2 };
+        let separator = if uri.contains('?') { '&' } else { '?' };
+        let second_uri = format!("{uri}{separator}isolation=second");
 
         let root1 = journal_root.clone();
         let handle1 = tokio::spawn(async move { get(uri, &root1).await });
         let root2 = journal_root.clone();
-        let handle2 = tokio::spawn(async move { get(uri, &root2).await });
+        let handle2 = tokio::spawn(async move { get(&second_uri, &root2).await });
 
         tokio::time::timeout(
             Duration::from_secs(5),
             tokio::task::spawn_blocking(move || {
-                test_hooks::wait_entered(role, 2);
+                test_hooks::wait_entered(role, held_tasks);
             }),
         )
         .await
@@ -596,6 +609,9 @@ async fn owner_read_mixed_isolation() {
     }
 
     for &role in OwnerReadRole::ALL {
+        if shares_counts_run(role) {
+            continue;
+        }
         let uri = role.probe_uri();
         tokio::time::timeout(
             Duration::from_secs(5),
@@ -607,6 +623,19 @@ async fn owner_read_mixed_isolation() {
         .unwrap_or_else(|_| panic!("wait_entered timed out for role {role:?} at URI {uri}"))
         .expect("wait_entered join handle");
     }
+
+    // Whichever transcript counts request opens the run holds it for both.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while OwnerReadRole::ALL
+            .iter()
+            .filter(|role| shares_counts_run(**role))
+            .all(|role| test_hooks::entered(*role) == 0)
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("no transcript counts request entered its run");
 
     let shell_root = journal_root.clone();
     let shell_res = tokio::time::timeout(Duration::from_secs(5), async move {
