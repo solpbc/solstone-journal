@@ -73,6 +73,13 @@ impl WespeakerEmbedder {
         let projection = crate::onnx_init::read_projection(model_path)?;
         let dispatches = provider_dispatches(providers)?;
         let mut builder = Session::builder()?.with_execution_providers(dispatches)?;
+        // ORT 1.25's KleidiAI convolution backend retains input-dependent tables
+        // in thread-local caches across runs. Use the supported MLAS fallback
+        // for bounded iOS speaker inference without changing the model graph.
+        #[cfg(target_os = "ios")]
+        {
+            builder = builder.with_config_entry("mlas.disable_kleidiai", "1")?;
+        }
         let mut edited = builder.edit_from_file(model_path)?;
         let mut graph = Graph::new()?;
         graph.set_outputs([Outlet::new(
