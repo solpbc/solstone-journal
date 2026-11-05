@@ -794,10 +794,9 @@ fn emit_notification(journal_root: &Path, _identity: ObjectIdentity, kind: &str,
     #[cfg(test)]
     test_support::record_notification(_identity, kind, key);
 
-    let sock_path = journal_root.join("health/callosum.sock");
-    if !sock_path.exists() {
-        return;
-    }
+    // No existence check: on Windows the bus is a named pipe and nothing
+    // lives at this path, and an absent bus fails the send at once anyway.
+    let sock_path = journal_root.join("health").join("callosum.sock");
     let payload = serde_json::json!({
         "tract": "change",
         "event": "changed",
@@ -3733,6 +3732,8 @@ mod tests {
         );
     }
 
+    // Windows file names are UTF-16, so this fixture cannot exist there.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_error_non_utf8_segment() {
         let (temp, root) = setup_fixture_journal();
@@ -5208,8 +5209,22 @@ mod tests {
         // Event 4: solstone_core_segment::relocate_segment across two days
         let before_4_src = walk3.get("20260101").copied().unwrap_or(0);
         let before_4_dst = walk3.get("20260102").copied().unwrap_or(0);
-        let src_dir = temp.path().join("chronicle/20260101/field/100000_60");
-        let dst_dir = temp.path().join("chronicle/20260102/field/100000_60");
+        // Relocation admits the canonical journal path, which on Windows is
+        // the verbatim form; join component by component so it stays valid.
+        #[cfg(windows)]
+        let journal = fs::canonicalize(temp.path()).unwrap();
+        #[cfg(not(windows))]
+        let journal = temp.path().to_path_buf();
+        let src_dir = journal
+            .join("chronicle")
+            .join("20260101")
+            .join("field")
+            .join("100000_60");
+        let dst_dir = journal
+            .join("chronicle")
+            .join("20260102")
+            .join("field")
+            .join("100000_60");
         let source = solstone_core_segment::RelocationEnd {
             day: "20260101".to_string(),
             segment: "100000_60".to_string(),
@@ -5225,7 +5240,7 @@ mod tests {
             parent_rel: "chronicle/20260102/field".to_string(),
         };
         let relocation = solstone_core_segment::Relocation {
-            journal: temp.path(),
+            journal: &journal,
             source: &source,
             destination: &destination,
             successor: None,
