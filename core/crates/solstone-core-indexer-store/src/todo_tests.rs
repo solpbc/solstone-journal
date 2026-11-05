@@ -370,7 +370,7 @@ fn non_notfound_stat_errors_keep_rows_then_drop_as_a_present_file_after_three_tr
     let logs = journal
         .path()
         .join("chronicle")
-        .join(chrono::Utc::now().format("%Y%m%d").to_string())
+        .join(chrono::Local::now().format("%Y%m%d").to_string())
         .join("health/indexer.jsonl");
     let events = fs::read_to_string(logs).unwrap();
     assert!(events.contains("injected source stat error"));
@@ -723,7 +723,7 @@ fn a_killed_claim_is_recovered_and_counted_before_it_is_processed() {
     let logs = journal
         .path()
         .join("chronicle")
-        .join(chrono::Utc::now().format("%Y%m%d").to_string())
+        .join(chrono::Local::now().format("%Y%m%d").to_string())
         .join("health/indexer.jsonl");
     assert!(
         fs::read_to_string(logs)
@@ -1052,7 +1052,7 @@ fn attempts(journal: &Journal) -> Vec<serde_json::Value> {
     let log = journal
         .path()
         .join("chronicle")
-        .join(chrono::Utc::now().format("%Y%m%d").to_string())
+        .join(chrono::Local::now().format("%Y%m%d").to_string())
         .join("health/indexer.jsonl");
     fs::read_to_string(log)
         .unwrap_or_default()

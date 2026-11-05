@@ -26,6 +26,8 @@ use crate::{AppState, legacy_error_response};
 /// Why a resumed delete keeps a segment whose files are not the confirmed ones.
 const CHANGED_REASON: &str =
     "this segment's files changed after you chose to delete it, so it was kept";
+/// Why a delete is still pending after it stopped part-way.
+const HELD_REASON: &str = "this delete stopped partway";
 /// Why a resumed delete keeps a segment it has nothing to compare against.
 const UNCONFIRMED_REASON: &str =
     "your journal couldn't confirm this was the segment you chose, so it was kept";
@@ -361,7 +363,7 @@ fn commit_delete(journal_root: &Path, pending_id: &str, resumed: bool) {
                 phase,
                 merge(marker, detail),
             );
-            Some((state, reason.map(str::to_owned)))
+            Some((state, reason))
         },
     );
 }
@@ -411,7 +413,7 @@ fn run_delete(
     journal_root: &Path,
     record: &DeleteRecord,
     resumed: bool,
-) -> Option<(&'static str, Value, DeleteState, Option<&'static str>)> {
+) -> Option<(&'static str, Value, DeleteState, Option<String>)> {
     let segment = &record.target;
     let target = Target {
         day: segment.day.clone(),
@@ -448,7 +450,7 @@ fn run_delete(
                 "refused",
                 json!({"refused":[{"entry":segment_rel,"reason":UNCONFIRMED_REASON,"staged":null}]}),
                 DeleteState::NotDeleted,
-                Some(UNCONFIRMED_REASON),
+                Some(UNCONFIRMED_REASON.to_owned()),
             ));
         }
     }
@@ -473,7 +475,7 @@ fn run_delete(
                     "refused",
                     json!({"refused":[{"entry":segment_rel,"reason":UNCONFIRMED_REASON,"staged":null}]}),
                     DeleteState::NotDeleted,
-                    Some(UNCONFIRMED_REASON),
+                    Some(UNCONFIRMED_REASON.to_owned()),
                 ));
             }
         } else {
@@ -485,7 +487,7 @@ fn run_delete(
                         "refused",
                         json!({"refused":[{"entry":segment_rel,"reason":UNCONFIRMED_REASON,"staged":null}]}),
                         DeleteState::NotDeleted,
-                        Some(UNCONFIRMED_REASON),
+                        Some(UNCONFIRMED_REASON.to_owned()),
                     ));
                 }
                 (crate::pending::HoldVerdict::Changed, _) | (_, Ok(true)) => {
@@ -493,7 +495,7 @@ fn run_delete(
                         "refused",
                         json!({"refused":[{"entry":segment_rel,"reason":CHANGED_REASON,"staged":null}]}),
                         DeleteState::NotDeleted,
-                        Some(CHANGED_REASON),
+                        Some(CHANGED_REASON.to_owned()),
                     ));
                 }
                 (crate::pending::HoldVerdict::Missing, Ok(false)) => {
@@ -503,7 +505,7 @@ fn run_delete(
                             "refused",
                             json!({"refused":[{"entry":segment_rel,"reason":CHANGED_REASON,"staged":null}]}),
                             DeleteState::NotDeleted,
-                            Some(CHANGED_REASON),
+                            Some(CHANGED_REASON.to_owned()),
                         ));
                     }
                 }
@@ -526,14 +528,20 @@ fn run_delete(
             targets: vec![row],
             halted: None,
         };
-        if outcome.removed_paths().next().is_none() && present(&staged_dir(journal_root, record)) {
+        if outcome.removed_paths().next().is_none()
+            && (is_tombstone_only(&segment_dir) || present(&staged_dir(journal_root, record)))
+        {
+            let (_, detail) = terminal_detail(&outcome);
+            append_action(journal_root, &DeleteRequest::from(record), "held", detail);
+            keep_pending(journal_root, record);
             return None;
         }
         let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
         let (phase, detail) = terminal_detail(&outcome);
         let detail = merge(json!({"recovered":true}), detail);
         let detail = fold_notify_detail(detail, notify_result);
-        return Some((phase, detail, owner_outcome(&outcome, &segment_dir), None));
+        let reason = refusal_reason(&outcome);
+        return Some((phase, detail, owner_outcome(&outcome, &segment_dir), reason));
     }
 
     // 5 & 6. Removal through door (live + staged coexistence falls through here and is refused)
@@ -546,10 +554,44 @@ fn run_delete(
     );
     // The chronicle is authoritative: this notification deliberately happens
     // only after the removal door has returned its proven outcome.
-    let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
     let (phase, detail) = terminal_detail(&outcome);
+    // Set aside, or emptied down to its tombstone, with nothing reported removed
+    // are the states steps 1 and 4 settle, so the delete stays pending and the next
+    // start finishes it, as it does for a stopped run.
+    if outcome.removed_paths().next().is_none()
+        && (is_tombstone_only(&segment_dir)
+            || (!present(&segment_dir) && present(&staged_dir(journal_root, record))))
+    {
+        append_action(journal_root, &DeleteRequest::from(record), "held", detail);
+        keep_pending(journal_root, record);
+        return None;
+    }
+    let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
     let detail = fold_notify_detail(detail, notify_result);
-    Some((phase, detail, owner_outcome(&outcome, &segment_dir), None))
+    let reason = refusal_reason(&outcome);
+    Some((phase, detail, owner_outcome(&outcome, &segment_dir), reason))
+}
+
+/// Leave the record pending for the next start, saying it stopped so the page can
+/// tell the owner. The next run's outcome replaces the reason. The door's own words
+/// go to the action log: they describe one step, and some would read false here.
+fn keep_pending(journal_root: &Path, record: &DeleteRecord) {
+    let mut held = record.clone();
+    held.reason = Some(HELD_REASON.to_owned());
+    let _ = STORE.write(journal_root, &held);
+}
+
+/// Why the door kept the segment, for the page to tell the owner. Only the two
+/// reasons written for an owner: the door's others describe one step for the action
+/// log, and some would read false under this page's titles.
+fn refusal_reason(outcome: &Outcome) -> Option<String> {
+    outcome
+        .targets
+        .iter()
+        .flat_map(|target| target.not_removed.iter())
+        .map(|entry| entry.reason.as_str())
+        .find(|reason| [door::WHOLE_BUSY, door::WHOLE_BINDING_HOLD].contains(reason))
+        .map(str::to_owned)
 }
 
 fn fold_notify_detail(
@@ -780,7 +822,7 @@ mod tests {
     use super::{
         CHANGED_REASON, DeleteRequest, DeleteState, Record, STORE, SegmentManifest, SegmentTarget,
         TOMBSTONE_NAME, UNCONFIRMED_REASON, commit_delete, door, record_terminal_action, resumable,
-        terminal_detail,
+        staged_dir, terminal_detail,
     };
     use crate::{Clock, router_with_delete_window};
     use solstone_core_indexer_store::scan::scan_journal;
@@ -1967,6 +2009,56 @@ mod tests {
             .unwrap(),
             named_before_flac
         );
+    }
+
+    /// A removal stopped once the segment is set aside is not a dead end: the
+    /// record stays pending, and the next start finishes what the owner confirmed.
+    #[cfg(unix)]
+    #[test]
+    fn a_removal_stopped_after_staging_stays_pending_and_the_next_start_finishes_it() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = TempDir::new().expect("journal");
+        let day = "20260805";
+        let key = "070000_17";
+        setup_direct_and_named(root.path(), day, key, "field.audio");
+        let live = root.path().join(format!("chronicle/{day}/{key}"));
+        let manifest = SegmentManifest::of(&live).unwrap();
+        let pending_id = "3".repeat(32);
+        let record = Record::pending(
+            pending_id.clone(),
+            SegmentTarget {
+                day: day.to_string(),
+                stream: solstone_core_journal_io::DEFAULT_STREAM.to_string(),
+                key: key.to_string(),
+                manifest,
+            },
+            Duration::from_secs(10),
+        );
+        STORE.write(root.path(), &record).expect("write record");
+
+        // A folder that can't be emptied stops the removal part-way.
+        let talents = live.join("talents");
+        fs::set_permissions(&talents, fs::Permissions::from_mode(0o500)).unwrap();
+        commit_delete(root.path(), &pending_id, false);
+        let staged = staged_dir(root.path(), &record);
+        let held = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(held.state, DeleteState::Pending);
+        assert!(held.reason.is_some());
+        assert!(staged.is_dir());
+        assert!(!live.join(TOMBSTONE_NAME).exists());
+
+        fs::set_permissions(staged.join("talents"), fs::Permissions::from_mode(0o700)).unwrap();
+        commit_delete(root.path(), &pending_id, true);
+        let settled = STORE
+            .read::<SegmentTarget>(root.path(), &pending_id)
+            .unwrap();
+        assert_eq!(settled.state, DeleteState::Deleted);
+        assert!(settled.reason.is_none());
+        assert!(live.join(TOMBSTONE_NAME).is_file());
+        assert!(!staged.exists());
     }
 
     #[test]

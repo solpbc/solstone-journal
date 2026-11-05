@@ -565,7 +565,7 @@ fn queue_fresh_full_pass(journal: &Path) -> io::Result<()> {
 }
 
 fn record_recovery(journal: &Path) {
-    let now = chrono::Utc::now();
+    let now = chrono::Local::now();
     let log_path = journal.join(artifact(ArtifactId::IndexAttempts).path.replacen(
         '*',
         &now.format("%Y%m%d").to_string(),

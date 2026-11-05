@@ -7428,7 +7428,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       incomplete: 'Some of it may already be gone.',
       pending: 'Your journal will try again the next time it starts.'
     }[state] || 'It\'s still in your journal.';
-    const message = [label, asSentence(reason) || fallback].filter(Boolean).join(' ');
+    const retry = state === 'pending' && reason ? fallback : '';
+    const message = [label, asSentence(reason) || fallback, retry].filter(Boolean).join(' ');
     window.AppServices.notifications.show({
       app: 'transcripts',
       icon: 'triangle-alert',
@@ -7439,6 +7440,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     });
   }
 
+  const DELETE_WATCH_FAST_ATTEMPTS = 20;
+  const DELETE_WATCH_ATTEMPTS = DELETE_WATCH_FAST_ATTEMPTS + 180;
+
   // The delete runs after its cancel window, so the answer to the DELETE is
   // only that it was accepted. Ask what happened once the window has passed,
   // so a refusal reaches the page and not just the journal's log.
@@ -7446,7 +7450,8 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await wait(Math.max(0, commitAtLocalMs - Date.now()) + 500);
     let unknown = false;
-    for (let attempt = 0; attempt < 20; attempt++) {
+    let saidStillDeleting = false;
+    for (let attempt = 0; attempt < DELETE_WATCH_ATTEMPTS; attempt++) {
       let data = null;
       try {
         const response = await fetch(`/app/transcripts/api/delete-status/${pendingId}`);
@@ -7487,7 +7492,25 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
         return;
       }
-      await wait(1000);
+      // A delete still pending with a reason has stopped until the next start.
+      if (data?.state === 'pending' && data.reason) {
+        showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
+        return;
+      }
+      // A large journal takes minutes, so keep watching at a slower pace and
+      // say so once, rather than leave the result to a reload.
+      if (attempt >= DELETE_WATCH_FAST_ATTEMPTS - 1 && data?.state === 'pending' && !saidStillDeleting && !shownOutcomes.has(pendingId)) {
+        saidStillDeleting = true;
+        window.AppServices.notifications.show({
+          app: 'transcripts',
+          icon: 'timer',
+          title: 'Still deleting',
+          message: 'This can take a while on a large journal. The result will show here.',
+          dismissible: true,
+          autoDismiss: 10000
+        });
+      }
+      await wait(attempt < DELETE_WATCH_FAST_ATTEMPTS ? 1000 : 5000);
     }
     if (shownOutcomes.has(pendingId)) return;
     shownOutcomes.add(pendingId);

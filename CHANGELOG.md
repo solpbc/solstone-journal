@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- deleting a segment on a large journal is much faster and no longer stops partway when your journal starts a new day. if your journal is busy with another job, the transcripts page says so and your journal keeps the segment so you can try again. a slow delete shows its result when it finishes.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
 - opening a screen frame from a recording now selects that frame instead of the first one. on android, moving between frames waits for the selected picture to finish decoding.

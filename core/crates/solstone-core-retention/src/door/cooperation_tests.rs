@@ -615,6 +615,54 @@ fn obligation_after_pivot_preserves_staged_raw_before_tombstone() {
     assert!(outcome.targets[0].not_removed[0].staged.is_some());
 }
 
+/// An exclusive lease this delete took for itself answers once: what a later
+/// phase's census could only have tripped on is not the delete's concern. A busy
+/// journal is said in its own words, and a stage already there still refuses.
+#[test]
+fn own_lease_delete_finishes_past_a_new_day_and_refuses_a_stage_or_a_busy_journal() {
+    let fixture = Fixture::new();
+    let target = Fixture::target("field.audio", "070000_17");
+    fixture.populate(&target);
+    let root = fixture.root.clone();
+    let outcome = with_checkpoint(
+        move |phase, _| {
+            if phase == Phase::AfterPivot {
+                fs::create_dir_all(root.join("chronicle/20261105/health")).unwrap();
+            }
+        },
+        || remove_at(&fixture, &target),
+    );
+    assert!(outcome.targets[0].not_removed.is_empty(), "{outcome:?}");
+    assert!(!outcome.targets[0].removed.is_empty());
+
+    let fixture = Fixture::new();
+    let target = Fixture::target("field.audio", "070000_17");
+    let path = fixture.populate(&target);
+    let held = fixture.activity();
+    let outcome = remove_at(&fixture, &target);
+    assert_eq!(outcome.targets[0].not_removed[0].reason, WHOLE_BUSY);
+    assert!(outcome.targets[0].not_removed[0].staged.is_none());
+    assert_eq!(
+        fs::read(path.join("audio.flac")).unwrap(),
+        b"sole raw bytes"
+    );
+    drop(held);
+
+    let unrecognised = fixture
+        .root
+        .join("health/offload/.tmp-offload-unrecognised");
+    fs::create_dir_all(unrecognised.join("kept")).unwrap();
+    let outcome = remove_at(&fixture, &target);
+    assert_eq!(
+        outcome.targets[0].not_removed[0].reason,
+        WHOLE_ACTIVITY_HOLD
+    );
+    assert_eq!(
+        fs::read(path.join("audio.flac")).unwrap(),
+        b"sole raw bytes"
+    );
+}
+
 #[test]
 fn final_restore_refusal_preserves_payload_effects_and_earlier_success() {
     let fixture = Fixture::new();
