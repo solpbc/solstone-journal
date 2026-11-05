@@ -136,6 +136,7 @@ workspace = true
 full-tests = ["solstone-core-thinking/test-hooks", "solstone-core-sol-link/test-hooks"]
 default = ["host"]
 test-hooks = [
+    "solstone-core-transcripts-web/test-hooks",
     "solstone-core-speaker-resolve/test-hooks",
     "solstone-core-convey-http/test-hooks",
     "solstone-core-thinking/test-hooks",

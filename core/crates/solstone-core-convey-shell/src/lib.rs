@@ -371,6 +371,8 @@ pub struct EmbeddedConveyHandle {
     location_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     renewal_shutdown: tokio::sync::watch::Sender<bool>,
     backup_deps: solstone_core_backup_web::BackupWebDeps,
+    /// The journal whose calendar background work this handle retires.
+    calendar_root: Arc<solstone_core_journal_io::JournalRoot>,
 }
 
 /// Clone-only stop signal; task and runtime ownership remains in the serving handle.
@@ -458,6 +460,14 @@ impl EmbeddedConveyHandle {
         join_embedded_renewal(&self.service_token_renewal_task).await;
         join_embedded_renewal(&self.weekly_heads_up_task).await;
         join_embedded_renewal(&self.location_task).await;
+        // The transcript calendar folds days on its own threads, each taking
+        // the journal. Stop and join them here so none can run after the
+        // embedding app releases its journal.
+        let calendar_root = Arc::clone(&self.calendar_root);
+        let _ = tokio::task::spawn_blocking(move || {
+            solstone_core_transcripts_web::retire_calendar_root(&calendar_root);
+        })
+        .await;
     }
 }
 
@@ -630,6 +640,7 @@ async fn bind_embedded_router(
     let binding = backup_deps
         .retained_root()
         .map_err(ConveyServeError::EmbeddedRoot)?;
+    let calendar_root = Arc::clone(&binding);
     let relay_admissions = relay_admission::admission_registry_for(&journal_root);
     relay_admissions.clear();
     if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(&journal_root)
@@ -798,6 +809,7 @@ async fn bind_embedded_router(
         location_task: tokio::sync::Mutex::new(Some(location_task)),
         renewal_shutdown,
         backup_deps,
+        calendar_root,
     };
     if *handle.renewal_shutdown.borrow()
         || startup

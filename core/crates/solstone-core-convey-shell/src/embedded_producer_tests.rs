@@ -711,3 +711,194 @@ async fn owner_notices_push_and_show_once_per_episode_and_once_on_clear() {
     task.await.unwrap();
     server.abort();
 }
+
+#[cfg(feature = "test-hooks")]
+struct UnparkOnDrop(Arc<solstone_core_transcripts_web::calendar_lifecycle_hooks::BetweenDays>);
+
+#[cfg(feature = "test-hooks")]
+impl Drop for UnparkOnDrop {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+async fn month(
+    handle: &EmbeddedConveyHandle,
+    month: &str,
+) -> (axum::http::StatusCode, serde_json::Value) {
+    let request = axum::http::Request::get(format!("/app/transcripts/api/stats/{month}"))
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let response = handle.request_owner(request).await;
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap_or_default(),
+    )
+}
+
+#[cfg(feature = "test-hooks")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn embedded_stop_retires_the_calendar_worker_between_days() {
+    use solstone_core_transcripts_web::calendar_lifecycle_hooks as hooks;
+
+    let root = tempfile::tempdir().unwrap();
+    write(
+        root.path(),
+        "config/journal.json",
+        r#"{"setup":{"completed_at":1},"identity":{"timezone":"UTC"}}"#,
+    );
+    // One day in January, two in February. A January read counts its own
+    // month and leaves February to the background worker.
+    for day in ["20260101", "20260201", "20260202"] {
+        write(
+            root.path(),
+            &format!("chronicle/{day}/field/100000_60/mic_audio.jsonl"),
+            concat!(
+                "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n",
+                "{\"start\":\"10:00:00\",\"end\":\"10:00:01\",\"text\":\"words\"}\n"
+            ),
+        );
+    }
+    let identity = solstone_core_journal_io::JournalRoot::open(root.path())
+        .unwrap()
+        .identity();
+    hooks::clear(identity);
+    let bind = || async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let SocketAddr::V4(address) = address else {
+            unreachable!()
+        };
+        bind_embedded_device_door(root.path().to_path_buf(), address, None)
+            .await
+            .unwrap()
+    };
+    let parked = hooks::hold_worker_between_days(identity);
+    // Release the parked worker however the test ends, so a failed assertion
+    // reports instead of leaving a stop joined on it forever.
+    let _unpark = UnparkOnDrop(Arc::clone(&parked));
+    let handle = bind().await;
+    let (status, _) = month(&handle, "202601").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let parked_c = parked.clone();
+    tokio::task::spawn_blocking(move || parked_c.wait_arrived())
+        .await
+        .unwrap();
+    let folds_when_parked = hooks::folds(identity);
+
+    // Stop the embedded owner while its calendar worker is parked between days.
+    let handle = Arc::new(handle);
+    let stopping_handle = Arc::clone(&handle);
+    let stopping = tokio::spawn(async move {
+        stopping_handle.shutdown_and_wait().await;
+        hooks::note_retire_event(identity, hooks::RetireEvent::Returned);
+    });
+    let first = tokio::task::spawn_blocking(move || hooks::wait_retire_event(identity))
+        .await
+        .unwrap();
+    assert_eq!(
+        first,
+        vec![hooks::RetireEvent::Joining],
+        "stop must wait for the calendar worker before it returns"
+    );
+    parked.release();
+    stopping.await.unwrap();
+    // The worker is joined: no fold of the old root can start any more.
+    assert_eq!(hooks::folds(identity), folds_when_parked);
+    // A dashboard stream that closes late, after the stop, must not bring the
+    // calendar back.
+    solstone_core_transcripts_web::note_dashboard_stream(root.path(), false);
+    assert_eq!(hooks::folds(identity), folds_when_parked);
+    drop(handle);
+
+    // Reopening the same journal starts a fresh calendar that counts every day.
+    let reopened = bind().await;
+    let (status, february) = month(&reopened, "202602").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_eq!(february, json!({"20260201": 1, "20260202": 1}));
+    reopened.shutdown_and_wait().await;
+}
+
+#[cfg(feature = "test-hooks")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_retried_stop_waits_for_a_cancelled_stops_calendar_join() {
+    use solstone_core_transcripts_web::calendar_lifecycle_hooks as hooks;
+
+    let root = tempfile::tempdir().unwrap();
+    write(
+        root.path(),
+        "config/journal.json",
+        r#"{"setup":{"completed_at":1},"identity":{"timezone":"UTC"}}"#,
+    );
+    for day in ["20260101", "20260201", "20260202"] {
+        write(
+            root.path(),
+            &format!("chronicle/{day}/field/100000_60/mic_audio.jsonl"),
+            concat!(
+                "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n",
+                "{\"start\":\"10:00:00\",\"end\":\"10:00:01\",\"text\":\"words\"}\n"
+            ),
+        );
+    }
+    let identity = solstone_core_journal_io::JournalRoot::open(root.path())
+        .unwrap()
+        .identity();
+    hooks::clear(identity);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let SocketAddr::V4(address) = address else {
+        unreachable!()
+    };
+
+    let parked = hooks::hold_worker_between_days(identity);
+    // Release the parked worker however the test ends, so a failed assertion
+    // reports instead of leaving a stop joined on it forever.
+    let _unpark = UnparkOnDrop(Arc::clone(&parked));
+    let handle = Arc::new(
+        bind_embedded_device_door(root.path().to_path_buf(), address, None)
+            .await
+            .unwrap(),
+    );
+    let (status, _) = month(&handle, "202601").await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    let parked_c = parked.clone();
+    tokio::task::spawn_blocking(move || parked_c.wait_arrived())
+        .await
+        .unwrap();
+    let folds_when_parked = hooks::folds(identity);
+
+    // The first stop reaches the calendar join, then its caller gives up.
+    let first_handle = Arc::clone(&handle);
+    let first = tokio::spawn(async move { first_handle.shutdown_and_wait().await });
+    let seen = tokio::task::spawn_blocking(move || hooks::wait_retire_events(identity, 1))
+        .await
+        .unwrap();
+    assert_eq!(seen, vec![hooks::RetireEvent::Joining]);
+    first.abort();
+    let _ = first.await;
+
+    // A retried stop must still wait for that join rather than return early.
+    let second_handle = Arc::clone(&handle);
+    let second = tokio::spawn(async move {
+        second_handle.shutdown_and_wait().await;
+        hooks::note_retire_event(identity, hooks::RetireEvent::Returned);
+    });
+    let seen = tokio::task::spawn_blocking(move || hooks::wait_retire_events(identity, 2))
+        .await
+        .unwrap();
+    assert_eq!(
+        seen,
+        vec![hooks::RetireEvent::Joining, hooks::RetireEvent::Waiting],
+        "a retried stop must wait for the earlier calendar join"
+    );
+    parked.release();
+    second.await.unwrap();
+    assert_eq!(hooks::folds(identity), folds_when_parked);
+}

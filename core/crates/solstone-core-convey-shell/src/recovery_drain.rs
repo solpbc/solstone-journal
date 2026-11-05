@@ -157,6 +157,9 @@ pub fn stop_admitted_work(journal: &Path) -> Result<(), String> {
         hook(journal)?;
     }
     wait_for_target_use_to_end(journal);
+    // The calendar's background folds take the journal on their own; retire
+    // them before the hold is released so none can start again.
+    solstone_core_transcripts_web::retire_calendar(journal);
     release_target_for_restore(journal);
     Ok(())
 }
