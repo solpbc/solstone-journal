@@ -1054,3 +1054,62 @@ fn adoption_changes_nothing_when_the_owner_match_is_ambiguous_or_unconfigured() 
     );
     assert_eq!(principal_flag(unconfigured.path(), "jordan"), None);
 }
+
+#[test]
+fn profile_save_creates_one_principal_and_preserves_it_after_a_name_change() {
+    let journal = TempDir::new();
+    write_identity_config(
+        journal.path(),
+        json!({"name":"Jordan Rivera","preferred":"Jo"}),
+    );
+    let id = crate::ensure_configured_principal(journal.path())
+        .unwrap()
+        .unwrap();
+    let principal = read_journal_principal(journal.path()).unwrap().unwrap();
+    assert_eq!(principal["id"], id);
+    assert_eq!(principal["name"], "Jo");
+    assert_eq!(principal["aka"], json!(["Jordan Rivera"]));
+    write_identity_config(journal.path(), json!({"name":"Jordan Smith"}));
+    assert_eq!(
+        crate::ensure_configured_principal(journal.path()).unwrap(),
+        None
+    );
+    assert_eq!(
+        read_journal_principal(journal.path()).unwrap(),
+        Some(principal)
+    );
+    assert_eq!(
+        crate::load_all_journal_entities(journal.path())
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn profile_save_adopts_an_existing_match_but_never_bypasses_ambiguity_or_a_hidden_person() {
+    for (count, blocked, adopted) in [(1, false, true), (2, false, false), (1, true, false)] {
+        let journal = TempDir::new();
+        write_identity_config(journal.path(), json!({"name":"Jordan Rivera"}));
+        for index in 0..count {
+            seed_person(
+                journal.path(),
+                &format!("jordan_{index}"),
+                "Jordan Rivera",
+                json!({"blocked":blocked}),
+            );
+        }
+        let result = crate::ensure_configured_principal(journal.path()).unwrap();
+        assert_eq!(result.is_some(), adopted);
+        assert_eq!(
+            read_journal_principal(journal.path()).unwrap().is_some(),
+            adopted
+        );
+        assert_eq!(
+            crate::load_all_journal_entities(journal.path())
+                .unwrap()
+                .len(),
+            count
+        );
+    }
+}

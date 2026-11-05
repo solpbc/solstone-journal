@@ -1608,6 +1608,16 @@ async fn init_finalize(
         Err(error) => return config_error(error),
     };
 
+    if let Err(error) = solstone_core_entity::ensure_configured_principal(&state.journal_root) {
+        return error_envelope(
+            "owner_identity_failed",
+            "Internal Server Error",
+            error,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response();
+    }
+
     if wrote_first_completion && should_start_local {
         let journal = state.journal_root.clone();
         let host = state.host.clone();

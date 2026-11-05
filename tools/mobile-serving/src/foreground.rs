@@ -783,7 +783,7 @@ impl DescribeSession for InProcessDescribeSession<'_> {
         Ok(())
     }
 
-    fn recv_timeout(&self, _timeout: Duration) -> Result<SessionCompletion, SessionReceiveError> {
+    fn recv(&self) -> Result<SessionCompletion, SessionReceiveError> {
         let request = {
             let mut queue = self
                 .queue

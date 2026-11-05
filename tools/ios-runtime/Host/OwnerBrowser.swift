@@ -50,7 +50,7 @@ final class OwnerRead: @unchecked Sendable {
       throw URLError(.dataLengthExceedsMaximum)
     }
     var bodyText = text
-    let allowed = Set(["accept", "content-type", "range", "if-none-match", "if-modified-since", "last-event-id"])
+    let allowed = Set(["accept", "content-type", "range", "if-none-match", "if-modified-since", "last-event-id", "x-solstone-actor"])
     var headers = request.allHTTPHeaderFields?.compactMap { key, value -> [String]? in
       allowed.contains(key.lowercased()) ? [key.lowercased(), value] : nil
     } ?? []

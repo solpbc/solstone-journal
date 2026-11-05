@@ -198,6 +198,9 @@ fn admit(method: &str, uri: &str, headers: &[(String, String)]) -> Result<Admitt
                 | "if-none-match"
                 | "if-modified-since"
                 | "last-event-id"
+                // Owner intent is checked by the destination route. Authority
+                // still comes from this private embedding boundary, not a header.
+                | "x-solstone-actor"
         ) {
             return Err("owner request header not admitted".into());
         }
@@ -638,6 +641,37 @@ impl OwnerResponses {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn owner_correction_intent_is_preserved_without_accepting_credentials() {
+        let body = br#"{"entity_id":"person-one"}"#.to_vec();
+        let correction = request(
+            "POST",
+            "/app/transcripts/api/line-label/20261103/recording/120000",
+            &[
+                ("Content-Type".into(), "application/json".into()),
+                ("X-Solstone-Actor".into(), "owner".into()),
+            ],
+            body.clone(),
+        )
+        .unwrap();
+        assert_eq!(correction.headers()["x-solstone-actor"], "owner");
+        assert_eq!(
+            correction.into_body().collect().await.unwrap().to_bytes(),
+            body
+        );
+        for header in ["authorization", "cookie", "host", "x-forwarded-for"] {
+            assert!(
+                request(
+                    "POST",
+                    "/app/transcripts/api/line-label/20261103/recording/120000",
+                    &[(header.into(), "owner".into())],
+                    vec![],
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn representation_is_preserved_and_authority_cannot_be_supplied() {

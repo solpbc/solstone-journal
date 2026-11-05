@@ -137,6 +137,60 @@ pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
     extract_identity_names(config.as_ref())
 }
 
+/// Complete an explicit owner-profile save with its principal Person.
+/// Existing principals are preserved. An existing name match is adopted only
+/// when unambiguous and admissible; blocked or ambiguous matches are left for
+/// owner review. Reads and background discovery must not call this writer.
+pub fn ensure_configured_principal(journal_root: &Path) -> Result<Option<String>, String> {
+    let _trust = hold_entity_trust_lock(journal_root).map_err(|error| error.to_string())?;
+    if has_journal_principal(journal_root).map_err(|error| error.to_string())? {
+        return Ok(None);
+    }
+    let names =
+        read_owner_names_for_principal_grant(journal_root).map_err(|error| error.to_string())?;
+    let Some(name) = names.first() else {
+        return Ok(None);
+    };
+    if super::journal_entities::is_placeholder_name(name) {
+        return Ok(None);
+    }
+    let matches = super::journal_entities::load_all_journal_entities(journal_root)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|entity| entity.entity_type() == Some("Person"))
+        .filter(|entity| {
+            let candidate = entity.resolution_entity();
+            entity_matches_identity_name(&candidate.name, Some(&candidate.aka), &names)
+        })
+        .collect::<Vec<_>>();
+    if !matches.is_empty() {
+        return if matches.len() == 1 && super::journal_entities::is_admissible_person(&matches[0]) {
+            super::lifecycle::adopt_configured_principal(journal_root)
+                .map_err(|error| error.to_string())
+        } else {
+            Ok(None)
+        };
+    }
+    let id = super::retired::fresh_entity_id(
+        journal_root,
+        &solstone_core_entity_matching::entity_slug(name),
+    )?;
+    let emails = journal_identity_emails(journal_root).map_err(|error| error.to_string())?;
+    create_journal_entity(
+        journal_root,
+        &id,
+        name,
+        "Person",
+        Some(&names[1..]),
+        Some(&emails),
+        &names,
+        false,
+        None,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(Some(id))
+}
+
 /// The owner's configured email addresses, trimmed, without blanks. Empty
 /// when the config is absent; an unreadable config is an error, so a caller
 /// can tell "none set" from "could not read".

@@ -646,6 +646,11 @@ async fn finalize_writes_journal_config_with_the_python_response_shape() {
     let config: Value = serde_json::from_slice(&fs::read(config_path).unwrap()).unwrap();
     assert_eq!(config["identity"]["name"], "Ada");
     assert_eq!(config["identity"]["preferred"], "A");
+    let principal = solstone_core_entity::read_journal_principal(temporary.path())
+        .unwrap()
+        .expect("setup creates the owner Person");
+    assert_eq!(principal["name"], "A");
+    assert_eq!(principal["aka"], json!(["Ada"]));
     assert_eq!(config["identity"]["timezone"], "America/Denver");
     assert!(
         config["setup"]["completed_at"]

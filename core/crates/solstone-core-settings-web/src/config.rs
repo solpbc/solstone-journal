@@ -316,6 +316,11 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             };
         }
     };
+    if section == "identity"
+        && solstone_core_entity::ensure_configured_principal(&journal_root).is_err()
+    {
+        return settings_operation_failed();
+    }
     if !changed_fields.is_empty() {
         let owner_voice_enabled = changed_fields
             .get("owner_voice_only")
@@ -985,6 +990,22 @@ mod tests {
         .await;
         assert_eq!(status, axum::http::StatusCode::OK);
         assert_eq!(identity_field(root.path(), "name").as_deref(), Some("Ada"));
+        let principal = solstone_core_entity::read_journal_principal(root.path())
+            .unwrap()
+            .expect("profile save creates the owner Person");
+        assert_eq!(principal["name"], "Ada");
+        let (status, _) = post_identity(
+            root.path(),
+            json!({"section":"identity","data":{"name":"Ada"}}),
+        )
+        .await;
+        assert_eq!(status, axum::http::StatusCode::OK);
+        assert_eq!(
+            solstone_core_entity::load_all_journal_entities(root.path())
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
