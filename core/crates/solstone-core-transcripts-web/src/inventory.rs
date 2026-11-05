@@ -5371,8 +5371,14 @@ mod tests {
         .expect("SSE client connected to callosum bus");
 
         let day = "20260306";
-        emit_notification(temp.path(), identity, "day", day);
-        emit_notification(temp.path(), identity, "system", "calendar");
+        // Send from a blocking thread, as production does: the send waits for
+        // the bus to confirm, and this runtime thread is what serves the bus.
+        for (kind, key) in [("day", day), ("system", "calendar")] {
+            let journal = temp.path().to_path_buf();
+            tokio::task::spawn_blocking(move || emit_notification(&journal, identity, kind, key))
+                .await
+                .unwrap();
+        }
 
         let mut received = Vec::new();
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
