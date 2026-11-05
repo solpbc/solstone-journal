@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.
 - on a mac or linux computer, when `solstone journal open` can't open a browser, it now says how to reach the link from another computer over SSH.
 - when redoing a day from scratch runs past its six-hour limit, your journal now moves straight on to an ordinary reprocess of that day, and the parts it hadn't reached keep their earlier results. before, it started the whole day over once more, which stopped at the same point six hours later.

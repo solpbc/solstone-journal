@@ -31,6 +31,8 @@ def run(argv):
   (build/'build-receipts.json').write_text(json.dumps(commands,indent=2))
   if out.returncode: raise RuntimeError(commands[-1])
 run([sys.executable,root/'tests/test_audio_package.py'])
+run([sys.executable,root/'tests/check_owner_downloads.py','--java-home',java])
+run(['node',root/'tests/owner_downloads.js'])
 run([sys.executable,root.parents[1]/'scripts/test_mobile_pdfium.py'])
 run([sys.executable,root.parents[1]/'scripts/test_mobile_media.py'])
 classes=build/'classes'; dex=build/'dex'; host_classes=build/'host-tests'; recovery_classes=build/'creator-recovery-lifecycle-tests'

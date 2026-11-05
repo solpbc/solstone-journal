@@ -30,7 +30,8 @@ const EXPORT_FILENAME: &str = "journal-export.zip";
 /// Stream a portable archive without leaving an export artifact in the journal.
 pub(crate) async fn export(State(state): State<AppState>) -> Response {
     match export_file(&state.root).await {
-        Ok(file) => Response::builder()
+        Ok((file, length)) => Response::builder()
+            .header(header::CONTENT_LENGTH, length)
             .header(header::CONTENT_TYPE, "application/zip")
             .header(
                 header::CONTENT_DISPOSITION,
@@ -69,7 +70,7 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
     }
 }
 
-async fn export_file(root: &Path) -> Result<tokio::fs::File, String> {
+async fn export_file(root: &Path) -> Result<(tokio::fs::File, u64), String> {
     let source = ArchiveSource::open(root).map_err(|error| error.to_string())?;
     let scratch = tempfile::tempdir().map_err(|error| error.to_string())?;
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -94,7 +95,12 @@ async fn export_file(root: &Path) -> Result<tokio::fs::File, String> {
         .await
         .map_err(|error| error.to_string())?;
     drop(scratch);
-    Ok(file)
+    let length = file
+        .metadata()
+        .await
+        .map_err(|error| error.to_string())?
+        .len();
+    Ok((file, length))
 }
 
 #[cfg(any(
@@ -183,7 +189,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        corpus::tests::{request, response_header},
+        corpus::tests::{request, response, response_header},
         test_support::{phase_root, seed_import},
     };
 
@@ -227,10 +233,18 @@ mod tests {
         publish_public_archive(&root, &expected);
         let expected_members = zip_members(&fs::read(&expected).expect("expected archive"));
 
-        let (status, content_type, _, body) =
-            request(&root, "GET", "/app/import/api/journal-archive/export", None).await;
+        let (status, headers, body) =
+            response(&root, "GET", "/app/import/api/journal-archive/export", None).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(content_type, "application/zip");
+        assert_eq!(headers["content-type"], "application/zip");
+        assert_eq!(
+            headers["content-length"]
+                .to_str()
+                .unwrap()
+                .parse::<usize>()
+                .unwrap(),
+            body.len()
+        );
         assert_eq!(
             response_header(
                 &root,
