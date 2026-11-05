@@ -792,18 +792,34 @@ pub(crate) fn resolve_key(journal: &Path, day: &str, key: &str) -> String {
     }
 }
 
-/// The rows stored in a window, or `Err` for a file that can't be read as rows.
+/// Why a window's rows couldn't be had.
+pub(crate) enum StoredRowsError {
+    /// The file's bytes aren't text, or its text isn't rows.
+    NotRows,
+    /// The file couldn't be read, which says nothing of what it holds.
+    Read(String),
+}
+
+/// The rows stored in a window, and `None` for a window with no file.
 pub(crate) fn stored_rows(
     journal: &Path,
     (day, key): &WindowId,
-) -> Result<Option<(String, Vec<BodyRow>)>, ()> {
+) -> Result<Option<(String, Vec<BodyRow>)>, StoredRowsError> {
     let path = stream_dir(journal, day).join(key).join(BODY_RECORDS_FILE);
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(()),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
+            return Err(StoredRowsError::NotRows);
+        }
+        Err(error) => {
+            return Err(StoredRowsError::Read(format!(
+                "{}: {error}",
+                path.display()
+            )));
+        }
     };
-    let rows = decode_rows(&text).map_err(|_| ())?;
+    let rows = decode_rows(&text).map_err(|_| StoredRowsError::NotRows)?;
     Ok(Some((text, rows)))
 }
 
@@ -886,9 +902,13 @@ pub fn decide(
         decision.stayed_deleted = true;
         return Ok(decision);
     }
-    let Ok(stored) = stored_rows(journal, window) else {
-        decision.unreadable = true;
-        return Ok(decision);
+    let stored = match stored_rows(journal, window) {
+        Ok(stored) => stored,
+        Err(StoredRowsError::NotRows) => {
+            decision.unreadable = true;
+            return Ok(decision);
+        }
+        Err(StoredRowsError::Read(error)) => return Err(error),
     };
     let (stored_text, stored_rows) = stored.unzip();
     let mut merged_rows = stored_rows.unwrap_or_default();

@@ -38,7 +38,7 @@ use solstone_core_import_sources::apple_health::{
     read_or_create_zone, settle_readings, stored_windows_of_day, stream_days, summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
-    DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan,
+    DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan, sync_folder,
 };
 use solstone_core_import_sources::save::{self, RenderedImport, SegmentFile};
 use solstone_core_journal_io::{
@@ -180,6 +180,10 @@ struct RunState {
     schema: u32,
     phase: Phase,
     source_hash: String,
+    /// A folder's hash is names and sizes, which another folder can match, so
+    /// carrying on needs its export's own bytes. Empty for a zip, whose hash has them.
+    #[serde(default)]
+    export_hash: String,
     import_id: String,
     facet: Option<String>,
     scan: ScanCounts,
@@ -389,7 +393,7 @@ impl Run<'_> {
                 }
                 SegmentBindingOutcome::FailedAtAdvance { .. } if first => {
                     first = false;
-                    self.count_a_failure(window)?;
+                    self.failed_in_a_row.set(self.failed_in_a_row.get() + 1);
                     failed.push(Failed {
                         day: window.0.clone(),
                         key: Some(window.1.clone()),
@@ -420,9 +424,7 @@ impl Run<'_> {
             }
         }
         // The windows the stream didn't attempt after the first failure, one at a
-        // time, since any number of them can be at fault. So many failing in a row,
-        // across days, with none between them bound, is the stream's fault, and
-        // going on would only repeat it for every window left.
+        // time, since any number of them can be at fault.
         for window in &retry {
             let one = self.publish_once(std::slice::from_ref(window))?;
             if one
@@ -432,7 +434,7 @@ impl Run<'_> {
             {
                 self.failed_in_a_row.set(0);
             } else {
-                self.count_a_failure(window)?;
+                self.failed_in_a_row.set(self.failed_in_a_row.get() + 1);
             }
             if one.status != PublicationStatus::Success {
                 failed.push(Failed {
@@ -445,14 +447,16 @@ impl Run<'_> {
         Ok(failed)
     }
 
-    /// One more window that couldn't be published, none bound since the last.
-    fn count_a_failure(&self, window: &WindowId) -> Result<(), Stop> {
-        let count = self.failed_in_a_row.get() + 1;
-        self.failed_in_a_row.set(count);
+    /// So many windows failing in a row, across days, with none between them bound,
+    /// is the stream's fault, and going on would only repeat it for every window
+    /// left. Asked once a day is recorded, so the next run starts on the day after
+    /// and every run gets at least a day further.
+    fn stop_if_stuck(&self, day: &str) -> Result<(), Stop> {
+        let count = self.failed_in_a_row.get();
         if count >= MAX_FAILED_IN_A_ROW {
             return Err(Stop::Failed(format!(
-                "{}: publishing stopped at {} after {count} windows in a row couldn't be published; the next run carries on from there",
-                window.0, window.1
+                "the import stopped after {}: {count} segments in a row couldn't be finished; import the same file again to carry on from there",
+                readable_day(day)
             )));
         }
         Ok(())
@@ -533,6 +537,7 @@ impl Run<'_> {
                 .map_err(|error| error.to_string())?;
             atomic_replace(&path, facet_file_text(facet).as_bytes(), PRIVATE)
                 .map_err(|error| error.to_string())?;
+            sync_folder(&dir)?;
         }
         Ok(())
     }
@@ -661,19 +666,29 @@ impl Run<'_> {
         let failed = self.publish_day(&publish)?;
         self.point("published")?;
 
+        // A window's own folder is synced as its file lands. What holds that folder
+        // has to last too, before the day counts as done and its staging can go.
+        if pending.windows.iter().any(|window| window.write) {
+            sync_day_folders(self.journal, &day)?;
+        }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
         state.failed.extend(failed);
-        state.done_through = Some(day);
+        state.done_through = Some(day.clone());
         state.pending = None;
         save_state(self.journal, state)?;
         self.write_progress(state);
-        Ok(())
+        self.stop_if_stuck(&day)
     }
 
-    /// One line per day of what this run touched, kept under the import.
+    /// One line per day of what this run touched, kept under the import whose run
+    /// the state is, which a takeover isn't.
     fn append_listing(&self, state: &mut RunState, pending: &Pending) -> Result<(), String> {
-        let path = self.import_dir().join(LISTING_FILE);
+        let path = self
+            .journal
+            .join("imports")
+            .join(&state.import_id)
+            .join(LISTING_FILE);
         // Not append mode: Windows refuses to cut a file opened that way.
         let mut file = OpenOptions::new()
             .create(true)
@@ -718,9 +733,10 @@ impl Run<'_> {
             let windows = stored_windows_of_day(self.journal, &day)?;
             let failed = self.publish_day(&windows)?;
             state.failed.extend(failed);
-            state.done_through = Some(day);
+            state.done_through = Some(day.clone());
             save_state(self.journal, state)?;
             self.point("repaired")?;
+            self.stop_if_stuck(&day)?;
         }
         state.notes.push(
             "The last import's progress couldn't be read, so every window already saved was published again."
@@ -728,6 +744,27 @@ impl Run<'_> {
         );
         Ok(())
     }
+}
+
+/// A day as a person reads a date.
+fn readable_day(day: &str) -> String {
+    match (day.get(..4), day.get(4..6), day.get(6..8)) {
+        (Some(year), Some(month), Some(date)) => format!("{year}-{month}-{date}"),
+        _ => day.to_owned(),
+    }
+}
+
+/// Make a day's new folders last: the windows in the stream, the stream in the day,
+/// and the day in the chronicle. A day that got no window has none to keep.
+fn sync_day_folders(journal: &Path, day: &str) -> Result<(), String> {
+    let chronicle = journal.join("chronicle");
+    let day_dir = chronicle.join(day);
+    if !day_dir.join(STREAM).is_dir() {
+        return Ok(());
+    }
+    sync_folder(&day_dir.join(STREAM))?;
+    sync_folder(&day_dir)?;
+    sync_folder(&chronicle)
 }
 
 /// Move the stream's record up to its markers' tail, as the streams command does,
@@ -803,6 +840,14 @@ fn close_superseded(journal: &Path, state: &RunState, zone: chrono_tz::Tz) {
     let Ok(_lock) = hold_import_lock(journal, &state.import_id) else {
         return;
     };
+    // It finished, and only its staging was left when it stopped.
+    if let Ok(Some(metadata)) = read_provenance(journal, &state.import_id)
+        && let AttemptRead::Present(facts) = read_attempt_facts(&metadata)
+        && facts.state == AttemptState::Completed
+        && facts.failure_reason.is_none()
+    {
+        return;
+    }
     let summary = summary_text(&summary_of(state), state.facet.as_deref(), zone);
     let _ = atomic_replace(
         journal
@@ -870,6 +915,9 @@ pub fn run_apple_health_segments(
     let source_hash = solstone_core_import::hash_source(request.source)
         .map_err(|error| error.to_string())?
         .into_inner();
+    let export_hash = solstone_core_body_ingest::apple_folder_export(request.source)
+        .and_then(|export| solstone_core_import::hash_source(&export).ok())
+        .map_or_else(String::new, solstone_core_import::SourceHash::into_inner);
 
     // The run state is read before any binding, so the same export resumes under
     // the import it began as, whatever timestamp this request carries.
@@ -877,6 +925,7 @@ pub fn run_apple_health_segments(
     let resumable = match &previous {
         Read::Trusted(state)
             if state.source_hash == source_hash
+                && state.export_hash == export_hash
                 && state.facet.as_deref() == request.facet
                 && matches!(state.phase, Phase::Scan | Phase::Place | Phase::Write) =>
         {
@@ -930,7 +979,7 @@ pub fn run_apple_health_segments(
         )
     };
     let resume = resumable.is_some();
-    let outcome = run_phases(&run, previous, resume, &source_hash, zone);
+    let outcome = run_phases(&run, previous, resume, (&source_hash, &export_hash), zone);
     match outcome {
         Ok(outcome) => Ok(outcome),
         Err(Stop::Injected(point)) => {
@@ -950,6 +999,8 @@ pub fn run_apple_health_segments(
                     "this export is larger than {} GiB, the most one import reads",
                     solstone_core_body_ingest::apple_scan_byte_bound() / (1024 * 1024 * 1024)
                 )
+            } else if error.contains(solstone_core_body_ingest::EXPORT_INCOMPLETE) {
+                "this export looks incomplete, so none of it was saved. export it from Apple Health again and import the new copy".to_owned()
             } else {
                 error
             })
@@ -961,7 +1012,7 @@ fn run_phases(
     run: &Run<'_>,
     previous: Read,
     resume: bool,
-    source_hash: &str,
+    (source_hash, export_hash): (&str, &str),
     zone: chrono_tz::Tz,
 ) -> Result<AppleSegmentsOutcome, Stop> {
     let journal = run.journal;
@@ -971,6 +1022,7 @@ fn run_phases(
         schema: STATE_SCHEMA,
         phase: Phase::Scan,
         source_hash: source_hash.to_owned(),
+        export_hash: export_hash.to_owned(),
         import_id: run.import_id.clone(),
         facet: request.facet.map(str::to_owned),
         failed,
@@ -1004,6 +1056,14 @@ fn run_phases(
                     .collect();
                 let failed = run.publish_day(&windows)?;
                 old.failed.extend(failed);
+                sync_day_folders(journal, &pending.day)?;
+                // That day's rows name the old import, so its listing has to, whichever
+                // of the windows it had got to. A window it hadn't is listed too.
+                let import = journal.join("imports").join(&old.import_id);
+                if import.is_dir() {
+                    run.append_listing(&mut old, &pending)?;
+                    old.totals.add(&pending.counts);
+                }
             }
             run.retry_failed(&mut old.failed)?;
             if old.phase != Phase::Retry && old.import_id != run.import_id {
@@ -1147,6 +1207,7 @@ fn run_phases(
             schema: STATE_SCHEMA,
             phase: Phase::Retry,
             source_hash: state.source_hash.clone(),
+            export_hash: state.export_hash.clone(),
             import_id: state.import_id.clone(),
             facet: state.facet.clone(),
             failed: state.failed.clone(),

@@ -35,6 +35,7 @@ const MAX_APPLE_EXPORT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_APPLE_SOURCE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_APPLE_EVENT_BYTES: usize = 1024 * 1024;
 const MAX_APPLE_XML_EVENTS_SCANNED: u64 = 50_000_000;
+const UNREADABLE_ATTRIBUTES: &str = "attributes";
 /// The scan path holds nothing per record, so its only whole-export bound is
 /// bytes, and it is its own, well past any real history.
 const MAX_APPLE_SCAN_BYTES: u64 = 64 * 1024 * 1024 * 1024;
@@ -52,6 +53,10 @@ const MAX_APPLE_IMPORT_ENTRIES_SCANNED: usize = 100_000;
 const MAX_STALE_APPLE_SNAPSHOTS: usize = 1_024;
 const ZIP_EOCD_MIN_BYTES: usize = 22;
 const ZIP_MAX_COMMENT_BYTES: usize = u16::MAX as usize;
+const ZIP64_LOCATOR_BYTES: usize = 20;
+const ZIP64_END_BYTES: usize = 56;
+/// An export whose `HealthData` never closes: an interrupted copy, or not an export.
+pub const EXPORT_INCOMPLETE: &str = "export_incomplete";
 #[derive(Clone, Copy)]
 struct SourceTraversalLimits {
     files: usize,
@@ -332,11 +337,11 @@ fn parse_export_with_event_limit(
     let mut ordinal = 0_u64;
     let mut events_scanned = 0_u64;
     let mut workout: Option<WorkoutState> = None;
+    let mut closed = false;
     loop {
         let event = match xml.read_event_into(&mut buffer) {
             Ok(event) => event,
-            Err(_) if xml.get_ref().exceeded() => return Err(source_error("xml_event_limit")),
-            Err(_) => return Err(source_error("xml")),
+            Err(error) => return Err(read_failure(&xml, &error)),
         };
         xml.get_mut().reset();
         if !matches!(&event, Event::Eof) {
@@ -347,6 +352,8 @@ fn parse_export_with_event_limit(
         }
         match event {
             Event::Eof => break,
+            Event::End(end) if end.name().as_ref() == b"HealthData" => closed = true,
+            Event::Empty(start) if start.name().as_ref() == b"HealthData" => closed = true,
             Event::Empty(start) if start.name().as_ref() == b"Record" => {
                 ordinal = next_ordinal(ordinal)?;
                 enforce_record_limit(ordinal)?;
@@ -423,10 +430,25 @@ fn parse_export_with_event_limit(
         }
         buffer.clear();
     }
+    if !closed {
+        return Err(source_error(EXPORT_INCOMPLETE));
+    }
     if workout.is_some() {
         return Err(normalize_error("workout_nesting"));
     }
     Ok(rows)
+}
+
+/// Why a read of the export stopped. XML that ends partway through a tag is an
+/// export that was cut off, which is said apart from XML the reader can't get past.
+fn read_failure(xml: &Reader<EventCappedReader<'_>>, error: &quick_xml::Error) -> BodyIngestError {
+    if xml.get_ref().exceeded() {
+        source_error("xml_event_limit")
+    } else if matches!(error, quick_xml::Error::Syntax(_)) {
+        source_error(EXPORT_INCOMPLETE)
+    } else {
+        source_error("xml")
+    }
 }
 
 /// One element of an Apple export as a body-record reader sees it.
@@ -466,6 +488,17 @@ pub fn scan_apple_export(
     })
 }
 
+/// Which file of a folder source holds the export, where it can be found within
+/// the scan path's bounds. A zip's bytes are already its identity.
+pub fn apple_folder_export(source: &Path) -> Option<PathBuf> {
+    if !source.is_dir() {
+        return None;
+    }
+    find_export_within(source, MAX_APPLE_SCAN_BYTES)
+        .ok()
+        .map(|member| source.join(member))
+}
+
 /// The scan path's whole-export bound, for a message that names it.
 #[must_use]
 pub const fn apple_scan_byte_bound() -> u64 {
@@ -482,15 +515,15 @@ fn scan_elements(
     let mut buffer = Vec::new();
     // The open `Record` or `Workout`, and how deep an unread subtree has gone.
     let mut open: Option<(bool, AppleElement)> = None;
-    // The open element passed `child_limit`: its children are dropped, and it
-    // is refused when it closes.
-    let mut oversized = false;
+    // Why the open element is refused, once it is: its children are dropped, and
+    // it's counted when it closes.
+    let mut refused: Option<&'static str> = None;
     let mut unread_depth = 0_u32;
+    let mut closed = false;
     loop {
         let event = match xml.read_event_into(&mut buffer) {
             Ok(event) => event,
-            Err(_) if xml.get_ref().exceeded() => return Err(source_error("xml_event_limit")),
-            Err(_) => return Err(source_error("xml")),
+            Err(error) => return Err(read_failure(&xml, &error)),
         };
         xml.get_mut().reset();
         let (start, is_empty) = match event {
@@ -500,11 +533,13 @@ fn scan_elements(
             Event::End(end) => {
                 if unread_depth > 0 {
                     unread_depth -= 1;
+                } else if open.is_none() && end.name().as_ref() == b"HealthData" {
+                    closed = true;
                 } else if matches!(end.name().as_ref(), b"Record" | b"Workout")
                     && let Some((workout, element)) = open.take()
                 {
-                    visit(if std::mem::take(&mut oversized) {
-                        AppleItem::Refused("children")
+                    visit(if let Some(stage) = refused.take() {
+                        AppleItem::Refused(stage)
                     } else if workout {
                         AppleItem::Workout(element)
                     } else {
@@ -529,25 +564,32 @@ fn scan_elements(
                 name,
                 b"MetadataEntry" | b"WorkoutStatistics" | b"WorkoutEvent"
             );
-            if child && (oversized || children >= child_limit) {
-                if !oversized {
-                    oversized = true;
+            if child && (refused.is_some() || children >= child_limit) {
+                if refused.is_none() {
+                    refused = Some("children");
                     *element = AppleElement::default();
                 }
-            } else {
-                match name {
-                    b"MetadataEntry" => {
-                        let entry = attributes(&xml, &start)?;
-                        if let (Some(key), Some(value)) = (entry.get("key"), entry.get("value")) {
-                            element.metadata.insert(key.clone(), value.clone());
+            } else if child {
+                match attributes(&xml, &start) {
+                    Ok(entry) => match name {
+                        b"MetadataEntry" => {
+                            if let (Some(key), Some(value)) = (entry.get("key"), entry.get("value"))
+                            {
+                                element.metadata.insert(key.clone(), value.clone());
+                            }
                         }
+                        b"WorkoutStatistics" => element.statistics.push(entry),
+                        _ => element.events.push(entry),
+                    },
+                    Err(_) => {
+                        refused = Some(UNREADABLE_ATTRIBUTES);
+                        *element = AppleElement::default();
                     }
-                    b"WorkoutStatistics" => element.statistics.push(attributes(&xml, &start)?),
-                    b"WorkoutEvent" => element.events.push(attributes(&xml, &start)?),
-                    _ => visit(AppleItem::NotRead(
-                        String::from_utf8_lossy(name).into_owned(),
-                    )),
                 }
+            } else {
+                visit(AppleItem::NotRead(
+                    String::from_utf8_lossy(name).into_owned(),
+                ));
             }
             if !is_empty {
                 unread_depth = 1;
@@ -556,8 +598,17 @@ fn scan_elements(
             match name {
                 b"Record" | b"Workout" => {
                     let workout = name == b"Workout";
+                    let Ok(attributes) = attributes(&xml, &start) else {
+                        // The tag's end is known, so only this record is lost.
+                        visit(AppleItem::Refused(UNREADABLE_ATTRIBUTES));
+                        if !is_empty {
+                            unread_depth = 1;
+                        }
+                        buffer.clear();
+                        continue;
+                    };
                     let element = AppleElement {
-                        attributes: attributes(&xml, &start)?,
+                        attributes,
                         ..AppleElement::default()
                     };
                     if is_empty {
@@ -571,7 +622,8 @@ fn scan_elements(
                     }
                 }
                 // Wrappers: a correlation's records are read as records.
-                b"HealthData" | b"Correlation" => {}
+                b"HealthData" => closed = is_empty,
+                b"Correlation" => {}
                 b"MetadataEntry" => {}
                 _ => {
                     visit(AppleItem::NotRead(
@@ -585,8 +637,8 @@ fn scan_elements(
         }
         buffer.clear();
     }
-    if open.is_some() || unread_depth > 0 {
-        return Err(source_error("xml"));
+    if open.is_some() || unread_depth > 0 || !closed {
+        return Err(source_error(EXPORT_INCOMPLETE));
     }
     Ok(())
 }
@@ -1015,7 +1067,7 @@ fn preflight_zip_within(file: &mut File, limit: u64) -> Result<(), BodyIngestErr
         .unwrap_or(usize::MAX)
         .min(ZIP_EOCD_MIN_BYTES + ZIP_MAX_COMMENT_BYTES);
     if tail_length < ZIP_EOCD_MIN_BYTES {
-        return Err(source_error("archive"));
+        return Err(source_error(EXPORT_INCOMPLETE));
     }
     let tail_offset = length
         .checked_sub(tail_length as u64)
@@ -1033,7 +1085,8 @@ fn preflight_zip_within(file: &mut File, limit: u64) -> Result<(), BodyIngestErr
                     *index + ZIP_EOCD_MIN_BYTES + usize::from(comment) == tail.len()
                 })
         })
-        .ok_or_else(|| source_error("archive"))?;
+        // A zip's end record is the last thing written, so an interrupted copy has none.
+        .ok_or_else(|| source_error(EXPORT_INCOMPLETE))?;
     let disk = read_u16(&tail[eocd + 4..eocd + 6]).expect("fixed EOCD slice");
     let directory_disk = read_u16(&tail[eocd + 6..eocd + 8]).expect("fixed EOCD slice");
     let disk_entries = read_u16(&tail[eocd + 8..eocd + 10]).expect("fixed EOCD slice");
@@ -1043,16 +1096,27 @@ fn preflight_zip_within(file: &mut File, limit: u64) -> Result<(), BodyIngestErr
     if disk != 0 || directory_disk != 0 || disk_entries != entries {
         return Err(source_error("archive"));
     }
-    if entries == u16::MAX || entries > MAX_APPLE_ARCHIVE_ENTRIES {
+    let end_offset = tail_offset + eocd as u64;
+    let (entries, directory_bytes, directory_offset, directory_limit) =
+        if entries == u16::MAX || directory_bytes == u32::MAX || directory_offset == u32::MAX {
+            zip64_directory(file, end_offset)?
+        } else {
+            (
+                u64::from(entries),
+                u64::from(directory_bytes),
+                u64::from(directory_offset),
+                end_offset,
+            )
+        };
+    if entries > u64::from(MAX_APPLE_ARCHIVE_ENTRIES) {
         return Err(source_error("archive_entry_limit"));
     }
-    if directory_bytes == u32::MAX || directory_bytes > MAX_APPLE_ARCHIVE_DIRECTORY_BYTES {
+    if directory_bytes > u64::from(MAX_APPLE_ARCHIVE_DIRECTORY_BYTES) {
         return Err(source_error("archive_directory_limit"));
     }
-    if directory_offset == u32::MAX
-        || u64::from(directory_offset)
-            .checked_add(u64::from(directory_bytes))
-            .is_none_or(|end| end > tail_offset + eocd as u64)
+    if directory_offset
+        .checked_add(directory_bytes)
+        .is_none_or(|end| end > directory_limit)
     {
         return Err(source_error("archive"));
     }
@@ -1061,12 +1125,65 @@ fn preflight_zip_within(file: &mut File, limit: u64) -> Result<(), BodyIngestErr
     Ok(())
 }
 
+/// A zip over 4 GiB keeps its directory's place in a zip64 record the plain end
+/// record points past: entries, directory bytes, directory offset, and where the
+/// directory must end by.
+fn zip64_directory(
+    file: &mut File,
+    end_offset: u64,
+) -> Result<(u64, u64, u64, u64), BodyIngestError> {
+    let archive = || source_error("archive");
+    let locator_offset = end_offset
+        .checked_sub(ZIP64_LOCATOR_BYTES as u64)
+        .ok_or_else(archive)?;
+    let mut locator = [0_u8; ZIP64_LOCATOR_BYTES];
+    file.seek(SeekFrom::Start(locator_offset))
+        .and_then(|_| file.read_exact(&mut locator))
+        .map_err(|_| archive())?;
+    if !locator.starts_with(b"PK\x06\x07")
+        || read_u32(&locator[4..8]) != Some(0)
+        || read_u32(&locator[16..20]) != Some(1)
+    {
+        return Err(archive());
+    }
+    let record_offset = read_u64(&locator[8..16]).expect("fixed locator slice");
+    if record_offset
+        .checked_add(ZIP64_END_BYTES as u64)
+        .is_none_or(|end| end > locator_offset)
+    {
+        return Err(archive());
+    }
+    let mut record = [0_u8; ZIP64_END_BYTES];
+    file.seek(SeekFrom::Start(record_offset))
+        .and_then(|_| file.read_exact(&mut record))
+        .map_err(|_| archive())?;
+    let on_this_disk = read_u64(&record[24..32]).expect("fixed record slice");
+    let entries = read_u64(&record[32..40]).expect("fixed record slice");
+    if !record.starts_with(b"PK\x06\x06")
+        || read_u32(&record[16..20]) != Some(0)
+        || read_u32(&record[20..24]) != Some(0)
+        || on_this_disk != entries
+    {
+        return Err(archive());
+    }
+    Ok((
+        entries,
+        read_u64(&record[40..48]).expect("fixed record slice"),
+        read_u64(&record[48..56]).expect("fixed record slice"),
+        record_offset,
+    ))
+}
+
 fn read_u16(bytes: &[u8]) -> Option<u16> {
     Some(u16::from_le_bytes(bytes.try_into().ok()?))
 }
 
 fn read_u32(bytes: &[u8]) -> Option<u32> {
     Some(u32::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn read_u64(bytes: &[u8]) -> Option<u64> {
+    Some(u64::from_le_bytes(bytes.try_into().ok()?))
 }
 
 struct AppleSnapshot {
@@ -1469,6 +1586,92 @@ mod tests {
         };
         assert_eq!(error.kind(), BodyIngestErrorKind::Source);
         assert_eq!(error.stage(), "xml_event_limit");
+    }
+
+    /// The save path's reader, on bytes.
+    fn saved_rows(bytes: &[u8]) -> Result<usize, BodyIngestError> {
+        let mut reader = BufReader::new(Cursor::new(bytes.to_vec()));
+        parse_export_with_event_limit(
+            &mut reader,
+            &Window::new(None, None).expect("open window"),
+            None,
+            1_000,
+        )
+        .map(|rows| rows.len())
+    }
+
+    #[test]
+    fn the_save_path_refuses_an_export_that_doesnt_close() {
+        let record = br#"<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="w" startDate="2026-10-10 06:31:10 -0600" endDate="2026-10-10 06:31:10 -0600" value="70"/>"#;
+        for bytes in [
+            b"".to_vec(),
+            b"<cda:ClinicalDocument/>".to_vec(),
+            [b"<HealthData>".as_slice(), record].concat(),
+            [b"<HealthData>".as_slice(), &record[..40]].concat(),
+            b"<HealthData><Workout workoutActivityType=\"x\" startDate=\"2026-10-10 06:31:10 -0600\">".to_vec(),
+        ] {
+            let error = saved_rows(&bytes).expect_err("an unclosed export");
+            assert_eq!(error.kind(), BodyIngestErrorKind::Source);
+            assert_eq!(error.stage(), EXPORT_INCOMPLETE);
+        }
+        assert_eq!(
+            saved_rows(&[b"<HealthData>".as_slice(), record, b"</HealthData>"].concat()).unwrap(),
+            1
+        );
+        assert_eq!(saved_rows(b"<HealthData/>").unwrap(), 0);
+    }
+
+    /// A zip whose end record defers to zip64: `entries` and `directory` are what the
+    /// zip64 record says.
+    fn zip64_file(path: &Path, entries: u64, directory: u64, signature: &[u8; 4]) {
+        let mut bytes = vec![0_u8; 64];
+        let record = bytes.len() as u64;
+        bytes.extend_from_slice(signature);
+        bytes.extend_from_slice(&44_u64.to_le_bytes());
+        bytes.extend_from_slice(&[0_u8; 4]);
+        bytes.extend_from_slice(&[0_u8; 8]);
+        bytes.extend_from_slice(&entries.to_le_bytes());
+        bytes.extend_from_slice(&entries.to_le_bytes());
+        bytes.extend_from_slice(&directory.to_le_bytes());
+        bytes.extend_from_slice(&0_u64.to_le_bytes());
+        bytes.extend_from_slice(b"PK\x06\x07");
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&record.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(b"PK\x05\x06");
+        bytes.extend_from_slice(&[0_u8; 4]);
+        bytes.extend_from_slice(&u16::MAX.to_le_bytes());
+        bytes.extend_from_slice(&u16::MAX.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(&[0_u8; 2]);
+        fs::write(path, bytes).expect("write synthetic zip64 end");
+    }
+
+    #[test]
+    fn a_zip64_directory_is_read_and_held_to_the_same_bounds() {
+        let temporary = TestDir::new();
+        let path = temporary.0.join("export.zip");
+        let check = |entries, directory, signature: &[u8; 4]| {
+            zip64_file(&path, entries, directory, signature);
+            preflight_zip(&mut File::open(&path).expect("open zip")).map_err(|error| error.stage())
+        };
+        assert_eq!(check(3, 64, b"PK\x06\x06"), Ok(()));
+        assert_eq!(
+            check(u64::from(MAX_APPLE_ARCHIVE_ENTRIES) + 1, 64, b"PK\x06\x06"),
+            Err("archive_entry_limit")
+        );
+        assert_eq!(
+            check(
+                3,
+                u64::from(MAX_APPLE_ARCHIVE_DIRECTORY_BYTES) + 1,
+                b"PK\x06\x06"
+            ),
+            Err("archive_directory_limit")
+        );
+        // A directory that would run past the record, and a record that isn't one.
+        assert_eq!(check(3, 65, b"PK\x06\x06"), Err("archive"));
+        assert_eq!(check(3, 64, b"PK\x06\x05"), Err("archive"));
     }
 
     #[test]

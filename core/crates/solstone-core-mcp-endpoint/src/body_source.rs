@@ -36,6 +36,10 @@ use solstone_core_indexer_query::AdmittedCategory;
 /// Windows one `get_transcript` call visits. A sparse span gets short pages rather
 /// than one call reading a whole day's files.
 const MAX_WINDOWS_PER_READ: usize = 24;
+/// How far before a span a read looks, for an interval that began in the window
+/// before it and runs into the span. `within` decides what of it belongs. An
+/// interval that began further back isn't found by a narrow span.
+const LOOK_BACK_SECONDS: u32 = 3_600;
 /// Entries on one page: what a single segment's page already holds.
 const MAX_ENTRIES_PER_PAGE: usize = solstone_core_transcripts::MAX_TRANSCRIPT_PAGE_ITEMS;
 
@@ -370,14 +374,20 @@ pub(crate) fn list_source(
         .map(|window| (window.start_seconds, window.end_seconds))
         .collect();
     let gaps = gaps_in(&spans, from, to);
-    // A kind keeps only the windows holding it in the span; what no window covers
-    // still describes the source, not the kind.
+    // A kind keeps only the windows holding it in the span, an interval from the
+    // window before included; what no window covers still describes the source, not
+    // the kind.
     let kind = request.kind.as_deref();
-    let ranged = in_range.clone();
+    let reach = from.saturating_sub(LOOK_BACK_SECONDS);
+    let reached: Vec<&Window> = windows
+        .iter()
+        .filter(|window| window.start_seconds.max(reach) < window.end_seconds.min(to))
+        .collect();
+    let ranged = reached.clone();
     let clock = day_date(day).map(|date| Clock::new(journal_root, stream, date));
     let mut unreadable = 0_u64;
     let in_range: Vec<&Window> = match (kind, clock) {
-        (Some(kind), Some(clock)) => in_range
+        (Some(kind), Some(clock)) => reached
             .into_iter()
             .filter(|window| {
                 match window_rows(
@@ -609,9 +619,10 @@ pub(crate) fn read_source_span(
         )
     });
     let windows = readable_windows(journal_root, snapshot, &reference.day, &reference.stream)?;
+    let reach = from.saturating_sub(LOOK_BACK_SECONDS);
     let windows: Vec<&Window> = windows
         .iter()
-        .filter(|window| window.start_seconds.max(from) < window.end_seconds.min(to))
+        .filter(|window| window.start_seconds.max(reach) < window.end_seconds.min(to))
         // A window that ends before the cursor holds nothing still to serve.
         .filter(|window| {
             lower

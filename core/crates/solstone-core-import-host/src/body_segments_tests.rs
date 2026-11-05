@@ -955,6 +955,48 @@ fn another_export_after_a_stop_publishes_the_old_half_day_and_starts_fresh() {
         AttemptState::Running,
         "the old import was closed"
     );
+    // The half-done day's rows name the old import, so its record says so.
+    let listing =
+        fs::read_to_string(root.join("imports/20261104_120000/body-touched.jsonl")).unwrap();
+    assert!(
+        listing.lines().any(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["day"] == day.as_str()
+        }),
+        "{listing}"
+    );
+    let summary = fs::read_to_string(root.join("imports/20261104_120000/summary.md")).unwrap();
+    assert!(summary.contains("replaced by a later one"), "{summary}");
+    let mut named = BTreeSet::new();
+    for (path, bytes) in snapshot(root) {
+        if path.ends_with(BODY_RECORDS_FILE)
+            && decode_rows(&String::from_utf8(bytes).unwrap())
+                .unwrap()
+                .iter()
+                .any(|row| row.run.as_deref() == Some("20261104_120000"))
+        {
+            named.insert(path.replace('\\', "/"));
+        }
+    }
+    let listed: Vec<String> = listing
+        .lines()
+        .flat_map(|line| {
+            let line: serde_json::Value = serde_json::from_str(line).unwrap();
+            let day = line["day"].as_str().unwrap().to_owned();
+            line["windows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|window| format!("{day}/{STREAM}/{}/", window[0].as_str().unwrap()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    for path in &named {
+        assert!(
+            listed.iter().any(|window| path.contains(window.as_str())),
+            "{path} names the import and isn't listed"
+        );
+    }
+    assert!(!named.is_empty());
 }
 
 // Re-import when a reading's place depends on a session: it has two places on its
@@ -1791,6 +1833,415 @@ fn a_stream_that_takes_no_window_stops_the_run_though_each_day_holds_only_one() 
     fs::create_dir_all(record.parent().unwrap()).unwrap();
     fs::write(&record, "not a record").unwrap();
     let error = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap_err();
-    assert!(error.contains("64 windows in a row"), "{error}");
-    assert!(error.contains("carries on"), "{error}");
+    assert!(error.contains("64 segments in a row"), "{error}");
+    assert!(error.contains("carry on"), "{error}");
+}
+
+fn raw_export(directory: &Path, bytes: &[u8]) -> PathBuf {
+    fs::create_dir_all(directory).unwrap();
+    fs::write(directory.join("export.xml"), bytes).unwrap();
+    directory.to_path_buf()
+}
+
+fn saved_windows(root: &Path) -> usize {
+    if !root.join("chronicle").exists() {
+        return 0;
+    }
+    snapshot(root)
+        .keys()
+        .filter(|path| path.ends_with(BODY_RECORDS_FILE))
+        .count()
+}
+
+#[test]
+fn an_export_that_doesnt_close_saves_nothing_and_says_it_looks_incomplete() {
+    let good = heart("2026-10-10 06:31:10 -0600", "70");
+    let cut = heart("2026-10-10 07:31:10 -0600", "71");
+    let open_record = good.replace("/>", "><MetadataEntry key=\"a\" value=\"b\"/>");
+    for bytes in [
+        // Between records, inside a tag, inside a record with children.
+        format!("<HealthData>{good}\n"),
+        format!("<HealthData>{good}{}", &cut[..40]),
+        format!("<HealthData>{good}{open_record}"),
+        // Nothing at all, and XML that isn't an export.
+        String::new(),
+        "<cda:ClinicalDocument/>".to_owned(),
+        format!("{good}{cut}"),
+    ] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let source = raw_export(scratch.path(), bytes.as_bytes());
+        let error =
+            run_apple_health_segments(root, &request(&source, "20261012_120000")).unwrap_err();
+        assert!(error.contains("looks incomplete"), "{bytes}: {error}");
+        assert_eq!(saved_windows(root), 0, "{bytes}");
+        // The whole export, taken again, goes in.
+        let whole = raw_export(
+            &scratch.path().join("whole"),
+            format!("<HealthData>{good}</HealthData>").as_bytes(),
+        );
+        let done = run(root, &whole, "20261012_130000", None);
+        assert!(done.finished, "{bytes}: {}", done.summary);
+        assert_eq!(saved_windows(root), 1, "{bytes}");
+    }
+}
+
+/// What an owner holds is a zip, and a copy of one that stopped short has no end.
+#[test]
+fn a_zip_cut_off_in_copying_saves_nothing_and_says_it_looks_incomplete() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("export.zip");
+    let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+    zip.start_file(
+        "apple_health_export/export.xml",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    std::io::Write::write_all(
+        &mut zip,
+        format!(
+            "<HealthData>{}</HealthData>",
+            heart("2026-10-10 06:31:10 -0600", "70")
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    zip.finish().unwrap();
+    let whole = fs::read(&path).unwrap();
+    fs::write(&path, &whole[..whole.len() / 2]).unwrap();
+    let error = run_apple_health_segments(root, &request(&path, "20261012_120000")).unwrap_err();
+    assert!(error.contains("looks incomplete"), "{error}");
+    assert_eq!(saved_windows(root), 0);
+}
+
+#[test]
+fn an_export_that_closes_with_nothing_in_it_is_a_finished_import_of_nothing() {
+    for bytes in ["<HealthData></HealthData>", "<HealthData/>"] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let source = raw_export(scratch.path(), bytes.as_bytes());
+        let done = run(root, &source, "20261012_120000", None);
+        assert!(done.finished, "{bytes}: {}", done.summary);
+        assert_eq!(saved_windows(root), 0);
+    }
+}
+
+#[test]
+fn one_record_that_cant_be_read_is_counted_and_the_rest_are_saved() {
+    let child = |attributes: &str| {
+        format!(
+            r#"<Record type="HKQuantityTypeIdentifierHeartRate" {SOURCE} startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:00:00 -0600" value="1"><MetadataEntry {attributes}/></Record>"#
+        )
+        .into_bytes()
+    };
+    let cases: [Vec<u8>; 6] = [
+        // An unescaped ampersand, a repeated attribute, bytes that aren't text.
+        br#"<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="A&B" startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:00:00 -0600" value="1"/>"#.to_vec(),
+        br#"<Record type="HKQuantityTypeIdentifierHeartRate" value="2" startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:00:00 -0600" value="1"/>"#.to_vec(),
+        b"<Record type=\"HKQuantityTypeIdentifierHeartRate\" sourceName=\"A\xff\" startDate=\"2026-10-10 08:00:00 -0600\" endDate=\"2026-10-10 08:00:00 -0600\" value=\"1\"/>".to_vec(),
+        // The same on an element with children, whose children go with it.
+        br#"<Record sourceName="A&B"><MetadataEntry key="a" value="b"/><HealthData/></Record>"#.to_vec(),
+        // On a child, which takes its record with it.
+        child(r#"key="a&b" value="c""#),
+        child(r#"key="a" key="b" value="c""#),
+    ];
+    for bad in cases {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let mut xml =
+            format!("<HealthData>{}", heart("2026-10-10 06:31:10 -0600", "70")).into_bytes();
+        xml.extend_from_slice(&bad);
+        xml.extend_from_slice(
+            format!("{}</HealthData>", heart("2026-10-11 06:31:10 -0600", "71")).as_bytes(),
+        );
+        let source = raw_export(scratch.path(), &xml);
+        let done = run(root, &source, "20261012_120000", None);
+        let shown = String::from_utf8_lossy(&bad).into_owned();
+        assert!(done.finished, "{shown}: {}", done.summary);
+        assert_eq!(saved_windows(root), 2, "{shown}");
+        assert!(done.summary.contains("## Refused"), "{}", done.summary);
+        assert!(done.summary.contains("attributes"), "{}", done.summary);
+        // Twice over, the same.
+        let again = run(root, &source, "20261012_130000", None);
+        assert!(again.finished);
+        assert_eq!(saved_windows(root), 2, "{shown}");
+    }
+}
+
+#[test]
+fn a_deleted_window_that_gains_a_stray_file_stays_deleted() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
+    run(root, &source, "20261012_120000", None);
+    delete(root, "20261010", "060000_3600");
+    let gone = window(root, "20261010", "060000_3600");
+    assert!(gone.join("tombstone.json").is_file());
+    // A sync client's conflict copy, say.
+    fs::write(gone.join("stream (conflicted copy).json"), "{}").unwrap();
+    let after = run(root, &source, "20261012_130000", None);
+    assert!(
+        !window(root, "20261010", "060000_3601").exists(),
+        "the deleted reading came back beside its tombstone"
+    );
+    assert!(!gone.join(BODY_RECORDS_FILE).exists());
+    assert!(
+        after.summary.contains("1 stayed deleted"),
+        "{}",
+        after.summary
+    );
+}
+
+#[test]
+fn another_folder_export_of_the_same_size_is_read_not_taken_for_the_old_one() {
+    for (point, elsewhere) in [("scanned", false), ("pending", true), ("written", true)] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
+        let stop = stopping_at(point, 1);
+        let mut stopped = request(&source, "20261104_120000");
+        stopped.stop_at = Some(&stop);
+        run_apple_health_segments(root, &stopped).unwrap_err();
+        // The same length, in the same folder or another.
+        let other = if elsewhere {
+            export(
+                &scratch.path().join("elsewhere"),
+                &[heart("2026-10-20 06:31:10 -0600", "71")],
+            )
+        } else {
+            export(scratch.path(), &[heart("2026-10-20 06:31:10 -0600", "71")])
+        };
+        let done = run(root, &other, "20261104_130000", None);
+        assert!(done.finished, "{point}: {}", done.summary);
+        assert_ne!(done.import_id, "20261104_120000", "{point}");
+        assert!(
+            window(root, "20261020", "060000_3600")
+                .join(BODY_RECORDS_FILE)
+                .is_file(),
+            "{point}: the other export reported finished without being read"
+        );
+    }
+}
+
+#[test]
+fn the_same_folder_export_still_carries_on_under_its_import() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("written", 2);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let done = run(root, &source, "20261104_130000", None);
+    assert!(done.finished, "{}", done.summary);
+    assert_eq!(done.import_id, "20261104_120000");
+}
+
+/// A file the run isn't allowed to read says nothing of what it holds.
+#[cfg(unix)]
+#[test]
+fn a_window_that_refuses_reading_stops_the_run_and_the_next_carries_on() {
+    use std::os::unix::fs::PermissionsExt;
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
+    run(root, &source, "20261012_120000", None);
+    let file = window(root, "20261010", "060000_3600").join(BODY_RECORDS_FILE);
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&file).is_ok() {
+        // Root reads anything, so there's no refusal to see.
+        return;
+    }
+    let more = export(
+        &scratch.path().join("more"),
+        &[
+            heart("2026-10-10 06:31:10 -0600", "70"),
+            heart("2026-10-10 06:45:10 -0600", "77"),
+        ],
+    );
+    let refused = run_apple_health_segments(root, &request(&more, "20261012_130000"));
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    let error = refused.unwrap_err();
+    assert!(error.contains(BODY_RECORDS_FILE), "{error}");
+    assert!(
+        root.join(RUN_DIR_REL).join("state.json").is_file(),
+        "its state was kept"
+    );
+    let done = run(root, &more, "20261012_140000", None);
+    assert!(done.finished, "{}", done.summary);
+    assert_eq!(done.import_id, "20261012_130000");
+    let rows = decode_rows(&fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        !done.summary.contains("unreadable and left alone")
+            || done.summary.contains("0 unreadable"),
+        "{}",
+        done.summary
+    );
+}
+
+/// A workout of `slots` five-minute slots on 10-10, with a day either side of it.
+fn long_workout_export(directory: &Path, slots: u32) -> PathBuf {
+    let minutes = 6 * 60 + slots * 5;
+    export(
+        directory,
+        &[
+            heart("2026-10-09 06:31:10 -0600", "70"),
+            format!(
+                r#"<Workout workoutActivityType="HKWorkoutActivityTypeHiking" {SOURCE} startDate="2026-10-10 06:00:00 -0600" endDate="2026-10-10 {:02}:{:02}:00 -0600"/>"#,
+                minutes / 60,
+                minutes % 60
+            ),
+            heart("2026-10-12 06:31:10 -0600", "71"),
+        ],
+    )
+}
+
+fn stick_slot(root: &Path, slot: u32) {
+    let minutes = 6 * 60 + slot * 5;
+    stuck_window(
+        root,
+        "20261010",
+        &format!("{:02}{:02}00_300", minutes / 60, minutes % 60),
+    );
+}
+
+fn later_day_landed(root: &Path) -> bool {
+    window(root, "20261012", "060000_3600")
+        .join(BODY_RECORDS_FILE)
+        .is_file()
+}
+
+#[test]
+fn one_short_of_the_bound_of_stuck_windows_lets_the_later_day_land_in_the_same_run() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = long_workout_export(scratch.path(), 63);
+    (0..63).for_each(|slot| stick_slot(root, slot));
+    let one = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    assert!(!one.finished);
+    assert!(later_day_landed(root));
+}
+
+#[test]
+fn a_day_with_more_stuck_windows_than_the_bound_is_recorded_and_the_next_run_goes_past_it() {
+    for slots in [64_u32, 72] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let source = long_workout_export(scratch.path(), slots);
+        (0..slots).for_each(|slot| stick_slot(root, slot));
+        let error =
+            run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap_err();
+        assert!(error.contains("carry on"), "{error}");
+        assert!(error.contains("after 2026-10-10"), "{error}");
+        assert!(
+            error.contains(&format!("{slots} segments in a row")),
+            "{error}"
+        );
+        // It stopped having recorded the day, and said so truly: the next run is past it.
+        assert!(!later_day_landed(root));
+        let state: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap())
+                .unwrap();
+        assert_eq!(state["done_through"], "20261010");
+        assert_eq!(state["failed"].as_array().unwrap().len(), slots as usize);
+        let two = run_apple_health_segments(root, &request(&source, "20261104_130000")).unwrap();
+        assert!(later_day_landed(root));
+        assert!(!two.finished);
+        assert_eq!(two.import_id, "20261104_120000");
+        assert!(two.summary.contains("Not saved"), "{}", two.summary);
+        // Unstuck, a later run with the same export saves them.
+        (0..slots).for_each(|slot| {
+            let minutes = 6 * 60 + slot * 5;
+            fs::remove_file(
+                window(
+                    root,
+                    "20261010",
+                    &format!("{:02}{:02}00_300", minutes / 60, minutes % 60),
+                )
+                .join("stream.json"),
+            )
+            .unwrap();
+        });
+        let three = run(root, &source, "20261104_140000", None);
+        assert!(three.finished, "{}", three.summary);
+    }
+}
+
+#[test]
+fn a_window_bound_between_stuck_ones_means_they_arent_in_a_row() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = long_workout_export(scratch.path(), 81);
+    (0..81)
+        .filter(|slot| *slot != 40)
+        .for_each(|slot| stick_slot(root, slot));
+    let one = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    assert!(!one.finished);
+    assert!(
+        later_day_landed(root),
+        "forty and forty, with one bound between them, stopped the run"
+    );
+}
+
+/// The privacy order: a kill between a window's new rows and its new facet mustn't
+/// leave those rows under the old one.
+#[test]
+fn a_kill_never_leaves_new_rows_under_a_windows_old_facet() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
+    run(root, &source, "20261012_120000", Some("health"));
+    let more = export(
+        &scratch.path().join("more"),
+        &[
+            heart("2026-10-10 06:31:10 -0600", "70"),
+            heart("2026-10-10 06:45:10 -0600", "77"),
+        ],
+    );
+    let stop = stopping_at("written", 1);
+    let mut stopped = request(&more, "20261012_130000");
+    stopped.facet = Some("other");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let dir = window(root, "20261010", "060000_3600");
+    let rows = decode_rows(&fs::read_to_string(dir.join(BODY_RECORDS_FILE)).unwrap()).unwrap();
+    assert_eq!(rows.len(), 2, "the kill came after the new row landed");
+    assert_eq!(
+        fs::read_to_string(dir.join("talents/facets.json")).unwrap(),
+        facet_file_text("other")
+    );
+}
+
+#[test]
+fn a_finished_import_isnt_told_it_was_replaced_before_it_finished() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
+    let stop = stopping_at("finished", 1);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let summary = root.join("imports/20261104_120000/summary.md");
+    let before = fs::read_to_string(&summary).unwrap();
+    let other = export(
+        &scratch.path().join("other"),
+        &[heart("2026-10-20 06:31:10 -0600", "700")],
+    );
+    run(root, &other, "20261104_130000", None);
+    assert_eq!(before, fs::read_to_string(&summary).unwrap());
 }

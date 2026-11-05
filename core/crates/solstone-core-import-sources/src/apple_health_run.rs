@@ -52,7 +52,7 @@ fn io_text(error: impl std::fmt::Display) -> String {
 
 /// Make a folder's new files survive power loss. Windows can't open a folder this
 /// way, and doesn't need it to keep a file whose contents are synced.
-fn sync_folder(dir: &Path) -> Result<(), String> {
+pub fn sync_folder(dir: &Path) -> Result<(), String> {
     #[cfg(unix)]
     File::open(dir)
         .and_then(|folder| folder.sync_all())

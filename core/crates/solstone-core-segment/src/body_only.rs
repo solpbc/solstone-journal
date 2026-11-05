@@ -106,10 +106,15 @@ pub fn is_body_only_dir(stream: &str, dir: &Path) -> bool {
 }
 
 /// Whether this directory holds anything a body window wouldn't: older content
-/// that new records must not land in, live or deleted. A tombstone that can't say
-/// what it removed isn't foreign, so a window the owner deleted stays deleted.
+/// that new records must not land in, live or deleted. A tombstone settles it
+/// whatever else is beside it, such as a sync client's copy: one that shows older
+/// content is foreign, and any other means a window the owner deleted stays deleted.
 #[must_use]
 pub fn holds_foreign_content(dir: &Path) -> bool {
+    let tombstone = dir.join(TOMBSTONE);
+    if tombstone.symlink_metadata().is_ok() {
+        return tombstone_record(&tombstone) == TombstoneRecord::OlderContent;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
@@ -118,9 +123,6 @@ pub fn holds_foreign_content(dir: &Path) -> bool {
             let name = entry.file_name();
             if name == OsStr::new(TALENTS) {
                 return !talents_hold_only_facets(&entry.path());
-            }
-            if name == OsStr::new(TOMBSTONE) {
-                return tombstone_record(&entry.path()) == TombstoneRecord::OlderContent;
             }
             name != OsStr::new(BODY_RECORDS_FILE)
                 && name != OsStr::new(STREAM_MARKER)
@@ -245,6 +247,24 @@ mod tests {
         {
             let dir = tombstoned(root, "20261010", &format!("{index:06}_300"), tombstone);
             assert_eq!(is_body_only_dir(STREAM, &dir), body_only, "{tombstone}");
+            assert_eq!(holds_foreign_content(&dir), foreign, "{tombstone}");
+        }
+    }
+
+    #[test]
+    fn a_tombstone_settles_it_whatever_turned_up_beside_it() {
+        let journal = TempDir::new();
+        let root = journal.path();
+        for (index, (tombstone, foreign)) in [
+            (r#"{"manifest":["a/body.jsonl","a/stream.json"]}"#, false),
+            ("not json", false),
+            (r#"{"manifest":["a/agents/day.md"]}"#, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let dir = tombstoned(root, "20261011", &format!("{index:06}_300"), tombstone);
+            fs::write(dir.join("stream (conflicted copy).json"), "{}").unwrap();
             assert_eq!(holds_foreign_content(&dir), foreign, "{tombstone}");
         }
     }

@@ -990,3 +990,143 @@ fn under_a_kind_a_window_that_cant_be_read_is_counted_not_called_empty_of_it() {
     assert!(!list.to_string().contains("none of the kind"), "{list}");
     let (_, _) = every_entry(root, list["span_reference"].as_str().unwrap());
 }
+
+fn interval(kind: RowKind, id_label: (&str, &str), start: &str, end: &str, value: &str) -> BodyRow {
+    let mut row = BodyRow::new(
+        kind,
+        id_label.0.into(),
+        "apple_health",
+        "HKQuantityTypeIdentifierStepCount",
+        id_label.1.into(),
+    );
+    row.start = Some(start.into());
+    row.end = Some(end.into());
+    row.value = Some(value.into());
+    row
+}
+
+#[test]
+fn a_narrow_span_finds_an_interval_that_began_in_the_window_before_it() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &[
+            interval(
+                RowKind::Count,
+                ("c1", "step count"),
+                "2026-10-10 06:50:00 -0600",
+                "2026-10-10 07:10:00 -0600",
+                "val900",
+            ),
+            interval(
+                RowKind::Stage,
+                ("s1", "asleep core"),
+                "2026-10-10 06:40:00 -0600",
+                "2026-10-10 07:30:00 -0600",
+                "val901",
+            ),
+            interval(
+                RowKind::Count,
+                ("c2", "step count"),
+                "2026-10-10 06:10:00 -0600",
+                "2026-10-10 06:20:00 -0600",
+                "val902",
+            ),
+            reading("r0", "2026-10-10 06:30:00 -0600", "val903"),
+        ],
+        None,
+    );
+    window(
+        root,
+        DAY,
+        "070000_3600",
+        &[reading("r1", "2026-10-10 07:02:00 -0600", "val904")],
+        None,
+    );
+    let read = |extra: Value| {
+        let mut arguments =
+            json!({"day": DAY, "source": LABEL, "time_from": "07:00", "time_to": "07:05"});
+        for (key, value) in extra.as_object().unwrap() {
+            arguments[key] = value.clone();
+        }
+        call(root, "list_transcripts", arguments)
+    };
+    let list = read(json!({}));
+    assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    let text = entries.join("\n");
+    for held in ["val900", "asleep core", "val904"] {
+        assert!(text.contains(held), "{held} isn't served: {text}");
+    }
+    // What the window before holds and doesn't overlap the span stays out.
+    assert!(
+        !text.contains("val902") && !text.contains("val903"),
+        "{text}"
+    );
+    assert_eq!(
+        list["gaps"],
+        json!([]),
+        "gaps still describe the span: {list}"
+    );
+
+    // Under a kind only the window before holds, the list has it and no note denies it.
+    let list = read(json!({"kind": "step count"}));
+    assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert!(entries.join("\n").contains("val900"), "{entries:?}");
+    let list = read(json!({"kind": "heart rate"}));
+    assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+    // A kind none of them hold reads as the empty list that says so.
+    let list = read(json!({"kind": "respiratory rate"}));
+    assert_eq!(list["transcripts"], json!([]), "{list}");
+    assert!(list.get("span_reference").is_none(), "{list}");
+}
+
+/// The contract's limit, stated in a test: an interval that began before the look-back
+/// isn't found by a narrow span, and a whole-day read finds it.
+#[test]
+fn an_interval_that_began_before_the_look_back_is_found_by_a_whole_day_read() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    window(
+        root,
+        DAY,
+        "050000_3600",
+        &[interval(
+            RowKind::Count,
+            ("c1", "step count"),
+            "2026-10-10 05:50:00 -0600",
+            "2026-10-10 07:10:00 -0600",
+            "val900",
+        )],
+        None,
+    );
+    window(
+        root,
+        DAY,
+        "070000_3600",
+        &[reading("r1", "2026-10-10 07:02:00 -0600", "val904")],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "07:00", "time_to": "07:05"}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert!(!entries.join("\n").contains("val900"), "{entries:?}");
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert!(entries.join("\n").contains("val900"), "{entries:?}");
+}
