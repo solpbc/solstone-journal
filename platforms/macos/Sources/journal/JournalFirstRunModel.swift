@@ -464,6 +464,8 @@ final class JournalFirstRunModel {
 
     private func runSetup(at journalRoot: URL, skipModelInstall: Bool) async throws {
         guard !isTerminating, setupTask == nil else { throw CancellationError() }
+        try Task.checkCancellation()
+        if supervisorIsLive(journalRoot) || externalSupervisorIsLive(journalRoot) { return }
         setupEvents = []
         setupRenderedLog = ""
         currentStep = nil

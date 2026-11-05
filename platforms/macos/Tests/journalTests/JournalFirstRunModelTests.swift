@@ -35,7 +35,7 @@ struct JournalFirstRunModelTests {
 
         if adopting { await fixture.model.retryAdopt() }
         else { await fixture.model.retrySetup() }
-        #expect(await trace.snapshot() == ["setup", "supervisor", "probe", "setup", "probe", "probe"])
+        #expect(await trace.snapshot() == ["setup", "supervisor", "probe", "probe", "probe"])
         #expect(fixture.model.route == .home)
         #expect(fixture.model.errorMessage == nil)
         #expect(fixture.browser.opened.count == 1)
@@ -54,7 +54,7 @@ struct JournalFirstRunModelTests {
         #expect(fixture.model.route == .ritual(.setupProgress))
         #expect(fixture.model.errorMessage != nil)
         await fixture.model.retrySetup()
-        #expect(await trace.snapshot() == ["supervisor", "probe", "setup", "probe"])
+        #expect(await trace.snapshot() == ["supervisor", "probe", "probe"])
         #expect(fixture.model.route == .home)
         #expect(fixture.model.errorMessage == nil)
     }
@@ -73,6 +73,29 @@ struct JournalFirstRunModelTests {
         await fixture.model.retrySetup()
         #expect(await trace.snapshot() == ["setup", "supervisor", "probe", "setup", "supervisor", "probe"])
         #expect(fixture.model.route == .home)
+    }
+
+    @Test func aLiveRuntimeForAnotherRootDoesNotSkipSetup() async throws {
+        let trace = FirstRunTrace()
+        let liveRoot = try makeTemporaryDirectory()
+        let fixture = makeModel(trace: trace, startResults: [true], probeResults: [.complete],
+            supervisorIsLive: { $0.standardizedFileURL == liveRoot.standardizedFileURL })
+        fixture.model.journalRoot = try makeTemporaryDirectory()
+        await fixture.model.retrySetup()
+        #expect(await trace.snapshot() == ["setup", "supervisor", "probe"])
+        #expect(fixture.model.route == .home)
+    }
+
+    @Test func cancelledRetryDoesNotProbeALiveRuntime() async {
+        let trace = FirstRunTrace()
+        let fixture = makeModel(trace: trace, startResults: [], probeResults: [],
+            supervisorIsLive: { _ in true })
+        let retry = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            await fixture.model.retrySetup()
+        }
+        await retry.value
+        #expect(await trace.snapshot().isEmpty)
     }
 
     @Test func resumingALiveLegacyJournalDoesNotStartItAgain() async throws {
@@ -112,7 +135,8 @@ struct JournalFirstRunModelTests {
         var starts = 0
         let model = JournalFirstRunModel(
             config: makeConfig(), setupRunner: setup,
-            startSupervisor: { _ in starts += 1; return true }
+            startSupervisor: { _ in starts += 1; return true },
+            externalSupervisorIsLive: { _ in false }
         )
         let task = Task { await model.runSetupThenStartSupervisor() }
         await setup.waitUntilEntered()

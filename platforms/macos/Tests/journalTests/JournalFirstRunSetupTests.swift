@@ -224,6 +224,20 @@ extension JournalFirstRunModelTests {
         #expect(world.peer.launched.isEmpty)
     }
 
+    @Test func nativeRetryOfALiveJournalDoesNotReenterSetupPreflight() async throws {
+        let probes = FakeInitClient(trace: FirstRunTrace(), probeResults: [.complete],
+            probeErrors: [URLError(.timedOut)])
+        let world = try makeSetupWorld(configureRoot: true, done: true, supervisorLive: true,
+            initClient: probes)
+        defer { world.refresh.release() }
+        await world.fixture.model.reconcileActivation()
+        #expect(world.fixture.model.errorMessage != nil)
+        await world.fixture.model.retrySetup()
+        #expect(await world.trace.snapshot().isEmpty)
+        #expect(world.fixture.model.route == .home)
+        #expect(world.fixture.model.errorMessage == nil)
+    }
+
     @Test func localSupervisorFailureRetryDeliversTheSamePendingIdentity() async throws {
         let world = try makeSetupWorld(configureRoot: true, done: true, startResults: [false, true], probes: [.complete])
         defer { world.refresh.release() }
