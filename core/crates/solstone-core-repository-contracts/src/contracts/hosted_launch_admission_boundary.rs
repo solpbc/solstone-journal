@@ -97,6 +97,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "core",
+        "open",
+        include_str!("../../../solstone-core/src/open.rs"),
+    ),
+    (
+        "core",
         "service",
         include_str!("../../../solstone-core/src/service.rs"),
     ),
@@ -304,6 +309,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "convey",
         "body",
         include_str!("../../../solstone-core-convey-shell/src/body.rs"),
+    ),
+    (
+        "convey",
+        "browser_access",
+        include_str!("../../../solstone-core-convey-shell/src/browser_access.rs"),
     ),
     (
         "convey",
@@ -733,6 +743,7 @@ const RAW_BYPASS_EXEMPT_SOURCES: &[(&str, &str)] = &[
     // a new core module cannot escape the inventory.
     ("core", "brain_owner"),
     ("core", "config"),
+    ("core", "open"),
     ("core", "service"),
     ("core", "service_logs"),
     ("core", "warm"),
