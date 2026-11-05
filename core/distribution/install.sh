@@ -960,7 +960,11 @@ finish_journal_install() {
 		fi
 	fi
 	printf 'next: add the solstone app on this computer.\n'
-	printf 'after setup, run solstone journal open /app/network/ and choose pair a device to make its pairing link.\n'
+	if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+		printf 'after setup, run solstone journal open /app/network/ and choose pair a device to make its pairing link.\n'
+	else
+		printf 'after setup, run solstone journal open /app/network/ --print-url on this computer, open the link on the other computer within a minute, and choose pair a device to make its pairing link.\n'
+	fi
 	printf 'linux app setup: https://github.com/solpbc/solstone-linux/blob/main/INSTALL.md\n'
 }
 

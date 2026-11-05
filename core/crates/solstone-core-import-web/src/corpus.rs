@@ -87,7 +87,7 @@ pub(crate) mod tests {
             .map(ToOwned::to_owned)
     }
 
-    async fn response(
+    pub(crate) async fn response(
         root: &Path,
         method: &str,
         uri: &str,
