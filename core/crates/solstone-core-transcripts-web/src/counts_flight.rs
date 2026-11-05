@@ -385,6 +385,7 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use std::collections::VecDeque;
     use std::path::Path;

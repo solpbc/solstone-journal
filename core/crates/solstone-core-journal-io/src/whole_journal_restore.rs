@@ -568,13 +568,17 @@ pub fn wait_for_target_use_to_end(journal: &Path) {
     wait_for_use_key(&key);
 }
 
+/// A test hook run with the journal path while a drain waits for target use.
 #[cfg(feature = "test-hooks")]
-static TARGET_USE_WAIT_HOOK: Mutex<Option<Arc<dyn Fn(&Path) + Send + Sync>>> = Mutex::new(None);
+pub type TargetUseWaitHook = Arc<dyn Fn(&Path) + Send + Sync>;
+
+#[cfg(feature = "test-hooks")]
+static TARGET_USE_WAIT_HOOK: Mutex<Option<TargetUseWaitHook>> = Mutex::new(None);
 
 /// Install or clear a hook called once when `wait_for_use_key` sees flight count > 0.
 /// The hook must not call back into target-use.
 #[cfg(feature = "test-hooks")]
-pub fn install_target_use_wait_hook(hook: Option<Arc<dyn Fn(&Path) + Send + Sync>>) {
+pub fn install_target_use_wait_hook(hook: Option<TargetUseWaitHook>) {
     *TARGET_USE_WAIT_HOOK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = hook;

@@ -161,6 +161,7 @@ fn event(
 
 /// One refresh shared with the socket loop. A busy lease is a non-success
 /// and does not start a second refresh. The returned code is the worker's.
+#[cfg(feature = "processing")]
 pub(super) fn run_scheduled(
     root: &JournalRoot,
     cancelled: &(dyn Fn() -> bool + Send + Sync),

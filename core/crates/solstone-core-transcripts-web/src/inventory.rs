@@ -292,6 +292,7 @@ struct WorkerControl {
     cv: Condvar,
     stop: AtomicBool,
     clock: Mutex<Clock>,
+    handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 static WORKERS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<WorkerControl>>>> =
@@ -329,17 +330,32 @@ fn get_or_create_inventory(
             cv: Condvar::new(),
             stop: AtomicBool::new(false),
             clock: Mutex::new(Clock::system()),
+            handle: Mutex::new(None),
         });
         entry.insert(worker.clone());
 
         let root_c = root.clone();
         let inv_arc_c = inv_arc.clone();
-        std::thread::spawn(move || {
-            run_worker_loop(root_c, inv_arc_c, worker);
+        let worker_c = worker.clone();
+        let handle = std::thread::spawn(move || {
+            run_worker_loop(root_c, inv_arc_c, worker_c);
         });
+        *worker.handle.lock().expect("worker handle lock") = Some(handle);
     }
 
     inv_arc
+}
+
+/// The inventory already serving this root, if any. Background work that
+/// must never bring a retired root back to life looks it up here instead of
+/// creating one.
+fn existing_inventory(identity: ObjectIdentity) -> Option<Arc<Mutex<JournalInventory>>> {
+    let reg = INVENTORIES.lock().expect("inventories lock");
+    let workers = WORKERS.lock().expect("workers lock");
+    if !workers.contains_key(&identity) {
+        return None;
+    }
+    reg.get(&identity).cloned()
 }
 
 /// Every listed day is settled for this pass.
@@ -479,6 +495,8 @@ fn run_worker_loop(
                     false,
                 );
             }
+            #[cfg(any(test, feature = "test-hooks"))]
+            lifecycle_hooks::run_worker_between_days(identity);
         }
 
         if is_full_pass {
@@ -499,21 +517,134 @@ fn run_worker_loop(
     }
 }
 
-#[allow(dead_code)]
+/// Retire one root's calendar: stop its background worker and every dashboard
+/// watcher, wait for those threads to finish, and forget its rows. Nothing it
+/// owned can take the journal again afterwards; a later request on the same
+/// root starts a fresh calendar.
 pub fn drop_inventory(identity: ObjectIdentity) {
-    let mut reg = INVENTORIES.lock().expect("inventories lock");
-    reg.remove(&identity);
-    let mut workers = WORKERS.lock().expect("workers lock");
-    if let Some(w) = workers.remove(&identity) {
+    // One retirement per journal at a time. A second one, for example a stop
+    // retried after the first caller gave up waiting, waits until the first
+    // has joined everything, then retires whatever was opened since.
+    let _turn = RetireTurn::take(identity);
+    let worker = {
+        let mut reg = INVENTORIES.lock().expect("inventories lock");
+        reg.remove(&identity);
+        let mut workers = WORKERS.lock().expect("workers lock");
+        workers.remove(&identity)
+    };
+    let watcher = WATCHERS.lock().expect("watchers lock").remove(&identity);
+
+    if let Some(w) = &worker {
         w.stop.store(true, Ordering::SeqCst);
+        // Take the request lock so a worker between its stop check and its
+        // wait cannot miss this wake.
+        drop(w.request.lock().expect("worker request lock"));
         w.cv.notify_all();
     }
-    let mut watchers = WATCHERS.lock().expect("watchers lock");
-    if let Some(w) = watchers.remove(&identity) {
+    if let Some(w) = &watcher {
         w.active.store(false, Ordering::SeqCst);
         w.generation.fetch_add(1, Ordering::SeqCst);
+        drop(w.mu.lock().expect("watcher lock"));
         w.cv.notify_all();
     }
+
+    let current = std::thread::current().id();
+    if let Some(w) = worker {
+        let handle = w.handle.lock().expect("worker handle lock").take();
+        if let Some(handle) = handle
+            && handle.thread().id() != current
+        {
+            #[cfg(any(test, feature = "test-hooks"))]
+            lifecycle_hooks::note_retire_event(identity, RetireEvent::Joining);
+            let _ = handle.join();
+        }
+    }
+    if let Some(w) = watcher {
+        let handles = std::mem::take(&mut *w.handles.lock().expect("watcher handles lock"));
+        for handle in handles {
+            if handle.thread().id() != current {
+                let _ = handle.join();
+            }
+        }
+    }
+}
+
+struct RetireDone {
+    done: Mutex<bool>,
+    cv: Condvar,
+}
+
+static RETIRING: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<RetireDone>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// This thread's turn to retire one journal's calendar. Dropping it, even on
+/// a panic, lets the next retirement of that journal proceed.
+struct RetireTurn {
+    identity: ObjectIdentity,
+    mine: Arc<RetireDone>,
+}
+
+impl RetireTurn {
+    fn take(identity: ObjectIdentity) -> Self {
+        loop {
+            let earlier = {
+                let mut retiring = RETIRING.lock().expect("retiring lock");
+                match retiring.get(&identity) {
+                    Some(earlier) => Arc::clone(earlier),
+                    None => {
+                        let mine = Arc::new(RetireDone {
+                            done: Mutex::new(false),
+                            cv: Condvar::new(),
+                        });
+                        retiring.insert(identity, Arc::clone(&mine));
+                        return Self { identity, mine };
+                    }
+                }
+            };
+            #[cfg(any(test, feature = "test-hooks"))]
+            lifecycle_hooks::note_retire_event(identity, RetireEvent::Waiting);
+            let mut done = earlier.done.lock().expect("retire done lock");
+            while !*done {
+                done = earlier.cv.wait(done).expect("retire done lock");
+            }
+        }
+    }
+}
+
+impl Drop for RetireTurn {
+    fn drop(&mut self) {
+        {
+            let mut retiring = RETIRING.lock().unwrap_or_else(|p| p.into_inner());
+            if retiring
+                .get(&self.identity)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.mine))
+            {
+                retiring.remove(&self.identity);
+            }
+        }
+        *self.mine.done.lock().unwrap_or_else(|p| p.into_inner()) = true;
+        self.mine.cv.notify_all();
+    }
+}
+
+/// Retire the calendar of the journal an embedding owner retained, by that
+/// root's own identity, so a removed or replaced directory at the same path
+/// can neither hide the old worker nor be retired in its place.
+pub fn retire_calendar_root(root: &JournalRoot) {
+    drop_inventory(root.identity());
+}
+
+/// Retire the calendar of the journal at `journal`. Called by the journal's
+/// stop and restore drains while the target is held, after admitted use has
+/// ended, so a background day fold cannot take the journal again once the
+/// hold is released.
+pub fn retire_calendar(journal: &Path) {
+    // A drain that holds only the path opens it here; an owner that kept its
+    // root retires by that root's identity with `retire_calendar_root`.
+    let Ok(root) = JournalRoot::open(journal) else {
+        return;
+    };
+    drop_inventory(root.identity());
 }
 
 pub(crate) fn notify_inventory_worker(identity: ObjectIdentity) {
@@ -528,14 +659,7 @@ pub fn reset_calendar_while_held(journal: &Path) {
         return;
     };
     let identity = root.identity();
-    let reg = INVENTORIES.lock().expect("inventories lock");
-    if let Some(inv_arc) = reg.get(&identity) {
-        let mut inv = inv_arc.lock().expect("inventory lock");
-        inv.rows.clear();
-        inv.last_full_pass_finish = None;
-        inv.pending_first_seen.clear();
-    }
-    drop(reg);
+    drop_inventory(identity);
     emit_notification(root.canonical_path(), identity, "system", "calendar");
 }
 
@@ -557,6 +681,7 @@ struct WatcherControl {
     cv: Condvar,
     mu: Mutex<()>,
     clock: Mutex<Clock>,
+    handles: Mutex<Vec<std::thread::JoinHandle<()>>>,
 }
 
 static WATCHERS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<WatcherControl>>>> =
@@ -568,7 +693,15 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
     };
     let root = Arc::new(root);
     let identity = root.identity();
-    let inv_arc = get_or_create_inventory(&root, identity);
+    // A stream closing during a stop must not bring the calendar back.
+    let inv_arc = if connected {
+        get_or_create_inventory(&root, identity)
+    } else {
+        match existing_inventory(identity) {
+            Some(inv_arc) => inv_arc,
+            None => return,
+        }
+    };
     let (transition_to_nonzero, transition_to_zero) = {
         let mut inv = inv_arc.lock().expect("inventory lock");
         let prev = inv.active_streams;
@@ -590,17 +723,26 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
                 cv: Condvar::new(),
                 mu: Mutex::new(()),
                 clock: Mutex::new(Clock::system()),
+                handles: Mutex::new(Vec::new()),
             })
         });
         ctrl.active.store(true, Ordering::SeqCst);
         let my_generation = ctrl.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let ctrl_c = ctrl.clone();
         let root_c = root.clone();
-        std::thread::spawn(move || {
+        let mut handles = ctrl.handles.lock().expect("watcher handles lock");
+        handles.retain(|h| !h.is_finished());
+        handles.push(std::thread::spawn(move || {
             while ctrl_c.active.load(Ordering::SeqCst)
                 && ctrl_c.generation.load(Ordering::SeqCst) == my_generation
             {
                 let guard = ctrl_c.mu.lock().unwrap();
+                // Re-check under the lock a retirement takes before it wakes us.
+                if !ctrl_c.active.load(Ordering::SeqCst)
+                    || ctrl_c.generation.load(Ordering::SeqCst) != my_generation
+                {
+                    break;
+                }
                 let _ = ctrl_c
                     .cv
                     .wait_timeout(guard, Duration::from_secs(10))
@@ -613,7 +755,7 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
                 let clock = ctrl_c.clock.lock().unwrap().clone();
                 tick_journal(&root_c, &clock);
             }
-        });
+        }));
     } else if transition_to_zero {
         let watchers = WATCHERS.lock().expect("watchers lock");
         if let Some(ctrl) = watchers.get(&identity) {
@@ -627,14 +769,20 @@ pub fn note_dashboard_stream(journal: &Path, connected: bool) {
 fn tick_journal(root: &Arc<JournalRoot>, clock: &Clock) {
     let now = clock.now();
     let identity = root.identity();
+    // A tick serves a live calendar only. A retired one stays retired until a
+    // request opens it again.
+    if existing_inventory(identity).is_none() {
+        return;
+    }
     let journal_path = root.canonical_path().to_path_buf();
-    let _ = read_inventory_inner(
+    let _ = read_inventory_inner_with(
         Some(root.clone()),
         &journal_path,
         identity,
         now,
         clock,
         RequestRole::Index,
+        false,
     );
 }
 
@@ -1053,6 +1201,9 @@ fn fold_single_day_exec(
     #[cfg(any(test, feature = "test-hooks"))]
     identity_barrier::run(root.identity(), day);
 
+    #[cfg(any(test, feature = "test-hooks"))]
+    lifecycle_hooks::note_fold(root.identity());
+
     #[cfg(test)]
     test_support::inc_compute_starts(root.identity());
 
@@ -1196,6 +1347,19 @@ fn read_inventory_inner(
     clock: &Clock,
     role: RequestRole,
 ) -> (Arc<BTreeMap<String, u64>>, Value) {
+    read_inventory_inner_with(root_opt, journal_path, identity, now, clock, role, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_inventory_inner_with(
+    root_opt: Option<Arc<JournalRoot>>,
+    journal_path: &Path,
+    identity: ObjectIdentity,
+    now: DateTime<Utc>,
+    clock: &Clock,
+    role: RequestRole,
+    create: bool,
+) -> (Arc<BTreeMap<String, u64>>, Value) {
     let Some(root) = root_opt else {
         return (
             Arc::new(BTreeMap::new()),
@@ -1204,7 +1368,19 @@ fn read_inventory_inner(
     };
 
     let req_gen = next_generation();
-    let inv_arc = get_or_create_inventory(&root, identity);
+    let inv_arc = if create {
+        get_or_create_inventory(&root, identity)
+    } else {
+        match existing_inventory(identity) {
+            Some(inv_arc) => inv_arc,
+            None => {
+                return (
+                    Arc::new(BTreeMap::new()),
+                    json!({"complete": false, "behind": 0, "failed": 0, "oldest": now.to_rfc3339()}),
+                );
+            }
+        }
+    };
 
     // Update worker clock
     {
@@ -1396,12 +1572,12 @@ fn read_inventory_inner(
     if role == RequestRole::Index {
         for (i, day) in pending_days.iter().enumerate() {
             #[cfg(test)]
-            if let Some(limit) = fold_limit {
-                if fold_count >= limit {
-                    budget_spent = true;
-                    remaining_pending_days.extend(pending_days[i..].iter().cloned());
-                    break;
-                }
+            if let Some(limit) = fold_limit
+                && fold_count >= limit
+            {
+                budget_spent = true;
+                remaining_pending_days.extend(pending_days[i..].iter().cloned());
+                break;
             }
 
             if start.elapsed() >= INLINE_FOLD_BUDGET {
@@ -1633,6 +1809,152 @@ pub(crate) fn fold_month_days(
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
+mod lifecycle_hooks {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Condvar, LazyLock, Mutex};
+
+    use solstone_core_journal_io::ObjectIdentity;
+
+    /// What a retirement did, in order, for one journal.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum RetireEvent {
+        /// It is waiting for the background worker to finish.
+        Joining,
+        /// It is waiting for an earlier retirement of the same journal.
+        Waiting,
+        /// The caller saw it return.
+        Returned,
+    }
+
+    /// The background worker parked after one day's fold.
+    pub struct BetweenDays {
+        /// (arrived, held)
+        state: Mutex<(bool, bool)>,
+        cv: Condvar,
+    }
+
+    impl BetweenDays {
+        pub fn wait_arrived(&self) {
+            let mut state = self.state.lock().unwrap();
+            while !state.0 {
+                state = self.cv.wait(state).unwrap();
+            }
+        }
+        pub fn release(&self) {
+            self.state.lock().unwrap().1 = false;
+            self.cv.notify_all();
+        }
+    }
+
+    static BETWEEN_DAYS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<BetweenDays>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    type RetireLog = (Mutex<HashMap<ObjectIdentity, Vec<RetireEvent>>>, Condvar);
+
+    static RETIRE_EVENTS: LazyLock<RetireLog> =
+        LazyLock::new(|| (Mutex::new(HashMap::new()), Condvar::new()));
+
+    static FOLDS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<AtomicUsize>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    /// Park the background worker after its next day, until released.
+    pub fn hold_worker_between_days(identity: ObjectIdentity) -> Arc<BetweenDays> {
+        let hold = Arc::new(BetweenDays {
+            state: Mutex::new((false, true)),
+            cv: Condvar::new(),
+        });
+        BETWEEN_DAYS.lock().unwrap().insert(identity, hold.clone());
+        hold
+    }
+
+    pub(crate) fn run_worker_between_days(identity: ObjectIdentity) {
+        let hold = BETWEEN_DAYS.lock().unwrap().remove(&identity);
+        if let Some(h) = hold {
+            let mut state = h.state.lock().unwrap();
+            state.0 = true;
+            h.cv.notify_all();
+            while state.1 {
+                state = h.cv.wait(state).unwrap();
+            }
+        }
+    }
+
+    /// Forget every hook and record kept for this journal identity. Tests call
+    /// it first: a new temporary journal can reuse an earlier one's identity.
+    pub fn clear(identity: ObjectIdentity) {
+        if let Some(h) = BETWEEN_DAYS.lock().unwrap().remove(&identity) {
+            h.release();
+        }
+        RETIRE_EVENTS.0.lock().unwrap().remove(&identity);
+        FOLDS.lock().unwrap().remove(&identity);
+    }
+
+    pub fn note_retire_event(identity: ObjectIdentity, event: RetireEvent) {
+        let (lock, cv) = &*RETIRE_EVENTS;
+        lock.lock()
+            .unwrap()
+            .entry(identity)
+            .or_default()
+            .push(event);
+        cv.notify_all();
+    }
+
+    /// Block until `n` retirement events are recorded; return them all.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn wait_retire_events(identity: ObjectIdentity, n: usize) -> Vec<RetireEvent> {
+        let (lock, cv) = &*RETIRE_EVENTS;
+        let mut events = lock.lock().unwrap();
+        while events.get(&identity).map_or(0, Vec::len) < n {
+            events = cv.wait(events).unwrap();
+        }
+        events.get(&identity).cloned().unwrap_or_default()
+    }
+
+    /// Block until a retirement event is recorded; return every event so far.
+    pub fn wait_retire_event(identity: ObjectIdentity) -> Vec<RetireEvent> {
+        let (lock, cv) = &*RETIRE_EVENTS;
+        let mut events = lock.lock().unwrap();
+        while events.get(&identity).is_none_or(|e| e.is_empty()) {
+            events = cv.wait(events).unwrap();
+        }
+        events.get(&identity).cloned().unwrap_or_default()
+    }
+
+    pub(crate) fn note_fold(identity: ObjectIdentity) {
+        FOLDS
+            .lock()
+            .unwrap()
+            .entry(identity)
+            .or_default()
+            .fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Day folds that started computing for this journal.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn folds(identity: ObjectIdentity) -> usize {
+        FOLDS
+            .lock()
+            .unwrap()
+            .get(&identity)
+            .map(|c| c.load(Ordering::SeqCst))
+            .unwrap_or(0)
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub use lifecycle_hooks::RetireEvent;
+
+/// Test hooks for the calendar's background lifecycle.
+#[cfg(feature = "test-hooks")]
+pub mod calendar_lifecycle_hooks {
+    pub use super::lifecycle_hooks::{
+        BetweenDays, RetireEvent, clear, folds, hold_worker_between_days, note_retire_event,
+        wait_retire_event, wait_retire_events,
+    };
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
 mod identity_barrier {
     use std::collections::HashMap;
     use std::sync::{Arc, Condvar, LazyLock, Mutex};
@@ -1666,15 +1988,15 @@ mod identity_barrier {
             .unwrap()
             .get(&identity)
             .map(|entry| (entry.hook.clone(), entry.gate.clone()));
-        if let Some((hook, gate)) = entry {
-            if hook(day) {
-                let (lock, cv) = &*gate;
-                let mut released = lock.lock().unwrap();
-                while !*released {
-                    released = cv.wait(released).unwrap();
-                }
-                *released = false;
+        if let Some((hook, gate)) = entry
+            && hook(day)
+        {
+            let (lock, cv) = &*gate;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = cv.wait(released).unwrap();
             }
+            *released = false;
         }
     }
 
@@ -1787,7 +2109,9 @@ pub(crate) mod test_support {
         map.remove(&identity);
     }
 
-    static WAITER_COUNTERS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<(Mutex<usize>, Condvar)>>>> =
+    type Counter<T> = Arc<(Mutex<T>, Condvar)>;
+
+    static WAITER_COUNTERS: LazyLock<Mutex<HashMap<ObjectIdentity, Counter<usize>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     fn get_waiter_counter(identity: ObjectIdentity) -> Arc<(Mutex<usize>, Condvar)> {
@@ -1842,7 +2166,7 @@ pub(crate) mod test_support {
         }
     }
 
-    static WORKER_PASSES: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<(Mutex<u64>, Condvar)>>>> =
+    static WORKER_PASSES: LazyLock<Mutex<HashMap<ObjectIdentity, Counter<u64>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
     fn get_worker_passes(identity: ObjectIdentity) -> Arc<(Mutex<u64>, Condvar)> {
@@ -1929,15 +2253,15 @@ pub(crate) mod test_support {
             .after_compute
             .get(&identity)
             .map(|e| (e.hook.clone(), e.gate.clone()));
-        if let Some((hook, gate)) = entry {
-            if hook(day) {
-                let (lock, cv) = &*gate;
-                let mut released = lock.lock().unwrap();
-                while !*released {
-                    released = cv.wait(released).unwrap();
-                }
-                *released = false;
+        if let Some((hook, gate)) = entry
+            && hook(day)
+        {
+            let (lock, cv) = &*gate;
+            let mut released = lock.lock().unwrap();
+            while !*released {
+                released = cv.wait(released).unwrap();
             }
+            *released = false;
         }
     }
 
@@ -2104,6 +2428,7 @@ pub(crate) mod test_support {
         }
         b.inline_fold_limits.remove(&identity);
         b.before_file_stats.remove(&identity);
+        super::lifecycle_hooks::clear(identity);
         b.notifications.remove(&identity);
         drop(b);
         reset_seam_counters(identity);
@@ -2115,6 +2440,7 @@ pub(crate) mod test_support {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default, clippy::too_many_arguments)]
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
@@ -2272,23 +2598,6 @@ mod tests {
             ),
         )
         .unwrap();
-    }
-
-    async fn month_day_count(
-        app: &axum::Router,
-        root: &Arc<JournalRoot>,
-        month: &str,
-        day: &str,
-    ) -> u64 {
-        let req = Request::get(format!("/app/transcripts/api/stats/{month}"))
-            .extension(root.clone())
-            .body(Body::empty())
-            .unwrap();
-        let resp = app.clone().oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body: Value =
-            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
-        body.get(day).and_then(Value::as_u64).unwrap_or(0)
     }
 
     async fn index_body(app: &axum::Router, root: &Arc<JournalRoot>) -> Value {
@@ -3092,10 +3401,10 @@ mod tests {
                 let health_dir = day_entry.path().join("health");
                 if let Ok(h_entries) = fs::read_dir(health_dir) {
                     for h_file in h_entries.flatten() {
-                        if let Ok(content) = fs::read_to_string(h_file.path()) {
-                            if content.contains("chronicle day 20260520: missed producer") {
-                                found_missed_producer = true;
-                            }
+                        if let Ok(content) = fs::read_to_string(h_file.path())
+                            && content.contains("chronicle day 20260520: missed producer")
+                        {
+                            found_missed_producer = true;
                         }
                     }
                 }
@@ -3520,14 +3829,14 @@ mod tests {
         let mut found_health_line = false;
         if let Ok(entries) = fs::read_dir(temp.path().join("chronicle/20260309/health")) {
             for h_file in entries.flatten() {
-                if let Ok(content) = fs::read_to_string(h_file.path()) {
-                    if content.contains("chronicle day 20260309: count failed") {
-                        assert!(
-                            !content.contains(temp.path().to_str().unwrap()),
-                            "health line must not contain path"
-                        );
-                        found_health_line = true;
-                    }
+                if let Ok(content) = fs::read_to_string(h_file.path())
+                    && content.contains("chronicle day 20260309: count failed")
+                {
+                    assert!(
+                        !content.contains(temp.path().to_str().unwrap()),
+                        "health line must not contain path"
+                    );
+                    found_health_line = true;
                 }
             }
         }
@@ -4219,6 +4528,95 @@ mod tests {
         );
         assert_eq!(full_pass_finish(identity), Some(stamped));
         assert_eq!(test_support::snapshot_worker_passes(identity), passes);
+    }
+
+    fn calendar_registered(identity: ObjectIdentity) -> (bool, bool, bool) {
+        (
+            INVENTORIES.lock().unwrap().contains_key(&identity),
+            WORKERS.lock().unwrap().contains_key(&identity),
+            WATCHERS.lock().unwrap().contains_key(&identity),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_stop_between_days_retires_and_joins_the_calendar() {
+        use solstone_core_journal_io::whole_journal_restore::{
+            hold_target_for_restore, release_target_for_restore, wait_for_target_use_to_end,
+        };
+
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+        for day in ["20260101", "20260102", "20260103"] {
+            write_analyzed_audio(
+                &temp
+                    .path()
+                    .join("chronicle")
+                    .join(day)
+                    .join("field/100000_60"),
+                day,
+            );
+        }
+        // The read folds the newest day; the worker takes the other two and
+        // parks after the first of them.
+        test_support::limit_inline_folds(identity, 1);
+        let parked = lifecycle_hooks::hold_worker_between_days(identity);
+
+        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let clock = Clock::new(move || t0);
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+        let _first = index_body(&app, &root).await;
+        note_dashboard_stream(temp.path(), true);
+        parked.wait_arrived();
+        let folds_when_parked = test_support::compute_starts(identity);
+        assert_eq!(calendar_registered(identity), (true, true, true));
+
+        // Stop: hold, drain, retire, release. Retirement must wait for the
+        // parked worker rather than leave it running.
+        let journal = temp.path().to_path_buf();
+        let stopping = std::thread::spawn(move || {
+            hold_target_for_restore(&journal);
+            wait_for_target_use_to_end(&journal);
+            retire_calendar(&journal);
+            lifecycle_hooks::note_retire_event(identity, RetireEvent::Returned);
+            release_target_for_restore(&journal);
+        });
+        // While the worker is parked, retirement can only be waiting for it.
+        // Returning first would leave the worker free to take the journal
+        // after the hold is released.
+        let first = lifecycle_hooks::wait_retire_event(identity);
+        assert_eq!(
+            first,
+            vec![RetireEvent::Joining],
+            "retirement must wait for the parked worker before it returns"
+        );
+        parked.release();
+        stopping.join().expect("stop sequence");
+
+        // Nothing it owned runs again, and nothing brings it back on its own.
+        assert_eq!(calendar_registered(identity), (false, false, false));
+        assert_eq!(test_support::compute_starts(identity), folds_when_parked);
+        notify_inventory_worker(identity);
+        tick_journal(&root, &Clock::new(move || t0 + chrono::Duration::hours(2)));
+        note_dashboard_stream(temp.path(), false);
+        assert_eq!(calendar_registered(identity), (false, false, false));
+        assert_eq!(test_support::compute_starts(identity), folds_when_parked);
+
+        // A request on the same root opens a fresh calendar that counts every day.
+        test_support::limit_inline_folds(identity, 10);
+        let reopened = index_body(&app, &root).await;
+        assert_eq!(reopened["freshness"], json!({"complete": true}));
+        let months = reopened["months"]["202601"]
+            .as_u64()
+            .expect("202601 months");
+        let walk: u64 = ["20260101", "20260102", "20260103"]
+            .iter()
+            .map(|d| crate::calendar::day_range_count(temp.path(), d, t0).unwrap())
+            .sum();
+        assert_eq!(months, walk);
+        assert_eq!(calendar_registered(identity), (true, true, false));
     }
 
     #[tokio::test]
@@ -4975,17 +5373,16 @@ mod tests {
                 if let Some(bytes) = frame.data_ref() {
                     let text = String::from_utf8_lossy(bytes);
                     for line in text.lines() {
-                        if let Some(data) = line.strip_prefix("data: ") {
-                            if let Ok(mut val) = serde_json::from_str::<Value>(data) {
-                                if val.get("tract") == Some(&json!("change")) {
-                                    if let Some(obj) = val.as_object_mut() {
-                                        obj.remove("ts");
-                                    }
-                                    received.push(val);
-                                    if received.len() >= 2 {
-                                        return;
-                                    }
-                                }
+                        if let Some(data) = line.strip_prefix("data: ")
+                            && let Ok(mut val) = serde_json::from_str::<Value>(data)
+                            && val.get("tract") == Some(&json!("change"))
+                        {
+                            if let Some(obj) = val.as_object_mut() {
+                                obj.remove("ts");
+                            }
+                            received.push(val);
+                            if received.len() >= 2 {
+                                return;
                             }
                         }
                     }

@@ -40,8 +40,12 @@ mod strava_delete;
 mod corpus;
 
 #[cfg(feature = "test-hooks")]
-pub use inventory::{install_calendar_identity_barrier, release_calendar_identity_barrier};
-pub use inventory::{note_dashboard_stream, reset_calendar_while_held};
+pub use inventory::{
+    calendar_lifecycle_hooks, install_calendar_identity_barrier, release_calendar_identity_barrier,
+};
+pub use inventory::{
+    note_dashboard_stream, reset_calendar_while_held, retire_calendar, retire_calendar_root,
+};
 
 #[derive(Clone)]
 pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);

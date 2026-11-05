@@ -161,6 +161,7 @@ fn exit_code_for(disposition: BackupDisposition, exit_code: i32) -> i32 {
     }
 }
 
+#[cfg(any(feature = "processing", test))]
 pub(crate) fn outcome_exit(outcome: &BackupRequestOutcome) -> i32 {
     match outcome {
         BackupRequestOutcome::Settled(settlement) => settlement.exit_code,
