@@ -459,7 +459,15 @@ pub fn scan_journal_with_checkpoint(
             return Err(error);
         }
     };
-    scan_journal_admitted(journal, full, &admission, checkpoint)
+    let report = scan_journal_admitted(journal, full, &admission, checkpoint)?;
+    drop(admission);
+    // A pass classifies only two batches under its lease, which at one pass a day
+    // would take years on a large journal, with health reading behind all that
+    // time. A failure changes nothing about the pass: the next one tries again.
+    if let Err(error) = crate::classification_batch::finish_classifications(journal, checkpoint) {
+        log::warn!("search classification did not finish after this pass: {error}");
+    }
+    Ok(report)
 }
 
 /// A full pass run by the to-do list. It leaves a large number of missing
@@ -3006,6 +3014,32 @@ mod tests {
         );
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup delete file classification");
+    }
+
+    #[test]
+    fn a_rescan_finishes_the_classification_walk_past_its_bounded_batches() {
+        let root = temp_root("classification-finished-by-rescan");
+        let conn = open_index(&root).expect("open index");
+        let step = crate::classification_batch::CHUNK_CLASSIFICATION_BACKFILL_STEP as usize;
+        for index in 0..(5 * step) {
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('legacy', ?1, '', '', '', '', 0, '')",
+                [format!("legacy-{index:04}.md")],
+            )
+            .expect("seed legacy chunk");
+        }
+        crate::chunk_sources::apply_path_lookup(&root).expect("apply path lookup");
+        drop(conn);
+
+        scan_journal(&root, false).expect("rescan");
+
+        let conn = open_index(&root).expect("reopen index");
+        let backfill = read_chunk_classification_backfill(&conn)
+            .expect("read state")
+            .expect("state");
+        assert!(backfill.completed);
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

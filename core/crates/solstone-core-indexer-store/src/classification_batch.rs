@@ -757,6 +757,36 @@ fn test_pause_after_committed_batch() {
     }
 }
 
+/// Longer than a waiting writer's slowest lock poll, so one always gets a turn.
+const FINISH_BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(60);
+
+/// Finish a walk that has begun and has neither finished nor stalled, taking the
+/// lease per batch and pausing between them so saves keep their turn. A stalled
+/// walk has a reason to read, so it is left to its repair.
+pub(crate) fn finish_classifications(
+    journal: &Path,
+    checkpoint: &dyn Fn() -> Result<(), String>,
+) -> Result<(), StoreError> {
+    let conn = Connection::open_with_flags(db_path(journal), OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let unfinished = crate::db::read_chunk_classification_backfill(&conn)?
+        .is_some_and(|backfill| !backfill.completed && !backfill.stalled);
+    drop(conn);
+    if !unfinished {
+        return Ok(());
+    }
+    loop {
+        checkpoint().map_err(|cause| StoreError::WriterAdmission {
+            operation: "classification-batch",
+            cause,
+        })?;
+        let status = apply_batch(journal, Counts::Terminal)?;
+        if status.stalled || status.coverage_mismatch || status.completed {
+            return Ok(());
+        }
+        std::thread::sleep(FINISH_BATCH_PAUSE);
+    }
+}
+
 pub fn drain_classifications(journal: &Path) -> Result<ClassificationStatus, StoreError> {
     let mut total_processed = 0;
     loop {
