@@ -1526,7 +1526,10 @@ fn router_with_roots(
             get(speakers::who_is_this),
         )
         .route("/app/speakers/api/state", get(speakers::state))
-        .route("/app/speakers/api/index", get(speakers_calendar::index))
+        .route(
+            "/app/speakers/api/index",
+            get(speakers_calendar::index).layer(solstone_core_convey_http::coalesce::layer()),
+        )
         .route("/app/speakers/api/grid", get(speakers_calendar::grid))
         .route("/app/speakers/api/quality", get(speakers_quality::quality))
         .route(

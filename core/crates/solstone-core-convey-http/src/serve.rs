@@ -138,19 +138,27 @@ where
     builder.serve_connection(TokioIo::new(io), service).await
 }
 
+#[allow(clippy::type_complexity)]
+pub(crate) fn compression_layer() -> CompressionLayer<
+    tower_http::compression::predicate::And<
+        SizeAbove,
+        fn(StatusCode, Version, &HeaderMap, &Extensions) -> bool,
+    >,
+> {
+    CompressionLayer::new()
+        .no_br()
+        .no_deflate()
+        .no_zstd()
+        .compress_when(SizeAbove::new(COMPRESSION_MIN_BYTES).and(compressible))
+}
+
 fn common_layers(router: Router) -> Router {
     router
         .layer(axum::middleware::map_response(refuse_framing))
         // Every convey page and API answer crosses the relay as-is otherwise; a
         // journal-sized JSON state is ten times smaller gzipped. Only clients
         // that ask (Accept-Encoding) get it, and range responses never do.
-        .layer(
-            CompressionLayer::new()
-                .no_br()
-                .no_deflate()
-                .no_zstd()
-                .compress_when(SizeAbove::new(COMPRESSION_MIN_BYTES).and(compressible)),
-        )
+        .layer(compression_layer())
         .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
 }
 

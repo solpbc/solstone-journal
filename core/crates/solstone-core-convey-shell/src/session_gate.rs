@@ -399,6 +399,258 @@ mod tests {
         assert_eq!(resumed.status(), StatusCode::OK);
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn coalesced_route_wave_maintains_target_use_and_answers_aborted_clients() {
+        use solstone_core_convey_http::coalesce::{self, Disposition, JoinEvent, JoinNotice};
+        use solstone_core_convey_http::identity::AccessBasis;
+        use solstone_core_journal_io::whole_journal_restore::{
+            hold_target_for_restore, release_target_for_restore, wait_for_target_use_to_end,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::{Notify, mpsc, oneshot};
+
+        let journal = tempfile::tempdir().unwrap();
+        let path = journal.path().to_owned();
+        std::fs::create_dir(path.join("config")).unwrap();
+        std::fs::write(
+            path.join("config").join("journal.json"),
+            br#"{"setup":{"completed_at":1}}"#,
+        )
+        .unwrap();
+
+        struct RestoreGuard(std::path::PathBuf);
+        impl Drop for RestoreGuard {
+            fn drop(&mut self) {
+                release_target_for_restore(&self.0);
+            }
+        }
+        let _guard = RestoreGuard(path.clone());
+
+        let executions = Arc::new(AtomicUsize::new(0));
+        let (entered_tx, mut entered_rx) = mpsc::unbounded_channel::<usize>();
+        let release_slots: Arc<Mutex<std::collections::HashMap<usize, oneshot::Sender<()>>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
+
+        let exec_c = executions.clone();
+        let rel_slots_c = release_slots.clone();
+
+        let handler = move || {
+            let exec = exec_c.clone();
+            let entered_tx = entered_tx.clone();
+            let rel_slots = rel_slots_c.clone();
+            async move {
+                let id = exec.fetch_add(1, Ordering::SeqCst) + 1;
+                let (rel_tx, rel_rx) = oneshot::channel();
+                rel_slots.lock().unwrap().insert(id, rel_tx);
+                entered_tx.send(id).unwrap();
+                rel_rx.await.unwrap();
+                format!("{id}")
+            }
+        };
+
+        let router = apply_layer(
+            axum::Router::new().route("/controlled", get(handler).layer(coalesce::layer())),
+            path.clone(),
+        );
+
+        let registrations: Arc<Mutex<Vec<Disposition>>> = Arc::new(Mutex::new(Vec::new()));
+        let answered_count = Arc::new(AtomicUsize::new(0));
+        let all_answered_notify = Arc::new(Notify::new());
+
+        let spawn_client = |router: axum::Router,
+                            regs: Arc<Mutex<Vec<Disposition>>>,
+                            ans_cnt: Arc<AtomicUsize>,
+                            ans_not: Arc<Notify>| {
+            let (reg_tx, reg_rx) = oneshot::channel();
+            let reg_tx = Arc::new(Mutex::new(Some(reg_tx)));
+            let handle = tokio::spawn(async move {
+                let notice = JoinNotice::new(move |event| match event {
+                    JoinEvent::Registered(disp) => {
+                        regs.lock().unwrap().push(disp);
+                        if let Some(tx) = reg_tx.lock().unwrap().take() {
+                            let _ = tx.send(disp);
+                        }
+                    }
+                    JoinEvent::Answered => {
+                        if ans_cnt.fetch_add(1, Ordering::SeqCst) + 1 == 100 {
+                            ans_not.notify_waiters();
+                        }
+                    }
+                });
+                let req = Request::get("/controlled")
+                    .extension(AccessBasis::Localhost)
+                    .extension(notice)
+                    .body(Body::empty())
+                    .unwrap();
+                router.oneshot(req).await.unwrap()
+            });
+            (handle, reg_rx)
+        };
+
+        // --- Wave 1 ---
+        let mut w1_handles = Vec::new();
+        let mut w1_reg_rxs = Vec::new();
+        for _ in 0..10 {
+            let (h, rx) = spawn_client(
+                router.clone(),
+                registrations.clone(),
+                answered_count.clone(),
+                all_answered_notify.clone(),
+            );
+            w1_handles.push(h);
+            w1_reg_rxs.push(rx);
+        }
+        for rx in w1_reg_rxs {
+            rx.await.unwrap();
+        }
+        let e1 = entered_rx.recv().await.unwrap();
+        assert_eq!(e1, 1);
+
+        // Abort the 10 client tasks
+        for h in w1_handles {
+            h.abort();
+        }
+
+        // Spawn 10 retries for wave 1
+        let mut retry_tasks: Vec<(usize, tokio::task::JoinHandle<axum::response::Response>)> =
+            Vec::new();
+        let mut w1_retry_reg_rxs = Vec::new();
+        for _ in 0..10 {
+            let (h, rx) = spawn_client(
+                router.clone(),
+                registrations.clone(),
+                answered_count.clone(),
+                all_answered_notify.clone(),
+            );
+            retry_tasks.push((1, h));
+            w1_retry_reg_rxs.push(rx);
+        }
+        for rx in w1_retry_reg_rxs {
+            rx.await.unwrap();
+        }
+
+        // Release execution 1
+        release_slots
+            .lock()
+            .unwrap()
+            .remove(&1)
+            .unwrap()
+            .send(())
+            .unwrap();
+
+        // Wait until execution 2 enters
+        let e2 = entered_rx.recv().await.unwrap();
+        assert_eq!(e2, 2);
+
+        // --- Waves 2..=5 ---
+        for w in 2..=5 {
+            let mut handles = Vec::new();
+            let mut reg_rxs = Vec::new();
+            for _ in 0..10 {
+                let (h, rx) = spawn_client(
+                    router.clone(),
+                    registrations.clone(),
+                    answered_count.clone(),
+                    all_answered_notify.clone(),
+                );
+                handles.push(h);
+                reg_rxs.push(rx);
+            }
+            for rx in reg_rxs {
+                rx.await.unwrap();
+            }
+
+            // Abort those 10
+            for h in handles {
+                h.abort();
+            }
+
+            // Spawn 10 retries
+            let mut retry_reg_rxs = Vec::new();
+            for _ in 0..10 {
+                let (h, rx) = spawn_client(
+                    router.clone(),
+                    registrations.clone(),
+                    answered_count.clone(),
+                    all_answered_notify.clone(),
+                );
+                retry_tasks.push((w, h));
+                retry_reg_rxs.push(rx);
+            }
+            for rx in retry_reg_rxs {
+                rx.await.unwrap();
+            }
+
+            // Release execution w
+            release_slots
+                .lock()
+                .unwrap()
+                .remove(&w)
+                .unwrap()
+                .send(())
+                .unwrap();
+
+            // Wait until execution w + 1 enters
+            let next_e = entered_rx.recv().await.unwrap();
+            assert_eq!(next_e, w + 1);
+        }
+
+        // While execution 6 is held and admissions are outstanding, initiate drain handshake
+        hold_target_for_restore(&path);
+        let held_drain_path = path.clone();
+        let (drain_started_tx, drain_started_rx) = oneshot::channel();
+        let drain = tokio::task::spawn_blocking(move || {
+            let _ = drain_started_tx.send(());
+            wait_for_target_use_to_end(&held_drain_path);
+        });
+        drain_started_rx.await.unwrap();
+        assert!(!drain.is_finished());
+
+        // Release execution 6
+        release_slots
+            .lock()
+            .unwrap()
+            .remove(&6)
+            .unwrap()
+            .send(())
+            .unwrap();
+
+        // Await all 50 retry tasks and drop bodies
+        for (in_flight_w, task) in retry_tasks {
+            let resp = task.await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert_eq!(body, format!("{}", in_flight_w + 1).as_bytes());
+        }
+
+        // Wait until every request (100 total) has delivered JoinEvent::Answered
+        while answered_count.load(Ordering::SeqCst) < 100 {
+            all_answered_notify.notified().await;
+        }
+
+        // Drain finishes now
+        drain.await.unwrap();
+
+        // Assert executions == 6
+        assert_eq!(executions.load(Ordering::SeqCst), 6);
+
+        // Assert exactly one Registered(Immediate)
+        let regs = registrations.lock().unwrap();
+        assert_eq!(regs.len(), 100);
+        let immediate_count = regs
+            .iter()
+            .filter(|d| **d == Disposition::Immediate)
+            .count();
+        assert_eq!(immediate_count, 1);
+        assert_eq!(regs[0], Disposition::Immediate);
+        for d in &regs[1..] {
+            assert_eq!(*d, Disposition::Queued);
+        }
+    }
+
     #[tokio::test]
     async fn unlisted_routes_are_gated_by_default() {
         let temporary = std::env::temp_dir().join(format!(

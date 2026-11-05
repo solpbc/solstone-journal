@@ -6,31 +6,64 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path as RoutePath, State};
-use axum::http::StatusCode;
+use axum::extract::{Extension, Path as RoutePath, State};
+use axum::http::header::HeaderValue;
+use axum::http::{HeaderName, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
-use solstone_core_journal_io::{day_dirs, day_path};
+use solstone_core_journal_io::{JournalRoot, day_dirs, day_path};
 use solstone_core_journal_stats_cli::load_fresh_day_cache;
 
+use crate::counts_flight::{self, Delivery, Disposition, RequestRole};
 use crate::day::prepare_day;
 use crate::{AppState, TranscriptError, legacy_error_response};
 
-pub(crate) async fn index(State(state): State<Arc<AppState>>) -> Response {
-    let now = state.clock.now();
-    let journal_root = state.journal_root.clone();
-    solstone_core_convey_http::owner_read::spawn_blocking_response(
-        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsIndex,
-        move || match counts(&journal_root, now) {
-            Ok(value) => Json(date_nav_index(&value)).into_response(),
-            Err(error) => error.response(),
-        },
+const SERVER_TIMING: HeaderName = HeaderName::from_static("server-timing");
+
+pub(crate) async fn index(
+    State(state): State<Arc<AppState>>,
+    admitted: Option<Extension<Arc<JournalRoot>>>,
+) -> Response {
+    let delivery = counts_flight::execute(
+        admitted.map(|Extension(r)| r),
+        &state.journal_root,
+        &state.clock,
+        RequestRole::Index,
     )
-    .await
+    .await;
+    match delivery {
+        Delivery::Ready {
+            counts,
+            disposition,
+        } => {
+            let mut response = Json(date_nav_index(&counts)).into_response();
+            let val = if disposition == Disposition::Immediate {
+                HeaderValue::from_static("coalesced;desc=\"immediate\"")
+            } else {
+                HeaderValue::from_static("coalesced;desc=\"queued\"")
+            };
+            response.headers_mut().append(SERVER_TIMING, val);
+            response
+        }
+        Delivery::Failed {
+            mut response,
+            disposition,
+        } => {
+            let val = if disposition == Disposition::Immediate {
+                HeaderValue::from_static("coalesced;desc=\"immediate\"")
+            } else {
+                HeaderValue::from_static("coalesced;desc=\"queued\"")
+            };
+            response.headers_mut().append(SERVER_TIMING, val);
+            response
+        }
+    }
 }
+
 pub(crate) async fn stats(
     State(state): State<Arc<AppState>>,
+    admitted: Option<Extension<Arc<JournalRoot>>>,
     RoutePath(month): RoutePath<String>,
 ) -> Response {
     if !valid_month(&month) {
@@ -42,22 +75,45 @@ pub(crate) async fn stats(
         )
         .into_response();
     }
-    let now = state.clock.now();
-    let journal_root = state.journal_root.clone();
-    solstone_core_convey_http::owner_read::spawn_blocking_response(
-        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsMonthStats,
-        move || match counts(&journal_root, now) {
-            Ok(counts) => Json(
-                counts
-                    .into_iter()
-                    .filter(|(day, count)| day.starts_with(&month) && *count > 0)
-                    .collect::<BTreeMap<_, _>>(),
-            )
-            .into_response(),
-            Err(error) => error.response(),
-        },
+    let delivery = counts_flight::execute(
+        admitted.map(|Extension(r)| r),
+        &state.journal_root,
+        &state.clock,
+        RequestRole::MonthStats,
     )
-    .await
+    .await;
+    match delivery {
+        Delivery::Ready {
+            counts,
+            disposition,
+        } => {
+            let filtered: BTreeMap<_, _> = counts
+                .iter()
+                .filter(|(day, count)| day.starts_with(&month) && **count > 0)
+                .map(|(day, count)| (day.clone(), *count))
+                .collect();
+            let mut response = Json(filtered).into_response();
+            let val = if disposition == Disposition::Immediate {
+                HeaderValue::from_static("coalesced;desc=\"immediate\"")
+            } else {
+                HeaderValue::from_static("coalesced;desc=\"queued\"")
+            };
+            response.headers_mut().append(SERVER_TIMING, val);
+            response
+        }
+        Delivery::Failed {
+            mut response,
+            disposition,
+        } => {
+            let val = if disposition == Disposition::Immediate {
+                HeaderValue::from_static("coalesced;desc=\"immediate\"")
+            } else {
+                HeaderValue::from_static("coalesced;desc=\"queued\"")
+            };
+            response.headers_mut().append(SERVER_TIMING, val);
+            response
+        }
+    }
 }
 pub(crate) fn counts(
     root: &Path,
