@@ -55,6 +55,7 @@ public final class OwnerActivity extends ServingActivity {
     final ConcurrentHashMap<String,StreamPump> pumps = new ConcurrentHashMap<>();
     final OwnerUploadBoard uploadBoard = new OwnerUploadBoard();
     final OwnerFolderPicker folderPicker = new OwnerFolderPicker();
+    final OwnerDownloads downloads = new OwnerDownloads(this);
     volatile int folderGeneration;
     volatile FolderOperation folderOperation;
     final SetupBrowser setupBrowser = new SetupBrowser();
@@ -188,6 +189,7 @@ public final class OwnerActivity extends ServingActivity {
             settings.setUserAgentString(settings.getUserAgentString()+" "+contract.getString("user_agent_product"));
         } catch(Exception error) { throw new IllegalStateException("journal web contract unavailable",error); }
         web.addJavascriptInterface(new Bridge(),"JournalOwner");
+        web.setDownloadListener((url,agent,disposition,mime,length)->downloads.receive(url,disposition,mime));
         web.setWebChromeClient(new WebChromeClient() {
             public boolean onConsoleMessage(ConsoleMessage message) { return true; }
             public boolean onJsAlert(WebView view,String url,String message,JsResult result) {
@@ -450,6 +452,7 @@ public final class OwnerActivity extends ServingActivity {
         } catch(Exception error) { pageError("couldn't open your browser"); }
     }
     void retireDocument() {
+        downloads.retire();
         FolderOperation folder;
         synchronized (folderPicker) {
             folder = folderOperation;
@@ -568,6 +571,7 @@ public final class OwnerActivity extends ServingActivity {
     WebResourceResponse resource(WebResourceRequest request) throws Exception {
         String url=request.getUrl().toString(); String path=OwnerOrigin.path(url);
         if (!"GET".equals(request.getMethod()) && !"HEAD".equals(request.getMethod())) return refused();
+        if ("/__android/owner-downloads.js".equals(path)) return new WebResourceResponse("application/javascript","UTF-8",getAssets().open("owner-downloads.js"));
         if ("/__android/owner.js".equals(path)) return new WebResourceResponse("application/javascript","UTF-8",getAssets().open("owner.js"));
         OwnerTransport current=transport;
         if (current == null) return refused();
@@ -592,7 +596,7 @@ public final class OwnerActivity extends ServingActivity {
             retireDocument();
             current.close();
             transport=new OwnerTransport(this);
-            String injection="<script>window.__journalOwnerToken="+JSONObject.quote(token)+";history.replaceState(null,'',"+JSONObject.quote(stream.url)+");</script><script src=\"/__android/owner.js\"></script>";
+            String injection="<script>window.__journalOwnerToken="+JSONObject.quote(token)+";history.replaceState(null,'',"+JSONObject.quote(stream.url)+");</script><script src=\"/__android/owner.js\"></script><script src=\"/__android/owner-downloads.js\"></script>";
             int head=html.indexOf("<head>");
             if (head < 0) throw new IOException("journal page has no head");
             html=html.substring(0,head+6)+injection+html.substring(head+6);
@@ -608,6 +612,15 @@ public final class OwnerActivity extends ServingActivity {
         return new WebResourceResponse(mime,"UTF-8",stream.status,"Journal",responseHeaders,body);
     }
     final class Bridge {
+        @JavascriptInterface public String beginDownload(String token,String name,String mime,long bytes) {
+            return downloads.beginBlob(token,name,mime,bytes);
+        }
+        @JavascriptInterface public boolean downloadChunk(String token,String id,String bytes) {
+            return downloads.blobChunk(token,id,bytes);
+        }
+        @JavascriptInterface public void endDownload(String token,String id,boolean success) {
+            downloads.endBlob(token,id,success);
+        }
         @JavascriptInterface public void cancel(String token,String id) {
             if (token == null || id == null || !token.equals(pageToken) || id.length() >= 64) return;
             String key=token+":"+id;
@@ -788,6 +801,7 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     protected void onActivityResult(int request,int result,Intent data) {
+        if (request == OwnerDownloads.PICK_SAVE) { downloads.selected(result,data);return; }
         if (request == 41) {
             Uri uri=data == null ? null : data.getData();
             if (result != RESULT_OK || uri == null) { finishChooser(null); return; }
