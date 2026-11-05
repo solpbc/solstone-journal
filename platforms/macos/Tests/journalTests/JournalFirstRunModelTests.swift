@@ -14,6 +14,67 @@ import Testing
 @MainActor
 @Suite("JournalFirstRunModel")
 struct JournalFirstRunModelTests {
+    @Test(arguments: [false, true])
+    func legacyRetryAfterProbeFailureReusesTheRunningSupervisor(adopting: Bool) async throws {
+        let trace = FirstRunTrace()
+        let root = try makeTemporaryDirectory()
+        let handoff = FakeFirstRunHandoffStore(handoff: adopting ? migrationHandoff(root: root) : nil)
+        var live = false
+        let fixture = makeModel(
+            trace: trace, startResults: [true, false], probeResults: [.incomplete, .complete],
+            probeErrors: [URLError(.cannotConnectToHost)], handoffStore: handoff,
+            supervisorIsLive: { _ in live },
+            didStartSupervisor: { live = $0 }
+        )
+        fixture.model.journalRoot = root
+        if adopting { await fixture.model.adoptFromHandoff() }
+        else { await fixture.model.continueFromNameLocation() }
+        #expect(live)
+        #expect(fixture.model.errorMessage != nil)
+        #expect(handoff.consumeCount == 0)
+
+        if adopting { await fixture.model.retryAdopt() }
+        else { await fixture.model.retrySetup() }
+        #expect(await trace.snapshot() == ["setup", "supervisor", "probe", "setup", "probe", "probe"])
+        #expect(fixture.model.route == .home)
+        #expect(fixture.model.errorMessage == nil)
+        #expect(fixture.browser.opened.count == 1)
+        #expect(handoff.consumeCount == (adopting ? 1 : 0))
+    }
+
+    @Test func resumedLegacyProbeFailureShowsRecoveryAndRetryReusesTheRuntime() async throws {
+        let trace = FirstRunTrace()
+        var live = false
+        let fixture = makeModel(
+            trace: trace, startResults: [true, false], probeResults: [.complete],
+            probeErrors: [URLError(.timedOut)], supervisorIsLive: { _ in live },
+            didStartSupervisor: { live = $0 }
+        )
+        await fixture.model.resumeConfiguredRoot(try makeTemporaryDirectory())
+        #expect(fixture.model.route == .ritual(.setupProgress))
+        #expect(fixture.model.errorMessage != nil)
+        await fixture.model.retrySetup()
+        #expect(await trace.snapshot() == ["supervisor", "probe", "setup", "probe"])
+        #expect(fixture.model.route == .home)
+        #expect(fixture.model.errorMessage == nil)
+    }
+
+    @Test func legacyRetryRestartsARuntimeThatStoppedAfterTheFailedProbe() async throws {
+        let trace = FirstRunTrace()
+        var live = false
+        let fixture = makeModel(
+            trace: trace, startResults: [true, true], probeResults: [.complete],
+            probeErrors: [URLError(.timedOut)], supervisorIsLive: { _ in live },
+            didStartSupervisor: { live = $0 }
+        )
+        await fixture.model.continueFromNameLocation()
+        #expect(fixture.model.errorMessage != nil)
+        live = false
+        await fixture.model.retrySetup()
+        #expect(await trace.snapshot() == ["setup", "supervisor", "probe", "setup", "supervisor", "probe"])
+        #expect(fixture.model.route == .home)
+    }
+
     @Test func resumingALiveLegacyJournalDoesNotStartItAgain() async throws {
         let trace = FirstRunTrace()
         let fixture = makeModel(trace: trace, startResults: [], probeResults: [.complete], supervisorIsLive: { _ in true })
@@ -612,6 +673,7 @@ func makeModel(
     mailbox injectedMailbox: SetupMailboxStore? = nil,
     continuation injectedContinuation: JournalSetupContinuationStore? = nil,
     supervisorIsLive: @escaping @MainActor (URL) -> Bool = { _ in false },
+    didStartSupervisor: @escaping @MainActor (Bool) -> Void = { _ in },
     externalSupervisorIsLive: @escaping @Sendable (URL) -> Bool = { _ in false },
     refreshSleep: @escaping @Sendable () async -> Void = {
         try? await Task.sleep(for: .seconds(60))
@@ -652,7 +714,9 @@ func makeModel(
         setupRunner: setupRunner,
         initClient: initClient,
         startSupervisor: { root in
-            await starts.start(root: root)
+            let started = await starts.start(root: root)
+            didStartSupervisor(started)
+            return started
         },
         handoffStore: handoffStore,
         journalFileReader: journalFileReader,

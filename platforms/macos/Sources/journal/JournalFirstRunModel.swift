@@ -433,7 +433,7 @@ final class JournalFirstRunModel {
 
         do {
             try await runSetup(at: journalRoot, skipModelInstall: false)
-            guard await startSupervisor(journalRoot.standardizedFileURL) else {
+            guard await ensureSupervisor(journalRoot.standardizedFileURL) else {
                 errorMessage = supervisorFailureMessage()
                 return
             }
@@ -491,6 +491,7 @@ final class JournalFirstRunModel {
     }
 
     func resumeConfiguredRoot(_ root: URL) async {
+        route = .ritual(.setupProgress)
         assignRoot(root)
         config.journalRoot = journalRoot
         errorMessage = nil
@@ -518,7 +519,7 @@ final class JournalFirstRunModel {
             config.journalRoot = root
 
             try await runSetup(at: root, skipModelInstall: false)
-            guard await startSupervisor(root) else {
+            guard await ensureSupervisor(root) else {
                 errorMessage = supervisorFailureMessage()
                 return
             }
