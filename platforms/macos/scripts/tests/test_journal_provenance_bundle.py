@@ -15,14 +15,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 MAKEFILE = REPO_ROOT / "Makefile"
 SOURCE_PROVENANCE = REPO_ROOT / "Sources/journal/Resources/runtime-entry-candidate-provenance.json"
 SOURCE_INFO_PLIST = REPO_ROOT / "Sources/journal/Info.plist"
-APPLE_RELEASE = REPO_ROOT / ".build/apple/Products/Release"
 JOURNAL_APP = REPO_ROOT / "journal.app"
-APPLE_OUTPUTS = [
-    APPLE_RELEASE / "journal",
-    APPLE_RELEASE / "solstone-watchdog",
-    APPLE_RELEASE / "SolstoneJournalMac_journal.bundle",
-    APPLE_RELEASE / "solstone_JournalMarkKit.bundle",
-]
 
 
 def parse_makefile():
@@ -88,8 +81,15 @@ class JournalProvenanceBundleTest(unittest.TestCase):
         )
 
     def test_unsigned_assembly_refreshes_apple_products_and_copies_provenance(self):
-        for output in APPLE_OUTPUTS:
-            remove_path(output)
+        products = pathlib.Path(subprocess.check_output(
+            ["swift", "build", "-c", "release", "--arch", "arm64", "--arch", "arm64", "--show-bin-path"],
+            cwd=REPO_ROOT,
+            text=True,
+        ).strip())
+        self.assertTrue(products.is_absolute())
+        self.assertTrue(products.resolve().is_relative_to((REPO_ROOT / ".build").resolve()))
+        for name in ("journal", "solstone-watchdog", "SolstoneJournalMac_journal.bundle", "solstone_JournalMarkKit.bundle"):
+            remove_path(products / name)
 
         result = subprocess.run(
             ["make", "journal-app-unsigned"],
@@ -100,10 +100,10 @@ class JournalProvenanceBundleTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        journal = APPLE_RELEASE / "journal"
-        watchdog = APPLE_RELEASE / "solstone-watchdog"
+        journal = products / "journal"
+        watchdog = products / "solstone-watchdog"
         product_provenance = (
-            APPLE_RELEASE
+            products
             / "SolstoneJournalMac_journal.bundle/Contents/Resources/Resources/runtime-entry-candidate-provenance.json"
         )
         assembled_provenance = (
@@ -126,15 +126,15 @@ class JournalProvenanceBundleTest(unittest.TestCase):
 
         blocks = parse_makefile()
         journal_bundle_copy = (
-            "\t@cp -r .build/apple/Products/Release/SolstoneJournalMac_journal.bundle "
+            '\t@cp -r "$(SWIFT_PRODUCTS_DIR)/SolstoneJournalMac_journal.bundle" '
             "journal.app/Contents/Resources/"
         )
         mark_bundle_copy = (
-            "\t@cp -r .build/apple/Products/Release/solstone_JournalMarkKit.bundle "
+            '\t@cp -r "$(SWIFT_PRODUCTS_DIR)/solstone_JournalMarkKit.bundle" '
             "journal.app/Contents/Resources/"
         )
         makefile_text = MAKEFILE.read_text(encoding="utf-8")
-        assembly_recipe = "\n".join(blocks["assemble-journal-app"]["recipe"])
+        assembly_recipe = "\n".join(blocks["assemble-journal-products"]["recipe"])
         distribution_recipe = "\n".join(blocks["bundle-dist-journal"]["recipe"])
 
         self.assertEqual(makefile_text.count(journal_bundle_copy), 1)

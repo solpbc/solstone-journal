@@ -45,11 +45,8 @@ SPARKLE_ARTIFACT_DIR   ?= $(MACOS_SUPPORT_ROOT)/vendor/sparkle
 SPARKLE_FRAMEWORK      ?= $(SPARKLE_ARTIFACT_DIR)/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework
 # The DMG window art is shared with the capture app's image.
 DMG_BACKGROUND         ?= $(MACOS_SUPPORT_ROOT)/assets/dmg-background@2x.png
-# Two --arch flags are load-bearing: they select SwiftPM's Apple/Xcode backend,
-# which writes to .build/apple/Products/Release (what bundle-dist-journal copies
-# from). Journal is arm64-only, so both flags are arm64; do not collapse them to
-# one flag, and do not swap in --build-system swiftbuild, which writes to
-# .build/out/Products/Release instead.
+# Two --arch flags select SwiftPM's Apple backend and its relocatable bundles.
+# Journal is arm64-only. Use the same flags when resolving the product directory.
 JOURNAL_RELEASE_APPLE_ARCH_FLAGS := --arch arm64 --arch arm64
 
 # journal.app carries the Rust-native distribution tree directly. Development
@@ -266,19 +263,25 @@ journal-app-dev: journal-native-runtime
 		find journal.app/Contents -maxdepth 3 \( -path '*/Versions' -o -path '*/_CodeSignature' \) -prune -o \( -type f -o -type d \) -print | sort
 
 assemble-journal-app: release-universal-journal
+	@products=$$(swift build -c release $(JOURNAL_RELEASE_APPLE_ARCH_FLAGS) --show-bin-path) && \
+		$(MAKE) --no-print-directory assemble-journal-products SWIFT_PRODUCTS_DIR="$$products"
+
+.PHONY: assemble-journal-products
+assemble-journal-products:
+	@test -n "$(SWIFT_PRODUCTS_DIR)" && test -d "$(SWIFT_PRODUCTS_DIR)" || { echo "error: Swift build products directory is missing" >&2; exit 1; }
 	@rm -rf journal.app
 	@mkdir -p journal.app/Contents/MacOS journal.app/Contents/Resources journal.app/Contents/Frameworks journal.app/Contents/Library/LaunchAgents
-	@cp .build/apple/Products/Release/journal journal.app/Contents/MacOS/
-	@cp .build/apple/Products/Release/solstone-watchdog journal.app/Contents/MacOS/
+	@cp "$(SWIFT_PRODUCTS_DIR)/journal" journal.app/Contents/MacOS/
+	@cp "$(SWIFT_PRODUCTS_DIR)/solstone-watchdog" journal.app/Contents/MacOS/
 	@cp Sources/journal/Info.plist journal.app/Contents/
 	@cp Sources/journal/Resources/AppIcon.icns journal.app/Contents/Resources/
 	@cp Sources/journal/app.solstone.journal.watchdog.plist journal.app/Contents/Library/LaunchAgents/
-	@test -d .build/apple/Products/Release/solstone_JournalMarkKit.bundle || { echo "error: solstone_JournalMarkKit.bundle missing from .build/apple/Products/Release"; exit 1; }
-	@test -d .build/apple/Products/Release/solstone_SetupChrome.bundle || { echo "error: solstone_SetupChrome.bundle missing from .build/apple/Products/Release"; exit 1; }
-	@test -d .build/apple/Products/Release/SolstoneJournalMac_journal.bundle || { echo "error: SolstoneJournalMac_journal.bundle missing from .build/apple/Products/Release"; exit 1; }
-	@cp -r .build/apple/Products/Release/solstone_JournalMarkKit.bundle journal.app/Contents/Resources/
-	@cp -r .build/apple/Products/Release/solstone_SetupChrome.bundle journal.app/Contents/Resources/
-	@cp -r .build/apple/Products/Release/SolstoneJournalMac_journal.bundle journal.app/Contents/Resources/
+	@test -d "$(SWIFT_PRODUCTS_DIR)/solstone_JournalMarkKit.bundle" || { echo "error: solstone_JournalMarkKit.bundle missing from $(SWIFT_PRODUCTS_DIR)"; exit 1; }
+	@test -d "$(SWIFT_PRODUCTS_DIR)/solstone_SetupChrome.bundle" || { echo "error: solstone_SetupChrome.bundle missing from $(SWIFT_PRODUCTS_DIR)"; exit 1; }
+	@test -d "$(SWIFT_PRODUCTS_DIR)/SolstoneJournalMac_journal.bundle" || { echo "error: SolstoneJournalMac_journal.bundle missing from $(SWIFT_PRODUCTS_DIR)"; exit 1; }
+	@cp -r "$(SWIFT_PRODUCTS_DIR)/solstone_JournalMarkKit.bundle" journal.app/Contents/Resources/
+	@cp -r "$(SWIFT_PRODUCTS_DIR)/solstone_SetupChrome.bundle" journal.app/Contents/Resources/
+	@cp -r "$(SWIFT_PRODUCTS_DIR)/SolstoneJournalMac_journal.bundle" journal.app/Contents/Resources/
 
 journal-app-unsigned: assemble-journal-app
 
