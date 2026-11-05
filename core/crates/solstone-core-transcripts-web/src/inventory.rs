@@ -8,7 +8,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, LazyLock, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(test))]
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -29,6 +31,7 @@ use crate::counts_flight::RequestRole;
 /// - Warm read 1: 3ms (< 100ms)
 /// - Warm read 2: 2ms
 /// - Live-day refold cost: 4ms
+#[cfg(not(test))]
 pub const INLINE_FOLD_BUDGET: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1559,9 +1562,11 @@ fn read_inventory_inner_with(
     // Newest pending first
     pending_days.sort_by(|a, b| b.cmp(a));
 
+    #[cfg(not(test))]
     let start = Instant::now();
     let mut budget_spent = false;
 
+    // Unit tests choose a fold count instead of racing the host's scheduling.
     #[cfg(test)]
     let fold_limit = test_support::inline_fold_limit(identity);
     #[cfg(test)]
@@ -1572,15 +1577,11 @@ fn read_inventory_inner_with(
     if role == RequestRole::Index {
         for (i, day) in pending_days.iter().enumerate() {
             #[cfg(test)]
-            if let Some(limit) = fold_limit
-                && fold_count >= limit
-            {
-                budget_spent = true;
-                remaining_pending_days.extend(pending_days[i..].iter().cloned());
-                break;
-            }
+            let inline_budget_spent = fold_limit.is_some_and(|limit| fold_count >= limit);
+            #[cfg(not(test))]
+            let inline_budget_spent = start.elapsed() >= INLINE_FOLD_BUDGET;
 
-            if start.elapsed() >= INLINE_FOLD_BUDGET {
+            if inline_budget_spent {
                 budget_spent = true;
                 remaining_pending_days.extend(pending_days[i..].iter().cloned());
                 break;
@@ -2467,6 +2468,7 @@ mod tests {
         fn drop(&mut self) {
             test_support::release_identity_barrier(self.0);
             test_support::release_compute_barrier(self.0);
+            test_support::release_background_fill(self.0);
             crate::counts_flight::test_support::reset(self.0);
             drop_inventory(self.0);
             test_support::reset(self.0);
@@ -3233,6 +3235,9 @@ mod tests {
         let (temp, root) = setup_fixture_journal();
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
+        // Only the request folds this day, so a worker cannot repair a stale
+        // identity before the second read checks it.
+        let _hold = test_support::hold_background_fill(identity);
 
         let config_path = temp.path().join("config/journal.json");
         let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
@@ -3254,11 +3259,8 @@ mod tests {
         let temp_path = temp.path().to_path_buf();
         let target_day_c = target_day.to_string();
 
-        let (held_tx, held_rx) = std::sync::mpsc::channel();
-        let held_tx = Arc::new(Mutex::new(Some(held_tx)));
         let fired = Arc::new(AtomicBool::new(false));
         let fired_c = fired.clone();
-        let identity_c = identity;
 
         test_support::install_barrier_after_compute(identity, move |day| {
             if day == target_day_c && !fired_c.swap(true, Ordering::SeqCst) {
@@ -3270,18 +3272,8 @@ mod tests {
                 )
                 .unwrap();
                 solstone_core_journal_io::bump_stream_marker(&temp_path, &target_day_c).unwrap();
-                if let Some(tx) = held_tx.lock().unwrap().take() {
-                    let _ = tx.send(());
-                }
-                true
-            } else {
-                false
             }
-        });
-
-        std::thread::spawn(move || {
-            held_rx.recv().unwrap();
-            test_support::release_compute_barrier(identity_c);
+            false
         });
 
         let req1 = Request::get("/app/transcripts/api/stats/202607")
@@ -3293,6 +3285,7 @@ mod tests {
         let bytes1 = to_bytes(resp1.into_body(), usize::MAX).await.unwrap();
         let body1: Value = serde_json::from_slice(&bytes1).unwrap();
 
+        assert!(fired.load(Ordering::SeqCst));
         let count1 = body1[target_day].as_u64().unwrap();
         assert_eq!(count1, pre_target_count);
 
