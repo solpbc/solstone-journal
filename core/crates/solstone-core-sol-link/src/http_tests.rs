@@ -1586,6 +1586,45 @@ async fn old_finalize_lane_redirects_and_choice_storage() {
     assert_eq!(res_local.status(), StatusCode::OK);
 }
 
+#[tokio::test]
+async fn finalize_principal_failure_does_not_skip_local_start_and_can_retry() {
+    let temporary = committed_journal();
+    crate::http::setup_probe_test::capability(temporary.path(), "ok");
+    let host = Arc::new(FakeSetupHost::default());
+    let entities = temporary.path().join("entities");
+    fs::write(&entities, b"not a directory").unwrap();
+    let body = json!({"lane":"local", "name":"Ada", "preferred":"Ada"});
+    let failed = request_with_host(
+        temporary.path(),
+        host.clone(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/finalize",
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(failed.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(host.start_calls.lock().unwrap().len(), 1);
+
+    fs::remove_file(entities).unwrap();
+    let retried = request_with_host(
+        temporary.path(),
+        host.clone(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/finalize",
+        Some(body),
+    )
+    .await;
+    assert_eq!(retried.status(), StatusCode::OK);
+    assert_eq!(host.start_calls.lock().unwrap().len(), 1);
+    assert!(
+        solstone_core_entity::read_journal_principal(temporary.path())
+            .unwrap()
+            .is_some()
+    );
+}
+
 fn assert_mark_render_spec(mark: &Value) {
     assert_eq!(
         mark.as_object().unwrap().keys().collect::<Vec<_>>(),

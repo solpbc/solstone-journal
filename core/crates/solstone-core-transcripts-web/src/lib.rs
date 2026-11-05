@@ -20,6 +20,7 @@ mod attach;
 mod audio_capture;
 mod calendar;
 mod capture_zone;
+mod counts_flight;
 mod day;
 mod delete;
 mod line_label;
@@ -49,6 +50,10 @@ pub struct SenseLaunchContext {
 }
 
 impl Clock {
+    pub fn new(now: impl Fn() -> DateTime<Utc> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(now))
+    }
+
     pub fn system() -> Self {
         Self(Arc::new(Utc::now))
     }
@@ -203,6 +208,7 @@ pub use day::{DaySegmentRef, day_segment_list};
 
 include!(concat!(env!("OUT_DIR"), "/transcripts_assets.rs"));
 
+#[derive(Debug)]
 pub(crate) struct TranscriptError(String);
 
 impl std::fmt::Display for TranscriptError {

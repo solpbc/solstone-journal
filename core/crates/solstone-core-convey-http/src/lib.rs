@@ -157,6 +157,7 @@
 
 pub mod byo_guard;
 pub mod cant_open;
+pub mod coalesce;
 pub mod envelope;
 pub mod gate;
 pub mod identity;

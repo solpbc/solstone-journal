@@ -17,6 +17,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - ultrawide screens you share are now described from a larger image. with the local model, small text on a 3440×1440 screen is misread about half as often. when the model runs on your own computer, each of these screens takes longer to describe, longest on a smaller graphics card. with your own model, some providers' newest models count more of each image toward your usage. other screen shapes are described as before.
+- recordings you play from your journal's dashboard start sooner, because they now stream instead of loading whole first, and your browser no longer keeps a copy of them. skipping ahead starts sooner too.
+- when the transcripts calendar, speakers, health or search takes a while, reloading the page or asking again no longer piles more of the same work onto your journal. requests that arrive together share one fresh answer, and no answer is older than your request.
 
 ### Fixed
 

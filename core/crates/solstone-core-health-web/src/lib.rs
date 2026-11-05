@@ -73,11 +73,13 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
         .route("/app/health/static/{*name}", get(assets::static_asset))
         .route(
             "/app/health/api/state",
-            get(move || state(state_root.clone(), state_clock.clone())),
+            get(move || state(state_root.clone(), state_clock.clone()))
+                .layer(solstone_core_convey_http::coalesce::layer()),
         )
         .route(
             "/app/health/api/media-backlog",
-            get(move || journal_data::media_backlog(media_root.clone(), media_clock.now())),
+            get(move || journal_data::media_backlog(media_root.clone(), media_clock.now()))
+                .layer(solstone_core_convey_http::coalesce::layer()),
         )
         .route(
             "/app/health/api/log",

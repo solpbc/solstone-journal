@@ -41,7 +41,8 @@ pub fn router(journal_root: PathBuf) -> Router {
         )
         .route(
             "/app/search/api/search",
-            get(move |query: Query<SearchQuery>| search_api(search_root.clone(), query)),
+            get(move |query: Query<SearchQuery>| search_api(search_root.clone(), query))
+                .layer(solstone_core_convey_http::coalesce::layer()),
         )
         .route(
             "/app/search/api/agents",
