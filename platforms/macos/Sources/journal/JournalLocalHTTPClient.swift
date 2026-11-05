@@ -284,17 +284,51 @@ private final class LocalNoRedirectDelegate: NSObject, URLSessionTaskDelegate, @
 }
 
 /// All mutable exchange state is confined to queue. Cancellation and the deadline use it too.
-private final class UnixHTTPExchange: @unchecked Sendable {
+/// What the exchange needs from its connection, so a test can set the order events arrive in.
+protocol UnixExchangeConnection: AnyObject {
+    var stateUpdateHandler: (@Sendable (NWConnection.State) -> Void)? { get set }
+    func start(queue: DispatchQueue)
+    func send(_ content: Data, completion: @escaping @Sendable (NWError?) -> Void)
+    func receive(_ completion: @escaping @Sendable (Data?, Bool, NWError?) -> Void)
+    func cancel()
+}
+
+private final class NWUnixExchangeConnection: UnixExchangeConnection {
     let connection: NWConnection
+    init(socket: String) { connection = NWConnection(to: .unix(path: socket), using: .tcp) }
+    var stateUpdateHandler: (@Sendable (NWConnection.State) -> Void)? {
+        get { connection.stateUpdateHandler }
+        set { connection.stateUpdateHandler = newValue }
+    }
+    func start(queue: DispatchQueue) { connection.start(queue: queue) }
+    func send(_ content: Data, completion: @escaping @Sendable (NWError?) -> Void) {
+        connection.send(content: content, completion: .contentProcessed(completion))
+    }
+    func receive(_ completion: @escaping @Sendable (Data?, Bool, NWError?) -> Void) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, complete, error in
+            completion(data, complete, error)
+        }
+    }
+    func cancel() { connection.cancel() }
+}
+
+final class UnixHTTPExchange: @unchecked Sendable {
+    let connection: any UnixExchangeConnection
     let request: URLRequest
     let queue = DispatchQueue(label: "journal.local-http")
     var continuation: CheckedContinuation<(Data, URLResponse), any Error>?
     var buffer = Data()
     var cancelled = false
     var deadline: DispatchWorkItem?
+    var requestSent = false
+    var receiving = false
 
-    init(socket: String, request: URLRequest) {
-        self.connection = NWConnection(to: .unix(path: socket), using: .tcp)
+    convenience init(socket: String, request: URLRequest) {
+        self.init(connection: NWUnixExchangeConnection(socket: socket), request: request)
+    }
+
+    init(connection: any UnixExchangeConnection, request: URLRequest) {
+        self.connection = connection
         self.request = request
     }
 
@@ -320,7 +354,12 @@ private final class UnixHTTPExchange: @unchecked Sendable {
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready: self.send()
-            case .failed: self.finish(.failure(LocalHTTPError.unavailable))
+            // Once the request is out, .failed is how this socket reports the journal's close, and it can
+            // arrive ahead of the answer it follows, or ahead of the send's own completion, which may then
+            // never come. A receive decides either way; the deadline stands behind it.
+            case .failed:
+                if self.requestSent { self.startReceive() }
+                else { self.finish(.failure(LocalHTTPError.unavailable)) }
             default: break
             }
         }
@@ -342,21 +381,32 @@ private final class UnixHTTPExchange: @unchecked Sendable {
             head += "\(key): \(value)\r\n"
         }
         head += "\r\n"
-        connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { error in
-            if error != nil { self.finish(.failure(LocalHTTPError.unavailable)) }
-            else { self.receive() }
-        })
+        requestSent = true
+        connection.send(Data(head.utf8) + body) { error in
+            if error != nil, !self.receiving { self.finish(.failure(LocalHTTPError.unavailable)) }
+            else { self.startReceive() }
+        }
+    }
+
+    private func startReceive() {
+        guard !receiving else { return }
+        receiving = true
+        receive()
     }
 
     private func receive() {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, complete, error in
+        connection.receive { data, complete, error in
             guard self.continuation != nil else { return }
             if let data { self.buffer.append(data) }
             do {
                 if let parsed = try JournalHTTPFraming.parse(self.buffer, url: self.request.url!, method: self.request.httpMethod ?? "GET") {
                     self.finish(.success(parsed)); return
                 }
-                if complete || error != nil { self.finish(.failure(LocalHTTPError.invalidResponse)); return }
+                if complete || error != nil {
+                    // Nothing at all came back: the journal is not answering, which is not a bad answer.
+                    self.finish(.failure(self.buffer.isEmpty ? LocalHTTPError.unavailable : LocalHTTPError.invalidResponse))
+                    return
+                }
                 self.receive()
             } catch { self.finish(.failure(error)) }
         }

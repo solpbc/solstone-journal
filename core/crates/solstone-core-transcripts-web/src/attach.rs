@@ -40,6 +40,9 @@ pub(crate) fn normalize_markdown_only_segments(
     segments: &mut [TranscriptSegment],
 ) {
     for segment in segments {
+        if !segment.stream.starts_with("import.") {
+            continue;
+        }
         let directory = crate::segment_media::physical_segment_dir(
             journal_root,
             day,

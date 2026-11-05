@@ -1,31 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Private flights registry keyed by `ObjectIdentity` around `counts(&Path, DateTime<Utc>)`.
+//! `complete: true` covers every change whose stream-marker bump committed before the read, and every change to a live day. A change on an older day whose producer committed but did not bump appears within about an hour of it while the calendar is in use.
 //!
-//! The registry key is `ObjectIdentity` only and omits `AccessBasis`. `Localhost` and
-//! `LinkedDevice` never hide an owner action and these routes are owner reads.
-//!
-//! The instant bound via `clock.now()` is not visible in the JSON because both analyzing and
-//! failed stay in `timeline_types`.
-//!
-//! A missing admission extension does not share and scans `AppState.journal_root`.
-//! With an admission extension, the scan path is that root's `canonical_path` because `counts`
-//! takes `&Path`, and the key is the identity, not the path string.
+//! A queued request waits for the in-flight run and at most one successor. The month route's wait is that bound plus the folds of its own month (at most 31 days).
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::Response;
+use serde_json::Value;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, join_failed, spawn_blocking_response};
 use solstone_core_journal_io::{JournalRoot, ObjectIdentity};
 use tokio::sync::oneshot;
 
-use crate::calendar;
-use crate::{Clock, TranscriptError};
+use crate::Clock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RequestRole {
@@ -49,9 +41,16 @@ impl Disposition {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct InventorySnapshot {
+    pub(crate) counts: Arc<BTreeMap<String, u64>>,
+    pub(crate) freshness: Value,
+}
+
 pub(crate) enum Delivery {
     Ready {
         counts: Arc<BTreeMap<String, u64>>,
+        freshness: Value,
         disposition: Disposition,
     },
     Failed {
@@ -62,20 +61,18 @@ pub(crate) enum Delivery {
 
 #[derive(Clone)]
 enum FailedOutcome {
-    Transcript(String),
     JoinFailed,
 }
 
 impl FailedOutcome {
     fn into_response(self) -> Response {
         match self {
-            Self::Transcript(msg) => TranscriptError::display(msg).response(),
             Self::JoinFailed => join_failed(),
         }
     }
 }
 
-type FlightResult = Result<Arc<BTreeMap<String, u64>>, FailedOutcome>;
+type FlightResult = Result<Arc<InventorySnapshot>, FailedOutcome>;
 type WaiterSender = oneshot::Sender<FlightResult>;
 
 struct FlightSlot {
@@ -104,15 +101,12 @@ pub(crate) async fn execute(
             RequestRole::MonthStats => OwnerReadRole::TranscriptsMonthStats,
         };
         let clock = clock.clone();
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = oneshot::channel::<FlightResult>();
         let _ = spawn_blocking_response(owner_role, move || {
             let now = clock.now();
-            let outcome = calendar::counts(&scan_path, now);
-            let outcome_to_send = match outcome {
-                Ok(map) => Ok(Arc::new(map)),
-                Err(err) => Err(FailedOutcome::Transcript(err.to_string())),
-            };
-            let _ = tx.send(outcome_to_send);
+            let (counts, freshness) =
+                crate::inventory::read_inventory_unadmitted(&scan_path, now, &clock, role);
+            let _ = tx.send(Ok(Arc::new(InventorySnapshot { counts, freshness })));
             Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::empty())
@@ -120,8 +114,9 @@ pub(crate) async fn execute(
         })
         .await;
         return match rx.await {
-            Ok(Ok(counts)) => Delivery::Ready {
-                counts,
+            Ok(Ok(snapshot)) => Delivery::Ready {
+                counts: snapshot.counts.clone(),
+                freshness: snapshot.freshness.clone(),
                 disposition: Disposition::Immediate,
             },
             Ok(Err(failed)) => Delivery::Failed {
@@ -136,7 +131,6 @@ pub(crate) async fn execute(
     };
 
     let key = root.identity();
-    let scan_path = root.canonical_path().to_path_buf();
     let (tx, rx) = oneshot::channel();
 
     let (disposition, opener) = {
@@ -163,12 +157,13 @@ pub(crate) async fn execute(
     }
 
     if let Some(opener_tx) = opener {
-        spawn_flight(key, scan_path, clock.clone(), role, vec![opener_tx]);
+        spawn_flight(root, clock.clone(), role, vec![opener_tx]);
     }
 
     match rx.await {
-        Ok(Ok(counts)) => Delivery::Ready {
-            counts,
+        Ok(Ok(snapshot)) => Delivery::Ready {
+            counts: snapshot.counts.clone(),
+            freshness: snapshot.freshness.clone(),
             disposition,
         },
         Ok(Err(failed)) => Delivery::Failed {
@@ -183,12 +178,12 @@ pub(crate) async fn execute(
 }
 
 fn spawn_flight(
-    key: ObjectIdentity,
-    scan_path: PathBuf,
+    root: Arc<JournalRoot>,
     clock: Clock,
     role: RequestRole,
     waiters: Vec<WaiterSender>,
 ) {
+    let key = root.identity();
     tokio::spawn(async move {
         #[cfg(test)]
         test_support::increment_run_count(key);
@@ -199,8 +194,7 @@ fn spawn_flight(
         };
 
         struct FlightDropGuard {
-            key: ObjectIdentity,
-            scan_path: PathBuf,
+            root: Arc<JournalRoot>,
             clock: Clock,
             waiters: Option<Vec<WaiterSender>>,
             disarmed: bool,
@@ -211,12 +205,13 @@ fn spawn_flight(
                 if self.disarmed {
                     return;
                 }
+                let key = self.root.identity();
                 let next = {
                     let mut reg = FLIGHTS.lock().expect("flights lock");
-                    if let Some(slot) = reg.get_mut(&self.key) {
+                    if let Some(slot) = reg.get_mut(&key) {
                         let pending = slot.pending.take();
                         if pending.is_none() {
-                            reg.remove(&self.key);
+                            reg.remove(&key);
                         }
                         pending
                     } else {
@@ -230,8 +225,7 @@ fn spawn_flight(
                 }
                 if let Some(cohort) = next {
                     spawn_flight(
-                        self.key,
-                        self.scan_path.clone(),
+                        self.root.clone(),
                         self.clock.clone(),
                         cohort.role,
                         cohort.waiters,
@@ -241,15 +235,14 @@ fn spawn_flight(
         }
 
         let mut guard = FlightDropGuard {
-            key,
-            scan_path: scan_path.clone(),
+            root: root.clone(),
             clock: clock.clone(),
             waiters: Some(waiters),
             disarmed: false,
         };
 
         let (scan_tx, scan_rx) = oneshot::channel();
-        let scan_path_c = scan_path.clone();
+        let root_c = root.clone();
         let clock_c = clock.clone();
 
         let _ = spawn_blocking_response(owner_role, move || {
@@ -257,17 +250,11 @@ fn spawn_flight(
             #[cfg(test)]
             test_support::record_instant(key, now);
 
-            let outcome = calendar::counts(&scan_path_c, now);
-            match outcome {
-                Ok(map) => {
-                    #[cfg(test)]
-                    test_support::run_pauser(key);
-                    let _ = scan_tx.send(Ok(Arc::new(map)));
-                }
-                Err(err) => {
-                    let _ = scan_tx.send(Err(FailedOutcome::Transcript(err.to_string())));
-                }
-            }
+            let (counts, freshness) =
+                crate::inventory::read_inventory_admitted(root_c, now, &clock_c, role);
+            #[cfg(test)]
+            test_support::run_pauser(key);
+            let _ = scan_tx.send(Ok(Arc::new(InventorySnapshot { counts, freshness })));
             Response::builder()
                 .status(StatusCode::OK)
                 .body(Body::empty())
@@ -298,7 +285,7 @@ fn spawn_flight(
         let waiters = guard.waiters.take().unwrap_or_default();
 
         if let Some(cohort) = next {
-            spawn_flight(key, scan_path, clock, cohort.role, cohort.waiters);
+            spawn_flight(root, clock, cohort.role, cohort.waiters);
         }
 
         // Answer current waiters
@@ -420,6 +407,7 @@ mod tests {
     impl Drop for TestResetGuard {
         fn drop(&mut self) {
             test_support::reset(self.0);
+            crate::inventory::drop_inventory(self.0);
         }
     }
 
@@ -438,6 +426,25 @@ mod tests {
         }
     }
 
+    fn stats_free_walk(journal: &Path) -> std::collections::BTreeMap<String, u64> {
+        let mut aside = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(journal.join("chronicle")) {
+            for entry in entries.flatten() {
+                let stats_path = entry.path().join("stats.json");
+                let aside_path = entry.path().join("stats.json.aside");
+                if stats_path.is_file() {
+                    std::fs::rename(&stats_path, &aside_path).unwrap();
+                    aside.push((stats_path, aside_path));
+                }
+            }
+        }
+        let walk = crate::calendar::counts_by_walk(journal, chrono::Utc::now()).unwrap();
+        for (stats_path, aside_path) in aside {
+            std::fs::rename(&aside_path, &stats_path).unwrap();
+        }
+        walk
+    }
+
     fn setup_temp_journal() -> (tempfile::TempDir, Arc<JournalRoot>) {
         let temp = tempfile::tempdir().unwrap();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/journal");
@@ -452,7 +459,8 @@ mod tests {
         for day in days.keys() {
             let count = day_range_count(temp.path(), day, Utc::now()).unwrap();
             let mut scan = DayScan::default();
-            scan.stats.transcript_ranges = count;
+            scan.schema_version = solstone_core_journal_stats_cli::SCHEMA_VERSION;
+            scan.stats.transcript_ranges = count.saturating_add(1_000_000);
             scan.stats.percept_ranges = 0;
             scan.stats.browser_segments = 0;
             let dir = day_path(temp.path(), day, false).unwrap();
@@ -488,6 +496,15 @@ mod tests {
 
         assert!(body_a["months"].get("202603").is_some());
         assert!(body_a["months"].get("202608").is_none());
+        let index_total: u64 = body_a["months"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|value| value.as_u64().unwrap())
+            .sum();
+        let walk_total: u64 = stats_free_walk(temp.path()).values().sum();
+        assert_eq!(index_total, walk_total);
+        assert_ne!(index_total, walk_total.saturating_add(1_000_000));
 
         // Setup pauser for the first two successful runs only
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
@@ -552,6 +569,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(write_res, ContentWriteOutcome::Written(_)));
+        solstone_core_journal_io::bump_stream_marker(temp.path(), "20260804").unwrap();
 
         // R3 registers
         let app3 = app.clone();

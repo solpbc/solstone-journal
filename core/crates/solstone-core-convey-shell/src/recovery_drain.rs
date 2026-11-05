@@ -143,6 +143,7 @@ pub fn relinquish_admitted_work(journal: &Path) -> Result<(), String> {
         hook(journal)?;
     }
     wait_for_target_use_to_end(journal);
+    solstone_core_transcripts_web::reset_calendar_while_held(journal);
     Ok(())
 }
 
@@ -259,6 +260,7 @@ pub fn pause_admitted_work(root: Arc<JournalRoot>) -> Result<PausedRecovery, Str
         .expect("owned hold")
         .wait_for_admitted_use()
         .map_err(|e| e.to_string())?;
+    solstone_core_transcripts_web::reset_calendar_while_held(paused.root.canonical_path());
     Ok(paused)
 }
 

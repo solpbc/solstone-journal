@@ -244,6 +244,17 @@
   text-align: center;
 }
 
+.date-nav-content__freshness {
+  padding: 8px 12px 0;
+  color: var(--ink-soft);
+  font-size: var(--text-min);
+  text-align: center;
+}
+
+.date-nav-content__freshness[hidden] {
+  display: none;
+}
+
 .date-nav-content__retry {
   min-height: 44px;
   padding: 0 16px;

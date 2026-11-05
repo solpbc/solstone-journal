@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "a1df5243b01cb4f5d959615e083bb0d3be4e8657c44f40bd85e68d573a68bcd2",
+  "cargo_lock_sha256": "73d56128fb726aff0175581a740fed09cdc8b131a219d95653aa8fe32059f803",
   "dependency_source_companion": {
-    "bytes": 104787503,
-    "filename": "windows-rust-dependencies-a1df5243b01cb4f5.tar.gz",
-    "sha256": "89b96ec2cc1bbec3d72e6f2e10f7ea4c3defdc3672d11071984609d25ee169cf"
+    "bytes": 104798826,
+    "filename": "windows-rust-dependencies-73d56128fb726aff.tar.gz",
+    "sha256": "b032a5b738186695f38184cf6220ba24713162105968e8c4e9751b96e8b34633"
   },
   "notice_texts": [
     {
@@ -23198,7 +23198,7 @@
     },
     {
       "archive_sha256": null,
-      "identity": "spl-core@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f)",
+      "identity": "spl-core@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.14.0#f1f080fa4138f8e1ac703e643b6f3f7c36ec2834)",
       "license_expression": "AGPL-3.0-only",
       "name": "spl-core",
       "notice_references": [
@@ -23209,17 +23209,17 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "df60337f81e2a85d488169944856e4a8a629509f",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/df60337f81e2a85d488169944856e4a8a629509f/LICENSE"
+            "revision": "f1f080fa4138f8e1ac703e643b6f3f7c36ec2834",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/f1f080fa4138f8e1ac703e643b6f3f7c36ec2834/LICENSE"
           }
         }
       ],
       "notice_status": "texts-acquired",
       "repository": "https://github.com/solpbc/spl-rust",
-      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f",
+      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.14.0#f1f080fa4138f8e1ac703e643b6f3f7c36ec2834",
       "vcs": {
         "git": {
-          "sha1": "df60337f81e2a85d488169944856e4a8a629509f"
+          "sha1": "f1f080fa4138f8e1ac703e643b6f3f7c36ec2834"
         },
         "path_in_vcs": "crates/spl-core"
       },
@@ -23228,7 +23228,7 @@
     },
     {
       "archive_sha256": null,
-      "identity": "spl-home@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f)",
+      "identity": "spl-home@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.14.0#f1f080fa4138f8e1ac703e643b6f3f7c36ec2834)",
       "license_expression": "AGPL-3.0-only",
       "name": "spl-home",
       "notice_references": [
@@ -23239,17 +23239,17 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "df60337f81e2a85d488169944856e4a8a629509f",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/df60337f81e2a85d488169944856e4a8a629509f/LICENSE"
+            "revision": "f1f080fa4138f8e1ac703e643b6f3f7c36ec2834",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/f1f080fa4138f8e1ac703e643b6f3f7c36ec2834/LICENSE"
           }
         }
       ],
       "notice_status": "texts-acquired",
       "repository": "https://github.com/solpbc/spl-rust",
-      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f",
+      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.14.0#f1f080fa4138f8e1ac703e643b6f3f7c36ec2834",
       "vcs": {
         "git": {
-          "sha1": "df60337f81e2a85d488169944856e4a8a629509f"
+          "sha1": "f1f080fa4138f8e1ac703e643b6f3f7c36ec2834"
         },
         "path_in_vcs": "crates/spl-home"
       },
@@ -23258,7 +23258,7 @@
     },
     {
       "archive_sha256": null,
-      "identity": "spl-transport@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f)",
+      "identity": "spl-transport@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.14.0#f1f080fa4138f8e1ac703e643b6f3f7c36ec2834)",
       "license_expression": "AGPL-3.0-only",
       "name": "spl-transport",
       "notice_references": [
@@ -23269,17 +23269,17 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "df60337f81e2a85d488169944856e4a8a629509f",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/df60337f81e2a85d488169944856e4a8a629509f/LICENSE"
+            "revision": "f1f080fa4138f8e1ac703e643b6f3f7c36ec2834",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/f1f080fa4138f8e1ac703e643b6f3f7c36ec2834/LICENSE"
           }
         }
       ],
       "notice_status": "texts-acquired",
       "repository": "https://github.com/solpbc/spl-rust",
-      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.13.1#df60337f81e2a85d488169944856e4a8a629509f",
+      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.14.0#f1f080fa4138f8e1ac703e643b6f3f7c36ec2834",
       "vcs": {
         "git": {
-          "sha1": "df60337f81e2a85d488169944856e4a8a629509f"
+          "sha1": "f1f080fa4138f8e1ac703e643b6f3f7c36ec2834"
         },
         "path_in_vcs": "crates/spl-transport"
       },
@@ -29125,14 +29125,14 @@
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc --features solstone-core/journal-mcp-endpoint; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-11-04T00:35:36.512496+00:00",
+    "query_utc": "2026-11-05T04:56:16.571108+00:00",
     "shipped_feature_arguments": [
       "--features",
       "solstone-core/journal-mcp-endpoint"
     ],
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 564,
-    "source_sha256": "5e3b7fd4f1f1435a0c5d197e1e6db38a396c8676618a5945de98b73f0049bab8",
+    "source_sha256": "1e928ca05ed3e334aa671ec4db850b982caed0ac6bd4727f23615d5bdc177617",
     "windows_notice_package_count": 498,
     "windows_notice_path_package_count": 1
   },

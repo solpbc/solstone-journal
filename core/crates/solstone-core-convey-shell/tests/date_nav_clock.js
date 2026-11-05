@@ -831,6 +831,119 @@ async function run() {
     preventDefault: () => {},
   });
   assert.notStrictEqual(locationObj.href, hrefBeforeStep, 'unprevented ArrowRight steps the day');
+
+  // An index that reports freshness: bounded re-reads, change envelopes, reconnects.
+  const timers = [];
+  windowObj.setTimeout = (fn, ms) => {
+    const timer = { fn, ms, live: true };
+    timers.push(timer);
+    return timer;
+  };
+  windowObj.clearTimeout = (timer) => {
+    if (timer) timer.live = false;
+  };
+  const liveTimers = () => timers.filter((timer) => timer.live);
+  const fireTimers = async () => {
+    liveTimers().forEach((timer) => {
+      timer.live = false;
+      timer.fn();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  };
+  const appListeners = { change: new Set(), connection: new Set() };
+  windowObj.appEvents = {
+    listen: (tract, fn) => {
+      appListeners[tract].add(fn);
+      return () => appListeners[tract].delete(fn);
+    },
+    onConnectionState: (fn) => {
+      appListeners.connection.add(fn);
+      fn({ connected: true, state: 'connected' });
+      return () => appListeners.connection.delete(fn);
+    },
+  };
+  const sendChange = (msg) => appListeners.change.forEach((fn) => fn(msg));
+  let indexReads = 0;
+  let nextIndex = null;
+  windowObj.apiJson = async (url) => {
+    if (url.includes('api/index')) {
+      indexReads += 1;
+      return nextIndex;
+    }
+    return { '20261001': 1 };
+  };
+  const mountFreshness = async (index) => {
+    nextIndex = index;
+    indexReads = 0;
+    documentObj.dispatchEvent({ type: 'workspace:mounted', detail: { appName: 'records' } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+  const coverage = { start: '20261001', end: '20261031' };
+  const noteNode = () => documentObj.querySelector('[data-date-nav-freshness]');
+
+  // No freshness field: one read, and nothing reacts to a change or a reconnect.
+  await mountFreshness({ coverage, months: { '202610': 1 } });
+  assert.strictEqual(indexReads, 1, 'an index without freshness is read once');
+  assert.strictEqual(liveTimers().length, 0, 'an index without freshness schedules nothing');
+  sendChange({ tract: 'change', event: 'changed', kind: 'day', key: '20261001' });
+  appListeners.connection.forEach((fn) => fn({ connected: true }));
+  assert.strictEqual(liveTimers().length, 0, 'a view whose index has no freshness ignores change and reconnect');
+  assert.strictEqual(noteNode().hidden, true, 'an index without freshness shows no note');
+
+  // Behind: labelled, re-read on a timer until complete, then quiet.
+  await mountFreshness({
+    coverage,
+    months: { '202610': 1 },
+    freshness: { complete: false, behind: 3, failed: 0, oldest: '2026-11-05T09:00:00Z' },
+  });
+  assert.strictEqual(noteNode().hidden, false, 'a behind index shows a note');
+  assert.strictEqual(liveTimers().length, 1, 'a behind index schedules one re-read');
+  nextIndex = { coverage, months: { '202610': 7 }, freshness: { complete: true } };
+  await fireTimers();
+  assert.strictEqual(indexReads, 2, 'the timer re-reads the index');
+  assert.strictEqual(noteNode().hidden, true, 'a complete answer clears the note');
+  assert.strictEqual(liveTimers().length, 0, 'a complete answer stops the re-reads');
+
+  // Behind forever: the re-reads end.
+  nextIndex = { coverage, months: { '202610': 1 }, freshness: { complete: false, behind: 1, failed: 0, oldest: 'x' } };
+  await mountFreshness(nextIndex);
+  let rounds = 0;
+  while (liveTimers().length > 0 && rounds < 50) {
+    rounds += 1;
+    await fireTimers();
+  }
+  assert.ok(rounds > 0 && rounds < 50, 'a stuck index stops being re-read');
+  assert.strictEqual(noteNode().hidden, false, 'a stuck index keeps its note');
+
+  // Failed days only: labelled, with no timer, because the server's own retry announces itself.
+  await mountFreshness({ coverage, months: {}, freshness: { complete: false, behind: 0, failed: 2, oldest: 'x' } });
+  assert.strictEqual(noteNode().hidden, false, 'failed days show a note');
+  assert.strictEqual(liveTimers().length, 0, 'failed days alone schedule no re-read');
+
+  // A burst of envelopes settles into one read; other kinds and keys don't count.
+  await mountFreshness({ coverage, months: { '202610': 1 }, freshness: { complete: true } });
+  sendChange({ tract: 'change', event: 'changed', kind: 'entity', key: 'x' });
+  sendChange({ tract: 'change', event: 'changed', kind: 'system', key: 'other' });
+  assert.strictEqual(liveTimers().length, 0, 'an unknown kind or system key is ignored');
+  sendChange({ tract: 'change', event: 'changed', kind: 'day', key: '20261001' });
+  sendChange({ tract: 'change', event: 'changed', kind: 'day', key: '20261002' });
+  sendChange({ tract: 'change', event: 'changed', kind: 'system', key: 'calendar' });
+  assert.strictEqual(liveTimers().length, 1, 'a burst of envelopes holds one pending read');
+  await fireTimers();
+  assert.strictEqual(indexReads, 2, 'a burst of envelopes costs one read');
+  appListeners.connection.forEach((fn) => fn({ connected: true }));
+  await fireTimers();
+  assert.strictEqual(indexReads, 3, 'a reconnect re-reads an index with freshness');
+  appListeners.connection.forEach((fn) => fn({ connected: false }));
+  assert.strictEqual(liveTimers().length, 0, 'a disconnect schedules nothing');
+
+  // Leaving the view stops everything.
+  sendChange({ tract: 'change', event: 'changed', kind: 'day', key: '20261001' });
+  assert.strictEqual(liveTimers().length, 1, 'a change is pending before unmount');
+  documentObj.dispatchEvent({ type: 'workspace:mounted', detail: { appName: null } });
+  assert.strictEqual(liveTimers().length, 0, 'unmount cancels pending reads');
+  assert.strictEqual(appListeners.change.size, 0, 'unmount removes the change listener');
+  assert.strictEqual(appListeners.connection.size, 0, 'unmount removes the connection listener');
 }
 
 run()
