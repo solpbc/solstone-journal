@@ -60,7 +60,8 @@ fn extract_file_stat(meta: &fs::Metadata) -> FileStat {
         len: meta.len(),
         mtime: (meta.last_write_time() as i64, 0),
         ctime: (meta.creation_time() as i64, 0),
-        // The file index is not on stable Rust. Size and the two 100 ns times decide.
+        // The file index is not on stable Rust; `read_marker_identity` fills
+        // this with the marker's generation instead.
         file_id: 0,
     }
 }
@@ -794,12 +795,9 @@ fn emit_notification(journal_root: &Path, _identity: ObjectIdentity, kind: &str,
     #[cfg(test)]
     test_support::record_notification(_identity, kind, key);
 
-    let sock_path = journal_root.join("health/callosum.sock");
-    // On Windows the bus is a named pipe, so this path is logical and never exists on disk.
-    #[cfg(unix)]
-    if !sock_path.exists() {
-        return;
-    }
+    // No existence check: on Windows the bus is a named pipe and nothing
+    // lives at this path, and an absent bus fails the send at once anyway.
+    let sock_path = journal_root.join("health").join("callosum.sock");
     let payload = serde_json::json!({
         "tract": "change",
         "event": "changed",
@@ -832,29 +830,54 @@ fn read_marker_identity(
                 MarkerIdentity::StatError(err.kind())
             }
         }
-        Ok(meta) => {
-            let stat = extract_file_stat(&meta);
-            if let Some(MarkerIdentity::Present {
-                stat: stored_stat,
-                malformed,
-            }) = stored_marker
-                && stored_stat == &stat
-            {
-                return MarkerIdentity::Present {
-                    stat,
-                    malformed: *malformed,
-                };
-            }
-            let malformed = match fs::read_to_string(&path) {
-                Ok(content) => {
-                    serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content)
-                        .is_err()
-                }
-                Err(_) => false,
-            };
-            MarkerIdentity::Present { stat, malformed }
-        }
+        Ok(meta) => present_marker_identity(&path, &meta, stored_marker),
     }
+}
+
+#[cfg(unix)]
+fn present_marker_identity(
+    path: &Path,
+    meta: &fs::Metadata,
+    stored_marker: Option<&MarkerIdentity>,
+) -> MarkerIdentity {
+    let stat = extract_file_stat(meta);
+    if let Some(MarkerIdentity::Present {
+        stat: stored_stat,
+        malformed,
+    }) = stored_marker
+        && stored_stat == &stat
+    {
+        return MarkerIdentity::Present {
+            stat,
+            malformed: *malformed,
+        };
+    }
+    let malformed = match fs::read_to_string(path) {
+        Ok(content) => {
+            serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content).is_err()
+        }
+        Err(_) => false,
+    };
+    MarkerIdentity::Present { stat, malformed }
+}
+
+// Without an inode, two bumps inside one clock tick can leave the marker's
+// size and times unchanged, so its generation stands in for the file id.
+#[cfg(not(unix))]
+fn present_marker_identity(
+    path: &Path,
+    meta: &fs::Metadata,
+    _stored_marker: Option<&MarkerIdentity>,
+) -> MarkerIdentity {
+    let marker = fs::read_to_string(path)
+        .ok()
+        .map(|content| serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content));
+    let mut stat = extract_file_stat(meta);
+    if let Some(Ok(marker)) = &marker {
+        stat.file_id = marker.generation;
+    }
+    let malformed = matches!(marker, Some(Err(_)));
+    MarkerIdentity::Present { stat, malformed }
 }
 
 fn read_tree_digest(journal: &Path, day: &str, _identity: ObjectIdentity) -> TreeDigest {
@@ -3735,6 +3758,8 @@ mod tests {
         );
     }
 
+    // Windows file names are UTF-16, so this fixture cannot exist there.
+    #[cfg(unix)]
     #[tokio::test]
     async fn test_error_non_utf8_segment() {
         let (temp, root) = setup_fixture_journal();
@@ -3770,16 +3795,6 @@ mod tests {
             bad_name.push(0xFF);
             let bad_os = std::ffi::OsStr::from_bytes(&bad_name);
             let bad_seg = stream_dir.join(bad_os);
-            fs::create_dir_all(&bad_seg).unwrap();
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::ffi::{OsStrExt, OsStringExt};
-            let mut bad_name = std::ffi::OsStr::new("120000_60")
-                .encode_wide()
-                .collect::<Vec<_>>();
-            bad_name.push(0xD800);
-            let bad_seg = stream_dir.join(std::ffi::OsString::from_wide(&bad_name));
             fs::create_dir_all(&bad_seg).unwrap();
         }
 
@@ -5220,10 +5235,22 @@ mod tests {
         // Event 4: solstone_core_segment::relocate_segment across two days
         let before_4_src = walk3.get("20260101").copied().unwrap_or(0);
         let before_4_dst = walk3.get("20260102").copied().unwrap_or(0);
-        // A move names its ends under the journal's canonical spelling, which differs on Windows.
-        let canonical = fs::canonicalize(temp.path()).unwrap();
-        let src_dir = canonical.join("chronicle/20260101/field/100000_60");
-        let dst_dir = canonical.join("chronicle/20260102/field/100000_60");
+        // Relocation admits the canonical journal path, which on Windows is
+        // the verbatim form; join component by component so it stays valid.
+        #[cfg(windows)]
+        let journal = fs::canonicalize(temp.path()).unwrap();
+        #[cfg(not(windows))]
+        let journal = temp.path().to_path_buf();
+        let src_dir = journal
+            .join("chronicle")
+            .join("20260101")
+            .join("field")
+            .join("100000_60");
+        let dst_dir = journal
+            .join("chronicle")
+            .join("20260102")
+            .join("field")
+            .join("100000_60");
         let source = solstone_core_segment::RelocationEnd {
             day: "20260101".to_string(),
             segment: "100000_60".to_string(),
@@ -5239,7 +5266,7 @@ mod tests {
             parent_rel: "chronicle/20260102/field".to_string(),
         };
         let relocation = solstone_core_segment::Relocation {
-            journal: temp.path(),
+            journal: &journal,
             source: &source,
             destination: &destination,
             successor: None,
@@ -5370,8 +5397,14 @@ mod tests {
         .expect("SSE client connected to callosum bus");
 
         let day = "20260306";
-        emit_notification(temp.path(), identity, "day", day);
-        emit_notification(temp.path(), identity, "system", "calendar");
+        // Send from a blocking thread, as production does: the send waits for
+        // the bus to confirm, and this runtime thread is what serves the bus.
+        for (kind, key) in [("day", day), ("system", "calendar")] {
+            let journal = temp.path().to_path_buf();
+            tokio::task::spawn_blocking(move || emit_notification(&journal, identity, kind, key))
+                .await
+                .unwrap();
+        }
 
         let mut received = Vec::new();
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
