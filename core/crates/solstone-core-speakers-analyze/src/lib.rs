@@ -46,8 +46,8 @@ use solstone_core_speakers::{
 };
 #[cfg(feature = "runtime")]
 use solstone_core_speakers_onnx::{
-    PlatformDescriptor, PyannoteSegmenter, SpeakerOnnxError, WespeakerEmbedder,
-    default_speaker_execution_providers,
+    PlatformDescriptor, PyannoteSegmenter, SpeakerExecutionProvider, SpeakerOnnxError,
+    WespeakerEmbedder, default_speaker_execution_providers,
 };
 
 pub const REQUEST_SCHEMA: &str = "solstone-speaker-analyze-request-v1";
@@ -375,8 +375,16 @@ fn analyze_request(request: &Request) -> Result<Value, AnalyzeError> {
     // Python uses two Wespeaker sessions for statements and diarization; one
     // shared session is behavior-neutral because calls are serialized here and
     // the model carries no per-role state.
-    let mut embedder = WespeakerEmbedder::open(Path::new(&request.wespeaker_onnx_path), &providers)
-        .map_err(|error| map_open_onnx_error("wespeaker_onnx_path", error))?;
+    // Use ORT CPU for iOS embeddings so repeated analyses do not create CoreML
+    // sessions for this stage. Pyannote keeps its existing provider plan.
+    let embedding_providers = if cfg!(target_os = "ios") {
+        &[SpeakerExecutionProvider::Cpu][..]
+    } else {
+        providers.as_slice()
+    };
+    let mut embedder =
+        WespeakerEmbedder::open(Path::new(&request.wespeaker_onnx_path), embedding_providers)
+            .map_err(|error| map_open_onnx_error("wespeaker_onnx_path", error))?;
 
     let statement_audio_buffer = statement_audio_buffer_for_request(request);
     let statement_audio = match statement_audio_buffer {
