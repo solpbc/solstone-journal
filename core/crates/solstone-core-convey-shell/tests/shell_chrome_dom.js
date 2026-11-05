@@ -450,6 +450,7 @@ function createHarness(options = {}) {
   const backgroundFailures = [];
   const readyCalls = [];
   const marks = [];
+  const warnings = [];
   const setTimeoutFn = options.setTimeout || setTimeout;
   const clearTimeoutFn = options.clearTimeout || clearTimeout;
   const fetch = (url) => {
@@ -564,7 +565,6 @@ function createHarness(options = {}) {
     location,
     localStorage: window.localStorage,
     MutationObserver: MutationObserverShim,
-    console,
     URL,
     URLSearchParams,
     setTimeout: setTimeoutFn,
@@ -574,6 +574,7 @@ function createHarness(options = {}) {
     CustomEvent: window.CustomEvent,
     fetch,
     AbortController,
+    console: { ...console, warn(message) { warnings.push(message); } },
     performance: { mark(name, options) { marks.push({ name, detail: options?.detail }); } },
   });
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
@@ -635,6 +636,7 @@ function createHarness(options = {}) {
     backgroundFailures,
     readyCalls,
     marks,
+    warnings,
   };
 }
 
@@ -1736,7 +1738,9 @@ asyncCase('view readiness reports once per mount, re-arms, and rejects stale rep
   old('content');
   assert.strictEqual(h.marks.filter(entry => entry.name === 'view:ready').length, 1);
   const current = h.window.createViewReady('home');
-  assert.throws(() => current('loading'), /readiness state/);
+  assert.doesNotThrow(() => current('loading'));
+  assert.strictEqual(h.warnings.length, 1);
+  assert.strictEqual(h.marks.filter(entry => entry.name === 'view:ready').length, 1);
   current('content');
   marks = h.marks.filter(entry => entry.name === 'view:ready');
   assert.strictEqual(marks.length, 2);

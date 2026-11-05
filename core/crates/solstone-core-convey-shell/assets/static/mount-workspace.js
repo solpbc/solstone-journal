@@ -11,7 +11,8 @@
     return function (state) {
       if (!mount || mount !== activeMount || mount.ready || mount.view !== view) return;
       if (!['content', 'empty', 'error'].includes(state)) {
-        throw new TypeError('Unknown view readiness state');
+        console.warn('Unknown view readiness state');
+        return;
       }
       mount.ready = true;
       performance.mark('view:ready', { detail: { view, state } });

@@ -8,7 +8,7 @@ pub struct EmbeddedAsset {
     pub bytes: &'static [u8],
 }
 
-/// Source bytes for a dashboard asset. Template hashes describe the source,
+/// Build-time metadata for a dashboard asset. Template hashes describe the source,
 /// before response-time substitutions. Routes continue to use their own handlers.
 pub struct AssetRecord {
     pub path: &'static str,
@@ -16,6 +16,7 @@ pub struct AssetRecord {
     pub byte_len: usize,
     pub sha256: &'static str,
     pub template: bool,
+    #[cfg(test)]
     pub bytes: &'static [u8],
 }
 

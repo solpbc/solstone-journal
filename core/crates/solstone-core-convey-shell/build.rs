@@ -308,7 +308,7 @@ fn main() {
             content_type(&path)
         };
         generated.push_str(&format!(
-            "    AssetRecord {{ path: {route:?}, content_type: {:?}, byte_len: {}, sha256: {hash:?}, template: {template}, bytes: include_bytes!({path:?}) }},\n",
+            "    AssetRecord {{ path: {route:?}, content_type: {:?}, byte_len: {}, sha256: {hash:?}, template: {template}, #[cfg(test)] bytes: include_bytes!({path:?}) }},\n",
             kind, bytes.len(),
         ));
     }
