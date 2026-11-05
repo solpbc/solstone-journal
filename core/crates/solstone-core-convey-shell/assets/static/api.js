@@ -197,9 +197,56 @@
     }
   }
 
+  // A phone app's in-app proxy answers 403 with this header when it refuses a
+  // request itself (for example a stale capability). That is never a sign-in
+  // failure, and the journal never sends it. The page reloads its current URL
+  // once, so the host app can re-establish access; a second refusal inside the
+  // window is left to the caller's error state instead of reloading again.
+  const LOOPBACK_REFUSED_HEADER = 'X-SPL-Loopback-Refused';
+  const LOOPBACK_RELOAD_STAMP_KEY = 'solstone.loopbackRefusedReloadAt';
+  const LOOPBACK_RELOAD_WINDOW_MS = 10000;
+
+  function isLoopbackRefusal(response) {
+    return response?.status === 403
+      && typeof response?.headers?.has === 'function'
+      && response.headers.has(LOOPBACK_REFUSED_HEADER);
+  }
+
+  function recoverFromLoopbackRefusal() {
+    const now = Date.now();
+    try {
+      const last = Number(window.sessionStorage.getItem(LOOPBACK_RELOAD_STAMP_KEY)) || 0;
+      if (last > 0 && now - last < LOOPBACK_RELOAD_WINDOW_MS) {
+        return false;
+      }
+      window.sessionStorage.setItem(LOOPBACK_RELOAD_STAMP_KEY, String(now));
+    } catch (_) {
+      // Without a stamp a reload could repeat forever; stay on the error state.
+      return false;
+    }
+    window.location.reload();
+    return true;
+  }
+
   async function apiJson(url, opts) {
     const { fetchOptions, noAuthRedirect } = normalizeRequestOptions(opts);
     const response = await fetch(url, fetchOptions);
+
+    if (isLoopbackRefusal(response)) {
+      const apiError = new ApiError({
+        status: response.status,
+        statusText: response.statusText,
+        serverMessage: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+        url: url,
+        cause: 'loopback_refused',
+        timestamp: Date.now()
+      });
+      pushApiErrorToConsole(apiError, url, fetchOptions);
+      if (!noAuthRedirect) {
+        recoverFromLoopbackRefusal();
+      }
+      throw apiError;
+    }
 
     if ((response.status === 401 || response.status === 403) && !noAuthRedirect) {
       const correlationId = response?.headers?.get('X-Solstone-Request-Id') || '';
@@ -336,5 +383,7 @@
 
   window.ApiError = ApiError;
   window.apiJson = apiJson;
+  window.isLoopbackRefusal = isLoopbackRefusal;
+  window.recoverFromLoopbackRefusal = recoverFromLoopbackRefusal;
   window.saveControl = saveControl;
 })();

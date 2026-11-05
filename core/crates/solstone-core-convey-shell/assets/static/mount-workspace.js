@@ -77,6 +77,9 @@
 
     try {
       const response = await fetch(url, { credentials: 'same-origin' });
+      if (window.isLoopbackRefusal?.(response)) {
+        window.recoverFromLoopbackRefusal?.();
+      }
       if (!response.ok) {
         const error = new Error(`Request failed (HTTP ${response.status})`);
         error.status = response.status;

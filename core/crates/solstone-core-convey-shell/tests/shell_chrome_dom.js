@@ -1632,6 +1632,88 @@ asyncCase('stream labels: concurrent misses share reads, and a joiner the read l
   assert.strictEqual(format.needsStreamLabel('z.tmux'), false);
 });
 
+function loopbackApi(responses, { storage = new Map(), storageThrows = false } = {}) {
+  const reloads = [];
+  const assigned = [];
+  const sessionStorage = {
+    getItem(key) {
+      if (storageThrows) throw new Error('storage blocked');
+      return storage.has(key) ? storage.get(key) : null;
+    },
+    setItem(key, value) {
+      if (storageThrows) throw new Error('storage blocked');
+      storage.set(key, String(value));
+    },
+  };
+  const location = {
+    href: '/app/home/',
+    reload: () => reloads.push(true),
+  };
+  Object.defineProperty(location, 'href', {
+    get: () => '/app/home/',
+    set: (value) => assigned.push(value),
+  });
+  const headersOf = (map) => ({
+    has: (name) => Object.keys(map).some((key) => key.toLowerCase() === name.toLowerCase()),
+    get: (name) => {
+      const key = Object.keys(map).find((k) => k.toLowerCase() === name.toLowerCase());
+      return key ? map[key] : null;
+    },
+  });
+  const context = {
+    window: { location, sessionStorage },
+    Date, Number, String, Object, Array, Map, WeakMap, Promise, JSON, Error, URL,
+    console: { log() {}, warn() {}, error() {} },
+    fetch: () => {
+      const next = responses.shift();
+      return Promise.resolve({
+        status: next.status,
+        statusText: '',
+        ok: next.status >= 200 && next.status < 300,
+        redirected: false,
+        url: '',
+        headers: headersOf(next.headers || {}),
+        text: () => Promise.resolve(next.body || ''),
+      });
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets/static/api.js'), 'utf8'), context, { filename: 'api.js' });
+  return { api: context.window, reloads, assigned, storage };
+}
+
+asyncCase('loopback refusal: reloads the current page once, never sends the owner to the root', async () => {
+  const refused = { status: 403, headers: { 'X-SPL-Loopback-Refused': 'capability' } };
+  const { api, reloads, assigned } = loopbackApi([refused, refused]);
+  await assert.rejects(api.apiJson('/app/home/api/pulse'), (error) => error.cause === 'loopback_refused');
+  assert.strictEqual(reloads.length, 1, 'first refusal reloads');
+  await assert.rejects(api.apiJson('/app/home/api/pulse'), (error) => error.cause === 'loopback_refused');
+  assert.strictEqual(reloads.length, 1, 'a second refusal inside the window does not reload again');
+  assert.deepStrictEqual(assigned, [], 'never navigates to the root');
+});
+
+asyncCase('loopback refusal: an unmarked 403 still takes the sign-in path', async () => {
+  const { api, reloads, assigned } = loopbackApi([{ status: 403 }]);
+  await assert.rejects(api.apiJson('/app/home/api/pulse'), (error) => error.status === 403 && error.cause !== 'loopback_refused');
+  assert.deepStrictEqual(assigned, ['/']);
+  assert.strictEqual(reloads.length, 0);
+});
+
+asyncCase('loopback refusal: without session storage it never reloads, so it cannot loop', async () => {
+  const refused = { status: 403, headers: { 'X-SPL-Loopback-Refused': 'capability' } };
+  const { api, reloads } = loopbackApi([refused], { storageThrows: true });
+  await assert.rejects(api.apiJson('/app/home/api/pulse'), (error) => error.cause === 'loopback_refused');
+  assert.strictEqual(reloads.length, 0);
+});
+
+asyncCase('loopback refusal: a stamp older than the window allows one more reload', async () => {
+  const refused = { status: 403, headers: { 'X-SPL-Loopback-Refused': 'capability' } };
+  const storage = new Map([['solstone.loopbackRefusedReloadAt', String(Date.now() - 60000)]]);
+  const { api, reloads } = loopbackApi([refused], { storage });
+  await assert.rejects(api.apiJson('/app/home/api/pulse'));
+  assert.strictEqual(reloads.length, 1);
+});
+
 async function runAsyncCases() {
   for (const runCase of asyncCases) {
     await runCase();
