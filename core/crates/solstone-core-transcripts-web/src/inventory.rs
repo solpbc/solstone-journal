@@ -231,7 +231,7 @@ impl Backoff {
     }
 
     pub(crate) fn can_retry(&self, now: DateTime<Utc>) -> bool {
-        self.next_retry.map_or(true, |retry| now >= retry)
+        self.next_retry.is_none_or(|retry| now >= retry)
     }
 }
 
@@ -305,13 +305,13 @@ fn get_or_create_inventory(
     let mut reg = INVENTORIES.lock().expect("inventories lock");
     let mut workers = WORKERS.lock().expect("workers lock");
 
-    if let Some(existing_worker) = workers.get(&identity) {
-        if existing_worker.canonical_path != canonical {
-            existing_worker.stop.store(true, Ordering::SeqCst);
-            existing_worker.cv.notify_all();
-            workers.remove(&identity);
-            reg.remove(&identity);
-        }
+    if let Some(existing_worker) = workers.get(&identity)
+        && existing_worker.canonical_path != canonical
+    {
+        existing_worker.stop.store(true, Ordering::SeqCst);
+        existing_worker.cv.notify_all();
+        workers.remove(&identity);
+        reg.remove(&identity);
     }
 
     let inv_arc = reg
@@ -319,7 +319,7 @@ fn get_or_create_inventory(
         .or_insert_with(|| Arc::new(Mutex::new(JournalInventory::new())))
         .clone();
 
-    if !workers.contains_key(&identity) {
+    if let std::collections::hash_map::Entry::Vacant(entry) = workers.entry(identity) {
         let worker = Arc::new(WorkerControl {
             canonical_path: canonical.to_path_buf(),
             request: Mutex::new(WorkerPassRequest {
@@ -330,7 +330,7 @@ fn get_or_create_inventory(
             stop: AtomicBool::new(false),
             clock: Mutex::new(Clock::system()),
         });
-        workers.insert(identity, worker.clone());
+        entry.insert(worker.clone());
 
         let root_c = root.clone();
         let inv_arc_c = inv_arc.clone();
@@ -674,13 +674,12 @@ fn read_marker_identity(
                 stat: stored_stat,
                 malformed,
             }) = stored_marker
+                && stored_stat == &stat
             {
-                if stored_stat == &stat {
-                    return MarkerIdentity::Present {
-                        stat,
-                        malformed: *malformed,
-                    };
-                }
+                return MarkerIdentity::Present {
+                    stat,
+                    malformed: *malformed,
+                };
             }
             let malformed = match fs::read_to_string(&path) {
                 Ok(content) => {
@@ -1048,25 +1047,15 @@ fn fold_single_day_exec(
         let new_row = match compute_outcome {
             Ok(count) => {
                 inv.pending_first_seen.remove(day);
-                if !is_live {
-                    if let Some(ref prev) = prev_row {
-                        if let DayFoldState::Computed(old_count) = prev.state {
-                            if old_count != count
-                                && prev.identity.marker().stat_only()
-                                    == identity_pre.marker().stat_only()
-                            {
-                                if let Ok(mut writer) = DailyLogWriter::new(
-                                    journal,
-                                    "calendar",
-                                    "inventory",
-                                    Some(day.to_string()),
-                                ) {
-                                    writer
-                                        .write(&format!("chronicle day {day}: missed producer\n"));
-                                }
-                            }
-                        }
-                    }
+                if !is_live
+                    && let Some(prev) = prev_row.as_ref()
+                    && let DayFoldState::Computed(old_count) = prev.state
+                    && old_count != count
+                    && prev.identity.marker().stat_only() == identity_pre.marker().stat_only()
+                    && let Ok(mut writer) =
+                        DailyLogWriter::new(journal, "calendar", "inventory", Some(day.to_string()))
+                {
+                    writer.write(&format!("chronicle day {day}: missed producer\n"));
                 }
 
                 match &prev_row {
@@ -1094,13 +1083,12 @@ fn fold_single_day_exec(
                 }
             }
             Err(err) => {
-                let in_failed_episode = prev_row.as_ref().map_or(false, |r| r.in_failed_episode);
-                if !in_failed_episode {
-                    if let Ok(mut writer) =
+                let in_failed_episode = prev_row.as_ref().is_some_and(|row| row.in_failed_episode);
+                if !in_failed_episode
+                    && let Ok(mut writer) =
                         DailyLogWriter::new(journal, "calendar", "inventory", Some(day.to_string()))
-                    {
-                        writer.write(&format!("chronicle day {day}: count failed\n"));
-                    }
+                {
+                    writer.write(&format!("chronicle day {day}: count failed\n"));
                 }
 
                 match &prev_row {
