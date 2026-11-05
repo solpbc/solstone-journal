@@ -342,18 +342,16 @@ fn get_or_create_inventory(
     inv_arc
 }
 
-/// Every listed day was folded in this pass.
-/// A failed row folded in this pass is settled: it stays reported in `failed`
-/// and retries on its own backoff, and it does not block the pass.
+/// Every listed day is settled for this pass.
+/// A Failed row is settled at any generation: it stays reported in `failed`
+/// and retries on its own backoff, so a pass can stamp while that day waits.
+/// A Computed row must have been folded in this pass.
 fn listed_days_refolded(inv: &JournalInventory, listed_days: &[String], req_gen: u64) -> bool {
     !listed_days.is_empty()
         && listed_days.iter().all(|day| {
-            inv.rows.get(day).is_some_and(|row| {
-                row.fold_generation >= req_gen
-                    && matches!(
-                        row.state,
-                        DayFoldState::Computed(_) | DayFoldState::Failed(_)
-                    )
+            inv.rows.get(day).is_some_and(|row| match row.state {
+                DayFoldState::Failed(_) => true,
+                DayFoldState::Computed(_) => row.fold_generation >= req_gen,
             })
         })
 }
@@ -1455,23 +1453,8 @@ fn read_inventory_inner(
         if listed_days_refolded(&inv, &listed_days, req_gen) {
             let finish_now = clock.now();
             inv.last_full_pass_finish = Some(finish_now);
-            inv.in_full_pass = false;
         }
-    } else if role == RequestRole::Index && !run_full_pass {
-        // A failed full pass leaves the claim set. Release it once every listed
-        // day has a stored count again, so the next hour can run.
-        let mut inv = inv_arc.lock().expect("inventory lock");
-        let settled = !listed_days.is_empty()
-            && inv.in_flight.is_empty()
-            && listed_days.iter().all(|day| {
-                matches!(
-                    inv.rows.get(day).map(|row| &row.state),
-                    Some(DayFoldState::Computed(_))
-                )
-            });
-        if inv.in_full_pass && settled {
-            inv.in_full_pass = false;
-        }
+        inv.in_full_pass = false;
     }
 
     // Build counts snapshot and freshness using stored day_identities (no extra stats)
@@ -1804,22 +1787,59 @@ pub(crate) mod test_support {
         map.remove(&identity);
     }
 
-    static WAITER_COUNTERS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<AtomicUsize>>>> =
+    static WAITER_COUNTERS: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<(Mutex<usize>, Condvar)>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
 
-    fn get_waiter_counter(identity: ObjectIdentity) -> Arc<AtomicUsize> {
+    fn get_waiter_counter(identity: ObjectIdentity) -> Arc<(Mutex<usize>, Condvar)> {
         let mut map = WAITER_COUNTERS.lock().unwrap();
-        map.entry(identity).or_default().clone()
+        map.entry(identity)
+            .or_insert_with(|| Arc::new((Mutex::new(0), Condvar::new())))
+            .clone()
     }
 
     pub(crate) fn inc_waiter_counter(identity: ObjectIdentity) {
-        get_waiter_counter(identity).fetch_add(1, Ordering::SeqCst);
+        let entry = get_waiter_counter(identity);
+        let (lock, cv) = &*entry;
+        let mut count = lock.lock().unwrap();
+        *count += 1;
+        cv.notify_all();
     }
     pub(crate) fn dec_waiter_counter(identity: ObjectIdentity) {
-        get_waiter_counter(identity).fetch_sub(1, Ordering::SeqCst);
+        let entry = get_waiter_counter(identity);
+        let (lock, cv) = &*entry;
+        let mut count = lock.lock().unwrap();
+        *count = count.saturating_sub(1);
+        cv.notify_all();
     }
     pub(crate) fn waiter_counter(identity: ObjectIdentity) -> usize {
-        get_waiter_counter(identity).load(Ordering::SeqCst)
+        let entry = get_waiter_counter(identity);
+        let (lock, _) = &*entry;
+        *lock.lock().unwrap()
+    }
+
+    pub(crate) fn wait_waiter_count(
+        identity: ObjectIdentity,
+        pred: impl Fn(usize) -> bool,
+        timeout: std::time::Duration,
+    ) -> usize {
+        let entry = get_waiter_counter(identity);
+        let (lock, cv) = &*entry;
+        let mut count = lock.lock().unwrap();
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if pred(*count) {
+                return *count;
+            }
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return *count;
+            }
+            let (guard, wait) = cv.wait_timeout(count, deadline - now).unwrap();
+            count = guard;
+            if wait.timed_out() && !pred(*count) {
+                return *count;
+            }
+        }
     }
 
     static WORKER_PASSES: LazyLock<Mutex<HashMap<ObjectIdentity, Arc<(Mutex<u64>, Condvar)>>>> =
@@ -2281,6 +2301,57 @@ mod tests {
         serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap()
     }
 
+    fn assert_next_read_sees_change(body: &Value, month: &str, stale: u64, fresh: u64) {
+        let complete = body["freshness"]["complete"] == true;
+        let shown = body["months"][month].as_u64().unwrap_or(0);
+        assert!(
+            !(complete && shown == stale),
+            "next read reported the pre-write count {stale} with complete:true"
+        );
+        if complete {
+            assert_eq!(shown, fresh);
+        }
+    }
+
+    fn full_pass_claimed(identity: ObjectIdentity) -> bool {
+        let reg = INVENTORIES.lock().expect("inventories lock");
+        reg.get(&identity)
+            .expect("inventory")
+            .lock()
+            .expect("inventory lock")
+            .in_full_pass
+    }
+
+    async fn assert_unbumped_then_hourly(
+        app: &axum::Router,
+        root: &Arc<JournalRoot>,
+        journal: &Path,
+        now_ref: &Arc<Mutex<DateTime<Utc>>>,
+        identity: ObjectIdentity,
+        month: &str,
+        day: &str,
+        old: u64,
+    ) -> u64 {
+        *now_ref.lock().unwrap() += chrono::Duration::minutes(30);
+        let hidden = index_month(app, root, month).await;
+        assert_eq!(
+            hidden, old,
+            "unbumped change on {day} stays hidden inside the hour"
+        );
+        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
+        test_support::clear_recorded_notifications(identity);
+        let body = index_body(app, root).await;
+        let walk = crate::calendar::counts_by_walk(journal, *now_ref.lock().unwrap()).unwrap();
+        let new = month_sum(&walk, month);
+        assert_ne!(old, new, "change on {day} must move the count");
+        assert_eq!(body["months"][month].as_u64(), Some(new));
+        assert_eq!(
+            test_support::recorded_notifications(identity),
+            vec![("day".to_string(), day.to_string())]
+        );
+        new
+    }
+
     #[tokio::test]
     async fn test_oracle_equivalence() {
         let (temp, root) = setup_fixture_journal();
@@ -2505,7 +2576,9 @@ mod tests {
         );
     }
 
-    // A mutant that reads the marker after compute would store the new stat with the old count and this assertion would fail.
+    // The write lands after compute. A mutant that reads identity after that
+    // stores the new marker with the old count, and the next read would report
+    // that count with complete:true.
     #[tokio::test]
     async fn test_barrier_hide_stale() {
         let (temp, root) = setup_fixture_journal();
@@ -2520,13 +2593,15 @@ mod tests {
 
         let target_day = "20260306";
         let target_path = temp.path().join("chronicle").join(target_day);
+        let stale_walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
+        let stale_sum = month_sum(&stale_walk, "202603");
         let (held_tx, held_rx) = std::sync::mpsc::channel();
         let held_tx = Arc::new(Mutex::new(Some(held_tx)));
         let fired = Arc::new(AtomicBool::new(false));
         let fired_c = fired.clone();
         let target_day_s = target_day.to_string();
 
-        test_support::install_barrier_after_identity_read(identity, move |day| {
+        test_support::install_barrier_after_compute(identity, move |day| {
             if day == target_day_s && !fired_c.swap(true, Ordering::SeqCst) {
                 if let Some(tx) = held_tx.lock().unwrap().take() {
                     let _ = tx.send(());
@@ -2550,7 +2625,7 @@ mod tests {
             )
             .unwrap();
             solstone_core_journal_io::bump_stream_marker(&temp_path, &target_day_c).unwrap();
-            test_support::release_identity_barrier(identity);
+            test_support::release_compute_barrier(identity);
         });
 
         let req = Request::get("/app/transcripts/api/index")
@@ -2563,17 +2638,13 @@ mod tests {
         let body: Value = serde_json::from_slice(&bytes).unwrap();
 
         assert_eq!(body["freshness"], json!({"complete": true}));
-        let walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
-        let expected_sum: u64 = walk
-            .iter()
-            .filter(|(d, _)| d.starts_with("202603"))
-            .map(|(_, c)| *c)
-            .sum();
-        assert_eq!(body["months"]["202603"], expected_sum);
+        assert_eq!(body["months"]["202603"], stale_sum);
 
+        let fresh_walk = crate::calendar::counts_by_walk(temp.path(), now).unwrap();
+        let fresh_sum = month_sum(&fresh_walk, "202603");
+        assert_ne!(fresh_sum, stale_sum);
         let next = index_body(&app, &root).await;
-        assert_eq!(next["freshness"]["complete"], true);
-        assert_eq!(next["months"]["202603"], expected_sum);
+        assert_next_read_sees_change(&next, "202603", stale_sum, fresh_sum);
     }
 
     #[tokio::test]
@@ -2610,7 +2681,7 @@ mod tests {
         let fired = Arc::new(AtomicBool::new(false));
         let fired_c = fired.clone();
         let today_s = today.to_string();
-        test_support::install_barrier_after_identity_read(identity, move |day| {
+        test_support::install_barrier_after_compute(identity, move |day| {
             if day == today_s && !fired_c.swap(true, Ordering::SeqCst) {
                 if let Some(tx) = held_tx.lock().unwrap().take() {
                     let _ = tx.send(());
@@ -2629,17 +2700,16 @@ mod tests {
             let raw = today_path.join("field/180000_60");
             fs::create_dir_all(&raw).unwrap();
             fs::write(raw.join("mic.flac"), b"raw today").unwrap();
-            test_support::release_identity_barrier(identity);
+            test_support::release_compute_barrier(identity);
         });
 
         let body = index_body(&app, &root).await;
+        assert_eq!(body["months"]["202608"], before);
         let walk = stats_free_walk(temp.path(), now);
         let expected = month_sum(&walk, "202608");
         assert_ne!(expected, before);
-        assert_eq!(body["months"]["202608"], expected);
         let next = index_body(&app, &root).await;
-        assert_eq!(next["months"]["202608"], expected);
-        assert_eq!(next["freshness"]["complete"], true);
+        assert_next_read_sees_change(&next, "202608", before, expected);
     }
 
     #[tokio::test]
@@ -2674,7 +2744,7 @@ mod tests {
         let fired = Arc::new(AtomicBool::new(false));
         let fired_c = fired.clone();
         let day_s = day.to_string();
-        test_support::install_barrier_after_identity_read(identity, move |day_name| {
+        test_support::install_barrier_after_compute(identity, move |day_name| {
             if day_name == day_s && !fired_c.swap(true, Ordering::SeqCst) {
                 if let Some(tx) = held_tx.lock().unwrap().take() {
                     let _ = tx.send(());
@@ -2685,22 +2755,25 @@ mod tests {
             }
         });
 
+        // The hour starts the fold. The browser write and the marker bump land
+        // after compute, so this read stores the pre-write count.
         *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
         let journal = temp.path().to_path_buf();
+        let day_c = day.to_string();
         std::thread::spawn(move || {
             held_rx.recv().unwrap();
             write_browser_segment(&journal, day, "235000_60");
-            test_support::release_identity_barrier(identity);
+            solstone_core_journal_io::bump_stream_marker(&journal, &day_c).unwrap();
+            test_support::release_compute_barrier(identity);
         });
 
         let body = index_body(&app, &root).await;
+        assert_eq!(body["months"]["202601"], before);
         let walk = stats_free_walk(temp.path(), *now_ref.lock().unwrap());
         let expected = month_sum(&walk, "202601");
         assert_ne!(expected, before);
-        assert_eq!(body["months"]["202601"], expected);
         let next = index_body(&app, &root).await;
-        assert_eq!(next["months"]["202601"], expected);
-        assert_eq!(next["freshness"]["complete"], true);
+        assert_next_read_sees_change(&next, "202601", before, expected);
     }
 
     // A mutant that treats a fold started before arrival as current would return the pre-bump count.
@@ -2946,109 +3019,73 @@ mod tests {
             Response::new(Body::empty())
         });
 
-        let resp1 = app
-            .clone()
-            .oneshot(
-                Request::get("/app/transcripts/api/index")
-                    .extension(root.clone())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let b1: Value =
-            serde_json::from_slice(&to_bytes(resp1.into_body(), usize::MAX).await.unwrap())
-                .unwrap();
-        let old_month_count = b1["months"]["202601"].as_u64().unwrap();
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["complete"], true);
+        let mut shown = seeded["months"]["202605"].as_u64().unwrap();
 
-        let target_day = "20260101";
-        let day_path = temp.path().join("chronicle").join(target_day);
-        let marker = health_marker_path(temp.path(), target_day, HealthMarkerKind::Stream);
-        let _ = fs::remove_file(&marker);
-
-        // Three edits on a day older than yesterday, no bump:
-        // 1. Remove an existing segment
-        let existing_seg = day_path.join("field/100000_60");
-        let _ = fs::remove_dir_all(&existing_seg);
-
-        // 2. Add a browser file in a segment dir
-        let browser_seg = day_path.join("workstation.browser/100000_60");
-        fs::create_dir_all(&browser_seg).unwrap();
-        fs::write(
-            browser_seg.join("stream.json"),
-            b"{\"stream\":\"workstation.browser\",\"seq\":1}\n",
+        // Three unbumped edits, one at a time, on segments that already exist.
+        // 094000_300 is the only audio in its quarter-hour. 091000_300 takes the
+        // browser file. 090000_300 is screen-only, so a raw adds an audio slot.
+        let day = "20260520";
+        let day_path = temp.path().join("chronicle").join(day);
+        let removed = day_path.join("default/094000_300");
+        assert!(
+            removed.join("audio.jsonl").is_file(),
+            "removal target must be a real segment"
+        );
+        fs::remove_dir_all(&removed).unwrap();
+        shown = assert_unbumped_then_hourly(
+            &app,
+            &root,
+            temp.path(),
+            &now_ref,
+            identity,
+            "202605",
+            day,
+            shown,
         )
-        .unwrap();
+        .await;
+
+        let browser_seg = day_path.join("default/091000_300");
+        assert!(
+            browser_seg.is_dir(),
+            "browser edit must use an existing segment"
+        );
         fs::write(
             browser_seg.join("browser_page.jsonl"),
-            b"{\"t\":\"segment_start\",\"ts\":1783006230000,\"rel\":30000,\"site\":\"example.com\",\"url\":\"https://example.com\",\"title\":\"Test\",\"adapter\":\"docs\",\"ctx\":\"doc\",\"n\":1,\"blocks\":[]}\n",
+            b"{\"t\":\"segment_start\",\"title\":\"Test\",\"text\":\"page\"}\n",
         )
         .unwrap();
+        shown = assert_unbumped_then_hourly(
+            &app,
+            &root,
+            temp.path(),
+            &now_ref,
+            identity,
+            "202605",
+            day,
+            shown,
+        )
+        .await;
 
-        // 3. Add a raw-only segment directory
-        let raw_seg = day_path.join("field/190000_60");
-        fs::create_dir_all(&raw_seg).unwrap();
+        let raw_seg = day_path.join("default/090000_300");
+        assert!(raw_seg.is_dir(), "raw edit must use an existing segment");
         fs::write(raw_seg.join("mic.flac"), b"raw audio bytes").unwrap();
+        shown = assert_unbumped_then_hourly(
+            &app,
+            &root,
+            temp.path(),
+            &now_ref,
+            identity,
+            "202605",
+            day,
+            shown,
+        )
+        .await;
 
-        // A read 30 minutes later keeps the old count
-        *now_ref.lock().unwrap() += chrono::Duration::minutes(30);
-        let resp2 = app
-            .clone()
-            .oneshot(
-                Request::get("/app/transcripts/api/index")
-                    .extension(root.clone())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let b2: Value =
-            serde_json::from_slice(&to_bytes(resp2.into_body(), usize::MAX).await.unwrap())
-                .unwrap();
-        assert_eq!(b2["months"]["202601"], old_month_count);
+        let kept = index_body(&app, &root).await;
+        assert_eq!(kept["months"]["202605"].as_u64(), Some(shown));
 
-        // Advance the injected clock to more than 3600 seconds past last full-pass finish and tick/read
-        *now_ref.lock().unwrap() += chrono::Duration::seconds(3700);
-        test_support::clear_recorded_notifications(identity);
-
-        let resp3 = app
-            .clone()
-            .oneshot(
-                Request::get("/app/transcripts/api/index")
-                    .extension(root.clone())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let b3: Value =
-            serde_json::from_slice(&to_bytes(resp3.into_body(), usize::MAX).await.unwrap())
-                .unwrap();
-        let walk = crate::calendar::counts_by_walk(temp.path(), *now_ref.lock().unwrap()).unwrap();
-        let expected_sum: u64 = walk
-            .iter()
-            .filter(|(d, _)| d.starts_with("202601"))
-            .map(|(_, c)| *c)
-            .sum();
-        assert_eq!(b3["months"]["202601"], expected_sum);
-
-        // The read after the hourly refold keeps the corrected count.
-        let resp_next = app
-            .clone()
-            .oneshot(
-                Request::get("/app/transcripts/api/index")
-                    .extension(root.clone())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let b_next: Value =
-            serde_json::from_slice(&to_bytes(resp_next.into_body(), usize::MAX).await.unwrap())
-                .unwrap();
-        assert_eq!(b_next["months"]["202601"], expected_sum);
-
-        // Writes one missed producer line per day
         let mut found_missed_producer = false;
         if let Ok(entries) = fs::read_dir(temp.path().join("chronicle")) {
             for day_entry in entries.flatten() {
@@ -3056,7 +3093,7 @@ mod tests {
                 if let Ok(h_entries) = fs::read_dir(health_dir) {
                     for h_file in h_entries.flatten() {
                         if let Ok(content) = fs::read_to_string(h_file.path()) {
-                            if content.contains("chronicle day 20260101: missed producer") {
+                            if content.contains("chronicle day 20260520: missed producer") {
                                 found_missed_producer = true;
                             }
                         }
@@ -3066,14 +3103,6 @@ mod tests {
         }
         assert!(found_missed_producer, "must write missed producer line");
 
-        // Records one day notification per day
-        let notifs = test_support::recorded_notifications(identity);
-        assert!(
-            notifs.contains(&("day".to_string(), "20260101".to_string())),
-            "must record day notification"
-        );
-
-        // restart_wipe records nothing and the following read keeps the corrected count
         test_support::clear_recorded_notifications(identity);
         restart_wipe(identity);
         assert!(
@@ -3081,20 +3110,8 @@ mod tests {
             "restart_wipe records nothing"
         );
 
-        let resp4 = app
-            .clone()
-            .oneshot(
-                Request::get("/app/transcripts/api/index")
-                    .extension(root.clone())
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let b4: Value =
-            serde_json::from_slice(&to_bytes(resp4.into_body(), usize::MAX).await.unwrap())
-                .unwrap();
-        assert_eq!(b4["months"]["202601"], expected_sum);
+        let after_wipe = index_body(&app, &root).await;
+        assert_eq!(after_wipe["months"]["202605"].as_u64(), Some(shown));
     }
 
     #[tokio::test]
@@ -4134,6 +4151,196 @@ mod tests {
         assert_eq!(next["freshness"]["failed"].as_u64(), Some(1));
     }
 
+    #[tokio::test]
+    async fn test_worker_full_pass_stamps_while_failed_day_in_backoff() {
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let failed_day = "20260201";
+        let good_day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(failed_day)
+                .join("field/100000_60"),
+            "failed",
+        );
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(good_day)
+                .join("field/100000_60"),
+            "good",
+        );
+        test_support::set_injected_compute_error(identity, failed_day, Some("injected"));
+        test_support::limit_inline_folds(identity, 1);
+
+        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now_ref = Arc::new(Mutex::new(t0));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+
+        let snap = test_support::snapshot_worker_passes(identity);
+        let _seeded = index_body(&app, &root).await;
+        test_support::wait_worker_passes_after(identity, snap);
+        let stamped = full_pass_finish(identity)
+            .expect("worker pass stamps while the newest day is in backoff");
+        assert_eq!(stamped, t0);
+        let passes = test_support::snapshot_worker_passes(identity);
+        assert_eq!(passes, snap + 1);
+        assert!(!full_pass_claimed(identity));
+
+        *now_ref.lock().unwrap() = t0 + chrono::Duration::minutes(10);
+        let _inside_hour = index_body(&app, &root).await;
+        assert_eq!(full_pass_finish(identity), Some(stamped));
+        assert_eq!(test_support::snapshot_worker_passes(identity), passes);
+        assert!(!full_pass_claimed(identity));
+
+        let new_day = "20260202";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(new_day)
+                .join("field/100000_60"),
+            "arrived",
+        );
+        test_support::clear_recorded_notifications(identity);
+        let _arrived = index_body(&app, &root).await;
+        assert_eq!(
+            test_support::recorded_notifications(identity),
+            vec![("day".to_string(), new_day.to_string())]
+        );
+        assert_eq!(full_pass_finish(identity), Some(stamped));
+        assert_eq!(test_support::snapshot_worker_passes(identity), passes);
+    }
+
+    #[tokio::test]
+    async fn test_skipped_refold_releases_full_pass_claim() {
+        let (temp, root) = setup_minimal_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let good_day = "20260102";
+        let failed_day = "20260101";
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(good_day)
+                .join("field/100000_60"),
+            "good",
+        );
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(failed_day)
+                .join("field/100000_60"),
+            "failed",
+        );
+        test_support::set_injected_compute_error(identity, failed_day, Some("injected"));
+
+        let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let now_ref = Arc::new(Mutex::new(t0));
+        let now_c = now_ref.clone();
+        let clock = Clock::new(move || *now_c.lock().unwrap());
+        let app = crate::router(temp.path().to_path_buf(), clock, || {
+            Response::new(Body::empty())
+        });
+
+        let seeded = index_body(&app, &root).await;
+        assert_eq!(seeded["freshness"]["failed"].as_u64(), Some(1));
+        let before = seeded["months"]["202601"].as_u64().unwrap();
+        let stamped = full_pass_finish(identity).expect("seed pass stamps");
+        assert_eq!(stamped, t0);
+
+        let at_hour = t0 + chrono::Duration::seconds(7200);
+        *now_ref.lock().unwrap() = at_hour;
+
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_c = fired.clone();
+        let good_day_s = good_day.to_string();
+        test_support::install_barrier_after_compute(identity, move |day| {
+            if day == good_day_s && !fired_c.swap(true, Ordering::SeqCst) {
+                let _ = held_tx.send(());
+                true
+            } else {
+                false
+            }
+        });
+
+        let fold_root = root.clone();
+        let fold_journal = temp.path().to_path_buf();
+        let fold_inv = get_or_create_inventory(&root, identity);
+        let fold_day = good_day.to_string();
+        let fold_thread = std::thread::spawn(move || {
+            assert!(
+                fold_single_day(
+                    &fold_root,
+                    &fold_journal,
+                    &fold_day,
+                    false,
+                    at_hour,
+                    next_generation(),
+                    &fold_inv,
+                    false,
+                )
+                .is_ok(),
+                "direct fold aborted"
+            );
+        });
+        held_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("direct fold did not park after compute");
+
+        let app_c = app.clone();
+        let root_c = root.clone();
+        let index_task = tokio::spawn(async move { index_body(&app_c, &root_c).await });
+        // This runtime is current-thread. Waiting here would stall the index read.
+        let identity_wait = identity;
+        let waiting = tokio::task::spawn_blocking(move || {
+            test_support::wait_waiter_count(
+                identity_wait,
+                |count| count >= 1,
+                Duration::from_secs(5),
+            )
+        })
+        .await
+        .unwrap();
+        assert!(
+            waiting >= 1,
+            "inline full pass did not wait on the in-flight day: {waiting}"
+        );
+        test_support::release_compute_barrier(identity);
+        fold_thread.join().unwrap();
+        let skipped = index_task.await.unwrap();
+
+        assert_eq!(skipped["months"]["202601"].as_u64(), Some(before));
+        assert_eq!(full_pass_finish(identity), Some(stamped));
+        assert!(
+            !full_pass_claimed(identity),
+            "skipped full pass must release the claim"
+        );
+
+        write_browser_segment(temp.path(), good_day, "235000_60");
+        *now_ref.lock().unwrap() = at_hour + chrono::Duration::seconds(3700);
+        let corrected = index_body(&app, &root).await;
+        let expected =
+            crate::calendar::day_range_count(temp.path(), good_day, *now_ref.lock().unwrap())
+                .unwrap();
+        assert_ne!(expected, before);
+        assert_eq!(corrected["months"]["202601"].as_u64(), Some(expected));
+        assert!(full_pass_finish(identity).unwrap() > stamped);
+    }
+
     #[test]
     fn test_two_waiters_one_further_fold() {
         let (temp, root) = setup_minimal_journal();
@@ -4217,34 +4424,22 @@ mod tests {
         let waiter_a = spawn_waiter();
         let waiter_b = spawn_waiter();
 
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while test_support::waiter_counter(identity) < 2 {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "waiters did not park: {}",
-                test_support::waiter_counter(identity)
-            );
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        let parked =
+            test_support::wait_waiter_count(identity, |count| count >= 2, Duration::from_secs(5));
+        assert!(parked >= 2, "waiters did not park: {parked}");
 
         write_browser_segment(temp.path(), day, "235000_60");
         solstone_core_journal_io::bump_stream_marker(temp.path(), day).unwrap();
         test_support::release_identity_barrier(identity);
 
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            let n = hooks.load(Ordering::SeqCst);
-            assert!(n <= 2, "more than one further fold started: {n}");
-            if n == 2 && test_support::waiter_counter(identity) == 1 {
-                break;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "second fold did not single-flight: hooks={n} waiters={}",
-                test_support::waiter_counter(identity)
-            );
-            std::thread::sleep(Duration::from_millis(5));
-        }
+        let second = parked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(second, 2, "more than one further fold started: {second}");
+        let waiting =
+            test_support::wait_waiter_count(identity, |count| count == 1, Duration::from_secs(5));
+        assert_eq!(
+            waiting, 1,
+            "second fold did not single-flight: hooks={second} waiters={waiting}"
+        );
 
         test_support::release_identity_barrier(identity);
         owner.join().unwrap();
