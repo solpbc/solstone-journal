@@ -73,8 +73,6 @@ pub(crate) struct BrowserAccess {
     journal_root: PathBuf,
     port: u16,
     open: AtomicBool,
-    /// This upgrade closed the port, and the owner hasn't seen that said yet.
-    notice_unread: AtomicBool,
     /// Closing is honoured only while the owner socket is serving.
     socket_live: AtomicBool,
     links: Mutex<HashMap<String, PendingLink>>,
@@ -107,15 +105,10 @@ impl Sessions {
 
 impl BrowserAccess {
     pub(crate) fn load(journal_root: &Path, port: u16) -> Arc<Self> {
-        #[cfg(windows)]
-        if WINDOWS_CLOSES_BY_DEFAULT {
-            close_at_upgrade(journal_root);
-        }
         Arc::new(Self {
             journal_root: journal_root.to_owned(),
             port,
             open: AtomicBool::new(saved_open(journal_root)),
-            notice_unread: AtomicBool::new(saved_notice_unread(journal_root)),
             socket_live: AtomicBool::new(false),
             links: Mutex::new(HashMap::new()),
             sessions: Mutex::new(Sessions::default()),
@@ -208,15 +201,10 @@ impl BrowserAccess {
             "closed_now": self.closed(),
             "message": (!self.socket_live()).then_some(UNAVAILABLE),
             "account_check": cfg!(windows),
-            "upgrade_notice": self.notice_unread.load(Ordering::SeqCst),
         })
     }
 }
 
-/// Whether a Windows journal with no saved choice closes. Windows admits by
-/// account, so closing costs its owner little. Off until the founder's date for
-/// closed defaults, 2026-11-11; turning it on is the whole change.
-const WINDOWS_CLOSES_BY_DEFAULT: bool = false;
 /// Whether the port can be closed. Without an owner socket, a Mac or Linux owner
 /// would have no way back in. On Windows the account check admits the owner over
 /// TCP, so a closed journal stays closed whether or not its pipe came up.
@@ -224,82 +212,15 @@ pub(crate) fn can_close(socket_up: bool) -> bool {
     socket_up || cfg!(windows)
 }
 
-/// With no choice saved. Elsewhere closing would turn away an owner's programs,
-/// so it stays theirs to do.
-const OPEN_WHEN_UNSET: bool = !(cfg!(windows) && WINDOWS_CLOSES_BY_DEFAULT);
-
-fn saved_entry(root: &Path) -> Option<Value> {
+/// A journal with no saved choice stays open: it predates new journals starting
+/// closed, and an upgrade doesn't change what its owner relies on. Setup writes
+/// the choice when it creates a journal.
+fn saved_open(root: &Path) -> bool {
     solstone_core_journal_config::read_journal_config(root)
         .ok()
-        .and_then(|read| read.config)?
-        .get(CONFIG_KEY)
-        .cloned()
-}
-
-fn saved_open(root: &Path) -> bool {
-    saved_entry(root)
-        .and_then(|entry| entry.get("open")?.as_bool())
-        .unwrap_or(OPEN_WHEN_UNSET)
-}
-
-fn saved_notice_unread(root: &Path) -> bool {
-    saved_entry(root)
-        .and_then(|entry| entry.get("notice_unread")?.as_bool())
-        .unwrap_or(false)
-}
-
-/// A journal set up before this release, with no choice saved, closes now and
-/// says so once. An owner's explicit choice is never touched, and a new journal
-/// has nothing to be told.
-#[cfg(windows)]
-fn close_at_upgrade(root: &Path) {
-    let Ok(read) = solstone_core_journal_config::read_journal_config(root) else {
-        return;
-    };
-    let Some(config) = read.config else {
-        return;
-    };
-    let finished_setup = config
-        .get("setup")
-        .and_then(|setup| setup.get("completed_at"))
-        .is_some_and(|completed| !completed.is_null());
-    if !finished_setup || config.get(CONFIG_KEY).is_some() {
-        return;
-    }
-    let result = solstone_core_journal_config_write::mutate_journal_config(
-        root,
-        Default::default(),
-        |config| {
-            config.insert(
-                CONFIG_KEY.into(),
-                json!({
-                    "open": false,
-                    "closed_at_upgrade": chrono::Utc::now().to_rfc3339(),
-                    "notice_unread": true,
-                }),
-            );
-            solstone_core_journal_config_write::JournalConfigMutation {
-                changed: true,
-                value: (),
-            }
-        },
-    );
-    if let Err(error) = result {
-        log::warn!("local access: {error}");
-    }
-}
-
-/// The owner has read the notice. Their choice stays exactly as it was.
-fn save_notice_seen(root: &Path) -> Result<(), String> {
-    solstone_core_journal_config_write::mutate_journal_config(root, Default::default(), |config| {
-        let changed = config
-            .get_mut(CONFIG_KEY)
-            .and_then(Value::as_object_mut)
-            .is_some_and(|entry| entry.remove("notice_unread").is_some());
-        solstone_core_journal_config_write::JournalConfigMutation { changed, value: () }
-    })
-    .map(|_| ())
-    .map_err(|error| error.to_string())
+        .and_then(|read| read.config)
+        .and_then(|config| config.get(CONFIG_KEY)?.get("open")?.as_bool())
+        .unwrap_or(true)
 }
 
 /// A same-origin path: one leading slash, nothing that names another host.
@@ -530,19 +451,6 @@ pub(crate) fn setting_routes(access: Arc<BrowserAccess>) -> Router {
 }
 
 async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) -> Response {
-    if body.get("notice_seen").and_then(Value::as_bool) == Some(true) {
-        let root = access.journal_root.clone();
-        let saved = tokio::task::spawn_blocking(move || save_notice_seen(&root)).await;
-        if !matches!(saved, Ok(Ok(()))) {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": SAVE_FAILED})),
-            )
-                .into_response();
-        }
-        access.notice_unread.store(false, Ordering::SeqCst);
-        return Json(access.snapshot()).into_response();
-    }
     let Some(open) = body.get("open").and_then(Value::as_bool) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -585,8 +493,6 @@ async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) ->
             .flatten()
     };
     access.open.store(open, Ordering::SeqCst);
-    // A choice replaces the saved entry, notice included.
-    access.notice_unread.store(false, Ordering::SeqCst);
     let mut response = Json(access.snapshot()).into_response();
     if let Some(session) = session {
         response
@@ -630,39 +536,10 @@ mod tests {
             journal_root: PathBuf::from("/nonexistent"),
             port: 5015,
             open: AtomicBool::new(open),
-            notice_unread: AtomicBool::new(false),
             socket_live: AtomicBool::new(socket_live),
             links: Mutex::new(HashMap::new()),
             sessions: Mutex::new(Sessions::default()),
         })
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn only_a_finished_journal_with_no_choice_closes_at_upgrade() {
-        let write = |config: Value| {
-            let root = tempfile::tempdir().unwrap();
-            std::fs::create_dir_all(root.path().join("config")).unwrap();
-            std::fs::write(root.path().join("config/journal.json"), config.to_string()).unwrap();
-            root
-        };
-        // Set up before this release, no choice saved: closes and says so once.
-        let existing = write(json!({"setup": {"completed_at": 1}}));
-        close_at_upgrade(existing.path());
-        assert!(!saved_open(existing.path()));
-        assert!(saved_notice_unread(existing.path()));
-        save_notice_seen(existing.path()).unwrap();
-        assert!(!saved_notice_unread(existing.path()));
-        assert!(!saved_open(existing.path()));
-        // The owner chose open: stays open, nothing to say.
-        let chose = write(json!({"setup": {"completed_at": 1}, "local_access": {"open": true}}));
-        close_at_upgrade(chose.path());
-        assert!(saved_open(chose.path()));
-        assert!(!saved_notice_unread(chose.path()));
-        // Still in its first run: nothing to say.
-        let new = write(json!({}));
-        close_at_upgrade(new.path());
-        assert!(!saved_notice_unread(new.path()));
     }
 
     fn app(access: Arc<BrowserAccess>) -> Router {

@@ -1788,7 +1788,7 @@ fn step_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             message: error.to_string(),
         })?;
     }
-    ensure_journal_config(&context.journal_path)
+    ensure_journal_config(&context.journal_path, !existing_journal)
         .map_err(|error| StepExecutionError::Unhandled { message: error })?;
     if existing_journal {
         cleanup_legacy_log_aliases(&context.journal_path).map_err(|error| {
@@ -2582,10 +2582,15 @@ fn run_skill_step(
     Ok(StepResult::new(name, StepStatus::Ok, paths, now))
 }
 
-fn ensure_journal_config(journal: &Path) -> Result<(), String> {
-    mutate_journal_config(journal, LockOptions::default(), |_config| {
+/// A journal this run creates starts with local access closed, written before
+/// its port first listens. One that already exists keeps what its owner has.
+fn ensure_journal_config(journal: &Path, created: bool) -> Result<(), String> {
+    mutate_journal_config(journal, LockOptions::default(), |config| {
+        if created {
+            config.insert("local_access".into(), json!({ "open": false }));
+        }
         JournalConfigMutation {
-            changed: false,
+            changed: created,
             value: (),
         }
     })
@@ -5467,6 +5472,60 @@ mod tests {
         assert_eq!(result.status, StepStatus::Ok);
         assert_eq!(fs::read_to_string(config_path(&home)).unwrap(), existing);
         assert!(get_journal_config_path(&resolved.journal_path).is_file());
+    }
+
+    #[test]
+    fn a_created_journal_starts_closed_and_an_existing_one_keeps_its_choice() {
+        let local_access = |resolved: &ResolvedSetup| {
+            read_journal_config(&resolved.journal_path)
+                .unwrap()
+                .config
+                .unwrap()
+                .get("local_access")
+                .cloned()
+        };
+        let run = |args, resolved, root, home| {
+            let mut runner = FakeRunner::new(Vec::new());
+            let mut prompt = Prompt(false);
+            step_journal(&mut context(
+                args,
+                resolved,
+                root,
+                home,
+                &mut runner,
+                &mut prompt,
+                None,
+            ))
+            .expect("journal step");
+        };
+
+        let (args, resolved, root, home) = fixture("journal-created-closed", &[]);
+        assert!(!non_empty_journal(&resolved.journal_path));
+        run(&args, &resolved, &root, &home);
+        assert_eq!(local_access(&resolved), Some(json!({ "open": false })));
+        // Setup again over the journal it made: still the owner's to change.
+        mutate_journal_config(&resolved.journal_path, LockOptions::default(), |config| {
+            config.insert("local_access".into(), json!({ "open": true }));
+            JournalConfigMutation {
+                changed: true,
+                value: (),
+            }
+        })
+        .unwrap();
+        run(&args, &resolved, &root, &home);
+        assert_eq!(local_access(&resolved), Some(json!({ "open": true })));
+
+        // Set up before this release, no choice saved: nothing changes.
+        let (args, resolved, root, home) =
+            fixture("journal-existing-open", &["--accept-existing-journal"]);
+        fs::create_dir_all(resolved.journal_path.join("config")).unwrap();
+        fs::write(
+            resolved.journal_path.join("config/journal.json"),
+            r#"{"setup":{"completed_at":1}}"#,
+        )
+        .unwrap();
+        run(&args, &resolved, &root, &home);
+        assert_eq!(local_access(&resolved), None);
     }
 
     #[cfg(unix)]

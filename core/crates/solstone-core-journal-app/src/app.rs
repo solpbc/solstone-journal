@@ -473,19 +473,12 @@ fn read_status() -> Result<Value, String> {
     } else {
         (false, None)
     };
-    let access_notice = answering && crate::convey::access_notice_unread();
-    Ok(status_value(&service, answering, version, access_notice))
+    Ok(status_value(&service, answering, version))
 }
 
-fn status_value(
-    service: &ServiceStatus,
-    answering: bool,
-    version: Option<String>,
-    access_notice: bool,
-) -> Value {
+fn status_value(service: &ServiceStatus, answering: bool, version: Option<String>) -> Value {
     json!({
         "service": service,
-        "access_notice": access_notice,
         "set_up": service.is_set_up(),
         "answering": answering,
         "runtime_version": version,
@@ -526,10 +519,6 @@ fn handle(context: &Context, window: &Window, message: &str) {
             })),
         ),
         "status" => context.spawn(id, read_status),
-        "dismiss-access-notice" => context.spawn(id, || {
-            crate::convey::dismiss_access_notice()?;
-            read_status()
-        }),
         "ping" => {
             let port = args
                 .get("port")

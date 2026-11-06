@@ -89,56 +89,6 @@ pub fn mint_link(_path: &str) -> Option<String> {
     None
 }
 
-const LOCAL_ACCESS_ROUTE: &str = "/app/settings/api/local-access";
-
-/// Whether this upgrade closed local access and the owner hasn't been told.
-#[cfg(windows)]
-pub fn access_notice_unread() -> bool {
-    use solstone_core_local_endpoint as endpoint;
-    let Ok(Some(pipe)) = endpoint::socket_path() else {
-        return false;
-    };
-    endpoint::pipe_request(&pipe, "GET", LOCAL_ACCESS_ROUTE, None, ANSWER_BOUND)
-        .ok()
-        .filter(|response| response.status == 200)
-        .and_then(|response| serde_json::from_slice::<Value>(&response.body).ok())
-        .and_then(|state| state.get("upgrade_notice")?.as_bool())
-        .unwrap_or(false)
-}
-
-#[cfg(not(windows))]
-pub fn access_notice_unread() -> bool {
-    false
-}
-
-/// The owner has read it.
-#[cfg(windows)]
-pub fn dismiss_access_notice() -> Result<(), String> {
-    use solstone_core_local_endpoint as endpoint;
-    let pipe = endpoint::socket_path()
-        .ok()
-        .flatten()
-        .ok_or_else(|| "the journal isn't answering".to_owned())?;
-    let response = endpoint::pipe_request(
-        &pipe,
-        "PUT",
-        LOCAL_ACCESS_ROUTE,
-        Some(br#"{"notice_seen":true}"#),
-        ANSWER_BOUND,
-    )
-    .map_err(|_| "the journal isn't answering".to_owned())?;
-    if response.status == 200 {
-        Ok(())
-    } else {
-        Err("that couldn't be saved. please try again.".to_owned())
-    }
-}
-
-#[cfg(not(windows))]
-pub fn dismiss_access_notice() -> Result<(), String> {
-    Ok(())
-}
-
 pub struct Convey {
     base: String,
     agent: Agent,

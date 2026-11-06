@@ -6626,7 +6626,7 @@ function renderLocalAccess(state) {
     document.getElementById('localAccessDesc').textContent = 'whether other accounts and programs on this computer can open your journal.';
   }
   document.getElementById('localAccessState').textContent = state.open
-    ? `open: anyone using this computer, and any program running on it, can open your journal at ${window.location.host}. this is how your journal has always worked.`
+    ? `open: anyone using this computer, and any program running on it, can open your journal at ${window.location.host}.`
     : state.account_check
       ? 'closed: only your account on this computer can open your journal. other accounts see a page that shows nothing from it. programs running as a service, as another account or inside WSL can\'t reach it. agents you\'ve connected and devices you\'ve paired keep their own access. an administrator on this computer can still reach your journal\'s folder.'
       : 'closed: to open your journal in a browser, use a one-time link from the journal app on a mac or from solstone journal open. other accounts on this computer see a page that shows nothing from your journal.';
@@ -6635,10 +6635,12 @@ function renderLocalAccess(state) {
 async function showCloseLocalAccess() {
   const detail = document.getElementById('localAccessConfirmDetail');
   detail.replaceChildren();
+  const paired = document.createElement('p');
+  paired.textContent = 'devices already paired and agents already connected keep their access, so look over your devices and your agents in case another account added one.';
   if (localAccess && localAccess.account_check) {
     const stays = document.createElement('p');
     stays.textContent = 'your browser, your programs and the agents you\'ve connected keep working. programs running as a service, as another account or inside WSL won\'t reach your journal.';
-    detail.appendChild(stays);
+    detail.append(stays, paired);
     showLocalAccessConfirm('close local access to this computer?', 'close local access', 'keep it open', false);
     return;
   }
@@ -6661,7 +6663,7 @@ async function showCloseLocalAccess() {
   }
   const bookmarks = document.createElement('p');
   bookmarks.textContent = `a bookmark to ${window.location.host} shows a page asking you to open your journal from the journal app or with solstone journal open. this browser keeps access until your journal restarts; any other browser needs a new one-time link.`;
-  detail.appendChild(bookmarks);
+  detail.append(bookmarks, paired);
   showLocalAccessConfirm('close local access to this computer?', 'close local access', 'keep it open', false);
 }
 

@@ -345,6 +345,27 @@ assert gpu == [expected], (expected, gpu)
 "
             '
         fi
+        log "local-thinking-install: a new journal starts closed, and its link opens it"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+            set -euo pipefail
+            port=$(cat "$HOME/journal/health/convey.port")
+            origin="http://127.0.0.1:${port}"
+            test "$(curl --silent --output /dev/null --write-out "%{http_code}" "$origin/init/api/state")" = 409
+            link=$(solstone journal open /init --print-url)
+            jar=$(mktemp)
+            curl --fail-with-body --silent --show-error --location --cookie-jar "$jar" --cookie "$jar" \
+                --output /dev/null "$link"
+            state=$(curl --fail-with-body --silent --show-error --cookie "$jar" \
+                "$origin/app/settings/api/local-access")
+            printf "%s" "$state" | grep -q "\"closed_now\":true"
+            # The rest of this test drives setup as a program, so open local
+            # access the way an owner who wants that does.
+            curl --fail-with-body --silent --show-error --cookie "$jar" \
+                -X PUT -H "Content-Type: application/json" -H "Origin: $origin" \
+                -d "{\"open\":true,\"consent\":true}" \
+                "$origin/app/settings/api/local-access" >/dev/null
+            rm -f "$jar"
+        '
         log "local-thinking-install: complete loopback onboarding ceremony"
         docker exec -e LOCAL_THINKING_EXPECT="$LOCAL_THINKING_EXPECT" -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail

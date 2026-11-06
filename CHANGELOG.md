@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on windows, you can close local access in your journal's settings, so only your account on this computer can open your journal. other accounts get a page that shows nothing from it, and your browser keeps working.
+- on windows, you can close local access in your journal's settings, so other accounts on your computer get a page that shows nothing from it. your browser keeps working.
 - on windows, one journal runs on a computer at a time, and the journal app says so when another account's journal is running, instead of showing that journal as yours.
 - on windows, a journal folder other accounts can read is made private to your account and this computer's administrators when your journal starts. a folder that's already private is left alone.
 - `solstone journal open` now opens your journal on windows with a one-time link, and `--print-url` prints it.
@@ -19,6 +19,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- a new journal now starts with local access closed, on mac, linux and windows, so other accounts on your computer get a page that shows nothing from it. a journal you already have stays as it is, and you can change this either way in your journal's settings.
+- on mac and linux, a closed journal opens in your browser with a one-time link, from the journal app on a mac or with `solstone journal open` on linux, and a script or program that uses `localhost:5015` gets refused until it's updated or you open local access.
+- on windows, a closed journal opens directly for your windows account, with no link, and programs running under your windows account keep working. one running as a service or inside WSL gets refused until you open local access.
+- if you close local access on a journal you already have, devices already paired and agents already connected keep their access, so look over your devices and your agents in case another account added one.
 - the empty "your · journal" mark, on the network page and in the journal app on windows, is now easy to see on any background.
 
 ### Fixed

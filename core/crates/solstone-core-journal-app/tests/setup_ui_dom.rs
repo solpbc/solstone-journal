@@ -22,7 +22,6 @@ fn setup_ui_dom_contract() {
         Some("--dark"),
         Some("--dark-resume"),
         Some("--other-account"),
-        Some("--access-notice"),
     ] {
         let mut command = Command::new("node");
         command.arg(format!(
