@@ -2124,9 +2124,12 @@ fn fetch_body_face(
     record: &Map<String, Value>,
 ) -> Result<Prepared, DispatchError> {
     let face = body_face_for(journal_root, snapshot, act_ref, record)?;
-    let item = solstone_core_location::body_records::face_json(&face);
-    let text = serde_json::to_string_pretty(&item)
-        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+    // A source app names itself, so every value is a third party's text: served
+    // literal, as a capture record is.
+    let Value::Object(item) = solstone_core_location::body_records::face_json(&face) else {
+        return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
+    };
+    let text = literal_record_text(item)?;
     let mut value = json!({
         "title": entry_title(&face.anchor.day),
         "date": face.anchor.day,

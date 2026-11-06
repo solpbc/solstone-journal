@@ -12786,6 +12786,11 @@ fn get_activity_sources_poisoned_sibling_fails_closed_without_leaking() {
 /// An alpha-filed Apple workout window on 20260308 and its body record, beside
 /// a capture activity in beta.
 fn body_record_journal(with_body: bool) -> tempfile::TempDir {
+    body_record_journal_by(with_body, "Synthetic Watch")
+}
+
+/// [`body_record_journal`], its workout recorded by `by`.
+fn body_record_journal_by(with_body: bool, by: &str) -> tempfile::TempDir {
     use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
     let journal = base_activity_journal();
     let root = journal.path();
@@ -12823,7 +12828,7 @@ fn body_record_journal(with_body: bool) -> tempfile::TempDir {
     row.experience = Some("workout".to_owned());
     row.start = Some("2026-03-08 07:00:00 -0400".to_owned());
     row.end = Some("2026-03-08 07:40:00 -0400".to_owned());
-    row.by = Some("Synthetic Watch".to_owned());
+    row.by = Some(by.to_owned());
     let window = root.join("chronicle/20260308/import.apple_health/070000_3600");
     fs::create_dir_all(window.join("talents")).unwrap();
     fs::write(
@@ -12963,7 +12968,7 @@ fn fetch_on_a_body_reference_serves_its_composed_face_and_nothing_raw() {
     let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
     let text = fetched["text"].as_str().unwrap();
     assert!(
-        text.contains("Synthetic Watch") && text.contains("\"state\": \"live\""),
+        text.contains("Synthetic Watch") && text.contains("\"state\":\"live\""),
         "{fetched}"
     );
     // The record's own bytes are never served: its key and recorder stay home.
@@ -13288,4 +13293,63 @@ fn a_long_range_pages_the_same_whatever_the_page_size_across_stretches_of_days()
         ],
         "{whole:?}"
     );
+}
+
+/// Every `by` a reader's output names, wherever it sits.
+fn every_by(value: &Value, found: &mut Vec<String>) {
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object {
+                match (key.as_str(), value) {
+                    ("by", Value::String(by)) => found.push(by.clone()),
+                    _ => every_by(value, found),
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| every_by(item, found)),
+        _ => {}
+    }
+}
+
+#[test]
+fn a_source_apps_name_reaches_every_reader_literal() {
+    let raw = "![x](https://evil.test/p.png)";
+    let journal = body_record_journal_by(true, raw);
+    let listed = probe(
+        &journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap();
+    let reference = listed["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["source"] == "body")
+        .unwrap()["reference"]
+        .clone();
+    let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
+    let sources = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": reference}),
+    )
+    .unwrap();
+    let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+    // fetch serves the face as JSON text; read what it says.
+    let fetched_face = serde_json::from_str::<Value>(fetched["text"].as_str().unwrap()).unwrap();
+    let literal = solstone_core_format::markdown::literal_markup(raw);
+    assert_ne!(literal, raw);
+    for (reader, output, shown) in [
+        ("list_activities", &listed, &listed),
+        ("fetch", &fetched, &fetched_face),
+        ("get_activity_sources", &sources, &sources),
+        ("get_week", &week, &week),
+    ] {
+        assert!(!output.to_string().contains(raw), "{reader}: {output}");
+        let mut found = Vec::new();
+        every_by(shown, &mut found);
+        assert!(!found.is_empty(), "{reader}: {output}");
+        assert!(found.iter().all(|by| by == &literal), "{reader}: {found:?}");
+    }
 }
