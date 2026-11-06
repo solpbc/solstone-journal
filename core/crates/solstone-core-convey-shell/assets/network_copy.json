@@ -6,6 +6,7 @@
   "PAIR_TYPE_TERMINAL": "a terminal",
   "PHONE_STEP_1": "open the solstone app on your phone and scan this code",
   "PHONE_STEP_2": "or point your phone's camera at it and tap the link",
+  "THIS_COMPUTER_APP_FINDS": "if the solstone app on this computer isn't paired yet, it can find your journal by itself: open it and choose \"connect to your journal\". to use a link instead:",
   "THIS_COMPUTER_STEP_1": "copy the pairing link below and open it in your browser on this computer",
   "COMPUTER_STEP_1": "send the pairing link below to that computer and open it there",
   "COMPUTER_STEP_2": "choose \"open in the solstone app\", or paste the link into the solstone app where it asks for one",

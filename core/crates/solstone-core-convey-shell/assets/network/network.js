@@ -498,6 +498,8 @@
       ceremony.sameMachine = active;
       const typeChooser = dialog.querySelector('.link-pairing-type');
       if (typeChooser) typeChooser.hidden = active;
+      const appFinds = dialog.querySelector('[data-copy="THIS_COMPUTER_APP_FINDS"]');
+      if (appFinds) appFinds.hidden = !active;
       const thisComputerStep = dialog.querySelector('[data-copy="THIS_COMPUTER_STEP_1"]');
       if (thisComputerStep) thisComputerStep.hidden = !active;
       const computerStep = dialog.querySelector('[data-copy="COMPUTER_STEP_1"]');

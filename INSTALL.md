@@ -156,7 +156,7 @@ windows 10 (22H2) or 11 on an Intel or AMD (x64) computer, or windows 11 on an a
 
 For command-line diagnostics after that, open a new terminal window so it picks up the `solstone` command the installer added. If you need to select an existing journal, use the location guidance below.
 
-The journal starts closed to devices on your network, so windows doesn't ask about the network when the journal first starts. To continue in the solstone app on this computer, use the journal window. You can still pair from the journal's network page: choose "pair a device", then "pair the solstone app on this computer". Your journal stays closed. To pair a phone or another computer over your own network, choose "open to devices on your network" on that page, or run `solstone call link local-network open`. windows may then ask whether **journal**, from sol pbc, can use public and private networks, and on a standard account an administrator has to allow it. If windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking **journal**: an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.
+The journal starts closed to devices on your network, so windows doesn't ask about the network when the journal first starts. To continue in the solstone app on this computer, use the journal window. If the app is installed later, its connect step and settings find your journal, and one press connects. You can still pair from the journal's network page: choose "pair a device", then "pair the solstone app on this computer". Your journal stays closed. To pair a phone or another computer over your own network, choose "open to devices on your network" on that page, or run `solstone call link local-network open`. windows may then ask whether **journal**, from sol pbc, can use public and private networks, and on a standard account an administrator has to allow it. If windows didn't ask and a device still can't reach your journal, an earlier choice in windows may be blocking **journal**: an administrator can allow it in Windows Security, under Firewall & network protection › Allow an app through firewall.
 
 ### If something doesn't work on windows
 
@@ -223,7 +223,7 @@ Your journal works alongside the solstone app: the app takes in what you share w
 
 **mac:** download the signed app bundle from https://solstone.app/download and drag it to Applications. On first launch it finds the journal running on this machine; click **connect your journal** to pair.
 
-**linux:** Follow `solstone-linux`'s own INSTALL guide. Installing the service and pairing it are two separate steps. `install-service` writes and starts the unit, and pairing reads a pair link you create in the journal.
+**linux:** Follow `solstone-linux`'s own INSTALL guide. On the computer where your journal runs, the window's `journal` tab finds it, and one press connects. For a journal on another computer, paste a pairing link from that journal, and confirm its mark. From a terminal, installing the service and pairing it are two separate steps: `install-service` writes and starts the unit, and pairing reads a pair link.
 
 **tmux terminal sessions:** follow `solstone-tmux`'s own INSTALL guide, which also carries the steps for retiring a previous Python installation.
 

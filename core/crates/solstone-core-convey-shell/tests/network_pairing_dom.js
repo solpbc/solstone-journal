@@ -11,7 +11,7 @@ let cases = 0;
 const REQUIRED_COPY_KEYS = [
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'DEVICE_PAIR_CTA', 'MODAL_TITLE', 'PAIR_TYPE_PROMPT',
   'PAIR_TYPE_PHONE', 'PAIR_TYPE_COMPUTER', 'PAIR_TYPE_TERMINAL', 'PHONE_STEP_1', 'PHONE_STEP_2',
-  'THIS_COMPUTER_STEP_1', 'COMPUTER_STEP_1', 'COMPUTER_STEP_2', 'COMPUTER_LINUX_NOTE', 'TERMINAL_STEP_1', 'TERMINAL_STEP_2',
+  'THIS_COMPUTER_APP_FINDS', 'THIS_COMPUTER_STEP_1', 'COMPUTER_STEP_1', 'COMPUTER_STEP_2', 'COMPUTER_LINUX_NOTE', 'TERMINAL_STEP_1', 'TERMINAL_STEP_2',
   'PAIR_NETWORK_LINE', 'PAIR_RELAY_LINE', 'DETAILS_DISCLOSURE', 'CA_FP_LABEL', 'CA_FP_NOTE',
   'PAIR_LINK_FIELD_LABEL', 'PAIR_LINK_COPY_LABEL', 'CHECK_PAIRING_CTA', 'PAIR_START_FAIL_BODY',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'CHECK_AGAIN_LABEL',
@@ -366,6 +366,9 @@ function createEnvironment(manifestDir, options = {}) {
   typeChooser.append(...typeButtons);
   const typeBlocks = ['phone', 'computer', 'terminal'].map((type) => make(`link-pairing-for-${type}`));
   typeBlocks[0].appendChild(qr);
+  const thisComputerAppFinds = make('link-pairing-this-computer-app-finds', 'p');
+  thisComputerAppFinds.setAttribute('data-copy', 'THIS_COMPUTER_APP_FINDS');
+  thisComputerAppFinds.hidden = true;
   const computerSteps = make('link-pairing-computer-steps', 'ol');
   computerSteps.classList.add('link-pairing-steps');
   const thisComputerStep1 = make('link-pairing-this-computer-step-1', 'li');
@@ -381,7 +384,7 @@ function createEnvironment(manifestDir, options = {}) {
   const linuxSetup = make('link-pairing-computer-linux', 'div');
   linuxSetup.classList.add('link-pairing-linux');
   linuxSetup.appendChild(linuxNote);
-  typeBlocks[1].append(computerSteps, linuxSetup);
+  typeBlocks[1].append(thisComputerAppFinds, computerSteps, linuxSetup);
   const copyButton = make('link-pairing-copy', 'button');
   copyButton.dataset.pairingAction = 'copy';
   const check = make('link-pairing-check', 'button');
@@ -1497,6 +1500,7 @@ async function main() {
     assert.ok(typeChooser && typeChooser.hidden === true);
     const visibleSteps = env.nodes.get('link-pairing-for-computer').querySelectorAll('li').filter((li) => !li.hidden);
     assert.strictEqual(visibleSteps[0]?.getAttribute('data-copy'), 'THIS_COMPUTER_STEP_1');
+    assert.strictEqual(env.nodes.get('link-pairing-this-computer-app-finds').hidden, false);
     assert.ok(env.nodes.get('link-pairing-for-computer').querySelectorAll('li').some((li) => li.getAttribute('data-copy') === 'COMPUTER_STEP_2'));
     assert.ok(env.nodes.get('link-pairing-for-computer').querySelector('[data-copy="COMPUTER_LINUX_NOTE"]') !== null);
     assert.strictEqual(env.nodes.get('link-pairing-computer-linux').hidden, false);
