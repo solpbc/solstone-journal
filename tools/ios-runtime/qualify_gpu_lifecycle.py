@@ -22,6 +22,24 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def install_app(device, app, output):
+    report = output / "install.json"
+    with (output / "install.log").open("wb") as log:
+        subprocess.run(["xcrun", "devicectl", "device", "install", "app", "--device", device,
+                        "--json-output", str(report), str(app)],
+                       stdout=log, stderr=subprocess.STDOUT, check=True)
+    installed = json.loads(report.read_text()).get("result", {}).get("installedApplications", [])
+    if BUNDLE not in [row.get("bundleID") for row in installed]:
+        raise ValueError("installation did not confirm the built app identity")
+
+
+def app_exited_zero(report):
+    termination = json.loads(report.read_text()).get("result", {}).get("terminationResult", {})
+    if "exitCode" not in termination:
+        raise ValueError("devicectl launch report has no terminationResult.exitCode: its schema or this tool, not the app")
+    return termination["exitCode"] == 0
+
+
 def source_inputs(work):
     paths = set()
     for command in (["git", "ls-files", "-z"], ["git", "ls-files", "--others", "--exclude-standard", "-z"]):
@@ -74,22 +92,17 @@ def qualify(commit, work, build, fixture, device, output):
             if path.is_file():
                 files.append({"path": str(path.relative_to(app)), "bytes": path.stat().st_size, "sha256": sha(path)})
         result["app"] = files
-        with (output / "install.log").open("wb") as log:
-            subprocess.run(["xcrun", "devicectl", "device", "install", "app", "--device", device, str(app)],
-                           stdout=log, stderr=subprocess.STDOUT, check=True)
-        installed = (output / "install.log").read_text(errors="replace")
-        if f"bundleID: {BUNDLE}" not in installed:
-            raise ValueError("installation did not confirm the built app identity")
+        install_app(device, app, output)
         subprocess.run([
             "xcrun", "devicectl", "device", "copy", "to", "--device", device,
             "--domain-type", "appDataContainer", "--domain-identifier", BUNDLE,
             "--source", str(work / "verifier-fixture.json"), "--destination", "Documents/verifier-fixture.json",
         ], check=True)
-        console = output / "phone.log"
+        console, launch = output / "phone.log", output / "launch.json"
         with console.open("wb") as log:
             run = subprocess.run([
                 "xcrun", "devicectl", "device", "process", "launch", "--device", device,
-                "--console", "--terminate-existing", BUNDLE, "--verifier-lifecycle",
+                "--console", "--terminate-existing", "--json-output", str(launch), BUNDLE, "--verifier-lifecycle",
             ], stdout=log, stderr=subprocess.STDOUT, timeout=180)
         result["launcher_exit"] = run.returncode
         text = console.read_text(errors="replace")
@@ -103,7 +116,7 @@ def qualify(commit, work, build, fixture, device, output):
         cases = [row for row in rows if row.get("event") == "verifier.lifecycle"]
         final = [row for row in rows if row.get("event") == "verifier.lifecycle.finished"]
         result["cases"] = cases
-        if run.returncode or "The app terminated with the exit code 0." not in text:
+        if run.returncode or not app_exited_zero(launch):
             raise ValueError("physical app did not exit successfully")
         if len(final) != 1 or final[0].get("value", {}).get("passed") is not True:
             raise ValueError("physical qualification did not complete")

@@ -74,6 +74,7 @@ check: check-owner-fixture check-owner-recovery
 	cargo test --locked --manifest-path appraisal-helper/Cargo.toml
 	python3 test_gpu_appraisal_receipt.py
 	python3 test_serving_receipts.py
+	python3 test_gpu_lifecycle_reports.py
 	python3 ../mobile-audio/test_prepare.py
 	python3 ../../scripts/test_mobile_pdfium.py
 	python3 ../../scripts/test_mobile_media.py
