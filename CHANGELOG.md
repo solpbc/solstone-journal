@@ -43,6 +43,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 
+## [2.0.70] - 2026-11-06
+
+### Fixed
+
+- on a mac, the solstone app works with this journal release. it didn't with 2.0.69, which is why the journal app skipped that version.
+
 ## [2.0.69] - 2026-11-06
 
 ### Added
