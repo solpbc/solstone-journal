@@ -955,9 +955,12 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         } => original_filename.as_str(),
         Incoming::Paste { .. } => "paste.txt",
     };
+    // A photo is dated by what it holds, and its name is only a label. A date in the name
+    // that disagreed would cancel both and put the photo on the day it was imported.
+    let is_photo = text_value(&data, "imported_via") == "mobile_photos";
     let (semantic, method, no_match_reason) = timestamp_for_upload(
         &source_path,
-        original_for_timestamp,
+        if is_photo { "" } else { original_for_timestamp },
         solstone_core_journal_config::owner_zone(&state.root),
     );
     let import_id = match claim_import_directory(&state.root, &semantic) {
@@ -1022,6 +1025,10 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     });
     metadata.insert("import_id".to_owned(), json!(import_id));
     metadata.insert("source_timestamp".to_owned(), json!(semantic));
+    if is_photo {
+        // Starting reads the staged file, which carries the name, so the date is settled here.
+        metadata.insert("owner_timestamp".to_owned(), json!(semantic));
+    }
     metadata.insert("file_size".to_owned(), json!(file_size));
     metadata.insert(
         "timestamp_detection_no_match_reason".to_owned(),
@@ -3959,6 +3966,62 @@ mod tests {
         body.extend_from_slice(bytes);
         write!(&mut body, "\r\n--{boundary}--\r\n").unwrap();
         (boundary.to_owned(), body)
+    }
+
+    #[tokio::test]
+    async fn a_photo_keeps_its_own_date_whatever_its_name_says() {
+        let root = TempDir::new().unwrap();
+        let save = |via: &'static str, item: &'static str, exif: &'static str| {
+            let root = root.path().to_path_buf();
+            async move {
+                let (boundary, upload) = multipart_upload_bytes(
+                    item,
+                    "20190304_120000.jpg",
+                    "image/jpeg",
+                    &make_test_jpeg_app1(exif, exif),
+                );
+                let mut body = Vec::new();
+                write!(
+                    &mut body,
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"imported_via\"\r\n\r\n{via}\r\n"
+                )
+                .unwrap();
+                body.extend_from_slice(&upload);
+                let request = Request::post("/app/import/api/save")
+                    .header(
+                        "content-type",
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap();
+                let (status, saved) =
+                    response_json(crate::routes(root).oneshot(request).await.unwrap()).await;
+                assert_eq!(status, StatusCode::OK, "{saved}");
+                saved
+            }
+        };
+
+        let photo = save("mobile_photos", "photo", "2026:05:10 14:30:00").await;
+        let id = photo["timestamp"].as_str().unwrap();
+        let stored = read_import_metadata(root.path(), id).unwrap();
+        assert_eq!(stored["source_timestamp"], "20260510_143000");
+        assert_eq!(stored["owner_timestamp"], "20260510_143000");
+        assert_eq!(stored["original_filename"], "20190304_120000.jpg");
+        assert_eq!(stored["source"], "image");
+        assert!(
+            root.path()
+                .join("imports")
+                .join(id)
+                .join("20190304_120000.jpg")
+                .is_file()
+        );
+
+        // Every other door still treats the disagreement as no date at all.
+        let shared = save("mobile_share", "shared", "2026:05:11 14:30:00").await;
+        let id = shared["timestamp"].as_str().unwrap();
+        let stored = read_import_metadata(root.path(), id).unwrap();
+        assert_eq!(stored["timestamp_detection_method"], "upload_fallback");
+        assert!(!stored.contains_key("owner_timestamp"));
     }
 
     fn strava_card_upload(client_item_id: &str, bytes: &[u8]) -> (String, Vec<u8>) {
