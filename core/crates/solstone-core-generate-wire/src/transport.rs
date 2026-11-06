@@ -53,8 +53,19 @@ pub(crate) fn post_json(
     let body = response
         .into_body()
         .read_to_string()
-        .map_err(classify_ureq_error)?;
+        .map_err(|error| classify_body_error(status, error))?;
     Ok(HttpResponse { status, body })
+}
+
+/// A provider that sent a success status has done the work and may bill for it,
+/// so a reply lost after that is no outage: it counts against the request, and
+/// a repeat is set aside rather than paid for again without end.
+fn classify_body_error(status: u16, error: ureq::Error) -> EndpointTransportError {
+    if (200..300).contains(&status) {
+        EndpointTransportError::Other
+    } else {
+        classify_ureq_error(error)
+    }
 }
 
 pub(crate) fn classify_ureq_error(error: ureq::Error) -> EndpointTransportError {
@@ -150,6 +161,23 @@ mod tests {
         assert_eq!(
             classify_ureq_error(ureq::Error::StatusCode(429)),
             EndpointTransportError::Other
+        );
+    }
+
+    #[test]
+    fn a_reply_lost_after_a_success_status_is_not_an_outage() {
+        let reset = || ureq::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+        assert_eq!(
+            classify_body_error(200, reset()),
+            EndpointTransportError::Other
+        );
+        assert_eq!(
+            classify_body_error(200, ureq::Error::Timeout(ureq::Timeout::RecvBody)),
+            EndpointTransportError::Other
+        );
+        assert_eq!(
+            classify_body_error(503, reset()),
+            EndpointTransportError::Connection
         );
     }
 

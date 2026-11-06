@@ -7,7 +7,9 @@ use chrono::{Duration, NaiveDate};
 
 use crate::event::HealthEvent;
 use crate::read::read_day_records;
-use crate::vocabulary::{CAP, DETERMINISTIC_FAILURE_REASON_CODES, MIN_SPAN_MS};
+use crate::vocabulary::{
+    CAP, DETERMINISTIC_FAILURE_REASON_CODES, MIN_SPAN_MS, SEGMENT_NONGATING_TALENTS,
+};
 use crate::{
     CompletedUnit, CompletionActivity, CompletionSegment, CompletionsSince, DailyUnit,
     DeterministicFailure, FoldRead, HealthError, HealthLogSource, RunLogRecord, TerminalEvent,
@@ -205,6 +207,40 @@ pub struct SegmentTalentFailures {
     /// Talents to set aside. Only a failure about the request itself counts,
     /// so an outage or a dropped connection never sets a recording's work aside.
     pub repeated: BTreeMap<TerminalUnit, RepeatedFailure>,
+    /// When each segment whose latest attempt at a step it waits on failed may
+    /// be tried again, by stream and segment key.
+    pub segment_retry_at: BTreeMap<(Option<String>, String), i64>,
+    /// When the day's daily work may be tried again, if every daily talent
+    /// still failing failed for a reason that says nothing about its request.
+    pub daily_retry_at: Option<i64>,
+}
+
+/// A failed attempt rests this long, doubling with each failure in a row...
+const FIRST_REST_MS: i64 = 5 * 60 * 1000;
+/// ...up to this. A failure can be billed, and nothing else bounds one that is
+/// never counted, so this sets what it can cost. It also sets how late a step
+/// that kept failing through an outage can start once the outage ends.
+pub const LONGEST_REST_MS: i64 = 30 * 60 * 1000;
+
+fn rest_after_failures(failures: usize) -> i64 {
+    let doublings = failures.saturating_sub(1).min(8) as u32;
+    FIRST_REST_MS
+        .saturating_mul(1 << doublings)
+        .min(LONGEST_REST_MS)
+}
+
+/// The unit's failures in a row, the latest one's time and its reason, if its
+/// latest attempt failed.
+fn latest_failures(terminals: &[ObservedTerminal]) -> Option<(usize, i64, Option<&str>)> {
+    let latest = terminals.last()?;
+    (latest.event == TerminalEvent::Fail).then(|| {
+        let failures = terminals
+            .iter()
+            .rev()
+            .take_while(|item| item.event == TerminalEvent::Fail)
+            .count();
+        (failures, latest.ts, latest.reason_code.as_deref())
+    })
 }
 
 /// Request-specific failures beyond the deterministic set: the answer ran out
@@ -240,9 +276,31 @@ pub fn read_segment_talent_failures<S: HealthLogSource>(
         None,
     );
     let mut failures = SegmentTalentFailures::default();
+    let mut daily_about_the_request = false;
     for (unit, terminals) in grouped {
+        let latest = latest_failures(&terminals);
+        if unit.mode == "daily" {
+            if let Some((count, ts, reason)) = latest {
+                daily_about_the_request |= reason.is_some_and(about_the_request);
+                let retry_at = ts.saturating_add(rest_after_failures(count));
+                failures.daily_retry_at = failures.daily_retry_at.max(Some(retry_at));
+            }
+            continue;
+        }
         if unit.mode != "segment" {
             continue;
+        }
+        if let (Some((count, ts, _)), Some(segment), false) = (
+            latest,
+            unit.segment.clone(),
+            SEGMENT_NONGATING_TALENTS.contains(&unit.name.as_str()),
+        ) {
+            let retry_at = ts.saturating_add(rest_after_failures(count));
+            let at = failures
+                .segment_retry_at
+                .entry((unit.stream.clone(), segment))
+                .or_default();
+            *at = retry_at.max(*at);
         }
         let repeated =
             trailing_failures_repeated(&terminals, |code| !code.is_some_and(about_the_request));
@@ -259,6 +317,9 @@ pub fn read_segment_talent_failures<S: HealthLogSource>(
         if let Some(repeated) = repeated {
             failures.repeated.insert(unit, repeated);
         }
+    }
+    if daily_about_the_request {
+        failures.daily_retry_at = None;
     }
     Ok(FoldRead {
         value: failures,
@@ -490,6 +551,60 @@ mod tests {
         let dir = root.join("chronicle").join(day).join("health");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(name), content).unwrap();
+    }
+
+    #[test]
+    fn a_failed_attempt_rests_longer_each_time_up_to_a_limit() {
+        let minutes = |failures| rest_after_failures(failures) / 60_000;
+        assert_eq!([1, 2, 3, 4, 5, 500].map(minutes), [5, 10, 20, 30, 30, 30]);
+    }
+
+    fn failures_of(log: &str) -> SegmentTalentFailures {
+        let temp = TempDir::new().unwrap();
+        write_run_log(temp.path(), "20260810", "a.jsonl", log);
+        read_segment_talent_failures(&FilesystemHealthLogSource::new(temp.path()), "20260810")
+            .unwrap()
+            .value
+    }
+
+    fn terminal(event: &str, mode: &str, name: &str, ts: i64, reason: &str) -> String {
+        let segment = if mode == "segment" {
+            r#""stream":"audio","segment":"120000_60","#
+        } else {
+            ""
+        };
+        format!(
+            r#"{{"event":"{event}","ts":{ts},"mode":"{mode}",{segment}"name":"{name}","day":"20260810","reason_code":"{reason}"}}"#
+        ) + "\n"
+    }
+
+    #[test]
+    fn a_segment_rests_on_its_latest_failures_and_a_success_ends_them() {
+        let key = (Some("audio".to_owned()), "120000_60".to_owned());
+        let minute = 60_000;
+        let fail = |ts| terminal("talent.fail", "segment", "sense", ts, "network_unreachable");
+        let failed_twice = fail(0) + &fail(minute);
+        assert_eq!(
+            failures_of(&failed_twice).segment_retry_at[&key],
+            minute + 10 * minute
+        );
+        let recovered =
+            failed_twice + &terminal("talent.complete", "segment", "sense", 2 * minute, "");
+        assert!(!failures_of(&recovered).segment_retry_at.contains_key(&key));
+    }
+
+    #[test]
+    fn a_day_rests_short_only_when_no_failure_is_about_its_request() {
+        let down = terminal(
+            "talent.fail",
+            "daily",
+            "morning_briefing",
+            7,
+            "network_unreachable",
+        );
+        assert_eq!(failures_of(&down).daily_retry_at, Some(7 + FIRST_REST_MS));
+        let own = terminal("talent.fail", "daily", "weekly", 8, "schema_invalid");
+        assert_eq!(failures_of(&(down + &own)).daily_retry_at, None);
     }
 
     #[test]

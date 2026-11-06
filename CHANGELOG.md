@@ -25,6 +25,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - when an agent reads your week with `get_week`, it now gets up to seven of your week's activities by name, instead of one for each activity type, so a week of meetings no longer reads as one meeting. it also gets how many activities the week holds in all.
 - searching your journal from a connected agent is much faster on a large journal, and it finds the same things.
+- when your journal can't reach your thinking provider, it now tries again every few minutes instead of nonstop, and leaves far fewer log files behind. once the provider is back, your journal starts catching up by itself soon after, and a daily briefing that failed during the outage no longer waits up to a day to try again.
+- if a provider's answer for a step on a recording is cut off on its way back, your journal now stops asking for that step after several tries over a couple of hours and lists it in health, so the same step doesn't keep costing you on your own key. you can try it again from health.
 - fixed cases where long transcripts lost a speaker from an activity's people list or gave a voice someone else's name.
 - the date picker on the transcripts page no longer makes you wait each time on a journal with many older days.
 - on windows, turning on encrypted backup could show an error and not open the services portal, even though setup had started. the services portal now opens.

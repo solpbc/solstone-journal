@@ -17,7 +17,7 @@ use solstone_core_journal_config::work_priority::{WorkBand, WorkPriority};
 use solstone_core_system::{
     daily_coverage::{self, CoverageState},
     partition::canonical_journal_command,
-    queue::{DISCOVERED_ADMISSION, DiscoveredTask, TaskQueue},
+    queue::{DiscoveredTask, TaskQueue},
     request::{BusTaskRequest, DailyCatchupProvenance, TaskArgv},
     work_intent::{self, IntentState, OwnerIntent},
     work_inventory::{HistoryProgress, HistorySample, WorkHold, WorkInventory},
@@ -369,10 +369,15 @@ impl WorkDiscovery {
                     let pass = started.elapsed();
                     let ended = Instant::now();
                     let owner_days = owner_days_in_queue(&journal, &queue);
+                    // The one task trying thinking again says whether it is
+                    // answered, so its end starts a pass as an owner's does.
+                    let trial = queue.thinking_failing_since().is_some()
+                        && queue.thinking_in_queue();
                     let owner_done = || {
                         owner_days
                             .iter()
                             .any(|(day, week)| !owner_work_in_queue(&queue, day, week.as_deref()))
+                            || (trial && !queue.thinking_in_queue())
                     };
                     let mut published = backlog.published.take();
                     let told = published
@@ -392,7 +397,7 @@ impl WorkDiscovery {
                     if !rest(
                         &receiver,
                         automatic.then(|| ended + rest_after(pass)),
-                        (!owner_days.is_empty())
+                        (!owner_days.is_empty() || trial)
                             .then_some((ended + pass, &owner_done as &dyn Fn() -> bool)),
                         automatic.then_some(&mut top_up as &mut dyn FnMut() -> bool),
                         told.map(|told| (told, &mut promise as &mut dyn FnMut(Instant))),
@@ -485,6 +490,11 @@ impl Backlog {
             return false;
         }
         if self.ranked.is_empty() {
+            return false;
+        }
+        // Nothing here tries thinking again: the next pass does, once it is due.
+        if queue.thinking_failing_since().is_some() {
+            self.ranked.clear();
             return false;
         }
         let present = self
@@ -1296,6 +1306,7 @@ fn inspect_day(
                 sources.ask,
                 p,
                 policy,
+                failures.value.daily_retry_at,
                 &mut work,
                 report,
             )?
@@ -1319,6 +1330,21 @@ fn inspect_day(
             segment: segment.key.clone(),
         };
         if segment.stream == "import.archive" && !sources.archive_coordinates.contains(&coordinate)
+        {
+            continue;
+        }
+        // A segment that just failed rests, unless the owner is asking for it.
+        // A time further off than the longest rest was left by a clock that has
+        // since moved back, and must not stall the segment for days.
+        if intent.is_none()
+            && failures
+                .value
+                .segment_retry_at
+                .get(&(Some(segment.stream.clone()), segment.key.clone()))
+                .is_some_and(|at| {
+                    let left = at - now.timestamp_millis();
+                    left > 0 && left <= solstone_core_system_health::LONGEST_REST_MS
+                })
         {
             continue;
         }
@@ -1353,6 +1379,7 @@ fn queue_daily(
     ask: crate::owner_asks::DayAsk,
     p: WorkPriority,
     policy: WorkPolicy,
+    outage_retry_at: Option<i64>,
     work: &mut DayWork,
     report: &mut WorkInventory,
 ) -> Result<bool, String> {
@@ -1402,9 +1429,13 @@ fn queue_daily(
         // A request to process the day waives only the wait earned before it,
         // as an ask to think it again does. Owed units it cannot finish, such
         // as an owner conflict, stay with their own recovery, and the day
-        // rests on its retry wait rather than running again at once.
+        // rests on its retry wait rather than running again at once. A day
+        // that failed only because thinking was not answered waives it the
+        // same way once its shorter rest is over: that wait grows for a day,
+        // and an outage says nothing about the day's own work.
         ask.asked_at_ms
-            .max(intent.and_then(|intent| intent.asked_at_ms)),
+            .max(intent.and_then(|intent| intent.asked_at_ms))
+            .max(outage_retry_at.filter(|at| chrono::Utc::now().timestamp_millis() >= *at)),
     ) {
         held(report, day, None, p.band, "retry_wait");
     } else {
@@ -1599,7 +1630,8 @@ fn admit(
     if stopped.load(Ordering::Acquire) {
         return Ok(Vec::new());
     }
-    while current.len() < DISCOVERED_ADMISSION
+    let room = queue.discovered_room(SystemTime::now());
+    while current.len() < room
         && let Some(candidate) = ranked.pop_front()
     {
         if stopped.load(Ordering::Acquire) {
@@ -2668,7 +2700,7 @@ mod tests {
                 apps: PathBuf::from(&payload).join("solstone/apps"),
             };
             let root = fixture("local");
-            for second in 0..DISCOVERED_ADMISSION + 2 {
+            for second in 0..solstone_core_system::queue::DISCOVERED_ADMISSION + 2 {
                 segment(root.path(), "19990101", &format!("1200{second:02}_60"));
             }
             let queue = queue(root.path());
@@ -2694,7 +2726,10 @@ mod tests {
             let inventory = backlog.published.as_ref().unwrap();
             assert!(inventory.complete, "{:?}", inventory.unreadable);
             assert!(inventory.unreadable.is_empty());
-            assert_eq!(backlog.admitted.len(), DISCOVERED_ADMISSION);
+            assert_eq!(
+                backlog.admitted.len(),
+                solstone_core_system::queue::DISCOVERED_ADMISSION
+            );
             let next = backlog
                 .ranked
                 .front()
@@ -4468,6 +4503,19 @@ mod tests {
         reason: &str,
         sensed: bool,
     ) -> PathBuf {
+        // After the input the fixture writes, so the failures read as about it.
+        let after_input = chrono::Utc::now().timestamp_millis() + 3_600_000;
+        failing_talent_from(root, talent, failures, reason, sensed, after_input)
+    }
+
+    fn failing_talent_from(
+        root: &Path,
+        talent: &str,
+        failures: i64,
+        reason: &str,
+        sensed: bool,
+        after_input: i64,
+    ) -> PathBuf {
         use solstone_core_journal_io::{
             JournalRoot,
             operational_log::{OplogFormat, create_oplog_at},
@@ -4500,7 +4548,6 @@ mod tests {
                 .fixed_offset(),
         )
         .unwrap();
-        let after_input = chrono::Utc::now().timestamp_millis() + 3_600_000;
         if sensed {
             writeln!(log, "{}", serde_json::json!({"event":"sense.complete","ts":after_input,"mode":"segment","stream":"notes","segment":key,"density":"active"})).unwrap();
             writeln!(log, "{}", serde_json::json!({"event":"talent.dispatch","ts":after_input,"mode":"segment","stream":"notes","segment":key,"name":"documents","use_id":"use-documents"})).unwrap();
@@ -4696,7 +4743,8 @@ mod tests {
             "wait failed: Dispatch(Closed)",
         ] {
             let root = fixture("local");
-            failing_talent(root.path(), "screen", 30, reason, true);
+            let rested = chrono::Utc::now().timestamp_millis() - 40 * 3_600_000;
+            failing_talent_from(root.path(), "screen", 30, reason, true, rested);
             let queue = queue(root.path());
             reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
             assert!(queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
@@ -4712,10 +4760,129 @@ mod tests {
     #[test]
     fn failures_short_of_the_cap_keep_repairing() {
         let root = fixture("local");
-        failing_talent(root.path(), "screen", 4, "provider_request_rejected", true);
+        let rested = chrono::Utc::now().timestamp_millis() - 10 * 3_600_000;
+        failing_talent_from(
+            root.path(),
+            "screen",
+            4,
+            "provider_request_rejected",
+            true,
+            rested,
+        );
         let queue = queue(root.path());
         reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
         assert!(queue.contains_reference("supervisor-work-19990101-notes-120000_60"));
+    }
+
+    /// A segment that just failed waits its rest out instead of going back on
+    /// the next pass, for an outage and a billed failure alike. The owner asking
+    /// for its day is the exception.
+    #[test]
+    fn a_segment_that_just_failed_rests_unless_the_owner_asks() {
+        let repair = "supervisor-work-19990101-notes-120000_60";
+        for reason in ["network_unreachable", "provider_response_invalid"] {
+            let root = fixture("local");
+            let just_now = chrono::Utc::now().timestamp_millis();
+            failing_talent_from(root.path(), "screen", 1, reason, true, just_now);
+            let queue = queue(root.path());
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+            assert!(!queue.contains_reference(repair), "{reason}");
+            let report = solstone_core_system::work_inventory::read(root.path())
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                report
+                    .bands
+                    .iter()
+                    .map(|band| band.segments_owed)
+                    .sum::<u64>(),
+                1,
+                "still owed while it rests"
+            );
+            work_intent::register(root.path(), "19990101", false).unwrap();
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+            assert!(queue.contains_reference(repair), "{reason}");
+        }
+        // A failure stamped far ahead was left by a clock that has moved back.
+        let root = fixture("local");
+        let ahead = chrono::Utc::now().timestamp_millis() + 24 * 3_600_000;
+        failing_talent_from(root.path(), "screen", 1, "network_unreachable", true, ahead);
+        let queue = queue(root.path());
+        reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+        assert!(queue.contains_reference(repair));
+    }
+
+    /// The day's retry wait grows for a day. A day that failed only because
+    /// thinking was not answered rests far less, and a day whose own request
+    /// failed keeps the wait.
+    #[test]
+    fn an_outage_does_not_earn_a_day_the_long_retry_wait() {
+        use solstone_core_journal_io::{
+            JournalRoot,
+            operational_log::{OplogFormat, create_oplog_at},
+        };
+        use std::io::Write;
+        let daily = "supervisor-work-19990101-daily";
+        let hour = 3_600_000;
+        let now = chrono::Utc::now().timestamp_millis();
+        for (reason, age, runs) in [
+            ("network_unreachable", hour, true),
+            ("network_unreachable", 0, false),
+            ("provider_response_invalid", hour, false),
+        ] {
+            let root = fixture("local");
+            thought_without_receipt(root.path(), "19990101", &["130000_600"]);
+            let queue = queue(root.path());
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+            assert!(queue.contains_reference(daily), "owed to begin with");
+            // Enough attempts, all before the failure below, that the wait
+            // still runs for hours.
+            for _ in 0..6 {
+                solstone_core_system::catchup::record_daily_catchup_admission_failure(
+                    root.path(),
+                    "19990101",
+                    (now - 2 * hour) as f64 / 1000.0,
+                );
+            }
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+            assert!(!queue.contains_reference(daily), "held by the retry wait");
+            let mut log = create_oplog_at(
+                JournalRoot::open(root.path()).unwrap(),
+                "think",
+                "daily",
+                OplogFormat::Jsonl,
+                chrono::NaiveDate::parse_from_str("19990101", "%Y%m%d")
+                    .unwrap()
+                    .and_hms_opt(12, 0, 0)
+                    .unwrap()
+                    .and_utc()
+                    .fixed_offset(),
+            )
+            .unwrap();
+            writeln!(
+                log,
+                "{}",
+                serde_json::json!({"event":"talent.fail","ts":now - age,"mode":"daily","day":"19990101","name":"morning_briefing","use_id":"use-1","reason_code":reason})
+            )
+            .unwrap();
+            drop(log);
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+            assert_eq!(queue.contains_reference(daily), runs, "{reason} age {age}");
+            // An attempt since the failure has been paid for: its wait stands,
+            // so a day that stops logging failures can't run on every pass.
+            if runs {
+                solstone_core_system::catchup::record_daily_catchup_admission_failure(
+                    root.path(),
+                    "19990101",
+                    now as f64 / 1000.0,
+                );
+                reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+                assert!(
+                    !queue.contains_reference(daily),
+                    "no waiver after an attempt"
+                );
+            }
+        }
     }
 
     /// The history walk re-senses an older day whose outputs were already made.

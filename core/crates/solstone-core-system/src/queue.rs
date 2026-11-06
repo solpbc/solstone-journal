@@ -244,6 +244,14 @@ pub struct DiscoveredTask {
     pub request: crate::request::BusTaskRequest,
 }
 
+/// This many thinking tasks failing in a row, with none succeeding, says thinking
+/// itself is not being answered rather than that one task's request is at fault.
+const THINKING_FAILURE_RUN: usize = 3;
+/// While thinking keeps failing, one discovered task tries it this long after the
+/// last failure. Its success lets the backlog go, so this is also about how late
+/// the journal notices that a provider has come back.
+const THINKING_RETRY_AFTER: Duration = Duration::from_secs(300);
+
 /// Completion information retained for the most recent queue executions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskHistoryRecord {
@@ -3377,6 +3385,64 @@ impl TaskQueue {
         self.collect_status_snapshot(Instant::now()).recent_tasks
     }
 
+    /// When the latest of a failing run of thinking tasks ended. `None` means
+    /// thinking is not known to be failing.
+    pub fn thinking_failing_since(&self) -> Option<SystemTime> {
+        let state = self.inner.state.lock().expect("queue state lock poisoned");
+        let mut failures = state
+            .history
+            .iter()
+            .rev()
+            .filter(|record| asks_for_thinking(&record.command))
+            .filter(|record| {
+                matches!(
+                    record.exit_status.as_str(),
+                    "ok" | "error" | TIMEOUT_EXIT_STATUS
+                )
+            })
+            .take(THINKING_FAILURE_RUN);
+        let latest = failures.next()?;
+        (latest.exit_status != "ok"
+            && failures.clone().count() == THINKING_FAILURE_RUN - 1
+            && failures.all(|record| record.exit_status != "ok"))
+        .then_some(latest.ended_at)
+    }
+
+    /// How much discovered work may go to the queue now: all it admits, or
+    /// while thinking keeps failing, one task once the last failure has rested
+    /// and no thinking is under way.
+    pub fn discovered_room(&self, now: SystemTime) -> usize {
+        let Some(failed_at) = self.thinking_failing_since() else {
+            return DISCOVERED_ADMISSION;
+        };
+        let rested = now
+            .duration_since(failed_at)
+            .is_ok_and(|rested| rested >= THINKING_RETRY_AFTER);
+        usize::from(rested && !self.thinking_in_queue())
+    }
+
+    /// Whether a thinking task is pending, queued, running or held.
+    pub fn thinking_in_queue(&self) -> bool {
+        let state = self.inner.state.lock().expect("queue state lock poisoned");
+        state
+            .pending
+            .iter()
+            .any(|source| is_analysis_command(&source.command))
+            || state
+                .running
+                .values()
+                .any(|slot| is_analysis_command(&slot.command))
+            || state
+                .held
+                .values()
+                .any(|held| is_analysis_command(&held.dispatch.submission.command))
+            || state
+                .queues
+                .values()
+                .flatten()
+                .any(|entry| is_analysis_command(&entry.command))
+    }
+
     #[cfg(any(unix, test))]
     #[allow(dead_code)]
     pub(crate) fn recovery_reap_attempts(&self) -> usize {
@@ -3727,6 +3793,18 @@ fn is_local_analysis_command(command: &[String]) -> bool {
             && alias.get(2).is_some_and(|value| value == "describe"))
         || (matches!(program, "journal" | "solstone-core-journal")
             && alias.get(1).is_some_and(|value| value == "describe"))
+}
+
+/// A thinking task whose result says whether thinking was answered. A scheduled
+/// check of what is due succeeds with no model call, and says nothing.
+fn asks_for_thinking(command: &[String]) -> bool {
+    is_analysis_command(command)
+        && command.iter().any(|argument| {
+            matches!(
+                argument.as_str(),
+                "--segment" | "--daily-only" | "--retry-unit" | "--from-scratch" | "--activity"
+            )
+        })
 }
 
 fn is_analysis_command(command: &[String]) -> bool {
@@ -5827,6 +5905,56 @@ mod tests {
 
     fn queue(ready: bool, cap: u64, plans: VecDeque<SpawnPlan>) -> TaskQueue {
         queue_with_sink(ready, cap, plans, None)
+    }
+
+    fn ended(queue: &TaskQueue, command: &str, exit_status: &str, ended_at: SystemTime) {
+        queue
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .history
+            .push_back(TaskHistoryRecord {
+                partition: Partition::new("segment"),
+                command: command.split(' ').map(str::to_owned).collect(),
+                reference: "task".into(),
+                ended_at,
+                exit_status: exit_status.into(),
+                scheduler_name: None,
+            });
+    }
+
+    /// Thinking that keeps failing sends one task at a time, after a rest, and
+    /// its success lets the backlog go. Other work never speaks for thinking.
+    #[test]
+    fn a_failing_run_of_thinking_narrows_discovered_work_to_one_trial() {
+        let queue = queue(false, 10, VecDeque::new());
+        let start = SystemTime::now();
+        assert_eq!(queue.discovered_room(start), DISCOVERED_ADMISSION);
+        let repair = "journal think --day 20260101 --segment 120000_60 --repair-segment";
+        ended(&queue, repair, "error", start);
+        ended(&queue, repair, "error", start);
+        ended(&queue, "journal indexer", "ok", start);
+        ended(&queue, "journal think --cadence", "ok", start);
+        ended(&queue, repair, "cancelled", start);
+        assert_eq!(queue.discovered_room(start), DISCOVERED_ADMISSION, "two");
+        ended(&queue, repair, "error", start);
+        assert_eq!(queue.thinking_failing_since(), Some(start));
+        assert_eq!(queue.discovered_room(start), 0);
+        let rest = THINKING_RETRY_AFTER;
+        assert_eq!(queue.discovered_room(start + rest), 1);
+        // A task already under way is the trial, whatever else is due.
+        queue.submit(command_request(
+            &["journal", "think", "--day", "20260101"],
+            "trial",
+            None,
+        ));
+        assert_eq!(queue.discovered_room(start + rest), 0);
+        ended(&queue, "journal think --cadence", "ok", start + rest);
+        assert_eq!(queue.thinking_failing_since(), Some(start));
+        ended(&queue, repair, "ok", start + rest);
+        assert_eq!(queue.thinking_failing_since(), None);
+        assert_eq!(queue.discovered_room(start + rest), DISCOVERED_ADMISSION);
     }
 
     #[cfg(feature = "full-tests")]
