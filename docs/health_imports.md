@@ -159,7 +159,9 @@ Before any save:
 - show the target journal and require per-run confirmation;
 - validate every replication-destination decision;
 - apply exactly one raw-retention decision;
-- never send body data, tokens, exports, or fixtures to a remote model;
+- never send OAuth tokens, exports, or fixtures to a remote model; body data
+  reaches a model only as other journal content does, through the provider the
+  owner chose;
 - use only synthetic fixtures in the repository.
 
 Apple uses `imports/_approvals/health_import_preflight.json` with

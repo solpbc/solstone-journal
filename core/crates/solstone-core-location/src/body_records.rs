@@ -307,6 +307,8 @@ pub struct StoredBody {
     pub workout_type: Option<String>,
     /// Who recorded it, as an opaque id.
     pub recorder: String,
+    /// The owner's day the record arrived on, by the writer's clock.
+    pub arrived: Option<String>,
     /// Owner-held fields only, by name.
     pub owner: BTreeMap<String, Value>,
     pub hidden: bool,
@@ -361,6 +363,7 @@ pub fn stored_body_records(
                 workout_type: Some(text(record, &["account", "type"]))
                     .filter(|kind| !kind.is_empty()),
                 recorder: text(record, &["account", "recorder"]),
+                arrived: Some(text(record, &["account", "arrived"])).filter(|day| !day.is_empty()),
                 owner: OWNER_FIELDS
                     .iter()
                     .filter(|field| activity_field_held(record, field))
@@ -776,6 +779,105 @@ pub fn owner_group(
         .into_iter()
         .map(|index| records[index].clone())
         .collect())
+}
+
+/// How long after a day its body facts may still arrive and reach its briefing.
+pub const BRIEFING_ARRIVAL_DAYS: i64 = 7;
+
+/// The faces the morning briefing for `day` may read: from every unmuted
+/// facet, grouped over records that arrived no later than a week after `day`,
+/// whose anchor starts on `day` by the owner's clock, unhidden, and with at
+/// least one account still there. A record with no arrival day never counts.
+///
+/// # Errors
+///
+/// Any read error while gathering: the caller treats the whole block as
+/// unreadable.
+pub fn briefing_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
+    if !has_body_data(journal) {
+        return Ok(Vec::new());
+    }
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d")
+        .map_err(|error| ComposeError(error.to_string()))?;
+    let latest = (date + chrono::Duration::days(BRIEFING_ARRIVAL_DAYS))
+        .format("%Y%m%d")
+        .to_string();
+    let facets = solstone_core_facets::list_declared_facet_names(journal)
+        .map_err(|error| ComposeError(error.to_string()))?;
+    let mut faces = Vec::new();
+    for facet in facets {
+        let muted = solstone_core_facets::observe_facet_declaration(journal, &facet)
+            .map_err(|error| ComposeError(error.to_string()))?
+            .is_some_and(|declaration| declaration.muted == Some(true));
+        if muted {
+            continue;
+        }
+        let mut records = Vec::new();
+        for offset in -(GROUP_DAYS_BACK + 1)..=(GROUP_DAYS_FORWARD + 1) {
+            let on = (date + chrono::Duration::days(offset))
+                .format("%Y%m%d")
+                .to_string();
+            records.extend(
+                stored_body_records(journal, &facet, &on)?
+                    .into_iter()
+                    .filter(|record| {
+                        record
+                            .arrived
+                            .as_deref()
+                            .is_some_and(|arrived| arrived <= latest.as_str())
+                    }),
+            );
+        }
+        let mut windows = Windows::default();
+        for group in group_partition(&records) {
+            let at = anchor(&records, &group);
+            let Some((start, _)) = records[at].instants() else {
+                continue;
+            };
+            if owner_moment(journal, start).map(|(on, _)| on).as_deref() != Some(day)
+                || group.iter().any(|&index| records[index].hidden)
+            {
+                continue;
+            }
+            let mut order = group.clone();
+            order.sort_by_key(|&index| {
+                (
+                    records[index]
+                        .instants()
+                        .map_or(i64::MAX, |(start, _)| start),
+                    records[index].key.clone(),
+                )
+            });
+            let members = order
+                .iter()
+                .map(|&index| windows.compose(journal, records[index].clone()))
+                .collect::<Vec<_>>();
+            if members
+                .iter()
+                .any(|member| matches!(member.account, Account::Unreadable))
+            {
+                return Err(ComposeError("a body window couldn't be read".to_owned()));
+            }
+            if !members
+                .iter()
+                .any(|member| matches!(member.account, Account::Live(_) | Account::PartRemoved(_)))
+            {
+                continue;
+            }
+            let anchor = members
+                .iter()
+                .find(|member| member.id == records[at].id)
+                .expect("the anchor is a member")
+                .clone();
+            faces.push(Face {
+                anchor,
+                members,
+                hidden: false,
+            });
+        }
+    }
+    faces.sort_by(|left, right| left.anchor.stored_start.cmp(&right.anchor.stored_start));
+    Ok(faces)
 }
 
 fn account_json(member: &ComposedBody) -> Value {

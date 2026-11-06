@@ -161,6 +161,47 @@ pub fn parse_source_time(text: &str) -> Option<DateTime<FixedOffset>> {
         .or_else(|| DateTime::parse_from_rfc3339(text.trim()).ok())
 }
 
+/// The owner's own words on an account, per source: what the owner wrote, never
+/// a name the source made up. Apple's export carries none, so it gives
+/// nothing. Elsewhere, a generated default ("Morning Run", "Lunch Ride", a bare
+/// type name) is the source's, and any other name or description is the owner's.
+#[must_use]
+pub fn owner_words(source: &str, row: &BodyRow) -> Vec<String> {
+    if source == "apple_health" {
+        return Vec::new();
+    }
+    row.words
+        .iter()
+        .map(|words| words.trim())
+        .filter(|words| !words.is_empty() && !generated_name(words, &row.record_type))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A name a source writes itself: a part of the day and a type, or the type alone.
+fn generated_name(words: &str, record_type: &str) -> bool {
+    const PARTS: [&str; 6] = [
+        "morning",
+        "lunch",
+        "afternoon",
+        "evening",
+        "night",
+        "early morning",
+    ];
+    let lower = words.to_lowercase();
+    let plain = |text: &str| plain_words(text).to_lowercase();
+    let kind = plain(record_type);
+    let rest = PARTS
+        .iter()
+        .find_map(|part| lower.strip_prefix(part).map(str::trim))
+        .unwrap_or(&lower);
+    if rest == kind || rest == record_type.to_lowercase() {
+        return true;
+    }
+    let mapped = mapped_workout_type("strava", rest);
+    mapped.is_some() && mapped == mapped_workout_type("strava", record_type)
+}
+
 /// Who recorded an account, as an opaque id: its stream and `by`. Two accounts
 /// from one recorder never group.
 #[must_use]
@@ -415,6 +456,46 @@ pub fn render_line(line: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn owner_words_are_only_what_the_owner_wrote() {
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            "s1".to_owned(),
+            "strava",
+            "Run",
+            "Run".to_owned(),
+        );
+        for generated in [
+            "Morning Run",
+            "Lunch Run",
+            "Evening Run",
+            "Run",
+            "  Night Run ",
+        ] {
+            row.words = vec![generated.to_owned()];
+            assert!(owner_words("strava", &row).is_empty(), "{generated}");
+        }
+        let mut ride = BodyRow::new(
+            RowKind::Experience,
+            "s2".to_owned(),
+            "strava",
+            "Ride",
+            "Ride".to_owned(),
+        );
+        ride.words = vec!["Lunch Ride".to_owned(), "Hill repeats with Sam".to_owned()];
+        assert_eq!(owner_words("strava", &ride), ["Hill repeats with Sam"]);
+        // Apple's export carries no owner-written words, whatever a row holds.
+        let mut apple = BodyRow::new(
+            RowKind::Experience,
+            "a1".to_owned(),
+            "apple_health",
+            "HKWorkoutActivityTypeRunning",
+            "Running".to_owned(),
+        );
+        apple.words = vec!["Loop 10".to_owned()];
+        assert!(owner_words("apple_health", &apple).is_empty());
+    }
+
     use serde_json::json;
 
     use super::*;

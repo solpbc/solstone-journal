@@ -98,6 +98,7 @@ pub fn freeze(
         }
     };
     attach_daily_location(&mut prepared, &mut state, context, &hook)?;
+    attach_daily_body(&mut prepared, context, &hook);
     prepared.config.remove("_briefing_inclusion");
     Ok(
         json!({"version":1,"prepared":{"name":prepared.name,"config":prepared.config},"hook":hook,"state":state}),
@@ -111,6 +112,42 @@ thread_local! {
 
 const LOCATION_PART_BYTE_CAP: usize = 16384;
 const LOCATION_CAVEAT: &str = "These words do not establish someone else's presence and do not establish a future commitment.";
+
+/// Body facts go last and yield first: the block goes in only when it fits
+/// whole in the room every other part leaves. Its fingerprint is stored either
+/// way, taken before this decision, so freshness never re-runs the budget.
+fn attach_daily_body(prepared: &mut PreparedTalent, context: &ExecutionContext, hook: &str) {
+    use solstone_core_local::generate::compute_input_budget;
+    let Some(day) = prepared
+        .config
+        .get("day")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let block = crate::daily_body::body_block(&context.journal, hook, &day);
+    let max_output_tokens = prepared
+        .config
+        .get("max_output_tokens")
+        .and_then(Value::as_u64)
+        .and_then(|tokens| u32::try_from(tokens).ok())
+        .unwrap_or(0);
+    let budget = compute_input_budget(
+        max_output_tokens,
+        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
+    );
+    let used = crate::model_text_parts(&prepared.config)
+        .iter()
+        .fold(0u32, |total, text| {
+            total.saturating_add(solstone_core_tokens::count(text))
+        });
+    crate::daily_body::attach(
+        &mut prepared.config,
+        &block,
+        Some(budget.saturating_sub(used)),
+    );
+}
 
 fn attach_daily_location(
     prepared: &mut PreparedTalent,
@@ -2345,6 +2382,109 @@ mod tests {
                 .any(|p| p.lines().any(|l| l.starts_with("- "))),
             "location observation lines must be present in model_text_parts"
         );
+    }
+
+    /// The morning briefing's frozen request for `LOCATION_DAY` on a journal
+    /// built as `location_journal` builds it.
+    fn briefing_request(root: &std::path::Path) -> (Vec<String>, serde_json::Map<String, Value>) {
+        let cfg_path = root.join("config/journal.json");
+        let mut cfg: Value =
+            serde_json::from_str(&std::fs::read_to_string(&cfg_path).unwrap()).unwrap();
+        cfg["providers"] = json!({"active": {"provider": "test", "model": "test-model"}});
+        std::fs::write(&cfg_path, serde_json::to_string(&cfg).unwrap()).unwrap();
+        let talent_root = root.join("talent");
+        let apps_root = root.join("apps");
+        let templates_dir = root.join("templates");
+        for p in [&talent_root, &apps_root, &templates_dir] {
+            std::fs::create_dir_all(p).unwrap();
+        }
+        let src_talent =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone/talent");
+        for file in ["morning_briefing.md", "morning_briefing.schema.json"] {
+            std::fs::copy(src_talent.join(file), talent_root.join(file)).unwrap();
+        }
+        let paths = crate::prepare::RuntimePaths {
+            talent_root,
+            apps_root,
+            templates_dir,
+        };
+        let context = ExecutionContext {
+            journal: root.to_owned(),
+        };
+        let request = json!({"name": "morning_briefing", "day": LOCATION_DAY})
+            .as_object()
+            .unwrap()
+            .clone();
+        let prepared = crate::prepare::prepare(
+            request,
+            &paths,
+            &context,
+            crate::prepare::PrepareMode::Execute,
+        )
+        .unwrap();
+        let packet = freeze(prepared, &context).unwrap();
+        let (thawed, _) = thaw(&packet).unwrap();
+        (crate::model_text_parts(&thawed.config), thawed.config)
+    }
+
+    #[test]
+    fn a_day_with_no_body_facts_prompts_as_a_journal_with_no_body_data() {
+        let plain = tempfile::tempdir().unwrap();
+        location_journal(plain.path(), LOCATION_DAY);
+        solstone_core_facets::create_facet(plain.path(), "body", "Body", "", "", "", None).unwrap();
+        let with_body = tempfile::tempdir().unwrap();
+        location_journal(with_body.path(), LOCATION_DAY);
+        // Body data elsewhere in the journal: an Apple workout and its record a
+        // month before, which can't reach this day.
+        let root = with_body.path();
+        std::fs::create_dir_all(root.join("imports")).unwrap();
+        std::fs::write(
+            root.join("imports/.apple_health-zone.json"),
+            r#"{"zone":"America/Denver"}"#,
+        )
+        .unwrap();
+        let day = chrono::NaiveDate::parse_from_str(LOCATION_DAY, "%Y%m%d").unwrap()
+            - chrono::Duration::days(30);
+        let earlier = day.format("%Y%m%d").to_string();
+        let window = root.join(format!(
+            "chronicle/{earlier}/import.apple_health/070000_3600"
+        ));
+        std::fs::create_dir_all(window.join("talents")).unwrap();
+        std::fs::write(window.join("body.jsonl"), "{}\n").unwrap();
+        solstone_core_facets::create_facet(root, "body", "Body", "", "", "", None).unwrap();
+        let record = json!({"id":"body_w1","source":"body","activity":"workout",
+            "account":{"key":"import.apple_health\u{1f}w1","start":format!("{} 07:00:00 -0600", day.format("%Y-%m-%d")),
+                "end":format!("{} 07:40:00 -0600", day.format("%Y-%m-%d")),"recorder":"x","arrived":earlier}});
+        let _ = solstone_core_facets::append_activity_record(
+            root,
+            "body",
+            &earlier,
+            record.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        assert!(solstone_core_location::body_records::has_body_data(root));
+
+        let (plain_parts, _) = briefing_request(plain.path());
+        let (body_parts, body_config) = briefing_request(root);
+        // The one thing that may differ is the minute each was generated in.
+        let unclocked = |parts: Vec<String>| {
+            parts
+                .into_iter()
+                .map(|part| {
+                    part.split('\n')
+                        .filter(|line| !line.trim_start().starts_with("\"generated\""))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            unclocked(plain_parts),
+            unclocked(body_parts),
+            "the model request differs"
+        );
+        assert!(!body_config.contains_key(crate::daily_body::FINGERPRINT_KEY));
+        assert!(!body_config.contains_key(crate::daily_body::TEXT_KEY));
     }
 
     #[test]

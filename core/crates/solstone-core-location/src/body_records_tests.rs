@@ -26,6 +26,13 @@ fn journal() -> tempfile::TempDir {
         r#"{"zone":"America/Denver"}"#,
     )
     .unwrap();
+    // The owner's clock, so nothing here depends on the host's zone.
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"identity":{"timezone":"America/Denver"}}"#,
+    )
+    .unwrap();
     let facet = root.join("facets/body");
     fs::create_dir_all(&facet).unwrap();
     fs::write(facet.join("facet.json"), r#"{"title":"Body"}"#).unwrap();
@@ -207,6 +214,7 @@ fn stored(
         stored_end: format!("2026-10-10 {end}:00 -0600"),
         workout_type: kind.map(str::to_owned),
         recorder: recorder.to_owned(),
+        arrived: Some(DAY.to_owned()),
         owner: BTreeMap::new(),
         hidden: false,
         apart: Vec::new(),
@@ -502,4 +510,122 @@ fn a_face_holds_only_members_a_reader_may_read_and_shows_under_its_anchors_day()
             .unwrap()
             .is_empty()
     );
+}
+
+fn arrived_record(
+    root: &Path,
+    day: &str,
+    row: &BodyRow,
+    arrived: Option<&str>,
+    extra: serde_json::Value,
+) {
+    let mut account = json!({"key": format!("{STREAM}\u{1f}{}", row.id), "start": row.start, "end": row.end,
+        "recorder": solstone_core_format::content::body_records::recorder_id(STREAM, row.by.as_deref()),
+        "type": "running"});
+    if let Some(arrived) = arrived {
+        account["arrived"] = json!(arrived);
+    }
+    let mut record = json!({"id": format!("body_{}", row.id), "source": "body", "activity": row.experience, "account": account});
+    for (key, value) in extra.as_object().unwrap() {
+        record[key] = value.clone();
+    }
+    let path = root.join(format!("facets/body/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!("{record}\n"));
+    fs::write(path, text).unwrap();
+}
+
+fn briefing_ids(root: &Path, day: &str) -> Vec<Vec<String>> {
+    briefing_faces(root, day)
+        .unwrap()
+        .iter()
+        .map(|face| {
+            face.members
+                .iter()
+                .map(|member| member.id.clone())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn the_briefing_reads_only_what_arrived_within_a_week_grouped_before_later_arrivals() {
+    let journal = journal();
+    let root = journal.path();
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    let app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    let late = workout_row(
+        "l",
+        "Synthetic Ring",
+        "2026-10-10 07:02:00 -0600",
+        "2026-10-10 07:42:00 -0600",
+    );
+    let bare = workout_row(
+        "b",
+        "Synthetic Phone",
+        "2026-10-10 12:00:00 -0600",
+        "2026-10-10 12:30:00 -0600",
+    );
+    window(root, DAY, "070000_3600", &[watch.clone()]);
+    window(root, DAY, "070000_300", &[app.clone()]);
+    window(root, DAY, "070500_300", &[late.clone()]);
+    window(root, DAY, "120000_3600", &[bare.clone()]);
+    arrived_record(root, DAY, &watch, Some("20261011"), json!({}));
+    arrived_record(root, DAY, &app, Some("20261017"), json!({}));
+    // Arrived at D+60: never joins the group the briefing reads.
+    arrived_record(root, DAY, &late, Some("20261209"), json!({}));
+    // No arrival day: never admitted.
+    arrived_record(root, DAY, &bare, None, json!({}));
+    assert_eq!(briefing_ids(root, DAY), [vec!["body_w", "body_x"]]);
+    // Nothing on the next day: the face belongs to the day it started.
+    assert!(briefing_ids(root, NEXT).is_empty());
+}
+
+#[test]
+fn the_briefing_leaves_out_hidden_muted_and_deleted_faces_and_takes_a_night_on_its_first_day() {
+    let journal = journal();
+    let root = journal.path();
+    let start = window(root, DAY, "220000_3600", &[night()]);
+    arrived_record(root, DAY, &night(), Some(DAY), json!({}));
+    assert_eq!(briefing_ids(root, DAY), [vec!["body_n1"]]);
+    assert!(briefing_ids(root, NEXT).is_empty());
+    // Deleted with no surviving tile: nothing.
+    delete(&start);
+    assert!(briefing_ids(root, DAY).is_empty());
+    // Hidden: nothing.
+    let journal = journal_fixture_with_live_night();
+    let root = journal.path();
+    let path = root.join(format!("facets/body/activities/{DAY}.jsonl"));
+    let text = fs::read_to_string(&path)
+        .unwrap()
+        .replace("\"source\"", "\"hidden\":true,\"source\"");
+    fs::write(&path, text).unwrap();
+    assert!(briefing_ids(root, DAY).is_empty());
+    // Muted facet: nothing.
+    let journal = journal_fixture_with_live_night();
+    let root = journal.path();
+    fs::write(
+        root.join("facets/body/facet.json"),
+        r#"{"title":"Body","muted":true}"#,
+    )
+    .unwrap();
+    assert!(briefing_ids(root, DAY).is_empty());
+}
+
+fn journal_fixture_with_live_night() -> tempfile::TempDir {
+    let journal = journal();
+    window(journal.path(), DAY, "220000_3600", &[night()]);
+    arrived_record(journal.path(), DAY, &night(), Some(DAY), json!({}));
+    journal
 }
