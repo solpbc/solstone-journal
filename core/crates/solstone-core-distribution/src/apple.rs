@@ -192,13 +192,14 @@ pub fn require_tool_pins(apple: &Apple) -> Result<(), AppleError> {
             unexpected.push(format!("xcode {flattened:?} (want {:?})", apple.xcode));
         }
     }
-    if !apple.notarytool.is_empty() {
+    if !apple.notarytool.is_empty() || !apple.compatible_notarytools.is_empty() {
         let notarytool = run("xcrun", &["notarytool", "--version"])?;
-        if !notarytool.contains(&apple.notarytool) {
+        if !notarytool_is_pinned(apple, &notarytool) {
             unexpected.push(format!(
-                "notarytool {:?} (want {:?})",
+                "notarytool {:?} (want {:?}, compatible {:?})",
                 notarytool.trim(),
-                apple.notarytool
+                apple.notarytool,
+                apple.compatible_notarytools
             ));
         }
     }
@@ -212,6 +213,12 @@ pub fn require_tool_pins(apple: &Apple) -> Result<(), AppleError> {
         "unexpected:\n  {}",
         unexpected.join("\n  ")
     )))
+}
+
+fn notarytool_is_pinned(apple: &Apple, actual: &str) -> bool {
+    std::iter::once(apple.notarytool.as_str())
+        .chain(apple.compatible_notarytools.iter().map(String::as_str))
+        .any(|pin| !pin.is_empty() && actual.trim() == pin)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -626,6 +633,22 @@ fn notarize(path: &Path, apple: &Apple) -> Result<NotarizationReceipt, AppleErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notarytool_pins_accept_only_declared_versions_and_keep_legacy_contracts() {
+        let legacy: Apple = toml_edit::de::from_str("notarytool = \"1.1.2 (41)\"").unwrap();
+        assert!(notarytool_is_pinned(&legacy, "1.1.2 (41)\n"));
+        assert!(!notarytool_is_pinned(&legacy, "1.1.4 (43)"));
+        let compatible: Apple = toml_edit::de::from_str(
+            "notarytool = \"1.1.2 (41)\"\ncompatible_notarytools = [\"1.1.4 (43)\"]",
+        )
+        .unwrap();
+        assert!(notarytool_is_pinned(&compatible, "1.1.2 (41)"));
+        assert!(notarytool_is_pinned(&compatible, "1.1.4 (43)\n"));
+        for unknown in ["", "1.1.3 (42)", "1.1.40 (43)", "prefix 1.1.4 (43)"] {
+            assert!(!notarytool_is_pinned(&compatible, unknown), "{unknown}");
+        }
+    }
     use crate::macho::{FixtureSpec, MH_DYLIB, fixture};
 
     fn write(root: &Path, relative: &str, bytes: &[u8]) {

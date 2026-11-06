@@ -1083,6 +1083,7 @@ fn macos_missing_archive_chain_refuses_before_signing_and_preserves_destination(
             codesign_path: "codesign".into(),
             xcode: "xcode".into(),
             notarytool: "notarytool".into(),
+            compatible_notarytools: Vec::new(),
         }),
         inventory: committed_inventory(),
         fail_evidence_install: false,

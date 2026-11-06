@@ -68,6 +68,8 @@ pub struct Apple {
     pub xcode: String,
     #[serde(default)]
     pub notarytool: String,
+    #[serde(default)]
+    pub compatible_notarytools: Vec<String>,
 }
 
 impl Apple {
