@@ -55,7 +55,10 @@ pub(crate) fn voice_names_from_entities(
 ) -> Option<VoiceNames> {
     let principal = owner.id.clone()?;
     let owner_voice_confirmed = matches!(
-        solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(journal, &principal),
+        // `owner` admitted this principal from these entities.
+        solstone_core_speaker_resolve::owner_centroid::load_centroid_of_admitted_owner(
+            journal, &principal,
+        ),
         Ok(Some(_))
     );
     let people = entities
@@ -79,9 +82,10 @@ pub(crate) fn voice_names_from_entities(
 /// recognized lines named "<owner name> (owner)" so an agent can tell them from
 /// everyone else's. `None` without a single admitted principal.
 pub fn agent_speakers(journal: &Path) -> Option<solstone_core_transcripts::AgentSpeakers> {
-    let voices = voice_names(journal)?;
-    let name = solstone_core_entity::load_all_journal_entities(journal)
-        .ok()?
+    let entities = solstone_core_entity::load_all_journal_entities(journal).ok()?;
+    let owner = crate::JournalOwner::from_entities(journal, &entities);
+    let voices = voice_names_from_entities(journal, &owner, &entities)?;
+    let name = entities
         .into_iter()
         .find(|entity| entity.id == voices.principal)
         .and_then(|entity| Some(entity.value.get("name")?.as_str()?.trim().to_owned()))

@@ -3777,6 +3777,104 @@ fn possible_name_rows_return_only_through_an_admission_that_runs_inside_the_quer
     fs::remove_dir_all(root).expect("cleanup");
 }
 
+#[test]
+fn coverage_finds_a_chunk_without_a_classification_with_or_without_the_path_lookup() {
+    let root = temp_root("coverage-path-lookup");
+    let note = "chronicle/20260107/talents/note.md";
+    write_rel(&root, note, "# Note\n\nfirst kestrel words\n");
+    // Another classified file, so only the missing row can read as incomplete.
+    write_rel(
+        &root,
+        "chronicle/20260107/talents/other.md",
+        "# Other\n\nunrelated words\n",
+    );
+    scan_journal(&root, true).expect("scan");
+    let indexed = indexed_rows(&root, "talents/note.md");
+    let path = indexed[0].1.clone();
+    let boundary = connection_boundary(&["Transcripts", "Facets"], ConnectionScope::WholeJournal);
+    let writable = Connection::open(db_path(&root)).unwrap();
+    writable
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, '', 1, 0, NULL, 0)",
+            [],
+        )
+        .unwrap();
+    assert!(solstone_core_indexer_store::chunk_sources::path_lookup_ready(&writable));
+    assert!(connection_search(&root, &boundary, "kestrel").coverage_complete);
+
+    let (category, basis, eligible): (Option<String>, Option<String>, i64) = writable
+        .query_row(
+            "SELECT category, basis, eligible FROM chunk_classification WHERE path=?1",
+            [&path],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    writable
+        .execute("DELETE FROM chunk_classification WHERE path=?1", [&path])
+        .unwrap();
+    assert!(!connection_search(&root, &boundary, "kestrel").coverage_complete);
+
+    let set_ready = |ready: i64| {
+        writable
+            .execute("UPDATE chunk_source_readiness SET ready = ?1", [ready])
+            .unwrap();
+    };
+    set_ready(0);
+    assert!(!connection_search(&root, &boundary, "kestrel").coverage_complete);
+
+    writable
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, ?2, ?3, ?4, 0)",
+            params![path, category, basis, eligible],
+        )
+        .unwrap();
+    assert!(connection_search(&root, &boundary, "kestrel").coverage_complete);
+    set_ready(1);
+    assert!(connection_search(&root, &boundary, "kestrel").coverage_complete);
+    drop(writable);
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_path_reads_the_same_entries_with_or_without_the_path_lookup() {
+    let root = temp_root("path-entries-lookup");
+    let note = "chronicle/20260107/talents/note.md";
+    let other = "chronicle/20260107/talents/other.md";
+    write_rel(
+        &root,
+        note,
+        "# One\n\nfirst words\n\n# Two\n\nsecond words\n",
+    );
+    write_rel(&root, other, "# Other\n\nunrelated words\n");
+    scan_journal(&root, true).expect("scan");
+    let indexed = indexed_rows(&root, "talents/note.md");
+    assert!(indexed.len() > 1, "{indexed:?}");
+    let path = indexed[0].1.clone();
+    let boundary = connection_boundary(&["Transcripts", "Facets"], ConnectionScope::WholeJournal);
+    let read = || {
+        let entries = crate::read_indexed_path_entries(&root, &boundary, &path, 50, 16384).unwrap();
+        (
+            entries.entries,
+            entries.truncated,
+            crate::indexed_path_has_later_chunk(&root, &boundary, &path).unwrap(),
+        )
+    };
+    assert!(solstone_core_indexer_store::chunk_sources::path_lookup_ready(&read_only(&root)));
+    let through_lookup = read();
+    assert_eq!(through_lookup.0.len(), indexed.len());
+    assert!(
+        through_lookup.0[0].contains("first words"),
+        "{through_lookup:?}"
+    );
+    assert!(through_lookup.2);
+    Connection::open(db_path(&root))
+        .unwrap()
+        .execute("UPDATE chunk_source_readiness SET ready = 0", [])
+        .unwrap();
+    assert_eq!(read(), through_lookup);
+    fs::remove_dir_all(&root).unwrap();
+}
+
 /// The row ids a search would have named for `rel`, read the way a test may.
 fn indexed_rows(root: &Path, rel: &str) -> Vec<(i64, String, i64)> {
     let conn = read_only(root);

@@ -208,6 +208,15 @@ pub fn load_owner_centroid(
 ) -> Result<Option<OwnerCentroid>, OwnerCentroidError> {
     require_admitted_owner_target(journal_root, principal_entity_id)
         .map_err(load_admission_failure)?;
+    load_centroid_of_admitted_owner(journal_root, principal_entity_id)
+}
+
+/// [`load_owner_centroid`] for a caller that has just admitted this owner from
+/// its own read of the journal's entities. Admitting one reads them all.
+pub fn load_centroid_of_admitted_owner(
+    journal_root: &Path,
+    principal_entity_id: &str,
+) -> Result<Option<OwnerCentroid>, OwnerCentroidError> {
     let path = owner_centroid_file(journal_root, principal_entity_id)
         .map_err(OwnerCentroidError::EntityPath)?;
     if !path.exists() {

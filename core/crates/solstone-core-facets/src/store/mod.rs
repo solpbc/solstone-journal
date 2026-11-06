@@ -79,9 +79,10 @@ pub use facet_entities::{
     FacetEntityAttachResult, PreparedReviewAttachment, PreparedReviewPromotion, ScopedFacetEntity,
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
     detach_facet_entity, list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
-    list_scoped_facet_entities_tolerant_with_resolved_ids, prepare_review_promotion,
-    publish_review_aliases, publish_review_attachment, review_promotion_snapshot,
-    update_facet_entity_description, update_facet_entity_identity,
+    list_scoped_facet_entities_tolerant_with_resolved_ids,
+    list_scoped_facet_entities_with_resolved_ids, prepare_review_promotion, publish_review_aliases,
+    publish_review_attachment, review_promotion_snapshot, update_facet_entity_description,
+    update_facet_entity_identity,
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use facet_id::{

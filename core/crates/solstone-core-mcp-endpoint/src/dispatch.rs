@@ -980,6 +980,8 @@ fn resolve_search_entities(
 
     let mut matches = Vec::new();
     let query_folded = fold_literal(&request.query);
+    // Read once a facet needs it: it reads every entity in the journal.
+    let mut identities = None;
 
     for (facet_id, facet_dir, _) in facets {
         if request.facet_id.as_deref().is_some_and(|id| id != facet_id) {
@@ -991,7 +993,13 @@ fn resolve_search_entities(
         ) {
             continue;
         }
-        let scoped = match read_scoped_entities(journal_root, &facet_dir) {
+        if identities.is_none() {
+            identities = solstone_core_facets::read_identity_map(journal_root).ok();
+        }
+        let scoped = match identities.as_ref().map_or(
+            Err(DispatchError::Tool(ToolError::FileUnreadable)),
+            |identities| read_scoped_entities_resolved(journal_root, &facet_dir, identities),
+        ) {
             Ok(scoped) => scoped,
             Err(_) => {
                 return EntityResolutionOutcome {
@@ -1283,6 +1291,7 @@ fn search(
     // Possible-name rows are admitted inside the query, so one this connection
     // may not see never matches, counts, relaxes the query or anchors a cursor.
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
+    let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names));
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
         let batch = (MAX_SEARCH_EXAMINED_ROWS - examined).min(100);
         let response = search_connection_with_possible_names(
@@ -1435,7 +1444,6 @@ fn search(
                 more_segments: false,
                 activity_record: record.as_ref(),
             }];
-            let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names));
             if allowed && !is_screen_text {
                 issue_segment_links(
                     journal_root,
@@ -2303,9 +2311,25 @@ pub(crate) fn read_scoped_entities(
     journal_root: &Path,
     facet_dir: &str,
 ) -> Result<Vec<solstone_core_facets::ScopedFacetEntity>, DispatchError> {
-    let mut entities =
-        solstone_core_facets::list_scoped_facet_entities(journal_root, facet_dir, false, false)
-            .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    let identities = solstone_core_facets::read_identity_map(journal_root)
+        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
+    read_scoped_entities_resolved(journal_root, facet_dir, &identities)
+}
+
+/// [`read_scoped_entities`] against one request's read of the identity map.
+fn read_scoped_entities_resolved(
+    journal_root: &Path,
+    facet_dir: &str,
+    identities: &solstone_core_facets::EntityIdentityMap,
+) -> Result<Vec<solstone_core_facets::ScopedFacetEntity>, DispatchError> {
+    let mut entities = solstone_core_facets::list_scoped_facet_entities_with_resolved_ids(
+        journal_root,
+        facet_dir,
+        false,
+        false,
+        &identities.resolved,
+    )
+    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
     // Legacy folders can name the same facet relationship. Match the link
     // owner's preference: the folder named by the entity id, then name order.
     entities.sort_by(|a, b| {
@@ -2349,13 +2373,22 @@ fn list_entities(
         .transpose()?;
 
     let facets = available_facets(journal_root, snapshot)?;
+    // Read once a facet needs it: it reads every entity in the journal.
+    let mut identities = None;
     // Every facet in the effective filter must be read before paging so a malformed relationship fails closed.
     let mut all_entities = Vec::new();
     for (facet_id, facet_dir, _) in facets {
         if request.facet_id.as_deref().is_some_and(|id| id != facet_id) {
             continue;
         }
-        let scoped = read_scoped_entities(journal_root, &facet_dir)?;
+        if identities.is_none() {
+            identities = Some(
+                solstone_core_facets::read_identity_map(journal_root)
+                    .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?,
+            );
+        }
+        let identities = identities.as_ref().expect("read above");
+        let scoped = read_scoped_entities_resolved(journal_root, &facet_dir, identities)?;
         for item in scoped {
             all_entities.push((facet_id.clone(), item));
         }

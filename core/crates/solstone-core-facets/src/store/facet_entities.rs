@@ -50,6 +50,26 @@ pub fn list_scoped_facet_entities(
     include_blocked: bool,
 ) -> Result<Vec<ScopedFacetEntity>, FacetEntityWriteError> {
     let map = read_identity_map(journal_root)?;
+    list_scoped_facet_entities_with_resolved_ids(
+        journal_root,
+        facet_dir,
+        include_detached,
+        include_blocked,
+        &map.resolved,
+    )
+}
+
+/// [`list_scoped_facet_entities`] for a request that reads several facets. It
+/// joins them against one read of the identity map, which reads every entity.
+/// The caller must obtain `resolved` from the identity map, preserving its
+/// collision policy.
+pub fn list_scoped_facet_entities_with_resolved_ids(
+    journal_root: &Path,
+    facet_dir: &str,
+    include_detached: bool,
+    include_blocked: bool,
+    resolved: &HashMap<String, String>,
+) -> Result<Vec<ScopedFacetEntity>, FacetEntityWriteError> {
     let mut entities = Vec::new();
     for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {
         let Some(link) = read_facet_entity_link(journal_root, facet_dir, &relationship_dir)? else {
@@ -60,7 +80,7 @@ pub fn list_scoped_facet_entities(
             continue;
         }
         let entity_id = link.entity_id().to_owned();
-        let Some(entity_dir) = map.resolved.get(&entity_id) else {
+        let Some(entity_dir) = resolved.get(&entity_id) else {
             continue;
         };
         let Some(identity) = read_entity_identity(journal_root, entity_dir)? else {

@@ -22,6 +22,7 @@ pub use activity_placement::{
     ActivityCourse, PlacedRecord, ResolvedSegment, activity_span, place_activity_records,
 };
 pub use solstone_core_entity::facet_links;
+pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};
 pub use solstone_core_journal_io::AppendError;
 pub use speculative_facets::{
     FACET_CANDIDATE_MIN_SEGMENTS, FACET_CANDIDATE_WINDOW_DAYS, SpeculativeFacetCandidate,
@@ -96,7 +97,8 @@ pub use store::{
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
     detach_facet_entity, iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
     list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
-    list_scoped_facet_entities_tolerant_with_resolved_ids, move_facet_entity,
+    list_scoped_facet_entities_tolerant_with_resolved_ids,
+    list_scoped_facet_entities_with_resolved_ids, move_facet_entity,
     update_facet_entity_description, update_facet_entity_identity,
 };
 #[cfg(any(test, feature = "test-hooks"))]

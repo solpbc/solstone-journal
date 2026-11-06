@@ -1160,6 +1160,22 @@ pub struct IndexedPathEntries {
     pub truncated: bool,
 }
 
+/// The clause selecting one path's rows, with its values. Through the path
+/// lookup `chunks` is only probed by row id, because matching `path` on `chunks`
+/// reads the whole index.
+fn rows_of_path(reader: &QueryConnection, path: &str) -> (String, Vec<Value>) {
+    let value = || Value::Text(path.to_string());
+    if solstone_core_indexer_store::chunk_sources::path_lookup_ready(&reader.connection) {
+        (
+            "chunks.rowid IN (SELECT s.rowid FROM chunk_sources AS s WHERE s.path=?) AND chunks.path=?"
+                .to_owned(),
+            vec![value(), value()],
+        )
+    } else {
+        ("path=?".to_owned(), vec![value()])
+    }
+}
+
 /// Read up to `max_entries` indexed entries of one path, without opening its
 /// source file, admitting only rows the connection's boundary admits.
 ///
@@ -1182,16 +1198,17 @@ pub fn read_indexed_path_entries(
         }
         Err(error) => return Err(error),
     };
+    let (rows_of_path, path_values) = rows_of_path(&reader, path);
     let mut plan = SqlPlan {
-        where_clause: visible_rows("path=?"),
+        where_clause: visible_rows(&rows_of_path),
         params: Vec::new(),
         has_live_match_expression: false,
     };
     append_connection_prefilter(&mut plan, boundary);
-    let mut values = vec![
-        Value::Integer(i64::try_from(max_entry_bytes).unwrap_or(i64::MAX)),
-        Value::Text(path.to_string()),
-    ];
+    let mut values = vec![Value::Integer(
+        i64::try_from(max_entry_bytes).unwrap_or(i64::MAX),
+    )];
+    values.extend(path_values);
     values.extend(plan.params.into_iter().map(Value::Text));
     values.push(Value::Integer(
         i64::try_from(max_entries.saturating_add(1)).unwrap_or(i64::MAX),
@@ -1240,13 +1257,13 @@ pub fn indexed_path_has_later_chunk(
         }
         Err(error) => return Err(error),
     };
+    let (rows_of_path, mut values) = rows_of_path(&reader, path);
     let mut plan = SqlPlan {
-        where_clause: visible_rows("path=? AND idx>0"),
+        where_clause: visible_rows(&format!("{rows_of_path} AND idx>0")),
         params: Vec::new(),
         has_live_match_expression: false,
     };
     append_connection_prefilter(&mut plan, boundary);
-    let mut values = vec![Value::Text(path.to_string())];
     values.extend(plan.params.into_iter().map(Value::Text));
     let found: Option<i64> = reader
         .connection
@@ -1411,8 +1428,19 @@ impl QueryConnection {
         if !state.completed || state.stalled {
             return Ok(false);
         }
+        // The path lookup holds every chunk's path, and walking it stays off the
+        // chunks themselves, which is most of the index. Without it, read them.
+        let unclassified_chunk = if solstone_core_indexer_store::chunk_sources::path_lookup_ready(
+            &self.connection,
+        ) {
+            "EXISTS(SELECT 1 FROM (SELECT DISTINCT path FROM chunk_sources) s WHERE NOT EXISTS(SELECT 1 FROM chunk_classification cc WHERE cc.path=s.path))"
+        } else {
+            "EXISTS(SELECT 1 FROM chunks c LEFT JOIN chunk_classification cc ON cc.path=c.path WHERE cc.path IS NULL)"
+        };
         let incomplete: i64 = self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM chunks c LEFT JOIN chunk_classification cc ON cc.path=c.path WHERE cc.path IS NULL) OR EXISTS(SELECT 1 FROM chunk_classification WHERE unclassified=1) OR (EXISTS(SELECT 1 FROM files) AND NOT EXISTS(SELECT 1 FROM chunk_classification))",
+            &format!(
+                "SELECT {unclassified_chunk} OR EXISTS(SELECT 1 FROM chunk_classification WHERE unclassified=1) OR (EXISTS(SELECT 1 FROM files) AND NOT EXISTS(SELECT 1 FROM chunk_classification))"
+            ),
             [], |row| row.get(0),
         ).map_err(|error| self.classify(error))?;
         Ok(incomplete == 0)
