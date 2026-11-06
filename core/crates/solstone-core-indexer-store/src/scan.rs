@@ -8575,6 +8575,19 @@ not json
         .unwrap()
     }
 
+    /// Keeps a test's write transaction open while its worker blocks on it. Bound
+    /// by time, not a count of yields: on a busy machine a count can outlast the
+    /// worker's 5 s busy timeout, and the worker then fails on the lock instead of
+    /// the refusal the test is checking.
+    #[cfg(feature = "full-tests")]
+    fn hold_the_writer_while_blocked(still_blocked: impl Fn()) {
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(200);
+        while std::time::Instant::now() < until {
+            still_blocked();
+            std::thread::yield_now();
+        }
+    }
+
     #[cfg(feature = "full-tests")]
     fn assert_scan_journal_refusal(error: &StoreError) {
         assert!(matches!(
@@ -8980,13 +8993,12 @@ not json
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .unwrap();
         proceed.store(true, Ordering::Release);
-        for _ in 0..20_000 {
+        hold_the_writer_while_blocked(|| {
             assert!(
                 !allowed.load(Ordering::Acquire),
                 "edge checkpoint ran before its transaction"
             );
-            thread::yield_now();
-        }
+        });
         cancel.store(true, Ordering::Release);
         drop(tx);
         let error = worker.join().unwrap().unwrap_err();
@@ -9042,10 +9054,7 @@ not json
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .unwrap();
         proceed.store(true, Ordering::Release);
-        for _ in 0..20_000 {
-            assert!(!allowed.load(Ordering::Acquire));
-            thread::yield_now();
-        }
+        hold_the_writer_while_blocked(|| assert!(!allowed.load(Ordering::Acquire)));
         cancel.store(true, Ordering::Release);
         drop(tx);
         let error = worker.join().unwrap().unwrap_err();
@@ -9100,10 +9109,7 @@ not json
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .unwrap();
         proceed.store(true, Ordering::Release);
-        for _ in 0..20_000 {
-            assert!(!allowed.load(Ordering::Acquire));
-            thread::yield_now();
-        }
+        hold_the_writer_while_blocked(|| assert!(!allowed.load(Ordering::Acquire)));
         cancel.store(true, Ordering::Release);
         drop(tx);
         let error = worker.join().unwrap().unwrap_err();
@@ -9155,10 +9161,7 @@ not json
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .unwrap();
         proceed.store(true, Ordering::Release);
-        for _ in 0..20_000 {
-            assert!(!called.load(Ordering::Acquire));
-            thread::yield_now();
-        }
+        hold_the_writer_while_blocked(|| assert!(!called.load(Ordering::Acquire)));
         let parked = parent.join("parked");
         match fs::rename(&journal, &parked) {
             Ok(()) => {}
