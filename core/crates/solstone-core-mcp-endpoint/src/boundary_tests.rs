@@ -13466,3 +13466,271 @@ fn every_body_answer_names_the_windows_it_read() {
         }
     }
 }
+
+fn alpha_reader() -> ReadPermission {
+    ReadPermission {
+        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        scope: ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    }
+}
+
+fn body_reference(journal: &tempfile::TempDir) -> Value {
+    let res = probe(
+        journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap();
+    res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["source"] == "body")
+        .unwrap_or_else(|| panic!("{res}"))["reference"]
+        .clone()
+}
+
+fn shows_body(journal: &tempfile::TempDir) -> bool {
+    probe(
+        journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap()["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|activity| activity["source"] == "body")
+}
+
+const WATCH_WINDOW: &str = "chronicle/20260308/import.apple_health/070000_3600";
+
+#[test]
+fn fetch_and_sources_refuse_a_body_reference_whose_window_a_connection_no_longer_reads() {
+    let journal = body_record_journal(true);
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, alpha_reader())
+        .unwrap();
+    let reference = body_reference(&journal);
+    // The window is filed under beta now; the record stays in alpha's file.
+    fs::write(
+        journal
+            .path()
+            .join(WATCH_WINDOW)
+            .join("talents/facets.json"),
+        r#"[{"facet":"beta"}]"#,
+    )
+    .unwrap();
+    for tool in ["fetch", "get_activity_sources"] {
+        let answer = probe(&journal, tool, json!({"reference": reference}));
+        assert!(
+            answer.is_err()
+                || !answer
+                    .as_ref()
+                    .unwrap()
+                    .to_string()
+                    .contains("Synthetic Watch"),
+            "{tool}: {answer:?}"
+        );
+    }
+}
+
+#[test]
+fn no_connection_sees_a_body_record_whose_window_was_deleted() {
+    let journal = body_record_journal(true);
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    assert!(shows_body(&journal));
+    let window = journal.path().join(WATCH_WINDOW);
+    fs::remove_file(window.join("body.jsonl")).unwrap();
+    fs::write(
+        window.join("tombstone.json"),
+        r#"{"reason":"owner_segment_delete","manifest":["body.jsonl"]}"#,
+    )
+    .unwrap();
+    assert!(!shows_body(&journal));
+}
+
+#[test]
+fn a_deleted_start_beside_a_live_hour_window_stays_unread() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    PermissionStore::open(root)
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    // The row sat in a five-minute window, now deleted; the hour window over
+    // the same start is live and never held it.
+    let hour = root.join(WATCH_WINDOW);
+    let short = root.join("chronicle/20260308/import.apple_health/070000_300");
+    fs::create_dir_all(short.join("talents")).unwrap();
+    fs::copy(
+        hour.join("talents/facets.json"),
+        short.join("talents/facets.json"),
+    )
+    .unwrap();
+    fs::write(short.join("stream.json"), "{}\n").unwrap();
+    fs::write(
+        short.join("tombstone.json"),
+        r#"{"reason":"owner_segment_delete","manifest":["body.jsonl"]}"#,
+    )
+    .unwrap();
+    fs::write(hour.join("body.jsonl"), "").unwrap();
+    assert!(!shows_body(&journal));
+}
+
+#[test]
+fn a_capture_shows_no_body_beside_it_from_a_window_its_connection_cannot_read() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    // The record moves to beta's file, its window stays alpha's.
+    let record = fs::read_to_string(root.join("facets/alpha/activities/20260308.jsonl")).unwrap();
+    fs::remove_file(root.join("facets/alpha/activities/20260308.jsonl")).unwrap();
+    fs::create_dir_all(root.join("chronicle/20260308/phone/070000_300")).unwrap();
+    write_activity_line(
+        root,
+        "beta",
+        "20260308",
+        "act_beta_run",
+        "beta capture",
+        50,
+        Some("running"),
+        Some(&["070000_300"]),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let beta = root.join("facets/beta/activities/20260308.jsonl");
+    let mut text = fs::read_to_string(&beta).unwrap();
+    text.push_str(&record);
+    fs::write(&beta, text).unwrap();
+    let beta_reader = ReadPermission {
+        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        scope: ReadScope::Facets {
+            ids: vec![FACET_B.to_owned()],
+        },
+    };
+    let res = listed(&journal, Some(beta_reader));
+    let capture = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["title"] == "beta capture")
+        .unwrap_or_else(|| panic!("{res}"))
+        .clone();
+    assert!(capture.get("beside").is_none(), "{res}");
+    // The whole journal reads the window, and the line is there.
+    let res = listed(&journal, Some(ReadPermission::default_whole_journal()));
+    assert!(res.to_string().contains("\"kind\":\"workout\""), "{res}");
+}
+
+#[test]
+fn a_hidden_capture_sits_beside_no_body_item_and_a_hidden_group_isnt_listed() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    fs::create_dir_all(root.join("chronicle/20260308/phone/070000_300")).unwrap();
+    write_activity_line(
+        root,
+        "alpha",
+        "20260308",
+        "act_hidden_run",
+        "hidden capture",
+        50,
+        Some("running"),
+        Some(&["070000_300"]),
+        None,
+        None,
+        None,
+        Some(true),
+        None,
+    );
+    let res = listed(&journal, Some(ReadPermission::default_whole_journal()));
+    assert!(!res.to_string().contains("hidden capture"), "{res}");
+    assert!(shows_body(&journal));
+    // The same run from an app joins its group; the owner hides only the
+    // app's account, which hides the group: no connection lists it.
+    file_workout(
+        root,
+        "20260308",
+        "x2",
+        "Synthetic App",
+        "2026-03-08 07:01:00 -0400",
+        "2026-03-08 07:41:00 -0400",
+    );
+    assert!(shows_body(&journal));
+    let path = root.join("facets/alpha/activities/20260308.jsonl");
+    let text = fs::read_to_string(&path).unwrap().replace(
+        "\"id\":\"body_00000000000000x2\",",
+        "\"id\":\"body_00000000000000x2\",\"hidden\":true,",
+    );
+    assert!(text.contains("\"hidden\":true"), "{text}");
+    fs::write(&path, text).unwrap();
+    assert!(!shows_body(&journal));
+}
+
+#[test]
+fn a_reference_reaches_its_face_after_another_member_on_another_day_became_its_anchor() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    PermissionStore::open(root)
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    // A late run past midnight from the watch, and the same run from an app
+    // that started after midnight, so filed the next day.
+    file_workout(
+        root,
+        "20260308",
+        "lw",
+        "Synthetic Watch",
+        "2026-03-08 23:50:00 -0400",
+        "2026-03-09 01:00:00 -0400",
+    );
+    file_workout(
+        root,
+        "20260309",
+        "la",
+        "Synthetic App",
+        "2026-03-09 00:01:00 -0400",
+        "2026-03-09 01:00:00 -0400",
+    );
+    let res = probe(
+        &journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap();
+    let late = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| {
+            activity["source"] == "body" && activity["start"] == "2026-03-08 23:50:00 -0400"
+        })
+        .unwrap_or_else(|| panic!("{res}"))
+        .clone();
+    assert_eq!(late["accounts"].as_array().unwrap().len(), 2, "{late}");
+    // The owner titles the app's account: it's the anchor now, on the next day.
+    let mut patch = serde_json::Map::new();
+    patch.insert("title".to_owned(), json!("Hill repeats"));
+    solstone_core_facets::update_activity_record(
+        root,
+        "alpha",
+        "20260309",
+        "body_00000000000000la",
+        &patch,
+        "owner:web",
+        "",
+        "2026-03-10T00:00:00Z",
+    )
+    .unwrap()
+    .expect("titled");
+    let fetched = probe(&journal, "fetch", json!({"reference": late["reference"]})).unwrap();
+    assert!(
+        fetched["text"].as_str().unwrap().contains("Hill repeats"),
+        "{fetched}"
+    );
+}

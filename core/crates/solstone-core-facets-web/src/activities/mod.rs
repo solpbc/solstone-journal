@@ -2845,6 +2845,105 @@ mod tests {
         assert!(month().await.get(BODY_DAY).is_none());
     }
 
+    /// A late run past midnight from the watch, filed on BODY_DAY, and the same
+    /// run from an app that started after midnight, filed the next day.
+    fn add_late_run_across_midnight(root: &Path) {
+        use solstone_core_format::content::body_records::{
+            BodyRow, RowKind, encode_rows, recorder_id,
+        };
+        for (id, by, day, key, start, end) in [
+            (
+                "lw",
+                "Synthetic Watch",
+                BODY_DAY,
+                "230000_3600",
+                "2026-10-10 23:50:00 -0600",
+                "2026-10-11 01:00:00 -0600",
+            ),
+            (
+                "la",
+                "Synthetic App",
+                "20261011",
+                "000000_3600",
+                "2026-10-11 00:01:00 -0600",
+                "2026-10-11 01:00:00 -0600",
+            ),
+        ] {
+            let mut row = BodyRow::new(
+                RowKind::Experience,
+                id.to_owned(),
+                "apple_health",
+                "HKWorkoutActivityTypeRunning",
+                "Running".to_owned(),
+            );
+            row.experience = Some("workout".to_owned());
+            row.start = Some(start.to_owned());
+            row.end = Some(end.to_owned());
+            row.by = Some(by.to_owned());
+            let dir = root.join(format!("chronicle/{day}/import.apple_health/{key}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("body.jsonl"),
+                encode_rows(std::slice::from_ref(&row)),
+            )
+            .unwrap();
+            let record = json!({
+                "id": format!("body_{id}"), "source": "body", "activity": "workout",
+                "account": {"key": format!("import.apple_health\u{1f}{id}"), "start": start,
+                    "end": end, "type": "running",
+                    "recorder": recorder_id("import.apple_health", Some(by))},
+            });
+            let _ = solstone_core_facets::append_activity_record(
+                root,
+                "body",
+                day,
+                record.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn a_group_across_midnight_shows_once_and_hides_as_one() {
+        let root = body_journal();
+        add_late_run_across_midnight(root.path());
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let late = view["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "body_lw")
+            .unwrap_or_else(|| panic!("{view}"))
+            .clone();
+        assert_eq!(late["accounts"].as_array().unwrap().len(), 2, "{view}");
+        // Under the next day, where the app's account is filed, it isn't shown again.
+        let next = gated(root.path(), fixed_clock())
+            .oneshot(
+                Request::builder()
+                    .uri("/app/activities/api/day/20261011/view")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let next: Value =
+            serde_json::from_slice(&to_bytes(next.into_body(), usize::MAX).await.unwrap()).unwrap();
+        assert!(!next.to_string().contains("body_l"), "{next}");
+        // Hiding it hides both accounts, on both days.
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_lw/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows =
+            solstone_core_facets::read_activity_records_strict(root.path(), "body", "20261011")
+                .unwrap();
+        assert_eq!(rows[0]["hidden"], true, "{rows:?}");
+    }
+
     #[tokio::test]
     async fn a_body_group_shows_once_hides_as_one_and_owes_nothing_when_edited() {
         let root = body_journal();
