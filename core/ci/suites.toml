@@ -858,7 +858,9 @@ set = "component"
 areas = ["import"]
 platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
-timeout = "standard"
+# Windows runs these tests one at a time, and the body imports' stop-and-resume
+# runs reached the 600 s budget in two of three native runs on 2026-11-06.
+timeout = "slow"
 default_full = true
 runtime = "none"
 features = ["full-tests"]
