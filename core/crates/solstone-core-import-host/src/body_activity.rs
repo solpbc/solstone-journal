@@ -68,8 +68,8 @@ fn window_facet(window: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Every account key a body record names on `day`, in any facet. A file that
-/// can't be read names none, and the store refuses an append to it anyway.
+/// Every account key a body record names on `day`, in any facet. A line that
+/// can't be read names none, and a store write keeps it as it is.
 fn recorded_keys(journal: &Path, day: &str) -> BTreeSet<String> {
     let mut keys = BTreeSet::new();
     let Ok(facets) = fs::read_dir(journal.join("facets")) else {

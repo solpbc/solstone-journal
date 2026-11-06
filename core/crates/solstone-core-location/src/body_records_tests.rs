@@ -738,3 +738,41 @@ fn an_account_composes_only_from_a_window_its_start_falls_in() {
     assert_eq!(found[0].account, Account::NotFound);
     assert_eq!(found[0].window.as_deref(), Some("220000_3600"));
 }
+
+#[test]
+fn separate_keeps_a_line_it_cannot_read() {
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    solstone_core_facets::create_facet(root, "body", "Body", "Test", "#123456", "", None).unwrap();
+    for (key, recorder, start) in [("w", "watch", "07:00"), ("x", "strava", "07:01")] {
+        let row = json!({
+            "id": format!("body_{key}"), "source": "body", "activity": "workout",
+            "account": {"key": format!("{STREAM}\u{1f}{key}"), "recorder": recorder, "type": "running",
+                "start": format!("2026-10-10 {start}:00 -0600"), "end": "2026-10-10 08:00:00 -0600"},
+        });
+        let _ = solstone_core_facets::append_activity_record(
+            root,
+            "body",
+            DAY,
+            row.as_object().unwrap().clone(),
+        )
+        .unwrap();
+    }
+    let records = stored_body_records(root, "body", DAY).unwrap();
+    let path = root.join(format!("facets/body/activities/{DAY}.jsonl"));
+    let half = r#"{"id":"body_y","source":"bo"#;
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str(half);
+    text.push('\n');
+    fs::write(&path, text).unwrap();
+
+    separate_account(root, &records[1], &records[..1], "2026-10-12T00:00:00Z").unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    let lines = text.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 3, "{text}");
+    assert_eq!(lines[2], half);
+    assert!(
+        lines[0].contains(r#""apart""#) && lines[1].contains(r#""apart""#),
+        "{text}"
+    );
+}

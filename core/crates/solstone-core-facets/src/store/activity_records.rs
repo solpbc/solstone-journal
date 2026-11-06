@@ -285,10 +285,49 @@ fn parse_rows_strict(text: &str) -> Result<Vec<ActivityRecord>, ActivityRecordSt
     Ok(rows)
 }
 
-fn write_rows(path: &Path, rows: &[ActivityRecord]) -> Result<(), ActivityRecordStoreError> {
+/// A day file as a write reads it: its rows, and every other line, kept as it
+/// is with how many rows came before it. A write never loses a line it can't
+/// read: a half-written line, or one that isn't a record, goes back verbatim.
+#[derive(Default)]
+struct DayLines {
+    rows: Vec<ActivityRecord>,
+    kept: Vec<(usize, String)>,
+}
+
+fn read_day_lines(path: &Path) -> Result<DayLines, ActivityRecordStoreError> {
+    let mut day = DayLines::default();
+    if !path.exists() {
+        return Ok(day);
+    }
+    for line in read_text(path, String::new())?.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(line) {
+            Ok(Value::Object(row)) => day.rows.push(row),
+            _ => day.kept.push((day.rows.len(), line.to_owned())),
+        }
+    }
+    Ok(day)
+}
+
+fn write_rows(
+    path: &Path,
+    rows: &[ActivityRecord],
+    kept: &[(usize, String)],
+) -> Result<(), ActivityRecordStoreError> {
     let mut bytes = Vec::new();
-    for row in rows {
+    let mut kept = kept.iter().peekable();
+    for (index, row) in rows.iter().enumerate() {
+        while let Some((_, line)) = kept.next_if(|(before, _)| *before <= index) {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
         serde_json::to_writer(&mut bytes, row)?;
+        bytes.push(b'\n');
+    }
+    for (_, line) in kept {
+        bytes.extend_from_slice(line.as_bytes());
         bytes.push(b'\n');
     }
     atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) })?;
@@ -433,7 +472,10 @@ fn write_day_records<T>(
     if !existed && !create_if_missing {
         return Err(ActivityRecordStoreError::MissingDayFile { path });
     }
-    let current = read_rows(&path)?;
+    let DayLines {
+        rows: current,
+        kept,
+    } = read_day_lines(&path)?;
     let (updated, result) = modify(current.clone())?;
     if !existed && updated.is_empty() {
         return Ok((result, None));
@@ -441,7 +483,7 @@ fn write_day_records<T>(
     if existed && updated == current {
         return Ok((result, None));
     }
-    write_rows(&path, &updated)?;
+    write_rows(&path, &updated, &kept)?;
     Ok((result, Some(path)))
 }
 
@@ -2125,5 +2167,118 @@ mod tests {
         std::fs::write(act_dir.join("20261003.jsonl"), "[1, 2, 3]\n").unwrap();
         let err2 = read_activity_records_strict(root.path(), "work", "20261003").unwrap_err();
         assert!(matches!(err2, ActivityRecordStoreError::Json(_)));
+    }
+}
+
+#[cfg(test)]
+mod kept_line_tests {
+    use super::*;
+
+    const DAY: &str = "20261016";
+    const HALF: &str = r#"{"id":"run_0700","activity":"run"#;
+    const NOT_A_RECORD: &str = r#"["not", "a", "record"]"#;
+
+    fn journal_with(lines: &[&str]) -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        crate::create_facet(root.path(), "work", "Work", "Test", "#123456", "", None).unwrap();
+        let path = root
+            .path()
+            .join(format!("facets/work/activities/{DAY}.jsonl"));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut text = lines.join("\n");
+        text.push('\n');
+        std::fs::write(&path, text).unwrap();
+        (root, path)
+    }
+
+    fn lines(path: &Path) -> Vec<String> {
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn row(id: &str) -> String {
+        serde_json::json!({"id": id, "activity": "meeting", "segments": ["090000_300"]}).to_string()
+    }
+
+    #[test]
+    fn every_write_keeps_a_line_it_cannot_read_where_it_was() {
+        let first = row("meet_0900");
+        let second = row("meet_1000");
+        let (root, path) = journal_with(&[&first, HALF, NOT_A_RECORD, &second]);
+        let kept_in_place = |path: &Path| {
+            let now = lines(path);
+            let at = |text: &str| now.iter().position(|line| line == text);
+            assert_eq!(at(HALF), Some(1), "{now:?}");
+            assert_eq!(at(NOT_A_RECORD), Some(2), "{now:?}");
+            now
+        };
+
+        // Hide, edit and append each rewrite the file; none loses a line.
+        set_activity_hidden(
+            root.path(),
+            "work",
+            DAY,
+            "meet_1000",
+            true,
+            "owner:web",
+            None,
+            "t",
+        )
+        .unwrap()
+        .expect("hidden");
+        assert!(kept_in_place(&path)[3].contains(r#""hidden":true"#));
+        let mut patch = Map::new();
+        patch.insert("title".to_owned(), Value::String("Standup".to_owned()));
+        update_activity_record(
+            root.path(),
+            "work",
+            DAY,
+            "meet_0900",
+            &patch,
+            "owner:web",
+            "",
+            "t",
+        )
+        .unwrap()
+        .expect("edited");
+        assert!(kept_in_place(&path)[0].contains("Standup"));
+        let third = serde_json::from_str::<Value>(&row("meet_1100")).unwrap();
+        append_activity_record(root.path(), "work", DAY, third.as_object().unwrap().clone())
+            .unwrap();
+        let now = kept_in_place(&path);
+        assert_eq!(now.len(), 5, "{now:?}");
+        assert!(now[4].contains("meet_1100"));
+    }
+
+    #[test]
+    fn a_file_holding_only_a_bad_line_keeps_it() {
+        let (root, path) = journal_with(&[HALF]);
+        let before = std::fs::read(&path).unwrap();
+        // Nothing to hide: the file isn't touched.
+        assert!(
+            set_activity_hidden(
+                root.path(),
+                "work",
+                DAY,
+                "run_0700",
+                true,
+                "owner:web",
+                None,
+                "t"
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        // An append adds its row after the line, which stays.
+        let added = serde_json::from_str::<Value>(&row("meet_0900")).unwrap();
+        append_activity_record(root.path(), "work", DAY, added.as_object().unwrap().clone())
+            .unwrap();
+        let now = lines(&path);
+        assert_eq!(now[0], HALF);
+        assert!(now[1].contains("meet_0900"), "{now:?}");
     }
 }

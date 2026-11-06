@@ -257,3 +257,34 @@ fn a_refused_append_is_counted_and_the_next_facet_still_gets_its_record() {
     assert_eq!(counts.refused[0].0, "gone");
     assert_eq!(rows(root, "body").len(), 1);
 }
+
+#[test]
+fn a_day_holding_a_half_written_line_keeps_it_and_says_what_was_written() {
+    let journal = journal();
+    let root = journal.path();
+    let half = r#"{"id":"meet_0900","activity":"mee"#;
+    fs::create_dir_all(file(root, "body").parent().unwrap()).unwrap();
+    fs::write(file(root, "body"), format!("{half}\n")).unwrap();
+    window(
+        root,
+        "080000_3600",
+        Some("body"),
+        &[experience(
+            "w1",
+            "workout",
+            "2026-10-10 08:00:00 -0600",
+            "2026-10-10 08:40:00 -0600",
+        )],
+    );
+    let counts = write_records(root, DAY);
+    assert_eq!(counts.written, 1);
+    assert!(counts.refused.is_empty());
+    let text = fs::read_to_string(file(root, "body")).unwrap();
+    let lines = text.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert_eq!(lines[0], half);
+    assert!(
+        lines[1].contains(&record_id(&account_key(STREAM, "w1"))),
+        "{text}"
+    );
+}
