@@ -32,6 +32,9 @@ const REQUEST_BUDGET: Duration = Duration::from_secs(15);
 const COLD_START_ALLOWANCE: Duration = Duration::from_secs(30);
 /// Kept back from a request's budget to observe a stopped worker.
 const OBSERVATION_RESERVE: Duration = Duration::from_secs(2);
+/// How long a dropped worker may take to finish exiting. A cold scanner has
+/// held a killed `powershell.exe` open for seconds.
+const WORKER_EXIT_WAIT: Duration = Duration::from_secs(10);
 /// The field every request carries and every reply echoes.
 const REQUEST_ID: &str = "request_id";
 
@@ -141,6 +144,13 @@ impl Drop for Worker {
         // a worker that is not reading. It holds no state between requests.
         self.requests = None;
         let _ = self.child.kill();
+        // The worker is in this command's Job. Exiting ahead of it leaves the
+        // forwarder a live member and only its hard-stop window to reap it, and
+        // a miss turns a command that succeeded into a launch failure.
+        let deadline = Instant::now() + WORKER_EXIT_WAIT;
+        while matches!(self.child.try_wait(), Ok(None)) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 }
 
