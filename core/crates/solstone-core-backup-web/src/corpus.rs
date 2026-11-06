@@ -2728,8 +2728,10 @@ async fn handoff_needs_subscription_is_terminal_without_binding() {
         root.path().to_path_buf(),
         Arc::new(ScriptRunner::with_outputs(vec![])),
     );
-    let (_, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
-    let url = started["operation"]["portal_url"].as_str().unwrap();
+    let (status, started) = post_json(&deps, "/app/backup/enable-hosted", None).await;
+    let url = started["operation"]["portal_url"]
+        .as_str()
+        .unwrap_or_else(|| panic!("enable-hosted returned {status} with no portal url: {started}"));
     let nonce = url
         .split("nonce=")
         .nth(1)
