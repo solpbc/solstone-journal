@@ -13353,3 +13353,28 @@ fn a_source_apps_name_reaches_every_reader_literal() {
         assert!(found.iter().all(|by| by == &literal), "{reader}: {found:?}");
     }
 }
+
+#[test]
+fn a_bad_line_on_a_neighbouring_day_fails_no_list() {
+    let journal = body_record_journal(true);
+    // A day outside the range and the week before it, read only to group:
+    // one half-written line.
+    fs::write(
+        journal
+            .path()
+            .join("facets/alpha/activities/20260225.jsonl"),
+        "{\"id\":\"body_q\",\"sou\n",
+    )
+    .unwrap();
+    let listed = listed(&journal, None);
+    assert!(
+        listed["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|activity| activity["source"] == "body"),
+        "{listed}"
+    );
+    let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+    assert_eq!(week["body"][0]["kind"], "workout", "{week}");
+}

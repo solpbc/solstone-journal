@@ -651,9 +651,14 @@ fn set_hidden(
         Ok(Some(record)) => {
             // A body record's group hides and unhides as one: every member.
             if solstone_core_facets::is_body_record(&record) {
-                let members =
-                    solstone_core_location::body_records::owner_group(root, &facet, &day, &span_id)
-                        .unwrap_or_default();
+                // A group that can't be read is an error, not a group of one:
+                // a member left as it was must not read as done. Retrying is safe.
+                let members = match solstone_core_location::body_records::owner_group(
+                    root, &facet, &day, &span_id,
+                ) {
+                    Ok(members) => members,
+                    Err(error) => return internal(error.to_string()),
+                };
                 for member in members.iter().filter(|member| member.id != span_id) {
                     if let Err(error) = solstone_core_facets::set_activity_hidden(
                         root,
@@ -2651,6 +2656,73 @@ mod tests {
             .unwrap()
             .clone();
         assert_eq!(cap["beside"][0]["kind"], "sleep", "{next}");
+    }
+
+    #[tokio::test]
+    async fn a_bad_line_costs_only_itself_in_the_day_view() {
+        let root = body_journal();
+        let activities = root.path().join("facets/body/activities");
+        // A half-written line on the day, and a line that isn't text, on a day
+        // whose records group with it.
+        let today = activities.join(format!("{BODY_DAY}.jsonl"));
+        let mut bytes = std::fs::read(&today).unwrap();
+        bytes.extend_from_slice(b"{\"id\":\"body_q\",\"sou\n");
+        std::fs::write(&today, &bytes).unwrap();
+        std::fs::write(activities.join("20261008.jsonl"), b"\xff\xfe not a line\n").unwrap();
+        let (status, view) = body_call(root.path(), "view", None, None).await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        let items = view["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{view}");
+        assert_eq!(items[0]["accounts"].as_array().unwrap().len(), 2, "{view}");
+        // Hiding the group still works, and keeps the half-written line.
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let text = std::fs::read_to_string(&today).unwrap();
+        assert!(text.contains("{\"id\":\"body_q\",\"sou"), "{text}");
+        assert_eq!(text.matches("\"hidden\":true").count(), 2, "{text}");
+    }
+
+    #[tokio::test]
+    async fn an_unhide_that_cannot_read_the_group_says_so_and_a_retry_finishes() {
+        let root = body_journal();
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        // A day the group is read across can't be read at all.
+        let blocked = root.path().join("facets/body/activities/20261009.jsonl");
+        std::fs::create_dir_all(&blocked).unwrap();
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/unmute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_ne!(status, StatusCode::OK);
+        std::fs::remove_dir(&blocked).unwrap();
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/unmute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows =
+            solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
+                .unwrap();
+        assert!(rows.iter().all(|row| row["hidden"] == false), "{rows:?}");
     }
 
     #[tokio::test]

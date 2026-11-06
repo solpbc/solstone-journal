@@ -251,6 +251,8 @@ pub fn list_activity_day_stems(
     Ok(stems)
 }
 
+/// A day's records for a reader: a file that isn't text can't be read, and a
+/// line that isn't a record is skipped.
 fn read_rows(path: &Path) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
     if !path.exists() {
         return Ok(Vec::new());
@@ -260,6 +262,25 @@ fn read_rows(path: &Path) -> Result<Vec<ActivityRecord>, ActivityRecordStoreErro
         .filter(|line| !line.trim().is_empty())
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .filter_map(|value| value.as_object().cloned())
+        .collect())
+}
+
+/// A day's records, every line that is one; a line that isn't costs only
+/// itself. Unlike [`read_activity_records_strict`], a half-written line
+/// doesn't make the day unreadable.
+///
+/// # Errors
+///
+/// When the file can't be read at all.
+pub fn read_activity_records_readable(
+    root: &Path,
+    facet: &str,
+    day: &str,
+) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
+    Ok(read_day_lines(&day_path(root, facet, day)?)?
+        .rows
+        .into_iter()
+        .map(normalize)
         .collect())
 }
 
@@ -291,21 +312,29 @@ fn parse_rows_strict(text: &str) -> Result<Vec<ActivityRecord>, ActivityRecordSt
 #[derive(Default)]
 struct DayLines {
     rows: Vec<ActivityRecord>,
-    kept: Vec<(usize, String)>,
+    kept: Vec<(usize, Vec<u8>)>,
 }
 
 fn read_day_lines(path: &Path) -> Result<DayLines, ActivityRecordStoreError> {
     let mut day = DayLines::default();
-    if !path.exists() {
-        return Ok(day);
-    }
-    for line in read_text(path, String::new())?.lines() {
-        if line.trim().is_empty() {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(day),
+        Err(source) => {
+            return Err(ReadError::Io {
+                path: path.to_owned(),
+                source,
+            }
+            .into());
+        }
+    };
+    for line in bytes.split(|byte| *byte == b'\n') {
+        if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        match serde_json::from_str::<Value>(line) {
+        match serde_json::from_slice::<Value>(line) {
             Ok(Value::Object(row)) => day.rows.push(row),
-            _ => day.kept.push((day.rows.len(), line.to_owned())),
+            _ => day.kept.push((day.rows.len(), line.to_vec())),
         }
     }
     Ok(day)
@@ -314,20 +343,20 @@ fn read_day_lines(path: &Path) -> Result<DayLines, ActivityRecordStoreError> {
 fn write_rows(
     path: &Path,
     rows: &[ActivityRecord],
-    kept: &[(usize, String)],
+    kept: &[(usize, Vec<u8>)],
 ) -> Result<(), ActivityRecordStoreError> {
     let mut bytes = Vec::new();
     let mut kept = kept.iter().peekable();
     for (index, row) in rows.iter().enumerate() {
         while let Some((_, line)) = kept.next_if(|(before, _)| *before <= index) {
-            bytes.extend_from_slice(line.as_bytes());
+            bytes.extend_from_slice(line);
             bytes.push(b'\n');
         }
         serde_json::to_writer(&mut bytes, row)?;
         bytes.push(b'\n');
     }
     for (_, line) in kept {
-        bytes.extend_from_slice(line.as_bytes());
+        bytes.extend_from_slice(line);
         bytes.push(b'\n');
     }
     atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) })?;
@@ -2246,8 +2275,9 @@ mod kept_line_tests {
         .expect("edited");
         assert!(kept_in_place(&path)[0].contains("Standup"));
         let third = serde_json::from_str::<Value>(&row("meet_1100")).unwrap();
-        append_activity_record(root.path(), "work", DAY, third.as_object().unwrap().clone())
-            .unwrap();
+        let _ =
+            append_activity_record(root.path(), "work", DAY, third.as_object().unwrap().clone())
+                .unwrap();
         let now = kept_in_place(&path);
         assert_eq!(now.len(), 5, "{now:?}");
         assert!(now[4].contains("meet_1100"));
@@ -2275,8 +2305,9 @@ mod kept_line_tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
         // An append adds its row after the line, which stays.
         let added = serde_json::from_str::<Value>(&row("meet_0900")).unwrap();
-        append_activity_record(root.path(), "work", DAY, added.as_object().unwrap().clone())
-            .unwrap();
+        let _ =
+            append_activity_record(root.path(), "work", DAY, added.as_object().unwrap().clone())
+                .unwrap();
         let now = lines(&path);
         assert_eq!(now[0], HALF);
         assert!(now[1].contains("meet_0900"), "{now:?}");

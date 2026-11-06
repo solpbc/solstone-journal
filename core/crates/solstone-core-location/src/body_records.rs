@@ -17,9 +17,7 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, NaiveDate, Timelike};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
-use solstone_core_facets::{
-    activity_field_held, is_body_record, read_activity_records_strict, update_activity_record_with,
-};
+use solstone_core_facets::{activity_field_held, is_body_record, update_activity_record_with};
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time,
 };
@@ -329,15 +327,8 @@ pub fn stored_body_records(
     facet: &str,
     day: &str,
 ) -> Result<Vec<StoredBody>, ComposeError> {
-    let path = journal
-        .join("facets")
-        .join(facet)
-        .join("activities")
-        .join(format!("{day}.jsonl"));
-    if !path.is_file() {
-        return Ok(Vec::new());
-    }
-    let records = read_activity_records_strict(journal, facet, day)
+    // A line that isn't a record costs only itself.
+    let records = solstone_core_facets::read_activity_records_readable(journal, facet, day)
         .map_err(|error| ComposeError(error.to_string()))?;
     Ok(records
         .iter()
@@ -850,7 +841,11 @@ pub fn body_groups_range(
     let mut on = first - chrono::Duration::days(GROUP_DAYS_BACK);
     let end = last + chrono::Duration::days(GROUP_DAYS_FORWARD);
     while on <= end {
-        for stored in stored_body_records(journal, facet, &on.format("%Y%m%d").to_string())? {
+        // A day's file that can't be read at all costs only its records' part
+        // in grouping: the day's own reader reports it.
+        let stored = stored_body_records(journal, facet, &on.format("%Y%m%d").to_string())
+            .unwrap_or_default();
+        for stored in stored {
             if readable.is_none_or(|readable| groups.windows.may_read(journal, &stored, readable)) {
                 groups.records.push(stored);
             }

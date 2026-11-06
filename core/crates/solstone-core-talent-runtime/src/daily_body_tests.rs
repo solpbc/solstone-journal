@@ -164,11 +164,17 @@ fn a_deleted_account_gives_nothing_and_an_unreadable_read_gives_its_own_state() 
     );
 
     for edge in ["20260925", "20261012"] {
+        // A line that isn't a record costs only itself.
         let journal = self::journal(false);
         let path = journal
             .path()
             .join(format!("facets/body/activities/{edge}.jsonl"));
-        fs::write(path, "not json\n").unwrap();
+        fs::write(&path, "not json\n").unwrap();
+        let block = body_block(journal.path(), BODY_HOOK, DAY);
+        assert!(matches!(block.state, BodyState::Admitted(_)), "{edge}");
+        // A file that can't be read at all leaves the block unreadable.
+        fs::remove_file(&path).unwrap();
+        fs::create_dir_all(&path).unwrap();
         let block = body_block(journal.path(), BODY_HOOK, DAY);
         assert_eq!(block.state, BodyState::Unreadable, "{edge}");
         assert_eq!(block.fingerprint, UNREADABLE_FINGERPRINT);

@@ -42,8 +42,8 @@ pub use activity_records::{
     append_activity_lines_edit, append_activity_record, append_activity_record_checked,
     append_edit, edit_removable, edit_removed, get_activity_record, hold_activity_enrichment,
     is_body_record, is_retired_plan, list_activity_day_stems, load_activity_records,
-    parse_activity_records_strict, read_activity_records_strict, remove_activity_edit,
-    set_activity_hidden, set_activity_hidden_checked, update_activity_record,
+    parse_activity_records_strict, read_activity_records_readable, read_activity_records_strict,
+    remove_activity_edit, set_activity_hidden, set_activity_hidden_checked, update_activity_record,
     update_activity_record_checked, update_activity_record_with,
 };
 pub use awareness::{
