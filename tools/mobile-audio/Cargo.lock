@@ -1935,6 +1935,7 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-segment",
 ]
 
 [[package]]
@@ -2453,6 +2454,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-memory-original",
  "solstone-core-processing-record",
+ "solstone-core-segment",
  "solstone-core-speaker-id",
 ]
 

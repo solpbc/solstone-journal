@@ -802,6 +802,38 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn a_body_window_is_never_an_activitys_audio() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(root.path(), "20261010", "090000_300", &[], beside);
+            let record = serde_json::json!({"segments": ["090000_300"]});
+            let record = record.as_object().unwrap();
+            // No audio in the capture: a body window doesn't supply any.
+            assert_eq!(
+                owner_heard(root.path(), "20261010", record, None),
+                None,
+                "{beside:?}"
+            );
+            fs::write(
+                twins.capture.join("audio.jsonl"),
+                "{}\n{\"start\":\"00:00:01\",\"text\":\"hello there friend\"}\n",
+            )
+            .unwrap();
+            assert_eq!(
+                owner_heard(root.path(), "20261010", record, None),
+                Some(Vec::new()),
+                "{beside:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_quote_is_said_by_you_on_the_line_the_owner_says_was_theirs() {
         use solstone_core_speaker_id::owner_line_labels::{
             LineFingerprint, OwnerLineEntry, encode_owner_line_labels, owner_line_labels_path,

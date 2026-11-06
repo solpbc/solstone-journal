@@ -3355,7 +3355,8 @@ fn log_index_enqueue<W: std::io::Write>(
 
 /// Locate the requested segment. With a stream the lookup is exact; without one
 /// the request must name exactly one segment, because two streams sharing a
-/// basename is a refusal, not a guess.
+/// basename is a refusal, not a guess. A body window is never one of them: a
+/// request that names no stream means the owner's capture.
 fn resolve_segment_dir(
     journal: &std::path::Path,
     day: &str,
@@ -3368,7 +3369,10 @@ fn resolve_segment_dir(
     let matches = iter_segments(journal, PathOrDay::Day(day))
         .map_err(|error| error.to_string())?
         .into_iter()
-        .filter(|entry| entry.name().to_str() == Some(segment))
+        .filter(|entry| {
+            entry.name().to_str() == Some(segment)
+                && !solstone_core_segment::is_body_only_segment(entry)
+        })
         .map(|entry| entry.path().to_path_buf())
         .collect::<Vec<_>>();
     match matches.as_slice() {
@@ -3794,6 +3798,48 @@ fn from_scratch_floor_retry_consumes_one_durable_owner_cause() {
                 .is_none()
         );
         work_intent::finish_from_scratch(root.path(), day, &intent.id, false).unwrap();
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn a_body_window_never_answers_a_segment_with_no_stream() {
+    use solstone_core_segment::body_twins::{BODY_STREAM, Beside, lay};
+    for beside in [
+        Beside::Nothing,
+        Beside::BodyWindow,
+        Beside::DeletedBodyWindow,
+        Beside::RetiredCard,
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let twins = lay(root.path(), "20261010", "090000_300", &[], beside);
+        let found = resolve_segment_dir(root.path(), "20261010", "090000_300", None);
+        if beside == Beside::RetiredCard {
+            // An older card isn't a body window: HEAD's answer, a refusal.
+            assert!(found.is_err(), "{beside:?}: {found:?}");
+        } else {
+            assert_eq!(found, Ok(Some(twins.capture.clone())), "{beside:?}");
+        }
+        // A direct capture isn't refused or answered by a body window.
+        std::fs::remove_dir_all(twins.capture.parent().unwrap()).unwrap();
+        let direct = root.path().join("chronicle/20261010/090000_300");
+        std::fs::create_dir_all(&direct).unwrap();
+        let found = resolve_segment_dir(root.path(), "20261010", "090000_300", None);
+        if beside == Beside::RetiredCard {
+            assert!(found.is_err(), "{beside:?}: {found:?}");
+        } else {
+            assert_eq!(found, Ok(Some(direct.clone())), "{beside:?}");
+        }
+        // With no capture at all, a body window doesn't stand in.
+        std::fs::remove_dir_all(&direct).unwrap();
+        let found = resolve_segment_dir(root.path(), "20261010", "090000_300", None);
+        match beside {
+            Beside::RetiredCard => assert_eq!(found, Ok(twins.neighbour.clone()), "{beside:?}"),
+            _ => assert_eq!(found, Ok(None), "{beside:?}"),
+        }
+        // Naming the body stream still reaches it.
+        let named = resolve_segment_dir(root.path(), "20261010", "090000_300", Some(BODY_STREAM));
+        assert_eq!(named, Ok(twins.neighbour.clone()), "{beside:?}");
     }
 }
 

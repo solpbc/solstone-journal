@@ -899,3 +899,54 @@ async fn weekly_reflection_source_links() {
     assert_eq!(status, StatusCode::FOUND);
     assert_eq!(loc.as_deref(), Some("/app/home/week/20260308"));
 }
+
+#[tokio::test]
+async fn a_body_window_never_answers_an_activity_source_link() {
+    use solstone_core_segment::body_twins::{Beside, lay};
+    for beside in [
+        Beside::Nothing,
+        Beside::BodyWindow,
+        Beside::DeletedBodyWindow,
+        Beside::RetiredCard,
+    ] {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let twins = lay(
+            root,
+            "20260901",
+            "100000_300",
+            &[("audio.jsonl", "{\"start\":0.0}\n")],
+            beside,
+        );
+        write_file(
+            &root.join("facets/work/activities/20260901.jsonl"),
+            "{\"id\":\"act1\",\"segments\":[\"100000_300\"]}\n",
+        );
+        write_json(
+            &root.join("facets/work/facet.json"),
+            &json!({"id":"a0000000-0000-4000-8000-000000000001"}),
+        );
+        let app = source_link_router(root.to_path_buf(), Arc::new(FilesystemReads));
+        let (status, body, location) =
+            get_source(app, "sol://facets/work/activities/20260901#act1").await;
+        if beside == Beside::RetiredCard {
+            // An older card isn't a body window: HEAD's answer, ambiguous.
+            assert_eq!(status, StatusCode::NOT_FOUND, "{beside:?}: {body}");
+            continue;
+        }
+        // The day's segment list never holds a body window, so the capture
+        // stays the only match.
+        assert_eq!(status, StatusCode::FOUND, "{beside:?}: {body}");
+        assert_eq!(
+            location.as_deref(),
+            Some(
+                format!(
+                    "/app/transcripts/20260901?stream={}#100000_300",
+                    twins.capture_stream
+                )
+                .as_str()
+            ),
+            "{beside:?}"
+        );
+    }
+}

@@ -232,6 +232,7 @@ sha2.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 regex.workspace = true
 solstone-core-callosum = { workspace = true, features = ["test-hooks"] }
 solstone-core-cortex.workspace = true

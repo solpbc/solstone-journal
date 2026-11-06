@@ -4,7 +4,8 @@
 use serde_json::{Map, Value};
 
 use solstone_core_generate::ContentPart;
-use solstone_core_journal_io::{PathOrDay, iter_segments};
+use solstone_core_journal_io::{PathOrDay, Segment, iter_segments};
+use solstone_core_segment::is_body_only_segment;
 use solstone_core_talent_cli::preview::{PreviewRequest, PromptPreview, PromptPreviewRefusal};
 
 use crate::activity_contract::{self, SpanFailure};
@@ -354,10 +355,7 @@ fn resolve_activity(
         )
     })?;
     for segment in &span {
-        let Some(candidate) = available
-            .iter()
-            .find(|candidate| candidate.key() == segment)
-        else {
+        let Some(candidate) = span_segment(&available, segment) else {
             return Err(refusal(
                 "activity_segment_unavailable",
                 Some(segment.clone()),
@@ -388,6 +386,14 @@ fn resolve_activity(
     }))
 }
 
+/// The segment an activity's span names. An activity names no stream, so a
+/// body window sharing the key never answers.
+fn span_segment<'a>(available: &'a [Segment], key: &str) -> Option<&'a Segment> {
+    available
+        .iter()
+        .find(|candidate| candidate.key() == key && !is_body_only_segment(candidate))
+}
+
 fn refusal(
     code: impl Into<String>,
     segment: Option<String>,
@@ -402,6 +408,38 @@ fn refusal(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_body_window_never_answers_a_span_segment() {
+        use solstone_core_journal_io::{PathOrDay, iter_segments};
+        use solstone_core_segment::body_twins::{Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(root.path(), "20261010", "090000_300", &[], beside);
+            let available = iter_segments(root.path(), PathOrDay::Day("20261010")).unwrap();
+            let found =
+                super::span_segment(&available, "090000_300").map(|s| s.path().to_path_buf());
+            match beside {
+                // An older card isn't a body window: HEAD's answer, the first listed.
+                Beside::RetiredCard => assert_eq!(found, twins.neighbour, "{beside:?}"),
+                _ => assert_eq!(found, Some(twins.capture.clone()), "{beside:?}"),
+            }
+            // With the capture gone, a body window doesn't stand in for it.
+            std::fs::remove_dir_all(&twins.capture).unwrap();
+            let available = iter_segments(root.path(), PathOrDay::Day("20261010")).unwrap();
+            let found =
+                super::span_segment(&available, "090000_300").map(|s| s.path().to_path_buf());
+            match beside {
+                Beside::RetiredCard => assert_eq!(found, twins.neighbour, "{beside:?}"),
+                _ => assert_eq!(found, None, "{beside:?}"),
+            }
+        }
+    }
+
     #[cfg(all(test, feature = "full-tests"))]
     use std::fs;
 

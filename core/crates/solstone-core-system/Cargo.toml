@@ -56,6 +56,7 @@ solstone-core-local = { workspace = true }
 solstone-core-assets = { workspace = true }
 
 [dev-dependencies]
+solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-artifact-download.workspace = true
 filetime = "0.2.29"
 minisign = { workspace = true }

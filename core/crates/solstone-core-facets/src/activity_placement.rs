@@ -11,6 +11,7 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{PathOrDay, iter_segments};
+use solstone_core_segment::is_body_only_segment;
 
 use crate::activity_value_truthy;
 
@@ -95,13 +96,22 @@ pub fn place_activity_records(
     day: &str,
     placed: &[PlacedRecord<'_>],
 ) -> Vec<ActivityCourse> {
+    // A record naming no stream means the owner's capture, so a body window
+    // sharing its key neither answers it nor makes it ambiguous.
     let mut key_streams: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut key_capture_streams: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for segment in iter_segments(journal, PathOrDay::Day(day)).unwrap_or_default() {
         if let Ok(identity) = segment.record_identity() {
             key_streams
                 .entry(identity.key.to_owned())
                 .or_default()
                 .insert(identity.stream.to_owned());
+            if !is_body_only_segment(&segment) {
+                key_capture_streams
+                    .entry(identity.key.to_owned())
+                    .or_default()
+                    .insert(identity.stream.to_owned());
+            }
         }
     }
 
@@ -155,7 +165,7 @@ pub fn place_activity_records(
                             None
                         }
                     } else {
-                        match key_streams.get(&key) {
+                        match key_capture_streams.get(&key) {
                             Some(streams) if streams.len() == 1 => streams.iter().next().cloned(),
                             _ => None,
                         }
@@ -396,6 +406,47 @@ mod tests {
 
         assert_eq!(courses[4].stream, None);
         assert_eq!(courses[4].segments[0].stream, None);
+    }
+
+    #[test]
+    fn a_body_window_never_answers_a_record_with_no_stream() {
+        use solstone_core_segment::body_twins::{BODY_STREAM, Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = TempDir::new_in("/var/tmp").unwrap();
+            let twins = lay(root.path(), DAY, "100000_300", &[], beside);
+            let plain = record("plain", None, &["100000_300"], false);
+            let named = record("named", Some(BODY_STREAM), &["100000_300"], false);
+            let placed = [
+                PlacedRecord {
+                    facet: "work",
+                    record: &plain,
+                },
+                PlacedRecord {
+                    facet: "work",
+                    record: &named,
+                },
+            ];
+            let courses = place_activity_records(root.path(), DAY, &placed);
+            let expected = match beside {
+                // An older card isn't a body window: HEAD's answer, ambiguous.
+                Beside::RetiredCard => None,
+                _ => Some(twins.capture_stream.as_str()),
+            };
+            assert_eq!(courses[0].stream.as_deref(), expected, "{beside:?}");
+            assert_eq!(
+                courses[0].segments[0].stream.as_deref(),
+                expected,
+                "{beside:?}"
+            );
+            // Naming the body stream still reaches it.
+            let named_stream = twins.neighbour.as_ref().map(|_| BODY_STREAM);
+            assert_eq!(courses[1].stream.as_deref(), named_stream, "{beside:?}");
+        }
     }
 
     #[test]

@@ -48,7 +48,7 @@ use sha2::{Digest, Sha256};
 use solstone_core_facets::load_activity_records;
 use solstone_core_home::{HomeContext, readers::enabled_facet_names};
 use solstone_core_journal_io::iter_segments;
-use solstone_core_segment::owner_deleted;
+use solstone_core_segment::{is_body_only_dir, owner_deleted};
 use solstone_core_transcripts::VoiceNames;
 
 use crate::contract::{CommitPlan, ParsedOutput, PrePostState};
@@ -908,7 +908,8 @@ fn extract_passages(body: &str) -> Vec<&str> {
 /// Whether any segment the activity names is still in the journal, looked up
 /// the way the Story writer found its audio. A deleted segment's directory
 /// stays behind as its tombstone, so it counts only while live; one whose
-/// state cannot be read does not keep the words.
+/// state cannot be read does not keep the words. With no stream, a body window
+/// sharing the key isn't the activity's segment and keeps nothing.
 fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bool {
     let day_dir = journal.join("chronicle").join(day);
     let stream = record.get("stream").and_then(Value::as_str);
@@ -917,7 +918,7 @@ fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bo
         .flatten()
         .flatten()
         .filter(|entry| stream.is_none_or(|stream| entry.file_name() == stream))
-        .map(|entry| entry.path())
+        .map(|entry| (entry.file_name(), entry.path()))
         .collect::<Vec<_>>();
     record
         .get("segments")
@@ -926,10 +927,14 @@ fn keeps_a_segment(journal: &Path, day: &str, record: &Map<String, Value>) -> bo
         .flatten()
         .filter_map(Value::as_str)
         .any(|segment| {
-            streams
-                .iter()
-                .any(|dir| is_live_segment(&dir.join(segment)))
-                || (stream.is_none() && is_live_segment(&day_dir.join(segment)))
+            streams.iter().any(|(name, dir)| {
+                let dir = dir.join(segment);
+                is_live_segment(&dir)
+                    && (stream.is_some()
+                        || !name
+                            .to_str()
+                            .is_some_and(|name| is_body_only_dir(name, &dir)))
+            }) || (stream.is_none() && is_live_segment(&day_dir.join(segment)))
         })
 }
 
@@ -1572,6 +1577,42 @@ mod tests {
         let norm = normalize_markdown_text(raw_memory_text);
         assert_eq!(norm, "First part of memory. Second part of memory.");
         assert!(raw_memory_text.contains('\n'));
+    }
+
+    #[test]
+    fn a_body_window_never_keeps_an_activity_with_no_stream() {
+        use solstone_core_segment::body_twins::{BODY_STREAM, Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(root.path(), "20261010", "090000_300", &[], beside);
+            let plain = json!({"segments": ["090000_300"]});
+            let plain = plain.as_object().unwrap();
+            assert!(
+                keeps_a_segment(root.path(), "20261010", plain),
+                "{beside:?}"
+            );
+            // The owner deletes the capture.
+            fs::write(twins.capture.join("tombstone.json"), "{}").unwrap();
+            // An older card is live content of its own: HEAD's answer.
+            let kept = beside == Beside::RetiredCard;
+            assert_eq!(
+                keeps_a_segment(root.path(), "20261010", plain),
+                kept,
+                "{beside:?}"
+            );
+            // Naming the body stream still reaches a live window.
+            let named = json!({"segments": ["090000_300"], "stream": BODY_STREAM});
+            assert_eq!(
+                keeps_a_segment(root.path(), "20261010", named.as_object().unwrap()),
+                matches!(beside, Beside::BodyWindow | Beside::RetiredCard),
+                "{beside:?}"
+            );
+        }
     }
 
     #[test]

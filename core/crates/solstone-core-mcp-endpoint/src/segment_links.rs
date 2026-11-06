@@ -308,9 +308,15 @@ fn resolve_candidates(
                     }
                 }
             } else {
+                // With no stream, a body window sharing the key isn't the
+                // activity's segment.
                 let named_matches: Vec<&Segment> = day_segments
                     .iter()
-                    .filter(|s| s.stream().directory().is_some() && s.name().to_str() == Some(key))
+                    .filter(|s| {
+                        s.stream().directory().is_some()
+                            && s.name().to_str() == Some(key)
+                            && !solstone_core_segment::is_body_only_segment(s)
+                    })
                     .collect();
                 if !named_matches.is_empty() {
                     for seg in named_matches {
@@ -430,6 +436,50 @@ mod tests {
         zip.write_all(&write_npy("<i4", &format!("({},)", lines.len()), &ids))
             .unwrap();
         zip.finish().unwrap();
+    }
+
+    #[test]
+    fn a_body_window_never_answers_an_activity_with_no_stream() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        let names = |found: Vec<Segment>| {
+            found
+                .iter()
+                .map(|segment| segment.path().to_path_buf())
+                .collect::<Vec<_>>()
+        };
+        let record = json!({"segments": ["100000_300"]});
+        let record = record.as_object().unwrap();
+        let path = format!("facets/work/activities/{DAY}.jsonl");
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let journal = tempfile::tempdir().unwrap();
+            let twins = lay(journal.path(), DAY, "100000_300", &[], beside);
+            let found = names(activity_segment_candidates(journal.path(), &path, record));
+            let mut expected = vec![twins.capture.clone()];
+            if beside == Beside::RetiredCard {
+                // An older card isn't a body window: HEAD's answer, both.
+                expected.insert(0, twins.neighbour.clone().unwrap());
+            }
+            assert_eq!(found, expected, "{beside:?}");
+            // A direct capture isn't hidden behind a body window.
+            fs::remove_dir_all(twins.capture.parent().unwrap()).unwrap();
+            let direct = journal
+                .path()
+                .join("chronicle")
+                .join(DAY)
+                .join("100000_300");
+            fs::create_dir_all(&direct).unwrap();
+            let found = names(activity_segment_candidates(journal.path(), &path, record));
+            let expected = match beside {
+                Beside::RetiredCard => vec![twins.neighbour.clone().unwrap()],
+                _ => vec![direct],
+            };
+            assert_eq!(found, expected, "{beside:?}");
+        }
     }
 
     #[test]

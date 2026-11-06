@@ -55,6 +55,7 @@ unicode-general-category.workspace = true
 nix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
+solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 serde_json.workspace = true
 solstone-core-npy.workspace = true

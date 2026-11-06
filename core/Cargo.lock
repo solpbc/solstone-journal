@@ -5007,6 +5007,7 @@ dependencies = [
  "solstone-core-indexer-todo",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-segment",
  "tempfile",
 ]
 
@@ -6929,6 +6930,7 @@ dependencies = [
  "solstone-core-memory-original",
  "solstone-core-npy",
  "solstone-core-processing-record",
+ "solstone-core-segment",
  "solstone-core-speaker-id",
  "tempfile",
  "zip",

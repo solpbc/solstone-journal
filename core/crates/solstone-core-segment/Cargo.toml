@@ -33,6 +33,8 @@ path = "tests/segment_supervisor_loopback.rs"
 [features]
 full-tests = []
 test-hooks = []
+# Shared test fixtures, such as a capture beside a body window. No hooks.
+test-fixtures = []
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 solstone-core-local-endpoint.workspace = true

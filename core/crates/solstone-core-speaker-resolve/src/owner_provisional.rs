@@ -384,7 +384,10 @@ fn resolve_segment(
                 .filter_map(|entry| {
                     let stream = entry.file_name().to_str()?.to_owned();
                     let segment_dir = entry.path().join(&candidate.segment_key);
-                    segment_dir.is_dir().then_some((stream, segment_dir))
+                    // A body window sharing the key holds no speech to tag.
+                    (segment_dir.is_dir()
+                        && !solstone_core_segment::is_body_only_dir(&stream, &segment_dir))
+                    .then_some((stream, segment_dir))
                 })
                 .collect::<Vec<_>>();
             (matches.len() == 1).then(|| matches.into_iter().next())??
@@ -528,4 +531,39 @@ fn mean_embedding(embeddings: &[Vec<f32>]) -> Vec<f32> {
     let count = embeddings.len() as f32;
     mean.iter_mut().for_each(|value| *value /= count);
     mean
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_body_window_never_answers_a_tag_with_no_stream() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(root.path(), "20261010", "090000_300", &[], beside);
+            let candidate = ManualTagCandidate {
+                day: "20261010".to_owned(),
+                stream_layout: None,
+                stream: None,
+                segment_key: "090000_300".to_owned(),
+                source: "audio".to_owned(),
+                sentence_id: 1,
+                added_at: 0,
+                index: 0,
+            };
+            let found = resolve_segment(root.path(), candidate).map(|tag| tag.segment_dir);
+            match beside {
+                // An older card isn't a body window: HEAD's answer, no guess.
+                Beside::RetiredCard => assert_eq!(found, None, "{beside:?}"),
+                _ => assert_eq!(found, Some(twins.capture.clone()), "{beside:?}"),
+            }
+        }
+    }
 }

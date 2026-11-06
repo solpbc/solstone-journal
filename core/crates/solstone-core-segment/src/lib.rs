@@ -19,6 +19,8 @@
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 mod body_only;
+#[cfg(any(test, feature = "test-fixtures"))]
+pub mod body_twins;
 mod calendar;
 mod chronicle_migration;
 mod content_name;

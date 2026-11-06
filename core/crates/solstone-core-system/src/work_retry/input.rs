@@ -115,6 +115,14 @@ fn activity_hash_layout(
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(_) => return None,
                 };
+                // With no stream, a body window sharing the key isn't the
+                // activity's input: an import doesn't change what it read.
+                if only_stream.is_none()
+                    && name
+                        .is_some_and(|name| solstone_core_segment::is_body_only_dir(name, &nested))
+                {
+                    continue;
+                }
                 nested
             };
             let path = segment_dir.join("talents/sense.json");
@@ -165,6 +173,45 @@ fn canonical_json(value: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_body_window_never_changes_an_activity_hash_with_no_stream() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        let record = serde_json::json!({"segments": ["090000_300"]});
+        let record = record.as_object().unwrap();
+        for beside in [
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(
+                root.path(),
+                "20261010",
+                "090000_300",
+                &[("talents/sense.json", "{}")],
+                beside,
+            );
+            let hash = || {
+                (
+                    super::activity_hash(root.path(), "20261010", record),
+                    super::legacy_activity_hash(root.path(), "20261010", record),
+                )
+            };
+            let beside_it = hash();
+            std::fs::remove_dir_all(twins.neighbour.unwrap().parent().unwrap()).unwrap();
+            let alone = hash();
+            assert!(alone.0.is_some() && alone.1.is_some());
+            if beside == Beside::RetiredCard {
+                // An older card isn't a body window: HEAD's answer, it counts.
+                assert_ne!(beside_it.0, alone.0);
+                assert_ne!(beside_it.1, alone.1);
+            } else {
+                assert_eq!(beside_it, alone, "{beside:?}");
+            }
+        }
+    }
+
     #[test]
     fn direct_layout_tracks_sense_and_keeps_legacy_hash_separate() {
         let root = tempfile::tempdir().unwrap();

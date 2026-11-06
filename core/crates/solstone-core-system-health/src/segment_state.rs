@@ -7,11 +7,14 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use solstone_core_journal_io::{DEFAULT_STREAM, PathOrDay, day_path, iter_segments, segment_path};
+use solstone_core_segment::is_body_only_segment;
 
 use crate::{DataStateMap, scan::detect_data_state};
 
 /// Locate a segment by its directory basename.  Native `Segment::key` strips a
 /// valid suffix, while the Python reference compares the basename, so retain it.
+/// With no stream, a body window never answers: its key can match a capture's,
+/// and a caller that names no stream means the owner's capture.
 pub fn find_segment_dir(
     journal: &Path,
     day: &str,
@@ -33,7 +36,8 @@ pub fn find_segment_dir(
         .ok()?
         .into_iter()
         .find_map(|entry| {
-            (entry.name().to_str() == Some(segment)).then(|| entry.path().to_path_buf())
+            (entry.name().to_str() == Some(segment) && !is_body_only_segment(&entry))
+                .then(|| entry.path().to_path_buf())
         })
 }
 
@@ -136,6 +140,41 @@ mod tests {
             )]))
         );
         assert_eq!(snapshot(root.path()), before);
+    }
+
+    #[test]
+    fn a_body_window_never_answers_a_lookup_with_no_stream() {
+        use solstone_core_segment::body_twins::{BODY_STREAM, Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(
+                root.path(),
+                "20261010",
+                "090000_300",
+                &[("audio.jsonl", "{}\n")],
+                beside,
+            );
+            let found = find_segment_dir(root.path(), "20261010", "090000_300", None);
+            match beside {
+                // An older card isn't a body window: it keeps HEAD's answer,
+                // the first listed.
+                Beside::RetiredCard => assert_eq!(found, twins.neighbour, "{beside:?}"),
+                _ => assert_eq!(found, Some(twins.capture.clone()), "{beside:?}"),
+            }
+            // Naming the stream still reaches either.
+            if let Some(neighbour) = twins.neighbour {
+                assert_eq!(
+                    find_segment_dir(root.path(), "20261010", "090000_300", Some(BODY_STREAM)),
+                    Some(neighbour),
+                    "{beside:?}"
+                );
+            }
+        }
     }
 
     #[test]

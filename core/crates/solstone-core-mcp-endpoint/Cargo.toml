@@ -78,6 +78,7 @@ nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 ipconfig = { version = "0.3.2", default-features = false }
 
 [dev-dependencies]
+solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 pulldown-cmark.workspace = true
 proc-macro2 = "1.0.107"
 rusqlite.workspace = true

@@ -125,8 +125,13 @@ pub(crate) fn prepare(
         let Some(key) = key.as_str() else {
             return Ok(None);
         };
+        // With no stream, a body window sharing the key isn't the activity's.
         let mut matches = all_segments.iter().filter(|segment| {
-            segment.key() == key && stream.is_none_or(|stream| segment.stream().matches(stream))
+            segment.key() == key
+                && match stream {
+                    Some(stream) => segment.stream().matches(stream),
+                    None => !solstone_core_segment::is_body_only_segment(segment),
+                }
         });
         let Some(segment) = matches.next() else {
             return Err(format!("Work source segment is unavailable: {day}/{key}"));
@@ -680,6 +685,49 @@ mod tests {
             true
         );
         assert_eq!(candidate.metadata["source_complete"], false);
+    }
+
+    #[test]
+    fn a_body_window_never_answers_a_span_key_with_no_stream() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = TempDir::new().unwrap();
+            let twins = lay(
+                root.path(),
+                "20260101",
+                "090000_300",
+                &[
+                    (
+                        "audio.jsonl",
+                        r#"{"start":"00:00:01","text":"Speech OWN_RAW"}"#,
+                    ),
+                    (
+                        "talents/sense.json",
+                        r#"{"activity_summary":"OWN_SUMMARY"}"#,
+                    ),
+                ],
+                beside,
+            );
+            let mut config = config(&["090000_300"]);
+            config.insert("activity".into(), json!({"id": "activity"}));
+            let candidate = prepare(root.path(), &config).unwrap();
+            if beside == Beside::RetiredCard {
+                // An older card isn't a body window: HEAD's answer, no guess.
+                assert!(candidate.is_none(), "{beside:?}");
+                continue;
+            }
+            let candidate = candidate.expect("the capture's report");
+            assert!(
+                candidate.compact_transcript.contains("OWN_SUMMARY"),
+                "{beside:?}"
+            );
+            assert!(twins.capture.join("talents/sense.json").is_file());
+        }
     }
 
     #[test]

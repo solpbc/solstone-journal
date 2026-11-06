@@ -102,7 +102,11 @@ fn cfg_predicate(meta: &Meta) -> Result<bool, String> {
             let Lit::Str(feature) = &literal.lit else {
                 return Err("cfg feature value is not a string literal".to_owned());
             };
-            if matches!(feature.value().as_str(), "test-hooks" | "full-tests") {
+            // Features only tests enable: hooks, the full suites, and shared fixtures.
+            if matches!(
+                feature.value().as_str(),
+                "test-hooks" | "full-tests" | "test-fixtures"
+            ) {
                 Ok(false)
             } else {
                 Err(format!(
@@ -2231,6 +2235,17 @@ fn production_classifier_visits_named_modules_aliases_and_executable_bodies() {
     let attribute_error = calls_in_production(&attribute_file, &["read_bytes_bound"])
         .expect_err("target-bearing production attribute must fail closed");
     assert!(attribute_error.contains("target-bearing production attribute"));
+}
+
+#[test]
+fn production_classifier_reads_a_test_fixtures_item_as_test_only() {
+    let file = production_file("#[cfg(feature = \"test-fixtures\")] fn fixture() {}")
+        .expect("a test-fixtures item classifies");
+    assert!(
+        calls_in_production(&file, &["fixture"])
+            .expect("classifies")
+            .is_empty()
+    );
 }
 
 #[test]

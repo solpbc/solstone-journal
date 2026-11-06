@@ -1776,6 +1776,13 @@ fn day_dir(root: &Path, day: &str) -> PathBuf {
 }
 
 impl Segment {
+    fn is_body_window(&self) -> bool {
+        self.stream
+            .directory()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|stream| solstone_core_segment::is_body_only_dir(stream, &self.path))
+    }
+
     fn record_stream(&self) -> Option<&str> {
         match &self.stream {
             StreamLocation::Direct => Some(solstone_core_journal_io::DEFAULT_STREAM),
@@ -1812,10 +1819,15 @@ fn all_segments(root: &Path, day: &str) -> Vec<Segment> {
     segments
 }
 
+/// With no stream, a body window never answers: its key can match a capture's.
 fn find_segment(root: &Path, day: &str, key: &str, stream: Option<&str>) -> Option<Segment> {
     let stream = stream.filter(|stream| !stream.is_empty());
     all_segments(root, day).into_iter().find(|segment| {
-        segment.key == key && stream.is_none_or(|stream| segment.stream.matches(stream))
+        segment.key == key
+            && match stream {
+                Some(stream) => segment.stream.matches(stream),
+                None => !segment.is_body_window(),
+            }
     })
 }
 
@@ -2240,6 +2252,44 @@ mod tests {
         assert_eq!(counts.transcripts, 2);
         assert!(markdown.contains("First stream"));
         assert!(markdown.contains("Second stream"));
+    }
+
+    #[test]
+    fn a_body_window_never_answers_a_lookup_with_no_stream() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = TempDir::new().unwrap();
+            let twins = lay(
+                root.path(),
+                DAY,
+                SEGMENT,
+                &[(
+                    "audio.jsonl",
+                    r#"{"start":"00:00:00","text":"Owner capture"}"#,
+                )],
+                beside,
+            );
+            let sources = sources(true, false, TalentSource::Disabled);
+            let (period, _) = cluster_period(root.path(), DAY, SEGMENT, &sources, None);
+            let span = cluster_span(root.path(), DAY, &[SEGMENT], &sources, None);
+            if beside == Beside::RetiredCard {
+                // An older card isn't a body window: HEAD's answer, the first listed.
+                assert!(!period.contains("Owner capture"), "{beside:?}: {period}");
+                continue;
+            }
+            assert!(period.contains("Owner capture"), "{beside:?}: {period}");
+            assert!(
+                span.as_ref()
+                    .is_ok_and(|(text, _)| text.contains("Owner capture")),
+                "{beside:?}: {span:?}"
+            );
+            assert!(twins.capture.is_dir());
+        }
     }
 
     #[test]

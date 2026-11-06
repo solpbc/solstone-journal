@@ -42,6 +42,7 @@ name = "system_health_static_contracts"
 path = "tests/system_health_static_contracts.rs"
 
 [dev-dependencies]
+solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 filetime = "0.2.29"
 rusqlite.workspace = true
 solstone-core-depict.workspace = true
