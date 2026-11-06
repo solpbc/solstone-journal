@@ -2955,12 +2955,14 @@ mod tests {
     use crate::events::{EventSink, EventType};
     use crate::manifest::manifest_path;
     use crate::user_config::config_path;
+    #[cfg(all(unix, not(target_os = "macos")))]
     use crate::wrapper::{WrapperCommand, render_wrapper_version};
     use solstone_core_installation_identity::{
-        ArtifactBindingEvidence, Generation, InstallationId, LegacyManifestEvidence, OwnerBase,
-        PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path,
-        root_token_from_path,
+        ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
+        SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
     };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    use solstone_core_installation_identity::{Generation, InstallationId};
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::ffi::OsString;
@@ -2984,6 +2986,7 @@ mod tests {
             }
         }
 
+        #[cfg(target_os = "linux")]
         fn rewrite_service_units(mut self, home: PathBuf) -> Self {
             self.rewrite_service_unit = Some(home);
             self
