@@ -359,6 +359,131 @@ fn registered_cloud_sync_root_and_ordinary_child_are_refused_without_mutation() 
     assert_eq!(capture_tree(temporary.path()), before_tree);
 
     registered_cloud_sync_root_guard_cleans_up_during_unwind();
+    retained_root_refuses_late_registration_and_recovers_after_unregistering();
+    retained_root_refuses_registration_after_moving_into_a_new_parent();
+    retained_root_stays_refused_when_moved_into_a_registered_parent();
+}
+
+fn assert_retained_refusal(result: Result<(), JournalRootError>) {
+    assert!(matches!(
+        result,
+        Err(JournalRootError::Unsupported {
+            category: Some(WindowsRefusalCategory::CloudSyncRootRegistered),
+            ..
+        })
+    ));
+}
+
+fn retained_root_refuses_late_registration_and_recovers_after_unregistering() {
+    let temporary = tempfile::tempdir().expect("temporary sync root");
+    let child = temporary.path().join("ordinary-child");
+    fs::create_dir(&child).expect("create ordinary child");
+    let root = JournalRoot::open(temporary.path()).expect("admit before registration");
+    let retained_child = JournalRoot::open(&child).expect("admit child before registration");
+    root.revalidate().expect("unregistered root revalidates");
+    retained_child
+        .revalidate()
+        .expect("unregistered child revalidates");
+
+    let registered = register_sync_root(temporary.path());
+    let during = catch_unwind(AssertUnwindSafe(|| {
+        (root.revalidate(), retained_child.revalidate())
+    }));
+    assert_eq!(registered.unregister(), 0, "unregister late registration");
+    let (root_during, child_during) = match during {
+        Ok(result) => result,
+        Err(payload) => resume_unwind(payload),
+    };
+    assert_retained_refusal(root_during);
+    assert_retained_refusal(child_during);
+
+    root.revalidate().expect("unregistering restores the root");
+    retained_child
+        .revalidate()
+        .expect("unregistering restores the child");
+}
+
+/// Defender and the indexer can hold a fresh directory for a moment.
+fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut result = fs::rename(from, to);
+    for _ in 0..50 {
+        if !result
+            .as_ref()
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        result = fs::rename(from, to);
+    }
+    result
+}
+
+fn retained_root_refuses_registration_after_moving_into_a_new_parent() {
+    let temporary = tempfile::tempdir().expect("temporary namespace");
+    let parent = temporary.path().join("future-sync-root");
+    let journal = temporary.path().join("journal");
+    let moved = parent.join("journal");
+    fs::create_dir(&parent).expect("create future sync root");
+    fs::create_dir(&journal).expect("create journal root");
+    let root = JournalRoot::open(&journal).expect("admit journal root");
+
+    rename_with_retry(&journal, &moved).expect("move journal under the future sync root");
+    root.revalidate()
+        .expect("an unregistered parent leaves the retained root admitted");
+    assert!(
+        root.revalidate_canonical_binding().is_err(),
+        "a moved root no longer matches its admitted path"
+    );
+
+    let registered = register_sync_root(&parent);
+    let during = catch_unwind(AssertUnwindSafe(|| root.revalidate()));
+    assert_eq!(registered.unregister(), 0, "unregister move fixture");
+    let inside = match during {
+        Ok(result) => result,
+        Err(payload) => resume_unwind(payload),
+    };
+    assert_retained_refusal(inside);
+
+    rename_with_retry(&moved, &journal).expect("move journal back out");
+    root.revalidate()
+        .expect("unregistering restores the retained root");
+    root.revalidate_canonical_binding()
+        .expect("moving back restores the admitted path");
+}
+
+fn retained_root_stays_refused_when_moved_into_a_registered_parent() {
+    let temporary = tempfile::tempdir().expect("temporary namespace");
+    let sync_root = temporary.path().join("sync-root");
+    let journal = temporary.path().join("journal");
+    let moved = sync_root.join("journal");
+    fs::create_dir(&sync_root).expect("create sync root");
+    fs::create_dir(&journal).expect("create journal root");
+    let root = JournalRoot::open(&journal).expect("admit journal root");
+
+    let registered = register_sync_root(&sync_root);
+    let during = catch_unwind(AssertUnwindSafe(|| {
+        root.revalidate()
+            .expect("a sibling registration leaves the root outside");
+        // Windows may refuse the move outright; if it allows it, the retained root must refuse.
+        match fs::rename(&journal, &moved) {
+            Ok(()) => {
+                let inside = root.revalidate();
+                fs::rename(&moved, &journal).expect("move journal back out");
+                Some(inside)
+            }
+            Err(_) => None,
+        }
+    }));
+    assert_eq!(registered.unregister(), 0, "unregister move fixture");
+    let inside = match during {
+        Ok(result) => result,
+        Err(payload) => resume_unwind(payload),
+    };
+    if let Some(inside) = inside {
+        assert_retained_refusal(inside);
+    }
+    root.revalidate().expect("the root is outside again");
 }
 
 fn registered_cloud_sync_root_guard_cleans_up_during_unwind() {

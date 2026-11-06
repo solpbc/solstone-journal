@@ -59,14 +59,33 @@ listing handle only and never reopens a path.
 
 Filesystem admission is a strict `NTFS`/`ReFS` allow-list, and volume admission
 is a strict fixed-drive allow-list; each wildcard refuses rather than admits.
-`NTFS` roots undergo Cloud Files classification; `ReFS` roots are admitted
-without a `CfGetSyncRootInfoByPath` call. For `NTFS`, a registered sync root
-refuses; HRESULTs `ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT` (390),
-`ERROR_NOT_A_CLOUD_FILE` (376), and `ERROR_INVALID_FUNCTION` (1)
-admit; every other HRESULT refuses as unverifiable. `GetDriveTypeW` and
-`CfGetSyncRootInfoByPath` are classification-only queries against the
-already-validated path spelling, never identity reacquisition; identity comes
-exclusively from `FileIdInfo` on the retained handle.
+`NTFS` roots undergo Cloud Files classification; `ReFS` roots issue no Cloud
+Files query. For `NTFS`, a registered sync root refuses; HRESULTs
+`ERROR_CLOUD_FILE_NOT_UNDER_SYNC_ROOT` (390), `ERROR_NOT_A_CLOUD_FILE` (376),
+and `ERROR_INVALID_FUNCTION` (1) admit; every other HRESULT refuses as
+unverifiable. `GetDriveTypeW` and `CfGetSyncRootInfoByPath` are
+classification-only queries against the already-validated path spelling, never
+identity reacquisition; identity comes exclusively from `FileIdInfo` on the
+retained handle.
+
+Live classification sends the control behind `CfGetSyncRootInfoByHandle`
+(`0x000903BC`) directly to the retained handle, on every admission and every
+`revalidate()`. The exported `CfGetSyncRootInfoBy*` functions cannot be called
+at that rate: their telemetry opens a process handle on every failing result and
+never closes it, and "not a sync root" is a failing result.
+
+That control has no published contract, so each process also asks
+`CfGetSyncRootInfoByPath` the first time it admits a root on a volume and refuses
+unless both give the identical HRESULT. The comparison ends for that volume once
+they match, which costs one handle per volume per process, plus one per attempt
+while the documented API keeps failing and admission keeps refusing.
+`windows_cloud_sync_root_registration` proves the control against real
+registrations on the native Windows gate unless that gate is run with
+`JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST=0`. `revalidate()` relies on the direct
+control alone between comparisons. On a volume with no Cloud Files filter attached
+both queries return `ERROR_INVALID_FUNCTION`, so the comparison cannot tell a
+changed control from an unfiltered volume there. Drop the direct control if
+Windows fixes the exported functions.
 
 > **Known windows gate-1 limitation:** the Win32 surface used here has no
 > descriptor-relative open equivalent to Unix's `openat` + `O_NOFOLLOW` chain,
@@ -185,7 +204,7 @@ backend policy; it is never a silent path-only mode. The Unix backend never
 emits it. windows gate 1 uses it for reparse, filesystem, drive-type, and
 Cloud Files policy refusals; each carries a `WindowsRefusalCategory`.
 `CloudSyncRootStatusUnverifiable` carries the returned raw HRESULT when one
-exists, while `CloudSyncRootRegistered` denotes S_OK; `ReFS` roots do not
+exists, while `CloudSyncRootRegistered` denotes success; `ReFS` roots do not
 issue a Cloud Files query. Ordinary permission and I/O failures remain
 `JournalRootError::Io`.
 

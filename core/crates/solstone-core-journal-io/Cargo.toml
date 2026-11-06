@@ -42,6 +42,12 @@ name = "journal_io_lock_component"
 path = "tests/journal_io_lock_component.rs"
 required-features = ["test-hooks"]
 
+# The handle-growth control asserts through the feature-gated acquisition trace.
+[[test]]
+name = "windows_cloud_query_handles"
+path = "tests/windows_cloud_query_handles.rs"
+required-features = ["test-hooks"]
+
 # Cloud Files registration is irreconcilable process-global sync-root setup and
 # must not run concurrently with any other test touching that namespace.
 [[test]]

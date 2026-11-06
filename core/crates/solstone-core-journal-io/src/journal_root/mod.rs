@@ -203,6 +203,14 @@ impl ObjectIdentity {
         })
     }
 
+    /// The volume this retained Windows identity belongs to.
+    #[cfg(windows)]
+    pub(crate) const fn volume_serial(self) -> u64 {
+        match self.0 {
+            Repr::Windows { volume_serial, .. } => volume_serial,
+        }
+    }
+
     /// Compare a Windows directory-listing file identifier with this retained identity.
     #[cfg(windows)]
     pub(crate) fn matches_windows_file_id(self, file_id: [u8; 16]) -> bool {
