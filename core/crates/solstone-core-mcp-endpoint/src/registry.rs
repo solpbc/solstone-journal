@@ -185,7 +185,7 @@ pub(crate) const TOOLS: &[ToolEntry] = &[
         tool_name: crate::jsonrpc::ToolName::GetWeek,
         wire_name: "get_week",
         title: "read a week",
-        description: "read one week. memories are derived from activities and are not the owner's words. quotes are the owner's words. each activity's `participants` attended it, `heard` lists people the owner talked with in a conversation that wasn't a meeting, `mentioned` were named there without attending, and `on_screen` only appeared on screen. leaving an entry off the week page leaves that source visible to the other tools. pass week as the sunday it starts, YYYYMMDD, or omit it for the week containing today.",
+        description: "read one week. memories are derived from activities and are not the owner's words. quotes are the owner's words. each activity's `participants` attended it, `heard` lists people the owner talked with in a conversation that wasn't a meeting, `mentioned` were named there without attending, and `on_screen` only appeared on screen. `activities` holds up to seven, with activities of the same name as one row; `activities_total` counts all of the week's activities, and list_activities lists them. leaving an entry off the week page leaves that source visible to the other tools. pass week as the sunday it starts, YYYYMMDD, or omit it for the week containing today.",
         input_schema: week_input_schema,
         requires: WEEK,
         audit_name: solstone_core_mcp_audit::ToolName::GetWeek,

@@ -247,6 +247,7 @@ fn project_sunday(
         }
     }
 
+    let activities_total = collected.len();
     let mut groups: BTreeMap<String, Vec<Collected>> = BTreeMap::new();
     for item in collected {
         let k = group_key_for_record(&item.record);
@@ -448,7 +449,12 @@ fn project_sunday(
         }
     }
 
-    let intro = format_week_intro(memories.len(), said.len())
+    let memory_days = memories
+        .iter()
+        .filter_map(|memory| memory["day"].as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let intro = format_week_intro(memory_days, said.len())
         .map(Value::String)
         .unwrap_or(Value::Null);
 
@@ -480,6 +486,7 @@ fn project_sunday(
         "previous": previous,
         "next": next,
         "activities": activities,
+        "activities_total": activities_total,
     });
     // Only a week with body faces carries the key, so a journal without body
     // data answers exactly as before.
@@ -495,16 +502,13 @@ fn project_sunday(
     })
 }
 
+/// A week's rows are keyed on the name each activity is shown under, so the
+/// same name on several days is one recurring row and two different meetings
+/// are two rows.
 fn group_key_for_record(record: &Map<String, Value>) -> String {
-    for key in ["activity", "title", "id"] {
-        if let Some(s) = record.get(key).and_then(Value::as_str) {
-            let trimmed = s.trim().to_lowercase();
-            if !trimmed.is_empty() {
-                return trimmed;
-            }
-        }
-    }
-    String::new()
+    crate::tools::activities::activity_title(record)
+        .trim()
+        .to_lowercase()
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -708,6 +712,7 @@ mod tests {
             keys,
             BTreeSet::from([
                 "activities".to_owned(),
+                "activities_total".to_owned(),
                 "days".to_owned(),
                 "intro".to_owned(),
                 "memories".to_owned(),
@@ -794,6 +799,88 @@ mod tests {
             uri,
             refs: &["sol://chronicle/20260308/room/120000_1"],
         }
+    }
+
+    #[test]
+    fn a_week_of_one_activity_type_keeps_each_activity() {
+        let root = journal("solstone-week-one-type-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        let meeting = |id: &str, title: &str, seconds: u32| {
+            format!(
+                "{}\n",
+                json!({
+                    "id": id,
+                    "activity": "meeting",
+                    "title": title,
+                    "created_at": 100,
+                    "segments": [format!("090000_{seconds}")],
+                })
+            )
+        };
+        write_raw(
+            root.path(),
+            "facets/work/activities/20260308.jsonl",
+            &(meeting("kickoff", "Launch kickoff", 300) + &meeting("review", "Design review", 200)),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/activities/20260309.jsonl",
+            &meeting("standup_1", "Team standup", 100),
+        );
+        write_raw(
+            root.path(),
+            "facets/work/activities/20260310.jsonl",
+            &meeting("standup_2", " team STANDUP ", 100),
+        );
+
+        let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
+        let titles = value["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["title"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        // The same name on two days is one row, and it ranks first for recurring.
+        assert_eq!(titles, ["Team standup", "Launch kickoff", "Design review"]);
+        assert_eq!(value["activities_total"], 4);
+        assert_eq!(value["memories"].as_array().unwrap().len(), 3);
+        // Two of the three rows share a day, so they come from two days, not three.
+        assert_eq!(value["intro"], "your week, a memory from each of 2 days.");
+    }
+
+    #[test]
+    fn a_full_week_says_how_many_it_left_out_of_the_rows() {
+        let root = journal("solstone-week-capped-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        let lines = (1..=9)
+            .map(|n| {
+                format!(
+                    "{}\n",
+                    json!({
+                        "id": format!("meeting_{n}"),
+                        "activity": "meeting",
+                        "title": format!("Meeting {n}"),
+                        "created_at": 100,
+                        "segments": [format!("09000{n}_{}", n * 100)],
+                    })
+                )
+            })
+            .collect::<String>();
+        write_raw(root.path(), "facets/work/activities/20260308.jsonl", &lines);
+
+        let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
+        assert_eq!(value["activities"].as_array().unwrap().len(), 7);
+        assert_eq!(value["activities_total"], 9);
     }
 
     #[test]
