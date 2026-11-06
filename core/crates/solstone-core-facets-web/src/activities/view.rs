@@ -61,19 +61,27 @@ pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, 
         }
     }
 
-    let body: BTreeMap<&String, Faces> = match (days_set.first(), days_set.last()) {
-        (Some(first), Some(last)) => facets
-            .iter()
-            .map(|f| (f, owner_faces(root, f, first, last)))
-            .collect(),
-        _ => BTreeMap::new(),
-    };
+    // Counting a body group needs it grouped, not composed.
+    let body: BTreeMap<&String, solstone_core_location::body_records::Groups> =
+        match (days_set.first(), days_set.last()) {
+            (Some(first), Some(last)) => facets
+                .iter()
+                .map(|f| {
+                    let groups = solstone_core_location::body_records::body_groups_range(
+                        root, f, first, last, None, false,
+                    )
+                    .unwrap_or_default();
+                    (f, groups)
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        };
     let mut counts = BTreeMap::new();
     for day in days_set {
         let mut total = 0;
         for f in &facets {
             let visible_rows = load_activity_records(root, f, &day, false).unwrap_or_default();
-            total += visible_rows.len() + body.get(f).map_or(0, |faces| shown_on(faces, &day));
+            total += visible_rows.len() + body.get(f).map_or(0, |groups| groups.on(&day).len());
         }
         if total > 0 {
             counts.insert(day, total);

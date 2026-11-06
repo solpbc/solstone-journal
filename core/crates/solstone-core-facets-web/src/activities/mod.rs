@@ -2779,6 +2779,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_month_counts_a_body_group_once_and_not_once_hidden() {
+        let root = body_journal();
+        let month = || async {
+            request(
+                gated(root.path(), fixed_clock()),
+                "GET",
+                "/app/activities/api/stats/202610",
+                None,
+            )
+            .await
+            .1
+        };
+        assert_eq!(month().await[BODY_DAY], 1);
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(month().await.get(BODY_DAY).is_none());
+    }
+
+    #[tokio::test]
     async fn a_body_group_shows_once_hides_as_one_and_owes_nothing_when_edited() {
         let root = body_journal();
         let (status, view) = body_call(root.path(), "view", None, None).await;
