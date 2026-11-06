@@ -2177,6 +2177,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-body-ingest::apple_export_shapes"
+package = "solstone-core-body-ingest"
+target = "apple_export_shapes"
+set = "component"
+areas = ["body"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-body-ingest::oura_ingest"
 package = "solstone-core-body-ingest"
 target = "oura_ingest"

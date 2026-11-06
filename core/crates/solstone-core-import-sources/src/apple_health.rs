@@ -712,8 +712,14 @@ pub(crate) fn tile_experience(
         first_window.0.clone(),
         resolve_key(journal, &first_window.0, &first_window.1),
     );
-    if let Ok(Some((_, rows))) = stored_rows(journal, &stored_at)
-        && let Some(stored) = rows.iter().find(|row| row.id == experience.id)
+    // A file that can't be read says nothing of what's stored, and a shorter end
+    // staged on that silence would stand once it reads again.
+    let stored_rows = match stored_rows(journal, &stored_at) {
+        Ok(stored) => stored.map_or_else(Vec::new, |(_, rows)| rows),
+        Err(StoredRowsError::NotRows) => Vec::new(),
+        Err(StoredRowsError::Read(error)) => return Err(error),
+    };
+    if let Some(stored) = stored_rows.iter().find(|row| row.id == experience.id)
         && let Some(stored_end) = stored.end.as_deref().and_then(parse_source_time)
         && stored_end > end
     {
@@ -794,7 +800,8 @@ pub(crate) fn resolve_key(journal: &Path, day: &str, key: &str) -> String {
 
 /// Why a window's rows couldn't be had.
 pub(crate) enum StoredRowsError {
-    /// The file's bytes aren't text, or its text isn't rows.
+    /// The file's bytes aren't text, its text isn't rows, or it isn't a file. Trying
+    /// again changes none of these.
     NotRows,
     /// The file couldn't be read, which says nothing of what it holds.
     Read(String),
@@ -809,7 +816,15 @@ pub(crate) fn stored_rows(
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
+        // Windows refuses a folder opened as a file as it refuses any file.
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::InvalidData
+                    | std::io::ErrorKind::IsADirectory
+                    | std::io::ErrorKind::NotADirectory
+            ) || path.is_dir() =>
+        {
             return Err(StoredRowsError::NotRows);
         }
         Err(error) => {
@@ -993,15 +1008,12 @@ pub fn settle_readings(
         if let Some(known) = stored.get(key) {
             return Ok(known.clone());
         }
-        let path = stream_dir(journal, day).join(key).join(BODY_RECORDS_FILE);
-        let found = match fs::read_to_string(&path) {
-            Ok(text) => decode_rows(&text)
-                .map(|rows| rows.into_iter().map(|row| row.id).collect())
-                .map_err(|_| ()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
-            // Bytes that aren't text are a file that can't be read as rows.
-            Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Err(()),
-            Err(error) => return Err(format!("{}: {error}", path.display())),
+        let found = match stored_rows(journal, &(day.to_owned(), key.to_owned())) {
+            Ok(rows) => Ok(rows.map_or_else(BTreeSet::new, |(_, rows)| {
+                rows.into_iter().map(|row| row.id).collect()
+            })),
+            Err(StoredRowsError::NotRows) => Err(()),
+            Err(StoredRowsError::Read(error)) => return Err(error),
         };
         stored.insert(key.to_owned(), found.clone());
         Ok(found)

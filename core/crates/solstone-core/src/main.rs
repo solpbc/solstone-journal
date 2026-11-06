@@ -6217,7 +6217,10 @@ fn run_body_apple(options: BodyAppleOptions) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("Apple Health body import failed: {error}");
+            eprintln!(
+                "Apple Health body import failed: {}",
+                solstone_core_body_ingest::apple_refusal_text(&error)
+            );
             ExitCode::from(match error.kind() {
                 BodyIngestErrorKind::Gate => 2,
                 BodyIngestErrorKind::Source | BodyIngestErrorKind::Normalize => EXIT_DATAERR,

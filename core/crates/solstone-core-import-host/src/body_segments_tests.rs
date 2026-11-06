@@ -451,16 +451,22 @@ fn a_day_whose_marker_failed_stays_owed_and_the_next_run_moves_it() {
     ));
 }
 
+#[cfg(unix)]
 #[test]
 fn a_failed_write_binds_nothing_and_the_next_run_can_start() {
+    use std::os::unix::fs::PermissionsExt;
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
     let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
-    // A file where the stream's directory goes makes every window's write fail.
-    let blocked = root.join("chronicle/20261010").join(STREAM);
-    fs::create_dir_all(blocked.parent().unwrap()).unwrap();
-    fs::write(&blocked, "in the way").unwrap();
+    // A day folder that takes no stream makes every window's write fail.
+    let blocked = root.join("chronicle/20261010");
+    fs::create_dir_all(&blocked).unwrap();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o500)).unwrap();
+    if fs::write(blocked.join("probe"), "").is_ok() {
+        // Root writes anywhere, so there's no refusal to see.
+        return;
+    }
     let failed = run_apple_health_segments(
         root,
         &AppleSegmentsRequest::new(&source, "20261012_120000", None),
@@ -475,7 +481,7 @@ fn a_failed_write_binds_nothing_and_the_next_run_can_start() {
     );
     assert!(stream_marker_absent(root, "20261010"));
 
-    fs::remove_file(&blocked).unwrap();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
     let repaired = run(root, &source, "20261012_120000", None);
     assert!(repaired.finished);
     assert!(
@@ -927,6 +933,8 @@ fn another_export_after_a_stop_publishes_the_old_half_day_and_starts_fresh() {
         serde_json::from_slice(&fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap())
             .unwrap();
     let day = state["pending"]["day"].as_str().unwrap().to_owned();
+    let written = state["totals"]["written"].as_u64().unwrap()
+        + state["pending"]["counts"]["written"].as_u64().unwrap();
     let other = export(
         &scratch.path().join("other"),
         &[heart("2026-10-20 06:31:10 -0600", "70")],
@@ -966,6 +974,10 @@ fn another_export_after_a_stop_publishes_the_old_half_day_and_starts_fresh() {
     );
     let summary = fs::read_to_string(root.join("imports/20261104_120000/summary.md")).unwrap();
     assert!(summary.contains("replaced by a later one"), "{summary}");
+    assert!(
+        summary.contains(&format!("{written} windows written")),
+        "the half-done day counts: {written}: {summary}"
+    );
     let mut named = BTreeSet::new();
     for (path, bytes) in snapshot(root) {
         if path.ends_with(BODY_RECORDS_FILE)
@@ -1532,7 +1544,7 @@ fn journal_in(root: &Path) {
 }
 
 #[test]
-fn a_window_of_bytes_that_arent_text_is_counted_and_the_run_goes_on() {
+fn a_readings_other_place_that_isnt_text_holds_it_back_and_the_run_goes_on() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -1938,13 +1950,15 @@ fn one_record_that_cant_be_read_is_counted_and_the_rest_are_saved() {
         )
         .into_bytes()
     };
-    let cases: [Vec<u8>; 6] = [
+    let cases: [Vec<u8>; 7] = [
         // An unescaped ampersand, a repeated attribute, bytes that aren't text.
         br#"<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="A&B" startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:00:00 -0600" value="1"/>"#.to_vec(),
         br#"<Record type="HKQuantityTypeIdentifierHeartRate" value="2" startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:00:00 -0600" value="1"/>"#.to_vec(),
         b"<Record type=\"HKQuantityTypeIdentifierHeartRate\" sourceName=\"A\xff\" startDate=\"2026-10-10 08:00:00 -0600\" endDate=\"2026-10-10 08:00:00 -0600\" value=\"1\"/>".to_vec(),
         // The same on an element with children, whose children go with it.
         br#"<Record sourceName="A&B"><MetadataEntry key="a" value="b"/><HealthData/></Record>"#.to_vec(),
+        // What's inside it goes unread, even what would be read outside it.
+        br#"<Record sourceName="A&B"><Record type="HKQuantityTypeIdentifierHeartRate" sourceName="w" startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:00:00 -0600" value="999"/></Record>"#.to_vec(),
         // On a child, which takes its record with it.
         child(r#"key="a&b" value="c""#),
         child(r#"key="a" key="b" value="c""#),
@@ -2244,4 +2258,257 @@ fn a_finished_import_isnt_told_it_was_replaced_before_it_finished() {
     );
     run(root, &other, "20261104_130000", None);
     assert_eq!(before, fs::read_to_string(&summary).unwrap());
+}
+
+fn stage(start: &str, end: &str, value: &str) -> String {
+    format!(
+        r#"<Record type="HKCategoryTypeIdentifierSleepAnalysis" {SOURCE} startDate="{start}" endDate="{end}" value="HKCategoryValueSleepAnalysis{value}"/>"#
+    )
+}
+
+/// A night's stored end is read to keep it from shrinking, so a read that fails has
+/// to stop the run, not stage a shorter night to write once the file reads again.
+#[cfg(unix)]
+#[test]
+fn a_stop_on_an_unreadable_window_doesnt_shorten_a_night_on_resume() {
+    use std::os::unix::fs::PermissionsExt;
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let whole = [
+        stage(
+            "2026-10-10 23:50:00 -0600",
+            "2026-10-11 00:10:00 -0600",
+            "AsleepCore",
+        ),
+        stage(
+            "2026-10-11 00:10:00 -0600",
+            "2026-10-11 00:20:00 -0600",
+            "AsleepDeep",
+        ),
+    ];
+    let source = export(scratch.path(), &whole);
+    run(root, &source, "20261012_120000", None);
+    let first = body_bytes(root, "20261010", "230000_3600");
+    let fewer = export(&scratch.path().join("fewer"), &whole[..1]);
+    assert_eq!(run(root, &fewer, "20261012_120001", None).published, 0);
+    let file = window(root, "20261010", "230000_3600").join(BODY_RECORDS_FILE);
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&file).is_ok() {
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        return;
+    }
+    let refused = run_apple_health_segments(root, &request(&fewer, "20261012_130000"));
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(refused.is_err());
+    let resumed = run(root, &fewer, "20261012_140000", None);
+    assert!(resumed.finished, "{}", resumed.summary);
+    assert_eq!(
+        body_bytes(root, "20261010", "230000_3600"),
+        first,
+        "the night shrank"
+    );
+}
+
+/// Running again changes nothing about a folder where a file should be, so it's
+/// counted and the days after it land. On Windows too, where opening one reads as
+/// access denied.
+#[test]
+fn a_window_whose_file_is_a_folder_is_counted_and_later_days_land() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(
+        scratch.path(),
+        &[
+            heart("2026-10-10 06:31:10 -0600", "70"),
+            heart("2026-10-12 06:31:10 -0600", "71"),
+        ],
+    );
+    fs::create_dir_all(window(root, "20261010", "060000_3600").join(BODY_RECORDS_FILE)).unwrap();
+    let done = run(root, &source, "20261104_120000", None);
+    assert!(done.finished, "{}", done.summary);
+    assert!(done.summary.contains("1 unreadable"), "{}", done.summary);
+    assert!(later_day_landed(root));
+}
+
+/// A moment's unreadable export isn't another export: the run stops before touching
+/// the earlier one, whose record stays true and which carries on after.
+#[cfg(unix)]
+#[test]
+fn an_export_that_cant_be_read_for_a_moment_leaves_the_earlier_run_to_carry_on() {
+    use std::os::unix::fs::PermissionsExt;
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("written", 2);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let state = fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap();
+    let export_file = source.join("export.xml");
+    fs::set_permissions(&export_file, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&export_file).is_ok() {
+        fs::set_permissions(&export_file, fs::Permissions::from_mode(0o600)).unwrap();
+        return;
+    }
+    let refused = run_apple_health_segments(root, &request(&source, "20261104_130000"));
+    fs::set_permissions(&export_file, fs::Permissions::from_mode(0o600)).unwrap();
+    refused.unwrap_err();
+    assert_eq!(
+        fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap(),
+        state
+    );
+    assert!(!root.join("imports/20261104_130000").exists());
+    let summary = root.join("imports/20261104_120000/summary.md");
+    assert!(
+        fs::read_to_string(&summary).map_or(true, |text| !text.contains("replaced")),
+        "the earlier import was told it was replaced"
+    );
+    let done = run(root, &source, "20261104_140000", None);
+    assert_eq!(done.import_id, "20261104_120000");
+    assert!(done.finished, "{}", done.summary);
+}
+
+/// The other side of what a read error stops: a window that truly isn't rows, in the
+/// place its reading goes, is counted, left alone, and the days after it land.
+#[test]
+fn a_window_that_isnt_rows_where_its_reading_goes_is_counted_and_the_run_goes_on() {
+    for bad in [&[0xff_u8, 0xfe, b'\n'][..], &b"{not json\n"[..]] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let source = export(
+            scratch.path(),
+            &[
+                heart("2026-10-10 06:35:10 -0600", "81"),
+                heart("2026-10-12 06:35:10 -0600", "82"),
+            ],
+        );
+        let file = window(root, "20261010", "060000_3600").join(BODY_RECORDS_FILE);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, bad).unwrap();
+        let done = run(root, &source, "20261012_120000", None);
+        assert!(done.summary.contains("1 unreadable"), "{}", done.summary);
+        assert_eq!(fs::read(&file).unwrap(), bad);
+        assert!(
+            window(root, "20261012", "060000_3600")
+                .join(BODY_RECORDS_FILE)
+                .is_file()
+        );
+    }
+}
+
+/// A takeover killed after its listing line landed and before its state moved: the
+/// next one cuts back to the length the state knows, so no day is listed twice.
+#[test]
+fn a_takeovers_listing_line_isnt_doubled_after_a_kill() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("written", 2);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap())
+            .unwrap();
+    let day = state["pending"]["day"].as_str().unwrap().to_owned();
+    let listing = root.join("imports/20261104_120000/body-touched.jsonl");
+    // Longer than the line the takeover writes, so only cutting back removes it all.
+    let mut torn = fs::read_to_string(&listing).unwrap_or_default();
+    let windows: Vec<(String, u64, u64, u64)> = (0..200)
+        .map(|index| (format!("{index:06}_3600"), 1, 0, 0))
+        .collect();
+    torn.push_str(&format!("{}\n", json!({"day": day, "windows": windows})));
+    fs::write(&listing, torn).unwrap();
+    let other = export(
+        &scratch.path().join("other"),
+        &[heart("2026-10-20 06:31:10 -0600", "70")],
+    );
+    run(root, &other, "20261104_130000", None);
+    let days: Vec<String> = fs::read_to_string(&listing)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["day"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    let unique: BTreeSet<&String> = days.iter().collect();
+    assert_eq!(unique.len(), days.len(), "{days:?}");
+    assert!(days.contains(&day), "{days:?}");
+}
+
+/// The bound holds in a repair too: a stuck stream stops it after a recorded day, and
+/// each run gets further.
+#[test]
+fn a_stuck_stream_stops_a_repair_after_a_recorded_day_and_each_run_gets_further() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let mut records = Vec::new();
+    for day in 1..=6 {
+        for hour in 0..24 {
+            records.push(heart(
+                &format!("2026-10-{day:02} {hour:02}:10:00 -0600"),
+                "70",
+            ));
+        }
+    }
+    let source = export(scratch.path(), &records);
+    run(root, &source, "20261104_120000", None);
+    fs::create_dir_all(root.join(RUN_DIR_REL)).unwrap();
+    fs::write(root.join(RUN_DIR_REL).join("state.json"), "garbage").unwrap();
+    let record = root.join("streams").join(format!("{STREAM}.json"));
+    fs::write(&record, "not a record").unwrap();
+    let done_through = |root: &Path| {
+        let state: serde_json::Value =
+            serde_json::from_slice(&fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap())
+                .unwrap();
+        (state["phase"].clone(), state["done_through"].clone())
+    };
+    let one = run_apple_health_segments(root, &request(&source, "20261105_120000")).unwrap_err();
+    assert!(one.contains("carry on"), "{one}");
+    let (phase, first) = done_through(root);
+    assert_eq!(phase, "repair");
+    let two = run_apple_health_segments(root, &request(&source, "20261105_120001")).unwrap_err();
+    assert!(two.contains("carry on"), "{two}");
+    let (phase, second) = done_through(root);
+    assert_eq!(phase, "repair");
+    assert!(second.as_str().unwrap() > first.as_str().unwrap());
+}
+
+/// A file where the stream's folder goes: no window can ever be read or written there,
+/// and running again changes nothing, so it's counted. Windows answers a path through a
+/// file as not found, so there the write is what fails, and the run stops and says so.
+#[cfg(unix)]
+#[test]
+fn a_file_where_the_streams_folder_goes_is_counted_and_later_days_land() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(
+        scratch.path(),
+        &[
+            heart("2026-10-10 06:31:10 -0600", "70"),
+            heart("2026-10-12 06:31:10 -0600", "71"),
+        ],
+    );
+    let blocked = root.join("chronicle/20261010").join(STREAM);
+    fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+    fs::write(&blocked, "in the way").unwrap();
+    let done = run(root, &source, "20261104_120000", None);
+    assert!(done.finished, "{}", done.summary);
+    assert!(
+        done.summary.contains("1 reading wasn't added"),
+        "{}",
+        done.summary
+    );
+    assert!(later_day_landed(root));
+    assert_eq!(fs::read(&blocked).unwrap(), b"in the way");
 }

@@ -57,6 +57,8 @@ const ZIP64_LOCATOR_BYTES: usize = 20;
 const ZIP64_END_BYTES: usize = 56;
 /// An export whose `HealthData` never closes: an interrupted copy, or not an export.
 pub const EXPORT_INCOMPLETE: &str = "export_incomplete";
+/// What an owner reads for one.
+pub const EXPORT_INCOMPLETE_TEXT: &str = "this export looks incomplete, so none of it was saved. export it from Apple Health again and import the new copy";
 #[derive(Clone, Copy)]
 struct SourceTraversalLimits {
     files: usize,
@@ -488,15 +490,23 @@ pub fn scan_apple_export(
     })
 }
 
-/// Which file of a folder source holds the export, where it can be found within
-/// the scan path's bounds. A zip's bytes are already its identity.
-pub fn apple_folder_export(source: &Path) -> Option<PathBuf> {
+/// Which file of a folder source holds the export, within the scan path's bounds. A
+/// zip's bytes are already its identity, so it has none.
+pub fn apple_folder_export(source: &Path) -> Result<Option<PathBuf>, BodyIngestError> {
     if !source.is_dir() {
-        return None;
+        return Ok(None);
     }
-    find_export_within(source, MAX_APPLE_SCAN_BYTES)
-        .ok()
-        .map(|member| source.join(member))
+    find_export_within(source, MAX_APPLE_SCAN_BYTES).map(|member| Some(source.join(member)))
+}
+
+/// What a failed Apple import says: plain words where they're owed, its stage otherwise.
+#[must_use]
+pub fn apple_refusal_text(error: &BodyIngestError) -> String {
+    if error.stage() == EXPORT_INCOMPLETE {
+        EXPORT_INCOMPLETE_TEXT.to_owned()
+    } else {
+        error.to_string()
+    }
 }
 
 /// The scan path's whole-export bound, for a message that names it.
@@ -1621,57 +1631,130 @@ mod tests {
         assert_eq!(saved_rows(b"<HealthData/>").unwrap(), 0);
     }
 
-    /// A zip whose end record defers to zip64: `entries` and `directory` are what the
-    /// zip64 record says.
-    fn zip64_file(path: &Path, entries: u64, directory: u64, signature: &[u8; 4]) {
-        let mut bytes = vec![0_u8; 64];
-        let record = bytes.len() as u64;
-        bytes.extend_from_slice(signature);
-        bytes.extend_from_slice(&44_u64.to_le_bytes());
-        bytes.extend_from_slice(&[0_u8; 4]);
-        bytes.extend_from_slice(&[0_u8; 8]);
-        bytes.extend_from_slice(&entries.to_le_bytes());
-        bytes.extend_from_slice(&entries.to_le_bytes());
-        bytes.extend_from_slice(&directory.to_le_bytes());
-        bytes.extend_from_slice(&0_u64.to_le_bytes());
-        bytes.extend_from_slice(b"PK\x06\x07");
-        bytes.extend_from_slice(&0_u32.to_le_bytes());
-        bytes.extend_from_slice(&record.to_le_bytes());
-        bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.extend_from_slice(b"PK\x05\x06");
-        bytes.extend_from_slice(&[0_u8; 4]);
-        bytes.extend_from_slice(&u16::MAX.to_le_bytes());
-        bytes.extend_from_slice(&u16::MAX.to_le_bytes());
-        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
-        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
-        bytes.extend_from_slice(&[0_u8; 2]);
-        fs::write(path, bytes).expect("write synthetic zip64 end");
+    /// A zip whose end record defers to zip64, as each field of it should read.
+    struct Zip64 {
+        entries: u64,
+        on_this_disk: u64,
+        directory: u64,
+        signature: [u8; 4],
+        locator_disks: u32,
+        /// The locator names a record in the end record's comment, past the locator.
+        record_in_comment: bool,
+    }
+
+    impl Default for Zip64 {
+        fn default() -> Self {
+            Self {
+                entries: 3,
+                on_this_disk: 3,
+                directory: 64,
+                signature: *b"PK\x06\x06",
+                locator_disks: 1,
+                record_in_comment: false,
+            }
+        }
+    }
+
+    impl Zip64 {
+        fn write(&self, path: &Path) {
+            let mut record = self.signature.to_vec();
+            record.extend_from_slice(&44_u64.to_le_bytes());
+            record.extend_from_slice(&[0_u8; 4]);
+            record.extend_from_slice(&[0_u8; 8]);
+            record.extend_from_slice(&self.on_this_disk.to_le_bytes());
+            record.extend_from_slice(&self.entries.to_le_bytes());
+            record.extend_from_slice(&self.directory.to_le_bytes());
+            record.extend_from_slice(&0_u64.to_le_bytes());
+            let mut bytes = vec![0_u8; 64];
+            let mut place = bytes.len() as u64;
+            let mut comment = Vec::new();
+            if self.record_in_comment {
+                // Past the locator and the end record's fixed part.
+                place += (ZIP64_LOCATOR_BYTES + ZIP_EOCD_MIN_BYTES) as u64;
+                comment = record;
+            } else {
+                bytes.extend_from_slice(&record);
+            }
+            bytes.extend_from_slice(b"PK\x06\x07");
+            bytes.extend_from_slice(&0_u32.to_le_bytes());
+            bytes.extend_from_slice(&place.to_le_bytes());
+            bytes.extend_from_slice(&self.locator_disks.to_le_bytes());
+            bytes.extend_from_slice(b"PK\x05\x06");
+            bytes.extend_from_slice(&[0_u8; 4]);
+            bytes.extend_from_slice(&u16::MAX.to_le_bytes());
+            bytes.extend_from_slice(&u16::MAX.to_le_bytes());
+            bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+            bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+            bytes.extend_from_slice(&u16::try_from(comment.len()).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&comment);
+            fs::write(path, bytes).expect("write synthetic zip64 end");
+        }
     }
 
     #[test]
     fn a_zip64_directory_is_read_and_held_to_the_same_bounds() {
         let temporary = TestDir::new();
         let path = temporary.0.join("export.zip");
-        let check = |entries, directory, signature: &[u8; 4]| {
-            zip64_file(&path, entries, directory, signature);
+        let check = |zip: Zip64| {
+            zip.write(&path);
             preflight_zip(&mut File::open(&path).expect("open zip")).map_err(|error| error.stage())
         };
-        assert_eq!(check(3, 64, b"PK\x06\x06"), Ok(()));
+        assert_eq!(check(Zip64::default()), Ok(()));
         assert_eq!(
-            check(u64::from(MAX_APPLE_ARCHIVE_ENTRIES) + 1, 64, b"PK\x06\x06"),
+            check(Zip64 {
+                entries: u64::from(MAX_APPLE_ARCHIVE_ENTRIES) + 1,
+                on_this_disk: u64::from(MAX_APPLE_ARCHIVE_ENTRIES) + 1,
+                ..Zip64::default()
+            }),
             Err("archive_entry_limit")
         );
         assert_eq!(
-            check(
-                3,
-                u64::from(MAX_APPLE_ARCHIVE_DIRECTORY_BYTES) + 1,
-                b"PK\x06\x06"
-            ),
+            check(Zip64 {
+                directory: u64::from(MAX_APPLE_ARCHIVE_DIRECTORY_BYTES) + 1,
+                ..Zip64::default()
+            }),
             Err("archive_directory_limit")
         );
-        // A directory that would run past the record, and a record that isn't one.
-        assert_eq!(check(3, 65, b"PK\x06\x06"), Err("archive"));
-        assert_eq!(check(3, 64, b"PK\x06\x05"), Err("archive"));
+        for refused in [
+            // A directory that would run past the record, and a record that isn't one.
+            Zip64 {
+                directory: 65,
+                ..Zip64::default()
+            },
+            Zip64 {
+                signature: *b"PK\x06\x05",
+                ..Zip64::default()
+            },
+            // A zip split across disks, by its locator or its record.
+            Zip64 {
+                locator_disks: 2,
+                ..Zip64::default()
+            },
+            Zip64 {
+                on_this_disk: 2,
+                ..Zip64::default()
+            },
+            // A well-formed record, where no record can be.
+            Zip64 {
+                record_in_comment: true,
+                directory: 16,
+                ..Zip64::default()
+            },
+        ] {
+            assert_eq!(check(refused), Err("archive"));
+        }
+    }
+
+    #[test]
+    fn a_refusal_reads_plainly_where_the_export_is_why() {
+        assert_eq!(
+            apple_refusal_text(&source_error(EXPORT_INCOMPLETE)),
+            EXPORT_INCOMPLETE_TEXT
+        );
+        assert_eq!(
+            apple_refusal_text(&source_error("archive")),
+            "body-ingest source: archive"
+        );
     }
 
     #[test]

@@ -36,9 +36,10 @@ use solstone_core_indexer_query::AdmittedCategory;
 /// Windows one `get_transcript` call visits. A sparse span gets short pages rather
 /// than one call reading a whole day's files.
 const MAX_WINDOWS_PER_READ: usize = 24;
-/// How far before a span a read looks, for an interval that began in the window
-/// before it and runs into the span. `within` decides what of it belongs. An
-/// interval that began further back isn't found by a narrow span.
+/// How far before a span a read looks, for a count, stage or logged entry that began
+/// in the window before it and runs into the span. An experience has a tile in every
+/// slot it covers, so it needs no looking back. An interval that began further back
+/// isn't found by a narrow span.
 const LOOK_BACK_SECONDS: u32 = 3_600;
 /// Entries on one page: what a single segment's page already holds.
 const MAX_ENTRIES_PER_PAGE: usize = solstone_core_transcripts::MAX_TRANSCRIPT_PAGE_ITEMS;
@@ -48,6 +49,7 @@ const SPAN_EMPTY: &str = "No entries in this span.";
 const SPAN_EMPTY_CONTINUES: &str =
     "No entries in this part of the span. Pass next_cursor as cursor to read on.";
 const KIND_ABSENT: &str = "This source holds entries in that time, but none of the kind asked for. Its entries name their kinds; list without kind to see them.";
+const BEGAN_EARLIER: &str = "Nothing in this range is listed, but an entry that began before the range runs into it. Pass span_reference to get_transcript as reference to read it.";
 const OTHER_CONTENT: &str = "This source also holds other content on this day that isn't listed here, so these gaps describe only its body segments. List the day without source to see it.";
 
 struct Window {
@@ -278,7 +280,8 @@ fn is_kind(row: &BodyRow, kind: &str) -> bool {
 /// stays inside the window. A row before the window's start, such as a tile of an
 /// experience that began earlier, takes the window's start. A damaged line reads as
 /// itself, at the window's start, and only when no kind is asked for. Under a kind,
-/// a window with no line that reads as a row can't be read.
+/// a window with no line that reads as a row can't be read. From a window that ends
+/// before `from`, reached by looking back, only intervals that run into it belong.
 fn window_rows(
     window: &Window,
     clock: Clock,
@@ -290,6 +293,7 @@ fn window_rows(
         std::fs::read_to_string(window.segment.path().join(BODY_RECORDS_FILE)).map_err(|_| ())?;
     let start = clock.bound(window.start_seconds, false);
     let end = clock.bound(window.end_seconds, true);
+    let behind = i64::from(window.end_seconds) * 1000 <= from;
     let mut rows = Vec::new();
     let (mut good, mut damaged) = (0_u32, 0_u32);
     for (index, line) in text
@@ -301,6 +305,8 @@ fn window_rows(
             Ok(row) => {
                 good += 1;
                 if kind.is_some_and(|kind| !is_kind(&row, kind))
+                    || (behind
+                        && !matches!(row.kind, RowKind::Count | RowKind::Stage | RowKind::Logged))
                     || !within(&row, clock, window, from, to)
                 {
                     continue;
@@ -313,7 +319,7 @@ fn window_rows(
                     });
                 rows.push((at, window.name.clone(), row.id.clone(), render_row(&row)));
             }
-            Err(_) if kind.is_none() => rows.push((
+            Err(_) if kind.is_none() && !behind => rows.push((
                 start,
                 window.name.clone(),
                 format!("~{index:08}"),
@@ -374,20 +380,19 @@ pub(crate) fn list_source(
         .map(|window| (window.start_seconds, window.end_seconds))
         .collect();
     let gaps = gaps_in(&spans, from, to);
-    // A kind keeps only the windows holding it in the span, an interval from the
-    // window before included; what no window covers still describes the source, not
-    // the kind.
+    // A kind keeps only the windows holding it in the span; what no window covers
+    // still describes the source, not the kind.
     let kind = request.kind.as_deref();
     let reach = from.saturating_sub(LOOK_BACK_SECONDS);
-    let reached: Vec<&Window> = windows
+    let behind: Vec<&Window> = windows
         .iter()
-        .filter(|window| window.start_seconds.max(reach) < window.end_seconds.min(to))
+        .filter(|window| window.start_seconds.max(reach) < window.end_seconds.min(from))
         .collect();
-    let ranged = reached.clone();
+    let ranged = in_range.clone();
     let clock = day_date(day).map(|date| Clock::new(journal_root, stream, date));
     let mut unreadable = 0_u64;
     let in_range: Vec<&Window> = match (kind, clock) {
-        (Some(kind), Some(clock)) => reached
+        (Some(kind), Some(clock)) => in_range
             .into_iter()
             .filter(|window| {
                 match window_rows(
@@ -426,7 +431,26 @@ pub(crate) fn list_source(
             })
         })
     };
-    if kind.is_some() && in_range.is_empty() && unreadable == 0 && holds_entries() {
+    // With nothing to list, an interval from before the range is still in it. A
+    // window reached only by looking back isn't listed, so the answer says so.
+    let mut began_earlier = false;
+    if let (true, Some(clock)) = (in_range.is_empty(), clock) {
+        for window in &behind {
+            match window_rows(
+                window,
+                clock,
+                i64::from(from) * 1000,
+                i64::from(to) * 1000,
+                kind,
+            ) {
+                Ok(rows) => began_earlier |= !rows.is_empty(),
+                Err(()) if kind.is_some() => unreadable += 1,
+                Err(()) => {}
+            }
+        }
+    }
+    if kind.is_some() && in_range.is_empty() && unreadable == 0 && !began_earlier && holds_entries()
+    {
         return Ok(
             Prepared::new(json!({ "transcripts": [], "gaps": gaps }), 0, Vec::new())
                 .when_empty(KIND_ABSENT),
@@ -523,6 +547,9 @@ pub(crate) fn list_source(
     }
     if holds_other_content(journal_root, snapshot, day, stream)? {
         response["gaps_note"] = json!(OTHER_CONTENT);
+    }
+    if began_earlier {
+        response["began_earlier"] = json!(BEGAN_EARLIER);
     }
     Ok(Prepared::new(response, count, targets))
 }

@@ -1074,17 +1074,265 @@ fn a_narrow_span_finds_an_interval_that_began_in_the_window_before_it() {
         "gaps still describe the span: {list}"
     );
 
-    // Under a kind only the window before holds, the list has it and no note denies it.
+    // Under a kind only the window before holds, nothing is listed as in the range,
+    // the answer says what's there, and the span reference reaches it.
     let list = read(json!({"kind": "step count"}));
-    assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["transcripts"], json!([]), "{list}");
+    assert!(list["began_earlier"].is_string(), "{list}");
     let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
     assert!(entries.join("\n").contains("val900"), "{entries:?}");
     let list = read(json!({"kind": "heart rate"}));
     assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+    assert!(list.get("began_earlier").is_none(), "{list}");
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert!(!entries.join("\n").contains("val903"), "{entries:?}");
     // A kind none of them hold reads as the empty list that says so.
     let list = read(json!({"kind": "respiratory rate"}));
     assert_eq!(list["transcripts"], json!([]), "{list}");
     assert!(list.get("span_reference").is_none(), "{list}");
+}
+
+#[test]
+fn with_nothing_in_the_range_an_interval_from_before_it_is_said_and_reached() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &[interval(
+            RowKind::Stage,
+            ("s1", "asleep core"),
+            "2026-10-10 06:40:00 -0600",
+            "2026-10-10 07:30:00 -0600",
+            "val901",
+        )],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "07:10", "time_to": "07:15"}),
+    );
+    assert_eq!(list["transcripts"], json!([]), "{list}");
+    assert!(list["began_earlier"].is_string(), "{list}");
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert!(entries.join("\n").contains("asleep core"), "{entries:?}");
+    // One that ended before the span gives no such answer.
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "07:40", "time_to": "07:45"}),
+    );
+    assert!(list.get("began_earlier").is_none(), "{list}");
+}
+
+/// A two-hour workout as the writer tiles it: its first row and a tile a slot.
+fn tiled_workout(root: &Path) {
+    let start = "2026-10-10 06:00:00 -0600";
+    let end = "2026-10-10 08:00:00 -0600";
+    let mut first = workout();
+    first.start = Some(start.into());
+    first.end = Some(end.into());
+    window(root, DAY, "060000_300", std::slice::from_ref(&first), None);
+    for index in 1..24_u64 {
+        let minutes = 6 * 60 + index * 5;
+        let mut tile = BodyRow::new(
+            RowKind::ExperienceTile,
+            format!("workout-{index}"),
+            "apple_health",
+            "HKWorkoutActivityTypeRunning",
+            "running".into(),
+        );
+        tile.of = Some("workout".into());
+        tile.experience = Some("workout".into());
+        tile.by = Some("Synthetic Watch".into());
+        tile.start = Some(start.into());
+        tile.end = Some(end.into());
+        tile.index = Some(index);
+        tile.count = Some(24);
+        window(
+            root,
+            DAY,
+            &format!("{:02}{:02}00_300", minutes / 60, minutes % 60),
+            &[tile],
+            None,
+        );
+    }
+}
+
+/// An experience has a tile in every slot, so looking back adds none of them.
+#[test]
+fn a_narrow_span_over_a_workout_serves_the_tile_it_overlaps_and_no_more() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    tiled_workout(root);
+    for extra in [json!({}), json!({"kind": "workout"})] {
+        let mut arguments =
+            json!({"day": DAY, "source": LABEL, "time_from": "07:30", "time_to": "07:35"});
+        for (key, value) in extra.as_object().unwrap() {
+            arguments[key] = value.clone();
+        }
+        let list = call(root, "list_transcripts", arguments);
+        let times: Vec<&str> = list["transcripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["time"].as_str().unwrap())
+            .collect();
+        assert_eq!(times, ["07:30-07:35"], "{extra}: {list}");
+        let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+        assert_eq!(entries.len(), 1, "{extra}: {entries:#?}");
+    }
+}
+
+#[test]
+fn a_damaged_line_in_the_window_before_a_span_isnt_served() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &[reading("r0", "2026-10-10 06:30:00 -0600", "val903")],
+        None,
+    );
+    let path = root
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join("060000_3600/body.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str("{\"not a row\": \"DAMAGED-OUTSIDE-SPAN\"}\n");
+    fs::write(&path, text).unwrap();
+    window(
+        root,
+        DAY,
+        "070000_3600",
+        &[reading("r1", "2026-10-10 07:02:00 -0600", "val904")],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "07:00", "time_to": "07:05"}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert!(
+        !entries.join("\n").contains("DAMAGED-OUTSIDE-SPAN"),
+        "{entries:#?}"
+    );
+}
+
+#[test]
+fn looking_back_pages_without_doubling_or_reaching_past_the_window_before() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    let before: Vec<BodyRow> = (0..250_u32)
+        .map(|index| {
+            interval(
+                RowKind::Count,
+                (&format!("c{index:03}"), "step count"),
+                &format!(
+                    "2026-10-10 06:{:02}:{:02} -0600",
+                    30 + index / 60,
+                    index % 60
+                ),
+                "2026-10-10 07:10:00 -0600",
+                &format!("cv{index:03}x"),
+            )
+        })
+        .collect();
+    window(root, DAY, "060000_3600", &before, None);
+    let inside: Vec<BodyRow> = (0..250_u32)
+        .map(|index| {
+            reading(
+                &format!("r{index:03}"),
+                &format!("2026-10-10 07:{:02}:{:02} -0600", index / 60, index % 60),
+                &format!("rv{index:03}x"),
+            )
+        })
+        .collect();
+    window(root, DAY, "070000_3600", &inside, None);
+    window(
+        root,
+        DAY,
+        "050000_3600",
+        &[interval(
+            RowKind::Count,
+            ("w", "step count"),
+            "2026-10-10 05:00:00 -0600",
+            "2026-10-10 05:10:00 -0600",
+            "outside",
+        )],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "07:00", "time_to": "07:05"}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    let unique: std::collections::BTreeSet<&String> = entries.iter().collect();
+    assert_eq!(unique.len(), entries.len());
+    // Every count runs into the span, and 07:00-07:05 holds 250 readings' first 250 seconds.
+    assert_eq!(entries.len(), 500);
+    assert!(!entries.join("\n").contains("outside"));
+}
+
+#[test]
+fn a_limited_connection_doesnt_look_back_into_what_it_cant_read() {
+    let journal = journal();
+    let root = journal.path();
+    grant(
+        root,
+        ReadScope::Facets {
+            ids: vec![HEALTH.to_owned()],
+        },
+    );
+    fix_zone(root, "America/Denver");
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &[interval(
+            RowKind::Count,
+            ("c1", "step count"),
+            "2026-10-10 06:50:00 -0600",
+            "2026-10-10 07:10:00 -0600",
+            "SECRET-WORK",
+        )],
+        Some("work"),
+    );
+    window(
+        root,
+        DAY,
+        "070000_3600",
+        &[reading("r1", "2026-10-10 07:02:00 -0600", "val904")],
+        Some("health"),
+    );
+    for extra in [json!({}), json!({"kind": "step count"})] {
+        let mut arguments =
+            json!({"day": DAY, "source": LABEL, "time_from": "07:00", "time_to": "07:05"});
+        for (key, value) in extra.as_object().unwrap() {
+            arguments[key] = value.clone();
+        }
+        let list = call(root, "list_transcripts", arguments);
+        assert!(!list.to_string().contains("SECRET-WORK"), "{list}");
+        assert!(list.get("began_earlier").is_none(), "{list}");
+        if let Some(span) = list["span_reference"].as_str() {
+            let (entries, _) = every_entry(root, span);
+            assert!(!entries.join("\n").contains("SECRET-WORK"), "{entries:?}");
+        }
+    }
 }
 
 /// The contract's limit, stated in a test: an interval that began before the look-back

@@ -1272,7 +1272,14 @@ fn run_apple(media: &str, options: &Options, journal_path: &Path) -> CliRun {
             report.rows(),
             report.days().len()
         )),
-        Err(error) => failure("", &format!("{error}\n"), 1),
+        Err(error) => failure(
+            "",
+            &format!(
+                "{}\n",
+                solstone_core_body_ingest::apple_refusal_text(&error)
+            ),
+            1,
+        ),
     }
 }
 
@@ -2579,6 +2586,26 @@ mod sync_effect_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cut_off_apple_export_is_refused_in_plain_words() {
+        let scratch = tempfile::tempdir().unwrap();
+        std::fs::write(scratch.path().join("export.xml"), "<HealthData><Record").unwrap();
+        let options = Options {
+            dry_run: true,
+            ..Options::default()
+        };
+        let run = run_apple(
+            scratch.path().to_str().unwrap(),
+            &options,
+            &scratch.path().join("journal"),
+        );
+        assert_eq!(run.exit_code, 1, "{}", run.stderr);
+        assert_eq!(
+            run.stderr.trim_end(),
+            solstone_core_body_ingest::EXPORT_INCOMPLETE_TEXT
+        );
+    }
 
     #[test]
     fn force_notice_uses_positional_date_and_actual_binding_without_writing() {

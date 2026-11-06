@@ -915,9 +915,16 @@ pub fn run_apple_health_segments(
     let source_hash = solstone_core_import::hash_source(request.source)
         .map_err(|error| error.to_string())?
         .into_inner();
-    let export_hash = solstone_core_body_ingest::apple_folder_export(request.source)
-        .and_then(|export| solstone_core_import::hash_source(&export).ok())
-        .map_or_else(String::new, solstone_core_import::SourceHash::into_inner);
+    // Before anything touches an earlier run: an export that can't be read this
+    // moment says nothing about whether that run should carry on.
+    let export_hash = match solstone_core_body_ingest::apple_folder_export(request.source)
+        .map_err(|error| refusal_text(&error.to_string()))?
+    {
+        Some(export) => solstone_core_import::hash_source(&export)
+            .map_err(|error| error.to_string())?
+            .into_inner(),
+        None => String::new(),
+    };
 
     // The run state is read before any binding, so the same export resumes under
     // the import it began as, whatever timestamp this request carries.
@@ -994,17 +1001,22 @@ pub fn run_apple_health_segments(
         }
         Err(Stop::Failed(error)) => {
             let _ = finish(ImportTerminalInput::Failed(&[]), &[]);
-            Err(if error.contains("export_size_limit") {
-                format!(
-                    "this export is larger than {} GiB, the most one import reads",
-                    solstone_core_body_ingest::apple_scan_byte_bound() / (1024 * 1024 * 1024)
-                )
-            } else if error.contains(solstone_core_body_ingest::EXPORT_INCOMPLETE) {
-                "this export looks incomplete, so none of it was saved. export it from Apple Health again and import the new copy".to_owned()
-            } else {
-                error
-            })
+            Err(refusal_text(&error))
         }
+    }
+}
+
+/// What a run's failure says, in plain words where the export is why.
+fn refusal_text(error: &str) -> String {
+    if error.contains("export_size_limit") {
+        format!(
+            "this export is larger than {} GiB, the most one import reads",
+            solstone_core_body_ingest::apple_scan_byte_bound() / (1024 * 1024 * 1024)
+        )
+    } else if error.contains(solstone_core_body_ingest::EXPORT_INCOMPLETE) {
+        solstone_core_body_ingest::EXPORT_INCOMPLETE_TEXT.to_owned()
+    } else {
+        error.to_owned()
     }
 }
 
