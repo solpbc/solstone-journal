@@ -17,7 +17,9 @@
 //!    time, for the caller to decide, write and publish.
 //!
 //! Memory is one spill buffer, a read buffer per run, the open nights and
-//! sessions, and one day's rows. Nothing here writes the journal.
+//! sessions, and one day's rows. Runs are merged down until at most
+//! `MAX_OPEN_RUNS` are left, so a long export can't run out of open files. Nothing
+//! here writes the journal.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
@@ -40,8 +42,24 @@ use crate::apple_health::{
 /// How much a spill buffer holds before it is sorted and written.
 pub const DEFAULT_SPILL_BYTES: usize = 64 * 1024 * 1024;
 
+/// The most sorted runs merged at once, each holding one open file. macOS gives a
+/// launched app 256, and the process holds its other files too.
+const MAX_OPEN_RUNS: usize = 64;
+
 fn io_text(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+/// Make a folder's new files survive power loss. Windows can't open a folder this
+/// way, and doesn't need it to keep a file whose contents are synced.
+fn sync_folder(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    File::open(dir)
+        .and_then(|folder| folder.sync_all())
+        .map_err(io_text)?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
 }
 
 /// Sorted runs of one item type in one folder.
@@ -51,9 +69,11 @@ struct Spill<T> {
     buffer: Vec<T>,
     bytes: usize,
     runs: Vec<PathBuf>,
+    /// The number the next run takes. Merging removes runs, so it isn't their count.
+    next: usize,
 }
 
-impl<T: Serialize + Ord> Spill<T> {
+impl<T: Serialize + DeserializeOwned + Ord> Spill<T> {
     fn new(dir: &Path, limit: usize) -> Result<Self, String> {
         fs::create_dir_all(dir).map_err(io_text)?;
         Ok(Self {
@@ -62,6 +82,7 @@ impl<T: Serialize + Ord> Spill<T> {
             buffer: Vec::new(),
             bytes: 0,
             runs: Vec::new(),
+            next: 0,
         })
     }
 
@@ -79,24 +100,64 @@ impl<T: Serialize + Ord> Spill<T> {
             return Ok(());
         }
         self.buffer.sort();
-        let path = self.dir.join(format!("{:06}.run", self.runs.len()));
-        let file = File::create(&path).map_err(io_text)?;
-        let mut out = BufWriter::new(file);
+        let mut out = self.new_run()?;
         for item in self.buffer.drain(..) {
-            serde_json::to_writer(&mut out, &item).map_err(io_text)?;
-            out.write_all(b"\n").map_err(io_text)?;
+            out.write(&item)?;
         }
-        let file = out.into_inner().map_err(io_text)?;
-        // A phase is recorded done only after its runs are on disk.
-        file.sync_all().map_err(io_text)?;
+        let path = out.finish()?;
         self.bytes = 0;
         self.runs.push(path);
         Ok(())
     }
 
-    fn finish(mut self) -> Result<Vec<PathBuf>, String> {
+    fn new_run(&mut self) -> Result<RunWriter, String> {
+        let path = self.dir.join(format!("{:06}.run", self.next));
+        self.next += 1;
+        let out = BufWriter::new(File::create(&path).map_err(io_text)?);
+        Ok(RunWriter { path, out })
+    }
+
+    /// The last run, then merges until a reader can hold every run open at once. A
+    /// phase is recorded done only after this returns, so a stop in here repeats it.
+    /// Returns how many runs are left.
+    fn finish(mut self) -> Result<u64, String> {
         self.flush()?;
-        Ok(self.runs)
+        while self.runs.len() > MAX_OPEN_RUNS {
+            let batch: Vec<PathBuf> = self.runs.drain(..MAX_OPEN_RUNS).collect();
+            let mut out = self.new_run()?;
+            let mut merge: Merge<T> = Merge::open(&batch)?;
+            while let Some(item) = merge.next_item()? {
+                out.write(&item)?;
+            }
+            // Closed before they're removed.
+            drop(merge);
+            let path = out.finish()?;
+            for run in &batch {
+                fs::remove_file(run).map_err(io_text)?;
+            }
+            self.runs.push(path);
+        }
+        sync_folder(&self.dir)?;
+        Ok(self.runs.len() as u64)
+    }
+}
+
+/// One sorted run being written.
+struct RunWriter {
+    path: PathBuf,
+    out: BufWriter<File>,
+}
+
+impl RunWriter {
+    fn write(&mut self, item: &impl Serialize) -> Result<(), String> {
+        serde_json::to_writer(&mut self.out, item).map_err(io_text)?;
+        self.out.write_all(b"\n").map_err(io_text)
+    }
+
+    fn finish(self) -> Result<PathBuf, String> {
+        let file = self.out.into_inner().map_err(io_text)?;
+        file.sync_all().map_err(io_text)?;
+        Ok(self.path)
     }
 }
 
@@ -163,10 +224,9 @@ struct ScanItem(i64, u8, String, String, Vec<String>);
 /// One distinct content of an identity, and its events.
 type Content = (String, Vec<String>);
 
-/// A final row and the window it sits in, before any step around older content,
-/// and whether any session at all covers it, which settling a day needs.
+/// A final row and the window it sits in, before any step around older content.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-struct PlacedItem(String, String, String, bool);
+struct PlacedItem(String, String, String);
 
 /// What a scan counted. Names and counts, never a value.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -175,6 +235,9 @@ pub struct ScanCounts {
     pub not_read: BTreeMap<String, u64>,
     pub refused: BTreeMap<String, u64>,
     pub rows: u64,
+    /// The sorted runs left in staging, which a resume checks are all still there.
+    #[serde(default)]
+    pub runs: u64,
 }
 
 /// Read an export into sorted runs under `dir`. `progress` hears the row count
@@ -224,7 +287,7 @@ pub fn scan(
     if let Some(error) = failure {
         return Err(error);
     }
-    spill.finish()?;
+    let runs = spill.finish()?;
     progress(rows);
     let export = reader.export;
     Ok(ScanCounts {
@@ -232,6 +295,7 @@ pub fn scan(
         not_read: export.not_read,
         refused: export.refused,
         rows,
+        runs,
     })
 }
 
@@ -255,6 +319,9 @@ pub struct PlaceResult {
     pub rows: u64,
     /// Every day a placed row sits on.
     pub days: BTreeSet<String>,
+    /// The sorted runs left in staging, which a resume checks are all still there.
+    #[serde(default)]
+    pub runs: u64,
 }
 
 struct Placer<'a> {
@@ -276,14 +343,13 @@ fn seconds(text: Option<&str>) -> i64 {
 }
 
 impl Placer<'_> {
-    fn emit(&mut self, window: WindowId, row: &BodyRow, covered_any: bool) -> Result<(), String> {
+    fn emit(&mut self, window: WindowId, row: &BodyRow) -> Result<(), String> {
         let text = serde_json::to_string(row).expect("a body row serializes");
         let bytes = window.0.len() + window.1.len() + text.len() + 16;
         if !self.result.days.contains(&window.0) {
             self.result.days.insert(window.0.clone());
         }
-        self.out
-            .push(PlacedItem(window.0, window.1, text, covered_any), bytes)?;
+        self.out.push(PlacedItem(window.0, window.1, text), bytes)?;
         self.result.rows += 1;
         if self.result.rows.is_multiple_of(100_000) {
             (self.progress)(self.result.rows);
@@ -291,33 +357,29 @@ impl Placer<'_> {
         Ok(())
     }
 
-    /// Whether a session from the reading's own source covers it, and whether
-    /// any session does. Sessions end out of the set at the reading's own instant,
-    /// which only grows in merge order.
-    fn covering(&mut self, row: &BodyRow) -> (bool, bool) {
+    /// Whether a session from the reading's own source covers it. Sessions end out
+    /// of the set at the reading's own instant, which only grows in merge order.
+    fn covering(&mut self, row: &BodyRow) -> bool {
         if row.kind != RowKind::Reading || row.date.is_some() {
-            return (false, false);
+            return false;
         }
         let Some(at) = row
             .begins()
             .and_then(parse_source_time)
             .map(|time| time.timestamp_millis())
         else {
-            return (false, false);
+            return false;
         };
         self.sessions.retain(|(_, _, end)| *end > at);
-        let open = |own: bool| {
-            self.sessions
-                .iter()
-                .any(|(by, start, _)| *start <= at && (!own || *by == row.by))
-        };
-        (open(true), open(false))
+        self.sessions
+            .iter()
+            .any(|(by, start, _)| *start <= at && *by == row.by)
     }
 
     fn row(&mut self, row: &BodyRow) -> Result<(), String> {
-        let (covered, covered_any) = self.covering(row);
+        let covered = self.covering(row);
         let window = row_window(row, self.zone, covered)?;
-        self.emit(window, row, covered_any)
+        self.emit(window, row)
     }
 
     fn experience(&mut self, experience: &BodyRow) -> Result<(), String> {
@@ -336,7 +398,7 @@ impl Placer<'_> {
             }
         }
         for (window, row) in tiles {
-            self.emit(window, &row, false)?;
+            self.emit(window, &row)?;
         }
         Ok(())
     }
@@ -472,14 +534,17 @@ pub fn place(
     for night in nights {
         placer.close(night)?;
     }
-    let Placer { out, result, .. } = placer;
-    out.finish()?;
+    // The scan's runs are done with, so finishing the placed ones can use their files.
+    drop(merge);
+    let Placer {
+        out, mut result, ..
+    } = placer;
+    result.runs = out.finish()?;
     Ok(result)
 }
 
-/// One day's windows, each with this run's rows for it by id, and the readings on
-/// it any session covers.
-pub type DayWindows = (String, DayRows, BTreeSet<String>);
+/// One day's windows, each with this run's rows for it by id.
+pub type DayWindows = (String, DayRows);
 
 /// The placed rows, one day at a time, for days after `after`. Each window's key has
 /// already stepped around older content, and a refused night's stages are gone.
@@ -519,7 +584,6 @@ impl<'a> Days<'a> {
     pub fn next_day(&mut self) -> Result<Option<DayWindows>, String> {
         let mut day: Option<String> = None;
         let mut windows: BTreeMap<String, BTreeMap<String, BodyRow>> = BTreeMap::new();
-        let mut covered = BTreeSet::new();
         while let Some(item) = self.pull()? {
             if self
                 .after
@@ -545,9 +609,6 @@ impl<'a> Days<'a> {
             {
                 continue;
             }
-            if item.3 {
-                covered.insert(row.id.clone());
-            }
             windows
                 .entry(item.1)
                 .or_default()
@@ -567,7 +628,7 @@ impl<'a> Days<'a> {
             .into_iter()
             .map(|(key, rows)| ((day.clone(), key), rows))
             .collect();
-        Ok(Some((day, windows, covered)))
+        Ok(Some((day, windows)))
     }
 }
 

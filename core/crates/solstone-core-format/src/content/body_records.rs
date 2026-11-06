@@ -253,7 +253,7 @@ fn clock_span(row: &BodyRow) -> String {
     let format = |text: &str| {
         parse_source_time(text).map_or_else(
             || text.to_owned(),
-            |time| time.format("%Y-%m-%d %H:%M").to_string(),
+            |time| time.format("%Y-%m-%d %H:%M %z").to_string(),
         )
     };
     match (row.start.as_deref(), row.end.as_deref()) {

@@ -1138,7 +1138,7 @@ fn readings_in_an_hour_the_owner_deleted_stay_out_when_a_session_arrives() {
 }
 
 #[test]
-fn deleting_a_workouts_tile_leaves_another_sources_readings_in_their_hour() {
+fn deleting_a_workouts_tile_keeps_what_was_saved_and_holds_back_what_is_new_inside_it() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -1165,11 +1165,11 @@ fn deleting_a_workouts_tile_leaves_another_sources_readings_in_their_hour() {
         "20261012_120001",
         None,
     );
-    assert!(!again.summary.contains("added"), "{}", again.summary);
     assert_eq!(body_bytes(root, TEN, "060000_3600"), hour);
+    assert!(holding(root, TEN, "81").is_empty(), "{}", again.summary);
 
-    // A new phone reading inside the deleted slot still lands: the session that
-    // slot belonged to is still in the export.
+    // The reading saved on the deleted tile was one the export still holds, so it's
+    // counted there; a new phone reading inside the deleted slot is held back too.
     let mut more = records.to_vec();
     more.push(phone("2026-10-10 06:42:10 -0600", "93"));
     let three = run(
@@ -1178,8 +1178,12 @@ fn deleting_a_workouts_tile_leaves_another_sources_readings_in_their_hour() {
         "20261012_120002",
         None,
     );
-    assert!(!three.summary.contains("added"), "{}", three.summary);
-    assert_eq!(holding(root, TEN, "93"), ["060000_3600"]);
+    assert!(
+        three.summary.contains("1 reading wasn't added"),
+        "{}",
+        three.summary
+    );
+    assert!(holding(root, TEN, "93").is_empty());
 }
 
 #[test]
@@ -1305,4 +1309,488 @@ fn a_run_over_an_earlier_import_stopped_anywhere_resumes_to_the_same_bytes() {
         }
         assert_chain(root);
     }
+}
+
+fn strava_workout(day: u32) -> String {
+    format!(
+        r#"<Workout workoutActivityType="HKWorkoutActivityTypeRunning" sourceName="Synthetic Strava" creationDate="2026-10-10 08:00:00 -0600" startDate="2026-10-{day} 06:31:00 -0600" endDate="2026-10-{day} 07:20:00 -0600"/>"#
+    )
+}
+
+#[test]
+fn a_reading_whose_tile_was_deleted_stays_out_though_another_sources_session_covers_it() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let reading = heart("2026-10-10 06:40:30 -0600", "81");
+    run(
+        root,
+        &export(
+            &scratch.path().join("1"),
+            &[workout(10), strava_workout(10), reading.clone()],
+        ),
+        "20261012_120000",
+        None,
+    );
+    assert_eq!(holding(root, TEN, "81"), ["064000_300"]);
+    delete(root, TEN, "064000_300");
+    assert!(holding(root, TEN, "81").is_empty());
+    // The watch's own workout is gone from the later export; Strava's still covers.
+    let two = run(
+        root,
+        &export(&scratch.path().join("2"), &[strava_workout(10), reading]),
+        "20261012_120001",
+        None,
+    );
+    assert!(
+        holding(root, TEN, "81").is_empty(),
+        "a reading the owner deleted came back in {:?}",
+        holding(root, TEN, "81")
+    );
+    assert!(
+        two.summary.contains("1 reading wasn't added"),
+        "{}",
+        two.summary
+    );
+}
+
+#[test]
+fn the_same_bytes_at_the_same_time_leave_the_first_imports_record_alone() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(scratch.path(), &[heart("2026-10-10 06:31:10 -0600", "70")]);
+    let one = run(root, &source, "20261012_120000", None);
+    let dir = root.join("imports").join(&one.import_id);
+    let record = |name: &str| fs::read(dir.join(name)).unwrap();
+    let before = (
+        record("body-touched.jsonl"),
+        record("manifest.json"),
+        record("summary.md"),
+    );
+    let two = run(root, &source, "20261012_120000", None);
+    assert_ne!(one.import_id, two.import_id);
+    assert_eq!(
+        before,
+        (
+            record("body-touched.jsonl"),
+            record("manifest.json"),
+            record("summary.md"),
+        ),
+        "the first import's record was replaced"
+    );
+    assert!(two.summary.contains("0 windows written"), "{}", two.summary);
+    // A row still names the import that first wrote it.
+    let rows =
+        decode_rows(&String::from_utf8(body_bytes(root, TEN, "060000_3600")).unwrap()).unwrap();
+    assert_eq!(rows[0].run.as_deref(), Some(one.import_id.as_str()));
+    // The retry path takes a new record too, and leaves the first one as it was.
+    let three = run(root, &source, "20261012_120000", None);
+    assert!(three.import_id != one.import_id && three.import_id != two.import_id);
+}
+
+/// Every time in these records rendered two hours on at `-0400`, as an export from
+/// another zone writes the same instants.
+fn at_another_offset(records: &[String]) -> Vec<String> {
+    records
+        .iter()
+        .map(|record| {
+            let mut out = String::new();
+            let mut rest = record.as_str();
+            while let Some(at) = rest.find(" -0600") {
+                let (head, tail) = rest.split_at(at);
+                let (head, time) = head.split_at(head.len() - 19);
+                let time = chrono::NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M:%S")
+                    .unwrap()
+                    + chrono::Duration::hours(2);
+                out.push_str(head);
+                out.push_str(&time.format("%Y-%m-%d %H:%M:%S -0400").to_string());
+                rest = &tail[" -0600".len()..];
+            }
+            out.push_str(rest);
+            out
+        })
+        .collect()
+}
+
+fn every_kind(day: u32) -> Vec<String> {
+    let mut records = days_records(true);
+    records.push(format!(
+        r#"<Record type="HKQuantityTypeIdentifierStepCount" {SOURCE} unit="count" startDate="2026-10-{day} 09:00:00 -0600" endDate="2026-10-{day} 09:05:00 -0600" value="300"/>"#
+    ));
+    records.push(format!(
+        r#"<Record type="HKCategoryTypeIdentifierHeadache" {SOURCE} startDate="2026-10-{day} 10:00:00 -0600" endDate="2026-10-{day} 10:30:00 -0600" value="HKCategoryValueSeverityMild"/>"#
+    ));
+    records
+}
+
+#[test]
+fn an_export_at_another_offset_changes_nothing_and_doubles_nothing() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let records = every_kind(10);
+    run(
+        root,
+        &export(&scratch.path().join("1"), &records),
+        "20261012_120000",
+        None,
+    );
+    let before = snapshot(root);
+    let two = run(
+        root,
+        &export(&scratch.path().join("2"), &at_another_offset(&records)),
+        "20261012_120001",
+        None,
+    );
+    assert!(two.summary.contains("0 windows written"), "{}", two.summary);
+    assert_eq!(two.published, 0, "{}", two.summary);
+    let mut after = snapshot(root);
+    after.retain(|path, _| !path.contains("20261012_120001"));
+    assert_eq!(before, after);
+}
+
+#[test]
+fn a_first_import_at_another_offset_lands_where_its_instants_belong() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let records = every_kind(10);
+    let one = run(
+        root,
+        &export(&scratch.path().join("1"), &at_another_offset(&records)),
+        "20261012_120000",
+        None,
+    );
+    assert!(one.finished, "{}", one.summary);
+    let elsewhere = tempfile::tempdir().unwrap();
+    journal_in(elsewhere.path());
+    run(
+        elsewhere.path(),
+        &export(&scratch.path().join("2"), &records),
+        "20261012_120000",
+        None,
+    );
+    let windows = |root: &Path| -> BTreeSet<String> {
+        snapshot(root)
+            .into_keys()
+            .filter(|path| path.ends_with(BODY_RECORDS_FILE))
+            .collect()
+    };
+    assert_eq!(windows(root), windows(elsewhere.path()));
+}
+
+fn journal_in(root: &Path) {
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        json!({"identity": {"timezone": "America/Denver"}}).to_string(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_window_of_bytes_that_arent_text_is_counted_and_the_run_goes_on() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(
+        scratch.path(),
+        &[
+            heart("2026-10-10 06:35:10 -0600", "81"),
+            heart("2026-10-11 06:35:10 -0600", "82"),
+        ],
+    );
+    run(root, &source, "20261012_120000", None);
+    fs::write(
+        window(root, TEN, "060000_3600").join(BODY_RECORDS_FILE),
+        [0xff, 0xfe, b'\n'],
+    )
+    .unwrap();
+    // The reading now goes on a tile, and its other place can't be read as rows.
+    let two = run(
+        root,
+        &export(
+            &scratch.path().join("2"),
+            &[
+                heart("2026-10-10 06:35:10 -0600", "81"),
+                heart("2026-10-11 06:35:10 -0600", "83"),
+                workout(10),
+            ],
+        ),
+        "20261012_120001",
+        None,
+    );
+    assert!(
+        two.summary.contains("1 reading wasn't added"),
+        "{}",
+        two.summary
+    );
+    assert_eq!(holding(root, "20261011", "83"), ["060000_3600"]);
+}
+
+fn stuck_window(root: &Path, day: &str, key: &str) {
+    let stuck = window(root, day, key);
+    fs::create_dir_all(&stuck).unwrap();
+    fs::write(
+        stuck.join("stream.json"),
+        json!({"stream": STREAM, "prev_day": null, "prev_segment": null, "seq": 999}).to_string(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn two_adjacent_windows_that_wont_bind_dont_stop_the_days_after_them() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    for key in ["063000_300", "063500_300"] {
+        stuck_window(root, "20261011", key);
+    }
+    let one = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    assert!(!one.finished);
+    assert!(one.summary.contains("063000_300"), "{}", one.summary);
+    assert!(one.summary.contains("063500_300"), "{}", one.summary);
+    assert!(
+        window(root, "20261013", "063000_300")
+            .join("stream.json")
+            .is_file(),
+        "the later day landed"
+    );
+    // Once the fault is gone, the next run saves them.
+    for key in ["063000_300", "063500_300"] {
+        fs::remove_file(window(root, "20261011", key).join("stream.json")).unwrap();
+    }
+    let two = run_apple_health_segments(root, &request(&source, "20261104_130000")).unwrap();
+    assert!(two.finished, "{}", two.summary);
+    assert_chain(root);
+}
+
+#[test]
+fn a_stream_that_takes_no_window_stops_the_run_after_a_bounded_number_of_tries() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    // One window an hour, more of them than the run tries.
+    let mut records = Vec::new();
+    for day in 1..=4 {
+        for hour in 0..24 {
+            records.push(heart(
+                &format!("2026-10-{day:02} {hour:02}:10:00 -0600"),
+                "70",
+            ));
+        }
+    }
+    let source = export(scratch.path(), &records);
+    let record = root.join("streams").join(format!("{STREAM}.json"));
+    fs::create_dir_all(record.parent().unwrap()).unwrap();
+    fs::write(&record, "not a record").unwrap();
+    let error = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap_err();
+    assert!(error.contains("in a row"), "{error}");
+    assert!(
+        !window(root, "20261004", "230000_3600").exists(),
+        "the run stopped before the last day"
+    );
+    // Once the stream is whole, the same export resumes and finishes.
+    fs::remove_file(&record).unwrap();
+    let two = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    assert!(two.finished, "{}", two.summary);
+    assert!(window(root, "20261004", "230000_3600").is_dir());
+}
+
+/// Every window folder without records.
+fn folders_without_records(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for day in fs::read_dir(root.join("chronicle")).unwrap().flatten() {
+        let Ok(windows) = fs::read_dir(day.path().join(STREAM)) else {
+            continue;
+        };
+        for window in windows.flatten() {
+            if window.path().is_dir() && !window.path().join(BODY_RECORDS_FILE).exists() {
+                found.push(window.path());
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_faceted_run_stopped_partway_leaves_no_folder_holding_only_a_facet() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("written", 1);
+    let mut stopped = AppleSegmentsRequest::new(&source, "20261104_120000", Some("health"));
+    stopped.spill_bytes = 4096;
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    assert_eq!(folders_without_records(root), Vec::<PathBuf>::new());
+
+    // Another export publishes the half-done day, facet and all.
+    let other = export(
+        &scratch.path().join("o"),
+        &[heart("2026-10-20 06:31:10 -0600", "70")],
+    );
+    run(root, &other, "20261104_130000", None);
+    assert_eq!(folders_without_records(root), Vec::<PathBuf>::new());
+    let written: Vec<PathBuf> = fs::read_dir(root.join("chronicle").join(TEN).join(STREAM))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.join(BODY_RECORDS_FILE).is_file())
+        .collect();
+    assert!(!written.is_empty());
+    assert!(
+        written
+            .iter()
+            .all(|path| path.join("talents/facets.json").is_file()),
+        "{written:?}"
+    );
+}
+
+#[test]
+fn a_faceted_run_resumed_gives_every_window_its_facet() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("written", 2);
+    let mut stopped = AppleSegmentsRequest::new(&source, "20261104_120000", Some("health"));
+    stopped.spill_bytes = 4096;
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let mut again = AppleSegmentsRequest::new(&source, "20261104_120000", Some("health"));
+    again.spill_bytes = 4096;
+    let done = run_apple_health_segments(root, &again).unwrap();
+    assert!(done.finished, "{}", done.summary);
+    assert_eq!(folders_without_records(root), Vec::<PathBuf>::new());
+    for day in fs::read_dir(root.join("chronicle")).unwrap().flatten() {
+        let Ok(windows) = fs::read_dir(day.path().join(STREAM)) else {
+            continue;
+        };
+        for window in windows.flatten() {
+            if window.path().is_dir() {
+                assert!(
+                    window.path().join("talents/facets.json").is_file(),
+                    "{:?}",
+                    window.path()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_run_missing_from_staging_is_not_trusted_and_no_row_goes_missing() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let whole = tempfile::tempdir().unwrap();
+    journal_in(whole.path());
+    run_apple_health_segments(whole.path(), &request(&source, "20261104_120000")).unwrap();
+
+    let stop = stopping_at("pending", 2);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    // Power loss: a run's folder entry never reached the disk.
+    let runs = runs_in(&root.join(RUN_DIR_REL).join("placed")).unwrap();
+    assert!(runs.len() > 1, "the placed rows spilled");
+    fs::remove_file(runs.last().unwrap()).unwrap();
+
+    let done = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    assert!(done.finished, "{}", done.summary);
+    assert!(done.summary.contains("published again"), "{}", done.summary);
+    let ids = |root: &Path| -> BTreeMap<String, Vec<String>> {
+        snapshot(root)
+            .into_iter()
+            .filter(|(path, _)| path.ends_with(BODY_RECORDS_FILE))
+            .map(|(path, bytes)| {
+                let rows = decode_rows(&String::from_utf8(bytes).unwrap()).unwrap();
+                (path, rows.into_iter().map(|row| row.id).collect())
+            })
+            .collect()
+    };
+    assert_eq!(ids(root), ids(whole.path()));
+    assert_chain(root);
+}
+
+#[test]
+fn a_kill_during_a_repair_leaves_no_import_reading_as_running() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("pending", 3);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    fs::remove_dir_all(root.join(RUN_DIR_REL).join("placed")).unwrap();
+    let stop2 = stopping_at("repaired", 1);
+    let mut repairing = request(&source, "20261104_130000");
+    repairing.stop_at = Some(&stop2);
+    run_apple_health_segments(root, &repairing).unwrap_err();
+    let done = run_apple_health_segments(root, &request(&source, "20261104_140000")).unwrap();
+    assert!(done.finished, "{}", done.summary);
+    assert_chain(root);
+    for id in ["20261104_120000", "20261104_130000"] {
+        let metadata = read_provenance(root, id).unwrap().unwrap();
+        let AttemptRead::Present(facts) = read_attempt_facts(&metadata) else {
+            panic!("{id} has an attempt");
+        };
+        assert_ne!(facts.state, AttemptState::Running, "{id}");
+    }
+}
+
+#[test]
+fn failures_with_a_published_day_between_them_arent_in_a_row() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    // Every other day holds one stuck window, more of them than stop a run if they
+    // were in a row; the days between publish whole.
+    let days: Vec<chrono::NaiveDate> = (0..140)
+        .map(|n| chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap() + chrono::Duration::days(n))
+        .collect();
+    let records: Vec<String> = days
+        .iter()
+        .map(|day| heart(&format!("{} 06:31:10 -0600", day.format("%Y-%m-%d")), "70"))
+        .collect();
+    for day in days.iter().step_by(2) {
+        stuck_window(root, &day.format("%Y%m%d").to_string(), "060000_3600");
+    }
+    let source = export(scratch.path(), &records);
+    let one = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    assert!(!one.finished);
+    let last = days.last().unwrap().format("%Y%m%d").to_string();
+    assert!(
+        window(root, &last, "060000_3600")
+            .join("stream.json")
+            .is_file(),
+        "the last day landed"
+    );
+}
+
+#[test]
+fn a_stream_that_takes_no_window_stops_the_run_though_each_day_holds_only_one() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let days: Vec<chrono::NaiveDate> = (0..70)
+        .map(|n| chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap() + chrono::Duration::days(n))
+        .collect();
+    let records: Vec<String> = days
+        .iter()
+        .map(|day| heart(&format!("{} 06:31:10 -0600", day.format("%Y-%m-%d")), "70"))
+        .collect();
+    let source = export(scratch.path(), &records);
+    let record = root.join("streams").join(format!("{STREAM}.json"));
+    fs::create_dir_all(record.parent().unwrap()).unwrap();
+    fs::write(&record, "not a record").unwrap();
+    let error = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap_err();
+    assert!(error.contains("64 windows in a row"), "{error}");
+    assert!(error.contains("carries on"), "{error}");
 }

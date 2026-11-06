@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time,
@@ -97,17 +98,27 @@ fn read_rows(journal: &Path, day: &str) -> Result<BTreeMap<String, Vec<BodyRow>>
     Ok(by_source)
 }
 
-fn clock(time: DateTime<FixedOffset>) -> String {
-    time.format("%H:%M").to_string()
+/// A time on the clock that placed this source's windows, so the day reads as its
+/// windows do, whatever offset an export rendered. Its own clock when there's no
+/// such record.
+fn on_clock(time: DateTime<FixedOffset>, zone: Option<Tz>) -> NaiveDateTime {
+    zone.map_or_else(
+        || time.naive_local(),
+        |zone| time.with_timezone(&zone).naive_local(),
+    )
+}
+
+fn clock(time: DateTime<FixedOffset>, zone: Option<Tz>) -> String {
+    on_clock(time, zone).format("%H:%M").to_string()
 }
 
 fn time_of(text: Option<&str>) -> Option<DateTime<FixedOffset>> {
     parse_source_time(text?)
 }
 
-fn span_words(row: &BodyRow, day: &str) -> String {
-    let word = |text: Option<&str>| match time_of(text) {
-        Some(time) if time.format("%Y%m%d").to_string() == day => clock(time),
+fn span_words(row: &BodyRow, day: &str, zone: Option<Tz>) -> String {
+    let word = |text: Option<&str>| match time_of(text).map(|time| on_clock(time, zone)) {
+        Some(time) if time.format("%Y%m%d").to_string() == day => time.format("%H:%M").to_string(),
         Some(time) => time.format("%Y-%m-%d %H:%M").to_string(),
         None => String::new(),
     };
@@ -134,12 +145,17 @@ impl Tally {
         }
     }
 
-    fn words(&self) -> String {
+    fn words(&self, zone: Option<Tz>) -> String {
         match (self.first, self.last) {
             (Some(first), Some(last)) if first != last => {
-                format!("{}, {} to {}", self.count, clock(first), clock(last))
+                format!(
+                    "{}, {} to {}",
+                    self.count,
+                    clock(first, zone),
+                    clock(last, zone)
+                )
             }
-            (Some(first), _) => format!("{}, {}", self.count, clock(first)),
+            (Some(first), _) => format!("{}, {}", self.count, clock(first, zone)),
             _ => self.count.to_string(),
         }
     }
@@ -163,7 +179,13 @@ fn by_words(row: &BodyRow) -> String {
 }
 
 /// A source's rows for one day. The same rows make the same bytes, in any order.
-fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &str) {
+fn render_source(
+    lines: &mut Vec<String>,
+    source: &str,
+    rows: &[BodyRow],
+    day: &str,
+    zone: Option<Tz>,
+) {
     lines.push(format!("## {}", source_label(source)));
     lines.push(String::new());
     let starts_today: BTreeSet<&str> = rows
@@ -185,7 +207,7 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
                 let mut line = format!(
                     "- {kind}: {}, {}{}",
                     row.label,
-                    span_words(row, day),
+                    span_words(row, day, zone),
                     by_words(row)
                 );
                 if !row.words.is_empty() {
@@ -203,7 +225,7 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
                         format!(
                             "- {kind} continuing: {}, {}{}",
                             row.label,
-                            span_words(row, day),
+                            span_words(row, day, zone),
                             by_words(row)
                         ),
                     ));
@@ -243,7 +265,7 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
                 (false, true) => String::new(),
                 (false, false) => format!(" (recorded by {by})"),
             };
-            lines.push(format!("- {name}: entries {}{who}", tally.words()));
+            lines.push(format!("- {name}: entries {}{who}", tally.words(zone)));
             continue;
         }
         let (name, by) = (first, second);
@@ -253,7 +275,7 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
         } else {
             format!(" ({by})")
         };
-        lines.push(format!("- {name}: {noun} {}{by}", tally.words()));
+        lines.push(format!("- {name}: {noun} {}{by}", tally.words(zone)));
     }
     if !words.is_empty() {
         let words = words.into_iter().collect::<Vec<_>>().join(", ");
@@ -262,14 +284,15 @@ fn render_source(lines: &mut Vec<String>, source: &str, rows: &[BodyRow], day: &
     lines.push(String::new());
 }
 
-fn render_document(day: &str, rows: &BTreeMap<String, Vec<BodyRow>>) -> String {
+fn render_document(journal: &Path, day: &str, rows: &BTreeMap<String, Vec<BodyRow>>) -> String {
     let heading = NaiveDate::parse_from_str(day, "%Y%m%d").map_or_else(
         |_| day.to_owned(),
         |date| date.format("%A, %B %-d, %Y").to_string(),
     );
     let mut lines = vec![format!("# body on {heading}"), String::new()];
     for (source, rows) in rows {
-        render_source(&mut lines, source, rows, day);
+        let zone = solstone_core_journal_config::placed_zone(journal, source);
+        render_source(&mut lines, source, rows, day, zone);
     }
     let mut text = lines.join("\n");
     while text.ends_with("\n\n") {
@@ -303,7 +326,7 @@ fn rebuild_day(journal: &Path, day: &str) -> Result<(), ProjectionError> {
         }
         return Ok(());
     }
-    let text = render_document(day, &rows);
+    let text = render_document(journal, day, &rows);
     let unchanged = fs::read(&document).is_ok_and(|existing| existing == text.as_bytes());
     if !unchanged {
         crate::reconcile_io::replace(&document, text.as_bytes())
@@ -444,6 +467,33 @@ mod tests {
 
     fn document(root: &Path, day: &str) -> Option<String> {
         fs::read_to_string(document_path(root, day)).ok()
+    }
+
+    #[test]
+    fn a_day_reads_on_the_clock_that_placed_it_whatever_offset_a_row_states() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        fs::create_dir_all(root.join("imports")).unwrap();
+        fs::write(
+            root.join("imports/.apple_health-zone.json"),
+            r#"{"zone":"America/Denver"}"#,
+        )
+        .unwrap();
+        // Written at -0400: 21:30 and 22:30 in Denver, the second one's own clock on
+        // the next day.
+        window(
+            root,
+            "20261010",
+            "210000_3600",
+            &[
+                reading("a", "2026-10-10 23:30:00 -0400", "70"),
+                reading("b", "2026-10-11 00:30:00 -0400", "71"),
+            ],
+        );
+        let mut days = BodyDays::default();
+        days.reconcile(root);
+        let text = document(root, "20261010").unwrap();
+        assert!(text.contains("21:30 to 22:30"), "{text}");
     }
 
     #[test]

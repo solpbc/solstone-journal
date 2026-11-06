@@ -13,6 +13,7 @@
 //! so a kill anywhere leaves either a day not yet counted, which the next run
 //! redoes and publishes whether or not its bytes now match, or a day done.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::{Seek as _, SeekFrom, Write as _};
@@ -37,7 +38,7 @@ use solstone_core_import_sources::apple_health::{
     read_or_create_zone, settle_readings, stored_windows_of_day, stream_days, summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
-    DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, scan,
+    DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan,
 };
 use solstone_core_import_sources::save::{self, RenderedImport, SegmentFile};
 use solstone_core_journal_io::{
@@ -54,9 +55,13 @@ const LOCK_TIMEOUT: Duration = Duration::from_secs(30);
 /// The run's own folder. Only `scan/` and `placed/` are left out of copies.
 pub const RUN_DIR_REL: &str = "imports/.apple_health-run";
 const STATE_FILE: &str = "state.json";
-/// 2: a reading a session covers goes on its tile, which changes what staging holds.
-const STATE_SCHEMA: u32 = 2;
+/// 3: staging records how many runs it holds, and places rows without a note of
+/// whether another source's session covers them.
+const STATE_SCHEMA: u32 = 3;
 const PROGRESS_FILE: &str = "body-progress.json";
+/// So many windows that can't be published, in a row and none bound between them,
+/// is the stream's fault rather than theirs.
+const MAX_FAILED_IN_A_ROW: u32 = 64;
 const LISTING_FILE: &str = "body-touched.jsonl";
 const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 
@@ -193,7 +198,8 @@ struct RunState {
 enum Read {
     Absent,
     Trusted(Box<RunState>),
-    Untrusted,
+    /// Carrying the import whose run it was, when the state can still say.
+    Untrusted(Option<String>),
 }
 
 fn run_dir(journal: &Path) -> PathBuf {
@@ -211,29 +217,39 @@ fn read_state(journal: &Path) -> Read {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             // A run folder without its state is a run that didn't finish.
             return if run_dir(journal).exists() {
-                Read::Untrusted
+                Read::Untrusted(None)
             } else {
                 Read::Absent
             };
         }
-        Err(_) => return Read::Untrusted,
+        Err(_) => return Read::Untrusted(None),
+    };
+    let import_id = || {
+        serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()
+            .and_then(|state| state.get("import_id")?.as_str().map(str::to_owned))
     };
     match serde_json::from_slice::<RunState>(&bytes) {
         Ok(state) if state.schema == STATE_SCHEMA => {
-            // A phase that needs staging the folder no longer has (a restore
-            // copies the state and leaves staging out) can't be trusted.
+            // A phase that needs staging the folder no longer holds in full (a
+            // restore copies the state and leaves staging out, and power loss can
+            // lose a run) can't be trusted.
             let needs = match state.phase {
-                Phase::Place => Some("scan"),
-                Phase::Write => Some("placed"),
+                Phase::Place => Some(("scan", state.scan.runs)),
+                Phase::Write => Some(("placed", state.place.runs)),
                 Phase::Scan | Phase::Repair | Phase::Retry => None,
             };
-            if needs.is_some_and(|folder| !run_dir(journal).join(folder).is_dir()) {
-                Read::Untrusted
-            } else {
+            let whole = needs.is_none_or(|(folder, runs)| {
+                runs_in(&run_dir(journal).join(folder))
+                    .is_ok_and(|found| found.len() as u64 == runs)
+            });
+            if whole {
                 Read::Trusted(Box::new(state))
+            } else {
+                Read::Untrusted(Some(state.import_id))
             }
         }
-        _ => Read::Untrusted,
+        _ => Read::Untrusted(import_id()),
     }
 }
 
@@ -266,6 +282,8 @@ struct Run<'a> {
     request: &'a AppleSegmentsRequest<'a>,
     import_id: String,
     generation: u64,
+    /// Windows that couldn't be published since one last was.
+    failed_in_a_row: Cell<u32>,
 }
 
 impl Run<'_> {
@@ -337,7 +355,7 @@ impl Run<'_> {
 
     /// Publish one day's windows. A failure of one window is recorded and the
     /// rest go on; a failure the whole stream would repeat ends the day.
-    fn publish_day(&self, day: &str, windows: &[WindowId]) -> Result<Vec<Failed>, Stop> {
+    fn publish_day(&self, windows: &[WindowId]) -> Result<Vec<Failed>, Stop> {
         // Binding a window that holds no records would make it not body-only.
         let windows: Vec<WindowId> = windows
             .iter()
@@ -354,13 +372,15 @@ impl Run<'_> {
         }
         let record = self.publish_once(&windows)?;
         if record.status == PublicationStatus::Success {
+            self.failed_in_a_row.set(0);
             return Ok(failed);
         }
         let mut first = true;
         let mut retry = Vec::new();
         for (window, outcome) in windows.iter().zip(&record.segments) {
             match &outcome.outcome {
-                SegmentBindingOutcome::Bound { .. } | SegmentBindingOutcome::OwnerDeleted => {}
+                SegmentBindingOutcome::Bound { .. } => self.failed_in_a_row.set(0),
+                SegmentBindingOutcome::OwnerDeleted => {}
                 SegmentBindingOutcome::FailedAtMarkerWrite { error } => {
                     return Err(Stop::Failed(format!(
                         "{}/{}: the stream's marker couldn't be written: {error}",
@@ -369,6 +389,7 @@ impl Run<'_> {
                 }
                 SegmentBindingOutcome::FailedAtAdvance { .. } if first => {
                     first = false;
+                    self.count_a_failure(window)?;
                     failed.push(Failed {
                         day: window.0.clone(),
                         key: Some(window.1.clone()),
@@ -398,29 +419,43 @@ impl Run<'_> {
                 });
             }
         }
-        // The windows the stream didn't attempt after the first failure, one at
-        // a time. If the first of them fails too, the fault is the stream's.
-        for (index, window) in retry.iter().enumerate() {
+        // The windows the stream didn't attempt after the first failure, one at a
+        // time, since any number of them can be at fault. So many failing in a row,
+        // across days, with none between them bound, is the stream's fault, and
+        // going on would only repeat it for every window left.
+        for window in &retry {
             let one = self.publish_once(std::slice::from_ref(window))?;
-            if one.status == PublicationStatus::Success {
-                continue;
+            if one
+                .segments
+                .iter()
+                .any(|outcome| matches!(outcome.outcome, SegmentBindingOutcome::Bound { .. }))
+            {
+                self.failed_in_a_row.set(0);
+            } else {
+                self.count_a_failure(window)?;
             }
-            if index == 0 {
-                return Err(Stop::Failed(format!(
-                    "{day}: publishing stopped at {} and every window after it failed too",
-                    failed
-                        .first()
-                        .and_then(|f| f.key.clone())
-                        .unwrap_or_default()
-                )));
+            if one.status != PublicationStatus::Success {
+                failed.push(Failed {
+                    day: window.0.clone(),
+                    key: Some(window.1.clone()),
+                    stage: "bind".to_owned(),
+                });
             }
-            failed.push(Failed {
-                day: window.0.clone(),
-                key: Some(window.1.clone()),
-                stage: "bind".to_owned(),
-            });
         }
         Ok(failed)
+    }
+
+    /// One more window that couldn't be published, none bound since the last.
+    fn count_a_failure(&self, window: &WindowId) -> Result<(), Stop> {
+        let count = self.failed_in_a_row.get() + 1;
+        self.failed_in_a_row.set(count);
+        if count >= MAX_FAILED_IN_A_ROW {
+            return Err(Stop::Failed(format!(
+                "{}: publishing stopped at {} after {count} windows in a row couldn't be published; the next run carries on from there",
+                window.0, window.1
+            )));
+        }
+        Ok(())
     }
 
     /// Retry what an earlier run couldn't publish. What still fails stays.
@@ -478,6 +513,28 @@ impl Run<'_> {
             progress.to_string().as_bytes(),
             PRIVATE,
         );
+    }
+
+    /// Give windows their facet, where they hold records: a folder holding only a
+    /// facet would stop being body-only.
+    fn write_facets(
+        &self,
+        day: &str,
+        windows: &[PendingWindow],
+        facet: &str,
+    ) -> Result<(), String> {
+        for window in windows.iter().filter(|window| window.facet) {
+            let dir = window_dir(self.journal, &(day.to_owned(), window.key.clone()));
+            if !dir.join(BODY_RECORDS_FILE).is_file() {
+                continue;
+            }
+            let path = dir.join("talents/facets.json");
+            fs::create_dir_all(path.parent().expect("facets file has a parent"))
+                .map_err(|error| error.to_string())?;
+            atomic_replace(&path, facet_file_text(facet).as_bytes(), PRIVATE)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
     }
 
     /// Decide, write and publish one day, its readings already settled. `redo` is
@@ -549,15 +606,10 @@ impl Run<'_> {
         state.pending = Some(pending.clone());
         save_state(self.journal, state)?;
         self.point("pending")?;
+        // A window holding records takes its new facet first, so new rows never sit
+        // under its old one. A new window takes it after its records.
         if let Some(facet) = facet {
-            for window in pending.windows.iter().filter(|window| window.facet) {
-                let path = window_dir(self.journal, &(day.clone(), window.key.clone()))
-                    .join("talents/facets.json");
-                fs::create_dir_all(path.parent().expect("facets file has a parent"))
-                    .map_err(|error| error.to_string())?;
-                atomic_replace(&path, facet_file_text(facet).as_bytes(), PRIVATE)
-                    .map_err(|error| error.to_string())?;
-            }
+            self.write_facets(&day, &pending.windows, facet)?;
         }
         let mut written = 0;
         for (window, decision) in decided {
@@ -596,6 +648,9 @@ impl Run<'_> {
                 self.point("written")?;
             }
         }
+        if let Some(facet) = facet {
+            self.write_facets(&day, &pending.windows, facet)?;
+        }
 
         let publish: Vec<WindowId> = pending
             .windows
@@ -603,7 +658,7 @@ impl Run<'_> {
             .filter(|window| window.publish)
             .map(|window| (day.clone(), window.key.clone()))
             .collect();
-        let failed = self.publish_day(&day, &publish)?;
+        let failed = self.publish_day(&publish)?;
         self.point("published")?;
 
         self.append_listing(state, &pending)?;
@@ -661,7 +716,7 @@ impl Run<'_> {
                 continue;
             }
             let windows = stored_windows_of_day(self.journal, &day)?;
-            let failed = self.publish_day(&day, &windows)?;
+            let failed = self.publish_day(&windows)?;
             state.failed.extend(failed);
             state.done_through = Some(day);
             save_state(self.journal, state)?;
@@ -758,18 +813,39 @@ fn close_superseded(journal: &Path, state: &RunState, zone: chrono_tz::Tz) {
             .as_bytes(),
         PRIVATE,
     );
-    if let Ok(Some(metadata)) = read_provenance(journal, &state.import_id)
+    close_attempt_unlocked(journal, &state.import_id);
+}
+
+/// An earlier run's import still reading as running, when this run is taking over
+/// from it, reads as unconfirmed instead.
+fn close_attempt(journal: &Path, import_id: &str) {
+    if let Ok(_lock) = hold_import_lock(journal, import_id) {
+        close_attempt_unlocked(journal, import_id);
+    }
+}
+
+fn close_attempt_unlocked(journal: &Path, import_id: &str) {
+    if let Ok(Some(metadata)) = read_provenance(journal, import_id)
         && let AttemptRead::Present(facts) = read_attempt_facts(&metadata)
         && facts.state == AttemptState::Running
     {
         let _ = record_unconfirmed_attempt_unlocked(
             journal,
-            &state.import_id,
+            import_id,
             facts.generation,
             now_ms(),
             Some("replaced by a later import before it finished".to_owned()),
         );
     }
+}
+
+/// Whether an earlier run left its record in this import, which a run that isn't
+/// resuming it must not overwrite.
+fn holds_a_run(journal: &Path, import_id: &str) -> bool {
+    let dir = journal.join("imports").join(import_id);
+    [LISTING_FILE, PROGRESS_FILE, "summary.md", "manifest.json"]
+        .iter()
+        .any(|name| dir.join(name).exists())
 }
 
 /// Publish an Apple export as body windows. Runs under the source's lock.
@@ -813,11 +889,16 @@ pub fn run_apple_health_segments(
         None => {
             let requested = solstone_core_import::validate_timestamp(request.timestamp)
                 .map_err(|e| e.to_string())?;
-            solstone_core_import::bind_import_record(journal, &requested, Some(request.source))
-                .map_err(|error| error.to_string())?
-                .import_id
-                .as_str()
-                .to_owned()
+            solstone_core_import::bind_import_record_where(
+                journal,
+                &requested,
+                Some(request.source),
+                &|existing| !holds_a_run(journal, existing),
+            )
+            .map_err(|error| error.to_string())?
+            .import_id
+            .as_str()
+            .to_owned()
         }
     };
     if solstone_core_import::refuse_if_live_running(journal, &import_id, STREAM).is_some() {
@@ -836,6 +917,7 @@ pub fn run_apple_health_segments(
         request,
         import_id: import_id.clone(),
         generation,
+        failed_in_a_row: Cell::new(0),
     };
     let finish = |input, index_only: &[PathBuf]| {
         finish_import_attempt_indexing(
@@ -898,6 +980,9 @@ fn run_phases(
     let mut state = match previous {
         Read::Trusted(state) if resume => *state,
         Read::Trusted(mut old) if old.phase == Phase::Repair => {
+            if old.import_id != run.import_id {
+                close_attempt(journal, &old.import_id);
+            }
             run.repair(&mut old)?;
             let carried = std::mem::take(&mut old.failed);
             fresh(carried, std::mem::take(&mut old.notes))
@@ -908,13 +993,16 @@ fn run_phases(
             // Its half-done day's windows are on disk as far as they got; what it
             // owed them is publication, which is all this does.
             if let Some(pending) = old.pending.take() {
+                if let Some(facet) = &old.facet {
+                    run.write_facets(&pending.day, &pending.windows, facet)?;
+                }
                 let windows: Vec<WindowId> = pending
                     .windows
                     .iter()
                     .filter(|window| window.publish)
                     .map(|window| (pending.day.clone(), window.key.clone()))
                     .collect();
-                let failed = run.publish_day(&pending.day, &windows)?;
+                let failed = run.publish_day(&windows)?;
                 old.failed.extend(failed);
             }
             run.retry_failed(&mut old.failed)?;
@@ -923,7 +1011,10 @@ fn run_phases(
             }
             fresh(std::mem::take(&mut old.failed), Vec::new())
         }
-        Read::Untrusted => {
+        Read::Untrusted(old) => {
+            if let Some(old) = old.filter(|old| *old != run.import_id) {
+                close_attempt(journal, &old);
+            }
             let mut repairing = fresh(BTreeSet::new(), Vec::new());
             run.repair(&mut repairing)?;
             fresh(std::mem::take(&mut repairing.failed), repairing.notes)
@@ -973,12 +1064,11 @@ fn run_phases(
         &refused,
         state.done_through.clone(),
     )?;
-    while let Some((day, windows, covered)) = days.next_day()? {
-        let (windows, held_back) = settle_readings(journal, &day, zone, windows, &covered)?;
+    while let Some((day, windows)) = days.next_day()? {
+        let (windows, held_back) = settle_readings(journal, &day, zone, windows)?;
         run.write_day(&mut state, day, windows, held_back)?;
     }
-    // Close the placed runs before anything removes them: Windows refuses to
-    // delete a file that's still open.
+    // Close the placed runs before anything removes them.
     drop(days);
     run.retry_failed(&mut state.failed)?;
     run.point("written-all")?;

@@ -167,6 +167,7 @@ fn reference(journal: &Path, source: &Path) -> (Windows, ScanCounts) {
         not_read: export.not_read,
         refused: export.refused,
         rows: 0,
+        runs: 0,
     };
     (windows, counts)
 }
@@ -184,7 +185,7 @@ fn streamed(journal: &Path, source: &Path, spill: usize) -> (Windows, ScanCounts
     }
     let mut days = Days::open(journal, &placed_dir, &placed.refused_nights, None).unwrap();
     let mut windows = Windows::new();
-    while let Some((_, day, _)) = days.next_day().unwrap() {
+    while let Some((_, day)) = days.next_day().unwrap() {
         for (window, rows) in day {
             let decision = decide(journal, &window, rows, None, None).unwrap();
             if let Some(contents) = decision.contents {
@@ -193,6 +194,7 @@ fn streamed(journal: &Path, source: &Path, spill: usize) -> (Windows, ScanCounts
         }
     }
     counts.rows = 0;
+    counts.runs = 0;
     (windows, counts)
 }
 
@@ -391,7 +393,7 @@ fn days_resume_from_a_cursor() {
     .unwrap();
     let mut all = Vec::new();
     let mut days = Days::open(journal.path(), &placed_dir, &placed.refused_nights, None).unwrap();
-    while let Some((day, _, _)) = days.next_day().unwrap() {
+    while let Some((day, _)) = days.next_day().unwrap() {
         all.push(day);
     }
     assert!(all.len() > 3);
@@ -405,8 +407,93 @@ fn days_resume_from_a_cursor() {
         Some(after),
     )
     .unwrap();
-    while let Some((day, _, _)) = days.next_day().unwrap() {
+    while let Some((day, _)) = days.next_day().unwrap() {
         later.push(day);
     }
     assert_eq!(later, all[2..]);
+}
+
+fn hundreds_of_readings(count: u32) -> Vec<String> {
+    (0..count)
+        .map(|n| {
+            heart(
+                &format!(
+                    "2026-10-10 {:02}:{:02}:{:02} -0600",
+                    n / 3600,
+                    (n / 60) % 60,
+                    n % 60
+                ),
+                "70",
+            )
+        })
+        .collect()
+}
+
+/// A spill of one byte makes a run per row.
+fn staged(journal: &Path, source: &Path) -> (Windows, u64, u64) {
+    let staging = tempfile::tempdir().unwrap();
+    let scan_dir = staging.path().join("scan");
+    let placed_dir = staging.path().join("placed");
+    let counts = scan(source, &scan_dir, 1, &mut |_| {}).unwrap();
+    assert_eq!(runs_in(&scan_dir).unwrap().len() as u64, counts.runs);
+    let placed = place(journal, Denver, &scan_dir, &placed_dir, 1, &mut |_| {}).unwrap();
+    assert_eq!(runs_in(&placed_dir).unwrap().len() as u64, placed.runs);
+    let mut days = Days::open(journal, &placed_dir, &placed.refused_nights, None).unwrap();
+    let mut windows = Windows::new();
+    while let Some((_, day)) = days.next_day().unwrap() {
+        for (window, rows) in day {
+            let decision = decide(journal, &window, rows, None, None).unwrap();
+            windows.insert(window, decision.contents.unwrap());
+        }
+    }
+    (windows, counts.runs, placed.runs)
+}
+
+#[test]
+fn many_spills_merge_down_to_what_can_be_held_open_and_write_the_same_bytes() {
+    let journal = tempfile::tempdir().unwrap();
+    let records = hundreds_of_readings(MAX_OPEN_RUNS as u32 * 5);
+    let source = write_export(&records);
+    let (windows, scan_runs, placed_runs) = staged(journal.path(), source.path());
+    assert!(scan_runs as usize <= MAX_OPEN_RUNS, "{scan_runs}");
+    assert!(placed_runs as usize <= MAX_OPEN_RUNS, "{placed_runs}");
+    assert_eq!(windows, reference(journal.path(), source.path()).0);
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
+#[test]
+fn a_long_export_fits_within_a_low_open_file_limit() {
+    // The limit is process-wide, so lower it only in a fresh process.
+    if std::env::var_os("SOLSTONE_APPLE_NOFILE_CHILD").is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "apple_health_run::tests::a_long_export_fits_within_a_low_open_file_limit",
+                "--test-threads=1",
+            ])
+            .env("SOLSTONE_APPLE_NOFILE_CHILD", "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated open-file-limit run failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains("test result: ok. 1 passed; 0 failed;"),
+            "isolated assertion did not execute"
+        );
+        return;
+    }
+    use nix::sys::resource::{Resource, setrlimit};
+    // Above what merging holds open, below the runs a spill of one byte makes.
+    const LIMIT: u64 = 128;
+    setrlimit(Resource::RLIMIT_NOFILE, LIMIT, LIMIT).unwrap();
+    let journal = tempfile::tempdir().unwrap();
+    let source = write_export(&hundreds_of_readings(600));
+    let (windows, _, _) = staged(journal.path(), source.path());
+    assert!(!windows.is_empty());
 }

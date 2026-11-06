@@ -10,11 +10,12 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::path::Path;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
 use serde_json::{Value, json};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, parse_source_time, render_row,
 };
+use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
 };
@@ -149,37 +150,105 @@ fn gaps_in(windows: &[(u32, u32)], from: u32, to: u32) -> Vec<Value> {
     gaps
 }
 
-/// One row ready to serve, at its place in time order: milliseconds into the day,
-/// then its window, then its id.
+/// One row ready to serve, at its place in time order: its instant, kept inside
+/// its window, then its window, then its id.
 type Keyed = (i64, String, String, String);
+
+/// The one clock a read goes by. Windows sit on the zone a source fixed at its first
+/// import, whatever offset a row states, so a row is found and ordered by its instant
+/// against that zone. A source with no such record goes by each row's stated clock,
+/// and a row's place stays inside its window either way, so no read can lose it.
+#[derive(Clone, Copy)]
+struct Clock {
+    date: NaiveDate,
+    zone: Option<Tz>,
+}
+
+impl Clock {
+    fn new(journal_root: &Path, stream: &str, date: NaiveDate) -> Self {
+        let zone = stream
+            .strip_prefix("import.")
+            .and_then(|source| solstone_core_journal_config::placed_zone(journal_root, source));
+        Self { date, zone }
+    }
+
+    /// A time's place in order, comparable with `bound`.
+    fn order(self, time: DateTime<FixedOffset>) -> i64 {
+        match self.zone {
+            Some(_) => time.timestamp_millis(),
+            None => time.naive_local().and_utc().timestamp_millis(),
+        }
+    }
+
+    /// Where `seconds` into the day falls in order: the first time the clock shows
+    /// it, or the last for a window's end, since an hour can repeat in the fall. A
+    /// clock time skipped in the spring falls where the clock resumes.
+    fn bound(self, seconds: u32, last: bool) -> i64 {
+        let local = self
+            .date
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight exists as a clock time")
+            + chrono::Duration::seconds(i64::from(seconds));
+        let Some(zone) = self.zone else {
+            return local.and_utc().timestamp_millis();
+        };
+        let found = zone.from_local_datetime(&local);
+        let found = if last {
+            found.latest()
+        } else {
+            found.earliest()
+        };
+        found
+            .or_else(|| {
+                zone.from_local_datetime(&(local + chrono::Duration::hours(1)))
+                    .earliest()
+            })
+            .map_or_else(
+                || local.and_utc().timestamp_millis(),
+                |time| time.timestamp_millis(),
+            )
+    }
+
+    /// Milliseconds into the day on this clock, for reading against a span an agent
+    /// asked for. A time on an earlier day reads as the day's start, and one on a
+    /// later day as its end.
+    fn into_day(self, time: DateTime<FixedOffset>) -> i64 {
+        let local = match self.zone {
+            Some(zone) => time.with_timezone(&zone).naive_local(),
+            None => time.naive_local(),
+        };
+        match local.date().cmp(&self.date) {
+            std::cmp::Ordering::Less => 0,
+            std::cmp::Ordering::Greater => 86_400_000,
+            std::cmp::Ordering::Equal => {
+                i64::from(local.time().num_seconds_from_midnight()) * 1000
+                    + i64::from(local.time().nanosecond() / 1_000_000)
+            }
+        }
+    }
+}
 
 fn day_date(day: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(day, "%Y%m%d").ok()
 }
 
-/// Milliseconds into `date` on the time's own clock. A time on an earlier day
-/// reads as the day's start, and one on a later day as its end.
-fn ms_into(date: NaiveDate, text: Option<&str>) -> Option<i64> {
-    use chrono::Timelike;
-    let local = parse_source_time(text?)?.naive_local();
-    Some(match local.date().cmp(&date) {
-        std::cmp::Ordering::Less => 0,
-        std::cmp::Ordering::Greater => 86_400_000,
-        std::cmp::Ordering::Equal => {
-            i64::from(local.time().num_seconds_from_midnight()) * 1000
-                + i64::from(local.time().nanosecond() / 1_000_000)
-        }
-    })
-}
-
-/// Whether a row belongs to a read of `from..to`, in milliseconds into the day:
-/// a timed row inside it, or one whose interval or experience overlaps it. A row
-/// with no time states something about the date, so it always belongs.
-fn within(row: &BodyRow, date: NaiveDate, from: i64, to: i64) -> bool {
-    let Some(begin) = ms_into(date, row.begins()) else {
+/// Whether a row in `window` belongs to a read of `from..to`, in milliseconds into
+/// the day: a timed row inside it, or one whose interval or experience overlaps it.
+/// A row's start is taken inside its window, which it's stored in by that start. A
+/// row with no time states something about the date, so it always belongs.
+fn within(row: &BodyRow, clock: Clock, window: &Window, from: i64, to: i64) -> bool {
+    let Some(begin) = row.begins().and_then(parse_source_time) else {
         return true;
     };
-    let end = ms_into(date, row.end.as_deref()).unwrap_or(begin);
+    let begin = clock.into_day(begin).clamp(
+        i64::from(window.start_seconds) * 1000,
+        i64::from(window.end_seconds) * 1000 - 1,
+    );
+    let end = row
+        .end
+        .as_deref()
+        .and_then(parse_source_time)
+        .map_or(begin, |end| clock.into_day(end));
     if end > begin {
         begin < to && end > from
     } else {
@@ -201,21 +270,24 @@ fn is_kind(row: &BodyRow, kind: &str) -> bool {
         || (row.kind == RowKind::Event && kind.eq_ignore_ascii_case("workout"))
 }
 
-/// A window's rows that belong to a read, each at its place in time order. A row
-/// before the window's start, such as a tile of an experience that began earlier,
-/// takes the window's start. A damaged line reads as itself, at the window's start,
-/// and only when no kind is asked for.
+/// A window's rows that belong to a read, each at its place in time order, which
+/// stays inside the window. A row before the window's start, such as a tile of an
+/// experience that began earlier, takes the window's start. A damaged line reads as
+/// itself, at the window's start, and only when no kind is asked for. Under a kind,
+/// a window with no line that reads as a row can't be read.
 fn window_rows(
     window: &Window,
-    date: NaiveDate,
+    clock: Clock,
     from: i64,
     to: i64,
     kind: Option<&str>,
 ) -> Result<Vec<Keyed>, ()> {
     let text =
         std::fs::read_to_string(window.segment.path().join(BODY_RECORDS_FILE)).map_err(|_| ())?;
-    let start = i64::from(window.start_seconds) * 1000;
+    let start = clock.bound(window.start_seconds, false);
+    let end = clock.bound(window.end_seconds, true);
     let mut rows = Vec::new();
+    let (mut good, mut damaged) = (0_u32, 0_u32);
     for (index, line) in text
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -223,10 +295,18 @@ fn window_rows(
     {
         match serde_json::from_str::<BodyRow>(line) {
             Ok(row) => {
-                if kind.is_some_and(|kind| !is_kind(&row, kind)) || !within(&row, date, from, to) {
+                good += 1;
+                if kind.is_some_and(|kind| !is_kind(&row, kind))
+                    || !within(&row, clock, window, from, to)
+                {
                     continue;
                 }
-                let at = ms_into(date, row.begins()).map_or(start, |at| at.max(start));
+                let at = row
+                    .begins()
+                    .and_then(parse_source_time)
+                    .map_or(start, |time| {
+                        clock.order(time).clamp(start, (end - 1).max(start))
+                    });
                 rows.push((at, window.name.clone(), row.id.clone(), render_row(&row)));
             }
             Err(_) if kind.is_none() => rows.push((
@@ -235,8 +315,11 @@ fn window_rows(
                 format!("~{index:08}"),
                 line.to_owned(),
             )),
-            Err(_) => {}
+            Err(_) => damaged += 1,
         }
+    }
+    if good == 0 && damaged > 0 {
+        return Err(());
     }
     Ok(rows)
 }
@@ -291,30 +374,40 @@ pub(crate) fn list_source(
     // still describes the source, not the kind.
     let kind = request.kind.as_deref();
     let ranged = in_range.clone();
-    let in_range: Vec<&Window> = match (kind, day_date(day)) {
-        (Some(kind), Some(date)) => in_range
+    let clock = day_date(day).map(|date| Clock::new(journal_root, stream, date));
+    let mut unreadable = 0_u64;
+    let in_range: Vec<&Window> = match (kind, clock) {
+        (Some(kind), Some(clock)) => in_range
             .into_iter()
             .filter(|window| {
-                window_rows(
+                match window_rows(
                     window,
-                    date,
+                    clock,
                     i64::from(from) * 1000,
                     i64::from(to) * 1000,
                     Some(kind),
-                )
-                .map_or(true, |rows| !rows.is_empty())
+                ) {
+                    Ok(rows) => !rows.is_empty(),
+                    // It can't say whether it holds the kind, so it isn't listed as
+                    // holding it, and it isn't left out unsaid.
+                    Err(()) => {
+                        unreadable += 1;
+                        false
+                    }
+                }
             })
             .collect(),
         _ => in_range,
     };
     // Entries in the range, none of the kind: say so. With nothing in the range,
-    // the list reads as it would without a kind.
+    // the list reads as it would without a kind, and with a window that couldn't
+    // say, the count stands in for the note.
     let holds_entries = || {
-        day_date(day).is_some_and(|date| {
+        clock.is_some_and(|clock| {
             ranged.iter().any(|window| {
                 window_rows(
                     window,
-                    date,
+                    clock,
                     i64::from(from) * 1000,
                     i64::from(to) * 1000,
                     None,
@@ -323,7 +416,7 @@ pub(crate) fn list_source(
             })
         })
     };
-    if kind.is_some() && in_range.is_empty() && holds_entries() {
+    if kind.is_some() && in_range.is_empty() && unreadable == 0 && holds_entries() {
         return Ok(
             Prepared::new(json!({ "transcripts": [], "gaps": gaps }), 0, Vec::new())
                 .when_empty(KIND_ABSENT),
@@ -353,7 +446,6 @@ pub(crate) fn list_source(
     let mut remaining = in_range.iter().filter(after);
     let mut listed = Vec::new();
     let mut targets = Vec::new();
-    let mut unreadable = 0_u64;
     let mut last_name = None;
     for window in remaining.by_ref().take(request.limit) {
         last_name = Some(window.name.clone());
@@ -455,8 +547,8 @@ fn holds_other_content(
 /// `get_transcript` on a `span_reference`: the entries in the span, in time order
 /// across every window it touches, of one kind when the reference names one.
 ///
-/// Windows of different lengths overlap, so rows are merged by the clock time they
-/// state rather than served a window at a time. A window is read only once the walk
+/// Windows of different lengths overlap, so rows are merged by their instants
+/// rather than served a window at a time. A window is read only once the walk
 /// reaches its start, and one call serves from at most `MAX_WINDOWS_PER_READ` of
 /// them; under a kind, a window holding none of it doesn't count.
 /// The cursor is the place of the first row not yet served, so a window that
@@ -496,6 +588,7 @@ pub(crate) fn read_source_span(
         })
         .transpose()?;
     let date = day_date(&reference.day).ok_or_else(not_found)?;
+    let clock = Clock::new(journal_root, &reference.stream, date);
     let from = reference
         .time_from
         .as_deref()
@@ -523,7 +616,7 @@ pub(crate) fn read_source_span(
         .filter(|window| {
             lower
                 .as_ref()
-                .is_none_or(|(at, _, _)| i64::from(window.end_seconds) * 1000 > *at)
+                .is_none_or(|(at, _, _)| clock.bound(window.end_seconds, true) > *at)
         })
         .collect();
 
@@ -537,14 +630,14 @@ pub(crate) fn read_source_span(
     loop {
         // Read every window that starts at or before the earliest row waiting.
         while let Some(window) = windows.get(reached) {
-            let start = i64::from(window.start_seconds) * 1000;
+            let start = clock.bound(window.start_seconds, false);
             if waiting.peek().is_some_and(|Reverse(first)| start > first.0)
                 || visited == MAX_WINDOWS_PER_READ
             {
                 break;
             }
             reached += 1;
-            let rows = window_rows(window, date, from_ms, to_ms, kind);
+            let rows = window_rows(window, clock, from_ms, to_ms, kind);
             // Under a kind, a window holding none of it doesn't count toward the cap.
             if kind.is_none() || rows.as_ref().is_ok_and(|rows| !rows.is_empty()) {
                 visited += 1;
@@ -574,9 +667,12 @@ pub(crate) fn read_source_span(
             );
         }
         // Rows before the next unread window's start are all here.
-        let bound = windows
-            .get(reached)
-            .map(|window| (i64::from(window.start_seconds) * 1000, window.name.clone()));
+        let bound = windows.get(reached).map(|window| {
+            (
+                clock.bound(window.start_seconds, false),
+                window.name.clone(),
+            )
+        });
         let first = waiting.peek().map(|Reverse(first)| first.0);
         match (first, &bound) {
             (Some(at), Some((start, _))) if at >= *start => {

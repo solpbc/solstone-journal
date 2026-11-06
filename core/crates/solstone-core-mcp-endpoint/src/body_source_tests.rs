@@ -813,3 +813,180 @@ fn a_kind_lists_only_the_windows_holding_it_and_says_when_none_do() {
         .is_err()
     );
 }
+
+fn fix_zone(root: &Path, zone: &str) {
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        json!({ "zone": zone }).to_string(),
+    )
+    .unwrap();
+}
+
+/// Rows an export wrote at `-0400`, in windows on the Denver zone it was placed by.
+fn rows_on_another_offset(root: &Path) {
+    // 08:00-09:00 Denver holds 150 readings the export wrote at -0400 (10:0x).
+    let rows: Vec<BodyRow> = (0..150)
+        .map(|n| {
+            reading(
+                &format!("a{n:03}"),
+                &format!("2026-10-10 10:{:02}:{:02} -0400", n / 60, n % 60),
+                &format!("{}", 1000 + n),
+            )
+        })
+        .collect();
+    window(root, DAY, "080000_3600", &rows, None);
+    // A 300-second window beside it, the row on the Denver clock's 08:01.
+    window(
+        root,
+        DAY,
+        "080000_300",
+        &[reading("tile", "2026-10-10 10:01:00 -0400", "2000")],
+        None,
+    );
+    // 22:30 Denver, which this export wrote as the next day's 00:30.
+    window(
+        root,
+        DAY,
+        "220000_3600",
+        &[reading("late", "2026-10-11 00:30:00 -0400", "71")],
+        None,
+    );
+}
+
+#[test]
+fn rows_on_another_offset_are_all_found_in_order_across_pages_and_the_days_edge() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    rows_on_another_offset(root);
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let span = list["span_reference"].as_str().unwrap().to_owned();
+    let (entries, pages) = every_entry(root, &span);
+    assert_eq!(entries.len(), 152, "pages {pages:?}");
+    assert_eq!(list.get("unreadable"), None);
+    // In instant order, each keeping the offset it states.
+    let times: Vec<&str> = entries.iter().map(|entry| &entry[..25]).collect();
+    let mut sorted = times.clone();
+    sorted.sort_unstable();
+    assert_eq!(times, sorted);
+    assert!(
+        entries
+            .last()
+            .unwrap()
+            .starts_with("2026-10-11 00:30:00 -0400")
+    );
+
+    // A span an agent asks for reads on the windows' clock.
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "08:01", "time_to": "08:02"}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 61, "{entries:?}");
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.starts_with("2026-10-10 10:01"))
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "22:00", "time_to": "23:00"}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 1, "{entries:?}");
+}
+
+#[test]
+fn with_no_fixed_zone_a_read_still_loses_no_row() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    rows_on_another_offset(root);
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let span = list["span_reference"].as_str().unwrap().to_owned();
+    let (entries, pages) = every_entry(root, &span);
+    assert_eq!(entries.len(), 152, "pages {pages:?}");
+}
+
+#[test]
+fn a_clock_change_day_serves_every_row_in_instant_order() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    fix_zone(root, "America/Denver");
+    // 2026-11-01 in Denver: 01:30 happens twice, -0600 and then -0700.
+    window(
+        root,
+        "20261101",
+        "010000_3600",
+        &[
+            reading("second", "2026-11-01 01:30:00 -0700", "2"),
+            reading("first", "2026-11-01 01:30:00 -0600", "1"),
+        ],
+        None,
+    );
+    window(
+        root,
+        "20261101",
+        "020000_3600",
+        &[reading("after", "2026-11-01 02:00:00 -0700", "3")],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": "20261101", "source": LABEL}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    let values: Vec<&str> = entries.iter().map(|entry| &entry[..25]).collect();
+    assert_eq!(
+        values,
+        [
+            "2026-11-01 01:30:00 -0600",
+            "2026-11-01 01:30:00 -0700",
+            "2026-11-01 02:00:00 -0700"
+        ]
+    );
+}
+
+#[test]
+fn under_a_kind_a_window_that_cant_be_read_is_counted_not_called_empty_of_it() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    window(
+        root,
+        DAY,
+        "080000_3600",
+        &[reading("a", "2026-10-10 08:10:00 -0600", "70")],
+        None,
+    );
+    fs::write(
+        root.join("chronicle")
+            .join(DAY)
+            .join(STREAM)
+            .join("080000_3600/body.jsonl"),
+        "not a row\nnor this\n",
+    )
+    .unwrap();
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "kind": "resting heart rate"}),
+    );
+    assert_eq!(list["unreadable"], json!(1), "{list}");
+    assert!(!list.to_string().contains("none of the kind"), "{list}");
+    let (_, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+}
