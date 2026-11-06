@@ -111,8 +111,8 @@ fn readable_windows(
 
 /// Whether this connection may read a body window, by day, stream and name: the
 /// same test `readable_windows` makes, and the Transcripts category, which that
-/// tool requires before it runs. A window that can't be named is read only
-/// by a connection that reads the whole journal's transcripts.
+/// tool requires before it runs. No window to name, its directory gone with
+/// no tombstone say, is no window to read: only the owner sees that account.
 pub(crate) fn window_gate<'a>(
     journal_root: &'a Path,
     snapshot: &'a ConnectionReadSnapshot,
@@ -121,10 +121,6 @@ pub(crate) fn window_gate<'a>(
     // Body windows are transcripts: a connection without that category reads none,
     // whatever tool it calls.
     let transcripts = snapshot.categories.contains(&AdmittedCategory::Transcripts);
-    let whole = matches!(
-        snapshot.scope,
-        solstone_core_indexer_query::ConnectionScope::WholeJournal
-    ) && transcripts;
     // A window's answer holds for the read: many records share one window.
     let known = std::cell::RefCell::new(BTreeMap::<(String, String, String), bool>::new());
     move |day: &str, stream: &str, window: Option<&str>| match window {
@@ -140,7 +136,7 @@ pub(crate) fn window_gate<'a>(
             known.borrow_mut().insert(key, allowed);
             allowed
         }
-        None => whole,
+        None => false,
     }
 }
 

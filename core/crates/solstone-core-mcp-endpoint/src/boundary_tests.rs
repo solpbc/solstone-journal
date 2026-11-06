@@ -13216,24 +13216,25 @@ fn file_workout(root: &Path, day: &str, row_id: &str, by: &str, start: &str, end
 fn a_long_range_pages_the_same_whatever_the_page_size_across_stretches_of_days() {
     let journal = body_record_journal(true);
     let root = journal.path();
-    // From 20260308 the list reads 31 days at a time from 20260307. One run told
-    // by two recorders, filed either side of the first boundary (20260406 and
-    // 20260407), groups once; others sit a stretch or two apart.
+    // From 20260308 the list reads 31 days at a time from 20260307. One run past
+    // midnight told by two recorders, the app's starting after midnight, so filed
+    // either side of the first boundary (20260406 and 20260407), groups once;
+    // others sit a stretch or two apart.
     file_workout(
         root,
         "20260406",
         "a1",
         "Synthetic Watch",
-        "2026-04-06 23:00:00 -0400",
         "2026-04-06 23:50:00 -0400",
+        "2026-04-07 01:00:00 -0400",
     );
     file_workout(
         root,
         "20260407",
         "a2",
         "Synthetic App",
-        "2026-04-06 23:01:00 -0400",
-        "2026-04-06 23:51:00 -0400",
+        "2026-04-07 00:01:00 -0400",
+        "2026-04-07 01:00:00 -0400",
     );
     file_workout(
         root,
@@ -13377,4 +13378,41 @@ fn a_bad_line_on_a_neighbouring_day_fails_no_list() {
     );
     let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
     assert_eq!(week["body"][0]["kind"], "workout", "{week}");
+}
+
+#[test]
+fn a_vanished_window_shows_its_record_to_no_connection() {
+    let journal = body_record_journal(true);
+    // The window's directory is gone, with no tombstone left.
+    fs::remove_dir_all(
+        journal
+            .path()
+            .join("chronicle/20260308/import.apple_health/070000_3600"),
+    )
+    .unwrap();
+    let listed = listed(&journal, None);
+    assert!(
+        listed["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|activity| activity["source"] != "body"),
+        "{listed}"
+    );
+    let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+    assert!(week.get("body").is_none(), "{week}");
+    // The owner still sees it, saying so.
+    let faces = solstone_core_location::body_records::body_faces_range(
+        journal.path(),
+        "alpha",
+        "20260308",
+        "20260308",
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        faces["20260308"][0].anchor.account,
+        solstone_core_location::body_records::Account::NotFound
+    );
 }
