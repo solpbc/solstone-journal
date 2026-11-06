@@ -2138,8 +2138,9 @@ fn fetch_body_face(
     if face.hidden {
         value["hidden"] = Value::Bool(true);
     }
-    let target = format!("{rel_path}#{}", act_ref.record_identity);
-    Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]))
+    let mut targets = vec![format!("{rel_path}#{}", act_ref.record_identity)];
+    crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
+    Ok(Prepared::new(value, 1, targets).served_as_is(&["text"]))
 }
 
 /// The face a body record is shown under for this connection.

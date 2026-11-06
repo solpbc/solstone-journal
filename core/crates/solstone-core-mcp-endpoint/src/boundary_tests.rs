@@ -13416,3 +13416,53 @@ fn a_vanished_window_shows_its_record_to_no_connection() {
         solstone_core_location::body_records::Account::NotFound
     );
 }
+
+#[test]
+fn every_body_answer_names_the_windows_it_read() {
+    let window = "20260308/import.apple_health/070000_3600";
+    for tool in [
+        "list_activities",
+        "fetch",
+        "get_activity_sources",
+        "get_week",
+    ] {
+        let journal = body_record_journal(true);
+        let listed = probe(
+            &journal,
+            "list_activities",
+            json!({"from": "20260308", "to": "20260314"}),
+        )
+        .unwrap();
+        let reference = listed["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|activity| activity["source"] == "body")
+            .unwrap()["reference"]
+            .clone();
+        match tool {
+            "fetch" => drop(probe(&journal, "fetch", json!({"reference": reference})).unwrap()),
+            "get_activity_sources" => drop(
+                probe(
+                    &journal,
+                    "get_activity_sources",
+                    json!({"reference": reference}),
+                )
+                .unwrap(),
+            ),
+            "get_week" => drop(probe(&journal, "get_week", json!({"week": "20260308"})).unwrap()),
+            _ => {}
+        }
+        let outcomes = find_audit_files(journal.path(), solstone_core_mcp_audit::OUTCOME_FILE);
+        assert!(!outcomes.is_empty(), "{tool}");
+        for outcome in outcomes {
+            let outcome: Value =
+                serde_json::from_str(&fs::read_to_string(&outcome).unwrap()).unwrap();
+            let targets = outcome["result"]["targets"].as_array().unwrap();
+            assert!(
+                targets.iter().any(|target| target == window),
+                "{tool}: {targets:?}"
+            );
+        }
+    }
+}

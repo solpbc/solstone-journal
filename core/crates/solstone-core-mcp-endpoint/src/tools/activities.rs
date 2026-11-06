@@ -389,6 +389,7 @@ fn body_lines_near(
     journal_root: &Path,
     body: &mut [(String, solstone_core_location::body_records::Groups)],
     day: &str,
+    targets: &mut Vec<String>,
 ) -> Vec<BesideLine> {
     let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
         .ok()
@@ -402,6 +403,7 @@ fn body_lines_near(
                 if !solstone_core_location::body_records::face_still_there(&face) {
                     continue;
                 }
+                crate::body_source::name_windows(targets, crate::body_source::face_windows(&face));
                 let value = solstone_core_location::body_records::face_json(&face);
                 if let Some(span) = face_span(&value) {
                     lines.push((span, body_line(&value)));
@@ -933,9 +935,9 @@ pub(crate) fn execute_list(
             .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
 
         let face = item.group.as_ref().map(|(stretch, group)| {
-            solstone_core_location::body_records::face_json(
-                &body[*stretch].1.compose(journal_root, group),
-            )
+            let face = body[*stretch].1.compose(journal_root, group);
+            crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
+            solstone_core_location::body_records::face_json(&face)
         });
         if let Some(face) = &face {
             let mut activity =
@@ -1016,7 +1018,7 @@ pub(crate) fn execute_list(
         // beside it.
         let faces = body_near
             .entry(item.day.clone())
-            .or_insert_with(|| body_lines_near(journal_root, &mut body, &item.day));
+            .or_insert_with(|| body_lines_near(journal_root, &mut body, &item.day, &mut targets));
         if !faces.is_empty()
             && let Some(span) = solstone_core_location::body_records::capture_instants(
                 journal_root,
@@ -1119,7 +1121,9 @@ pub(crate) fn execute_get_sources(
             .get("accounts")
             .cloned()
             .unwrap_or(Value::Array(Vec::new()));
-        return Ok(Prepared::new(json!({ "units": units }), 1, vec![rel_path]));
+        let mut targets = vec![rel_path];
+        crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
+        return Ok(Prepared::new(json!({ "units": units }), 1, targets));
     }
     let Some((record, _)) =
         crate::activity_admit::record_by_identity(&file_text, &activity_ref.record_identity)

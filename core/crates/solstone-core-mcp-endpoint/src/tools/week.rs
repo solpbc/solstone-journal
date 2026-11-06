@@ -158,6 +158,8 @@ fn project_sunday(
     // Body faces, composed for this connection: workouts, nights and sessions.
     let gate = crate::body_source::window_gate(journal, snapshot);
     let mut body = Vec::new();
+    // The windows body faces were composed from, for the audit.
+    let mut windows = Vec::new();
     // Each facet's faces over the week, grouped once, the first time a day
     // file asks.
     let mut week_faces: BTreeMap<String, BTreeMap<String, Vec<_>>> = BTreeMap::new();
@@ -233,6 +235,10 @@ fn project_sunday(
                         .iter()
                         .find(|face| Some(face.anchor.id.as_str()) == id)
                     {
+                        crate::body_source::name_windows(
+                            &mut windows,
+                            crate::body_source::face_windows(face),
+                        );
                         body.push((
                             day_str.clone(),
                             face.anchor.stored_start.clone(),
@@ -519,7 +525,9 @@ fn project_sunday(
     Ok(WeekRead {
         value,
         count: 1,
-        targets: vec![format!("week:{start_day}")],
+        targets: std::iter::once(format!("week:{start_day}"))
+            .chain(windows)
+            .collect(),
     })
 }
 

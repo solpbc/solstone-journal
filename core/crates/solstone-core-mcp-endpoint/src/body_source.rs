@@ -140,6 +140,32 @@ pub(crate) fn window_gate<'a>(
     }
 }
 
+/// The windows a body face was composed from, named as the audit names a
+/// window `get_transcript` read, so a re-import that changes an answer
+/// changes what it names.
+pub(crate) fn face_windows(face: &solstone_core_location::body_records::Face) -> Vec<String> {
+    face.members
+        .iter()
+        .filter_map(|member| {
+            Some(format!(
+                "{}/{}/{}",
+                member.day,
+                member.stream,
+                member.window.as_ref()?
+            ))
+        })
+        .collect()
+}
+
+/// Add each of `windows` to `targets` once.
+pub(crate) fn name_windows(targets: &mut Vec<String>, windows: Vec<String>) {
+    for window in windows {
+        if !targets.contains(&window) {
+            targets.push(window);
+        }
+    }
+}
+
 /// The labels of body sources this connection can read on `day`, for a list that
 /// leaves their windows out.
 pub(crate) fn other_sources(
