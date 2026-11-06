@@ -78,6 +78,10 @@ enum JournalIconGen {
         let d = JournalIconSVGPathData.string(from: path)
         let strokeWidth = JournalIconSVGPathData.format(borderWidth)
         let dashText = dash.map { JournalIconSVGPathData.format($0) }.joined(separator: " ")
-        return #"<path fill="\#(color)" fill-opacity="0.07" stroke="\#(color)" stroke-width="\#(strokeWidth)" stroke-dasharray="\#(dashText)" stroke-linejoin="round" d="\#(d)"/>"#
+        let paper = JournalIconTileGeometry.genericPaperHex
+        let backingWidth = JournalIconSVGPathData.format(borderWidth * JournalIconTileGeometry.genericBackingWidthRatio)
+        return #"<path fill="\#(paper)" stroke="\#(paper)" stroke-width="\#(backingWidth)" stroke-linejoin="round" d="\#(d)"/>"#
+            + "\n  "
+            + #"<path fill="none" stroke="\#(color)" stroke-width="\#(strokeWidth)" stroke-dasharray="\#(dashText)" stroke-linejoin="round" d="\#(d)"/>"#
     }
 }
