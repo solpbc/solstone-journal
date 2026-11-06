@@ -41,11 +41,10 @@ fn hosted_view(binding: Option<&HostedBinding>, operation: Option<&Operation>) -
 // A worker writes its result to disk before it publishes a terminal phase, so a
 // snapshot must observe the operation before it reads the persisted state. Read
 // in the other order and a result that lands between the two reads is missed
-// while its terminal phase is still reported.
+// while its terminal phase is still reported. The read waits out a brief holder:
+// a route that just started a worker or poll thread is racing that thread for the
+// slot, and losing the race must not turn its answer into an error.
 pub fn status(root: &Path, operations: &SharedOperationSlot) -> Result<Value, ()> {
-    #[cfg(windows)]
-    let operation = crate::operation::observed_current(operations)?;
-    #[cfg(not(windows))]
     let operation = crate::operation::current(operations);
     status_with_operation(root, operation.as_ref())
 }
@@ -129,9 +128,6 @@ pub fn offload(
     operations: &SharedOperationSlot,
 ) -> Result<Value, ()> {
     // Operation first, then persisted state: see `status`.
-    #[cfg(windows)]
-    let operation = crate::operation::observed_current(operations)?;
-    #[cfg(not(windows))]
     let operation = crate::operation::current(operations);
     let mut value = build_checked_offload_status(root).map_err(|_| ())?.value;
     value["enable_supported"] = json!(!cfg!(any(target_os = "ios", target_os = "android")));

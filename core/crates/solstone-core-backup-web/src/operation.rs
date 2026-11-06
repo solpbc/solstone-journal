@@ -582,7 +582,6 @@ pub(crate) fn fail_handoff_poll(
     finish_or_defer(current, Terminal::error(reason));
 }
 
-#[cfg(any(not(windows), test))]
 pub fn current(slot: &SharedOperationSlot) -> Option<Operation> {
     let mut guard = slot.lock().expect("operation slot lock");
     #[cfg(windows)]

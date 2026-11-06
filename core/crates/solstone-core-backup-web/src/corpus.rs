@@ -2750,6 +2750,40 @@ async fn handoff_needs_subscription_is_terminal_without_binding() {
     assert_eq!(done["hosted"]["bound"], false);
 }
 
+// A route answers with a status read straight after starting a poll or worker
+// thread, and that thread takes the operation slot as soon as it runs.
+#[cfg(feature = "full-tests")]
+#[test]
+fn status_reads_wait_out_a_held_operation_slot_instead_of_failing() {
+    let root = crate::test_support::root("healthy");
+    let slot = crate::operation::new_slot();
+    let held = slot.lock().unwrap();
+    let status_read = {
+        let path = root.path().to_path_buf();
+        let slot = slot.clone();
+        std::thread::spawn(move || crate::status::status(&path, &slot))
+    };
+    let offload_read = {
+        let path = root.path().to_path_buf();
+        let slot = slot.clone();
+        std::thread::spawn(move || crate::status::offload(&path, &corpus_cache(), &slot))
+    };
+    // Enough for a read that refuses contention to finish. A starved thread can
+    // only miss the defect, never fail a read that waits.
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        !status_read.is_finished(),
+        "status did not wait for the slot"
+    );
+    assert!(
+        !offload_read.is_finished(),
+        "offload did not wait for the slot"
+    );
+    drop(held);
+    assert!(status_read.join().unwrap().is_ok());
+    assert!(offload_read.join().unwrap().is_ok());
+}
+
 #[cfg(feature = "full-tests")]
 // This fixture admits a Unix bin/lib payload; Windows requires verified native workers.
 #[cfg(unix)]

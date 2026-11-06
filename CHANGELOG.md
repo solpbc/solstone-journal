@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - fixed cases where long transcripts lost a speaker from an activity's people list or gave a voice someone else's name.
 - the date picker on the transcripts page no longer makes you wait each time on a journal with many older days.
+- on windows, turning on encrypted backup could show an error and not open the services portal, even though setup had started. the services portal now opens.
 - on windows, `solstone journal service start` or `restart`, or setup, could say your journal was ready, then report a failure, even though your journal was running. the command now finishes its own cleanup before it ends.
 - reduced repeated work when building an activity's people list.
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
