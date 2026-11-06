@@ -77,9 +77,19 @@ fn window(root: &Path, day: &str, key: &str, rows: &[BodyRow]) -> PathBuf {
     dir
 }
 
+/// The owner deletes a window.
 fn delete(dir: &Path) {
+    delete_for(dir, "owner_segment_delete");
+}
+
+/// A window is removed, for `reason`.
+fn delete_for(dir: &Path, reason: &str) {
     fs::remove_file(dir.join(BODY_RECORDS_FILE)).unwrap();
-    fs::write(dir.join(TOMBSTONE), r#"{"manifest":["body.jsonl"]}"#).unwrap();
+    fs::write(
+        dir.join(TOMBSTONE),
+        json!({"reason": reason, "manifest": ["body.jsonl"]}).to_string(),
+    )
+    .unwrap();
 }
 
 fn record(root: &Path, extra: serde_json::Value) {
@@ -791,4 +801,61 @@ fn an_assembled_night_says_so_in_its_face() {
         face["accounts"][0]["assembled"], "stages joined across gaps under an hour",
         "{face}"
     );
+}
+
+#[test]
+fn removed_by_you_only_for_the_owners_own_delete() {
+    for (reason, expected) in [
+        ("owner_segment_delete", Account::RemovedByYou),
+        ("retention_policy", Account::Removed),
+        ("import_run_release", Account::Removed),
+    ] {
+        let journal = journal();
+        let root = journal.path();
+        let start = window(root, DAY, "220000_3600", &[night()]);
+        record(root, json!({}));
+        delete_for(&start, reason);
+        assert_eq!(composed(root)[0].account, expected, "{reason}");
+    }
+    // A tombstone that can't be read names nobody.
+    let journal = journal();
+    let root = journal.path();
+    let start = window(root, DAY, "220000_3600", &[night()]);
+    record(root, json!({}));
+    delete(&start);
+    fs::write(start.join(TOMBSTONE), "{not json").unwrap();
+    assert_eq!(composed(root)[0].account, Account::Removed);
+}
+
+#[test]
+fn a_window_that_cannot_be_read_beside_a_deleted_one_reads_unreadable() {
+    let journal = journal();
+    let root = journal.path();
+    let hour = window(root, DAY, "220000_3600", &[]);
+    let short = window(root, DAY, "221000_300", &[night()]);
+    record(root, json!({}));
+    delete(&hour);
+    // The row's own window is live: a deleted window beside it changes nothing.
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+    fs::write(short.join(BODY_RECORDS_FILE), "not json\n").unwrap();
+    assert_eq!(composed(root)[0].account, Account::Unreadable);
+}
+
+#[test]
+fn a_deleted_start_with_a_later_piece_that_cannot_be_read_reads_unreadable() {
+    let journal = journal();
+    let root = journal.path();
+    let start = window(root, DAY, "220000_3600", &[night()]);
+    let later = window(root, NEXT, "000000_3600", &[tile(1)]);
+    // A window the night never reached can't be read: it says nothing of it.
+    let noon = window(root, NEXT, "120000_3600", &[]);
+    fs::write(noon.join(BODY_RECORDS_FILE), "not json\n").unwrap();
+    record(root, json!({}));
+    delete(&start);
+    delete(&later);
+    assert_eq!(composed(root)[0].account, Account::RemovedByYou);
+    // One it did reach might still hold a piece of it.
+    fs::write(later.join(BODY_RECORDS_FILE), "not json\n").unwrap();
+    fs::remove_file(later.join(TOMBSTONE)).unwrap();
+    assert_eq!(composed(root)[0].account, Account::Unreadable);
 }

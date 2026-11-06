@@ -38,6 +38,10 @@ pub enum Account {
     PartRemoved(Box<BodyRow>),
     /// The owner deleted the window of its start and every tile of its span.
     RemovedByYou,
+    /// The window of its start and every tile of its span are gone, and not by
+    /// the owner's delete: retention reached them, say, or an import run was
+    /// released.
+    Removed,
     /// Its window is live and holds no such row.
     NotFound,
     /// Its window couldn't be read.
@@ -68,6 +72,12 @@ pub struct ComposedBody {
 }
 
 impl ComposedBody {
+    /// Whether its window, or a later piece of its span, still holds it.
+    #[must_use]
+    pub fn still_there(&self) -> bool {
+        matches!(self.account, Account::Live(_) | Account::PartRemoved(_))
+    }
+
     /// The row to show: the experience, or the surviving tile.
     #[must_use]
     pub fn row(&self) -> Option<&BodyRow> {
@@ -98,9 +108,15 @@ pub type Readable<'a> = &'a dyn Fn(&str, &str, Option<&str>) -> bool;
 #[derive(Debug)]
 enum Held {
     Rows(Vec<BodyRow>),
-    Deleted,
+    /// Tombstoned: by the owner's own delete, or not.
+    Deleted {
+        by_owner: bool,
+    },
     Unreadable,
 }
+
+/// The one tombstone reason that is the owner's delete of a window.
+const OWNER_DELETE: &str = "owner_segment_delete";
 
 #[derive(Debug)]
 struct Window {
@@ -127,7 +143,12 @@ fn window_span(name: &str) -> Option<(u32, u32)> {
 /// What one window holds now.
 fn read_held(path: &Path) -> Held {
     if path.join(TOMBSTONE).exists() {
-        return Held::Deleted;
+        // A tombstone that can't be read says nobody's delete in particular.
+        let by_owner = fs::read(path.join(TOMBSTONE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|tombstone| tombstone["reason"] == OWNER_DELETE);
+        return Held::Deleted { by_owner };
     }
     match fs::read_to_string(path.join(BODY_RECORDS_FILE)) {
         Ok(text) => decode_rows(&text).map_or(Held::Unreadable, Held::Rows),
@@ -202,6 +223,22 @@ impl Day {
         })
     }
 
+    /// How far into `day` a span ending at `end` reaches, in seconds: all of
+    /// it when it ends later, none when it ended before.
+    fn seconds_reached(&self, day: &str, end: DateTime<FixedOffset>) -> u32 {
+        if let Some(seconds) = seconds_on(day, end, self.zone) {
+            return seconds;
+        }
+        let local = self.zone.map_or_else(
+            || end.naive_local(),
+            |zone| end.with_timezone(&zone).naive_local(),
+        );
+        match NaiveDate::parse_from_str(day, "%Y%m%d") {
+            Ok(date) if local.date() > date => 86_400,
+            _ => 0,
+        }
+    }
+
     fn covering(&self, day: &str, start: &str) -> Vec<&Window> {
         let Some(seconds) =
             parse_source_time(start).and_then(|start| seconds_on(day, start, self.zone))
@@ -233,7 +270,7 @@ fn locate(
     day: &str,
     stream: &str,
     row_id: &str,
-    start: &str,
+    (start, end): (&str, &str),
     days: &mut BTreeMap<(String, String), Day>,
 ) -> (Option<String>, Account) {
     let load = |days: &mut BTreeMap<(String, String), Day>, on: &str| {
@@ -246,29 +283,47 @@ fn locate(
     load(days, day);
     let today = &days[&(day.to_owned(), stream.to_owned())];
     let covering = today.covering(day, start);
-    let deleted = covering
-        .iter()
-        .find(|window| matches!(window.held, Held::Deleted))
-        .map(|window| window.name.clone());
-    let unreadable = covering
+    // A window that can't be read might hold the row: nothing more is known.
+    if let Some(window) = covering
         .iter()
         .find(|window| matches!(window.held, Held::Unreadable))
-        .map(|window| window.name.clone());
+    {
+        return (Some(window.name.clone()), Account::Unreadable);
+    }
+    let deleted = covering.iter().find_map(|window| match window.held {
+        Held::Deleted { by_owner } => Some((window.name.clone(), by_owner)),
+        _ => None,
+    });
     let first = covering.first().map(|window| window.name.clone());
-    if let Some(name) = deleted {
-        // Deleted: say so only when no tile of the span survives.
-        for on in std::iter::once(day.to_owned()).chain(later_days(day)) {
-            load(days, &on);
-            if let Some(tile) = days[&(on.clone(), stream.to_owned())].surviving_tile(row_id) {
-                return (Some(name), Account::PartRemoved(Box::new(tile.clone())));
-            }
+    let Some((name, by_owner)) = deleted else {
+        return (first, Account::NotFound);
+    };
+    // Deleted: say so only when no tile of the span survives, and nothing that
+    // can't be read might hold one.
+    let end = parse_source_time(end);
+    let begins = parse_source_time(start)
+        .and_then(|start| seconds_on(day, start, today.zone))
+        .unwrap_or(0);
+    for on in std::iter::once(day.to_owned()).chain(later_days(day)) {
+        load(days, &on);
+        let that_day = &days[&(on.clone(), stream.to_owned())];
+        if let Some(tile) = that_day.surviving_tile(row_id) {
+            return (Some(name), Account::PartRemoved(Box::new(tile.clone())));
         }
-        return (Some(name), Account::RemovedByYou);
+        let from = if on == day { begins } else { 0 };
+        let reaches = end.map_or(0, |end| that_day.seconds_reached(&on, end));
+        if that_day.windows.iter().any(|window| {
+            matches!(window.held, Held::Unreadable) && window.start < reaches && window.end > from
+        }) {
+            return (Some(name), Account::Unreadable);
+        }
     }
-    if let Some(name) = unreadable {
-        return (Some(name), Account::Unreadable);
-    }
-    (first, Account::NotFound)
+    let account = if by_owner {
+        Account::RemovedByYou
+    } else {
+        Account::Removed
+    };
+    (Some(name), account)
 }
 
 fn split_key(key: &str) -> Option<(&str, &str)> {
@@ -487,7 +542,7 @@ impl Windows {
                 &stored.day,
                 &stored.stream,
                 &stored.row_id,
-                &stored.stored_start,
+                (&stored.stored_start, &stored.stored_end),
                 &mut self.days,
             )
         });
@@ -991,10 +1046,7 @@ pub fn briefing_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeErr
             {
                 return Err(ComposeError("a body window couldn't be read".to_owned()));
             }
-            if !members
-                .iter()
-                .any(|member| matches!(member.account, Account::Live(_) | Account::PartRemoved(_)))
-            {
+            if !members.iter().any(|member| member.still_there()) {
                 continue;
             }
             let anchor = members
@@ -1018,6 +1070,7 @@ fn account_json(member: &ComposedBody) -> Value {
         Account::Live(_) => "live",
         Account::PartRemoved(_) => "part_removed",
         Account::RemovedByYou => "removed_by_you",
+        Account::Removed => "removed",
         Account::NotFound => "not_found",
         Account::Unreadable => "unreadable",
     };
@@ -1098,6 +1151,13 @@ pub fn face_json(face: &Face) -> Value {
 pub fn half_cover(left: (i64, i64), right: (i64, i64)) -> bool {
     let overlap = left.1.min(right.1) - left.0.max(right.0);
     overlap > 0 && (overlap * 2 >= left.1 - left.0 || overlap * 2 >= right.1 - right.0)
+}
+
+/// Whether any account of the face is still there to show: one beside line
+/// stands for what happened, so a face whose every account is gone has none.
+#[must_use]
+pub fn face_still_there(face: &Face) -> bool {
+    face.members.iter().any(ComposedBody::still_there)
 }
 
 /// A face's span as it's shown: its first account's instants, as its window

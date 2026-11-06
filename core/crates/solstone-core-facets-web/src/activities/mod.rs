@@ -2583,6 +2583,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_removed_workout_sits_beside_nothing() {
+        let root = body_journal();
+        std::fs::create_dir_all(
+            root.path()
+                .join(format!("chronicle/{BODY_DAY}/phone/070500_300")),
+        )
+        .unwrap();
+        let capture = json!({"id":"run_070500_300","activity":"running","title":"Morning loop","segments":["070500_300"],"source":"user"});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "body",
+            BODY_DAY,
+            capture.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        // The owner deletes both accounts' windows.
+        for key in ["070000_3600", "070000_300"] {
+            let dir = root
+                .path()
+                .join(format!("chronicle/{BODY_DAY}/import.apple_health/{key}"));
+            std::fs::remove_file(dir.join("body.jsonl")).unwrap();
+            std::fs::write(
+                dir.join("tombstone.json"),
+                r#"{"reason":"owner_segment_delete","manifest":["body.jsonl"]}"#,
+            )
+            .unwrap();
+        }
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let items = view["items"].as_array().unwrap();
+        let capture = items
+            .iter()
+            .find(|item| item["source"] == "user")
+            .unwrap_or_else(|| panic!("{view}"));
+        assert!(capture.get("beside").is_none(), "{view}");
+        let body = items
+            .iter()
+            .find(|item| item["source"] == "body")
+            .unwrap_or_else(|| panic!("{view}"));
+        assert_eq!(body["accounts"][0]["state"], "removed_by_you", "{view}");
+    }
+
+    #[tokio::test]
     async fn beside_lines_go_by_the_end_a_window_says_now() {
         use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
         let root = body_journal();

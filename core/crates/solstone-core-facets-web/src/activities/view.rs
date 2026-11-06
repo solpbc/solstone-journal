@@ -226,6 +226,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 .into_iter()
                 .flatten()
                 .filter(|face| include_hidden || !face.hidden)
+                .filter(|face| solstone_core_location::body_records::face_still_there(face))
             {
                 if let Some(span) = solstone_core_location::body_records::shown_span(face) {
                     near_faces.push((span, solstone_core_location::body_records::face_json(face)));

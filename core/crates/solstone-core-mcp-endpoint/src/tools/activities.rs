@@ -399,6 +399,9 @@ fn body_lines_near(
         for (_, groups) in body.iter_mut() {
             for group in groups.on(&on).to_vec() {
                 let face = groups.compose(journal_root, &group);
+                if !solstone_core_location::body_records::face_still_there(&face) {
+                    continue;
+                }
                 let value = solstone_core_location::body_records::face_json(&face);
                 if let Some(span) = face_span(&value) {
                     lines.push((span, body_line(&value)));
