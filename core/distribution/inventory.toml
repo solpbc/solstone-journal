@@ -31,6 +31,7 @@ keychain = "~/Library/Keychains/sol-signing.keychain-db"
 codesign_path = "/usr/bin/codesign"
 xcode = ""
 notarytool = "1.1.2 (41)"
+compatible_notarytools = ["1.1.4 (43)"]
 
 [[target]]
 id = "linux-x86_64"
