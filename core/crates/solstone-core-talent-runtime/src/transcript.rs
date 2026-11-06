@@ -43,9 +43,8 @@ pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
 /// The owner and every other admitted person, as transcript lines name them
 /// by voice. `None` without a single admitted principal.
 pub fn voice_names(journal: &Path) -> Option<VoiceNames> {
-    let owner = crate::JournalOwner::load(journal).ok()?;
-    owner.id.as_ref()?;
     let entities = solstone_core_entity::load_all_journal_entities(journal).ok()?;
+    let owner = crate::JournalOwner::from_entities(journal, &entities);
     voice_names_from_entities(journal, &owner, &entities)
 }
 
