@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- when you correct an activity, its story now more often follows what you told your journal, and saying an activity was a recording now sticks far more reliably. removing that correction now also means the story, the people and the description no longer treat it as a recording.
 - home now reports that recent activity couldn't be summarized when none of the entries are available.
 - on windows, the journal no longer holds on to more and more system resources the longer it runs.
 - deleting a segment on a large journal is much faster and no longer stops partway when your journal starts a new day. if your journal is busy with another job, the transcripts page says so and your journal keeps the segment so you can try again. a slow delete shows its result when it finishes.

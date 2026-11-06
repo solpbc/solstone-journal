@@ -111,9 +111,17 @@ pub(crate) fn build(
             "activity_type".to_owned(),
             python_string(activity.get("activity")),
         );
+        let description = input_description(activity);
+        context.insert(
+            "activity_description_line".to_owned(),
+            description
+                .as_ref()
+                .map(|description| format!("**Description:** {description}\n"))
+                .unwrap_or_default(),
+        );
         context.insert(
             "activity_description".to_owned(),
-            python_string(activity.get("description")),
+            description.unwrap_or_default(),
         );
         if let Some(level) = activity.get("level_avg").filter(|value| value.is_number()) {
             context.insert("activity_level".to_owned(), python_value_string(level));
@@ -207,6 +215,51 @@ fn estimate_duration_minutes(segments: &[String]) -> u64 {
     (seconds / 60).max(1)
 }
 
+/// The owner's correction as a talent reads it last, when one stands.
+fn owner_correction(activity: &Map<String, Value>) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(account) = activity
+        .get("details")
+        .and_then(Value::as_str)
+        .filter(|account| !account.trim().is_empty())
+    {
+        parts.push(format!("## What you told the journal\n\n{account}"));
+    }
+    if activity.get("playback") == Some(&Value::Bool(true)) {
+        parts.push(
+            "## A recording\n\nThis was a recording or video playing. You watched or listened to it; you were not at the event, and no one in it was with you."
+                .to_owned(),
+        );
+    }
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+/// The correction once more, as the last thing in the request: a small model
+/// follows the owner far more often when nothing comes after their words.
+pub(crate) fn correction_last(activity: &Map<String, Value>) -> Option<String> {
+    owner_correction(activity).map(|correction| {
+        format!(
+            "{correction}\n\nThis is what happened. Where anything above says otherwise, write it this way."
+        )
+    })
+}
+
+/// The activity's line as a talent may read it. The story step writes the line
+/// from its own opening sentence, so with no correction standing, a line that
+/// is the current story's opening may be a removed correction's. Read back, it
+/// would keep the removed correction in the next story.
+fn input_description(activity: &Map<String, Value>) -> Option<String> {
+    let description = python_string(activity.get("description"));
+    let own_opening = activity
+        .get("story")
+        .and_then(|story| story.get("body"))
+        .and_then(Value::as_str)
+        .and_then(crate::story::activity_line);
+    let read_back = owner_correction(activity).is_none()
+        && own_opening.as_deref() == Some(description.as_str());
+    (!read_back).then_some(description)
+}
+
 fn activity_context(
     journal: &Path,
     day: &str,
@@ -243,9 +296,11 @@ fn activity_context(
     } else {
         entities.join(", ")
     };
+    let description_line = input_description(activity)
+        .map(|description| format!("- **Description:** {description}\n"))
+        .unwrap_or_default();
     let mut parts = vec![format!(
-        "## Activity Context\n- **Type:** {activity_type}\n- **Description:** {}\n{engagement_line}- **Duration:** ~{} minutes ({} segments)\n- **Active Entities:** {entities}",
-        python_string(activity.get("description")),
+        "## Activity Context\n- **Type:** {activity_type}\n{description_line}{engagement_line}- **Duration:** ~{} minutes ({} segments)\n- **Active Entities:** {entities}",
         estimate_duration_minutes(&segments),
         segments.len(),
     )];
@@ -605,6 +660,28 @@ mod tests {
             context["activity_md_dir"],
             format!("{}/facets/work/activities/20260101/", root.path().display())
         );
+    }
+
+    #[test]
+    fn the_documented_description_variable_stays_and_empties_with_its_line() {
+        let root = tempfile::tempdir().expect("root");
+        let read = |activity: Value| {
+            let config =
+                json!({"day":"20260101","span":["090000_60"],"facet":"work","activity":activity});
+            build(root.path(), config.as_object().expect("object"), None)
+        };
+        let told = read(json!({"id":"a","activity":"reading","description":"Read a paper."}));
+        assert_eq!(told["activity_description"], "Read a paper.");
+        assert_eq!(
+            told["activity_description_line"],
+            "**Description:** Read a paper.\n"
+        );
+        let read_back = read(
+            json!({"id":"a","activity":"reading","description":"Read a paper.",
+            "story":{"talent":"work","body":"You read a paper. It was long."}}),
+        );
+        assert_eq!(read_back["activity_description"], "");
+        assert_eq!(read_back["activity_description_line"], "");
     }
 
     #[test]

@@ -272,6 +272,14 @@ pub fn prepare(
             Some(count) => format!("{count}\n\n{instruction}"),
             None => instruction,
         };
+        let instruction = match composed
+            .get("activity")
+            .and_then(Value::as_object)
+            .and_then(crate::prompt_context::correction_last)
+        {
+            Some(correction) => format!("{instruction}\n\n{correction}"),
+            None => instruction,
+        };
         composed.insert("user_instruction".to_owned(), Value::String(instruction));
     }
     if let Some(output) = composed.get("output").and_then(Value::as_str)
@@ -1208,7 +1216,8 @@ mod tests {
             told["details"] = json!(account);
             told["playback"] = json!(true);
             let told = render_shipped_talent(talent, told);
-            assert_eq!(sections(&told), sections(&plain) + 2, "{talent}");
+            // Each one as a section, and again at the very end of the request.
+            assert_eq!(sections(&told), sections(&plain) + 4, "{talent}");
             assert!(told.contains(account), "{talent}");
             // The talent's standing rule names each section it renders, so
             // renaming one in code cannot leave the rule pointing at nothing.
@@ -1222,6 +1231,61 @@ mod tests {
             normalized["details"] = json!("");
             normalized["playback"] = json!(false);
             assert_eq!(render_shipped_talent(talent, normalized), plain, "{talent}");
+        }
+    }
+
+    #[test]
+    fn a_correction_is_the_last_thing_an_activity_talent_reads() {
+        let base = json!({"id":"coding_090000_60","activity":"coding","description":"Release work","segments":["090000_60"]});
+        let account = "Mina ran the slides.";
+        for talent in ["participation", "work", "conversation"] {
+            let mut told = base.clone();
+            told["details"] = json!(account);
+            let told = render_shipped_talent(talent, told);
+            assert!(
+                told.ends_with(&format!(
+                    "## What you told the journal\n\n{account}\n\nThis is what happened. Where anything above says otherwise, write it this way."
+                )),
+                "{talent}"
+            );
+
+            let mut recording = base.clone();
+            recording["playback"] = json!(true);
+            let recording = render_shipped_talent(talent, recording);
+            assert!(recording.contains("\n## A recording\n"), "{talent}");
+            assert!(recording.ends_with("write it this way."), "{talent}");
+
+            assert!(
+                !render_shipped_talent(talent, base.clone()).contains("write it this way."),
+                "{talent}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_story_opening_is_not_read_back_once_no_correction_stands() {
+        const OPENING: &str = "Watched a recording of the keynote.";
+        const STORY: &str = "You watched a recording of the keynote. It ran long.";
+        let base = json!({"id":"coding_090000_60","activity":"coding","segments":["090000_60"]});
+        for talent in ["participation", "work", "conversation"] {
+            let reads = |description: &str, story: Option<&str>, playback: bool| {
+                let mut activity = base.clone();
+                activity["description"] = json!(description);
+                if let Some(body) = story {
+                    activity["story"] = json!({"talent":"conversation","body":body});
+                }
+                if playback {
+                    activity["playback"] = json!(true);
+                }
+                render_shipped_talent(talent, activity)
+                    .contains(&format!("**Description:** {description}\n"))
+            };
+            // The correction was removed: the line is what the corrected story opened with.
+            assert!(!reads(OPENING, Some(STORY), false), "{talent}");
+            // A correction stands, the line is not the story's, or there is no story yet.
+            assert!(reads(OPENING, Some(STORY), true), "{talent}");
+            assert!(reads("Owner wrote this.", Some(STORY), false), "{talent}");
+            assert!(reads(OPENING, None, false), "{talent}");
         }
     }
 
