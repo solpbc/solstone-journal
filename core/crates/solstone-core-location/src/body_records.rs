@@ -1040,6 +1040,10 @@ fn account_json(member: &ComposedBody) -> Value {
             account.insert("start".to_owned(), json_text(row.start.as_deref()));
             account.insert("end".to_owned(), json_text(row.end.as_deref()));
             account.insert("by".to_owned(), json_text(row.by.as_deref()));
+            // A night the source assembled from stages says so, and how.
+            if let Some(assembled) = &row.assembled {
+                account.insert("assembled".to_owned(), Value::String(assembled.clone()));
+            }
             if matches!(member.account, Account::Live(_)) {
                 account.insert(
                     "values".to_owned(),

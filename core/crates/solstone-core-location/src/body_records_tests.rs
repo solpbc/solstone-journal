@@ -776,3 +776,19 @@ fn separate_keeps_a_line_it_cannot_read() {
         "{text}"
     );
 }
+
+#[test]
+fn an_assembled_night_says_so_in_its_face() {
+    let journal = journal();
+    let root = journal.path();
+    let mut assembled = night();
+    assembled.assembled = Some("stages joined across gaps under an hour".to_owned());
+    window(root, DAY, "220000_3600", std::slice::from_ref(&assembled));
+    record(root, json!({}));
+    let faces = body_faces(root, "body", DAY, &everyone, true).unwrap();
+    let face = face_json(&faces[0]);
+    assert_eq!(
+        face["accounts"][0]["assembled"], "stages joined across gaps under an hour",
+        "{face}"
+    );
+}
