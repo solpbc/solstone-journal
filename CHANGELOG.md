@@ -8,7 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- when you pair the solstone app on this computer from your journal, the dialog now says an unpaired app can find your journal by itself, so you don't need the link.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -17,25 +16,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
-- when you correct an activity, its story now more often follows what you told your journal, and saying an activity was a recording now sticks far more reliably. removing that correction now also means the story, the people and the description no longer treat it as a recording.
-- home now reports that recent activity couldn't be summarized when none of the entries are available.
-- on windows, the journal no longer holds on to more and more system resources the longer it runs.
-- deleting a segment on a large journal is much faster and no longer stops partway when your journal starts a new day. if your journal is busy with another job, the transcripts page says so and your journal keeps the segment so you can try again. a slow delete shows its result when it finishes.
-- on a large journal, search health no longer stays on "search is catching up with your journal" for a very long time.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
-- opening a screen frame from a recording now selects that frame instead of the first one. on android, moving between frames waits for the selected picture to finish decoding.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
-- on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.
-- on a mac or linux computer, when `solstone journal open` can't open a browser, it now says how to reach the link from another computer over SSH.
-- when redoing a day from scratch runs past its six-hour limit, your journal now moves straight on to an ordinary reprocess of that day, and the parts it hadn't reached keep their earlier results. before, it started the whole day over once more, which stopped at the same point six hours later.
-- with your own endpoint or confidential processing, each new run on the thinking page now names the model that did the work, not the default local model.
 - the iphone development journal uses less memory when working through speech.
-- new journals create your identity from the name you enter during setup, and speaker corrections work in the phone dashboard.
 - the iphone development journal can save its recovery key and journal exports through the native share sheet.
 - home and health now show daily processing status in the iphone development journal.
-- the date picker on the transcripts page says when your journal is still counting days, and fills in on its own.
 - fixed another android permission error when downloading a journal archive.
 - fixed a failure when downloading a journal archive in the android and iphone development apps.
 - dimming the journal on iphone hides the keyboard and page controls until you wake it.
@@ -55,6 +42,33 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.69] - 2026-11-06
+
+### Added
+
+- when you pair the solstone app on this computer from your journal, the dialog now says an unpaired app can find your journal by itself, so you don't need the link.
+
+### Changed
+
+- the recovery key step in backup now has "save recovery key", which saves the key as a file, or opens your browser's share options where it has them. it replaces "save to my password manager", which only copied the key. if copying or saving the key fails, the page now says so.
+- your journal's notification history now lasts only while its browser tab is open, and history an earlier version saved in your browser is removed.
+
+### Fixed
+
+- when you correct an activity, your journal now reads your correction last when it writes the story. when you remove a correction that said an activity was a recording, the description no longer carries it into the next story.
+- home now says your recent activity couldn't be summarized when everything recent has been deleted, hidden or left empty.
+- on windows, the journal no longer gains an open system handle every time it checks your journal folder. before, its open handles kept growing the longer it ran.
+- deleting a segment on a large journal is much faster and no longer stops partway when your journal starts a new day. if your journal is busy with another job, the transcripts page says so and your journal keeps the segment so you can try again. a slow delete shows its result when it finishes.
+- on a large journal, search health no longer stays on "search is catching up with your journal" for a very long time.
+- opening a screen frame from a recording now selects that frame instead of the first one.
+- on a mac, when `solstone journal open` finds your journal isn't running, it now says to open the journal app.
+- on a mac or linux computer, when `solstone journal open` can't open a browser, it now says how to reach the link from another computer over SSH.
+- when redoing a day from scratch runs past its time limit, your journal now moves straight on to an ordinary reprocess of that day, and the parts it hadn't reached keep their earlier results. before, it started the whole day over once more, which stopped at the same point again.
+- with your own endpoint or confidential processing, each new run on the thinking page now names the model that did the work, not the default local model.
+- new journals create your identity from the name you enter during setup.
+- the date picker on the transcripts page says when your journal is still counting days, and fills in on its own.
+- on a mac without apple's developer tools, your journal no longer asks you to install them when it starts turning speech into text.
 
 ## [2.0.68] - 2026-11-05
 

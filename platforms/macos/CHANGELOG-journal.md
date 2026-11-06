@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.69 (build 119)] - 2026-11-06
+
+### Changed
+
+- updated the bundled journal to [2.0.69](https://solstone.app/releases#v2.0.69) →
+
 ### Fixed
 
-- after setup stops, trying again no longer fails because your journal is already running. reopening the journal app now shows a retry button if it cannot check whether setup finished.
+- if setup stopped with an error, trying again no longer fails when your journal is already running. reopening the journal app now shows a "try again" button if it cannot check whether setup finished.
 
 ## [2.0.68 (build 118)] - 2026-11-05
 
