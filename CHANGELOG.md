@@ -17,6 +17,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- the empty "your · journal" mark, on the network page and in the journal app on windows, is now easy to see on any background.
+
 ### Fixed
 
 - fixed cases where long transcripts lost a speaker from an activity's people list or gave a voice someone else's name.

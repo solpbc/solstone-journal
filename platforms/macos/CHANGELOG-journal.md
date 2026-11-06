@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- the empty "your · journal" mark, in the app and on its icon, is now easy to see on any background.
+
 ## [2.0.70 (build 122)] - 2026-11-06
 
 ### Changed

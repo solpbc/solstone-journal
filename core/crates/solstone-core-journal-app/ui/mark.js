@@ -7,7 +7,8 @@
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const GENERIC = {
-  chips: ['#E8913A', '#D4A017'],
+  chips: ['#B06A1A', '#A57F0E'],
+  paper: '#FEFCF8',
   words: ['your', 'journal'],
 };
 const PLATE_FILL = '#FCF3E4';
@@ -146,7 +147,6 @@ export function renderMarkCard(container, mark, confirmedLine, unavailable = fal
       const chip = document.createElement('div');
       chip.className = 'mark-chip generic';
       chip.style.borderColor = hex;
-      chip.style.background = hex + '12';
       if (index === 1) chip.classList.add('rotated');
       chips.appendChild(chip);
     });
@@ -250,13 +250,22 @@ async function drawTile(tile, mark) {
     const hex = known ? icons[index].color.hex : GENERIC.chips[index];
     ctx.save();
     roundedSquare(ctx, cx, layout.cy, layout.side, radius, rotation);
-    ctx.globalAlpha = known ? 0.12 : 0.07;
-    ctx.fillStyle = hex;
-    ctx.fill();
-    ctx.globalAlpha = 1;
+    if (known) {
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = hex;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else {
+      // Paper fills the chip and runs under the dashes, so they read on any ground.
+      ctx.fillStyle = GENERIC.paper;
+      ctx.fill();
+      ctx.strokeStyle = GENERIC.paper;
+      ctx.lineWidth = border * 3;
+      ctx.stroke();
+      ctx.setLineDash([3.2 * layout.side / 27, 2.4 * layout.side / 27]);
+    }
     ctx.strokeStyle = hex;
     ctx.lineWidth = border;
-    if (!known) ctx.setLineDash([3.2 * layout.side / 27, 2.4 * layout.side / 27]);
     ctx.stroke();
     ctx.restore();
     if (known) {

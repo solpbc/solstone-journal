@@ -50,6 +50,9 @@
   --orange-ink:  #B06A1A; /* large text / UI boundaries; normal text uses orange-text-aa */
   --orange-wash: #FBEFDD; /* soft orange tint — pill / avatar / badge fills */
   --orange-text-aa: #A15F17; /* orange for NORMAL-size text on white/cream (5.04 / 4.92 / 4.58:1) — the value every var(--orange-text-aa, #a15f17) fallback already names */
+  --mark-generic-paper:  #FEFCF8; /* the no-identity-yet chip's paper. Fixed: does not follow the dark appearance */
+  --mark-generic-dash-1: #B06A1A; /* its first chip's dashes, on that paper. Fixed */
+  --mark-generic-dash-2: #A57F0E; /* its second chip's dashes, on that paper. Fixed */
 
   /* ── surfaces (canon background set — no off-canon page colors) ───────── */
   --cream:        #FCF3E4; /* warm page bg (product-chrome / trust surfaces) */

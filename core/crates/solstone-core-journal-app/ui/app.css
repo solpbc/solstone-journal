@@ -478,7 +478,12 @@ details.detail p { margin-top: var(--space-2); user-select: text; overflow-wrap:
   align-items: center;
   justify-content: center;
 }
-.mark-chip.generic { border-style: dashed; }
+/* Paper fills the chip and runs under the dashes, so every gap sits on paper. */
+.mark-chip.generic {
+  border-style: dashed;
+  background: #FEFCF8;
+  box-shadow: 0 0 0 2px #FEFCF8;
+}
 .mark-chip.rotated { transform: rotate(45deg); }
 .mark-chip svg { width: 58%; height: 58%; }
 .mark-words {

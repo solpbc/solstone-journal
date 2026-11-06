@@ -332,7 +332,7 @@ systemctl --user start solstone-linux</code></div>
   .link-mark-chip { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--hairline-2); border-radius: 12px; box-sizing: border-box; }
   .link-mark-chip svg { width: 28px; height: 28px; display: block; }
   .link-mark-chip-generic { width: 48px; height: 48px; }
-  .link-mark-chip-generic svg { display: block; }
+  .link-mark-chip-generic svg { display: block; overflow: visible; }
   .link-mark-words { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.55em; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .3px; color: var(--ink); }
   .link-mark-words .link-mark-sep { color: var(--ink-faint); }
   .link-identity-id-disclosure { margin-top: 0.9em; font-size: 0.85rem; }
@@ -1138,15 +1138,15 @@ systemctl --user start solstone-linux</code></div>
   }
 
   // The org-wide no-identity-yet treatment (journal-mark.md § 4.3): dashed,
-  // glyph-less chips in the locked mark palette plus the words "your" /
-  // "journal", spoken as one accessible unit. Renders in place of hiding the
+  // glyph-less chips on paper plus the words "your" / "journal", spoken as one
+  // accessible unit. Renders in place of hiding the
   // section, whether the identity fetch failed, the identity isn't committed
   // yet, or the served spec is malformed.
   function renderGenericIdentityMark(container) {
     if (!container) return;
     container.innerHTML = '<div class="link-mark-chips">' +
-      '<div class="link-mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--orange)" fill-opacity="0.07" stroke="var(--orange)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
-      '<div class="link-mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--gold)" fill-opacity="0.07" stroke="var(--gold)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+      '<div class="link-mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-1)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+      '<div class="link-mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="var(--mark-generic-paper)" stroke="var(--mark-generic-paper)" stroke-width="6"/><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="none" stroke="var(--mark-generic-dash-2)" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
       '</div><div class="link-mark-words"><span>your</span><span class="link-mark-sep">·</span><span>journal</span></div>';
     container.setAttribute('role', 'img');
     container.setAttribute('aria-label', 'your journal, not set up yet');
