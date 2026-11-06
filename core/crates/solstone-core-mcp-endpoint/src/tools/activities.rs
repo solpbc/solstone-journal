@@ -387,9 +387,8 @@ fn body_line(face: &Value) -> Value {
 /// `day`: those shown under it and under the day before, for a night.
 fn body_lines_near(
     journal_root: &Path,
-    facets: &[(String, String, String)],
+    body: &mut [(String, solstone_core_location::body_records::Groups)],
     day: &str,
-    gate: &dyn Fn(&str, &str, Option<&str>) -> bool,
 ) -> Vec<BesideLine> {
     let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
         .ok()
@@ -397,16 +396,9 @@ fn body_lines_near(
         .map(|date| date.format("%Y%m%d").to_string());
     let mut lines = Vec::new();
     for on in std::iter::once(day.to_owned()).chain(previous) {
-        for (_, facet_dir, _) in facets {
-            for face in solstone_core_location::body_records::body_faces(
-                journal_root,
-                facet_dir,
-                &on,
-                gate,
-                false,
-            )
-            .unwrap_or_default()
-            {
+        for (_, groups) in body.iter_mut() {
+            for group in groups.on(&on).to_vec() {
+                let face = groups.compose(journal_root, &group);
                 let value = solstone_core_location::body_records::face_json(&face);
                 if let Some(span) = face_span(&value) {
                     lines.push((span, body_line(&value)));
@@ -416,6 +408,9 @@ fn body_lines_near(
     }
     lines
 }
+
+/// How many days of body groups `list_activities` reads at a time.
+const BODY_STRETCH_DAYS: i64 = 31;
 
 /// Capture activities this connection reads that can sit beside a body item
 /// shown under `day`: those on it and on the next day, for a night. Beside
@@ -686,13 +681,30 @@ pub(crate) fn execute_list(
         day: String,
         file_digest: String,
         rec_identity: String,
-        /// A body record's face, composed for this connection.
-        face: Option<Value>,
+        /// A body record's group as this connection reads it, and the
+        /// stretch it was read in; composed once the item is on the page.
+        group: Option<(usize, solstone_core_location::body_records::Group)>,
     }
 
     let mut collected = Vec::new();
     let mut targets = Vec::new();
     let gate = crate::body_source::window_gate(journal_root, snapshot);
+    // Each facet's body groups this connection reads, grouped once: from the
+    // day before the first day this page can show (a night beside it) to the
+    // range's last. Nothing anchored before a cursor's day can be on its page.
+    let first_shown = match &cursor_bound {
+        Some((last_day, ..)) if last_day > &request.from => last_day,
+        _ => &request.from,
+    };
+    let before_from = chrono::NaiveDate::parse_from_str(first_shown, "%Y%m%d")
+        .ok()
+        .and_then(|date| date.pred_opt())
+        .map_or_else(
+            || first_shown.clone(),
+            |date| date.format("%Y%m%d").to_string(),
+        );
+    // Body rows as read, by facet, day and id, until their groups are read.
+    let mut body_rows: BTreeMap<(String, String, String), CollectedItem> = BTreeMap::new();
 
     for (facet_id, facet_dir, facet_title) in &facets_to_search {
         let stems = solstone_core_facets::list_activity_day_stems(journal_root, facet_dir)
@@ -729,21 +741,6 @@ pub(crate) fn execute_list(
             if raw_rows.len() != normalized.len() {
                 return Err(DispatchError::Tool(ToolError::FileUnreadable));
             }
-            // A body record shows as its face, only for windows this connection
-            // reads; it names no entity, so an entity filter leaves it out.
-            let faces = if entity_filter.is_none() {
-                solstone_core_location::body_records::body_faces(
-                    journal_root,
-                    facet_dir,
-                    &day,
-                    &gate,
-                    false,
-                )
-                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
-            } else {
-                Vec::new()
-            };
-
             for ((record, trimmed), normalized_row) in raw_rows.into_iter().zip(normalized) {
                 // Same predicate as load_activity_records(..., include_hidden: false).
                 // Identity stays the raw line, not the normalized object.
@@ -755,24 +752,28 @@ pub(crate) fn execute_list(
                     continue;
                 }
                 if solstone_core_facets::is_body_record(&record) {
-                    let id = record.get("id").and_then(Value::as_str);
-                    if let Some(face) = faces
-                        .iter()
-                        .find(|face| Some(face.anchor.id.as_str()) == id)
+                    // A body record shows as its face, only for windows this
+                    // connection reads; it names no entity, so an entity filter
+                    // leaves it out.
+                    if entity_filter.is_none()
+                        && let Some(id) = record.get("id").and_then(Value::as_str)
                     {
-                        collected.push(CollectedItem {
-                            sort_key: sort_activity_key(&day, facet_id, &record),
-                            rec_identity: crate::activity_admit::compute_record_identity(
-                                &record, &trimmed,
-                            ),
-                            record,
-                            facet_id: facet_id.clone(),
-                            facet_dir: facet_dir.clone(),
-                            facet_title: facet_title.clone(),
-                            day: day.clone(),
-                            file_digest: file_digest.clone(),
-                            face: Some(solstone_core_location::body_records::face_json(face)),
-                        });
+                        body_rows.insert(
+                            (facet_dir.clone(), day.clone(), id.to_owned()),
+                            CollectedItem {
+                                sort_key: sort_activity_key(&day, facet_id, &record),
+                                rec_identity: crate::activity_admit::compute_record_identity(
+                                    &record, &trimmed,
+                                ),
+                                record,
+                                facet_id: facet_id.clone(),
+                                facet_dir: facet_dir.clone(),
+                                facet_title: facet_title.clone(),
+                                day: day.clone(),
+                                file_digest: file_digest.clone(),
+                                group: None,
+                            },
+                        );
                     }
                     continue;
                 }
@@ -805,9 +806,74 @@ pub(crate) fn execute_list(
                     day: day.clone(),
                     file_digest: file_digest.clone(),
                     rec_identity,
-                    face: None,
+                    group: None,
                 });
             }
+        }
+    }
+
+    // Body groups, read a stretch of days at a time from the day before the
+    // first this page can show, until the page and the item after it are
+    // settled: everything sorts by day first, so nothing on a later day can
+    // come before them. Each stretch groups as its days do alone.
+    let mut body: Vec<(String, solstone_core_location::body_records::Groups)> = Vec::new();
+    if let (Ok(mut from), Ok(last)) = (
+        chrono::NaiveDate::parse_from_str(&before_from, "%Y%m%d"),
+        chrono::NaiveDate::parse_from_str(&request.to, "%Y%m%d"),
+    ) {
+        while from <= last {
+            let to = (from + chrono::Duration::days(BODY_STRETCH_DAYS - 1)).min(last);
+            let (from_day, to_day) = (
+                from.format("%Y%m%d").to_string(),
+                to.format("%Y%m%d").to_string(),
+            );
+            for (_, facet_dir, _) in &facets_to_search {
+                let groups = match solstone_core_location::body_records::body_groups_range(
+                    journal_root,
+                    facet_dir,
+                    &from_day,
+                    &to_day,
+                    Some(&gate),
+                    false,
+                ) {
+                    Ok(groups) => groups,
+                    // A body record shows only as its face, so a list that would
+                    // hold one can't go on without it; beside lines alone can.
+                    Err(_) if entity_filter.is_none() => {
+                        return Err(DispatchError::Tool(ToolError::FileUnreadable));
+                    }
+                    Err(_) => solstone_core_location::body_records::Groups::default(),
+                };
+                let mut on = from;
+                while on <= to {
+                    let day = on.format("%Y%m%d").to_string();
+                    for group in groups.on(&day) {
+                        if let Some(mut item) = body_rows.remove(&(
+                            facet_dir.clone(),
+                            day.clone(),
+                            group.anchor_id.clone(),
+                        )) {
+                            item.group = Some((body.len(), group.clone()));
+                            collected.push(item);
+                        }
+                    }
+                    on += chrono::Duration::days(1);
+                }
+                body.push((facet_dir.clone(), groups));
+            }
+            let settled = collected
+                .iter()
+                .filter(|item| item.day <= to_day)
+                .filter(|item| {
+                    cursor_bound
+                        .as_ref()
+                        .is_none_or(|cursor_key| &item.sort_key > cursor_key)
+                })
+                .count();
+            if settled > request.limit {
+                break;
+            }
+            from = to + chrono::Duration::days(1);
         }
     }
 
@@ -863,7 +929,12 @@ pub(crate) fn execute_list(
             )
             .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
 
-        if let Some(face) = &item.face {
+        let face = item.group.as_ref().map(|(stretch, group)| {
+            solstone_core_location::body_records::face_json(
+                &body[*stretch].1.compose(journal_root, group),
+            )
+        });
+        if let Some(face) = &face {
             let mut activity =
                 body_activity(face, &item.facet_title, &item.day, reference, &zone_str);
             if let Some(span) = face_span(face) {
@@ -947,9 +1018,9 @@ pub(crate) fn execute_list(
             &item.day,
             &item.record,
         ) {
-            let faces = body_near.entry(item.day.clone()).or_insert_with(|| {
-                body_lines_near(journal_root, &facets_to_search, &item.day, &gate)
-            });
+            let faces = body_near
+                .entry(item.day.clone())
+                .or_insert_with(|| body_lines_near(journal_root, &mut body, &item.day));
             let beside = faces
                 .iter()
                 .filter(|(other, _)| solstone_core_location::body_records::half_cover(span, *other))

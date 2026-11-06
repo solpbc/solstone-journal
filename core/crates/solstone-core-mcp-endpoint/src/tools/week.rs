@@ -158,6 +158,15 @@ fn project_sunday(
     // Body faces, composed for this connection: workouts, nights and sessions.
     let gate = crate::body_source::window_gate(journal, snapshot);
     let mut body = Vec::new();
+    // Each facet's faces over the week, grouped once, the first time a day
+    // file asks.
+    let mut week_faces: BTreeMap<String, BTreeMap<String, Vec<_>>> = BTreeMap::new();
+    let first_day = week_dates
+        .first()
+        .map(|date| date.format("%Y%m%d").to_string());
+    let last_day = week_dates
+        .last()
+        .map(|date| date.format("%Y%m%d").to_string());
     for date in &week_dates {
         let day_str = date.format("%Y%m%d").to_string();
         for (f_id, f_dir, f_title) in &facets {
@@ -195,10 +204,22 @@ fn project_sunday(
             if rows.len() != line_identities.len() {
                 return Err(ToolError::FileUnreadable);
             }
-            let faces = solstone_core_location::body_records::body_faces(
-                journal, f_dir, &day_str, &gate, false,
-            )
-            .map_err(|_| ToolError::FileUnreadable)?;
+            if !week_faces.contains_key(f_dir) {
+                let faces = solstone_core_location::body_records::body_faces_range(
+                    journal,
+                    f_dir,
+                    first_day.as_deref().unwrap_or(&day_str),
+                    last_day.as_deref().unwrap_or(&day_str),
+                    Some(&gate),
+                    false,
+                )
+                .map_err(|_| ToolError::FileUnreadable)?;
+                week_faces.insert(f_dir.clone(), faces);
+            }
+            let faces = week_faces
+                .get(f_dir)
+                .and_then(|faces| faces.get(&day_str))
+                .map_or(&[][..], Vec::as_slice);
 
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)

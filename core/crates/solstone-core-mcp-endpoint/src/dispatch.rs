@@ -2148,29 +2148,29 @@ pub(crate) fn body_face_for(
 ) -> Result<solstone_core_location::body_records::Face, DispatchError> {
     let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
     let gate = crate::body_source::window_gate(journal_root, snapshot);
-    let mut faces = Vec::new();
-    for day in
-        [act_ref.day.clone()]
-            .into_iter()
-            .chain(solstone_core_location::body_records::days_after(
-                &act_ref.day,
-            ))
-    {
-        faces.extend(
-            solstone_core_location::body_records::body_faces(
-                journal_root,
-                &act_ref.facet_dir,
-                &day,
-                &gate,
-                true,
-            )
-            .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?,
-        );
-    }
-    faces
-        .into_iter()
-        .find(|face| face.members.iter().any(|member| member.id == id))
-        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))
+    // Every day the record's group can show under, grouped once.
+    let days = solstone_core_location::body_records::days_after(&act_ref.day);
+    let from = days
+        .iter()
+        .min()
+        .map_or(&act_ref.day, |day| day.min(&act_ref.day));
+    let to = days
+        .iter()
+        .max()
+        .map_or(&act_ref.day, |day| day.max(&act_ref.day));
+    solstone_core_location::body_records::body_faces_range(
+        journal_root,
+        &act_ref.facet_dir,
+        from,
+        to,
+        Some(&gate),
+        true,
+    )
+    .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?
+    .into_values()
+    .flatten()
+    .find(|face| face.members.iter().any(|member| member.id == id))
+    .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))
 }
 
 fn memory_hit_origin(journal_root: &Path, path: &str, stream: &str) -> Option<Origin> {

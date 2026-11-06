@@ -13070,3 +13070,222 @@ fn beside_lines_go_both_ways_and_never_past_what_a_connection_reads() {
     assert!(beta.get("beside").is_none(), "{res}");
     assert!(!res.to_string().contains("Running"), "{res}");
 }
+
+#[test]
+fn pages_after_a_cursor_list_what_one_page_lists_beside_lines_included() {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    // A late workout filed under 20260308 that runs past midnight.
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        "w2".to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    row.experience = Some("workout".to_owned());
+    row.start = Some("2026-03-08 23:30:00 -0400".to_owned());
+    row.end = Some("2026-03-09 00:30:00 -0400".to_owned());
+    row.by = Some("Synthetic Watch".to_owned());
+    let window = root.join("chronicle/20260308/import.apple_health/230000_3600");
+    fs::create_dir_all(window.join("talents")).unwrap();
+    fs::write(
+        window.join("body.jsonl"),
+        encode_rows(std::slice::from_ref(&row)),
+    )
+    .unwrap();
+    fs::write(window.join("stream.json"), "{}\n").unwrap();
+    fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    let record = json!({
+        "id": "body_fedcba9876543210", "source": "body", "activity": "workout",
+        "account": {"key": "import.apple_health\u{1f}w2", "start": row.start, "end": row.end,
+            "type": "running", "recorder": recorder_id("import.apple_health", row.by.as_deref())},
+    });
+    let path = root.join("facets/alpha/activities/20260308.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str(&format!("{record}\n"));
+    fs::write(&path, text).unwrap();
+    // Two captures on 20260309, the second inside the late workout: its page
+    // comes after a cursor on 20260309, and its beside line is the day before's.
+    fs::create_dir_all(root.join("chronicle/20260309/phone/000000_300")).unwrap();
+    for (facet, id, title) in [
+        ("alpha", "act_early", "early capture"),
+        ("beta", "act_late", "late capture"),
+    ] {
+        write_activity_line(
+            root,
+            facet,
+            "20260309",
+            id,
+            title,
+            50,
+            Some("running"),
+            Some(&["000000_300"]),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+    }
+    PermissionStore::open(root)
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    let strip = |page: &Value| {
+        page["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|activity| {
+                let mut activity = activity.clone();
+                activity.as_object_mut().unwrap().remove("reference");
+                activity
+            })
+            .collect::<Vec<_>>()
+    };
+    let args = json!({"from": "20260308", "to": "20260314"});
+    let whole = strip(&probe(&journal, "list_activities", args.clone()).unwrap());
+    let mut paged = Vec::new();
+    let mut args = json!({"from": "20260308", "to": "20260314", "limit": 1});
+    loop {
+        let page = probe(&journal, "list_activities", args.clone()).unwrap();
+        paged.extend(strip(&page));
+        if page["next_cursor"].is_null() {
+            break;
+        }
+        args["cursor"] = page["next_cursor"].clone();
+    }
+    assert_eq!(paged, whole);
+    let late = whole
+        .iter()
+        .find(|activity| activity["title"] == "late capture")
+        .unwrap_or_else(|| panic!("{whole:?}"));
+    assert_eq!(late["day"], "20260309");
+    assert_eq!(late["beside"][0]["kind"], "workout", "{late}");
+    assert_eq!(
+        late["beside"][0]["start"], "2026-03-08 23:30:00 -0400",
+        "{late}"
+    );
+}
+
+/// A synthetic workout account, its window and its record, filed under `day`.
+fn file_workout(root: &Path, day: &str, row_id: &str, by: &str, start: &str, end: &str) {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        row_id.to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    row.experience = Some("workout".to_owned());
+    row.start = Some(start.to_owned());
+    row.end = Some(end.to_owned());
+    row.by = Some(by.to_owned());
+    let hour = &start[11..13];
+    let window = root.join(format!(
+        "chronicle/{day}/import.apple_health/{hour}0000_3600"
+    ));
+    fs::create_dir_all(window.join("talents")).unwrap();
+    let rows = window.join("body.jsonl");
+    let mut text = fs::read_to_string(&rows).unwrap_or_default();
+    text.push_str(&encode_rows(std::slice::from_ref(&row)));
+    fs::write(&rows, text).unwrap();
+    fs::write(window.join("stream.json"), "{}\n").unwrap();
+    fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    let id = format!("body_{:0>16}", row_id);
+    let record = json!({
+        "id": id, "source": "body", "activity": "workout",
+        "account": {"key": format!("import.apple_health\u{1f}{row_id}"), "start": start, "end": end,
+            "type": "running", "recorder": recorder_id("import.apple_health", Some(by))},
+    });
+    let path = root.join(format!("facets/alpha/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!("{record}\n"));
+    fs::write(&path, text).unwrap();
+}
+
+#[test]
+fn a_long_range_pages_the_same_whatever_the_page_size_across_stretches_of_days() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    // From 20260308 the list reads 31 days at a time from 20260307. One run told
+    // by two recorders, filed either side of the first boundary (20260406 and
+    // 20260407), groups once; others sit a stretch or two apart.
+    file_workout(
+        root,
+        "20260406",
+        "a1",
+        "Synthetic Watch",
+        "2026-04-06 23:00:00 -0400",
+        "2026-04-06 23:50:00 -0400",
+    );
+    file_workout(
+        root,
+        "20260407",
+        "a2",
+        "Synthetic App",
+        "2026-04-06 23:01:00 -0400",
+        "2026-04-06 23:51:00 -0400",
+    );
+    file_workout(
+        root,
+        "20260408",
+        "b1",
+        "Synthetic Watch",
+        "2026-04-08 07:00:00 -0400",
+        "2026-04-08 07:30:00 -0400",
+    );
+    file_workout(
+        root,
+        "20260520",
+        "c1",
+        "Synthetic Watch",
+        "2026-05-20 07:00:00 -0400",
+        "2026-05-20 07:30:00 -0400",
+    );
+    PermissionStore::open(root)
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    let list = |limit: usize| {
+        let mut args = json!({"from": "20260308", "to": "20260630", "limit": limit});
+        let mut all = Vec::new();
+        loop {
+            let page = probe(&journal, "list_activities", args.clone()).unwrap();
+            for activity in page["activities"].as_array().unwrap() {
+                let mut activity = activity.clone();
+                activity.as_object_mut().unwrap().remove("reference");
+                all.push(activity);
+            }
+            if page["next_cursor"].is_null() {
+                break all;
+            }
+            args["cursor"] = page["next_cursor"].clone();
+        }
+    };
+    let whole = list(100);
+    assert_eq!(list(1), whole);
+    assert_eq!(list(2), whole);
+    let starts = whole
+        .iter()
+        .filter(|activity| activity["source"] == "body")
+        .map(|activity| {
+            (
+                activity["day"].clone(),
+                activity["accounts"].as_array().unwrap().len(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        starts,
+        [
+            (json!("20260308"), 1),
+            (json!("20260406"), 2),
+            (json!("20260408"), 1),
+            (json!("20260520"), 1)
+        ],
+        "{whole:?}"
+    );
+}

@@ -629,3 +629,97 @@ fn journal_fixture_with_live_night() -> tempfile::TempDir {
     arrived_record(journal.path(), DAY, &night(), Some(DAY), json!({}));
     journal
 }
+
+/// Anchor and member ids of faces, in order.
+fn face_ids(faces: &[Face]) -> Vec<(String, Vec<String>, bool)> {
+    faces
+        .iter()
+        .map(|face| {
+            (
+                face.anchor.id.clone(),
+                face.members
+                    .iter()
+                    .map(|member| member.id.clone())
+                    .collect(),
+                face.hidden,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_range_of_days_shows_the_faces_each_day_shows_alone() {
+    let journal = journal();
+    let root = journal.path();
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    let app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    let next = workout_row(
+        "n",
+        "Synthetic Watch",
+        "2026-10-11 18:00:00 -0600",
+        "2026-10-11 18:30:00 -0600",
+    );
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    window(root, NEXT, "180000_3600", std::slice::from_ref(&next));
+    workout_record(root, DAY, &watch, json!({}));
+    workout_record(root, DAY, &app, json!({}));
+    workout_record(root, NEXT, &next, json!({"hidden": true}));
+
+    let not_watch = |_: &str, _: &str, window: Option<&str>| window != Some("070000_3600");
+    for readable in [&everyone as Readable<'_>, &not_watch] {
+        for include_hidden in [true, false] {
+            let range =
+                body_faces_range(root, "body", DAY, NEXT, Some(readable), include_hidden).unwrap();
+            for day in [DAY, NEXT] {
+                let alone = body_faces(root, "body", day, readable, include_hidden).unwrap();
+                assert_eq!(
+                    face_ids(range.get(day).map_or(&[][..], Vec::as_slice)),
+                    face_ids(&alone),
+                    "{day} include_hidden={include_hidden}"
+                );
+            }
+            assert!(
+                range
+                    .keys()
+                    .all(|day| day.as_str() == DAY || day.as_str() == NEXT)
+            );
+        }
+    }
+    let all = body_faces_range(root, "body", DAY, NEXT, None, true).unwrap();
+    assert_eq!(
+        face_ids(&all[DAY]),
+        vec![(
+            "body_w".to_owned(),
+            vec!["body_w".to_owned(), "body_x".to_owned()],
+            false
+        )]
+    );
+    assert_eq!(
+        face_ids(&all[NEXT]),
+        vec![("body_n".to_owned(), vec!["body_n".to_owned()], true)]
+    );
+    // The owner's range reads every window, the same as a reader that may read all.
+    assert_eq!(
+        body_faces_range(root, "body", DAY, NEXT, None, true)
+            .unwrap()
+            .values()
+            .map(|faces| face_ids(faces))
+            .collect::<Vec<_>>(),
+        body_faces_range(root, "body", DAY, NEXT, Some(&everyone), true)
+            .unwrap()
+            .values()
+            .map(|faces| face_ids(faces))
+            .collect::<Vec<_>>()
+    );
+}

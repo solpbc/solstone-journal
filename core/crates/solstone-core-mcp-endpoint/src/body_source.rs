@@ -7,7 +7,7 @@
 //! and speaker names don't arise. `docs/BODY_SEGMENTS.md` is the contract.
 
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
@@ -125,12 +125,20 @@ pub(crate) fn window_gate<'a>(
         snapshot.scope,
         solstone_core_indexer_query::ConnectionScope::WholeJournal
     ) && transcripts;
+    // A window's answer holds for the read: many records share one window.
+    let known = std::cell::RefCell::new(BTreeMap::<(String, String, String), bool>::new());
     move |day: &str, stream: &str, window: Option<&str>| match window {
         Some(_) if !transcripts => false,
         Some(name) => {
+            let key = (day.to_owned(), stream.to_owned(), name.to_owned());
+            if let Some(&allowed) = known.borrow().get(&key) {
+                return allowed;
+            }
             let probe = segment_assignment_probe_path(day, stream, name);
-            live_allows(journal_root, &transcript_boundary, &probe, Some(stream))
-                && released(journal_root, day, stream, name)
+            let allowed = live_allows(journal_root, &transcript_boundary, &probe, Some(stream))
+                && released(journal_root, day, stream, name);
+            known.borrow_mut().insert(key, allowed);
+            allowed
         }
         None => whole,
     }

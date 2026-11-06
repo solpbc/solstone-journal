@@ -396,6 +396,8 @@ type Listing = (Vec<(String, u32, u32)>, Option<Tz>);
 #[derive(Default)]
 pub struct Windows {
     names: BTreeMap<(String, String), Listing>,
+    /// The experience ids each live window holds, read once.
+    holds: BTreeMap<std::path::PathBuf, std::collections::BTreeSet<String>>,
     days: BTreeMap<(String, String), Day>,
 }
 
@@ -444,16 +446,27 @@ impl Windows {
             .join("chronicle")
             .join(&stored.day)
             .join(&stored.stream);
+        let holds = &mut self.holds;
         let holding = covering.iter().find(|name| {
             let window = dir.join(name.as_str());
-            !window.join(TOMBSTONE).exists()
-                && fs::read_to_string(window.join(BODY_RECORDS_FILE))
-                    .ok()
-                    .and_then(|text| decode_rows(&text).ok())
-                    .is_some_and(|rows| {
-                        rows.iter()
-                            .any(|row| row.kind == RowKind::Experience && row.id == stored.row_id)
-                    })
+            holds
+                .entry(window.clone())
+                .or_insert_with(|| {
+                    if window.join(TOMBSTONE).exists() {
+                        return std::collections::BTreeSet::new();
+                    }
+                    fs::read_to_string(window.join(BODY_RECORDS_FILE))
+                        .ok()
+                        .and_then(|text| decode_rows(&text).ok())
+                        .map(|rows| {
+                            rows.into_iter()
+                                .filter(|row| row.kind == RowKind::Experience)
+                                .map(|row| row.id)
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .contains(&stored.row_id)
         });
         match holding {
             Some(name) => vec![name.clone()],
@@ -538,6 +551,16 @@ pub fn compose_body_records(
 /// caller's choice of records.
 #[must_use]
 pub fn pair(left: &StoredBody, right: &StoredBody) -> bool {
+    pair_on(left, right, left.instants(), right.instants())
+}
+
+/// `pair`, on instants already read.
+fn pair_on(
+    left: &StoredBody,
+    right: &StoredBody,
+    left_at: Option<(i64, i64)>,
+    right_at: Option<(i64, i64)>,
+) -> bool {
     if left.activity != right.activity
         || left.recorder == right.recorder
         || left.apart.contains(&right.key)
@@ -551,8 +574,7 @@ pub fn pair(left: &StoredBody, right: &StoredBody) -> bool {
     {
         return false;
     }
-    let (Some((a_start, a_end)), Some((b_start, b_end))) = (left.instants(), right.instants())
-    else {
+    let (Some((a_start, a_end)), Some((b_start, b_end))) = (left_at, right_at) else {
         return false;
     };
     let overlap = (a_end.min(b_end) - a_start.max(b_start)).max(0);
@@ -570,6 +592,7 @@ pub fn pair(left: &StoredBody, right: &StoredBody) -> bool {
 #[must_use]
 pub fn group_partition(records: &[StoredBody]) -> Vec<Vec<usize>> {
     let count = records.len();
+    let at = records.iter().map(StoredBody::instants).collect::<Vec<_>>();
     let mut component = (0..count).collect::<Vec<_>>();
     fn root(component: &mut [usize], index: usize) -> usize {
         let mut at = index;
@@ -579,9 +602,18 @@ pub fn group_partition(records: &[StoredBody]) -> Vec<Vec<usize>> {
         }
         at
     }
-    for left in 0..count {
-        for right in (left + 1)..count {
-            if pair(&records[left], &records[right]) {
+    // Two accounts pair only when they overlap, so each is weighed only against
+    // those that start before it ends.
+    let mut timed = (0..count)
+        .filter_map(|index| at[index].map(|(start, end)| (start, end, index)))
+        .collect::<Vec<_>>();
+    timed.sort_unstable();
+    for (position, &(_, left_end, left)) in timed.iter().enumerate() {
+        for &(right_start, _, right) in &timed[position + 1..] {
+            if right_start >= left_end {
+                break;
+            }
+            if pair_on(&records[left], &records[right], at[left], at[right]) {
                 let (a, b) = (root(&mut component, left), root(&mut component, right));
                 component[a.max(b)] = a.min(b);
             }
@@ -597,7 +629,7 @@ pub fn group_partition(records: &[StoredBody]) -> Vec<Vec<usize>> {
         let clique = set.iter().enumerate().all(|(position, &left)| {
             set[position + 1..]
                 .iter()
-                .all(|&right| pair(&records[left], &records[right]))
+                .all(|&right| pair_on(&records[left], &records[right], at[left], at[right]))
         });
         if set.len() > 1 && clique {
             groups.push(set);
@@ -700,29 +732,143 @@ pub fn body_faces(
     readable: Readable<'_>,
     include_hidden: bool,
 ) -> Result<Vec<Face>, ComposeError> {
-    if !has_body_data(journal) {
-        return Ok(Vec::new());
+    Ok(
+        body_faces_range(journal, facet, day, day, Some(readable), include_hidden)?
+            .remove(day)
+            .unwrap_or_default(),
+    )
+}
+
+/// [`body_faces`] for every anchor day from `from` to `to`, read, gated and
+/// grouped once for the whole span. With no `readable`, the owner's own view,
+/// which reads every window, so nothing is gated.
+///
+/// # Errors
+///
+/// When an activity file can't be read.
+pub fn body_faces_range(
+    journal: &Path,
+    facet: &str,
+    from: &str,
+    to: &str,
+    readable: Option<Readable<'_>>,
+    include_hidden: bool,
+) -> Result<BTreeMap<String, Vec<Face>>, ComposeError> {
+    Ok(body_groups_range(journal, facet, from, to, readable, include_hidden)?.into_faces(journal))
+}
+
+/// One group as read, before its accounts are composed.
+#[derive(Clone, Debug)]
+pub struct Group {
+    /// The id of the record it shows as.
+    pub anchor_id: String,
+    /// Hidden when any member is.
+    pub hidden: bool,
+    at: usize,
+    order: Vec<usize>,
+}
+
+/// A facet's groups over a span of days, by the day each shows under, grouped
+/// but composed only when asked: a reader that shows a few composes a few.
+#[derive(Default)]
+pub struct Groups {
+    records: Vec<StoredBody>,
+    windows: Windows,
+    by_day: BTreeMap<String, Vec<Group>>,
+}
+
+impl Groups {
+    /// The groups shown under `day`, in order.
+    #[must_use]
+    pub fn on(&self, day: &str) -> &[Group] {
+        self.by_day.get(day).map_or(&[], Vec::as_slice)
     }
-    let mut windows = Windows::default();
-    let mut records = Vec::new();
-    for on in days_around(day) {
-        for stored in stored_body_records(journal, facet, &on)? {
-            if windows.may_read(journal, &stored, readable) {
-                records.push(stored);
-            }
+
+    /// The group as its windows say now.
+    pub fn compose(&mut self, journal: &Path, group: &Group) -> Face {
+        let members = group
+            .order
+            .iter()
+            .map(|&index| self.windows.compose(journal, self.records[index].clone()))
+            .collect::<Vec<_>>();
+        let anchor = members
+            .iter()
+            .find(|member| member.id == self.records[group.at].id)
+            .expect("the anchor is a member")
+            .clone();
+        Face {
+            anchor,
+            members,
+            hidden: group.hidden,
         }
     }
-    let mut faces = Vec::new();
-    for group in group_partition(&records) {
-        let at = anchor(&records, &group);
-        if records[at].day != day {
+
+    /// Every group composed, by day.
+    #[must_use]
+    pub fn into_faces(mut self, journal: &Path) -> BTreeMap<String, Vec<Face>> {
+        let by_day = std::mem::take(&mut self.by_day);
+        by_day
+            .into_iter()
+            .map(|(day, groups)| {
+                let faces = groups
+                    .iter()
+                    .map(|group| self.compose(journal, group))
+                    .collect();
+                (day, faces)
+            })
+            .collect()
+    }
+}
+
+/// [`body_faces_range`] without composing: read, gated and grouped once.
+///
+/// # Errors
+///
+/// When an activity file can't be read.
+pub fn body_groups_range(
+    journal: &Path,
+    facet: &str,
+    from: &str,
+    to: &str,
+    readable: Option<Readable<'_>>,
+    include_hidden: bool,
+) -> Result<Groups, ComposeError> {
+    let mut groups = Groups {
+        records: Vec::new(),
+        windows: Windows::default(),
+        by_day: BTreeMap::new(),
+    };
+    if !has_body_data(journal) {
+        return Ok(groups);
+    }
+    let (Ok(first), Ok(last)) = (
+        NaiveDate::parse_from_str(from, "%Y%m%d"),
+        NaiveDate::parse_from_str(to, "%Y%m%d"),
+    ) else {
+        return Ok(groups);
+    };
+    let mut on = first - chrono::Duration::days(GROUP_DAYS_BACK);
+    let end = last + chrono::Duration::days(GROUP_DAYS_FORWARD);
+    while on <= end {
+        for stored in stored_body_records(journal, facet, &on.format("%Y%m%d").to_string())? {
+            if readable.is_none_or(|readable| groups.windows.may_read(journal, &stored, readable)) {
+                groups.records.push(stored);
+            }
+        }
+        on += chrono::Duration::days(1);
+    }
+    let records = &groups.records;
+    for group in group_partition(records) {
+        let at = anchor(records, &group);
+        let day = records[at].day.clone();
+        if day.as_str() < from || day.as_str() > to {
             continue;
         }
         let hidden = group.iter().any(|&index| records[index].hidden);
         if hidden && !include_hidden {
             continue;
         }
-        let mut order = group.clone();
+        let mut order = group;
         order.sort_by_key(|&index| {
             (
                 records[index]
@@ -731,22 +877,14 @@ pub fn body_faces(
                 records[index].key.clone(),
             )
         });
-        let members = order
-            .iter()
-            .map(|&index| windows.compose(journal, records[index].clone()))
-            .collect::<Vec<_>>();
-        let anchor = members
-            .iter()
-            .find(|member| member.id == records[at].id)
-            .expect("the anchor is a member")
-            .clone();
-        faces.push(Face {
-            anchor,
-            members,
+        groups.by_day.entry(day).or_default().push(Group {
+            anchor_id: records[at].id.clone(),
             hidden,
+            at,
+            order,
         });
     }
-    Ok(faces)
+    Ok(groups)
 }
 
 /// The group `record_id` is in as the owner sees it, itself included: what a

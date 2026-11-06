@@ -12,16 +12,21 @@ use solstone_core_facets::{
     place_activity_records, read_activity_definitions,
 };
 
-/// The owner's own view reads every body window.
-fn owner_reads(_: &str, _: &str, _: Option<&str>) -> bool {
-    true
+type Faces = BTreeMap<String, Vec<solstone_core_location::body_records::Face>>;
+
+/// A facet's body faces as the owner sees them, hidden ones included, by
+/// anchor day from `from` to `to`, read and grouped once. The owner reads every
+/// window, so nothing is gated.
+fn owner_faces(root: &Path, facet: &str, from: &str, to: &str) -> Faces {
+    solstone_core_location::body_records::body_faces_range(root, facet, from, to, None, true)
+        .unwrap_or_default()
 }
 
-/// How many body faces a facet shows on a day, for the owner.
-fn body_face_count(root: &Path, facet: &str, day: &str) -> usize {
-    solstone_core_location::body_records::body_faces(root, facet, day, &owner_reads, false)
-        .map(|faces| faces.len())
-        .unwrap_or_default()
+/// How many faces a facet shows on a day, hidden ones aside.
+fn shown_on(faces: &Faces, day: &str) -> usize {
+    faces
+        .get(day)
+        .map_or(0, |faces| faces.iter().filter(|face| !face.hidden).count())
 }
 
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
@@ -56,12 +61,19 @@ pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, 
         }
     }
 
+    let body: BTreeMap<&String, Faces> = match (days_set.first(), days_set.last()) {
+        (Some(first), Some(last)) => facets
+            .iter()
+            .map(|f| (f, owner_faces(root, f, first, last)))
+            .collect(),
+        _ => BTreeMap::new(),
+    };
     let mut counts = BTreeMap::new();
     for day in days_set {
         let mut total = 0;
         for f in &facets {
             let visible_rows = load_activity_records(root, f, &day, false).unwrap_or_default();
-            total += visible_rows.len() + body_face_count(root, f, &day);
+            total += visible_rows.len() + body.get(f).map_or(0, |faces| shown_on(faces, &day));
         }
         if total > 0 {
             counts.insert(day, total);
@@ -98,13 +110,27 @@ fn map_facet_declaration(root: &Path, facet_name: &str, count: usize) -> Value {
 
 pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, String> {
     let declared = list_declared_facet_names(root).map_err(|e| e.to_string())?;
+    // Body faces under this day and the day before (a night's), once per facet.
+    let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .and_then(|date| date.pred_opt())
+        .map(|date| date.format("%Y%m%d").to_string());
+    let around: BTreeMap<&String, Faces> = declared
+        .iter()
+        .map(|f| {
+            (
+                f,
+                owner_faces(root, f, previous.as_deref().unwrap_or(day), day),
+            )
+        })
+        .collect();
 
     let mut facet_entries = Vec::new();
     for f in &declared {
         let count = load_activity_records(root, f, day, false)
             .unwrap_or_default()
             .len()
-            + body_face_count(root, f, day);
+            + around.get(f).map_or(0, |faces| shown_on(faces, day));
         facet_entries.push(map_facet_declaration(root, f, count));
     }
 
@@ -183,24 +209,18 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     let mut items = Vec::new();
     // Body faces this view shows beside a capture activity: under this day and
     // the day before, for a night.
-    let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .ok()
-        .and_then(|date| date.pred_opt())
-        .map(|date| date.format("%Y%m%d").to_string());
     let mut near_faces = Vec::new();
-    for on in std::iter::once(day.to_owned()).chain(previous) {
+    for on in std::iter::once(day.to_owned()).chain(previous.clone()) {
         for f in &scope {
-            for face in solstone_core_location::body_records::body_faces(
-                root,
-                f,
-                &on,
-                &owner_reads,
-                include_hidden,
-            )
-            .unwrap_or_default()
+            for face in around
+                .get(f)
+                .and_then(|faces| faces.get(&on))
+                .into_iter()
+                .flatten()
+                .filter(|face| include_hidden || !face.hidden)
             {
-                if let Some(span) = solstone_core_location::body_records::face_instants(&face) {
-                    near_faces.push((span, solstone_core_location::body_records::face_json(&face)));
+                if let Some(span) = solstone_core_location::body_records::face_instants(face) {
+                    near_faces.push((span, solstone_core_location::body_records::face_json(face)));
                 }
             }
         }
@@ -277,9 +297,11 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
 
     // Body faces: composed from their windows, after the day's own items.
     for f in &scope {
-        let faces =
-            solstone_core_location::body_records::body_faces(root, f, day, &owner_reads, true)
-                .map_err(|e| e.to_string())?;
+        let faces = around
+            .get(f)
+            .and_then(|faces| faces.get(day))
+            .cloned()
+            .unwrap_or_default();
         for face in faces {
             if face.hidden {
                 hidden_count += 1;
