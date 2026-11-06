@@ -2076,13 +2076,14 @@ mod tests {
             stream: "_default".into(),
             dir: key.into(),
         };
-        door::remove_segments(
+        let outcome = door::remove_segments(
             root.path(),
             &[target],
             "2026-08-05T12:00:00Z",
             RemovalReason::OwnerSegmentDelete,
             "cid-test",
         );
+        assert!(outcome.removed_paths().next().is_some());
         let pending_id = "4".repeat(32);
         let record = Record::pending(
             pending_id.clone(),
