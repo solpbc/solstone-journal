@@ -576,7 +576,15 @@ fn days_export(directory: &Path) -> PathBuf {
 }
 
 fn request<'a>(source: &'a Path, timestamp: &'a str) -> AppleSegmentsRequest<'a> {
-    let mut request = AppleSegmentsRequest::new(source, timestamp, None);
+    request_for(source, timestamp, None)
+}
+
+fn request_for<'a>(
+    source: &'a Path,
+    timestamp: &'a str,
+    facet: Option<&'a str>,
+) -> AppleSegmentsRequest<'a> {
+    let mut request = AppleSegmentsRequest::new(source, timestamp, facet);
     // Small enough that every phase spills into several runs.
     request.spill_bytes = 4_096;
     request
@@ -604,6 +612,35 @@ fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
                     .into_owned();
                 files.insert(relative, fs::read(&path).unwrap());
             }
+        }
+    }
+    // And every activity record, so a run with a facet is held to its records.
+    // A facet's destination id is the journal's own, minted when it's first
+    // written to, so it's left out.
+    for facet in fs::read_dir(root.join("facets"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        for file in fs::read_dir(facet.path().join("activities"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            // One separator on every platform, so the key reads the same on Windows.
+            let relative = file
+                .path()
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let mut text = String::new();
+            for line in fs::read_to_string(file.path()).unwrap().lines() {
+                let mut record: serde_json::Value = serde_json::from_str(line).unwrap();
+                record.as_object_mut().unwrap().remove("destination_id");
+                text.push_str(&format!("{record}\n"));
+            }
+            files.insert(relative, text.into_bytes());
         }
     }
     for import in fs::read_dir(root.join("imports")).unwrap().flatten() {
@@ -688,55 +725,85 @@ fn stopping_at(point: &'static str, nth: usize) -> impl Fn(&str) -> bool {
 fn a_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes() {
     let scratch = tempfile::tempdir().unwrap();
     let source = days_export(scratch.path());
-    let whole = journal();
-    let done =
-        run_apple_health_segments(whole.path(), &request(&source, "20261104_120000")).unwrap();
-    assert!(done.finished);
-    let expected = snapshot(whole.path());
-    assert!(expected.len() > 50, "the export spans many windows");
-    assert_chain(whole.path());
-
-    for (point, nth) in [
-        ("scanned", 1),
-        ("placed", 1),
-        ("pending", 1),
-        ("pending", 3),
-        ("written", 2),
-        ("published", 1),
-        ("published", 4),
-        ("written-all", 1),
-        ("finished", 1),
-    ] {
-        let journal = journal();
-        let root = journal.path();
-        let stop = stopping_at(point, nth);
-        let mut stopped = request(&source, "20261104_120000");
-        stopped.stop_at = Some(&stop);
-        let error = run_apple_health_segments(root, &stopped).unwrap_err();
-        assert!(error.contains(point), "{point}: {error}");
-        // The owner runs it again later, under a new timestamp.
-        let resumed =
-            run_apple_health_segments(root, &request(&source, "20261104_130000")).unwrap();
-        assert!(resumed.finished, "{point} {nth}: {}", resumed.summary);
-        assert_eq!(
-            resumed.import_id, done.import_id,
-            "{point} {nth}: resumed under its import"
-        );
-        assert!(
-            !root.join("imports/20261104_130000").exists(),
-            "{point} {nth}: no second import holds these bytes"
-        );
-        assert!(!root.join(RUN_DIR_REL).exists());
-        let got = snapshot(root);
-        assert_eq!(
-            got.keys().collect::<Vec<_>>(),
-            expected.keys().collect::<Vec<_>>(),
-            "{point} {nth}"
-        );
-        for (path, bytes) in &expected {
-            assert_eq!(got.get(path), Some(bytes), "{point} {nth}: {path}");
+    // Without a facet, and with one, so a stop also falls among records.
+    for facet in [None, Some("health")] {
+        let whole = journal();
+        let done = run_apple_health_segments(
+            whole.path(),
+            &request_for(&source, "20261104_120000", facet),
+        )
+        .unwrap();
+        assert!(done.finished);
+        let expected = snapshot(whole.path());
+        assert!(expected.len() > 50, "the export spans many windows");
+        if facet.is_some() {
+            assert!(
+                expected
+                    .keys()
+                    .any(|path| path.starts_with("facets/health/activities/")),
+                "the export makes records"
+            );
         }
-        assert_chain(root);
+        assert_chain(whole.path());
+
+        // Without a facet, everywhere; with one, the stops on either side of
+        // a day's records, which are written once the day is published.
+        let everywhere = [
+            ("scanned", 1),
+            ("placed", 1),
+            ("pending", 1),
+            ("pending", 3),
+            ("written", 2),
+            ("published", 1),
+            ("published", 4),
+            ("written-all", 1),
+            ("finished", 1),
+        ];
+        let around_records = [
+            ("published", 1),
+            ("pending", 3),
+            ("published", 4),
+            ("written-all", 1),
+            ("finished", 1),
+        ];
+        let points: &[(&str, usize)] = if facet.is_some() {
+            &around_records
+        } else {
+            &everywhere
+        };
+        for &(point, nth) in points {
+            let journal = journal();
+            let root = journal.path();
+            let stop = stopping_at(point, nth);
+            let mut stopped = request_for(&source, "20261104_120000", facet);
+            stopped.stop_at = Some(&stop);
+            let error = run_apple_health_segments(root, &stopped).unwrap_err();
+            assert!(error.contains(point), "{point}: {error}");
+            // The owner runs it again later, under a new timestamp.
+            let resumed =
+                run_apple_health_segments(root, &request_for(&source, "20261104_130000", facet))
+                    .unwrap();
+            assert!(resumed.finished, "{point} {nth}: {}", resumed.summary);
+            assert_eq!(
+                resumed.import_id, done.import_id,
+                "{point} {nth}: resumed under its import"
+            );
+            assert!(
+                !root.join("imports/20261104_130000").exists(),
+                "{point} {nth}: no second import holds these bytes"
+            );
+            assert!(!root.join(RUN_DIR_REL).exists());
+            let got = snapshot(root);
+            assert_eq!(
+                got.keys().collect::<Vec<_>>(),
+                expected.keys().collect::<Vec<_>>(),
+                "{point} {nth}"
+            );
+            for (path, bytes) in &expected {
+                assert_eq!(got.get(path), Some(bytes), "{point} {nth}: {path}");
+            }
+            assert_chain(root);
+        }
     }
 }
 
@@ -1116,8 +1183,7 @@ fn a_session_dropped_later_leaves_its_series_on_its_tiles_and_makes_no_empty_hou
         !window(root, TEN, "060000_3600").exists(),
         "no hour is written with nothing in it"
     );
-    // No reading is held back.
-    assert!(!two.summary.contains("belong"), "{}", two.summary);
+    assert!(!two.summary.contains("added"), "{}", two.summary);
 }
 
 #[test]
@@ -2549,7 +2615,7 @@ fn an_import_adds_one_activity_per_workout_and_again_adds_none() {
     }
     let two = run(root, &source, "20261012_120001", Some("body"));
     assert!(
-        !two.summary.contains("to your activities"),
+        !two.summary.contains("now show on their days"),
         "{}",
         two.summary
     );
