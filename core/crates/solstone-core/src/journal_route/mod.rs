@@ -788,20 +788,26 @@ mod tests {
     use std::fs;
 
     use solstone_core_installation_identity::{
-        ArtifactBindingEvidence, GuardFields, InstallationId, LegacyManifestEvidence, OwnerBase,
-        PlatformTag, SetupAdmissionRequest, admit_setup, journal_token_from_path, lower_hex,
-        root_token_from_path,
+        ArtifactBindingEvidence, LegacyManifestEvidence, OwnerBase, PlatformTag,
+        SetupAdmissionRequest, admit_setup, journal_token_from_path, root_token_from_path,
     };
+    #[cfg(target_os = "linux")]
+    use solstone_core_installation_identity::{GuardFields, InstallationId, lower_hex};
+    #[cfg(target_os = "linux")]
     use solstone_core_service_unit::{build_service_environment, render_systemd_unit};
+    #[cfg(target_os = "linux")]
     use solstone_core_setup::identity_evidence::{
         gather_setup_artifact_evidence, route_journal_wrapper_slot,
     };
-    use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper_version, wrapper_paths};
+    use solstone_core_setup::wrapper::wrapper_paths;
+    #[cfg(target_os = "linux")]
+    use solstone_core_setup::wrapper::{WrapperCommand, render_wrapper_version};
 
     use super::{
-        all_artifacts_missing, record_service_observation, repair_eligibility_refusal,
-        rewrite_drifted_wrappers, service_state, tuple_state, wrapper_state,
+        all_artifacts_missing, repair_eligibility_refusal, rewrite_drifted_wrappers, tuple_state,
     };
+    #[cfg(target_os = "linux")]
+    use super::{record_service_observation, service_state, wrapper_state};
 
     #[test]
     fn tuple_eligibility_ignores_the_journal_slot() {
