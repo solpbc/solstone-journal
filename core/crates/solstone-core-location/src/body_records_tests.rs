@@ -859,3 +859,42 @@ fn a_deleted_start_with_a_later_piece_that_cannot_be_read_reads_unreadable() {
     fs::remove_file(later.join(TOMBSTONE)).unwrap();
     assert_eq!(composed(root)[0].account, Account::Unreadable);
 }
+
+#[test]
+fn a_group_the_owner_hid_hides_from_a_reader_of_one_member_alone() {
+    let journal = journal();
+    let root = journal.path();
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    let app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    // The watch's account was hidden before the app's arrived.
+    workout_record(root, DAY, &watch, json!({"hidden": true}));
+    workout_record(root, DAY, &app, json!({}));
+    let not_watch = |_: &str, _: &str, window: Option<&str>| window != Some("070000_3600");
+    assert!(
+        body_faces(root, "body", DAY, &not_watch, false)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        body_faces(root, "body", DAY, &everyone, false)
+            .unwrap()
+            .is_empty()
+    );
+    // Shown hidden, it names only what this reader reads.
+    let faces = body_faces(root, "body", DAY, &not_watch, true).unwrap();
+    assert_eq!(faces.len(), 1);
+    assert!(faces[0].hidden);
+    assert!(!face_json(&faces[0]).to_string().contains("body_w"));
+}

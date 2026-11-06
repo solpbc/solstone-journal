@@ -10,7 +10,7 @@
 //! served as it stands, and a facet change or a narrower grant can't widen what
 //! is read.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -895,17 +895,31 @@ pub fn body_groups_range(
     };
     let mut on = first - chrono::Duration::days(GROUP_DAYS_BACK);
     let end = last + chrono::Duration::days(GROUP_DAYS_FORWARD);
+    let mut every = Vec::new();
     while on <= end {
         // A day's file that can't be read at all costs only its records' part
         // in grouping: the day's own reader reports it.
-        let stored = stored_body_records(journal, facet, &on.format("%Y%m%d").to_string())
-            .unwrap_or_default();
-        for stored in stored {
-            if readable.is_none_or(|readable| groups.windows.may_read(journal, &stored, readable)) {
-                groups.records.push(stored);
+        every.extend(
+            stored_body_records(journal, facet, &on.format("%Y%m%d").to_string())
+                .unwrap_or_default(),
+        );
+        on += chrono::Duration::days(1);
+    }
+    // Hidden is the owner's word on the group as the owner sees it: a member
+    // in one with a hidden account hides for every reader, whatever else that
+    // reader may read.
+    let mut hides = BTreeSet::new();
+    if readable.is_some() {
+        for group in group_partition(&every) {
+            if group.iter().any(|&index| every[index].hidden) {
+                hides.extend(group.iter().map(|&index| every[index].id.clone()));
             }
         }
-        on += chrono::Duration::days(1);
+    }
+    for stored in every {
+        if readable.is_none_or(|readable| groups.windows.may_read(journal, &stored, readable)) {
+            groups.records.push(stored);
+        }
     }
     let records = &groups.records;
     for group in group_partition(records) {
@@ -914,7 +928,9 @@ pub fn body_groups_range(
         if day.as_str() < from || day.as_str() > to {
             continue;
         }
-        let hidden = group.iter().any(|&index| records[index].hidden);
+        let hidden = group
+            .iter()
+            .any(|&index| records[index].hidden || hides.contains(&records[index].id));
         if hidden && !include_hidden {
             continue;
         }
