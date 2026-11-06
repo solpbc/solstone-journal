@@ -877,6 +877,71 @@ extension JournalFirstRunModelTests {
         #expect(badFingerprint.peer.launched.isEmpty)
     }
 
+    @Test func anIdentityReadThatFailsAtFinalizeShowsTheErrorAndRetryDelivers() async throws {
+        let world = try makeSetupWorld(configureRoot: true, markState: "locked", saved: true, choice: "later",
+                                      probes: [.incomplete, .incomplete])
+        defer { world.refresh.release() }
+        await world.fixture.model.reconcileActivation()
+        await world.fixture.model.continueFromFolder()
+        world.client.setPerforms([setupState(root: world.root, done: true, markState: "locked", saved: true, choice: "later")])
+        world.identity.resolution = .failed(.timeout)
+
+        await world.fixture.model.finalizeThinking()
+
+        #expect(world.fixture.model.handoffError == JournalFirstRunCopy.handoffNotDelivered)
+        #expect(world.fixture.model.outbound == .failed)
+        #expect(world.fixture.model.operationError == .outbound)
+        #expect(world.fixture.mailbox.loadStep5() == .missing)
+        #expect(world.peer.launched.isEmpty)
+
+        world.identity.resolution = .mark(.uiTestSample, instanceID: setupInstanceID)
+        await world.fixture.model.retryHandoff()
+
+        guard case .ready = world.fixture.mailbox.loadStep5() else {
+            Issue.record("retry must deliver step 5 once the identity reads")
+            return
+        }
+        #expect(world.peer.launched.count == 1)
+        #expect(world.fixture.model.handoffError == nil)
+    }
+
+    @Test func aReadThatStopsDeliveryOnResumeShowsTheErrorAndRetryDelivers() async throws {
+        let goodNetwork = JournalNetworkStatus(caFingerprint: setupFingerprint, instanceID: setupInstanceID)
+        let stops: [(identity: JournalIdentityResolution?, network: JournalNetworkStatus?)] = [
+            (.uncommitted(instanceID: setupInstanceID), nil),
+            (.absent, nil),
+            (.failed(.timeout), nil),
+            (nil, JournalNetworkStatus(caFingerprint: "zz", instanceID: setupInstanceID)),
+            (nil, JournalNetworkStatus(caFingerprint: setupFingerprint, instanceID: "another-instance")),
+        ]
+        for stop in stops {
+            let world = try makeSetupWorld(configureRoot: true, probes: [.complete])
+            defer { world.refresh.release() }
+            try seedContinuation(world.fixture.continuation, root: world.root)
+            if let identity = stop.identity { world.identity.resolution = identity }
+            if let network = stop.network { world.client.setNetwork(network) }
+
+            await world.fixture.model.reconcileActivation()
+
+            #expect(world.fixture.model.handoffError == JournalFirstRunCopy.handoffNotDelivered)
+            #expect(world.fixture.model.outbound == .failed)
+            #expect(world.fixture.model.route == .ritual(.setupProgress))
+            #expect(world.fixture.mailbox.loadStep5() == .missing)
+            #expect(world.peer.launched.isEmpty)
+
+            world.identity.resolution = .mark(.uiTestSample, instanceID: setupInstanceID)
+            world.client.setNetwork(goodNetwork)
+            await world.fixture.model.retryHandoff()
+
+            guard case .ready = world.fixture.mailbox.loadStep5() else {
+                Issue.record("retry must deliver step 5 once the reads agree")
+                return
+            }
+            #expect(world.peer.launched.count == 1)
+            #expect(world.fixture.model.handoffError == nil)
+        }
+    }
+
     @Test func freshModelMintsThePendingLeftByARefusedPeer() async throws {
         let peer = ScriptedPeer()
         peer.queue = [setupPeerURL]

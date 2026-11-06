@@ -198,9 +198,22 @@ struct JournalLocalHTTPClientTests {
         #expect(result.1.url == url)
     }
 
+    // The head Journal 2.0.69 sent over its local socket, captured from a released runtime.
+    @Test func repeatedListHeadersReadAsOneValue() throws {
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nserver-timing: gate;dur=3.151\r\nserver-timing: app;dur=4.704\r\ncontent-security-policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; form-action 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'\r\nx-frame-options: DENY\r\ncontent-length: 687\r\ndate: Fri, 06 Nov 2026 11:03:57 GMT\r\n\r\n"
+        let body = Data(repeating: 0x20, count: 687)
+        let result = try #require(try JournalHTTPFraming.parse(Data(head.utf8) + body, url: url))
+        #expect(result.0 == body)
+        let http = try #require(result.1 as? HTTPURLResponse)
+        #expect(http.statusCode == 200)
+        #expect(http.value(forHTTPHeaderField: "server-timing") == "gate;dur=3.151, app;dur=4.704")
+    }
+
     @Test(arguments: [
         "HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n",
         "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Length: 1\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\ncontent-length: 0\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
         "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\r\n",
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n",

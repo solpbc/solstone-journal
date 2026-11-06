@@ -1475,8 +1475,7 @@ final class JournalFirstRunModel {
         let resolution = await identity.resolveIdentity(baseURL: Self.setupBaseURL)
         guard stillCurrent(captured) else { return }
         guard case .mark(_, let instanceID) = resolution else {
-            outbound = .none
-            if pendingOperation == .outbound { pendingOperation = .none }
+            presentOutboundFailure()
             return
         }
         let network: JournalNetworkStatus
@@ -1491,8 +1490,7 @@ final class JournalFirstRunModel {
         guard network.instanceID == instanceID,
               let fingerprint = network.caFingerprint,
               isFingerprint(fingerprint) else {
-            outbound = .none
-            if pendingOperation == .outbound { pendingOperation = .none }
+            presentOutboundFailure()
             return
         }
         let pending: UUID
@@ -1502,8 +1500,7 @@ final class JournalFirstRunModel {
             } else if let existing = try continuation.pendingStep5(ownedBy: step1) {
                 pending = existing
             } else {
-                outbound = .none
-                if pendingOperation == .outbound { pendingOperation = .none }
+                presentOutboundFailure()
                 return
             }
         } catch {
