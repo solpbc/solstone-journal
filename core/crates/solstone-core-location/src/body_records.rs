@@ -1100,11 +1100,18 @@ pub fn half_cover(left: (i64, i64), right: (i64, i64)) -> bool {
     overlap > 0 && (overlap * 2 >= left.1 - left.0 || overlap * 2 >= right.1 - right.0)
 }
 
-/// A face's span as instants: its anchor's stored ones.
+/// A face's span as it's shown: its first account's instants, as its window
+/// says them now, else as stored. Beside lines go by this, so a night a later
+/// export ended later sits beside what it now covers.
 #[must_use]
-pub fn face_instants(face: &Face) -> Option<(i64, i64)> {
-    let start = parse_source_time(&face.anchor.stored_start)?.timestamp();
-    let end = parse_source_time(&face.anchor.stored_end)?.timestamp();
+pub fn shown_span(face: &Face) -> Option<(i64, i64)> {
+    let first = face.members.first()?;
+    let (start, end) = match first.row() {
+        Some(row) => (row.start.clone()?, row.end.clone()?),
+        None => (first.stored_start.clone(), first.stored_end.clone()),
+    };
+    let start = parse_source_time(&start)?.timestamp();
+    let end = parse_source_time(&end)?.timestamp();
     (end > start).then_some((start, end))
 }
 

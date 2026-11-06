@@ -2583,6 +2583,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn beside_lines_go_by_the_end_a_window_says_now() {
+        use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+        let root = body_journal();
+        // A later export says the watch's run went on to 08:30; its record
+        // still holds 07:40.
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            "w".to_owned(),
+            "apple_health",
+            "HKWorkoutActivityTypeRunning",
+            "Running".to_owned(),
+        );
+        row.experience = Some("workout".to_owned());
+        row.start = Some("2026-10-10 07:00:00 -0600".to_owned());
+        row.end = Some("2026-10-10 08:30:00 -0600".to_owned());
+        row.by = Some("Synthetic Watch".to_owned());
+        std::fs::write(
+            root.path().join(format!(
+                "chronicle/{BODY_DAY}/import.apple_health/070000_3600/body.jsonl"
+            )),
+            encode_rows(std::slice::from_ref(&row)),
+        )
+        .unwrap();
+        std::fs::create_dir_all(
+            root.path()
+                .join(format!("chronicle/{BODY_DAY}/phone/080500_300")),
+        )
+        .unwrap();
+        let capture = json!({"id":"walk_080500_300","activity":"walking","title":"Cool-down","segments":["080500_300"],"source":"user"});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "body",
+            BODY_DAY,
+            capture.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let items = view["items"].as_array().unwrap();
+        let by_source = |source: &str| {
+            items
+                .iter()
+                .find(|item| item["source"] == source)
+                .unwrap_or_else(|| panic!("{source}: {view}"))
+        };
+        assert_eq!(by_source("user")["beside"][0]["kind"], "workout", "{view}");
+        assert_eq!(
+            by_source("body")["beside"][0]["title"],
+            "Cool-down",
+            "{view}"
+        );
+    }
+
+    #[tokio::test]
     async fn a_night_and_the_next_mornings_activity_sit_beside_each_other_across_midnight() {
         use solstone_core_format::content::body_records::{
             BodyRow, RowKind, encode_rows, recorder_id,

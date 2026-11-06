@@ -219,12 +219,21 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 .flatten()
                 .filter(|face| include_hidden || !face.hidden)
             {
-                if let Some(span) = solstone_core_location::body_records::face_instants(face) {
+                if let Some(span) = solstone_core_location::body_records::shown_span(face) {
                     near_faces.push((span, solstone_core_location::body_records::face_json(face)));
                 }
             }
         }
     }
+    // A capture's span is worked out only when a body face could sit beside
+    // it: a journal without body data reads nothing more than it did.
+    let faces_today = scope.iter().any(|f| {
+        around
+            .get(f)
+            .and_then(|faces| faces.get(day))
+            .is_some_and(|faces| !faces.is_empty())
+    });
+    let spans_needed = faces_today || !near_faces.is_empty();
     let mut captures = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
@@ -239,7 +248,10 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             &definitions_by_facet,
             (day, &calendar, &location),
         );
-        if let Some(span) = solstone_core_location::body_records::capture_instants(root, day, row) {
+        if spans_needed
+            && let Some(span) =
+                solstone_core_location::body_records::capture_instants(root, day, row)
+        {
             captures.push((
                 span,
                 string_field(row, "title"),
@@ -279,7 +291,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     }
 
     // A night shown today ends tomorrow: its morning's activities sit beside it.
-    if let Some(next) = solstone_core_location::body_records::next_day(day) {
+    if faces_today && let Some(next) = solstone_core_location::body_records::next_day(day) {
         for f in &scope {
             for row in load_activity_records(root, f, &next, include_hidden).unwrap_or_default() {
                 if let Some(span) =
@@ -310,7 +322,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 }
             }
             let mut item = solstone_core_location::body_records::face_json(&face);
-            if let Some(span) = solstone_core_location::body_records::face_instants(&face) {
+            if let Some(span) = solstone_core_location::body_records::shown_span(&face) {
                 let beside = captures
                     .iter()
                     .filter(|(other, _, _)| {

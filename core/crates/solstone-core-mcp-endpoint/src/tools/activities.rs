@@ -1013,14 +1013,18 @@ pub(crate) fn execute_list(
                 activity["place"] = json!({"device": beside.device, "words": beside.words});
             }
         }
-        if let Some(span) = solstone_core_location::body_records::capture_instants(
-            journal_root,
-            &item.day,
-            &item.record,
-        ) {
-            let faces = body_near
-                .entry(item.day.clone())
-                .or_insert_with(|| body_lines_near(journal_root, &mut body, &item.day));
+        // A capture's span is worked out only when a body face could sit
+        // beside it.
+        let faces = body_near
+            .entry(item.day.clone())
+            .or_insert_with(|| body_lines_near(journal_root, &mut body, &item.day));
+        if !faces.is_empty()
+            && let Some(span) = solstone_core_location::body_records::capture_instants(
+                journal_root,
+                &item.day,
+                &item.record,
+            )
+        {
             let beside = faces
                 .iter()
                 .filter(|(other, _)| solstone_core_location::body_records::half_cover(span, *other))

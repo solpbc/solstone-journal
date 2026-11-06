@@ -79,6 +79,10 @@ fn tombstone_record_of(bytes: &[u8]) -> TombstoneRecord {
 /// isn't one: it keeps counting as it always has.
 #[must_use]
 pub fn is_body_only_dir(stream: &str, dir: &Path) -> bool {
+    // Every other stream answers before its directory is listed.
+    if !BODY_RECORD_STREAMS.contains(&stream) {
+        return false;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
