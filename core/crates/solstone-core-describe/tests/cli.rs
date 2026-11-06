@@ -164,14 +164,23 @@ fn notification_listener(root: &Path) -> UnixListener {
 fn notification(listener: &UnixListener) -> Value {
     let (mut stream, _) = listener.accept().expect("accept notification");
     stream
-        .set_nonblocking(false)
-        .expect("blocking notification stream");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .expect("notification read timeout");
-    let mut line = String::new();
-    stream.read_to_string(&mut line).expect("read notification");
-    serde_json::from_str(line.trim()).expect("valid notification JSON")
+        .set_nonblocking(true)
+        .expect("nonblocking notification stream");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut bytes = Vec::new();
+    loop {
+        match stream.read_to_end(&mut bytes) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline =>
+            {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("read notification before deadline: {error}"),
+        }
+    }
+    serde_json::from_slice(&bytes).expect("valid notification JSON")
 }
 
 #[test]
