@@ -24,6 +24,9 @@ pub struct ServiceStatus {
     pub ready: bool,
     pub starts_at_sign_in: bool,
     pub port: Option<u16>,
+    /// Another account on this computer is running its journal.
+    #[serde(default)]
+    pub other_account_journal: bool,
 }
 
 impl ServiceStatus {
@@ -54,13 +57,16 @@ pub enum RunDisplay {
     Running,
     Stopped,
     NotRunning,
+    OtherAccount,
 }
 
 /// The run state from one reading. An action the window has in flight
 /// (starting, stopping) outranks this, and the window tracks that itself.
 #[must_use]
 pub fn run_display(status: &ServiceStatus, answering: bool) -> RunDisplay {
-    if answering && status.ready {
+    if status.other_account_journal {
+        RunDisplay::OtherAccount
+    } else if answering && status.ready {
         RunDisplay::Running
     } else if !status.wants_running {
         RunDisplay::Stopped
@@ -86,7 +92,24 @@ mod tests {
             ready,
             starts_at_sign_in: true,
             port: Some(5015),
+            other_account_journal: false,
         }
+    }
+
+    #[test]
+    fn another_accounts_journal_outranks_every_other_reading() {
+        let mut held = status(true, true, true);
+        held.other_account_journal = true;
+        assert_eq!(run_display(&held, true), RunDisplay::OtherAccount);
+        assert_eq!(run_display(&held, false), RunDisplay::OtherAccount);
+    }
+
+    #[test]
+    fn an_older_journal_that_does_not_say_means_no_other_account() {
+        let line = format!(
+            r#"{{"schema":"{APP_STATUS_SCHEMA}","journal":null,"installed":false,"wants_running":false,"running":false,"ready":false,"starts_at_sign_in":false,"port":null}}"#
+        );
+        assert!(!ServiceStatus::parse(&line).unwrap().other_account_journal);
     }
 
     #[test]

@@ -25,7 +25,7 @@ mod host;
 mod journal_data;
 mod logs;
 pub mod search_index;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 mod storage_privacy;
 mod talent_failures;
 mod work_view;
@@ -65,7 +65,7 @@ pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
     let speech_root = journal_root.clone();
     let speech_clock = clock.clone();
     let router = Router::new();
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let router = router.merge(storage_privacy::routes(journal_root.clone()));
     router
         .route("/app/health/", get(assets::shell))
@@ -183,9 +183,9 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
             .unwrap_or((false, false));
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         let storage_privacy = storage_privacy::snapshot(&root);
-        #[cfg(not(unix))]
+        #[cfg(not(any(unix, windows)))]
         let storage_privacy = serde_json::Value::Null;
         let mut payload = json!({
             "work": {

@@ -17,7 +17,13 @@ fn setup_ui_dom_contract() {
         ),
         Ok(_) => {}
     }
-    for mode in [None, Some("--dark"), Some("--dark-resume")] {
+    for mode in [
+        None,
+        Some("--dark"),
+        Some("--dark-resume"),
+        Some("--other-account"),
+        Some("--access-notice"),
+    ] {
         let mut command = Command::new("node");
         command.arg(format!(
             "{}/tests/setup_ui_dom.mjs",

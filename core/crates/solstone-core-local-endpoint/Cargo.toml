@@ -12,16 +12,25 @@ unsafe_code = "deny"
 [features]
 full-tests = []
 
-[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
-nix.workspace = true
+[target.'cfg(any(target_os = "linux", target_os = "macos", windows))'.dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+nix.workspace = true
 socket2.workspace = true
 toml_edit.workspace = true
 ureq.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+tokio = { workspace = true, features = ["io-util", "net", "rt", "time"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc.workspace = true
 
 [dev-dependencies]
 tempfile = "3.24.0"
+
+[target.'cfg(windows)'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

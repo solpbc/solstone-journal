@@ -60,6 +60,9 @@ const MAX_OUTSTANDING_LINKS: usize = 32;
 const MAX_SESSIONS: usize = 64;
 const MAX_PATH_BYTES: usize = 2048;
 
+#[cfg(windows)]
+const CLOSED_PROGRAM_MESSAGE: &str = "this journal only opens for the account it belongs to. if it's yours and this program runs another way, as a service or inside WSL, you can open local access in your journal's settings.";
+#[cfg(not(windows))]
 const CLOSED_PROGRAM_MESSAGE: &str = "programs on this computer can no longer open this journal here. if it's yours, run solstone journal open to open it in a browser, or update this program.";
 const CONSENT_NEEDED: &str = "opening local access lets any account on this computer, and any program running here, open your journal without asking. confirm to turn it on.";
 const UNAVAILABLE: &str = "this choice needs your journal's private connection on this computer, which isn't running right now. local access stays open until it is.";
@@ -70,6 +73,8 @@ pub(crate) struct BrowserAccess {
     journal_root: PathBuf,
     port: u16,
     open: AtomicBool,
+    /// This upgrade closed the port, and the owner hasn't seen that said yet.
+    notice_unread: AtomicBool,
     /// Closing is honoured only while the owner socket is serving.
     socket_live: AtomicBool,
     links: Mutex<HashMap<String, PendingLink>>,
@@ -102,10 +107,15 @@ impl Sessions {
 
 impl BrowserAccess {
     pub(crate) fn load(journal_root: &Path, port: u16) -> Arc<Self> {
+        #[cfg(windows)]
+        if WINDOWS_CLOSES_BY_DEFAULT {
+            close_at_upgrade(journal_root);
+        }
         Arc::new(Self {
             journal_root: journal_root.to_owned(),
             port,
             open: AtomicBool::new(saved_open(journal_root)),
+            notice_unread: AtomicBool::new(saved_notice_unread(journal_root)),
             socket_live: AtomicBool::new(false),
             links: Mutex::new(HashMap::new()),
             sessions: Mutex::new(Sessions::default()),
@@ -197,16 +207,99 @@ impl BrowserAccess {
             "open": open,
             "closed_now": self.closed(),
             "message": (!self.socket_live()).then_some(UNAVAILABLE),
+            "account_check": cfg!(windows),
+            "upgrade_notice": self.notice_unread.load(Ordering::SeqCst),
         })
     }
 }
 
-fn saved_open(root: &Path) -> bool {
+/// Whether a Windows journal with no saved choice closes. Windows admits by
+/// account, so closing costs its owner little. Off until the founder's date for
+/// closed defaults, 2026-11-11; turning it on is the whole change.
+const WINDOWS_CLOSES_BY_DEFAULT: bool = false;
+/// Whether the port can be closed. Without an owner socket, a Mac or Linux owner
+/// would have no way back in. On Windows the account check admits the owner over
+/// TCP, so a closed journal stays closed whether or not its pipe came up.
+pub(crate) fn can_close(socket_up: bool) -> bool {
+    socket_up || cfg!(windows)
+}
+
+/// With no choice saved. Elsewhere closing would turn away an owner's programs,
+/// so it stays theirs to do.
+const OPEN_WHEN_UNSET: bool = !(cfg!(windows) && WINDOWS_CLOSES_BY_DEFAULT);
+
+fn saved_entry(root: &Path) -> Option<Value> {
     solstone_core_journal_config::read_journal_config(root)
         .ok()
-        .and_then(|read| read.config)
-        .and_then(|config| config.get(CONFIG_KEY)?.get("open")?.as_bool())
-        .unwrap_or(true)
+        .and_then(|read| read.config)?
+        .get(CONFIG_KEY)
+        .cloned()
+}
+
+fn saved_open(root: &Path) -> bool {
+    saved_entry(root)
+        .and_then(|entry| entry.get("open")?.as_bool())
+        .unwrap_or(OPEN_WHEN_UNSET)
+}
+
+fn saved_notice_unread(root: &Path) -> bool {
+    saved_entry(root)
+        .and_then(|entry| entry.get("notice_unread")?.as_bool())
+        .unwrap_or(false)
+}
+
+/// A journal set up before this release, with no choice saved, closes now and
+/// says so once. An owner's explicit choice is never touched, and a new journal
+/// has nothing to be told.
+#[cfg(windows)]
+fn close_at_upgrade(root: &Path) {
+    let Ok(read) = solstone_core_journal_config::read_journal_config(root) else {
+        return;
+    };
+    let Some(config) = read.config else {
+        return;
+    };
+    let finished_setup = config
+        .get("setup")
+        .and_then(|setup| setup.get("completed_at"))
+        .is_some_and(|completed| !completed.is_null());
+    if !finished_setup || config.get(CONFIG_KEY).is_some() {
+        return;
+    }
+    let result = solstone_core_journal_config_write::mutate_journal_config(
+        root,
+        Default::default(),
+        |config| {
+            config.insert(
+                CONFIG_KEY.into(),
+                json!({
+                    "open": false,
+                    "closed_at_upgrade": chrono::Utc::now().to_rfc3339(),
+                    "notice_unread": true,
+                }),
+            );
+            solstone_core_journal_config_write::JournalConfigMutation {
+                changed: true,
+                value: (),
+            }
+        },
+    );
+    if let Err(error) = result {
+        log::warn!("local access: {error}");
+    }
+}
+
+/// The owner has read the notice. Their choice stays exactly as it was.
+fn save_notice_seen(root: &Path) -> Result<(), String> {
+    solstone_core_journal_config_write::mutate_journal_config(root, Default::default(), |config| {
+        let changed = config
+            .get_mut(CONFIG_KEY)
+            .and_then(Value::as_object_mut)
+            .is_some_and(|entry| entry.remove("notice_unread").is_some());
+        solstone_core_journal_config_write::JournalConfigMutation { changed, value: () }
+    })
+    .map(|_| ())
+    .map_err(|error| error.to_string())
 }
 
 /// A same-origin path: one leading slash, nothing that names another host.
@@ -257,6 +350,62 @@ fn is_navigation(request: &Request) -> bool {
             .is_some_and(|accept| accept.contains("text/html"))
 }
 
+/// One accepted connection on the browser port, and the answer to whose it is.
+/// Windows can say, so it asks once, the first time a closed port needs to know.
+#[cfg(windows)]
+#[derive(Clone)]
+pub(crate) struct TcpConnection {
+    server: std::net::SocketAddr,
+    client: std::net::SocketAddr,
+    owner: Arc<tokio::sync::OnceCell<bool>>,
+}
+
+#[cfg(windows)]
+impl TcpConnection {
+    pub(crate) fn new(server: std::net::SocketAddr, client: std::net::SocketAddr) -> Self {
+        Self {
+            server,
+            client,
+            owner: Arc::default(),
+        }
+    }
+}
+
+/// Whether this connection comes from the owner's own account.
+#[cfg(windows)]
+async fn owner_account(connection: Option<TcpConnection>) -> bool {
+    let Some(connection) = connection else {
+        return false;
+    };
+    *connection
+        .owner
+        .get_or_init(|| async {
+            let (server, client) = (connection.server, connection.client);
+            tokio::task::spawn_blocking(move || {
+                solstone_core_local_endpoint::connection_is_owner(server, client)
+            })
+            .await
+            .unwrap_or(false)
+        })
+        .await
+}
+
+#[cfg(windows)]
+fn connection_of(request: &Request) -> Option<TcpConnection> {
+    request.extensions().get::<TcpConnection>().cloned()
+}
+
+/// Only a browser's cookie can speak for the owner here.
+#[cfg(not(windows))]
+async fn owner_account(_connection: Option<()>) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+fn connection_of(_request: &Request) -> Option<()> {
+    None
+}
+
 /// The browser port's admission gate. Supplies the owner basis only after
 /// admission; nothing past it is reached without one.
 pub(crate) async fn gate(
@@ -264,10 +413,12 @@ pub(crate) async fn gate(
     mut request: Request,
     next: Next,
 ) -> Response {
-    if let Some(token) = auth_token(&request) {
-        return bootstrap(&access, request.headers(), token);
+    let connection = connection_of(&request);
+    if let Some(token) = auth_token(&request).map(str::to_owned) {
+        let admitted = access.admitted(request.headers()) || owner_account(connection).await;
+        return bootstrap(&access, admitted, &token);
     }
-    if !access.closed() || access.admitted(request.headers()) {
+    if !access.closed() || access.admitted(request.headers()) || owner_account(connection).await {
         request.extensions_mut().insert(AccessBasis::Localhost);
         return next.run(request).await;
     }
@@ -285,11 +436,11 @@ pub(crate) async fn gate(
     response
 }
 
-fn bootstrap(access: &BrowserAccess, headers: &HeaderMap, token: &str) -> Response {
+fn bootstrap(access: &BrowserAccess, admitted: bool, token: &str) -> Response {
     let spent = access.spend(token, Instant::now());
     let (path, session) = match spent {
         Some(path) => (path, access.new_session()),
-        None if access.closed() && !access.admitted(headers) => return landing(true),
+        None if access.closed() && !admitted => return landing(true),
         // Open, or a browser that already has access (a link it queued past
         // its lifetime, or one reopened from history): a spent link goes home.
         None => ("/".to_owned(), None),
@@ -331,6 +482,9 @@ fn landing(link_refused: bool) -> Response {
 }
 
 const LANDING_HEAD: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>journal</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;line-height:1.5;color:#222;background:#fafaf8}code{background:#eee;padding:.1rem .3rem;border-radius:.2rem}@media(prefers-color-scheme:dark){body{color:#ddd;background:#1b1b1a}code{background:#333}}</style></head><body><h1>open your journal</h1>";
+#[cfg(windows)]
+const LANDING_TAIL: &str = "<p>if this journal is yours, open it from the journal app, or run <code>solstone journal open</code> in a terminal.</p></body></html>";
+#[cfg(not(windows))]
 const LANDING_TAIL: &str = "<p>open your journal from the journal app on a mac, or run <code>solstone journal open</code> in a terminal.</p></body></html>";
 
 /// Routes only the owner socket serves.
@@ -376,6 +530,19 @@ pub(crate) fn setting_routes(access: Arc<BrowserAccess>) -> Router {
 }
 
 async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) -> Response {
+    if body.get("notice_seen").and_then(Value::as_bool) == Some(true) {
+        let root = access.journal_root.clone();
+        let saved = tokio::task::spawn_blocking(move || save_notice_seen(&root)).await;
+        if !matches!(saved, Ok(Ok(()))) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": SAVE_FAILED})),
+            )
+                .into_response();
+        }
+        access.notice_unread.store(false, Ordering::SeqCst);
+        return Json(access.snapshot()).into_response();
+    }
     let Some(open) = body.get("open").and_then(Value::as_bool) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -418,6 +585,8 @@ async fn change(access: Arc<BrowserAccess>, headers: &HeaderMap, body: Value) ->
             .flatten()
     };
     access.open.store(open, Ordering::SeqCst);
+    // A choice replaces the saved entry, notice included.
+    access.notice_unread.store(false, Ordering::SeqCst);
     let mut response = Json(access.snapshot()).into_response();
     if let Some(session) = session {
         response
@@ -461,10 +630,39 @@ mod tests {
             journal_root: PathBuf::from("/nonexistent"),
             port: 5015,
             open: AtomicBool::new(open),
+            notice_unread: AtomicBool::new(false),
             socket_live: AtomicBool::new(socket_live),
             links: Mutex::new(HashMap::new()),
             sessions: Mutex::new(Sessions::default()),
         })
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_a_finished_journal_with_no_choice_closes_at_upgrade() {
+        let write = |config: Value| {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(root.path().join("config")).unwrap();
+            std::fs::write(root.path().join("config/journal.json"), config.to_string()).unwrap();
+            root
+        };
+        // Set up before this release, no choice saved: closes and says so once.
+        let existing = write(json!({"setup": {"completed_at": 1}}));
+        close_at_upgrade(existing.path());
+        assert!(!saved_open(existing.path()));
+        assert!(saved_notice_unread(existing.path()));
+        save_notice_seen(existing.path()).unwrap();
+        assert!(!saved_notice_unread(existing.path()));
+        assert!(!saved_open(existing.path()));
+        // The owner chose open: stays open, nothing to say.
+        let chose = write(json!({"setup": {"completed_at": 1}, "local_access": {"open": true}}));
+        close_at_upgrade(chose.path());
+        assert!(saved_open(chose.path()));
+        assert!(!saved_notice_unread(chose.path()));
+        // Still in its first run: nothing to say.
+        let new = write(json!({}));
+        close_at_upgrade(new.path());
+        assert!(!saved_notice_unread(new.path()));
     }
 
     fn app(access: Arc<BrowserAccess>) -> Router {
@@ -647,5 +845,64 @@ mod tests {
         let response = change(access.clone(), &HeaderMap::new(), json!({"open": true})).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert!(access.closed());
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+#[cfg(windows)]
+mod network_tests {
+    use super::*;
+    use axum::http::Request as HttpRequest;
+    use axum::middleware::from_fn_with_state;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn a_closed_journal_with_no_pipe_still_refuses_a_stranger() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = listener.local_addr().unwrap();
+        let _client = std::net::TcpStream::connect(server).unwrap();
+        let (_accepted, peer) = listener.accept().unwrap();
+        let stranger = std::net::SocketAddr::new(peer.ip(), peer.port().wrapping_add(1));
+        let access = BrowserAccess::load(std::path::Path::new("nonexistent"), 5015);
+        access.open.store(false, Ordering::SeqCst);
+        access.set_socket_live(can_close(false));
+        let app = Router::new()
+            .route("/anything", get(|| async { "ok" }))
+            .layer(from_fn_with_state(access, gate));
+        let mut request = HttpRequest::builder()
+            .uri("/anything")
+            .body(Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(TcpConnection::new(server, stranger));
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn a_closed_port_admits_this_account_and_no_stranger() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = listener.local_addr().unwrap();
+        let _client = std::net::TcpStream::connect(server).unwrap();
+        let (_accepted, peer) = listener.accept().unwrap();
+        let stranger = std::net::SocketAddr::new(peer.ip(), peer.port().wrapping_add(1));
+        let access = BrowserAccess::load(std::path::Path::new("nonexistent"), 5015);
+        access.open.store(false, Ordering::SeqCst);
+        access.set_socket_live(true);
+        let app = Router::new()
+            .route("/anything", get(|| async { "ok" }))
+            .layer(from_fn_with_state(access, gate));
+        for (client, expected) in [(peer, StatusCode::OK), (stranger, StatusCode::CONFLICT)] {
+            let mut request = HttpRequest::builder()
+                .uri("/anything")
+                .body(Body::empty())
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(TcpConnection::new(server, client));
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), expected);
+        }
     }
 }

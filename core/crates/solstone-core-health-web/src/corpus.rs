@@ -204,7 +204,7 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                     // summary file reads the awaiting-engine verdict (search makes
                     // no claim); a phase with one carries `not_yet: null`.
                     if case["name"].as_str() == Some("api_state") && expected["status"] == 200 {
-                        #[cfg(unix)]
+                        #[cfg(any(unix, windows))]
                         {
                             assert!(actual["storage_privacy"]["private"].is_boolean());
                             assert!(actual["storage_privacy"]["consented"].is_boolean());

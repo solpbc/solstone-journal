@@ -10,9 +10,13 @@ import { fileURLToPath } from 'node:url';
 process.on('unhandledRejection', () => {});
 
 const darkResume = process.argv.includes('--dark-resume');
-const dark = process.argv.includes('--dark') || darkResume;
-let darkProbe = 'incomplete';
+const otherAccount = process.argv.includes('--other-account');
+const accessNotice = process.argv.includes('--access-notice');
+const dark = process.argv.includes('--dark') || darkResume || otherAccount || accessNotice;
+let darkProbe = otherAccount || accessNotice ? 'complete' : 'incomplete';
 let darkStatus = darkResume ? { ...statusBody('running', true), set_up: true, service: { ...statusBody('running', true).service, starts_at_sign_in: false } } : null;
+if (otherAccount) darkStatus = { ...statusBody('other-account', true), set_up: true };
+if (accessNotice) darkStatus = { ...statusBody('running', true), set_up: true, access_notice: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, '../ui/index.html'), 'utf8');
@@ -568,6 +572,10 @@ window.chrome = {
         send(id, true, { value: { status, models_missing: null } });
         return;
       }
+      if (accessNotice && cmd === 'dismiss-access-notice') {
+        send(id, true, { value: darkStatus });
+        return;
+      }
       if (dark && cmd === 'initProbe') { send(id, true, { value: darkProbe }); return; }
       if (dark && cmd === 'modelsReady') { send(id, true, { value: true }); return; }
       if (dark && cmd === 'open') { send(id, true, { value: null }); return; }
@@ -751,6 +759,33 @@ if (calls.some(c => c.cmd === 'flow' && c.args?.intent === 'start-setup') || cal
   throw new Error('initial status failure called start-setup or open');
 }
 pass('initial status failure then retry');
+
+if (otherAccount) {
+  await flush(); await flush();
+  const shown = $('pane').textContent;
+  if (!shown.includes("another account's journal is running on this computer")) throw new Error('second account did not get the plain screen');
+  if (!shown.includes('stops its journal or logs off')) throw new Error('second account was not told when theirs can start');
+  if (shown.includes('this is your journal')) throw new Error('second account was shown another journal as its own');
+  if (calls.some(c => c.cmd === 'flow')) throw new Error('second account admitted new flow');
+  pass('a second account sees the plain screen, never another journal');
+  console.log(`DOM CASES: ${passed} passed`);
+  process.exit(0);
+}
+
+if (accessNotice) {
+  await flush(); await flush();
+  const notice = () => query($('pane'), '[data-notice="local-access"]');
+  if (!notice()) throw new Error('upgrade notice was not shown');
+  if (!notice().textContent.includes('devices already paired and agents already connected keep their access')) throw new Error('upgrade notice left out paired devices');
+  darkStatus = { ...darkStatus, access_notice: false };
+  click('got it');
+  await flush(); await flush();
+  if (!calls.some(c => c.cmd === 'dismiss-access-notice')) throw new Error('got it did not tell the journal');
+  if (notice()) throw new Error('upgrade notice stayed after got it');
+  pass('the upgrade notice shows once and goes when dismissed');
+  console.log(`DOM CASES: ${passed} passed`);
+  process.exit(0);
+}
 
 if (darkResume) {
   await flush(); await flush();

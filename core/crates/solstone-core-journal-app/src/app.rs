@@ -379,11 +379,23 @@ fn dispatch_effect(context: &Context, effect: &crate::setup_flow::Effect, port: 
             let Some(port) = port else {
                 return;
             };
-            let _ = shell::open(&crate::setup_flow::home_url(port));
+            let _ = open_journal_page(
+                &format!("http://127.0.0.1:{port}"),
+                crate::setup_flow::APP_HOME_PATH,
+            );
         }
         crate::setup_flow::Effect::Browser(
             crate::setup_flow::BrowserEffect::Rejected | crate::setup_flow::BrowserEffect::None,
         ) => {}
+    }
+}
+
+/// Open one of the journal's pages in the owner's browser, by a one-time link
+/// when the journal can make one, so the page opens whatever the port decides.
+fn open_journal_page(base: &str, path: &str) -> Result<(), String> {
+    match crate::convey::mint_link(path) {
+        Some(url) => shell::open(&url),
+        None => shell::open(&format!("{base}{path}")),
     }
 }
 
@@ -452,17 +464,28 @@ impl Context {
 
 fn read_status() -> Result<Value, String> {
     let service = journal::status()?;
-    let (answering, version) = if service.is_set_up() {
+    let own = service
+        .journal
+        .as_deref()
+        .is_some_and(crate::convey::is_own_journal);
+    let (answering, version) = if service.is_set_up() && own {
         Convey::new(service.port).answer()
     } else {
         (false, None)
     };
-    Ok(status_value(&service, answering, version))
+    let access_notice = answering && crate::convey::access_notice_unread();
+    Ok(status_value(&service, answering, version, access_notice))
 }
 
-fn status_value(service: &ServiceStatus, answering: bool, version: Option<String>) -> Value {
+fn status_value(
+    service: &ServiceStatus,
+    answering: bool,
+    version: Option<String>,
+    access_notice: bool,
+) -> Value {
     json!({
         "service": service,
+        "access_notice": access_notice,
         "set_up": service.is_set_up(),
         "answering": answering,
         "runtime_version": version,
@@ -503,6 +526,10 @@ fn handle(context: &Context, window: &Window, message: &str) {
             })),
         ),
         "status" => context.spawn(id, read_status),
+        "dismiss-access-notice" => context.spawn(id, || {
+            crate::convey::dismiss_access_notice()?;
+            read_status()
+        }),
         "ping" => {
             let port = args
                 .get("port")
@@ -683,7 +710,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
                         } else {
                             crate::setup_flow::APP_HOME_PATH
                         };
-                        shell::open(&format!("http://127.0.0.1:{port}{path}"))
+                        open_journal_page(&format!("http://127.0.0.1:{port}"), path)
                     })
             } else if target == "journal" {
                 let session = context.session.borrow().clone();
@@ -700,7 +727,10 @@ fn handle(context: &Context, window: &Window, message: &str) {
                 *context.session.borrow_mut() = step.session;
                 match wanted {
                     crate::setup_flow::BrowserEffect::OpenHome => match bound {
-                        Ok(port) => shell::open(&crate::setup_flow::home_url(port)),
+                        Ok(port) => open_journal_page(
+                            &format!("http://127.0.0.1:{port}"),
+                            crate::setup_flow::APP_HOME_PATH,
+                        ),
                         Err(()) => Err(context
                             .session
                             .borrow()
@@ -716,7 +746,7 @@ fn handle(context: &Context, window: &Window, message: &str) {
             } else if let Some(page) = journal_page(&target) {
                 // Only the journal's own loopback address opens from here.
                 if is_loopback_base(&base) {
-                    shell::open(&format!("{base}{page}"))
+                    open_journal_page(&base, page)
                 } else {
                     Err("that isn't your journal's address".to_owned())
                 }

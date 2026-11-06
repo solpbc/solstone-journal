@@ -301,12 +301,12 @@ const CHECK_TASK_QUEUE_HOLDS: Check = Check {
     platforms: ALL,
 };
 pub static JOURNAL: &[RegistryEntry] = &[
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     RegistryEntry {
         check: Check {
             name: "storage_privacy",
             severity: Severity::Advisory,
-            platforms: &[Platform::Linux, Platform::Darwin],
+            platforms: &[Platform::Linux, Platform::Darwin, Platform::Windows],
         },
         runner: |c| {
             checks::storage_privacy::run(
@@ -314,7 +314,7 @@ pub static JOURNAL: &[RegistryEntry] = &[
                 Check {
                     name: "storage_privacy",
                     severity: Severity::Advisory,
-                    platforms: &[Platform::Linux, Platform::Darwin],
+                    platforms: &[Platform::Linux, Platform::Darwin, Platform::Windows],
                 },
             )
         },

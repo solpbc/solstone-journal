@@ -56,6 +56,7 @@ velopack = { workspace = true, features = ["public-utils"] }
 sha2 = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
+solstone-core-local-endpoint.workspace = true
 ureq = { workspace = true }
 velopack = { workspace = true, features = ["public-utils"] }
 windows = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }

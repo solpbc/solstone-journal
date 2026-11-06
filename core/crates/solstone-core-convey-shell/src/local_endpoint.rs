@@ -14,7 +14,9 @@ use axum::{
     routing::get,
 };
 use serde::Serialize;
-use solstone_core_local_endpoint::{RuntimeRecord, SocketLease};
+use solstone_core_local_endpoint::RuntimeRecord;
+#[cfg(not(windows))]
+use solstone_core_local_endpoint::SocketLease;
 
 #[derive(Clone, Default)]
 pub(crate) struct TcpPrograms(Arc<Mutex<BTreeMap<String, Program>>>);
@@ -115,12 +117,14 @@ pub(crate) fn runtime_record(journal: &Path, port: u16, socket: Option<&Path>) -
 }
 
 pub(crate) struct OwnerSocket {
+    #[cfg(not(windows))]
     pub lease: SocketLease,
     pub task: tokio::task::JoinHandle<()>,
 }
 impl OwnerSocket {
     pub fn shutdown(&self) {
         self.task.abort();
+        #[cfg(not(windows))]
         self.lease.cleanup();
     }
 }
@@ -130,6 +134,56 @@ impl Drop for OwnerSocket {
     }
 }
 
+/// The owner's pipe. Its name carries this account's SID and its DACL admits
+/// only that SID, so there is no peer to check once a client has connected.
+#[cfg(windows)]
+pub(crate) fn start(
+    journal: &Path,
+    _record: &RuntimeRecord,
+    router: Router,
+) -> Option<OwnerSocket> {
+    use solstone_core_convey_http::{
+        identity::AccessBasis,
+        serve::{serve_connection, tcp_builder},
+    };
+    let result = (|| -> std::io::Result<Option<OwnerSocket>> {
+        let Some(name) = solstone_core_local_endpoint::socket_for_journal(journal)? else {
+            return Ok(None);
+        };
+        let mut listener = solstone_core_local_endpoint::PipeListener::bind(&name)?;
+        let task = tokio::spawn(async move {
+            loop {
+                let stream = match listener.accept().await {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        log::warn!("journal pipe accept failed: {error}");
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+                let router = router.clone();
+                tokio::spawn(async move {
+                    if let Err(error) =
+                        serve_connection(stream, router, AccessBasis::Localhost, &tcp_builder())
+                            .await
+                    {
+                        log::debug!("journal pipe connection failed: {error}");
+                    }
+                });
+            }
+        });
+        Ok(Some(OwnerSocket { task }))
+    })();
+    match result {
+        Ok(socket) => socket,
+        Err(error) => {
+            log::warn!("journal pipe unavailable; keeping TCP access: {error}");
+            None
+        }
+    }
+}
+
+#[cfg(not(windows))]
 pub(crate) fn start(journal: &Path, record: &RuntimeRecord, router: Router) -> Option<OwnerSocket> {
     let result = (|| -> std::io::Result<Option<OwnerSocket>> {
         let Some(path) = solstone_core_local_endpoint::socket_for_journal(journal)? else {

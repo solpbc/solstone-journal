@@ -92,7 +92,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
 const BASELINE_CHECK_NAMES: &[&str] = &[
     "backup_status",
     "task_queue_holds",
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     "storage_privacy",
     "config_dir_readable",
     "journal_dir_writable",

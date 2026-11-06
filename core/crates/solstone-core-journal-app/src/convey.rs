@@ -34,6 +34,111 @@ fn answer_bound(path: &str) -> Duration {
     }
 }
 
+/// Whether the journal on this computer's port is this account's own: it
+/// answers on the private pipe that only this account can open, and it names
+/// the journal this installation is set up for. Port 5015 alone proves nothing,
+/// since another account's journal, or anything else, can hold it.
+#[cfg(windows)]
+pub fn is_own_journal(journal: &str) -> bool {
+    use solstone_core_local_endpoint as endpoint;
+    let Ok(Some(pipe)) = endpoint::socket_path() else {
+        return false;
+    };
+    let Ok(response) =
+        endpoint::pipe_request(&pipe, "GET", endpoint::RUNTIME_ROUTE, None, ANSWER_BOUND)
+    else {
+        return false;
+    };
+    let canonical = |path: &std::path::Path| std::fs::canonicalize(path).ok();
+    response.status == 200
+        && serde_json::from_slice::<endpoint::RuntimeRecord>(&response.body).is_ok_and(|record| {
+            let own = canonical(std::path::Path::new(journal));
+            own.is_some() && canonical(&record.journal_root) == own
+        })
+}
+
+#[cfg(not(windows))]
+pub fn is_own_journal(_journal: &str) -> bool {
+    true
+}
+
+/// A one-time link to a page of this account's journal, minted over its private
+/// pipe. A link opens the page even if the account check on the port says no.
+#[cfg(windows)]
+pub fn mint_link(path: &str) -> Option<String> {
+    use solstone_core_local_endpoint as endpoint;
+    let pipe = endpoint::socket_path().ok().flatten()?;
+    let request = serde_json::json!({ "path": path }).to_string();
+    let response = endpoint::pipe_request(
+        &pipe,
+        "POST",
+        "/_solstone/browser-link",
+        Some(request.as_bytes()),
+        ANSWER_BOUND,
+    )
+    .ok()?;
+    if response.status != 200 {
+        return None;
+    }
+    let body: Value = serde_json::from_slice(&response.body).ok()?;
+    body.get("url")?.as_str().map(str::to_owned)
+}
+
+#[cfg(not(windows))]
+pub fn mint_link(_path: &str) -> Option<String> {
+    None
+}
+
+const LOCAL_ACCESS_ROUTE: &str = "/app/settings/api/local-access";
+
+/// Whether this upgrade closed local access and the owner hasn't been told.
+#[cfg(windows)]
+pub fn access_notice_unread() -> bool {
+    use solstone_core_local_endpoint as endpoint;
+    let Ok(Some(pipe)) = endpoint::socket_path() else {
+        return false;
+    };
+    endpoint::pipe_request(&pipe, "GET", LOCAL_ACCESS_ROUTE, None, ANSWER_BOUND)
+        .ok()
+        .filter(|response| response.status == 200)
+        .and_then(|response| serde_json::from_slice::<Value>(&response.body).ok())
+        .and_then(|state| state.get("upgrade_notice")?.as_bool())
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+pub fn access_notice_unread() -> bool {
+    false
+}
+
+/// The owner has read it.
+#[cfg(windows)]
+pub fn dismiss_access_notice() -> Result<(), String> {
+    use solstone_core_local_endpoint as endpoint;
+    let pipe = endpoint::socket_path()
+        .ok()
+        .flatten()
+        .ok_or_else(|| "the journal isn't answering".to_owned())?;
+    let response = endpoint::pipe_request(
+        &pipe,
+        "PUT",
+        LOCAL_ACCESS_ROUTE,
+        Some(br#"{"notice_seen":true}"#),
+        ANSWER_BOUND,
+    )
+    .map_err(|_| "the journal isn't answering".to_owned())?;
+    if response.status == 200 {
+        Ok(())
+    } else {
+        Err("that couldn't be saved. please try again.".to_owned())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn dismiss_access_notice() -> Result<(), String> {
+    Ok(())
+}
+
 pub struct Convey {
     base: String,
     agent: Agent,

@@ -31,7 +31,7 @@ pub mod service_running;
 pub mod service_status;
 pub mod skill_state;
 pub mod speakers_analyze_installation;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod storage_privacy;
 pub mod supervisor_conflict;
 pub mod task_pace;

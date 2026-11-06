@@ -265,7 +265,15 @@ fn run_supervisor(
         );
         return ExitCode::from(EXIT_UNAVAILABLE);
     }
-    #[cfg(unix)]
+    // One journal runs on a computer at a time. Another account's holds the
+    // claim, and the Journal app reads the same fact to say so.
+    #[cfg(windows)]
+    if !options.no_convey && !solstone_core_local_endpoint::claim_journal_on_this_computer() {
+        eprintln!(
+            "your journal can't start because another account on this computer is running its journal. one journal runs on a computer at a time, so yours can start once that account stops its journal or logs off."
+        );
+        return ExitCode::from(EXIT_UNAVAILABLE);
+    }
     solstone_core_system::storage_privacy::apply_private_root(&journal);
     // This journal already running keeps its own plain refusal, further on.
     #[cfg(any(target_os = "linux", target_os = "macos"))]

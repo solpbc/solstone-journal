@@ -55,6 +55,12 @@ its own directory when overriding this path. New directories use mode `0700`; an
 existing directory must already have that mode. Other journal roots run TCP-only
 unless they have an explicit socket override.
 
+On Windows, the configured journal serves an owner-only named pipe instead, named
+`\\.\pipe\solstone-journal-<account SID>`. Its DACL admits only that account.
+`SOLSTONE_JOURNAL_SOCKET` names a different pipe, and an empty value turns it off.
+The browser port admits a connection when Windows reports that the owner's account
+holds its far end, so the owner's own programs stay on TCP.
+
 An explicit `SOLSTONE_CONVEY_PORT` selects TCP. Otherwise the CLI prefers an
 existing socket owned by its OS account, then falls back to `localhost:5015`.
 It reads no journal-local files. An empty socket override selects TCP-only for

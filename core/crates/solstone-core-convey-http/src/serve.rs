@@ -111,6 +111,26 @@ where
     .await
 }
 
+/// Serve one connection unstamped, with a per-connection value its handlers can
+/// read as a request extension.
+pub async fn serve_connection_with<I, T>(
+    io: I,
+    router: Router,
+    connection: T,
+    builder: &http1::Builder,
+) -> Result<(), hyper::Error>
+where
+    I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    T: Clone + Send + Sync + 'static,
+{
+    serve_with_layers(
+        io,
+        common_layers(router).layer(Extension(connection)),
+        builder,
+    )
+    .await
+}
+
 /// Serve one HTTP/1 connection with no accept-time identity.
 ///
 /// The router must supply an [`AccessBasis`] per request, after its own

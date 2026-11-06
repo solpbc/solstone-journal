@@ -33,7 +33,12 @@ const COPY = {
     stopping: 'stopping…',
     stopped: 'stopped',
     'not-running': 'not running',
+    'other-account': 'not running',
   },
+  accessNotice: 'your journal now opens only for your account on this computer. other accounts get a page that shows nothing from it, and programs running as a service or inside WSL can\'t reach it. if you rely on one of those, you can open local access in your journal\'s settings. devices already paired and agents already connected keep their access, so look over your devices and your agents in case another account added one.',
+  accessNoticeDismiss: 'got it',
+  otherAccountTitle: 'another account\'s journal is running on this computer',
+  otherAccountBody: 'one journal runs on a computer at a time, and another account here is running its own. yours can start once that account stops its journal or logs off.',
   health: 'health',
   healthy: 'healthy',
   unknown: 'unknown',
@@ -2308,7 +2313,30 @@ function render(force = false) {
   } else if (focused && focused !== document.body) {
     paneFocus = null;
   }
-  pane.replaceChildren(...[panes[state.pane]()].flat().filter(Boolean));
+  if (display() === 'other-account') {
+    pane.replaceChildren(
+      el('h2', {}, document.createTextNode(COPY.otherAccountTitle)),
+      el('p', {}, document.createTextNode(COPY.otherAccountBody))
+    );
+    return;
+  }
+  const accessNotice = state.status?.access_notice
+    ? el('div', { class: 'notice', 'data-notice': 'local-access' },
+        el('p', {}, document.createTextNode(COPY.accessNotice)),
+        el('button', {
+          type: 'button',
+          on: {
+            click: async () => {
+              try {
+                state.status = await call('dismiss-access-notice');
+              } finally {
+                render(true);
+              }
+            },
+          },
+        }, document.createTextNode(COPY.accessNoticeDismiss)))
+    : null;
+  pane.replaceChildren(...[accessNotice, ...[panes[state.pane]()].flat()].filter(Boolean));
   if (paneFocus) {
     const candidate = [...pane.querySelectorAll(paneFocus.tag.toLowerCase())].find(
       el => el.textContent.trim() === paneFocus.text && !el.disabled

@@ -8,6 +8,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- on windows, you can close local access in your journal's settings, so only your account on this computer can open your journal. other accounts get a page that shows nothing from it, and your browser keeps working.
+- on windows, one journal runs on a computer at a time, and the journal app says so when another account's journal is running, instead of showing that journal as yours.
+- on windows, a journal folder other accounts can read is made private to your account and this computer's administrators when your journal starts. a folder that's already private is left alone.
+- `solstone journal open` now opens your journal on windows with a one-time link, and `--print-url` prints it.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.

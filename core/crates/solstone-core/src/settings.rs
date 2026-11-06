@@ -92,6 +92,7 @@ fn open_line(port: i64) -> String {
 }
 
 /// Where the owner opens this journal: the port convey published, or the default when it has not.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn journal_url(journal: &Path) -> String {
     let port = read_convey_port(&journal.join("health/convey.port"))
         .ok()

@@ -37,7 +37,7 @@ pub mod segment_publication;
 pub mod speech_setup;
 #[cfg(any(unix, windows))]
 pub mod status_wire;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub mod storage_privacy;
 pub mod stt_backend_choice;
 pub mod vulkan_observe;

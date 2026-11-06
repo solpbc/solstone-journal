@@ -77,9 +77,15 @@
 //! app uses that same bare-path redirect; the slashed form is the native
 //! shell entry point.
 
-#[cfg(all(feature = "host", any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(
+    feature = "host",
+    any(target_os = "linux", target_os = "macos", windows)
+))]
 mod browser_access;
-#[cfg(all(feature = "host", any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(
+    feature = "host",
+    any(target_os = "linux", target_os = "macos", windows)
+))]
 mod local_endpoint;
 
 #[cfg(feature = "host")]
@@ -274,7 +280,6 @@ pub struct ConveyServeHandle {
     door_outcome: DoorOutcome,
     door: Arc<door::DoorLifecycle>,
     loopback_task: tokio::task::JoinHandle<()>,
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     owner_socket: Option<local_endpoint::OwnerSocket>,
     link_health_task: tokio::task::JoinHandle<()>,
     weekly_heads_up_task: tokio::task::JoinHandle<()>,
@@ -299,7 +304,6 @@ impl ConveyServeHandle {
     }
     pub fn shutdown(&self) {
         self.loopback_task.abort();
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
         if let Some(socket) = &self.owner_socket {
             socket.shutdown();
         }
@@ -991,7 +995,6 @@ pub async fn bind_with_authorization(
             door.clone(),
             door::open_after_finalize,
         ));
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let (loopback_router, owner_socket) = {
         let programs = local_endpoint::TcpPrograms::default();
         let socket_path = solstone_core_local_endpoint::socket_for_journal(&options.journal_root)
@@ -1021,7 +1024,7 @@ pub async fn bind_with_authorization(
                 .clone()
                 .merge(browser_access::socket_routes(access.clone())),
         );
-        access.set_socket_live(socket.is_some());
+        access.set_socket_live(browser_access::can_close(socket.is_some()));
         if socket.is_none() {
             live_record
                 .lock()
@@ -1053,7 +1056,6 @@ pub async fn bind_with_authorization(
         door_outcome,
         door,
         loopback_task,
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
         owner_socket,
         link_health_task,
         weekly_heads_up_task,
@@ -1072,26 +1074,38 @@ async fn serve_loopback(
     // routes without it.
     let router = loopback_guard::apply_layer(router);
     loop {
+        // The browser-authorization gate supplies the owner basis per request,
+        // after admission. On Windows it may also ask whose connection this is.
+        #[cfg(windows)]
+        let Ok((stream, peer)) = listeners.accept_peer().await else {
+            continue;
+        };
+        #[cfg(not(windows))]
         let Ok((stream, _)) = listeners.accept().await else {
             continue;
         };
         let router = router.clone();
         tokio::spawn(async move {
             let builder = tcp_builder();
-            // macOS and Linux: the browser-authorization gate supplies the
-            // owner basis per request, after admission. Elsewhere every
-            // connection here is `Localhost`, the owner.
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            #[cfg(windows)]
+            let served = match stream.local_addr() {
+                Ok(server) => {
+                    solstone_core_convey_http::serve::serve_connection_with(
+                        stream,
+                        router,
+                        browser_access::TcpConnection::new(server, peer),
+                        &builder,
+                    )
+                    .await
+                }
+                Err(error) => {
+                    log::debug!("convey loopback connection has no address: {error}");
+                    return;
+                }
+            };
+            #[cfg(not(windows))]
             let served = solstone_core_convey_http::serve::serve_connection_unstamped(
                 stream, router, &builder,
-            )
-            .await;
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-            let served = solstone_core_convey_http::serve::serve_connection(
-                stream,
-                router,
-                solstone_core_convey_http::identity::AccessBasis::Localhost,
-                &builder,
             )
             .await;
             if let Err(error) = served {

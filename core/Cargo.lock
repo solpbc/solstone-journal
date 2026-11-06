@@ -5526,6 +5526,7 @@ dependencies = [
  "solstone-core-about",
  "solstone-core-installed-payload",
  "solstone-core-journal-io",
+ "solstone-core-local-endpoint",
  "spl-core",
  "svgtypes",
  "tempfile",
@@ -5721,8 +5722,10 @@ dependencies = [
  "serde_json",
  "socket2",
  "tempfile",
+ "tokio",
  "toml_edit",
  "ureq",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

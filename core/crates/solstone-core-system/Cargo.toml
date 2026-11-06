@@ -113,5 +113,5 @@ path = "tests/system_provider_runtime.rs"
 name = "system_schedule_queue"
 path = "tests/system_schedule_queue.rs"
 
-[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos", windows))'.dependencies]
 solstone-core-local-endpoint.workspace = true

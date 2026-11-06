@@ -3,8 +3,15 @@
 
 //! Owner-account privacy of the journal root. No descendant migration or ACL policy.
 use serde::Serialize;
+#[cfg(unix)]
+use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::{fs, io, path::Path};
+use std::{io, path::Path};
+
+#[cfg(windows)]
+#[path = "storage_privacy_windows.rs"]
+mod windows;
 
 pub const WARNING: &str = "other accounts on this computer may be able to read your journal. its folder could not be made private on this drive. you can keep it on this drive or move it to a drive that keeps folders private.";
 pub const ACCEPTED: &str = "you chose to keep your journal on this drive, where other accounts on this computer may be able to read it.";
@@ -77,11 +84,43 @@ pub fn drive_cannot_run_journal(_root: &Path) -> bool {
 }
 
 /// Set once at process entry, before starting threads or writing journal files.
+#[cfg(unix)]
 pub fn set_private_umask() {
     nix::sys::stat::umask(nix::sys::stat::Mode::from_bits_truncate(0o077));
 }
 
+/// A root others can reach gets its one pass, off to the side: a large journal
+/// takes a while, and a storage choice never prevents journal startup.
+#[cfg(windows)]
+pub fn apply_private_root(root: &Path) {
+    match windows::root_is_private(root) {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(error) => {
+            log::warn!("journal root privacy could not be checked: {error}");
+            return;
+        }
+    }
+    let root = root.to_owned();
+    std::thread::spawn(move || {
+        match windows::make_private(&root) {
+            Ok(0) => {}
+            Ok(left) => log::warn!("journal root privacy: {left} items could not be changed"),
+            Err(error) => log::debug!("journal root privacy: {error}"),
+        }
+        match inspect(&root) {
+            Ok(status) if !status.private && status.consented => {
+                log::info!("journal root privacy: {ACCEPTED}")
+            }
+            Ok(status) if !status.private => log::warn!("journal root privacy: {WARNING}"),
+            Err(error) => log::warn!("journal root privacy could not be checked: {error}"),
+            _ => {}
+        }
+    });
+}
+
 /// Reapply only the root mode. A storage choice never prevents journal startup.
+#[cfg(unix)]
 pub fn apply_private_root(root: &Path) {
     if let Err(error) = fs::set_permissions(root, fs::Permissions::from_mode(0o700)) {
         log::debug!("journal root privacy mode: {error}");
@@ -106,10 +145,20 @@ pub struct StoragePrivacy {
 
 /// Read-only: health and doctor must not repair modes or record consent.
 pub fn inspect(root: &Path) -> io::Result<StoragePrivacy> {
-    let metadata = fs::metadata(root)?;
-    let (filesystem_type, ignores_ownership) = volume(root)?;
-    let private =
-        metadata.is_dir() && mode_is_private(metadata.permissions().mode(), ignores_ownership);
+    #[cfg(unix)]
+    let (private, filesystem_type) = {
+        let metadata = fs::metadata(root)?;
+        let (filesystem_type, ignores_ownership) = volume(root)?;
+        (
+            metadata.is_dir() && mode_is_private(metadata.permissions().mode(), ignores_ownership),
+            filesystem_type,
+        )
+    };
+    #[cfg(windows)]
+    let (private, filesystem_type) = (
+        windows::root_is_private(root)?,
+        windows::filesystem_type(root)?,
+    );
     let config = solstone_core_journal_config::read_journal_config(root)
         .map_err(io::Error::other)?
         .config;
@@ -131,6 +180,7 @@ pub fn inspect(root: &Path) -> io::Result<StoragePrivacy> {
     })
 }
 
+#[cfg(unix)]
 fn mode_is_private(mode: u32, ignores_ownership: bool) -> bool {
     mode & 0o777 == 0o700 && !ignores_ownership
 }
@@ -143,6 +193,7 @@ fn consent_matches(consent: &serde_json::Value, filesystem_type: &str, root: &Pa
             .is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
 }
 
+#[cfg(unix)]
 fn volume(root: &Path) -> io::Result<(String, bool)> {
     let stats = nix::sys::statfs::statfs(root).map_err(io::Error::from)?;
     #[cfg(target_vendor = "apple")]
@@ -171,6 +222,7 @@ mod tests {
         assert!(!drive_cannot_run_journal(&root.path().join("not/yet/made")));
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     }
+    #[cfg(unix)]
     #[test]
     fn actual_mode_and_ownership_policy_decide_privacy() {
         assert!(mode_is_private(0o40700, false));
@@ -191,7 +243,7 @@ mod tests {
             Path::new("/journal")
         ));
     }
-    #[cfg(feature = "full-tests")]
+    #[cfg(all(unix, feature = "full-tests"))]
     #[test]
     fn startup_repairs_only_the_root() {
         let root = tempfile::tempdir().unwrap();
@@ -216,6 +268,7 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
+#[cfg(unix)]
 mod process_tests {
     use super::*;
     #[test]

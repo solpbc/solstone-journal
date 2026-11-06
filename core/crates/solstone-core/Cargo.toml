@@ -254,5 +254,5 @@ nix = { workspace = true, features = ["ptrace", "signal"] }
 [target.'cfg(windows)'.dev-dependencies]
 solstone-core-installation-identity = { workspace = true, features = ["test-hooks"] }
 
-[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "macos", windows))'.dependencies]
 solstone-core-local-endpoint.workspace = true

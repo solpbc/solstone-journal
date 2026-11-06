@@ -1694,6 +1694,7 @@ fn run_app_status() -> ExitCode {
                     "ready": false,
                     "starts_at_sign_in": false,
                     "port": null,
+                    "other_account_journal": solstone_core_local_endpoint::other_account_journal_running(),
                 })
             );
             return ExitCode::SUCCESS;
@@ -1733,6 +1734,7 @@ fn run_app_status() -> ExitCode {
                 .as_ref()
                 .is_some_and(|definition| definition.starts_at_sign_in),
             "port": definition.as_ref().map(|definition| definition.action.port),
+            "other_account_journal": solstone_core_local_endpoint::other_account_journal_running(),
         })
     );
     ExitCode::SUCCESS

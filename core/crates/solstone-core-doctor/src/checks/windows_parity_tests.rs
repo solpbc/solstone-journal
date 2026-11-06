@@ -55,7 +55,7 @@ fn platform_specific_questions_stay_off_windows() {
         for entry in registry::entries(battery) {
             let unix_only = matches!(
                 entry.check.name,
-                "supervisor_conflict" | "launchd_stale_plist" | "storage_privacy"
+                "supervisor_conflict" | "launchd_stale_plist"
             );
             assert_eq!(
                 entry.check.platforms.contains(&Platform::Windows),

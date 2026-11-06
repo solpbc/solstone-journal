@@ -2597,10 +2597,10 @@ button:focus:not(:focus-visible) {
       </form>
     </section>
 
-    <!-- Local access Section (macOS and Linux only; hidden unless the journal answers) -->
+    <!-- Local access Section (hidden unless the journal answers) -->
     <section class="settings-section" id="section-localaccess" role="tabpanel" aria-labelledby="tab-localaccess">
       <h2>local access</h2>
-      <p class="settings-section-desc">whether other accounts and programs on this computer can open your journal without a link from you.</p>
+      <p class="settings-section-desc" id="localAccessDesc">whether other accounts and programs on this computer can open your journal without a link from you.</p>
       <div id="localAccessLoadState" class="settings-load-state" aria-live="polite">loading…</div>
       <form class="settings-form" onsubmit="return false;" id="localAccessForm" hidden>
         <div class="settings-field">
@@ -6622,14 +6622,26 @@ function renderLocalAccess(state) {
   const unavailable = document.getElementById('localAccessUnavailable');
   unavailable.hidden = !!state.available;
   unavailable.textContent = state.message || '';
+  if (state.account_check) {
+    document.getElementById('localAccessDesc').textContent = 'whether other accounts and programs on this computer can open your journal.';
+  }
   document.getElementById('localAccessState').textContent = state.open
     ? `open: anyone using this computer, and any program running on it, can open your journal at ${window.location.host}. this is how your journal has always worked.`
-    : 'closed: to open your journal in a browser, use a one-time link from the journal app on a mac or from solstone journal open. other accounts on this computer see a page that shows nothing from your journal.';
+    : state.account_check
+      ? 'closed: only your account on this computer can open your journal. other accounts see a page that shows nothing from it. programs running as a service, as another account or inside WSL can\'t reach it. agents you\'ve connected and devices you\'ve paired keep their own access. an administrator on this computer can still reach your journal\'s folder.'
+      : 'closed: to open your journal in a browser, use a one-time link from the journal app on a mac or from solstone journal open. other accounts on this computer see a page that shows nothing from your journal.';
 }
 
 async function showCloseLocalAccess() {
   const detail = document.getElementById('localAccessConfirmDetail');
   detail.replaceChildren();
+  if (localAccess && localAccess.account_check) {
+    const stays = document.createElement('p');
+    stays.textContent = 'your browser, your programs and the agents you\'ve connected keep working. programs running as a service, as another account or inside WSL won\'t reach your journal.';
+    detail.appendChild(stays);
+    showLocalAccessConfirm('close local access to this computer?', 'close local access', 'keep it open', false);
+    return;
+  }
   const intro = document.createElement('p');
   intro.textContent = 'these programs reached your journal without a browser since it started, and will stop working until they\'re updated:';
   detail.appendChild(intro);
