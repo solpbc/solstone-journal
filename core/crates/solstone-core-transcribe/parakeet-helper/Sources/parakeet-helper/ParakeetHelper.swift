@@ -124,37 +124,6 @@ private func macosVersionString() -> String {
     return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
 }
 
-private func swiftVersionString() -> String {
-#if os(macOS)
-    let process = Process()
-    let pipe = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
-    process.arguments = ["--version"]
-    process.standardOutput = pipe
-    process.standardError = Pipe()
-    do {
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            return "unknown"
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard
-            let output = String(data: data, encoding: .utf8)?
-                .split(separator: "\n")
-                .first
-        else {
-            return "unknown"
-        }
-        return String(output)
-    } catch {
-        return "unknown"
-    }
-#else
-    return "unknown"
-#endif
-}
-
 private func expandedURL(path: String) -> URL {
     URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
 }
@@ -268,7 +237,10 @@ struct Main {
         setenv("TDT_EMISSION_DELAY_FRAMES", "0", 1)
         let hardware = hardwareString()
         let macosVersion = macosVersionString()
-        let swiftVersion = swiftVersionString()
+        // The owner's compiler does not identify this binary's build. Invoking
+        // Apple's Swift shim also opens a developer-tools installer on Macs
+        // without Xcode. Keep unavailable diagnostic metadata explicit.
+        let swiftVersion = "unknown"
 
         switch parseCommand() {
         case .version:
