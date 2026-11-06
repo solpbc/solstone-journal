@@ -3795,7 +3795,12 @@ mod tests {
             bad_name.push(0xFF);
             let bad_os = std::ffi::OsStr::from_bytes(&bad_name);
             let bad_seg = stream_dir.join(bad_os);
-            fs::create_dir_all(&bad_seg).unwrap();
+            // APFS rejects this fixture before the inventory can read it.
+            match fs::create_dir_all(&bad_seg) {
+                Ok(()) => {}
+                Err(error) if error.raw_os_error() == Some(nix::libc::EILSEQ) => return,
+                Err(error) => panic!("create non-UTF-8 segment: {error}"),
+            }
         }
 
         solstone_core_journal_io::bump_stream_marker(temp.path(), target_day).unwrap();
@@ -4414,12 +4419,8 @@ mod tests {
         assert!(test_support::recorded_notifications(identity).is_empty());
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn test_failed_day_does_not_block_hourly_refold() {
-        use std::ffi::OsStr;
-        use std::os::unix::ffi::OsStrExt;
-
         let (temp, root) = setup_minimal_journal();
         let identity = root.identity();
         let _guard = TestResetGuard(identity);
@@ -4434,11 +4435,15 @@ mod tests {
                 .join("field/100000_60"),
             "good",
         );
-        let bad_stream = temp.path().join("chronicle").join(bad_day).join("field");
-        fs::create_dir_all(&bad_stream).unwrap();
-        let mut bad_name = b"120000_60".to_vec();
-        bad_name.push(0xFF);
-        fs::create_dir_all(bad_stream.join(OsStr::from_bytes(&bad_name))).unwrap();
+        write_analyzed_audio(
+            &temp
+                .path()
+                .join("chronicle")
+                .join(bad_day)
+                .join("field/120000_60"),
+            "failed",
+        );
+        test_support::set_injected_compute_error(identity, bad_day, Some("persistent error"));
 
         let t0 = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
         let now_ref = Arc::new(Mutex::new(t0));
