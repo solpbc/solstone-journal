@@ -28,6 +28,11 @@ pub(crate) const INPUT_WHOLE_KEY: &str = "_input_whole";
 /// The built-in Story talents whose source-word body was measured.
 const SOURCE_BODY_TALENTS: &[&str] = &["work", "conversation"];
 const MAX_QUOTE_CHARS: usize = 400;
+/// The working field a story talent fills first while an owner's account stands.
+pub(crate) const REPEATED_ACCOUNT: &str = "correction";
+/// A longer account is not copied: story talents get 1280 to 1536 output tokens,
+/// and a copy that used them up would cut off the JSON and lose the whole run.
+pub(crate) const REPEATED_ACCOUNT_MAX_BYTES: usize = 1200;
 /// The body is kept whole for readers of the activity record, including the
 /// morning briefing: clipping its last words can hide a cancellation or correction
 /// of an earlier claim.
@@ -280,6 +285,23 @@ pub fn output(
     }
 }
 
+/// Asks a story talent to repeat the owner's account as the first thing it
+/// writes: on a small model, its own copy of their words pulls what follows
+/// toward them. `parse` drops the field, so it never reaches the record.
+pub(crate) fn repeat_account_first(schema: &mut Map<String, Value>) {
+    let mut properties = Map::new();
+    properties.insert(REPEATED_ACCOUNT.to_owned(), json!({"type": "string"}));
+    if let Some(rest) = schema.get("properties").and_then(Value::as_object) {
+        properties.extend(rest.clone());
+    }
+    schema.insert("properties".to_owned(), Value::Object(properties));
+    let mut required = vec![json!(REPEATED_ACCOUNT)];
+    if let Some(rest) = schema.get("required").and_then(Value::as_array) {
+        required.extend(rest.iter().cloned());
+    }
+    schema.insert("required".to_owned(), Value::Array(required));
+}
+
 /// An empty body is a parse error, not a silent merge. No topics is a valid
 /// story: the talents are told to return `[]` when nothing is worth keeping.
 /// `generate_and_write` turns a Story parse error into
@@ -294,6 +316,14 @@ pub fn parse(
     let object = value
         .as_object_mut()
         .ok_or_else(|| error(prepared, "story output is not an object"))?;
+    let repeated_account_asked = prepared
+        .config
+        .get("json_schema")
+        .and_then(|schema| schema.get("properties"))
+        .is_some_and(|properties| properties.get(REPEATED_ACCOUNT).is_some());
+    if repeated_account_asked {
+        object.remove(REPEATED_ACCOUNT);
+    }
     for key in object.keys() {
         if !matches!(key.as_str(), "body" | "topics" | "confidence" | "relations") {
             return Err(error(
@@ -1244,6 +1274,32 @@ mod tests {
                 "expected rejection for extra key: {extra_key}"
             );
         }
+    }
+
+    #[test]
+    fn a_repeated_account_is_dropped_only_where_the_story_was_asked_for_it() {
+        let output = json!({
+            "correction": "Mina ran the slides.",
+            "body": "You watched Mina run the slides.",
+            "topics": [],
+            "confidence": 0.8,
+            "relations": []
+        })
+        .to_string();
+        let not_asked = PreparedTalent::new("work".into(), Map::new());
+        assert!(parse(&output, &not_asked, &PrePostState::None).is_err());
+
+        let mut schema = Map::new();
+        repeat_account_first(&mut schema);
+        let asked = PreparedTalent::new(
+            "work".into(),
+            Map::from_iter([("json_schema".to_owned(), Value::Object(schema))]),
+        );
+        let ParsedOutput::Json(kept) = parse(&output, &asked, &PrePostState::None).unwrap() else {
+            panic!("story output is JSON");
+        };
+        assert!(kept.get(REPEATED_ACCOUNT).is_none());
+        assert_eq!(kept["body"], "You watched Mina run the slides.");
     }
 
     #[test]

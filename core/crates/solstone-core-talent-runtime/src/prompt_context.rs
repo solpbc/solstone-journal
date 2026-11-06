@@ -216,13 +216,16 @@ fn estimate_duration_minutes(segments: &[String]) -> u64 {
 }
 
 /// The owner's correction as a talent reads it last, when one stands.
-fn owner_correction(activity: &Map<String, Value>) -> Option<String> {
-    let mut parts = Vec::new();
-    if let Some(account) = activity
+pub(crate) fn owner_account(activity: &Map<String, Value>) -> Option<&str> {
+    activity
         .get("details")
         .and_then(Value::as_str)
         .filter(|account| !account.trim().is_empty())
-    {
+}
+
+fn owner_correction(activity: &Map<String, Value>) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(account) = owner_account(activity) {
         parts.push(format!("## What you told the journal\n\n{account}"));
     }
     if activity.get("playback") == Some(&Value::Bool(true)) {

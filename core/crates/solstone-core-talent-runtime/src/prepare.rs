@@ -280,6 +280,30 @@ pub fn prepare(
             Some(correction) => format!("{instruction}\n\n{correction}"),
             None => instruction,
         };
+        let story_talent = composed
+            .get("hook")
+            .and_then(|hook| hook.get("post"))
+            .and_then(Value::as_str)
+            == Some("story");
+        let short_account_stands = composed
+            .get("activity")
+            .and_then(Value::as_object)
+            .and_then(crate::prompt_context::owner_account)
+            .is_some_and(|account| account.len() <= crate::story::REPEATED_ACCOUNT_MAX_BYTES);
+        let instruction = match composed
+            .get_mut("json_schema")
+            .and_then(Value::as_object_mut)
+            .filter(|_| story_talent && short_account_stands)
+        {
+            Some(schema) => {
+                crate::story::repeat_account_first(schema);
+                format!(
+                    "{instruction}\n\nStart your JSON with the field `{}`: copy those words exactly.",
+                    crate::story::REPEATED_ACCOUNT
+                )
+            }
+            None => instruction,
+        };
         composed.insert("user_instruction".to_owned(), Value::String(instruction));
     }
     if let Some(output) = composed.get("output").and_then(Value::as_str)
@@ -1141,6 +1165,13 @@ mod tests {
 
     /// The instruction a shipped activity talent renders for `activity`.
     fn render_shipped_talent(talent: &str, activity: Value) -> String {
+        prepare_shipped_talent(talent, activity).config["user_instruction"]
+            .as_str()
+            .expect("instruction")
+            .to_owned()
+    }
+
+    fn prepare_shipped_talent(talent: &str, activity: Value) -> PreparedTalent {
         let root = tempfile::tempdir().expect("root");
         let payload = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../payload/solstone");
         let talent_root = root.path().join("talent");
@@ -1181,7 +1212,7 @@ mod tests {
                 fs::copy(&path, talent_root.join(&name)).expect("talent copy");
             }
         }
-        let prepared = prepare(
+        prepare(
             json!({"name":talent,"day":"20260101","facet":"work","span":["090000_60"],"activity":activity})
                 .as_object()
                 .expect("request object")
@@ -1194,11 +1225,7 @@ mod tests {
             &ExecutionContext { journal },
             PrepareMode::Preview,
         )
-        .expect("prepare");
-        prepared.config["user_instruction"]
-            .as_str()
-            .expect("instruction")
-            .to_owned()
+        .expect("prepare")
     }
 
     fn sections(text: &str) -> usize {
@@ -1242,12 +1269,19 @@ mod tests {
             let mut told = base.clone();
             told["details"] = json!(account);
             let told = render_shipped_talent(talent, told);
-            assert!(
-                told.ends_with(&format!(
-                    "## What you told the journal\n\n{account}\n\nThis is what happened. Where anything above says otherwise, write it this way."
-                )),
-                "{talent}"
+            let last = format!(
+                "## What you told the journal\n\n{account}\n\nThis is what happened. Where anything above says otherwise, write it this way."
             );
+            if talent == "participation" {
+                assert!(told.ends_with(&last), "{talent}");
+            } else {
+                assert!(
+                    told.ends_with(&format!(
+                        "{last}\n\nStart your JSON with the field `correction`: copy those words exactly."
+                    )),
+                    "{talent}"
+                );
+            }
 
             let mut recording = base.clone();
             recording["playback"] = json!(true);
@@ -1260,6 +1294,57 @@ mod tests {
                 "{talent}"
             );
         }
+    }
+
+    #[test]
+    fn a_story_talent_repeats_the_owners_account_first() {
+        let base = json!({"id":"coding_090000_60","activity":"coding","description":"Release work","segments":["090000_60"]});
+        let fields = |talent: &str, activity: Value| -> (Vec<String>, Value) {
+            let prepared = prepare_shipped_talent(talent, activity);
+            let schema = prepared.config["json_schema"].clone();
+            let properties = schema["properties"].as_object().expect("properties");
+            (
+                properties.keys().cloned().collect(),
+                schema["required"].clone(),
+            )
+        };
+        let mut told = base.clone();
+        told["details"] = json!("Mina ran the slides.");
+        let mut recording = base.clone();
+        recording["playback"] = json!(true);
+        for talent in ["work", "conversation"] {
+            let (first, required) = fields(talent, told.clone());
+            assert_eq!(first[0], "correction", "{talent}");
+            assert_eq!(required[0], "correction", "{talent}");
+            // Only an account: nothing to copy from a recording, and no field
+            // with nothing standing.
+            for activity in [base.clone(), recording.clone()] {
+                let (plain, required) = fields(talent, activity.clone());
+                assert!(!plain.contains(&"correction".to_owned()), "{talent}");
+                assert!(!required.to_string().contains("correction"), "{talent}");
+                assert!(
+                    !render_shipped_talent(talent, activity).contains("Start your JSON"),
+                    "{talent}"
+                );
+            }
+        }
+        // A long account keeps its restatement, and the story keeps its output
+        // budget rather than running out mid-JSON on the copy.
+        let mut long = base.clone();
+        long["details"] = json!("Mina ran the slides. ".repeat(100));
+        for talent in ["work", "conversation"] {
+            let (plain, _) = fields(talent, long.clone());
+            assert!(!plain.contains(&"correction".to_owned()), "{talent}");
+            let rendered = render_shipped_talent(talent, long.clone());
+            assert!(rendered.ends_with("write it this way."), "{talent}");
+        }
+        let participation = prepare_shipped_talent("participation", told);
+        assert!(
+            !participation.config["json_schema"]
+                .to_string()
+                .contains("\"correction\""),
+            "participation"
+        );
     }
 
     #[test]
