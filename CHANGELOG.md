@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - when you correct an activity, its story now more often follows what you told your journal, and saying an activity was a recording now sticks far more reliably. removing that correction now also means the story, the people and the description no longer treat it as a recording.
 - home now reports that recent activity couldn't be summarized when none of the entries are available.
 - on windows, the journal no longer holds on to more and more system resources the longer it runs.
