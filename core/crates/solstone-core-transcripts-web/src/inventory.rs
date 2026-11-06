@@ -834,6 +834,14 @@ fn read_marker_identity(
     }
 }
 
+/// An empty marker is the older writers' shape: the next bump replaces it like any
+/// other, so its day needs no tree on every read. This parses the text itself because
+/// `read_health_marker` sets a malformed file aside, and a read writes nothing.
+fn marker_text_is_malformed(content: &str) -> bool {
+    !content.is_empty()
+        && serde_json::from_str::<solstone_core_journal_io::HealthMarker>(content).is_err()
+}
+
 #[cfg(unix)]
 fn present_marker_identity(
     path: &Path,
@@ -852,12 +860,8 @@ fn present_marker_identity(
             malformed: *malformed,
         };
     }
-    let malformed = match fs::read_to_string(path) {
-        Ok(content) => {
-            serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content).is_err()
-        }
-        Err(_) => false,
-    };
+    let malformed =
+        fs::read_to_string(path).is_ok_and(|content| marker_text_is_malformed(&content));
     MarkerIdentity::Present { stat, malformed }
 }
 
@@ -871,6 +875,7 @@ fn present_marker_identity(
 ) -> MarkerIdentity {
     let marker = fs::read_to_string(path)
         .ok()
+        .filter(|content| !content.is_empty())
         .map(|content| serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content));
     let mut stat = extract_file_stat(meta);
     if let Some(Ok(marker)) = &marker {
@@ -2891,20 +2896,25 @@ mod tests {
         let (_today_date, _today_str, _yesterday_str, live_set) =
             compute_live_set(temp.path(), &listed_days, now);
         let live_days_count = listed_days.iter().filter(|d| live_set.contains(*d)).count();
-        // A malformed stream marker is read as a live tree, including the
-        // fixture day whose marker is empty.
+        // A malformed stream marker is read as a live tree. The fixture day whose
+        // marker is empty is not one: the next bump replaces it.
+        let marker_text = |day: &String| {
+            fs::read_to_string(health_marker_path(
+                temp.path(),
+                day,
+                HealthMarkerKind::Stream,
+            ))
+            .ok()
+        };
+        assert!(
+            listed_days
+                .iter()
+                .any(|day| marker_text(day).is_some_and(|text| text.is_empty())),
+            "the fixture carries an empty marker"
+        );
         let malformed_days = listed_days
             .iter()
-            .filter(|day| {
-                let path = health_marker_path(temp.path(), day, HealthMarkerKind::Stream);
-                match fs::read_to_string(&path) {
-                    Ok(content) => {
-                        serde_json::from_str::<solstone_core_journal_io::HealthMarker>(&content)
-                            .is_err()
-                    }
-                    Err(_) => false,
-                }
-            })
+            .filter(|day| marker_text(day).is_some_and(|text| marker_text_is_malformed(&text)))
             .count();
         assert_eq!(
             test_support::tree_descents(identity),
@@ -4122,6 +4132,99 @@ mod tests {
         let b: Value =
             serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
         assert_eq!(b["freshness"]["complete"], true);
+    }
+
+    #[tokio::test]
+    async fn empty_stream_marker_day_follows_bumps_and_the_hourly_pass() {
+        let (temp, root) = setup_fixture_journal();
+        let identity = root.identity();
+        let _guard = TestResetGuard(identity);
+
+        let marker = temp.path().join("chronicle/20260416/health/stream.updated");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, b"").unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+        let month_count = |now: DateTime<Utc>| {
+            let app = crate::router(temp.path().to_path_buf(), Clock::fixed(now), || {
+                Response::new(Body::empty())
+            });
+            let root = root.clone();
+            async move {
+                let resp = app
+                    .oneshot(
+                        Request::get("/app/transcripts/api/stats/202604")
+                            .extension(root)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), StatusCode::OK);
+                let body: Value =
+                    serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap())
+                        .unwrap();
+                body["20260416"].as_u64().unwrap_or(0)
+            }
+        };
+        let walked = |now: DateTime<Utc>| {
+            crate::calendar::counts_by_walk(temp.path(), now)
+                .unwrap()
+                .get("20260416")
+                .copied()
+                .unwrap_or(0)
+        };
+        assert_eq!(month_count(now).await, walked(now));
+
+        // A change that bumps is counted on the next read.
+        let new_seg = temp.path().join("chronicle/20260416/field/190000_60");
+        fs::create_dir_all(&new_seg).unwrap();
+        fs::write(
+            new_seg.join("mic_audio.jsonl"),
+            b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"19:00:00\",\"end\":\"19:00:01\",\"text\":\"unbumped\"}\n",
+        )
+        .unwrap();
+        solstone_core_journal_io::bump_stream_marker(temp.path(), "20260416").unwrap();
+        let bumped = month_count(now).await;
+        assert_eq!(bumped, walked(now));
+
+        // Back to an empty marker: one that never bumps waits for the hourly pass,
+        // like any other older day, rather than walking the tree on every read.
+        fs::write(&marker, b"").unwrap();
+        assert_eq!(month_count(now).await, bumped);
+        let later_seg = temp.path().join("chronicle/20260416/field/210000_60");
+        fs::create_dir_all(&later_seg).unwrap();
+        fs::write(
+            later_seg.join("mic_audio.jsonl"),
+            b"{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\"}}\n{\"start\":\"19:00:00\",\"end\":\"19:00:01\",\"text\":\"unbumped\"}\n",
+        )
+        .unwrap();
+        assert_ne!(walked(now), bumped);
+        assert_eq!(month_count(now).await, bumped);
+        // The pass starts on an index read after the hour.
+        let later = now + chrono::Duration::hours(2);
+        let index = crate::router(temp.path().to_path_buf(), Clock::fixed(later), || {
+            Response::new(Body::empty())
+        })
+        .oneshot(
+            Request::get("/app/transcripts/api/index")
+                .extension(root.clone())
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(index.status(), StatusCode::OK);
+        assert_eq!(month_count(later).await, walked(later));
+
+        // Nothing was set aside: reading never writes.
+        let health = marker.parent().unwrap();
+        assert!(
+            fs::read_dir(health)
+                .unwrap()
+                .flatten()
+                .all(|entry| !entry.file_name().to_string_lossy().contains("wedged"))
+        );
     }
 
     #[tokio::test]
