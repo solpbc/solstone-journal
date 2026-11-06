@@ -64,6 +64,11 @@ pub fn assemble_prompt_preview(
             },
             None => crate::contract::PrePostState::None,
         };
+        if let Some(check) = stage.unavailable_before_generate
+            && let Some(reason) = (check.select)(&state)
+        {
+            return would_not_run(request, reason);
+        }
         if let Some(override_prompt) = stage.prompt_override
             && let Err(error) = override_prompt(&mut prepared, &state)
         {

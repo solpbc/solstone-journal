@@ -347,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn criterion_6_preview_pulse_prepares_current_window_without_writes() {
+    fn criterion_6_preview_empty_pulse_reports_unavailable_without_writes() {
         let root = root();
         write_talent(
             &root,
@@ -356,15 +356,53 @@ mod tests {
         );
         let before = snapshot(root.path());
         let output = run(&root, &["show", "pulse", "--prompt"]);
+        assert_eq!(output.exit_code, 1, "{}", output.stderr);
+        assert_eq!(output.stdout, "This talent would not run: no_activity\n");
+        assert!(output.stderr.is_empty());
+        assert_eq!(before, snapshot(root.path()));
+    }
+
+    #[test]
+    fn criterion_6_preview_nonempty_pulse_renders_current_window_without_writes() {
+        let root = root();
+        let source = root
+            .path()
+            .join("chronicle/20260101/device_audio/090000_300/talents");
+        fs::create_dir_all(&source).expect("segment talents");
+        fs::write(
+            source.join("activity.md"),
+            "Rowan proposed a repair; approval remains open.",
+        )
+        .expect("completed activity");
+        let config = json!({
+            "type":"generate",
+            "max_output_tokens":1024,
+            "hook":{"pre":"pulse"},
+            "cadence_window":{
+                "since_ms":7,
+                "segments":[{"day":"20260101","stream":"device_audio","segment":"090000_300","ts":1}],
+                "activities":[]
+            }
+        });
+        let config = serde_json::to_string_pretty(&config).expect("pulse metadata");
+        write_talent(&root, "pulse", &format!("{config}\n$completed_since"));
+        let before = snapshot(root.path());
+        let output = run(&root, &["show", "pulse", "--prompt", "--day", "20260101"]);
         assert_eq!(output.exit_code, 0, "{}", output.stderr);
         assert!(
-            output.stdout.contains("\"input_segments\": 0"),
+            output.stdout.contains("\"input_segments\": 1"),
             "{}",
             output.stdout
         );
+        assert!(
+            output
+                .stdout
+                .contains("Rowan proposed a repair; approval remains open.")
+        );
+        assert!(output.stdout.contains("\"stream\": \"device_audio\""));
         assert!(!output.stdout.contains("$completed_since"));
-        let after = snapshot(root.path());
-        assert_eq!(before, after);
+        assert!(output.stderr.is_empty());
+        assert_eq!(before, snapshot(root.path()));
     }
 
     #[test]

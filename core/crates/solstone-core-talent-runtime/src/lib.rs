@@ -905,12 +905,14 @@ fn execute_unclaimed(
         return RuntimeOutcome::Cancelled;
     }
     if let Some(check) = stage.unavailable_before_generate
-        && let Some(reason) = check(&state)
+        && let Some(reason) = (check.select)(&state)
     {
+        // No Generate call occurred, so a caller-supplied fitting receipt is not evidence.
+        prepared.config.remove(INPUT_BUDGET_KEY);
         return finish_unavailable(
             reason,
             &mut prepared,
-            (stage, &state),
+            (stage, &state, check.commit),
             context,
             writer,
             None,
@@ -1098,7 +1100,11 @@ pub(crate) const INPUT_BUDGET_KEY: &str = "input_budget";
 fn finish_unavailable(
     reason: &str,
     prepared: &mut PreparedTalent,
-    stage_state: (&'static contract::StageSpec, &PrePostState),
+    stage_state: (
+        &'static contract::StageSpec,
+        &PrePostState,
+        contract::UnavailableCommitFn,
+    ),
     context: &ExecutionContext,
     writer: &mut impl Write,
     usage: Option<Box<Value>>,
@@ -1108,15 +1114,7 @@ fn finish_unavailable(
     if cancellation.is_cancelled() {
         return RuntimeOutcome::Cancelled;
     }
-    let (stage, state) = stage_state;
-    let Some(callback) = stage.unavailable_commit else {
-        return RuntimeOutcome::StageFailed(stage_error(
-            "build",
-            "runtime",
-            prepared,
-            format!("unsupported unavailable selection: {reason}"),
-        ));
-    };
+    let (stage, state, callback) = stage_state;
     let plan = match callback(reason, prepared, state) {
         Ok(plan) => plan,
         Err(error) => return RuntimeOutcome::StageFailed(error),
@@ -1373,7 +1371,7 @@ pub(crate) fn generate_and_write(
                 return RuntimeOutcome::Cancelled;
             }
             if let Some((stage, state)) = stage
-                && stage.unavailable_commit.is_some()
+                && let Some(callback) = stage.unavailable_commit
             {
                 let mapped_reason = match &outcome {
                     RuntimeOutcome::SchemaValidationFailed { .. } => {
@@ -1406,7 +1404,7 @@ pub(crate) fn generate_and_write(
                     return finish_unavailable(
                         &reason,
                         prepared,
-                        (stage, &state),
+                        (stage, &state, callback),
                         context,
                         writer,
                         u,
@@ -1425,7 +1423,7 @@ pub(crate) fn generate_and_write(
         sense_grounding::ground(prepared, &context.journal, &response).unwrap_or(response);
     let response = sense_idle::enforce(prepared, &context.journal, &response).unwrap_or(response);
     if let Some((stage, state)) = stage {
-        if stage.unavailable_commit.is_some()
+        if let Some(callback) = stage.unavailable_commit
             && prepared
                 .config
                 .get(INPUT_BUDGET_KEY)
@@ -1436,7 +1434,7 @@ pub(crate) fn generate_and_write(
             return finish_unavailable(
                 "clipped",
                 prepared,
-                (stage, &state),
+                (stage, &state, callback),
                 context,
                 writer,
                 usage,
@@ -4064,12 +4062,21 @@ mod tests {
                 )],
             );
             let generate = OneShotClient::at_path(&stub);
+            let segment = context
+                .journal
+                .join("chronicle/20260907/device_audio/120000_300/talents");
+            fs::create_dir_all(&segment).unwrap();
+            fs::write(
+                segment.join("activity.md"),
+                "Rowan proposed a repair; approval remains open.",
+            )
+            .unwrap();
             let mut req_map = json!({
                 "name": "pulse",
                 "day": "20260907",
                 "prompt": "current request",
                 "json_schema": {"type": "object"},
-                "cadence_window": {"since_ms": 0, "segments": [], "activities": []}
+                "cadence_window": {"since_ms": 0, "segments": [{"day":"20260907","stream":"device_audio","segment":"120000_300"}], "activities": []}
             })
             .as_object()
             .unwrap()

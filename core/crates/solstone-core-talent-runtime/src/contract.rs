@@ -43,6 +43,14 @@ pub type CommitFn =
 pub type UnavailableCommitFn =
     fn(&str, &PreparedTalent, &PrePostState) -> Result<CommitPlan, StageError>;
 pub type UnavailableBeforeGenerateFn = fn(&PrePostState) -> Option<&'static str>;
+
+/// A pre-generation unavailable selection has its own commit callback. It does
+/// not enroll a stage in the independent post-generation fallback contract.
+#[derive(Clone, Copy)]
+pub struct BeforeGenerateUnavailable {
+    pub select: UnavailableBeforeGenerateFn,
+    pub commit: UnavailableCommitFn,
+}
 pub type WriteIntentFn = fn(
     CommitPlan,
     &ExecutionContext,
@@ -106,7 +114,7 @@ pub struct StageSpec {
     pub prompt_override: Option<PromptOverrideFn>,
     pub commit: Option<CommitSpec>,
     pub unavailable_commit: Option<UnavailableCommitFn>,
-    pub unavailable_before_generate: Option<UnavailableBeforeGenerateFn>,
+    pub unavailable_before_generate: Option<BeforeGenerateUnavailable>,
     pub writes_as_intent: Option<WriteIntentFn>,
     pub output_override: Option<OutputOverrideFn>,
 }
@@ -205,7 +213,10 @@ pub static PULSE: StageSpec = StageSpec {
         commit: crate::pulse::commit,
     }),
     unavailable_commit: None,
-    unavailable_before_generate: None,
+    unavailable_before_generate: Some(BeforeGenerateUnavailable {
+        select: crate::pulse::unavailable_before_generate,
+        commit: crate::pulse::unavailable_commit,
+    }),
     writes_as_intent: Some(crate::writers::apply_prepared),
     output_override: Some(crate::pulse::output_override),
 };
@@ -341,7 +352,10 @@ pub static WEEKLY_REFLECTION: StageSpec = StageSpec {
         commit: crate::weekly_reflection::commit,
     }),
     unavailable_commit: Some(crate::weekly_reflection::unavailable_commit),
-    unavailable_before_generate: Some(crate::weekly_reflection::unavailable_before_generate),
+    unavailable_before_generate: Some(BeforeGenerateUnavailable {
+        select: crate::weekly_reflection::unavailable_before_generate,
+        commit: crate::weekly_reflection::unavailable_commit,
+    }),
     writes_as_intent: Some(crate::writers::apply_prepared),
     output_override: None,
 };

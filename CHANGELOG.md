@@ -15,6 +15,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- home now reports that recent activity couldn't be summarized when none of the entries are available.
+
 - deleting a segment on a large journal is much faster and no longer stops partway when your journal starts a new day. if your journal is busy with another job, the transcripts page says so and your journal keeps the segment so you can try again. a slow delete shows its result when it finishes.
 - on a large journal, search health no longer stays on "search is catching up with your journal" for a very long time.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.

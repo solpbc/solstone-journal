@@ -81,6 +81,54 @@ pub fn build(
         })
 }
 
+/// Missing, deleted or hidden completion references are not activity evidence.
+pub fn unavailable_before_generate(state: &PrePostState) -> Option<&'static str> {
+    match state {
+        PrePostState::Pulse(state)
+            if state.window.segments == 0 && state.window.activities == 0 =>
+        {
+            Some("no_activity")
+        }
+        _ => None,
+    }
+}
+
+/// Publish the established unavailable value without attributing it to a model.
+/// This callback is paired only with the pre-generation zero-record selection.
+pub fn unavailable_commit(
+    reason: &str,
+    prepared: &PreparedTalent,
+    state: &PrePostState,
+) -> Result<CommitPlan, StageError> {
+    let PrePostState::Pulse(pulse) = state else {
+        return Err(stage_error(
+            "unavailable_commit",
+            "pulse",
+            prepared,
+            "missing pulse state",
+        ));
+    };
+    if reason != "no_activity" || pulse.window.segments != 0 || pulse.window.activities != 0 {
+        return Err(stage_error(
+            "unavailable_commit",
+            "pulse",
+            prepared,
+            "not an empty activity packet",
+        ));
+    }
+    let mut without_model = prepared.clone();
+    without_model.config.insert("model".to_owned(), Value::Null);
+    let mut plan = commit(
+        ParsedOutput::Text(summary_value(&pulse.default).to_string()),
+        &without_model,
+        state,
+    )?;
+    if let CommitPlan::Write(WriteIntent::DayAccumulator { record, .. }) = &mut plan {
+        record.remove("generated_at");
+    }
+    Ok(plan)
+}
+
 pub fn apply_prompt_override(
     prepared: &mut PreparedTalent,
     state: &PrePostState,
@@ -802,3 +850,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod empty_tests;
