@@ -460,11 +460,18 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 opt-level = 2
+strip = "none"
 
 # The token counter sizes every model request, and tests size thousands of
 # them; unoptimized it is about fifty times slower. It is small and rarely edited.
 [profile.dev.package.solstone-core-tokens]
 opt-level = 2
+
+# Rust 1.97's debug stripping can misalign compile-time dylibs for macOS 27.
+# Dev dependencies above and release build dependencies must remain loadable.
+# https://github.com/rust-lang/rust/issues/157750
+[profile.release.build-override]
+strip = "none"
 
 [patch.crates-io]
 ffmpeg-sys-next = { path = "vendor/ffmpeg-sys-next" }
