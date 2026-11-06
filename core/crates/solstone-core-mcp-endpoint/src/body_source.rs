@@ -109,6 +109,33 @@ fn readable_windows(
     Ok(windows)
 }
 
+/// Whether this connection may read a body window, by day, stream and name: the
+/// same test `readable_windows` makes, and the Transcripts category, which that
+/// tool requires before it runs. A window that can't be named is read only
+/// by a connection that reads the whole journal's transcripts.
+pub(crate) fn window_gate<'a>(
+    journal_root: &'a Path,
+    snapshot: &'a ConnectionReadSnapshot,
+) -> impl Fn(&str, &str, Option<&str>) -> bool + 'a {
+    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
+    // Body windows are transcripts: a connection without that category reads none,
+    // whatever tool it calls.
+    let transcripts = snapshot.categories.contains(&AdmittedCategory::Transcripts);
+    let whole = matches!(
+        snapshot.scope,
+        solstone_core_indexer_query::ConnectionScope::WholeJournal
+    ) && transcripts;
+    move |day: &str, stream: &str, window: Option<&str>| match window {
+        Some(_) if !transcripts => false,
+        Some(name) => {
+            let probe = segment_assignment_probe_path(day, stream, name);
+            live_allows(journal_root, &transcript_boundary, &probe, Some(stream))
+                && released(journal_root, day, stream, name)
+        }
+        None => whole,
+    }
+}
+
 /// The labels of body sources this connection can read on `day`, for a list that
 /// leaves their windows out.
 pub(crate) fn other_sources(

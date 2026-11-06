@@ -1,0 +1,1038 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! Body records, composed for a reader.
+//!
+//! A body record in a facet's activity file refers to an account in a body
+//! window by its stream and row id, and copies nothing else. Every reader that
+//! shows one composes it here, from the window as it now is, and only for a
+//! connection allowed to read that window: so nothing in a record file is ever
+//! served as it stands, and a facet change or a narrower grant can't widen what
+//! is read.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
+
+use chrono::{DateTime, FixedOffset, NaiveDate, Timelike};
+use chrono_tz::Tz;
+use serde_json::{Map, Value};
+use solstone_core_facets::{
+    activity_field_held, is_body_record, read_activity_records_strict, update_activity_record_with,
+};
+use solstone_core_format::content::body_records::{
+    BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time,
+};
+
+const TOMBSTONE: &str = "tombstone.json";
+/// Separates the stream from the row id in an account key.
+const KEY_SEPARATOR: char = '\u{1f}';
+/// The fields an owner edit can hold, shown in place of what the source says.
+pub const OWNER_FIELDS: [&str; 4] = ["title", "description", "details", "playback"];
+
+/// What the account's window says now.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Account {
+    /// The experience row, as its window holds it.
+    Live(Box<BodyRow>),
+    /// The window of its start was deleted and a later tile of its span is
+    /// still live: that tile's span, `by` and `label`.
+    PartRemoved(Box<BodyRow>),
+    /// The owner deleted the window of its start and every tile of its span.
+    RemovedByYou,
+    /// Its window is live and holds no such row.
+    NotFound,
+    /// Its window couldn't be read.
+    Unreadable,
+}
+
+/// A body record composed for one reader.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComposedBody {
+    pub id: String,
+    pub facet: String,
+    pub day: String,
+    /// `workout`, `sleep` or `mindfulness`.
+    pub activity: String,
+    pub key: String,
+    pub stream: String,
+    /// The instants stored when the record was created. Groups use these.
+    pub stored_start: String,
+    pub stored_end: String,
+    /// The window of its start, when one is known.
+    pub window: Option<String>,
+    pub account: Account,
+    /// Owner-held fields only, by name.
+    pub owner: BTreeMap<String, Value>,
+    pub hidden: bool,
+    /// Account keys this record is kept apart from.
+    pub apart: Vec<String>,
+}
+
+impl ComposedBody {
+    /// The row to show: the experience, or the surviving tile.
+    #[must_use]
+    pub fn row(&self) -> Option<&BodyRow> {
+        match &self.account {
+            Account::Live(row) | Account::PartRemoved(row) => Some(row),
+            _ => None,
+        }
+    }
+}
+
+/// Why a day's records couldn't be composed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComposeError(pub String);
+
+impl std::fmt::Display for ComposeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ComposeError {}
+
+/// Whether this reader may read a body window: its day, its stream and, when
+/// one is known, its name. The owner's own view reads every one.
+pub type Readable<'a> = &'a dyn Fn(&str, &str, Option<&str>) -> bool;
+
+/// One body window's rows, as far as it could be read.
+#[derive(Debug)]
+enum Held {
+    Rows(Vec<BodyRow>),
+    Deleted,
+    Unreadable,
+}
+
+#[derive(Debug)]
+struct Window {
+    name: String,
+    start: u32,
+    end: u32,
+    held: Held,
+}
+
+/// `HHMMSS_<len>[_...]` as seconds of the day, start and exclusive end.
+fn window_span(name: &str) -> Option<(u32, u32)> {
+    let (clock, rest) = name.split_once('_')?;
+    if clock.len() != 6 || !clock.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let length = rest.split('_').next()?.parse::<u32>().ok()?;
+    let hours = clock[0..2].parse::<u32>().ok()?;
+    let minutes = clock[2..4].parse::<u32>().ok()?;
+    let seconds = clock[4..6].parse::<u32>().ok()?;
+    let start = hours * 3600 + minutes * 60 + seconds;
+    Some((start, start + length.max(1)))
+}
+
+fn read_windows(journal: &Path, day: &str, stream: &str) -> Vec<Window> {
+    let dir = journal.join("chronicle").join(day).join(stream);
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut windows = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Some((start, end)) = window_span(&name) else {
+            continue;
+        };
+        let path = entry.path();
+        let held = if path.join(TOMBSTONE).exists() {
+            Held::Deleted
+        } else {
+            match fs::read_to_string(path.join(BODY_RECORDS_FILE)) {
+                Ok(text) => decode_rows(&text).map_or(Held::Unreadable, Held::Rows),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    Held::Rows(Vec::new())
+                }
+                Err(_) => Held::Unreadable,
+            }
+        };
+        windows.push(Window {
+            name,
+            start,
+            end,
+            held,
+        });
+    }
+    windows.sort_by(|left, right| (left.start, &left.name).cmp(&(right.start, &right.name)));
+    windows
+}
+
+/// Seconds into `day` of an instant, on the clock that placed the source's
+/// windows. `None` when it falls on another day.
+fn seconds_on(day: &str, time: DateTime<FixedOffset>, zone: Option<Tz>) -> Option<u32> {
+    let local = zone.map_or_else(
+        || time.naive_local(),
+        |zone| time.with_timezone(&zone).naive_local(),
+    );
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    (local.date() == date).then(|| local.num_seconds_from_midnight())
+}
+
+fn source_of(stream: &str) -> &str {
+    stream.strip_prefix("import.").unwrap_or(stream)
+}
+
+struct Day {
+    windows: Vec<Window>,
+    zone: Option<Tz>,
+}
+
+impl Day {
+    fn find(&self, row_id: &str) -> Option<(&Window, &BodyRow)> {
+        self.windows.iter().find_map(|window| match &window.held {
+            Held::Rows(rows) => rows
+                .iter()
+                .find(|row| row.kind == RowKind::Experience && row.id == row_id)
+                .map(|row| (window, row)),
+            _ => None,
+        })
+    }
+
+    fn surviving_tile(&self, row_id: &str) -> Option<&BodyRow> {
+        self.windows.iter().find_map(|window| match &window.held {
+            Held::Rows(rows) => rows.iter().find(|row| {
+                row.kind == RowKind::ExperienceTile && row.of.as_deref() == Some(row_id)
+            }),
+            _ => None,
+        })
+    }
+
+    fn covering(&self, day: &str, start: &str) -> Vec<&Window> {
+        let Some(seconds) =
+            parse_source_time(start).and_then(|start| seconds_on(day, start, self.zone))
+        else {
+            return Vec::new();
+        };
+        self.windows
+            .iter()
+            .filter(|window| window.start <= seconds && seconds < window.end)
+            .collect()
+    }
+}
+
+/// Tiles of a span sit in later windows, possibly on later days: the days a
+/// surviving tile is looked for in, after the start's own.
+const TILE_DAYS: i64 = 14;
+
+fn later_days(day: &str) -> impl Iterator<Item = String> {
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok();
+    (1..=TILE_DAYS).filter_map(move |offset| {
+        date.and_then(|date| date.checked_add_signed(chrono::Duration::days(offset)))
+            .map(|date| date.format("%Y%m%d").to_string())
+    })
+}
+
+/// The window an account's experience row sits in, and what it says now.
+fn locate(
+    journal: &Path,
+    day: &str,
+    stream: &str,
+    row_id: &str,
+    start: &str,
+    days: &mut BTreeMap<(String, String), Day>,
+) -> (Option<String>, Account) {
+    let load = |days: &mut BTreeMap<(String, String), Day>, on: &str| {
+        days.entry((on.to_owned(), stream.to_owned()))
+            .or_insert_with(|| Day {
+                windows: read_windows(journal, on, stream),
+                zone: solstone_core_journal_config::placed_zone(journal, source_of(stream)),
+            });
+    };
+    load(days, day);
+    let today = &days[&(day.to_owned(), stream.to_owned())];
+    if let Some((window, row)) = today.find(row_id) {
+        return (
+            Some(window.name.clone()),
+            Account::Live(Box::new(row.clone())),
+        );
+    }
+    let covering = today.covering(day, start);
+    let deleted = covering
+        .iter()
+        .find(|window| matches!(window.held, Held::Deleted))
+        .map(|window| window.name.clone());
+    let unreadable = covering
+        .iter()
+        .find(|window| matches!(window.held, Held::Unreadable))
+        .map(|window| window.name.clone());
+    let first = covering.first().map(|window| window.name.clone());
+    if let Some(name) = deleted {
+        // Deleted: say so only when no tile of the span survives.
+        for on in std::iter::once(day.to_owned()).chain(later_days(day)) {
+            load(days, &on);
+            if let Some(tile) = days[&(on.clone(), stream.to_owned())].surviving_tile(row_id) {
+                return (Some(name), Account::PartRemoved(Box::new(tile.clone())));
+            }
+        }
+        return (Some(name), Account::RemovedByYou);
+    }
+    if let Some(name) = unreadable {
+        return (Some(name), Account::Unreadable);
+    }
+    (first, Account::NotFound)
+}
+
+fn split_key(key: &str) -> Option<(&str, &str)> {
+    key.split_once(KEY_SEPARATOR)
+}
+
+fn text(record: &Map<String, Value>, path: &[&str]) -> String {
+    let mut value = Some(&Value::Object(record.clone()));
+    for step in path {
+        value = value.and_then(|value| value.get(*step));
+    }
+    value.and_then(Value::as_str).unwrap_or_default().to_owned()
+}
+
+/// A body record as stored: everything the gate and grouping read, without
+/// opening a window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredBody {
+    pub id: String,
+    pub facet: String,
+    pub day: String,
+    pub activity: String,
+    pub key: String,
+    pub stream: String,
+    pub row_id: String,
+    pub stored_start: String,
+    pub stored_end: String,
+    /// A workout's type in the shared vocabulary, when it has one.
+    pub workout_type: Option<String>,
+    /// Who recorded it, as an opaque id.
+    pub recorder: String,
+    /// Owner-held fields only, by name.
+    pub owner: BTreeMap<String, Value>,
+    pub hidden: bool,
+    /// Account keys this record is kept apart from.
+    pub apart: Vec<String>,
+}
+
+impl StoredBody {
+    fn instants(&self) -> Option<(i64, i64)> {
+        let start = parse_source_time(&self.stored_start)?.timestamp();
+        let end = parse_source_time(&self.stored_end)?.timestamp();
+        (end > start).then_some((start, end))
+    }
+}
+
+/// The body records stored in `facet` on `day`, hidden ones included.
+///
+/// # Errors
+///
+/// When the facet's activity file can't be read.
+pub fn stored_body_records(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+) -> Result<Vec<StoredBody>, ComposeError> {
+    let path = journal
+        .join("facets")
+        .join(facet)
+        .join("activities")
+        .join(format!("{day}.jsonl"));
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let records = read_activity_records_strict(journal, facet, day)
+        .map_err(|error| ComposeError(error.to_string()))?;
+    Ok(records
+        .iter()
+        .filter(|record| is_body_record(record))
+        .filter_map(|record| {
+            let key = text(record, &["account", "key"]);
+            let (stream, row_id) = split_key(&key)?;
+            let (stream, row_id) = (stream.to_owned(), row_id.to_owned());
+            Some(StoredBody {
+                id: text(record, &["id"]),
+                facet: facet.to_owned(),
+                day: day.to_owned(),
+                activity: text(record, &["activity"]),
+                stream,
+                row_id,
+                stored_start: text(record, &["account", "start"]),
+                stored_end: text(record, &["account", "end"]),
+                workout_type: Some(text(record, &["account", "type"]))
+                    .filter(|kind| !kind.is_empty()),
+                recorder: text(record, &["account", "recorder"]),
+                owner: OWNER_FIELDS
+                    .iter()
+                    .filter(|field| activity_field_held(record, field))
+                    .filter_map(|field| Some(((*field).to_owned(), record.get(*field)?.clone())))
+                    .collect(),
+                hidden: record
+                    .get("hidden")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                apart: record
+                    .get("apart")
+                    .and_then(Value::as_array)
+                    .map(|keys| {
+                        keys.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                key,
+            })
+        })
+        .collect())
+}
+
+/// A day's window names in one stream, with their spans, and the zone that placed them.
+type Listing = (Vec<(String, u32, u32)>, Option<Tz>);
+
+/// What composing reads, kept across records of one request.
+#[derive(Default)]
+pub struct Windows {
+    names: BTreeMap<(String, String), Listing>,
+    days: BTreeMap<(String, String), Day>,
+}
+
+impl Windows {
+    /// The windows an account belongs to: the live window among those its start
+    /// falls in that holds its row, or, when none does (it was deleted, say),
+    /// every window its start falls in. Hour windows and shorter ones overlap,
+    /// so the listing alone can't say which.
+    pub fn account_windows(&mut self, journal: &Path, stored: &StoredBody) -> Vec<String> {
+        let (names, zone) = self
+            .names
+            .entry((stored.day.clone(), stored.stream.clone()))
+            .or_insert_with(|| {
+                let dir = journal
+                    .join("chronicle")
+                    .join(&stored.day)
+                    .join(&stored.stream);
+                let mut names = fs::read_dir(dir)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+                    .filter_map(|entry| {
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        let (start, end) = window_span(&name)?;
+                        (!name.starts_with('.')).then_some((name, start, end))
+                    })
+                    .collect::<Vec<_>>();
+                names.sort();
+                (
+                    names,
+                    solstone_core_journal_config::placed_zone(journal, source_of(&stored.stream)),
+                )
+            });
+        let Some(seconds) = parse_source_time(&stored.stored_start)
+            .and_then(|start| seconds_on(&stored.day, start, *zone))
+        else {
+            return Vec::new();
+        };
+        let covering = names
+            .iter()
+            .filter(|(_, start, end)| *start <= seconds && seconds < *end)
+            .map(|(name, _, _)| name.clone())
+            .collect::<Vec<_>>();
+        let dir = journal
+            .join("chronicle")
+            .join(&stored.day)
+            .join(&stored.stream);
+        let holding = covering.iter().find(|name| {
+            let window = dir.join(name.as_str());
+            !window.join(TOMBSTONE).exists()
+                && fs::read_to_string(window.join(BODY_RECORDS_FILE))
+                    .ok()
+                    .and_then(|text| decode_rows(&text).ok())
+                    .is_some_and(|rows| {
+                        rows.iter()
+                            .any(|row| row.kind == RowKind::Experience && row.id == stored.row_id)
+                    })
+        });
+        match holding {
+            Some(name) => vec![name.clone()],
+            None => covering,
+        }
+    }
+
+    /// Whether this reader may read every window the account belongs to.
+    pub fn may_read(
+        &mut self,
+        journal: &Path,
+        stored: &StoredBody,
+        readable: Readable<'_>,
+    ) -> bool {
+        let windows = self.account_windows(journal, stored);
+        if windows.is_empty() {
+            return readable(&stored.day, &stored.stream, None);
+        }
+        windows
+            .iter()
+            .all(|window| readable(&stored.day, &stored.stream, Some(window)))
+    }
+
+    /// The account as its window says now.
+    pub fn compose(&mut self, journal: &Path, stored: StoredBody) -> ComposedBody {
+        let (window, account) = locate(
+            journal,
+            &stored.day,
+            &stored.stream,
+            &stored.row_id,
+            &stored.stored_start,
+            &mut self.days,
+        );
+        ComposedBody {
+            id: stored.id,
+            facet: stored.facet,
+            day: stored.day,
+            activity: stored.activity,
+            key: stored.key,
+            stream: stored.stream,
+            stored_start: stored.stored_start,
+            stored_end: stored.stored_end,
+            window,
+            account,
+            owner: stored.owner,
+            hidden: stored.hidden,
+            apart: stored.apart,
+        }
+    }
+}
+
+/// The body records in `facet` on `day` that this reader may read, composed.
+/// A record whose window it may not read isn't returned at all.
+///
+/// # Errors
+///
+/// When the facet's activity file can't be read.
+pub fn compose_body_records(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+    readable: Readable<'_>,
+    include_hidden: bool,
+) -> Result<Vec<ComposedBody>, ComposeError> {
+    let mut windows = Windows::default();
+    let mut composed = Vec::new();
+    for stored in stored_body_records(journal, facet, day)? {
+        if stored.hidden && !include_hidden {
+            continue;
+        }
+        if windows.may_read(journal, &stored, readable) {
+            composed.push(windows.compose(journal, stored));
+        }
+    }
+    Ok(composed)
+}
+
+/// Whether two accounts are one experience told twice: the same kind (and a
+/// workout's same shared type), different recorders, overlapping by at least
+/// 80% of the shorter and 60% of the longer on their stored instants, not kept
+/// apart, and not both edited by the owner. Both are in one facet by the
+/// caller's choice of records.
+#[must_use]
+pub fn pair(left: &StoredBody, right: &StoredBody) -> bool {
+    if left.activity != right.activity
+        || left.recorder == right.recorder
+        || left.apart.contains(&right.key)
+        || right.apart.contains(&left.key)
+        || (!left.owner.is_empty() && !right.owner.is_empty())
+    {
+        return false;
+    }
+    if left.activity == "workout"
+        && (left.workout_type.is_none() || left.workout_type != right.workout_type)
+    {
+        return false;
+    }
+    let (Some((a_start, a_end)), Some((b_start, b_end))) = (left.instants(), right.instants())
+    else {
+        return false;
+    };
+    let overlap = (a_end.min(b_end) - a_start.max(b_start)).max(0);
+    let (a, b) = (a_end - a_start, b_end - b_start);
+    let (shorter, longer) = (a.min(b), a.max(b));
+    // Integer form of overlap >= 0.8 * shorter and >= 0.6 * longer.
+    overlap * 5 >= shorter * 4 && overlap * 5 >= longer * 3
+}
+
+/// The records as groups: each a list of indices, singles included, in the
+/// order of their first member. A set of accounts that pass pairwise is a group
+/// only when every two of them pass, so no recorder appears twice; otherwise
+/// every account in it stands alone. Nothing about membership is stored, so the
+/// same records always give the same groups, in whatever order they came.
+#[must_use]
+pub fn group_partition(records: &[StoredBody]) -> Vec<Vec<usize>> {
+    let count = records.len();
+    let mut component = (0..count).collect::<Vec<_>>();
+    fn root(component: &mut [usize], index: usize) -> usize {
+        let mut at = index;
+        while component[at] != at {
+            component[at] = component[component[at]];
+            at = component[at];
+        }
+        at
+    }
+    for left in 0..count {
+        for right in (left + 1)..count {
+            if pair(&records[left], &records[right]) {
+                let (a, b) = (root(&mut component, left), root(&mut component, right));
+                component[a.max(b)] = a.min(b);
+            }
+        }
+    }
+    let mut members: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for index in 0..count {
+        let at = root(&mut component, index);
+        members.entry(at).or_default().push(index);
+    }
+    let mut groups = Vec::new();
+    for (_, set) in members {
+        let clique = set.iter().enumerate().all(|(position, &left)| {
+            set[position + 1..]
+                .iter()
+                .all(|&right| pair(&records[left], &records[right]))
+        });
+        if set.len() > 1 && clique {
+            groups.push(set);
+        } else {
+            groups.extend(set.into_iter().map(|index| vec![index]));
+        }
+    }
+    groups.sort_by_key(|group| group[0]);
+    groups
+}
+
+/// The member a group shows as: the one holding an owner field, else the
+/// earliest stored start, ties broken by key.
+#[must_use]
+pub fn anchor(records: &[StoredBody], group: &[usize]) -> usize {
+    if let Some(&held) = group
+        .iter()
+        .find(|&&index| !records[index].owner.is_empty())
+    {
+        return held;
+    }
+    *group
+        .iter()
+        .min_by_key(|&&index| {
+            (
+                records[index]
+                    .instants()
+                    .map_or(i64::MAX, |(start, _)| start),
+                records[index].key.clone(),
+            )
+        })
+        .expect("a group has a member")
+}
+
+/// Whether the journal holds body data at all: a body source placed windows.
+/// A journal without it opens no body file in any reader.
+#[must_use]
+pub fn has_body_data(journal: &Path) -> bool {
+    solstone_core_format::content::body_records::BODY_RECORD_STREAMS
+        .iter()
+        .any(|stream| {
+            journal
+                .join(format!("imports/.{}-zone.json", source_of(stream)))
+                .is_file()
+        })
+}
+
+/// A group, or one account alone, as a reader shows it: under its anchor's day.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Face {
+    pub anchor: ComposedBody,
+    /// Every member, the anchor included, earliest first.
+    pub members: Vec<ComposedBody>,
+    /// Hidden when any member is.
+    pub hidden: bool,
+}
+
+/// How many days back a group's members can be filed, and forward.
+const GROUP_DAYS_BACK: i64 = 14;
+const GROUP_DAYS_FORWARD: i64 = 1;
+
+/// The days after `day` a group anchored there can have members filed on, as
+/// far as a member filed on `day` can be grouped with: where a reader looks for
+/// the face a member of `day` is shown under.
+#[must_use]
+pub fn days_after(day: &str) -> Vec<String> {
+    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+        return Vec::new();
+    };
+    // A member filed on `day` shows under an anchor at most this far either way.
+    (-GROUP_DAYS_FORWARD..=GROUP_DAYS_BACK)
+        .filter(|offset| *offset != 0)
+        .filter_map(|offset| date.checked_sub_signed(chrono::Duration::days(offset)))
+        .map(|date| date.format("%Y%m%d").to_string())
+        .collect()
+}
+
+fn days_around(day: &str) -> Vec<String> {
+    let Ok(date) = NaiveDate::parse_from_str(day, "%Y%m%d") else {
+        return vec![day.to_owned()];
+    };
+    (-GROUP_DAYS_BACK..=GROUP_DAYS_FORWARD)
+        .filter_map(|offset| date.checked_add_signed(chrono::Duration::days(offset)))
+        .map(|date| date.format("%Y%m%d").to_string())
+        .collect()
+}
+
+/// The faces a reader shows for `facet` on `day`: groups worked out over the
+/// records it may read in the days around, shown under their anchor's day
+/// only. Only members whose windows this reader may read take part, so a face
+/// never carries an account, an anchor or an owner field from one it can't.
+///
+/// # Errors
+///
+/// When an activity file can't be read.
+pub fn body_faces(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+    readable: Readable<'_>,
+    include_hidden: bool,
+) -> Result<Vec<Face>, ComposeError> {
+    if !has_body_data(journal) {
+        return Ok(Vec::new());
+    }
+    let mut windows = Windows::default();
+    let mut records = Vec::new();
+    for on in days_around(day) {
+        for stored in stored_body_records(journal, facet, &on)? {
+            if windows.may_read(journal, &stored, readable) {
+                records.push(stored);
+            }
+        }
+    }
+    let mut faces = Vec::new();
+    for group in group_partition(&records) {
+        let at = anchor(&records, &group);
+        if records[at].day != day {
+            continue;
+        }
+        let hidden = group.iter().any(|&index| records[index].hidden);
+        if hidden && !include_hidden {
+            continue;
+        }
+        let mut order = group.clone();
+        order.sort_by_key(|&index| {
+            (
+                records[index]
+                    .instants()
+                    .map_or(i64::MAX, |(start, _)| start),
+                records[index].key.clone(),
+            )
+        });
+        let members = order
+            .iter()
+            .map(|&index| windows.compose(journal, records[index].clone()))
+            .collect::<Vec<_>>();
+        let anchor = members
+            .iter()
+            .find(|member| member.id == records[at].id)
+            .expect("the anchor is a member")
+            .clone();
+        faces.push(Face {
+            anchor,
+            members,
+            hidden,
+        });
+    }
+    Ok(faces)
+}
+
+/// The group `record_id` is in as the owner sees it, itself included: what a
+/// hide or unhide writes. Alone, it is its own group.
+///
+/// # Errors
+///
+/// When an activity file can't be read.
+pub fn owner_group(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+) -> Result<Vec<StoredBody>, ComposeError> {
+    let mut records = Vec::new();
+    for on in days_around(day) {
+        records.extend(stored_body_records(journal, facet, &on)?);
+    }
+    let Some(at) = records
+        .iter()
+        .position(|record| record.id == record_id && record.day == day)
+    else {
+        return Ok(Vec::new());
+    };
+    let group = group_partition(&records)
+        .into_iter()
+        .find(|group| group.contains(&at))
+        .unwrap_or_else(|| vec![at]);
+    Ok(group
+        .into_iter()
+        .map(|index| records[index].clone())
+        .collect())
+}
+
+fn account_json(member: &ComposedBody) -> Value {
+    let state = match &member.account {
+        Account::Live(_) => "live",
+        Account::PartRemoved(_) => "part_removed",
+        Account::RemovedByYou => "removed_by_you",
+        Account::NotFound => "not_found",
+        Account::Unreadable => "unreadable",
+    };
+    let mut account = Map::new();
+    account.insert("id".to_owned(), Value::String(member.id.clone()));
+    account.insert("day".to_owned(), Value::String(member.day.clone()));
+    account.insert("state".to_owned(), Value::String(state.to_owned()));
+    account.insert(
+        "source".to_owned(),
+        Value::String(source_of(&member.stream).to_owned()),
+    );
+    match member.row() {
+        Some(row) => {
+            account.insert("label".to_owned(), Value::String(row.label.clone()));
+            account.insert("start".to_owned(), json_text(row.start.as_deref()));
+            account.insert("end".to_owned(), json_text(row.end.as_deref()));
+            account.insert("by".to_owned(), json_text(row.by.as_deref()));
+            if matches!(member.account, Account::Live(_)) {
+                account.insert(
+                    "values".to_owned(),
+                    Value::Object(
+                        row.values
+                            .iter()
+                            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+                            .collect(),
+                    ),
+                );
+            }
+        }
+        // A deleted account keeps its kind and instants, as HEAD's records do.
+        None => {
+            account.insert(
+                "start".to_owned(),
+                Value::String(member.stored_start.clone()),
+            );
+            account.insert("end".to_owned(), Value::String(member.stored_end.clone()));
+        }
+    }
+    Value::Object(account)
+}
+
+fn json_text(text: Option<&str>) -> Value {
+    text.map_or(Value::Null, |text| Value::String(text.to_owned()))
+}
+
+/// A face as data for a reader: the anchor's id, facet and day, the owner's
+/// fields, hidden, and each account with its own composed line. Nothing is
+/// summed or chosen across accounts.
+#[must_use]
+pub fn face_json(face: &Face) -> Value {
+    let mut item = Map::new();
+    item.insert("id".to_owned(), Value::String(face.anchor.id.clone()));
+    item.insert("facet".to_owned(), Value::String(face.anchor.facet.clone()));
+    item.insert("day".to_owned(), Value::String(face.anchor.day.clone()));
+    item.insert("source".to_owned(), Value::String("body".to_owned()));
+    item.insert(
+        "activity".to_owned(),
+        Value::String(face.anchor.activity.clone()),
+    );
+    item.insert("hidden".to_owned(), Value::Bool(face.hidden));
+    for (field, value) in &face.anchor.owner {
+        item.insert(field.clone(), value.clone());
+    }
+    item.insert(
+        "accounts".to_owned(),
+        Value::Array(face.members.iter().map(account_json).collect()),
+    );
+    Value::Object(item)
+}
+
+/// Whether two spans sit beside each other: they overlap by at least half of
+/// either one, as a calendar entry sits beside an activity, on instants.
+#[must_use]
+pub fn half_cover(left: (i64, i64), right: (i64, i64)) -> bool {
+    let overlap = left.1.min(right.1) - left.0.max(right.0);
+    overlap > 0 && (overlap * 2 >= left.1 - left.0 || overlap * 2 >= right.1 - right.0)
+}
+
+/// A face's span as instants: its anchor's stored ones.
+#[must_use]
+pub fn face_instants(face: &Face) -> Option<(i64, i64)> {
+    let start = parse_source_time(&face.anchor.stored_start)?.timestamp();
+    let end = parse_source_time(&face.anchor.stored_end)?.timestamp();
+    (end > start).then_some((start, end))
+}
+
+/// A capture segment's span as instants: its key on the zone the device
+/// reported, else on the owner's.
+fn segment_instants(journal: &Path, day: &str, dir: &Path, key: &str) -> Option<(i64, i64)> {
+    use chrono::{Offset, TimeZone};
+    let (start, end) = window_span(key)?;
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let wall = date.and_hms_opt(0, 0, 0)? + chrono::Duration::seconds(i64::from(start));
+    let owner = solstone_core_journal_config::owner_zone(journal);
+    let reported = solstone_core_callosum::read_reported_zone(journal, dir).and_then(|zone| {
+        solstone_core_journal_config::capture_zone_view(
+            day,
+            key,
+            zone.tz.as_deref(),
+            zone.utc_offset_seconds,
+            &owner,
+        )
+    });
+    let offset = match reported {
+        Some(view) => view.utc_offset_seconds,
+        None => owner
+            .offset_from_local_datetime(&wall)
+            .earliest()?
+            .fix()
+            .local_minus_utc(),
+    };
+    let begin = wall.and_utc().timestamp() - i64::from(offset);
+    Some((begin, begin + i64::from(end - start)))
+}
+
+/// A capture activity's span as instants, from the segments it names. A key
+/// that sits in no capture segment is left out.
+#[must_use]
+pub fn capture_instants(
+    journal: &Path,
+    day: &str,
+    record: &Map<String, Value>,
+) -> Option<(i64, i64)> {
+    let stream = record
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| !stream.is_empty());
+    let day_dir = journal.join("chronicle").join(day);
+    let mut span: Option<(i64, i64)> = None;
+    for key in record
+        .get("segments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let dirs = match stream {
+            Some(stream) if stream == solstone_core_journal_io::DEFAULT_STREAM => {
+                vec![day_dir.join(key)]
+            }
+            Some(stream) => vec![day_dir.join(stream).join(key)],
+            None => {
+                let mut dirs = vec![day_dir.join(key)];
+                for entry in fs::read_dir(&day_dir).into_iter().flatten().flatten() {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if !solstone_core_format::content::body_records::BODY_RECORD_STREAMS
+                        .contains(&name.as_str())
+                    {
+                        dirs.push(entry.path().join(key));
+                    }
+                }
+                dirs
+            }
+        };
+        if let Some(found) = dirs
+            .iter()
+            .filter(|dir| dir.is_dir())
+            .find_map(|dir| segment_instants(journal, day, dir, key))
+        {
+            span = Some(span.map_or(found, |(start, end)| (start.min(found.0), end.max(found.1))));
+        }
+    }
+    span
+}
+
+/// The owner's day an instant falls on, and its seconds into that day: where to
+/// look up the place it was in. A night's middle is usually on the next day.
+#[must_use]
+pub fn owner_moment(journal: &Path, instant: i64) -> Option<(String, u32)> {
+    let owner = solstone_core_journal_config::owner_zone(journal);
+    let time = DateTime::from_timestamp(instant, 0)?.with_timezone(&owner);
+    Some((
+        time.date_naive().format("%Y%m%d").to_string(),
+        time.num_seconds_from_midnight(),
+    ))
+}
+
+/// The day after `day`, where a night that began on it ends.
+#[must_use]
+pub fn next_day(day: &str) -> Option<String> {
+    NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()?
+        .succ_opt()
+        .map(|date| date.format("%Y%m%d").to_string())
+}
+
+/// The actor of a separate. No route takes it back.
+pub const SEPARATE_ACTOR: &str = "owner:separate";
+
+/// Keep `record` apart from each of `others` for good: the owner's undo of a
+/// group. Each side names the other in `apart`, one write per record, and
+/// each write stands alone, so a stop after the first already separates them.
+/// Nothing is deleted or moved.
+///
+/// # Errors
+///
+/// The first write the store refuses; writes before it stand.
+pub fn separate_account(
+    journal: &Path,
+    record: &StoredBody,
+    others: &[StoredBody],
+    timestamp: &str,
+) -> Result<(), ComposeError> {
+    let keep_apart = |target: &StoredBody, keys: Vec<String>| {
+        update_activity_record_with(
+            journal,
+            &target.facet,
+            &target.day,
+            &target.id,
+            |current| {
+                let mut apart = current
+                    .get("apart")
+                    .and_then(Value::as_array)
+                    .map(|keys| {
+                        keys.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_else(Vec::new);
+                let before = apart.len();
+                for key in keys {
+                    if !apart.contains(&key) {
+                        apart.push(key);
+                    }
+                }
+                (apart.len() > before).then(|| {
+                    Map::from_iter([(
+                        "apart".to_owned(),
+                        Value::Array(apart.into_iter().map(Value::String).collect()),
+                    )])
+                })
+            },
+            SEPARATE_ACTOR,
+            "separated",
+            timestamp,
+        )
+        .map(|_| ())
+        .map_err(|error| ComposeError(error.to_string()))
+    };
+    keep_apart(
+        record,
+        others.iter().map(|other| other.key.clone()).collect(),
+    )?;
+    for other in others {
+        keep_apart(other, vec![record.key.clone()])?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "body_records_tests.rs"]
+mod tests;

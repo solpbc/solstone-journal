@@ -353,6 +353,156 @@ pub(crate) fn activity_entities(record: &Map<String, Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// One item a beside line can name: its span as instants, and the line.
+type BesideLine = ((i64, i64), Value);
+
+/// A face's span on its first account's instants.
+fn face_span(face: &Value) -> Option<(i64, i64)> {
+    let first = face.get("accounts")?.get(0)?;
+    let time = |field: &str| {
+        solstone_core_format::content::body_records::parse_source_time(first.get(field)?.as_str()?)
+            .map(|time| time.timestamp())
+    };
+    let (start, end) = (time("start")?, time("end")?);
+    (end > start).then_some((start, end))
+}
+
+/// What a beside line says of a body face: its kind, the owner's title or the
+/// source's label, and its times. No reading values.
+fn body_line(face: &Value) -> Value {
+    let first = face.get("accounts").and_then(|accounts| accounts.get(0));
+    json!({
+        "kind": face.get("activity").cloned().unwrap_or(Value::Null),
+        "title": face
+            .get("title")
+            .cloned()
+            .or_else(|| first.and_then(|first| first.get("label")).cloned())
+            .unwrap_or(Value::Null),
+        "start": first.and_then(|first| first.get("start")).cloned().unwrap_or(Value::Null),
+        "end": first.and_then(|first| first.get("end")).cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// Body faces this connection reads that can sit beside a capture activity on
+/// `day`: those shown under it and under the day before, for a night.
+fn body_lines_near(
+    journal_root: &Path,
+    facets: &[(String, String, String)],
+    day: &str,
+    gate: &dyn Fn(&str, &str, Option<&str>) -> bool,
+) -> Vec<BesideLine> {
+    let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .and_then(|date| date.pred_opt())
+        .map(|date| date.format("%Y%m%d").to_string());
+    let mut lines = Vec::new();
+    for on in std::iter::once(day.to_owned()).chain(previous) {
+        for (_, facet_dir, _) in facets {
+            for face in solstone_core_location::body_records::body_faces(
+                journal_root,
+                facet_dir,
+                &on,
+                gate,
+                false,
+            )
+            .unwrap_or_default()
+            {
+                let value = solstone_core_location::body_records::face_json(&face);
+                if let Some(span) = face_span(&value) {
+                    lines.push((span, body_line(&value)));
+                }
+            }
+        }
+    }
+    lines
+}
+
+/// Capture activities this connection reads that can sit beside a body item
+/// shown under `day`: those on it and on the next day, for a night. Beside
+/// lines: title and type.
+fn capture_lines_on(
+    journal_root: &Path,
+    facets: &[(String, String, String)],
+    day: &str,
+) -> Vec<BesideLine> {
+    let mut lines = Vec::new();
+    let next = solstone_core_location::body_records::next_day(day);
+    for on in std::iter::once(day.to_owned()).chain(next) {
+        lines.extend(capture_lines_of(journal_root, facets, &on));
+    }
+    lines
+}
+
+fn capture_lines_of(
+    journal_root: &Path,
+    facets: &[(String, String, String)],
+    day: &str,
+) -> Vec<BesideLine> {
+    let mut lines = Vec::new();
+    for (_, facet_dir, _) in facets {
+        for record in
+            solstone_core_facets::load_activity_records(journal_root, facet_dir, day, false)
+                .unwrap_or_default()
+        {
+            if let Some(span) =
+                solstone_core_location::body_records::capture_instants(journal_root, day, &record)
+            {
+                lines.push((
+                    span,
+                    json!({"title": activity_title(&record), "activity": record.get("activity").cloned().unwrap_or(Value::Null)}),
+                ));
+            }
+        }
+    }
+    lines
+}
+
+/// A body face as `list_activities` gives it: the owner's title when they set
+/// one, else the first account's label, its kind, and every account with its
+/// own composed line. Nothing is summed or chosen.
+pub(crate) fn body_activity(
+    face: &Value,
+    facet_title: &str,
+    day: &str,
+    reference: String,
+    zone: &str,
+) -> Value {
+    let accounts = face
+        .get("accounts")
+        .cloned()
+        .unwrap_or(Value::Array(Vec::new()));
+    let first = accounts.get(0).cloned().unwrap_or(Value::Null);
+    let title = face
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            first
+                .get("label")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    let mut activity = json!({
+        "title": title,
+        "facet": facet_title,
+        "day": day,
+        "source": "body",
+        "kind": face.get("activity").cloned().unwrap_or(Value::Null),
+        "start": first.get("start").cloned().unwrap_or(Value::Null),
+        "end": first.get("end").cloned().unwrap_or(Value::Null),
+        "accounts": accounts,
+        "reference": reference,
+        "zone": zone,
+    });
+    for field in ["description", "details"] {
+        if let Some(value) = face.get(field) {
+            activity[field] = value.clone();
+        }
+    }
+    activity
+}
+
 pub(crate) fn sort_activity_key(
     file_day: &str,
     facet_id: &str,
@@ -536,10 +686,13 @@ pub(crate) fn execute_list(
         day: String,
         file_digest: String,
         rec_identity: String,
+        /// A body record's face, composed for this connection.
+        face: Option<Value>,
     }
 
     let mut collected = Vec::new();
     let mut targets = Vec::new();
+    let gate = crate::body_source::window_gate(journal_root, snapshot);
 
     for (facet_id, facet_dir, facet_title) in &facets_to_search {
         let stems = solstone_core_facets::list_activity_day_stems(journal_root, facet_dir)
@@ -576,6 +729,20 @@ pub(crate) fn execute_list(
             if raw_rows.len() != normalized.len() {
                 return Err(DispatchError::Tool(ToolError::FileUnreadable));
             }
+            // A body record shows as its face, only for windows this connection
+            // reads; it names no entity, so an entity filter leaves it out.
+            let faces = if entity_filter.is_none() {
+                solstone_core_location::body_records::body_faces(
+                    journal_root,
+                    facet_dir,
+                    &day,
+                    &gate,
+                    false,
+                )
+                .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
+            } else {
+                Vec::new()
+            };
 
             for ((record, trimmed), normalized_row) in raw_rows.into_iter().zip(normalized) {
                 // Same predicate as load_activity_records(..., include_hidden: false).
@@ -585,6 +752,28 @@ pub(crate) fn execute_list(
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
                 if hidden || solstone_core_facets::is_retired_plan(&record) {
+                    continue;
+                }
+                if solstone_core_facets::is_body_record(&record) {
+                    let id = record.get("id").and_then(Value::as_str);
+                    if let Some(face) = faces
+                        .iter()
+                        .find(|face| Some(face.anchor.id.as_str()) == id)
+                    {
+                        collected.push(CollectedItem {
+                            sort_key: sort_activity_key(&day, facet_id, &record),
+                            rec_identity: crate::activity_admit::compute_record_identity(
+                                &record, &trimmed,
+                            ),
+                            record,
+                            facet_id: facet_id.clone(),
+                            facet_dir: facet_dir.clone(),
+                            facet_title: facet_title.clone(),
+                            day: day.clone(),
+                            file_digest: file_digest.clone(),
+                            face: Some(solstone_core_location::body_records::face_json(face)),
+                        });
+                    }
                     continue;
                 }
                 let entities = activity_entities(&record);
@@ -616,6 +805,7 @@ pub(crate) fn execute_list(
                     day: day.clone(),
                     file_digest: file_digest.clone(),
                     rec_identity,
+                    face: None,
                 });
             }
         }
@@ -652,6 +842,10 @@ pub(crate) fn execute_list(
     let mut locations = BTreeMap::new();
 
     let mut activities = Vec::new();
+    // Beside lines between body faces and capture activities, both ways, only
+    // between items this connection reads. Worked out when read; never stored.
+    let mut body_near: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
+    let mut capture_on: BTreeMap<String, Vec<BesideLine>> = BTreeMap::new();
     for item in &page {
         let reference = codec()
             .mint(
@@ -669,6 +863,41 @@ pub(crate) fn execute_list(
             )
             .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
 
+        if let Some(face) = &item.face {
+            let mut activity =
+                body_activity(face, &item.facet_title, &item.day, reference, &zone_str);
+            if let Some(span) = face_span(face) {
+                let captures = capture_on.entry(item.day.clone()).or_insert_with(|| {
+                    capture_lines_on(journal_root, &facets_to_search, &item.day)
+                });
+                let beside = captures
+                    .iter()
+                    .filter(|(other, _)| {
+                        solstone_core_location::body_records::half_cover(span, *other)
+                    })
+                    .map(|(_, line)| line.clone())
+                    .collect::<Vec<_>>();
+                if !beside.is_empty() {
+                    activity["beside"] = Value::Array(beside);
+                }
+                if sees_calendar {
+                    let middle = span.0 + (span.1 - span.0) / 2;
+                    if let Some((on, seconds)) =
+                        solstone_core_location::body_records::owner_moment(journal_root, middle)
+                    {
+                        let location = locations.entry(on.clone()).or_insert_with(|| {
+                            solstone_core_location::DayBeside::read(journal_root, &on)
+                        });
+                        if let Some(beside) = location.beside((seconds, seconds + 1), None) {
+                            activity["place"] =
+                                json!({"device": beside.device, "words": beside.words});
+                        }
+                    }
+                }
+            }
+            activities.push(activity);
+            continue;
+        }
         let (start, end, duration) = activity_times_and_duration(&item.record);
         let people = activity_people(&item.record);
         let entities = activity_entities(&item.record);
@@ -711,6 +940,23 @@ pub(crate) fn execute_list(
             let stream = item.record.get("stream").and_then(Value::as_str);
             if let Some(beside) = location.beside(span, stream) {
                 activity["place"] = json!({"device": beside.device, "words": beside.words});
+            }
+        }
+        if let Some(span) = solstone_core_location::body_records::capture_instants(
+            journal_root,
+            &item.day,
+            &item.record,
+        ) {
+            let faces = body_near.entry(item.day.clone()).or_insert_with(|| {
+                body_lines_near(journal_root, &facets_to_search, &item.day, &gate)
+            });
+            let beside = faces
+                .iter()
+                .filter(|(other, _)| solstone_core_location::body_records::half_cover(span, *other))
+                .map(|(_, line)| line.clone())
+                .collect::<Vec<_>>();
+            if !beside.is_empty() {
+                activity["beside"] = Value::Array(beside);
             }
         }
         activities.push(activity);
@@ -789,6 +1035,18 @@ pub(crate) fn execute_get_sources(
     let Ok(file_text) = String::from_utf8(bytes) else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
+    // A body record's sources are its accounts, composed for this connection.
+    if let Some(body) =
+        crate::activity_admit::body_record_by_identity(&file_text, &activity_ref.record_identity)
+    {
+        let face = crate::dispatch::body_face_for(journal_root, snapshot, &activity_ref, &body)?;
+        let item = solstone_core_location::body_records::face_json(&face);
+        let units = item
+            .get("accounts")
+            .cloned()
+            .unwrap_or(Value::Array(Vec::new()));
+        return Ok(Prepared::new(json!({ "units": units }), 1, vec![rel_path]));
+    }
     let Some((record, _)) =
         crate::activity_admit::record_by_identity(&file_text, &activity_ref.record_identity)
     else {

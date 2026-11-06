@@ -1116,7 +1116,8 @@ fn a_session_dropped_later_leaves_its_series_on_its_tiles_and_makes_no_empty_hou
         !window(root, TEN, "060000_3600").exists(),
         "no hour is written with nothing in it"
     );
-    assert!(!two.summary.contains("added"), "{}", two.summary);
+    // No reading is held back.
+    assert!(!two.summary.contains("belong"), "{}", two.summary);
 }
 
 #[test]
@@ -2511,4 +2512,62 @@ fn a_file_where_the_streams_folder_goes_is_counted_and_later_days_land() {
     );
     assert!(later_day_landed(root));
     assert_eq!(fs::read(&blocked).unwrap(), b"in the way");
+}
+
+#[test]
+fn an_import_adds_one_activity_per_workout_and_again_adds_none() {
+    let journal = journal();
+    let root = journal.path();
+    let dir = root.join("facets/body");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("facet.json"),
+        json!({"title": "body", "description": "body"}).to_string(),
+    )
+    .unwrap();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    let one = run(root, &source, "20261012_120000", Some("body"));
+    assert!(
+        one.summary.contains(
+            "2 of the workouts, nights of sleep and mindfulness sessions now show on their days."
+        ),
+        "{}",
+        one.summary
+    );
+    let files = ["20261010", "20261011"]
+        .map(|day| root.join(format!("facets/body/activities/{day}.jsonl")));
+    let before = files.clone().map(|file| fs::read(file).unwrap());
+    for bytes in &before {
+        let text = String::from_utf8_lossy(bytes);
+        assert_eq!(text.lines().count(), 1, "{text}");
+        assert!(text.contains(r#""source":"body""#), "{text}");
+        assert!(
+            !text.contains("Loop"),
+            "nothing of the row is copied: {text}"
+        );
+    }
+    let two = run(root, &source, "20261012_120001", Some("body"));
+    assert!(
+        !two.summary.contains("to your activities"),
+        "{}",
+        two.summary
+    );
+    assert_eq!(files.map(|file| fs::read(file).unwrap()), before);
+
+    // The same export with no facet gives no record and says why.
+    let fresh = tempfile::tempdir().unwrap();
+    fs::create_dir_all(fresh.path().join("config")).unwrap();
+    fs::write(
+        fresh.path().join("config/journal.json"),
+        json!({"identity": {"timezone": "America/Denver"}}).to_string(),
+    )
+    .unwrap();
+    let three = run(fresh.path(), &source, "20261012_120002", None);
+    assert!(
+        three.summary.contains("2 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because their windows have no facet."),
+        "{}",
+        three.summary
+    );
+    assert!(!fresh.path().join("facets").exists());
 }

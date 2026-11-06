@@ -14,9 +14,23 @@ pub fn is_retired_plan(record: &JsonObject) -> bool {
     record.get("source").and_then(Value::as_str) == Some("anticipated")
 }
 
+/// What a body record's `source` says.
+pub const BODY_RECORD_SOURCE: &str = "body";
+
+/// A body record refers to an account in a body window and copies none of it.
+/// It is read only by composing it with that window, for a connection allowed
+/// to read it, so no reader takes the file's row as it stands: it isn't
+/// indexed, chunked, thought about or counted, and an entry's position skips it.
+pub fn is_body_record(record: &JsonObject) -> bool {
+    record.get("source").and_then(Value::as_str) == Some(BODY_RECORD_SOURCE)
+}
+
 pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
-    for record in records.iter().filter(|record| !is_retired_plan(record)) {
+    for record in records
+        .iter()
+        .filter(|record| !is_retired_plan(record) && !is_body_record(record))
+    {
         let normalized = normalize_record(record);
         let mut lines = vec![format!("### {}", fallback_title(record))];
 

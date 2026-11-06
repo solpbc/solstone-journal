@@ -35,16 +35,16 @@ pub use activities::{
     write_activity_file,
 };
 pub use activity_records::{
-    ActivityRecord, ActivityRecordStoreError, AppendOutcome, EDIT_BEFORE, EDIT_LINES, EDIT_REMOVED,
-    EDIT_SET, EDIT_SPEAKER, EditRefusal, OWNER_LINES_ACTOR, activity_field_held,
-    activity_is_available, activity_value_or_empty, activity_value_string, activity_value_truthy,
-    admit_activity_destination, adopt_moved_activity_rows, append_activity_lines_edit,
-    append_activity_record, append_activity_record_checked, append_edit, edit_removable,
-    edit_removed, get_activity_record, hold_activity_enrichment, is_retired_plan,
-    list_activity_day_stems, load_activity_records, parse_activity_records_strict,
-    read_activity_records_strict, remove_activity_edit, set_activity_hidden,
-    set_activity_hidden_checked, update_activity_record, update_activity_record_checked,
-    update_activity_record_with,
+    ActivityRecord, ActivityRecordStoreError, AppendOutcome, BODY_RECORD_SOURCE, EDIT_BEFORE,
+    EDIT_LINES, EDIT_REMOVED, EDIT_SET, EDIT_SPEAKER, EditRefusal, OWNER_LINES_ACTOR,
+    activity_field_held, activity_is_available, activity_value_or_empty, activity_value_string,
+    activity_value_truthy, admit_activity_destination, adopt_moved_activity_rows,
+    append_activity_lines_edit, append_activity_record, append_activity_record_checked,
+    append_edit, edit_removable, edit_removed, get_activity_record, hold_activity_enrichment,
+    is_body_record, is_retired_plan, list_activity_day_stems, load_activity_records,
+    parse_activity_records_strict, read_activity_records_strict, remove_activity_edit,
+    set_activity_hidden, set_activity_hidden_checked, update_activity_record,
+    update_activity_record_checked, update_activity_record_with,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,

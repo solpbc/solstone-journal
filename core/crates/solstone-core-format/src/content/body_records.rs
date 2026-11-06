@@ -87,7 +87,7 @@ pub struct BodyRow {
     /// Values the source's reader chose to restate for search, in words.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub values: BTreeMap<String, String>,
-    /// The owner's own words on this record.
+    /// The source's words on this record.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub words: Vec<String>,
 }
@@ -159,6 +159,48 @@ pub fn parse_source_time(text: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_str(text.trim(), "%Y-%m-%d %H:%M:%S %z")
         .ok()
         .or_else(|| DateTime::parse_from_rfc3339(text.trim()).ok())
+}
+
+/// Who recorded an account, as an opaque id: its stream and `by`. Two accounts
+/// from one recorder never group.
+#[must_use]
+pub fn recorder_id(stream: &str, by: Option<&str>) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(format!("{stream}\u{1f}{}", by.unwrap_or_default()).as_bytes());
+    digest
+        .iter()
+        .take(6)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A workout's type in one shared vocabulary, so one recorder's run can pair
+/// with another's: Apple's `HKWorkoutActivityTypeRunning`, Strava's `Run` and
+/// Oura's `running` are all `running`. A type outside the table pairs with
+/// nothing.
+#[must_use]
+pub fn mapped_workout_type(source: &str, record_type: &str) -> Option<&'static str> {
+    let name = match source {
+        "apple_health" => record_type.strip_prefix("HKWorkoutActivityType")?,
+        _ => record_type,
+    };
+    let lower = name.to_ascii_lowercase();
+    Some(match lower.as_str() {
+        "running" | "run" | "trailrun" | "virtualrun" => "running",
+        "cycling" | "ride" | "virtualride" | "ebikeride" => "cycling",
+        "walking" | "walk" => "walking",
+        "hiking" | "hike" => "hiking",
+        "swimming" | "swim" => "swimming",
+        "rowing" | "rowingmachine" => "rowing",
+        "yoga" => "yoga",
+        "elliptical" => "elliptical",
+        "highintensityintervaltraining" | "hiit" => "hiit",
+        "traditionalstrengthtraining"
+        | "functionalstrengthtraining"
+        | "weighttraining"
+        | "strengthtraining" => "strength",
+        _ => return None,
+    })
 }
 
 /// An identifier in plain words: `HKQuantityTypeIdentifierHeartRate` reads

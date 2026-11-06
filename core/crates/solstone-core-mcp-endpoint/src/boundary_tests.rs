@@ -12131,6 +12131,39 @@ fn get_week_novelty_ignores_a_retired_plan_in_the_prior_week() {
     assert_eq!(ranked(&format!("{held}\n")), ["Review", "Standup"]);
     let plan = r#"{"id":"plan","title":"Standup","activity":"standup","created_at":1,"source":"anticipated"}"#;
     assert_eq!(ranked(&format!("{plan}\n")), ["Standup", "Review"]);
+    // Nor does a body record, which no default reader takes.
+    let body = r#"{"id":"body_0123456789abcdef","title":"Standup","activity":"standup","created_at":1,"source":"body"}"#;
+    assert_eq!(ranked(&format!("{body}\n")), ["Standup", "Review"]);
+}
+
+#[test]
+fn search_and_fetch_skip_a_body_record_and_keep_the_next_rows_position() {
+    let journal = base_activity_journal();
+    let activities = journal.path().join("facets/alpha/activities");
+    fs::create_dir_all(&activities).unwrap();
+    fs::write(
+        activities.join("20260110.jsonl"),
+        concat!(
+            "{\"id\":\"body_0123456789abcdef\",\"source\":\"body\",\"activity\":\"workout\",\"title\":\"Qrun body\",\"account\":{\"key\":\"import.apple_health\\u001fw1\",\"start\":\"2026-01-10 07:00:00 -0700\",\"end\":\"2026-01-10 07:40:00 -0700\"}}\n",
+            "{\"id\":\"run_070000_300\",\"title\":\"Qrun review\",\"activity\":\"review\",\"created_at\":1,\"segments\":[\"070000_300\"]}\n",
+        ),
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+    let res = probe(&journal, "search", json!({"query": "Qrun"})).unwrap();
+    let results = res["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "{res}");
+    assert!(!res.to_string().contains("Qrun body"), "{res}");
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": results[0]["reference"]}),
+    )
+    .unwrap();
+    let text = fetched["text"].as_str().unwrap();
+    assert!(text.contains("Qrun review"), "{fetched}");
+    assert!(!text.contains("Qrun body"), "{fetched}");
 }
 
 #[test]
@@ -12748,4 +12781,292 @@ fn get_activity_sources_poisoned_sibling_fails_closed_without_leaking() {
     let err_str = format!("{err:?}");
     assert!(!err_str.contains(poison_sentinel));
     assert!(!err_str.contains(good_needle));
+}
+
+/// An alpha-filed Apple workout window on 20260308 and its body record, beside
+/// a capture activity in beta.
+fn body_record_journal(with_body: bool) -> tempfile::TempDir {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+    let journal = base_activity_journal();
+    let root = journal.path();
+    write_activity_line(
+        root,
+        "beta",
+        "20260308",
+        "act_beta",
+        "Beta work",
+        100,
+        Some("work"),
+        Some(&["090000_300"]),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    if !with_body {
+        return journal;
+    }
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"America/New_York"}"#,
+    )
+    .unwrap();
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        "w1".to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    row.experience = Some("workout".to_owned());
+    row.start = Some("2026-03-08 07:00:00 -0400".to_owned());
+    row.end = Some("2026-03-08 07:40:00 -0400".to_owned());
+    row.by = Some("Synthetic Watch".to_owned());
+    let window = root.join("chronicle/20260308/import.apple_health/070000_3600");
+    fs::create_dir_all(window.join("talents")).unwrap();
+    fs::write(
+        window.join("body.jsonl"),
+        encode_rows(std::slice::from_ref(&row)),
+    )
+    .unwrap();
+    fs::write(window.join("stream.json"), "{}\n").unwrap();
+    fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    let record = json!({
+        "id": "body_0123456789abcdef", "source": "body", "activity": "workout",
+        "account": {"key": "import.apple_health\u{1f}w1", "start": row.start, "end": row.end,
+            "type": "running", "recorder": recorder_id("import.apple_health", row.by.as_deref())},
+    });
+    let path = root.join("facets/alpha/activities/20260308.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, format!("{record}\n")).unwrap();
+    journal
+}
+
+fn listed(journal: &tempfile::TempDir, permission: Option<ReadPermission>) -> Value {
+    if let Some(permission) = permission {
+        PermissionStore::open(journal.path())
+            .set_permission(CONNECTION, permission)
+            .unwrap();
+    }
+    let mut res = probe(
+        journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap();
+    // References are minted per call; compare what they point at by title.
+    for activity in res["activities"].as_array_mut().unwrap() {
+        activity.as_object_mut().unwrap().remove("reference");
+    }
+    res
+}
+
+#[test]
+fn list_activities_shows_a_body_record_only_to_a_connection_that_reads_its_window() {
+    let with = body_record_journal(true);
+    let res = listed(&with, None);
+    let body = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["source"] == "body")
+        .unwrap_or_else(|| panic!("{res}"))
+        .clone();
+    assert_eq!(body["title"], "Running");
+    assert_eq!(body["kind"], "workout");
+    assert_eq!(body["accounts"][0]["by"], "Synthetic Watch");
+    assert_eq!(body["facet"], "Alpha");
+
+    let alpha_with_transcripts = ReadPermission {
+        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        scope: ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    };
+    assert!(
+        listed(&with, Some(alpha_with_transcripts))
+            .to_string()
+            .contains("Synthetic Watch")
+    );
+
+    // A beta-limited connection and a Facets-only one get exactly what they
+    // would with no body data at all.
+    for permission in [
+        ReadPermission {
+            categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+            scope: ReadScope::Facets {
+                ids: vec![FACET_B.to_owned()],
+            },
+        },
+        ReadPermission {
+            categories: vec!["facets".to_owned()],
+            scope: ReadScope::WholeJournal,
+        },
+    ] {
+        let without = body_record_journal(false);
+        assert_eq!(
+            listed(&body_record_journal(true), Some(permission.clone())),
+            listed(&without, Some(permission.clone())),
+            "{permission:?}"
+        );
+    }
+}
+
+#[test]
+fn a_body_record_left_in_one_facet_after_its_window_moved_reaches_no_limited_connection() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    // The record stays in beta's file; its window is now filed under alpha.
+    let record = fs::read_to_string(root.join("facets/alpha/activities/20260308.jsonl")).unwrap();
+    fs::remove_file(root.join("facets/alpha/activities/20260308.jsonl")).unwrap();
+    let beta = root.join("facets/beta/activities/20260308.jsonl");
+    let mut text = fs::read_to_string(&beta).unwrap();
+    text.push_str(&record);
+    fs::write(&beta, text).unwrap();
+
+    let beta_only = ReadPermission {
+        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        scope: ReadScope::Facets {
+            ids: vec![FACET_B.to_owned()],
+        },
+    };
+    assert!(
+        !listed(&journal, Some(beta_only))
+            .to_string()
+            .contains("Synthetic Watch")
+    );
+    assert!(
+        listed(&journal, Some(ReadPermission::default_whole_journal()))
+            .to_string()
+            .contains("Synthetic Watch")
+    );
+}
+
+#[test]
+fn fetch_on_a_body_reference_serves_its_composed_face_and_nothing_raw() {
+    let journal = body_record_journal(true);
+    let res = probe(
+        &journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap();
+    let reference = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["source"] == "body")
+        .unwrap()["reference"]
+        .clone();
+    let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
+    let text = fetched["text"].as_str().unwrap();
+    assert!(
+        text.contains("Synthetic Watch") && text.contains("\"state\": \"live\""),
+        "{fetched}"
+    );
+    // The record's own bytes are never served: its key and recorder stay home.
+    assert!(
+        !text.contains("recorder") && !text.contains("import.apple_health"),
+        "{fetched}"
+    );
+}
+
+#[test]
+fn get_activity_sources_on_a_body_reference_gives_its_accounts() {
+    let journal = body_record_journal(true);
+    let res = probe(
+        &journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260314"}),
+    )
+    .unwrap();
+    let reference = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["source"] == "body")
+        .unwrap()["reference"]
+        .clone();
+    let sources = probe(
+        &journal,
+        "get_activity_sources",
+        json!({"reference": reference}),
+    )
+    .unwrap();
+    assert_eq!(sources["units"][0]["by"], "Synthetic Watch", "{sources}");
+    assert!(!sources.to_string().contains("recorder"), "{sources}");
+}
+
+#[test]
+fn get_week_shows_a_body_record_composed() {
+    let journal = body_record_journal(true);
+    let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+    assert_eq!(
+        week["body"][0]["accounts"][0]["by"], "Synthetic Watch",
+        "{week}"
+    );
+    assert_eq!(week["body"][0]["kind"], "workout");
+    // get_week itself reads only for a whole-journal connection with transcripts.
+}
+
+#[test]
+fn beside_lines_go_both_ways_and_never_past_what_a_connection_reads() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    fs::create_dir_all(root.join("chronicle/20260308/phone/070000_300")).unwrap();
+    for facet in ["alpha", "beta"] {
+        write_activity_line(
+            root,
+            facet,
+            "20260308",
+            &format!("act_{facet}_run"),
+            &format!("{facet} capture"),
+            50,
+            Some("running"),
+            Some(&["070000_300"]),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+    }
+    let res = listed(&journal, None);
+    let activities = res["activities"].as_array().unwrap();
+    let by_title = |title: &str| {
+        activities
+            .iter()
+            .find(|activity| activity["title"] == title)
+            .unwrap_or_else(|| panic!("{title}: {res}"))
+            .clone()
+    };
+    assert_eq!(
+        by_title("alpha capture")["beside"][0]["kind"],
+        "workout",
+        "{res}"
+    );
+    assert_eq!(
+        by_title("Running")["beside"].as_array().unwrap().len(),
+        2,
+        "{res}"
+    );
+
+    let beta_only = ReadPermission {
+        categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+        scope: ReadScope::Facets {
+            ids: vec![FACET_B.to_owned()],
+        },
+    };
+    let res = listed(&journal, Some(beta_only));
+    let beta = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["title"] == "beta capture")
+        .unwrap()
+        .clone();
+    assert!(beta.get("beside").is_none(), "{res}");
+    assert!(!res.to_string().contains("Running"), "{res}");
 }

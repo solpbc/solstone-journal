@@ -1292,6 +1292,15 @@ pub struct SummaryCounts {
     pub unreadable: u64,
     pub kept_facet: u64,
     pub refiled: u64,
+    /// Activity records created for workouts, nights and mindfulness sessions.
+    #[serde(default)]
+    pub activities: u64,
+    /// Experiences in a window with no facet, which get no activity record.
+    #[serde(default)]
+    pub activities_no_facet: u64,
+    /// Facets whose activity file refused a record.
+    #[serde(default)]
+    pub activities_refused: Vec<String>,
     /// Windows or days that couldn't be published, as "day key: stage".
     #[serde(default)]
     pub not_saved: Vec<String>,
@@ -1314,6 +1323,9 @@ impl SummaryCounts {
             unreadable: plan.unreadable,
             kept_facet: plan.kept_facet,
             refiled: plan.refiled,
+            activities: 0,
+            activities_no_facet: 0,
+            activities_refused: Vec::new(),
             not_saved: Vec::new(),
             notes: Vec::new(),
         }
@@ -1362,6 +1374,45 @@ pub fn summary_text(counts: &SummaryCounts, facet: Option<&str>, zone: Tz) -> St
             text,
             "{} already held records, and those are now filed under this facet instead of the one they had.\n",
             count_of_windows(counts.refiled)
+        );
+    }
+    if counts.activities > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.activities == 1 {
+                "1 workout, night of sleep or mindfulness session now shows on its day.".to_owned()
+            } else {
+                format!(
+                    "{} of the workouts, nights of sleep and mindfulness sessions now show on their days.",
+                    counts.activities
+                )
+            }
+        );
+    }
+    if counts.activities_no_facet > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.activities_no_facet == 1 {
+                "1 workout, night of sleep or mindfulness session doesn't show on its day, because its window has no facet.".to_owned()
+            } else {
+                format!(
+                    "{} of the workouts, nights of sleep and mindfulness sessions don't show on their days, because their windows have no facet.",
+                    counts.activities_no_facet
+                )
+            }
+        );
+    }
+    if !counts.activities_refused.is_empty() {
+        let facets = match counts.activities_refused.as_slice() {
+            [one] => format!("the {one} facet"),
+            [rest @ .., last] => format!("the {} and {last} facets", rest.join(", ")),
+            [] => String::new(),
+        };
+        let _ = writeln!(
+            text,
+            "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"
         );
     }
     let mut section = |title: &str, items: Vec<(String, u64)>| {

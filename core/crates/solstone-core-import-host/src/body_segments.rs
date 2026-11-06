@@ -140,6 +140,15 @@ struct Totals {
     published: u64,
     entries: u64,
     days: BTreeSet<String>,
+    /// Activity records created for experiences.
+    #[serde(default)]
+    activities: u64,
+    /// Experiences in a window with no facet, which get no activity record.
+    #[serde(default)]
+    activities_no_facet: u64,
+    /// Facets whose activity file refused a record; the next run tries again.
+    #[serde(default)]
+    activities_refused: BTreeSet<String>,
 }
 
 impl Totals {
@@ -152,6 +161,10 @@ impl Totals {
         self.kept_facet += other.kept_facet;
         self.refiled += other.refiled;
         self.published += other.published;
+        self.activities += other.activities;
+        self.activities_no_facet += other.activities_no_facet;
+        self.activities_refused
+            .extend(other.activities_refused.iter().cloned());
         self.entries += other.entries;
         self.days.extend(other.days.iter().cloned());
     }
@@ -673,6 +686,7 @@ impl Run<'_> {
         }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
+        state.totals.add(&activity_totals(self.journal, &day));
         state.failed.extend(failed);
         state.done_through = Some(day.clone());
         state.pending = None;
@@ -807,6 +821,17 @@ fn reconcile_stream(journal: &Path) -> Result<Option<String>, String> {
     }))
 }
 
+/// Create the activity records of a day's experiences, as totals.
+fn activity_totals(journal: &Path, day: &str) -> Totals {
+    let counts = crate::body_activity::write_records(journal, day);
+    Totals {
+        activities: counts.written,
+        activities_no_facet: counts.no_facet,
+        activities_refused: counts.refused.into_iter().map(|(facet, _)| facet).collect(),
+        ..Totals::default()
+    }
+}
+
 fn summary_of(state: &RunState) -> SummaryCounts {
     let mut refused = state.scan.refused.clone();
     for (stage, count) in &state.place.refused {
@@ -823,6 +848,9 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         unreadable: state.totals.unreadable,
         kept_facet: state.totals.kept_facet,
         refiled: state.totals.refiled,
+        activities: state.totals.activities,
+        activities_no_facet: state.totals.activities_no_facet,
+        activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         not_saved: state
             .failed
             .iter()
@@ -1076,6 +1104,8 @@ fn run_phases(
                     run.append_listing(&mut old, &pending)?;
                     old.totals.add(&pending.counts);
                 }
+                // A record its run didn't get to; the totals are this run's.
+                let _ = activity_totals(journal, &pending.day);
             }
             run.retry_failed(&mut old.failed)?;
             if old.phase != Phase::Retry && old.import_id != run.import_id {

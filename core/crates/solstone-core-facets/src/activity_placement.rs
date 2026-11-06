@@ -132,7 +132,10 @@ pub fn place_activity_records(
                 .get("stream")
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty());
-            let is_participant = !record.get("hidden").is_some_and(activity_value_truthy);
+            // A body record has no segments and refers to a body window: it never
+            // takes part in placing the day's capture activities.
+            let is_participant = !record.get("hidden").is_some_and(activity_value_truthy)
+                && !crate::is_body_record(record);
             let id = record
                 .get("id")
                 .and_then(Value::as_str)
@@ -447,6 +450,45 @@ mod tests {
             let named_stream = twins.neighbour.as_ref().map(|_| BODY_STREAM);
             assert_eq!(courses[1].stream.as_deref(), named_stream, "{beside:?}");
         }
+    }
+
+    #[test]
+    fn a_body_record_takes_no_part_in_placing_the_day() {
+        let root = TempDir::new_in("/var/tmp").unwrap();
+        chronicle_segment(root.path(), Some("s1"), "100000_300");
+        let capture = record("cap", None, &["100000_300"], false);
+        let body =
+            serde_json::json!({"id":"body_0123456789abcdef","source":"body","activity":"workout","segments":["100000_300"]})
+                .as_object()
+                .unwrap()
+                .clone();
+        let alone = place_activity_records(
+            root.path(),
+            DAY,
+            &[PlacedRecord {
+                facet: "work",
+                record: &capture,
+            }],
+        );
+        let beside = place_activity_records(
+            root.path(),
+            DAY,
+            &[
+                PlacedRecord {
+                    facet: "work",
+                    record: &body,
+                },
+                PlacedRecord {
+                    facet: "work",
+                    record: &capture,
+                },
+            ],
+        );
+        assert_eq!(beside.len(), 2);
+        assert_eq!(beside[1].stream, alone[0].stream);
+        assert_eq!(beside[1].span, alone[0].span);
+        assert!(beside[1].partners.is_empty() && !beside[1].concurrent);
+        assert!(beside[0].partners.is_empty() && !beside[0].concurrent);
     }
 
     #[test]

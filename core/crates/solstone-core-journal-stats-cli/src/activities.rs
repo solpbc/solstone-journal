@@ -81,7 +81,8 @@ pub(crate) fn accumulate_activities(
                         .collect()
                 })
                 .unwrap_or_default();
-            if segments.is_empty() {
+            // A body record has no segments; say so rather than lean on it.
+            if segments.is_empty() || solstone_core_format::content::is_body_record(record) {
                 continue;
             }
 

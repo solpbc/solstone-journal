@@ -10,7 +10,12 @@ pub fn is_synthetic(record: &Map<String, Value>) -> bool {
     record
         .get("source")
         .and_then(Value::as_str)
-        .is_some_and(|value| matches!(value, "cogitate" | "anticipated"))
+        .is_some_and(|value| {
+            matches!(
+                value,
+                "cogitate" | "anticipated" | solstone_core_format::content::BODY_RECORD_SOURCE
+            )
+        })
 }
 
 /// Production's existing minimum span eligibility predicate.
@@ -86,6 +91,14 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn a_body_record_is_synthetic_so_no_talent_runs_on_it() {
+        let body = json!({"source":"body","activity":"workout"});
+        assert!(is_synthetic(body.as_object().unwrap()));
+        let user = json!({"source":"user","activity":"workout"});
+        assert!(!is_synthetic(user.as_object().unwrap()));
+    }
 
     fn record(segments: Option<Value>) -> Map<String, Value> {
         segments

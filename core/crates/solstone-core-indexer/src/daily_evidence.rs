@@ -357,7 +357,13 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
                 .lines()
                 .filter(|line| !line.trim().is_empty())
                 .map(|line| serde_json::from_str::<Value>(line).expect("validated JSONL"))
-                .filter(|row| row.get("source").and_then(Value::as_str) != Some("anticipated"))
+                // Nor is a body record: it refers to a body window and copies none of it.
+                .filter(|row| {
+                    !matches!(
+                        row.get("source").and_then(Value::as_str),
+                        Some("anticipated" | solstone_core_format::content::BODY_RECORD_SOURCE)
+                    )
+                })
                 .map(|row| row.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -1439,6 +1445,61 @@ mod tests {
         fs::remove_dir_all(a).unwrap();
         fs::remove_dir_all(b).unwrap();
     }
+    #[test]
+    fn a_body_record_never_moves_daily_evidence_and_a_capture_row_beside_it_does() {
+        let root = root("daily-body-record");
+        write(&root, "facets/work/facet.json", "{\"title\":\"Work\"}");
+        let capture = "{\"id\":\"run_070000_300\",\"title\":\"Actual\",\"source\":\"user\"}\n";
+        let body = |end: &str| {
+            format!(
+                "{{\"id\":\"body_0123456789abcdef\",\"source\":\"body\",\"activity\":\"workout\",\"account\":{{\"key\":\"import.apple_health\\u001fw1\",\"start\":\"2026-09-10 07:00:00 -0600\",\"end\":\"{end}\"}}}}\n"
+            )
+        };
+        write(&root, "facets/work/activities/20260910.jsonl", capture);
+        let before = revision(&root, "entities:entity_observer", Some("work"));
+        // A body record before the capture row, then edited: nothing moves.
+        for end in ["2026-09-10 07:40:00 -0600", "2026-09-10 07:45:00 -0600"] {
+            write(
+                &root,
+                "facets/work/activities/20260910.jsonl",
+                &format!("{}{capture}", body(end)),
+            );
+            assert_eq!(
+                before,
+                revision(&root, "entities:entity_observer", Some("work"))
+            );
+        }
+        // The capture row changing beside it does.
+        write(
+            &root,
+            "facets/work/activities/20260910.jsonl",
+            &format!(
+                "{}{}",
+                body("2026-09-10 07:45:00 -0600"),
+                capture.replace("Actual", "Changed")
+            ),
+        );
+        assert_ne!(
+            before,
+            revision(&root, "entities:entity_observer", Some("work"))
+        );
+        fs::remove_dir_all(root).unwrap();
+        // A file holding only a body record is no evidence at all.
+        let only = super::tests::root("daily-body-only");
+        write(&only, "facets/work/facet.json", "{\"title\":\"Work\"}");
+        let before = revision(&only, "entities:entity_observer", Some("work"));
+        write(
+            &only,
+            "facets/work/activities/20260910.jsonl",
+            &body("2026-09-10 07:40:00 -0600"),
+        );
+        assert_eq!(
+            before,
+            revision(&only, "entities:entity_observer", Some("work"))
+        );
+        fs::remove_dir_all(only).unwrap();
+    }
+
     #[test]
     fn daily_evidence_review_reads_actual_previous_seven_days_and_rejects_corruption() {
         let root = root("daily-review-window");

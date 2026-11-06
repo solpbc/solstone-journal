@@ -186,8 +186,11 @@ fn kept_record_and_identity(text: &str, idx: i64) -> Option<(Map<String, Value>,
             continue;
         }
         match serde_json::from_str::<Value>(trimmed) {
-            // Retired plans are not indexed, so entry positions skip them too.
-            Ok(Value::Object(record)) if solstone_core_facets::is_retired_plan(&record) => {}
+            // Retired plans and body records are not indexed, so entry positions
+            // skip them too.
+            Ok(Value::Object(record))
+                if solstone_core_facets::is_retired_plan(&record)
+                    || solstone_core_facets::is_body_record(&record) => {}
             Ok(Value::Object(record)) => {
                 let identity = compute_record_identity(&record, trimmed);
                 kept.push((record, identity));
@@ -220,8 +223,40 @@ pub(crate) fn record_by_identity(
             _ => return None,
         }
     }
-    // A retired plan reads as not found, like a record that is gone.
-    matched.filter(|(record, _)| count == 1 && !solstone_core_facets::is_retired_plan(record))
+    // A retired plan or a body record reads as not found here, like a record
+    // that is gone: neither is indexed.
+    matched.filter(|(record, _)| {
+        count == 1
+            && !solstone_core_facets::is_retired_plan(record)
+            && !solstone_core_facets::is_body_record(record)
+    })
+}
+
+/// The body record a reference names, by the identity of its line. Only a reader
+/// that composes it for its connection asks for one.
+pub(crate) fn body_record_by_identity(
+    text: &str,
+    target_identity: &str,
+) -> Option<Map<String, Value>> {
+    let mut matched = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(trimmed) {
+            Ok(Value::Object(record)) => {
+                if compute_record_identity(&record, trimmed) == target_identity {
+                    matched.push(record);
+                }
+            }
+            _ => return None,
+        }
+    }
+    match matched.as_slice() {
+        [record] if solstone_core_facets::is_body_record(record) => Some(record.clone()),
+        _ => None,
+    }
 }
 
 pub(crate) fn read_contained_source(journal_root: &Path, rel: &str) -> Option<Vec<u8>> {

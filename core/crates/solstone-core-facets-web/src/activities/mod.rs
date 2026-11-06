@@ -473,7 +473,12 @@ async fn remove_edit(
         &removed_at,
     ) {
         Ok(Some(record)) => {
-            let ask = think_again(&root, &day, &facet, Some(&span_id));
+            // No talent reads a body record, so taking back its edit owes nothing.
+            let ask = if solstone_core_facets::is_body_record(&record) {
+                not_asked()
+            } else {
+                think_again(&root, &day, &facet, Some(&span_id))
+            };
             if let Err(error) = solstone_core_facets::append_action_log_for_day(
                 &root,
                 Some(&facet),
@@ -588,7 +593,7 @@ async fn mutate_update(
         root, &facet, &day, &span_id, patch, actor, &note, &timestamp,
     ) {
         Ok(Some(record)) => {
-            let ask = if actor == "owner:update" {
+            let ask = if actor == "owner:update" && !solstone_core_facets::is_body_record(&record) {
                 let rethought = patch
                     .keys()
                     .any(|key| RETHOUGHT_FIELDS.contains(&key.as_str()));
@@ -644,6 +649,26 @@ fn set_hidden(
         root, &facet, &day, &span_id, hidden, actor, reason, &timestamp,
     ) {
         Ok(Some(record)) => {
+            // A body record's group hides and unhides as one: every member.
+            if solstone_core_facets::is_body_record(&record) {
+                let members =
+                    solstone_core_location::body_records::owner_group(root, &facet, &day, &span_id)
+                        .unwrap_or_default();
+                for member in members.iter().filter(|member| member.id != span_id) {
+                    if let Err(error) = solstone_core_facets::set_activity_hidden(
+                        root,
+                        &member.facet,
+                        &member.day,
+                        &member.id,
+                        hidden,
+                        actor,
+                        reason,
+                        &timestamp,
+                    ) {
+                        return store_error(error);
+                    }
+                }
+            }
             let action = if hidden {
                 "activity_mute"
             } else {
@@ -2425,6 +2450,281 @@ mod tests {
 
     fn day_bytes(root: &Path) -> Vec<u8> {
         std::fs::read(root.join(format!("facets/work/activities/{CORRECTED_DAY}.jsonl"))).unwrap()
+    }
+
+    const BODY_DAY: &str = "20261010";
+
+    /// A watch run and a third-party app's run of it, each with its record.
+    fn body_journal() -> tempfile::TempDir {
+        use solstone_core_format::content::body_records::{
+            BodyRow, RowKind, encode_rows, recorder_id,
+        };
+        let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "body", "Body", "", "", "", None).unwrap();
+        // The owner's clock, so beside lines don't depend on the host's zone.
+        let config = root.path().join("config/journal.json");
+        let mut settings: Value = std::fs::read_to_string(&config)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| json!({}));
+        settings["identity"]["timezone"] = json!("America/Denver");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(&config, settings.to_string()).unwrap();
+        std::fs::create_dir_all(root.path().join("imports")).unwrap();
+        std::fs::write(
+            root.path().join("imports/.apple_health-zone.json"),
+            r#"{"zone":"America/Denver"}"#,
+        )
+        .unwrap();
+        for (id, by, key, start, end) in [
+            ("w", "Synthetic Watch", "070000_3600", "07:00", "07:40"),
+            ("x", "Synthetic App", "070000_300", "07:01", "07:41"),
+        ] {
+            let mut row = BodyRow::new(
+                RowKind::Experience,
+                id.to_owned(),
+                "apple_health",
+                "HKWorkoutActivityTypeRunning",
+                "Running".to_owned(),
+            );
+            row.experience = Some("workout".to_owned());
+            row.start = Some(format!("2026-10-10 {start}:00 -0600"));
+            row.end = Some(format!("2026-10-10 {end}:00 -0600"));
+            row.by = Some(by.to_owned());
+            let dir = root
+                .path()
+                .join(format!("chronicle/{BODY_DAY}/import.apple_health/{key}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("body.jsonl"),
+                encode_rows(std::slice::from_ref(&row)),
+            )
+            .unwrap();
+            let record = json!({
+                "id": format!("body_{id}"), "source": "body", "activity": "workout",
+                "account": {"key": format!("import.apple_health\u{1f}{id}"), "start": row.start,
+                    "end": row.end, "type": "running",
+                    "recorder": recorder_id("import.apple_health", row.by.as_deref())},
+            });
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                "body",
+                BODY_DAY,
+                record.as_object().unwrap().clone(),
+            )
+            .unwrap();
+        }
+        root
+    }
+
+    async fn body_call(
+        root: &Path,
+        path: &str,
+        actor: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut request = Request::builder()
+            .method(if body.is_some() { "POST" } else { "GET" })
+            .uri(format!("/app/activities/api/day/{BODY_DAY}/{path}"))
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(actor) = actor {
+            request = request.header(ACTOR_HEADER, actor);
+        }
+        let body = body.map_or_else(Body::empty, |body| {
+            Body::from(serde_json::to_vec(&body).unwrap())
+        });
+        let response = gated(root, fixed_clock())
+            .oneshot(request.body(body).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_day_view_puts_a_capture_activity_and_a_body_run_beside_each_other() {
+        let root = body_journal();
+        std::fs::create_dir_all(
+            root.path()
+                .join(format!("chronicle/{BODY_DAY}/phone/070500_300")),
+        )
+        .unwrap();
+        let capture = json!({"id":"run_070500_300","activity":"running","title":"Morning loop","segments":["070500_300"],"source":"user"});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "body",
+            BODY_DAY,
+            capture.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let items = view["items"].as_array().unwrap();
+        let by_source = |source: &str| {
+            items
+                .iter()
+                .find(|item| item["source"] == source)
+                .unwrap_or_else(|| panic!("{source}: {view}"))
+        };
+        assert_eq!(by_source("user")["beside"][0]["kind"], "workout", "{view}");
+        assert_eq!(
+            by_source("body")["beside"][0]["title"],
+            "Morning loop",
+            "{view}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_night_and_the_next_mornings_activity_sit_beside_each_other_across_midnight() {
+        use solstone_core_format::content::body_records::{
+            BodyRow, RowKind, encode_rows, recorder_id,
+        };
+        let root = body_journal();
+        let mut night = BodyRow::new(
+            RowKind::Experience,
+            "n1".to_owned(),
+            "apple_health",
+            "HKCategoryTypeIdentifierSleepAnalysis",
+            "Sleep".to_owned(),
+        );
+        night.experience = Some("sleep".to_owned());
+        night.start = Some("2026-10-10 22:10:00 -0600".to_owned());
+        night.end = Some("2026-10-11 06:20:00 -0600".to_owned());
+        night.by = Some("Synthetic Watch".to_owned());
+        let dir = root.path().join(format!(
+            "chronicle/{BODY_DAY}/import.apple_health/220000_3600"
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("body.jsonl"),
+            encode_rows(std::slice::from_ref(&night)),
+        )
+        .unwrap();
+        let record = json!({"id":"body_n1","source":"body","activity":"sleep",
+            "account":{"key":"import.apple_health\u{1f}n1","start":night.start,"end":night.end,
+                "recorder":recorder_id("import.apple_health", night.by.as_deref())}});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "body",
+            BODY_DAY,
+            record.as_object().unwrap().clone(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.path().join("chronicle/20261011/phone/060000_300")).unwrap();
+        let capture = json!({"id":"cap","activity":"reading","title":"Early pages","segments":["060000_300"],"source":"user"});
+        let _ = solstone_core_facets::append_activity_record(
+            root.path(),
+            "body",
+            "20261011",
+            capture.as_object().unwrap().clone(),
+        )
+        .unwrap();
+
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let night_item = view["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "body_n1")
+            .unwrap()
+            .clone();
+        assert_eq!(night_item["beside"][0]["title"], "Early pages", "{view}");
+
+        let request = Request::builder()
+            .uri("/app/activities/api/day/20261011/view")
+            .body(Body::empty())
+            .unwrap();
+        let response = gated(root.path(), fixed_clock())
+            .oneshot(request)
+            .await
+            .unwrap();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let next: Value = serde_json::from_slice(&bytes).unwrap();
+        let cap = next["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "cap")
+            .unwrap()
+            .clone();
+        assert_eq!(cap["beside"][0]["kind"], "sleep", "{next}");
+    }
+
+    #[tokio::test]
+    async fn a_body_group_shows_once_hides_as_one_and_owes_nothing_when_edited() {
+        let root = body_journal();
+        let (status, view) = body_call(root.path(), "view", None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        let items = view["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{view}");
+        assert_eq!(items[0]["id"], "body_w");
+        assert_eq!(items[0]["source"], "body");
+        assert_eq!(items[0]["accounts"].as_array().unwrap().len(), 2);
+        assert_eq!(items[0]["accounts"][0]["label"], "Running");
+        let facet = view["facets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|facet| facet["name"] == "body")
+            .unwrap();
+        assert_eq!(facet["count"], 1);
+
+        // An owner edit takes, and asks nothing to think again.
+        let (status, body) = body_call(
+            root.path(),
+            "record/body_w/update?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({"patch": {"title": "Hill repeats"}})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["asked"], false);
+        assert!(
+            solstone_core_system::owner_ask::read(root.path())
+                .unwrap_or_default()
+                .is_empty()
+        );
+
+        // Anyone else finds no such record.
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/update?facet=body",
+            None,
+            Some(json!({"patch": {"title": "Renamed"}})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Hiding the group hides every member; unhiding shows the group again.
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows =
+            solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
+                .unwrap();
+        assert!(rows.iter().all(|row| row["hidden"] == true), "{rows:?}");
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        assert!(view["items"].as_array().unwrap().is_empty());
+        assert_eq!(view["hidden_count"], 1);
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_w/unmute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        assert_eq!(view["items"].as_array().unwrap().len(), 1);
+        assert_eq!(view["items"][0]["title"], "Hill repeats");
     }
 
     #[tokio::test]

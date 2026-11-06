@@ -451,6 +451,8 @@ pub fn is_retired_plan(record: &ActivityRecord) -> bool {
     record.get("source").and_then(Value::as_str) == Some("anticipated")
 }
 
+pub use solstone_core_format::content::{BODY_RECORD_SOURCE, is_body_record};
+
 pub fn load_activity_records(
     root: &Path,
     facet: &str,
@@ -461,7 +463,9 @@ pub fn load_activity_records(
     Ok(rows
         .into_iter()
         .map(normalize)
-        .filter(|row| !is_retired_plan(row) && (include_hidden || !hidden(row)))
+        .filter(|row| {
+            !is_retired_plan(row) && !is_body_record(row) && (include_hidden || !hidden(row))
+        })
         .collect())
 }
 
@@ -756,7 +760,7 @@ fn update_activity_record_with_check(
         let updated = rows
             .into_iter()
             .map(|row| {
-                if id(&row) != record_id {
+                if id(&row) != record_id || !actor_may_write(&row, actor) {
                     return row;
                 }
                 let Some(patch) = derive.take().and_then(|derive| derive(&row)) else {
@@ -883,7 +887,7 @@ fn set_activity_hidden_with_check(
         let updated = rows
             .into_iter()
             .map(|row| {
-                if id(&row) != record_id {
+                if id(&row) != record_id || !actor_may_write(&row, actor) {
                     return row;
                 }
                 let mut normalized = normalize(row);
@@ -931,6 +935,12 @@ pub fn append_edit(
     );
     record.insert("edits".to_owned(), Value::Array(edits));
     record
+}
+
+/// Only the owner writes a body record. To anyone else it reads as no record,
+/// as it does to every default reader.
+fn actor_may_write(record: &ActivityRecord, actor: &str) -> bool {
+    !is_body_record(record) || actor.starts_with("owner:")
 }
 
 fn normalize(mut record: ActivityRecord) -> ActivityRecord {
@@ -1336,6 +1346,82 @@ fn id(record: &ActivityRecord) -> &str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_body_record_is_read_by_no_default_reader_and_written_only_by_the_owner() {
+        use super::*;
+        let root = tempfile::tempdir().unwrap();
+        crate::create_facet(root.path(), "body", "Body", "Test", "#123456", "", None).unwrap();
+        let day = "20261016";
+        let capture = serde_json::json!({"id":"run_070000_300","activity":"running","segments":["070000_300"]});
+        let body = serde_json::json!({"id":"body_0123456789abcdef","source":"body","activity":"workout",
+            "account":{"key":"import.apple_health\u{1f}w1","start":"2026-10-16 07:00:00 -0600","end":"2026-10-16 07:40:00 -0600"}});
+        for row in [&body, &capture] {
+            let _ =
+                append_activity_record(root.path(), "body", day, row.as_object().unwrap().clone())
+                    .unwrap();
+        }
+        let ids = |rows: Vec<ActivityRecord>| {
+            rows.iter()
+                .map(|row| id(row).to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(load_activity_records(root.path(), "body", day, true).unwrap()),
+            ["run_070000_300"]
+        );
+        assert!(
+            get_activity_record(root.path(), "body", day, "body_0123456789abcdef")
+                .unwrap()
+                .is_none()
+        );
+        let patch = Map::from_iter([("title".into(), Value::from("Renamed"))]);
+        for actor in ["cli:update", "talent:story"] {
+            let before = std::fs::read(day_path(root.path(), "body", day).unwrap()).unwrap();
+            let updated = update_activity_record(
+                root.path(),
+                "body",
+                day,
+                "body_0123456789abcdef",
+                &patch,
+                actor,
+                "n",
+                "2026-10-16T12:00:00Z",
+            )
+            .unwrap();
+            let muted = set_activity_hidden(
+                root.path(),
+                "body",
+                day,
+                "body_0123456789abcdef",
+                true,
+                actor,
+                None,
+                "2026-10-16T12:00:00Z",
+            )
+            .unwrap();
+            assert!(updated.is_none() && muted.is_none(), "{actor}");
+            assert_eq!(
+                std::fs::read(day_path(root.path(), "body", day).unwrap()).unwrap(),
+                before,
+                "{actor}"
+            );
+        }
+        let updated = update_activity_record(
+            root.path(),
+            "body",
+            day,
+            "body_0123456789abcdef",
+            &patch,
+            "owner:update",
+            "n",
+            "2026-10-16T12:00:00Z",
+        )
+        .unwrap()
+        .expect("the owner edits it");
+        assert_eq!(updated["title"], "Renamed");
+        assert!(activity_field_held(&updated, "title"));
+    }
+
     #[test]
     fn only_a_lock_timeout_reads_as_a_lock_timeout() {
         let timeout = super::ActivityRecordStoreError::Lock(super::LockError::Timeout(

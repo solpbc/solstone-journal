@@ -2029,6 +2029,11 @@ fn fetch(
             let Ok(file_text) = String::from_utf8(bytes) else {
                 return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
             };
+            if let Some(body) =
+                crate::activity_admit::body_record_by_identity(&file_text, &act_ref.record_identity)
+            {
+                return fetch_body_face(journal_root, snapshot, &act_ref, &rel_path, &body);
+            }
             let Some((record, _)) =
                 crate::activity_admit::record_by_identity(&file_text, &act_ref.record_identity)
             else {
@@ -2098,6 +2103,66 @@ fn fetch(
         }
         _ => Err(DispatchError::Tool(ToolError::ReferenceNotFound)),
     }
+}
+
+/// A body record fetched by reference: the group it is in, as this connection
+/// may read it. Any member's reference, a former anchor's included, reaches the
+/// group. A record whose window this connection can't read is not found.
+fn fetch_body_face(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    act_ref: &crate::references::ActivityReference,
+    rel_path: &str,
+    record: &Map<String, Value>,
+) -> Result<Prepared, DispatchError> {
+    let face = body_face_for(journal_root, snapshot, act_ref, record)?;
+    let item = solstone_core_location::body_records::face_json(&face);
+    let text = serde_json::to_string_pretty(&item)
+        .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+    let mut value = json!({
+        "title": entry_title(&face.anchor.day),
+        "date": face.anchor.day,
+        "text": text,
+    });
+    if face.hidden {
+        value["hidden"] = Value::Bool(true);
+    }
+    let target = format!("{rel_path}#{}", act_ref.record_identity);
+    Ok(Prepared::new(value, 1, vec![target]).served_as_is(&["text"]))
+}
+
+/// The face a body record is shown under for this connection.
+pub(crate) fn body_face_for(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    act_ref: &crate::references::ActivityReference,
+    record: &Map<String, Value>,
+) -> Result<solstone_core_location::body_records::Face, DispatchError> {
+    let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
+    let gate = crate::body_source::window_gate(journal_root, snapshot);
+    let mut faces = Vec::new();
+    for day in
+        [act_ref.day.clone()]
+            .into_iter()
+            .chain(solstone_core_location::body_records::days_after(
+                &act_ref.day,
+            ))
+    {
+        faces.extend(
+            solstone_core_location::body_records::body_faces(
+                journal_root,
+                &act_ref.facet_dir,
+                &day,
+                &gate,
+                true,
+            )
+            .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?,
+        );
+    }
+    faces
+        .into_iter()
+        .find(|face| face.members.iter().any(|member| member.id == id))
+        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))
 }
 
 fn memory_hit_origin(journal_root: &Path, path: &str, stream: &str) -> Option<Origin> {

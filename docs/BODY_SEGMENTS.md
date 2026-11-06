@@ -78,7 +78,7 @@ Apple gives sleep stages, not nights. Per source name, ordered by start, stage i
 
 ## What is indexed
 
-- **One entry per experience**, from the `experience` row: label, name and owner's words, times, `by`, and the `values` its reader chose. `fields` never reaches this text, so a key nobody listed can't reach search.
+- **One entry per experience**, from the `experience` row: label, name and the source's words on this record, times, `by`, and the `values` its reader chose. `fields` never reaches this text, so a key nobody listed can't reach search.
 - **One entry per day**, `chronicle/<day>/body.md`: experiences, each kind's count and first and last time, logged entries grouped under who recorded them, the words the source recorded on them, dated values. An entry reads as the owner's only where the source marks it as entered by the owner (Apple's `HKWasUserEntered`). Its times read on the source's fixed zone. It's deterministic and rebuilt from the windows that survive, on the `location.md` pattern. It holds no reading values.
 - **One entry per import**, `imports/<id>/summary.md`: names and counts.
 - **Nothing else.** Readings, counts, stages and tiles produce no search entry.
@@ -101,6 +101,16 @@ Later work opts in explicitly: code-written activity records, and a day's body d
 ## Facets
 
 Code writes `talents/facets.json` as `[{"facet":"<name>"}]` when the owner chose a facet for the import. A muted or missing facet is refused before anything is written. With none chosen there's no file: a connection that sees the whole journal reads the window and one limited to chosen facets doesn't, and the summary says so. Importing again with no facet leaves the file alone. Another facet replaces it and queues the window, so search reclassifies it. **A window carries one facet, so its rows share it:** rows from two imports in one window are readable under whichever facet it has, and the import's summary says when that happened. `body.md` is journal-wide, so a limited connection never sees it.
+
+## Activities
+
+Every workout, night's sleep and mindfulness session from Apple Health gets one activity record, in the facet its window has, on its window's day. A window with no facet gives none, and the import's summary says so. Code creates a record once and never edits it. Only the owner's edits and hides change it, and anyone else's write finds no such record. A record is a reference to its account, one recorder's experience row: the account's stream and row id, its start and end, the workout's type in one shared vocabulary (`running`, `cycling` and so on), an opaque id for who recorded it, and the owner's day it arrived on. It copies no name, value or words and holds no `segments`. Search, daily evidence and every talent skip it, so a day owes nothing because of one. `solstone_core_location::body_records`.
+
+Five readers show records, composed from the window as it now is and only for a connection that may read that window: the activities day view, MCP `list_activities`, `fetch`, `get_activity_sources` and `get_week`. A record whose window moved to another facet still shows to the owner and to a connection that reads the whole journal, and to a connection limited to chosen facets only when both facets are among them. When the window of its start was deleted, the owner's day view shows its account's `state` as `removed_by_you`, or `part_removed` when a later piece of its span is still there, shown from that piece; no connection sees the record. A record keeps its kind and times after that.
+
+**Groups.** Two accounts are one experience when they're the same kind (and a workout's same type), from different recorders, in one facet, overlapping by at least 80% of the shorter and 60% of the longer, not kept apart, and not both edited by the owner. A set is a group only when every two of its accounts pass. Otherwise each stands alone. Groups are worked out when read, from what the records store, so the order accounts arrived in never changes them and a deleted window never splits one. A group shows once, under the day of the account the owner edited, or else the earliest, with each account's own line and nothing summed. Hiding and unhiding act on every member. Two accounts never group when either record names the other in `apart`, and nothing reverses that. No owner control writes `apart` yet.
+
+**Beside.** A body item and a capture activity that cover at least half of either one show each other, both ways, in the day view and `list_activities`. The line shows only when the connection may read both items. A body item also shows the place the owner was at its middle, to the owner and to a connection that reads the whole journal's transcripts, as the calendar does. It is worked out when read and never stored.
 
 ## Agents
 
@@ -128,3 +138,4 @@ Strava keeps `workout.json` and its start-anchored keys. A Strava tile is an exp
 1. A parser and read table, source-specific, producing these rows.
 2. Its stream in `BODY_RECORD_STREAMS`, a family pattern in `content/mod.rs`, and a name in `source_words`.
 3. Its zone file and its run, on `solstone-core-import-host/src/body_segments.rs`.
+4. Its stream in the activity record writer, `solstone-core-import-host/src/body_activity.rs`, which today reads only Apple Health, as one constant, and any workout type names `mapped_workout_type` doesn't know yet.

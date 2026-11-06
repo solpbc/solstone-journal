@@ -3,7 +3,7 @@
 
 mod action_logs;
 mod activities;
-pub use activities::is_retired_plan;
+pub use activities::{BODY_RECORD_SOURCE, is_body_record, is_retired_plan};
 mod ai_chat;
 mod audio;
 pub mod body_records;
@@ -729,7 +729,10 @@ pub fn produce_chunks_by_shape(
     };
     if produced.error.is_none() && produced.chunks.is_empty() {
         for record in records.iter().filter(|record| {
-            has_partial_input(record) && !is_retired_plan(record) && !is_retired_event_plan(record)
+            has_partial_input(record)
+                && !is_retired_plan(record)
+                && !is_body_record(record)
+                && !is_retired_event_plan(record)
         }) {
             produced
                 .chunks

@@ -1,0 +1,505 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+#![allow(clippy::disallowed_methods)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+
+use super::*;
+
+const DAY: &str = "20261010";
+const NEXT: &str = "20261011";
+const STREAM: &str = "import.apple_health";
+const START: &str = "2026-10-10 22:10:00 -0600";
+const END: &str = "2026-10-11 06:20:00 -0600";
+
+fn journal() -> tempfile::TempDir {
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"America/Denver"}"#,
+    )
+    .unwrap();
+    let facet = root.join("facets/body");
+    fs::create_dir_all(&facet).unwrap();
+    fs::write(facet.join("facet.json"), r#"{"title":"Body"}"#).unwrap();
+    journal
+}
+
+fn night() -> BodyRow {
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        "n1".to_owned(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "Sleep".to_owned(),
+    );
+    row.experience = Some("sleep".to_owned());
+    row.start = Some(START.to_owned());
+    row.end = Some(END.to_owned());
+    row.by = Some("Synthetic Watch".to_owned());
+    row
+}
+
+fn tile(index: u64) -> BodyRow {
+    let mut row = BodyRow::new(
+        RowKind::ExperienceTile,
+        format!("n1#{index}"),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "Sleep".to_owned(),
+    );
+    row.of = Some("n1".to_owned());
+    row.index = Some(index);
+    row.start = Some(START.to_owned());
+    row.end = Some(END.to_owned());
+    row.by = Some("Synthetic Watch".to_owned());
+    row
+}
+
+fn window(root: &Path, day: &str, key: &str, rows: &[BodyRow]) -> PathBuf {
+    let dir = root.join("chronicle").join(day).join(STREAM).join(key);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(BODY_RECORDS_FILE), encode_rows(rows)).unwrap();
+    dir
+}
+
+fn delete(dir: &Path) {
+    fs::remove_file(dir.join(BODY_RECORDS_FILE)).unwrap();
+    fs::write(dir.join(TOMBSTONE), r#"{"manifest":["body.jsonl"]}"#).unwrap();
+}
+
+fn record(root: &Path, extra: serde_json::Value) {
+    let mut record = json!({
+        "id": "body_0123456789abcdef",
+        "source": "body",
+        "activity": "sleep",
+        "account": {"key": format!("{STREAM}\u{1f}n1"), "start": START, "end": END},
+    });
+    for (key, value) in extra.as_object().unwrap() {
+        record[key] = value.clone();
+    }
+    let dir = root.join("facets/body/activities");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(format!("{DAY}.jsonl")), format!("{record}\n")).unwrap();
+}
+
+fn everyone(_: &str, _: &str, _: Option<&str>) -> bool {
+    true
+}
+
+fn composed(root: &Path) -> Vec<ComposedBody> {
+    compose_body_records(root, "body", DAY, &everyone, true).unwrap()
+}
+
+#[test]
+fn a_live_account_composes_from_its_window() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    window(root, NEXT, "000000_3600", &[tile(1)]);
+    record(root, json!({}));
+    let found = composed(root);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].window.as_deref(), Some("220000_3600"));
+    assert_eq!(found[0].account, Account::Live(Box::new(night())));
+    assert_eq!(found[0].activity, "sleep");
+    // The default title normalize writes isn't the owner's.
+    assert!(found[0].owner.is_empty());
+}
+
+#[test]
+fn removed_by_you_only_when_no_tile_of_the_span_survives() {
+    let journal = journal();
+    let root = journal.path();
+    let start = window(root, DAY, "220000_3600", &[night()]);
+    let later = window(root, NEXT, "000000_3600", &[tile(1)]);
+    record(root, json!({}));
+    delete(&start);
+    assert_eq!(
+        composed(root)[0].account,
+        Account::PartRemoved(Box::new(tile(1)))
+    );
+    delete(&later);
+    assert_eq!(composed(root)[0].account, Account::RemovedByYou);
+}
+
+#[test]
+fn a_live_window_without_the_row_and_an_unreadable_one_say_so_apart() {
+    let journal = journal();
+    let root = journal.path();
+    let dir = window(root, DAY, "220000_3600", &[]);
+    record(root, json!({}));
+    assert_eq!(composed(root)[0].account, Account::NotFound);
+    fs::write(dir.join(BODY_RECORDS_FILE), "not json\n").unwrap();
+    assert_eq!(composed(root)[0].account, Account::Unreadable);
+}
+
+#[test]
+fn a_reader_that_may_not_read_the_window_gets_no_record() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    record(root, json!({}));
+    let nobody = |_: &str, _: &str, _: Option<&str>| false;
+    assert!(
+        compose_body_records(root, "body", DAY, &nobody, true)
+            .unwrap()
+            .is_empty()
+    );
+    let only_that = |_: &str, stream: &str, window: Option<&str>| {
+        stream == STREAM && window == Some("220000_3600")
+    };
+    assert_eq!(
+        compose_body_records(root, "body", DAY, &only_that, true)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn owner_fields_and_hidden_come_from_the_record() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    record(
+        root,
+        json!({
+            "title": "Long night",
+            "hidden": true,
+            "edits": [{"actor": "owner:update", "fields": ["title"], "note": "", "timestamp": "2026-10-12T00:00:00Z"}],
+        }),
+    );
+    assert!(
+        compose_body_records(root, "body", DAY, &everyone, false)
+            .unwrap()
+            .is_empty()
+    );
+    let found = composed(root);
+    assert!(found[0].hidden);
+    assert_eq!(found[0].owner.get("title"), Some(&json!("Long night")));
+}
+
+fn stored(
+    key: &str,
+    activity: &str,
+    kind: Option<&str>,
+    recorder: &str,
+    start: &str,
+    end: &str,
+) -> StoredBody {
+    StoredBody {
+        id: format!("body_{key}"),
+        facet: "body".to_owned(),
+        day: DAY.to_owned(),
+        activity: activity.to_owned(),
+        key: format!("{STREAM}\u{1f}{key}"),
+        stream: STREAM.to_owned(),
+        row_id: key.to_owned(),
+        stored_start: format!("2026-10-10 {start}:00 -0600"),
+        stored_end: format!("2026-10-10 {end}:00 -0600"),
+        workout_type: kind.map(str::to_owned),
+        recorder: recorder.to_owned(),
+        owner: BTreeMap::new(),
+        hidden: false,
+        apart: Vec::new(),
+    }
+}
+
+fn run(key: &str, recorder: &str, start: &str, end: &str) -> StoredBody {
+    stored(key, "workout", Some("running"), recorder, start, end)
+}
+
+fn keys(records: &[StoredBody]) -> Vec<Vec<String>> {
+    group_partition(records)
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|index| records[index].row_id.clone())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn near_misses_stay_alone() {
+    // Back to back from one recorder, and from two.
+    assert_eq!(
+        keys(&[
+            run("a", "watch", "07:00", "07:30"),
+            run("b", "watch", "07:30", "08:00")
+        ]),
+        [["a"], ["b"]]
+    );
+    assert_eq!(
+        keys(&[
+            run("a", "watch", "07:00", "07:30"),
+            run("b", "phone", "07:30", "08:00")
+        ]),
+        [["a"], ["b"]]
+    );
+    // One recorder's two overlapping runs.
+    assert_eq!(
+        keys(&[
+            run("a", "watch", "07:00", "08:00"),
+            run("b", "watch", "07:01", "08:01")
+        ]),
+        [["a"], ["b"]]
+    );
+    // A walk inside a run.
+    let walk = stored("w", "workout", Some("walking"), "phone", "07:10", "07:20");
+    assert_eq!(
+        keys(&[run("a", "watch", "07:00", "08:00"), walk]),
+        [["a"], ["w"]]
+    );
+    // A walk inside a longer walk from another recorder.
+    let long = stored("l", "workout", Some("walking"), "watch", "07:00", "08:00");
+    let short = stored("s", "workout", Some("walking"), "phone", "07:10", "07:30");
+    assert_eq!(keys(&[long, short]), [["l"], ["s"]]);
+    // A nap inside a night.
+    let night = stored("n", "sleep", None, "watch", "00:00", "07:00");
+    let nap = stored("p", "sleep", None, "phone", "03:00", "04:00");
+    assert_eq!(keys(&[night, nap]), [["n"], ["p"]]);
+    // An unmapped workout type pairs with nothing.
+    let odd = stored("o", "workout", None, "watch", "07:00", "08:00");
+    let odd2 = stored("q", "workout", None, "phone", "07:00", "08:00");
+    assert_eq!(keys(&[odd, odd2]), [["o"], ["q"]]);
+}
+
+#[test]
+fn one_experience_from_two_recorders_groups() {
+    // A watch run and a third-party app's run.
+    assert_eq!(
+        keys(&[
+            run("w", "watch", "07:00", "07:40"),
+            run("x", "strava", "07:02", "07:41")
+        ]),
+        [["w", "x"]]
+    );
+    // A phone night and a watch night 25 minutes apart at each end.
+    let phone = stored("p", "sleep", None, "phone", "00:00", "07:00");
+    let watch = stored("q", "sleep", None, "watch", "00:25", "06:35");
+    assert_eq!(keys(&[phone, watch]), [["p", "q"]]);
+}
+
+#[test]
+fn a_set_that_isnt_a_clique_stands_alone_and_order_never_matters() {
+    // W and X pass, A1 and X pass, W and A1 don't: three alone.
+    let w = run("w", "watch", "07:00", "08:00");
+    let x = run("x", "strava", "07:07", "08:07");
+    let a = run("a", "phone", "07:15", "08:15");
+    assert!(pair(&w, &x) && pair(&a, &x) && !pair(&w, &a), "fixture");
+    assert_eq!(
+        keys(&[w.clone(), x.clone(), a.clone()]),
+        [["w"], ["x"], ["a"]]
+    );
+    // Three that all pass group, in every order.
+    let e = [
+        run("e1", "watch", "07:00", "08:00"),
+        run("e2", "strava", "07:01", "08:01"),
+        run("e3", "phone", "07:02", "08:02"),
+    ];
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let records = order.map(|index| e[index].clone());
+        let mut found = keys(&records);
+        for group in &mut found {
+            group.sort();
+        }
+        assert_eq!(found, [["e1", "e2", "e3"]], "{order:?}");
+    }
+}
+
+#[test]
+fn apart_and_two_edits_keep_accounts_apart_and_a_third_stays_grouped() {
+    let mut w = run("w", "watch", "07:00", "08:00");
+    let x = run("x", "strava", "07:01", "08:01");
+    let mut a = run("a", "phone", "07:02", "08:02");
+    // Separating A from {W, X, A}: each side lists the other.
+    a.apart = vec![w.key.clone(), x.key.clone()];
+    w.apart = vec![a.key.clone()];
+    assert_eq!(
+        keys(&[w.clone(), x.clone(), a.clone()]),
+        [vec!["w", "x"], vec!["a"]]
+    );
+    // Two records the owner edited never group; one edited is the anchor.
+    let mut left = run("l", "watch", "07:00", "08:00");
+    let mut right = run("r", "strava", "07:01", "08:01");
+    right
+        .owner
+        .insert("title".to_owned(), json!("Hill repeats"));
+    let records = [left.clone(), right.clone()];
+    assert_eq!(keys(&records), [["l", "r"]]);
+    assert_eq!(records[anchor(&records, &[0, 1])].row_id, "r");
+    left.owner.insert("details".to_owned(), json!("felt slow"));
+    assert_eq!(keys(&[left, right]), [["l"], ["r"]]);
+}
+
+#[test]
+fn the_anchor_is_the_earliest_start_when_nobody_edited() {
+    let records = [
+        run("late", "strava", "07:01", "08:01"),
+        run("early", "watch", "07:00", "08:00"),
+    ];
+    assert_eq!(records[anchor(&records, &[0, 1])].row_id, "early");
+}
+
+#[test]
+fn separate_keeps_one_member_out_for_good_and_the_rest_grouped() {
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    solstone_core_facets::create_facet(root, "body", "Body", "Test", "#123456", "", None).unwrap();
+    let line = |key: &str, recorder: &str, start: &str, end: &str| {
+        json!({
+            "id": format!("body_{key}"), "source": "body", "activity": "workout",
+            "account": {"key": format!("{STREAM}\u{1f}{key}"), "recorder": recorder, "type": "running",
+                "start": format!("2026-10-10 {start}:00 -0600"), "end": format!("2026-10-10 {end}:00 -0600")},
+        })
+    };
+    for row in [
+        line("w", "watch", "07:00", "08:00"),
+        line("x", "strava", "07:01", "08:01"),
+        line("a", "phone", "07:02", "08:02"),
+    ] {
+        let _ = solstone_core_facets::append_activity_record(
+            root,
+            "body",
+            DAY,
+            row.as_object().unwrap().clone(),
+        )
+        .unwrap();
+    }
+    let records = stored_body_records(root, "body", DAY).unwrap();
+    assert_eq!(group_partition(&records), [[0, 1, 2]]);
+    let (member, others) = (
+        records[2].clone(),
+        vec![records[0].clone(), records[1].clone()],
+    );
+    separate_account(root, &member, &others, "2026-10-12T00:00:00Z").unwrap();
+    let after = stored_body_records(root, "body", DAY).unwrap();
+    assert_eq!(group_partition(&after), [vec![0, 1], vec![2]]);
+    // An owner field it gains later doesn't bring it back, and no edit undoes it.
+    let raw = solstone_core_facets::read_activity_records_strict(root, "body", DAY).unwrap();
+    let edits = raw[2]["edits"].as_array().unwrap();
+    assert_eq!(edits.last().unwrap()["actor"], SEPARATE_ACTOR);
+    assert!(!solstone_core_facets::edit_removable(
+        edits.last().unwrap().as_object().unwrap()
+    ));
+    // Separating again writes nothing.
+    let before = fs::read(root.join(format!("facets/body/activities/{DAY}.jsonl"))).unwrap();
+    separate_account(
+        root,
+        &after[2],
+        &[after[0].clone(), after[1].clone()],
+        "2026-10-12T00:01:00Z",
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(root.join(format!("facets/body/activities/{DAY}.jsonl"))).unwrap(),
+        before
+    );
+}
+
+fn workout_row(id: &str, by: &str, start: &str, end: &str) -> BodyRow {
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        id.to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    row.experience = Some("workout".to_owned());
+    row.start = Some(start.to_owned());
+    row.end = Some(end.to_owned());
+    row.by = Some(by.to_owned());
+    row
+}
+
+fn workout_record(root: &Path, day: &str, row: &BodyRow, extra: serde_json::Value) {
+    let mut record = json!({
+        "id": format!("body_{}", row.id), "source": "body", "activity": "workout",
+        "account": {"key": format!("{STREAM}\u{1f}{}", row.id), "start": row.start, "end": row.end,
+            "recorder": solstone_core_format::content::body_records::recorder_id(STREAM, row.by.as_deref()),
+            "type": "running"},
+    });
+    for (key, value) in extra.as_object().unwrap() {
+        record[key] = value.clone();
+    }
+    let path = root.join(format!("facets/body/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!("{record}\n"));
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn a_face_holds_only_members_a_reader_may_read_and_shows_under_its_anchors_day() {
+    let journal = journal();
+    let root = journal.path();
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    let app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    workout_record(root, DAY, &watch, json!({}));
+    workout_record(root, DAY, &app, json!({"hidden": true}));
+
+    let faces = body_faces(root, "body", DAY, &everyone, true).unwrap();
+    assert_eq!(faces.len(), 1);
+    assert_eq!(faces[0].anchor.id, "body_w");
+    assert_eq!(faces[0].members.len(), 2);
+    assert!(faces[0].hidden, "hidden when any member is");
+    assert!(
+        body_faces(root, "body", DAY, &everyone, false)
+            .unwrap()
+            .is_empty()
+    );
+
+    // A reader that may not read the watch's window sees the app's account alone.
+    let not_watch = |_: &str, _: &str, window: Option<&str>| window != Some("070000_3600");
+    let faces = body_faces(root, "body", DAY, &not_watch, true).unwrap();
+    assert_eq!(faces.len(), 1);
+    assert_eq!(faces[0].anchor.id, "body_x");
+    let text = face_json(&faces[0]).to_string();
+    assert!(
+        !text.contains("body_w") && !text.contains("Synthetic Watch"),
+        "{text}"
+    );
+
+    // Nothing shows on a day the anchor isn't filed on, and nothing at all
+    // without body data.
+    assert!(
+        body_faces(root, "body", NEXT, &everyone, true)
+            .unwrap()
+            .is_empty()
+    );
+    fs::remove_file(root.join("imports/.apple_health-zone.json")).unwrap();
+    assert!(
+        body_faces(root, "body", DAY, &everyone, true)
+            .unwrap()
+            .is_empty()
+    );
+}

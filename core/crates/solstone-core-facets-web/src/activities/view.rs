@@ -12,6 +12,18 @@ use solstone_core_facets::{
     place_activity_records, read_activity_definitions,
 };
 
+/// The owner's own view reads every body window.
+fn owner_reads(_: &str, _: &str, _: Option<&str>) -> bool {
+    true
+}
+
+/// How many body faces a facet shows on a day, for the owner.
+fn body_face_count(root: &Path, facet: &str, day: &str) -> usize {
+    solstone_core_location::body_records::body_faces(root, facet, day, &owner_reads, false)
+        .map(|faces| faces.len())
+        .unwrap_or_default()
+}
+
 pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, usize> {
     let declared = list_declared_facet_names(root).unwrap_or_default();
     let query_facet = query_value(query, "facet").filter(|f| !f.is_empty());
@@ -49,7 +61,7 @@ pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, 
         let mut total = 0;
         for f in &facets {
             let visible_rows = load_activity_records(root, f, &day, false).unwrap_or_default();
-            total += visible_rows.len();
+            total += visible_rows.len() + body_face_count(root, f, &day);
         }
         if total > 0 {
             counts.insert(day, total);
@@ -91,7 +103,8 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     for f in &declared {
         let count = load_activity_records(root, f, day, false)
             .unwrap_or_default()
-            .len();
+            .len()
+            + body_face_count(root, f, day);
         facet_entries.push(map_facet_declaration(root, f, count));
     }
 
@@ -168,6 +181,31 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     let asks = solstone_core_system::owner_ask::read(root).unwrap_or_default();
     let mut answers = super::lines::Answers::default();
     let mut items = Vec::new();
+    // Body faces this view shows beside a capture activity: under this day and
+    // the day before, for a night.
+    let previous = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()
+        .and_then(|date| date.pred_opt())
+        .map(|date| date.format("%Y%m%d").to_string());
+    let mut near_faces = Vec::new();
+    for on in std::iter::once(day.to_owned()).chain(previous) {
+        for f in &scope {
+            for face in solstone_core_location::body_records::body_faces(
+                root,
+                f,
+                &on,
+                &owner_reads,
+                include_hidden,
+            )
+            .unwrap_or_default()
+            {
+                if let Some(span) = solstone_core_location::body_records::face_instants(&face) {
+                    near_faces.push((span, solstone_core_location::body_records::face_json(&face)));
+                }
+            }
+        }
+    }
+    let mut captures = Vec::new();
     for ((facet, row), course) in scoped_rows.iter().zip(courses) {
         let is_hidden = row.get("hidden").is_some_and(activity_value_truthy);
         if is_hidden && !include_hidden {
@@ -181,6 +219,30 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             &definitions_by_facet,
             (day, &calendar, &location),
         );
+        if let Some(span) = solstone_core_location::body_records::capture_instants(root, day, row) {
+            captures.push((
+                span,
+                string_field(row, "title"),
+                string_field(row, "activity"),
+            ));
+            let beside = near_faces
+                .iter()
+                .filter(|(other, _)| solstone_core_location::body_records::half_cover(span, *other))
+                .map(|(_, face)| {
+                    json!({
+                        "kind": face["activity"],
+                        "title": face.get("title").cloned().unwrap_or_else(|| face["accounts"][0]["label"].clone()),
+                        "start": face["accounts"][0]["start"],
+                        "end": face["accounts"][0]["end"],
+                    })
+                })
+                .collect::<Vec<_>>();
+            if !beside.is_empty()
+                && let Value::Object(item) = &mut item
+            {
+                item.insert("beside".to_owned(), Value::Array(beside));
+            }
+        }
         if let Value::Object(item) = &mut item {
             let id = string_field(row, "id");
             item.insert(
@@ -194,6 +256,66 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             }
         }
         items.push(item);
+    }
+
+    // A night shown today ends tomorrow: its morning's activities sit beside it.
+    if let Some(next) = solstone_core_location::body_records::next_day(day) {
+        for f in &scope {
+            for row in load_activity_records(root, f, &next, include_hidden).unwrap_or_default() {
+                if let Some(span) =
+                    solstone_core_location::body_records::capture_instants(root, &next, &row)
+                {
+                    captures.push((
+                        span,
+                        string_field(&row, "title"),
+                        string_field(&row, "activity"),
+                    ));
+                }
+            }
+        }
+    }
+
+    // Body faces: composed from their windows, after the day's own items.
+    for f in &scope {
+        let faces =
+            solstone_core_location::body_records::body_faces(root, f, day, &owner_reads, true)
+                .map_err(|e| e.to_string())?;
+        for face in faces {
+            if face.hidden {
+                hidden_count += 1;
+                if !include_hidden {
+                    continue;
+                }
+            }
+            let mut item = solstone_core_location::body_records::face_json(&face);
+            if let Some(span) = solstone_core_location::body_records::face_instants(&face) {
+                let beside = captures
+                    .iter()
+                    .filter(|(other, _, _)| {
+                        solstone_core_location::body_records::half_cover(span, *other)
+                    })
+                    .map(|(_, title, activity)| json!({"title": title, "activity": activity}))
+                    .collect::<Vec<_>>();
+                if !beside.is_empty() {
+                    item["beside"] = Value::Array(beside);
+                }
+                let middle = span.0 + (span.1 - span.0) / 2;
+                if let Some((on, seconds)) =
+                    solstone_core_location::body_records::owner_moment(root, middle)
+                {
+                    let place = if on == day {
+                        location.beside((seconds, seconds + 1), None)
+                    } else {
+                        solstone_core_location::DayBeside::read(root, &on)
+                            .beside((seconds, seconds + 1), None)
+                    };
+                    if let Some(place) = place {
+                        item["place"] = json!({"device": place.device, "words": place.words});
+                    }
+                }
+            }
+            items.push(item);
+        }
     }
 
     Ok(json!({

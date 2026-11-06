@@ -130,6 +130,7 @@ fn project_sunday(
             for row in rows {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
                     || solstone_core_facets::is_retired_plan(&row)
+                    || solstone_core_facets::is_body_record(&row)
                 {
                     continue;
                 }
@@ -154,6 +155,9 @@ fn project_sunday(
     }
 
     let mut collected = Vec::new();
+    // Body faces, composed for this connection: workouts, nights and sessions.
+    let gate = crate::body_source::window_gate(journal, snapshot);
+    let mut body = Vec::new();
     for date in &week_dates {
         let day_str = date.format("%Y%m%d").to_string();
         for (f_id, f_dir, f_title) in &facets {
@@ -191,11 +195,39 @@ fn project_sunday(
             if rows.len() != line_identities.len() {
                 return Err(ToolError::FileUnreadable);
             }
+            let faces = solstone_core_location::body_records::body_faces(
+                journal, f_dir, &day_str, &gate, false,
+            )
+            .map_err(|_| ToolError::FileUnreadable)?;
 
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
                     || solstone_core_facets::is_retired_plan(&row)
                 {
+                    continue;
+                }
+                if solstone_core_facets::is_body_record(&row) {
+                    let id = row.get("id").and_then(Value::as_str);
+                    if let Some(face) = faces
+                        .iter()
+                        .find(|face| Some(face.anchor.id.as_str()) == id)
+                    {
+                        body.push((
+                            day_str.clone(),
+                            face.anchor.stored_start.clone(),
+                            ActivityReference {
+                                facet_id: f_id.clone(),
+                                facet_dir: f_dir.clone(),
+                                day: day_str.clone(),
+                                record_identity: rec_id,
+                                file_digest: file_digest.clone(),
+                                unit_index: None,
+                                source_binding: None,
+                            },
+                            f_title.clone(),
+                            solstone_core_location::body_records::face_json(face),
+                        ));
+                    }
                     continue;
                 }
                 let (_, _, dur) = crate::tools::activities::activity_times_and_duration(&row);
@@ -420,6 +452,25 @@ fn project_sunday(
         .map(Value::String)
         .unwrap_or(Value::Null);
 
+    body.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
+    let mut body_items = Vec::new();
+    for (day, _, target, facet_title, face) in body {
+        let reference = codec()
+            .mint(
+                principal.connection,
+                snapshot.generation,
+                ReferenceTarget::Activity(target),
+            )
+            .map_err(|_| ToolError::ReferenceNotFound)?;
+        body_items.push(crate::tools::activities::body_activity(
+            &face,
+            &facet_title,
+            &day,
+            reference,
+            &zone_str,
+        ));
+    }
+
     let value = json!({
         "week": {"start": start_day, "end": end_day},
         "intro": intro,
@@ -430,6 +481,12 @@ fn project_sunday(
         "next": next,
         "activities": activities,
     });
+    // Only a week with body faces carries the key, so a journal without body
+    // data answers exactly as before.
+    let mut value = value;
+    if !body_items.is_empty() {
+        value["body"] = Value::Array(body_items);
+    }
 
     Ok(WeekRead {
         value,
