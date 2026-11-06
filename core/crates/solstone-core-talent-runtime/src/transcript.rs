@@ -43,20 +43,30 @@ pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
 /// The owner and every other admitted person, as transcript lines name them
 /// by voice. `None` without a single admitted principal.
 pub fn voice_names(journal: &Path) -> Option<VoiceNames> {
-    let principal = crate::JournalOwner::load(journal).ok()?.id?;
+    let owner = crate::JournalOwner::load(journal).ok()?;
+    owner.id.as_ref()?;
+    let entities = solstone_core_entity::load_all_journal_entities(journal).ok()?;
+    voice_names_from_entities(journal, &owner, &entities)
+}
+
+pub(crate) fn voice_names_from_entities(
+    journal: &Path,
+    owner: &crate::JournalOwner,
+    entities: &[solstone_core_entity::JournalEntity],
+) -> Option<VoiceNames> {
+    let principal = owner.id.clone()?;
     let owner_voice_confirmed = matches!(
         solstone_core_speaker_resolve::owner_centroid::load_owner_centroid(journal, &principal),
         Ok(Some(_))
     );
-    let people = solstone_core_entity::load_all_journal_entities(journal)
-        .ok()?
-        .into_iter()
+    let people = entities
+        .iter()
         .filter(|entity| {
             solstone_core_entity::is_admissible_person(entity) && entity.id != principal
         })
         .filter_map(|entity| {
             let name = entity.value.get("name")?.as_str()?.trim().to_owned();
-            (!name.is_empty()).then_some((entity.id, name))
+            (!name.is_empty()).then_some((entity.id.clone(), name))
         })
         .collect();
     Some(VoiceNames {

@@ -16,6 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - on windows, `solstone journal service start` or `restart`, or setup, could say your journal was ready, then report a failure, even though your journal was running. the command now finishes its own cleanup before it ends.
+- reduced repeated work when building an activity's people list.
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.

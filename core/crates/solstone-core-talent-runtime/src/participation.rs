@@ -123,9 +123,10 @@ pub(crate) fn apply_result_cancellable(
     // talent ran still counts.
     let playback = stored.get("playback") == Some(&Value::Bool(true));
     let entities = detected_resolution_entities(journal, facet, day)?;
-    let owner = crate::JournalOwner::load(journal)?;
-    let admitted = solstone_core_entity::load_all_journal_entities(journal)
-        .map_err(|error| error.to_string())?
+    let journal_entities = solstone_core_entity::load_all_journal_entities(journal)
+        .map_err(|error| error.to_string())?;
+    let owner = crate::JournalOwner::from_entities(journal, &journal_entities);
+    let admitted = journal_entities
         .into_iter()
         .filter(solstone_core_entity::is_admissible_person)
         .collect::<Vec<_>>();
@@ -197,7 +198,13 @@ pub(crate) fn apply_result_cancellable(
             .is_some()
     });
     let numbered = if has_numbered {
-        collect_numbered_lines(journal, day, &segments, stream)?
+        collect_numbered_lines(
+            journal,
+            day,
+            &segments,
+            stream,
+            crate::transcript::voice_names_from_entities(journal, &owner, &admitted),
+        )?
     } else {
         NumberedVoices::default()
     };
@@ -625,8 +632,8 @@ fn collect_numbered_lines(
     day: &str,
     segments: &[&str],
     stream: Option<&str>,
+    voices: Option<solstone_core_transcripts::VoiceNames>,
 ) -> Result<NumberedVoices, String> {
-    let voices = crate::transcript::voice_names(journal);
     let principal = voices.as_ref().map(|v| v.principal.clone());
     let sources = solstone_core_transcripts::Sources {
         transcripts: true,
@@ -2182,9 +2189,15 @@ mod tests {
         write_json(&talents3.join("speakers.json"), json!([]));
 
         let span = ["100000_300", "100500_300", "101000_300"];
-        let lines = collect_numbered_lines(root.path(), DAY, &span, None)
-            .unwrap()
-            .lines;
+        let lines = collect_numbered_lines(
+            root.path(),
+            DAY,
+            &span,
+            None,
+            crate::transcript::voice_names(root.path()),
+        )
+        .unwrap()
+        .lines;
         let gate_numbers: BTreeSet<i64> = lines.iter().map(|line| line.number).collect();
 
         let sources = solstone_core_transcripts::Sources {
@@ -3272,9 +3285,15 @@ mod tests {
 
         fn readers(root: &Path) -> (Vec<NumericLine>, Vec<(String, bool)>) {
             (
-                collect_numbered_lines(root, DAY, &[SEGMENT], None)
-                    .unwrap()
-                    .lines,
+                collect_numbered_lines(
+                    root,
+                    DAY,
+                    &[SEGMENT],
+                    None,
+                    crate::transcript::voice_names(root),
+                )
+                .unwrap()
+                .lines,
                 voice_labels(root, DAY, SEGMENT, None, &people()),
             )
         }

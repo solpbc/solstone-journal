@@ -184,9 +184,17 @@ const OWNER_SOUND_LENGTH_RATIO: std::ops::RangeInclusive<f64> = 0.67..=1.5;
 
 impl JournalOwner {
     pub(crate) fn load(journal: &Path) -> Result<Self, String> {
-        let principals = solstone_core_entity::load_all_journal_entities(journal)
-            .map_err(|error| error.to_string())?
-            .into_iter()
+        let entities = solstone_core_entity::load_all_journal_entities(journal)
+            .map_err(|error| error.to_string())?;
+        Ok(Self::from_entities(journal, &entities))
+    }
+
+    pub(crate) fn from_entities(
+        journal: &Path,
+        entities: &[solstone_core_entity::JournalEntity],
+    ) -> Self {
+        let principals = entities
+            .iter()
             .filter(|entity| {
                 entity.is_principal() && solstone_core_entity::is_admissible_person(entity)
             })
@@ -212,7 +220,7 @@ impl JournalOwner {
                 folded.push(name);
             }
         }
-        Ok(Self {
+        Self {
             id: principal.map(|entity| entity.id.clone()),
             name: principal
                 .and_then(|entity| entity.value.get("name"))
@@ -222,7 +230,7 @@ impl JournalOwner {
                 .map(str::to_owned),
             names: folded,
             forms,
-        })
+        }
     }
 
     pub(crate) fn actor(&self, name: &str) -> NamedActor {
