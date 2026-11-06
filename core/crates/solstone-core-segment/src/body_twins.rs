@@ -20,7 +20,7 @@ pub const BODY_STREAM: &str = "import.apple_health";
 
 /// Capture stream names, each sorting after [`BODY_STREAM`].
 const CAPTURE_STREAMS: &[&str] = &[
-    "phone", "laptop", "watch", "tablet", "desk", "mic", "pc", "studio", "zz",
+    "phone", "laptop", "watch", "tablet", "mic", "pc", "studio", "zz",
 ];
 
 /// What sits beside the capture segment under the same key.
@@ -170,6 +170,7 @@ mod tests {
                 "{beside:?}"
             );
             assert!(twins.capture_stream.as_str() > BODY_STREAM);
+            assert!(CAPTURE_STREAMS.iter().all(|stream| *stream > BODY_STREAM));
             let day_dir = journal.path().join("chronicle/20261010");
             assert!(listed_ahead(&day_dir, BODY_STREAM, &twins.capture_stream));
             assert!(twins.capture.join("audio.jsonl").is_file());

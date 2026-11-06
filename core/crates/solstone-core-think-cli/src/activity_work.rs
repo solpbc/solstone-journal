@@ -1137,6 +1137,67 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_rebuild_beside_a_body_window_reads_the_capture_and_succeeds() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        let day = "20261016";
+        for beside in [Beside::BodyWindow, Beside::DeletedBodyWindow] {
+            let root = tempfile::tempdir().unwrap();
+            let twins = lay(
+                root.path(),
+                day,
+                "090000_300",
+                &[(
+                    "talents/sense.json",
+                    r#"{"density":"active","content_type":"writing","facets":[]}"#,
+                )],
+                beside,
+            );
+            solstone_core_facets::create_facet(
+                root.path(),
+                "home",
+                "Home",
+                "Test",
+                "#123456",
+                "",
+                None,
+            )
+            .unwrap();
+            // An activity that names no stream.
+            let record = serde_json::json!({"id":"writing_090000_300","activity":"writing","facet":"home","segments":["090000_300"]}).as_object().unwrap().clone();
+            let _ = solstone_core_facets::append_activity_record(
+                root.path(),
+                "home",
+                day,
+                record.clone(),
+            )
+            .unwrap();
+            let context = ThinkContext::new(
+                root.path(),
+                day.into(),
+                root.path().join("chronicle").join(day),
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .unwrap();
+            let hash = crate::segment::compute_activity_input_hash(&context, day, &record).unwrap();
+            crate::segment::write_activity_provenance(
+                &context,
+                day,
+                "home",
+                "writing_090000_300",
+                &hash,
+            )
+            .unwrap();
+            assert_eq!(
+                available_input(&context, day, &record).as_ref(),
+                Ok(&hash),
+                "{beside:?}"
+            );
+            assert!(rebuild_receipts(&context, day).is_ok(), "{beside:?}");
+            assert!(twins.capture.is_dir());
+        }
+    }
+
     fn retained_fixture(root: &Path) -> (ThinkContext, PathBuf, PathBuf) {
         let day = "20261016";
         let segment = root.join("chronicle").join(day).join("notes/090000_300");

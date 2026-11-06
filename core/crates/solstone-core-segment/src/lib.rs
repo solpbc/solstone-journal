@@ -45,7 +45,7 @@ mod write;
 
 pub use body_only::{
     day_holds_nothing_the_owner_did, holds_foreign_content, holds_nothing_the_owner_did,
-    is_body_only_dir, is_body_only_segment,
+    is_body_only_dir, is_body_only_listing, is_body_only_segment,
 };
 pub use calendar::{is_calendar_segment, is_calendar_stream};
 pub use chronicle_migration::{

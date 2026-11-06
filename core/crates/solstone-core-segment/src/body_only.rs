@@ -37,7 +37,11 @@ fn tombstone_record(path: &Path) -> TombstoneRecord {
     let Ok(bytes) = fs::read(path) else {
         return TombstoneRecord::CantSay;
     };
-    let Ok(body) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+    tombstone_record_of(&bytes)
+}
+
+fn tombstone_record_of(bytes: &[u8]) -> TombstoneRecord {
+    let Ok(body) = serde_json::from_slice::<serde_json::Value>(bytes) else {
         return TombstoneRecord::CantSay;
     };
     let Some(manifest) = body.get("manifest").and_then(serde_json::Value::as_array) else {
@@ -75,30 +79,70 @@ fn tombstone_record(path: &Path) -> TombstoneRecord {
 /// isn't one: it keeps counting as it always has.
 #[must_use]
 pub fn is_body_only_dir(stream: &str, dir: &Path) -> bool {
-    if !BODY_RECORD_STREAMS.contains(&stream) {
-        return false;
-    }
     let Ok(entries) = fs::read_dir(dir) else {
         return false;
     };
-    let mut holds_records = false;
+    let mut names = Vec::new();
     for entry in entries {
         let Ok(entry) = entry else {
             return false;
         };
-        let name = entry.file_name();
+        names.push(entry.file_name());
+    }
+    is_body_only_listing(
+        stream,
+        &names,
+        || fs::read(dir.join(TOMBSTONE)).ok(),
+        || {
+            fs::read_dir(dir.join(TALENTS))
+                .ok()?
+                .map(|entry| entry.ok().map(|entry| entry.file_name()))
+                .collect()
+        },
+    )
+}
+
+/// The same decision from a directory's listing, for a reader that lists and
+/// reads through its own bound handles. `tombstone` gives `tombstone.json`'s
+/// bytes and `talents` lists `talents/`; either gives `None` when it can't be
+/// read, which counts as not body-only.
+#[must_use]
+pub fn is_body_only_listing(
+    stream: &str,
+    names: &[std::ffi::OsString],
+    tombstone: impl FnOnce() -> Option<Vec<u8>>,
+    talents: impl FnOnce() -> Option<Vec<std::ffi::OsString>>,
+) -> bool {
+    if !BODY_RECORD_STREAMS.contains(&stream) {
+        return false;
+    }
+    let mut tombstone = Some(tombstone);
+    let mut talents = Some(talents);
+    let mut holds_records = false;
+    for name in names {
         if name == OsStr::new(TOMBSTONE) {
-            if tombstone_record(&entry.path()) != TombstoneRecord::BodyWindow {
+            let record = tombstone
+                .take()
+                .and_then(|read| read())
+                .map_or(TombstoneRecord::CantSay, |bytes| {
+                    tombstone_record_of(&bytes)
+                });
+            if record != TombstoneRecord::BodyWindow {
                 return false;
             }
             holds_records = true;
         } else if name == OsStr::new(BODY_RECORDS_FILE) {
             holds_records = true;
         } else if name == OsStr::new(TALENTS) {
-            if !talents_hold_only_facets(&entry.path()) {
+            let only_facets = talents.take().and_then(|list| list()).is_some_and(|names| {
+                names
+                    .iter()
+                    .all(|name| name == OsStr::new(FACETS) || is_incidental_file_name(name))
+            });
+            if !only_facets {
                 return false;
             }
-        } else if name != OsStr::new(STREAM_MARKER) && !is_incidental_file_name(&name) {
+        } else if name != OsStr::new(STREAM_MARKER) && !is_incidental_file_name(name) {
             return false;
         }
     }

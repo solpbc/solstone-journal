@@ -51,6 +51,39 @@ fn day_directory(root: &JournalRoot, day: &str) -> Result<Directory, String> {
     .ok_or("retained activity source is unavailable".into())
 }
 
+/// Whether a bound segment directory in `stream` is a body window, read through
+/// the same handles. Anything that can't be listed or read counts as not one,
+/// so a capture is never passed over.
+fn body_window(root: &JournalRoot, directory: &Directory, stream: &str, relative: &Path) -> bool {
+    let Ok(Some(entries)) = list(directory, 64) else {
+        return false;
+    };
+    let names = entries
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect::<Vec<_>>();
+    solstone_core_segment::is_body_only_listing(
+        stream,
+        &names,
+        || {
+            read_relative_file_bounded(root, &relative.join("tombstone.json"), 64 * 1024)
+                .ok()
+                .flatten()
+                .map(|observed| observed.bytes)
+        },
+        || {
+            let talents = open(
+                directory,
+                "talents".as_ref(),
+                &root.canonical_path().join(relative),
+            )
+            .ok()??;
+            let listed = list(&talents, 64).ok()??;
+            Some(listed.into_iter().map(|entry| entry.name).collect())
+        },
+    )
+}
+
 /// Bound enumeration, read regular descendants without following aliases, and
 /// retain the existing layout-aware fingerprint's exact identity construction.
 pub fn activity_input_bounded(
@@ -127,17 +160,22 @@ pub fn activity_input_bounded(
             let relative = if direct {
                 relative_day.join(&entry.name)
             } else {
-                if open(
+                let Some(segment_directory) = open(
                     &child,
                     segment.as_ref(),
                     &root.canonical_path().join(&relative_day).join(&entry.name),
                 )
                 .map_err(|e| e.to_string())?
-                .is_none()
-                {
+                else {
+                    continue;
+                };
+                let relative = relative_day.join(&entry.name).join(segment);
+                // With no stream, a body window sharing the key isn't the
+                // activity's segment, live or deleted.
+                if stream.is_none() && body_window(&root, &segment_directory, name, &relative) {
                     continue;
                 }
-                relative_day.join(&entry.name).join(segment)
+                relative
             };
             selected.push(relative.join("talents/sense.json"));
             if selected.len() > 1 {
@@ -232,6 +270,43 @@ mod tests {
             first.get_or_insert(path);
         }
         (serde_json::json!({"id":"work_120000","activity":"work","facet":"work","stream":stream,"segments":segments}).as_object().unwrap().clone(), first.unwrap())
+    }
+
+    #[test]
+    fn a_body_window_never_answers_a_bounded_read_with_no_stream() {
+        use solstone_core_segment::body_twins::{Beside, lay};
+        for beside in [
+            Beside::Nothing,
+            Beside::BodyWindow,
+            Beside::DeletedBodyWindow,
+            Beside::RetiredCard,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            lay(
+                root.path(),
+                DAY,
+                "120000_300",
+                &[("talents/sense.json", r#"{"density":"active"}"#)],
+                beside,
+            );
+            let record =
+                serde_json::json!({"id":"work_120000","activity":"work","segments":["120000_300"]})
+                    .as_object()
+                    .unwrap()
+                    .clone();
+            let bounded = activity_input_bounded(root.path(), DAY, &record, || Ok(()));
+            if beside == Beside::RetiredCard {
+                // An older card isn't a body window: HEAD's answer, ambiguous.
+                assert!(bounded.is_err(), "{beside:?}");
+                continue;
+            }
+            let bounded = bounded.unwrap_or_else(|error| panic!("{beside:?}: {error}"));
+            assert_eq!(
+                Some(bounded.hash),
+                super::super::activity_hash(root.path(), DAY, &record),
+                "{beside:?}"
+            );
+        }
     }
 
     #[test]
