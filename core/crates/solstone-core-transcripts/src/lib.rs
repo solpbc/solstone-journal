@@ -23,6 +23,8 @@ mod percept_absence;
 mod possible_name_labels;
 mod segment_page;
 mod speaker_coordinates;
+#[cfg(test)]
+mod speech_evidence_tests;
 mod who_spoke;
 
 use percept_absence::PerceptFamily;
@@ -136,6 +138,22 @@ pub struct ScreenTranscript {
     pub sources: Vec<Option<EntrySource>>,
 }
 
+/// A numeric speaker occurrence the canonical speech formatter actually rendered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NumericSpeechLine {
+    pub number: i64,
+    /// The original native sentence coordinate, not a rendered line offset.
+    pub coordinate: Option<i64>,
+}
+
+/// Compact speech grounding, retained independently of bulk JSON source records.
+/// An empty line list still identifies a successfully read source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpeechSourceEvidence {
+    pub path: PathBuf,
+    pub lines: Vec<NumericSpeechLine>,
+}
+
 impl ScreenTranscript {
     pub fn plain(text: String) -> Self {
         Self {
@@ -146,9 +164,9 @@ impl ScreenTranscript {
     }
 }
 
-/// A raw producer file larger than this keeps no [`EntrySource`]: nothing
-/// that reads one needs a file this large, and a long cluster should not hold
-/// every record twice.
+/// A raw producer file larger than this keeps no [`EntrySource`]:
+/// a long cluster should not hold every record twice. Speech grounding uses
+/// [`speech_evidence_for_span`] rather than depending on this bulk retention.
 pub const ENTRY_SOURCE_MAX_BYTES: usize = 64 * 1024;
 
 /// A terminal capture this large still keeps its records, so the talents that
@@ -265,6 +283,7 @@ struct Entry {
     screen_cuts: Vec<ScreenCut>,
     memory_origin: Option<Origin>,
     source: Option<EntrySource>,
+    speech_evidence: Option<Result<SpeechSourceEvidence, String>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -272,6 +291,7 @@ struct RawContent {
     text: String,
     screen_cuts: Vec<ScreenCut>,
     source: Option<EntrySource>,
+    speech_evidence: Option<Result<SpeechSourceEvidence, String>>,
 }
 
 impl std::ops::Deref for RawContent {
@@ -299,6 +319,7 @@ enum PerceptProjection {
     Generic,
     ScreenTalent,
     TerminalSense,
+    SpeechEvidence,
 }
 
 #[derive(Debug)]
@@ -604,6 +625,60 @@ fn cluster_span_with_projection_and_memory(
     stream: Option<&str>,
     projection: PerceptProjection,
 ) -> Result<(ScreenTranscript, SourceCounts, MemoryContext), String> {
+    let (entries, memory) = span_entries(root, day, span, sources, stream, projection)?;
+    let counts = SourceCounts::from_entries(&entries);
+    if entries.is_empty() {
+        return Ok((
+            ScreenTranscript::plain(format!(
+                "No transcript, screen, or browser files found in span: {}",
+                span.join(", ")
+            )),
+            counts,
+            memory,
+        ));
+    }
+    Ok((groups_to_markdown(entries), counts, memory))
+}
+
+/// Read every selected speech source through the same selection, numbering and
+/// formatter as the transcript. A failed selected source refuses the whole read;
+/// it must not make the remaining voices appear unanimously answered.
+pub fn speech_evidence_for_span(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    voices: Option<VoiceNames>,
+    stream: Option<&str>,
+) -> Result<Vec<SpeechSourceEvidence>, String> {
+    let sources = Sources {
+        transcripts: true,
+        percepts: false,
+        talents: TalentSource::Disabled,
+        voices,
+        heard_owner: None,
+    };
+    let (entries, _) = span_entries(
+        root,
+        day,
+        span,
+        &sources,
+        stream,
+        PerceptProjection::SpeechEvidence,
+    )?;
+    entries
+        .into_iter()
+        .filter_map(|entry| entry.speech_evidence)
+        .collect()
+}
+
+fn span_entries(
+    root: &Path,
+    day: &str,
+    span: &[&str],
+    sources: &Sources,
+    stream: Option<&str>,
+    projection: PerceptProjection,
+) -> Result<(Vec<Entry>, MemoryContext), String> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for key in span {
@@ -623,19 +698,8 @@ fn cluster_span_with_projection_and_memory(
         .iter()
         .flat_map(|segment| process_segment(root, segment, day, sources, projection, &mut memory))
         .collect::<Vec<_>>();
-    let counts = SourceCounts::from_entries(&entries);
-    if entries.is_empty() {
-        return Ok((
-            ScreenTranscript::plain(format!(
-                "No transcript, screen, or browser files found in span: {}",
-                span.join(", ")
-            )),
-            counts,
-            memory,
-        ));
-    }
     entries.sort_by_key(|entry| entry.timestamp);
-    Ok((groups_to_markdown(entries), counts, memory))
+    Ok((entries, memory))
 }
 
 pub fn cluster_range(
@@ -820,7 +884,11 @@ fn process_segment(
                 segment,
                 day,
                 RawPerceptFamily::Audio,
-                PerceptProjection::Generic,
+                if projection == PerceptProjection::SpeechEvidence {
+                    projection
+                } else {
+                    PerceptProjection::Generic
+                },
                 stem.and_then(|stem| run_numbers.get(stem)),
                 speakers,
             ) {
@@ -834,8 +902,27 @@ fn process_segment(
                     None,
                 );
                 transcript.source = content.source;
+                transcript.speech_evidence = content.speech_evidence;
                 entries.push(transcript);
+            } else if projection == PerceptProjection::SpeechEvidence {
+                let mut failed = entry(
+                    start,
+                    end,
+                    segment,
+                    "transcript",
+                    String::new(),
+                    stream.clone(),
+                    None,
+                );
+                failed.speech_evidence = Some(Err(format!(
+                    "unable to read speech evidence: {}",
+                    path.display()
+                )));
+                entries.push(failed);
             }
+        }
+        if projection == PerceptProjection::SpeechEvidence {
+            return entries;
         }
         let mut markdown = files
             .iter()
@@ -1155,6 +1242,7 @@ fn process_segment(
                             screen_cuts: Vec::new(),
                             memory_origin: None,
                             source: None,
+                            speech_evidence: None,
                         });
                     }
                 }
@@ -1216,6 +1304,7 @@ fn raw_content_with_speakers(
     // individually (content/mod.rs:500-513), preserving valid body rows rather than
     // reducing what native reads from the file.
     let mut source = None;
+    let mut speech_evidence = None;
     let (header, chunks, error, tmux_chunk_indices) = match (family, projection) {
         (RawPerceptFamily::RawScreen, PerceptProjection::ScreenTalent) => {
             let produced = produce_screen_talent_raw_screen_chunks(&rel, &text);
@@ -1249,12 +1338,15 @@ fn raw_content_with_speakers(
         _ => {
             let (records, unparsed_lines) = parse_raw_percept_records(&text);
             let produced = produce_raw_percept_chunks_by_shape(family, Some(&rel), &records);
+            if projection == PerceptProjection::SpeechEvidence {
+                speech_evidence = Some(numeric_speech_evidence(path, &records, &produced));
+            }
             let source_limit = if projection == PerceptProjection::TerminalSense {
                 TERMINAL_SOURCE_MAX_BYTES
             } else {
                 ENTRY_SOURCE_MAX_BYTES
             };
-            if text.len() <= source_limit {
+            if projection != PerceptProjection::SpeechEvidence && text.len() <= source_limit {
                 source = Some(EntrySource {
                     path: path.to_owned(),
                     sha256: source_sha256,
@@ -1320,6 +1412,42 @@ fn raw_content_with_speakers(
         text: rendered,
         screen_cuts,
         source,
+        speech_evidence,
+    })
+}
+
+fn numeric_speech_evidence(
+    path: &Path,
+    records: &[Map<String, Value>],
+    produced: &solstone_core_format::content::ProducedChunks,
+) -> Result<SpeechSourceEvidence, String> {
+    // Audio's formatter reports skipped records without `start` in `error`.
+    // Those deliberately render nothing; keep the valid neighboring chunks.
+    let mut records = records.iter();
+    let mut ordinal = 0;
+    let mut lines = Vec::new();
+    for chunk in &produced.chunks {
+        let record = chunk
+            .source
+            .as_ref()
+            .ok_or_else(|| format!("speech chunk has no source record: {}", path.display()))?;
+        let mut matched = None;
+        for candidate in records.by_ref() {
+            let coordinate = next_line_coordinate(candidate, &mut ordinal);
+            if candidate == record {
+                matched = Some(coordinate);
+                break;
+            }
+        }
+        let coordinate = matched
+            .ok_or_else(|| format!("speech chunk has no matching record: {}", path.display()))?;
+        if let Some(number) = record.get("speaker").and_then(Value::as_i64) {
+            lines.push(NumericSpeechLine { number, coordinate });
+        }
+    }
+    Ok(SpeechSourceEvidence {
+        path: path.to_owned(),
+        lines,
     })
 }
 
@@ -1482,6 +1610,7 @@ fn entry(
         screen_cuts: Vec::new(),
         memory_origin: None,
         source: None,
+        speech_evidence: None,
     }
 }
 

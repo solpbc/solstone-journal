@@ -591,10 +591,13 @@ fn answered_numbers(
     path: &std::path::Path,
     stem: &str,
     answers: &BTreeMap<i64, String>,
-) -> Vec<(i64, String)> {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
+) -> Result<Vec<(i64, String)>, String> {
+    let text = std::fs::read_to_string(path).map_err(|error| {
+        format!(
+            "unable to read answered speech source {}: {error}",
+            path.display()
+        )
+    })?;
     let runs = if segment_dir.join(format!("{stem}.npz")).is_file() {
         solstone_core_speaker_id::run_numbers::run_speaker_numbers(segment_dir, stem)
     } else {
@@ -618,7 +621,7 @@ fn answered_numbers(
             answered.push((number, speaker.clone()));
         }
     }
-    answered
+    Ok(answered)
 }
 
 struct SegmentWho {
@@ -635,22 +638,14 @@ fn collect_numbered_lines(
     voices: Option<solstone_core_transcripts::VoiceNames>,
 ) -> Result<NumberedVoices, String> {
     let principal = voices.as_ref().map(|v| v.principal.clone());
-    let sources = solstone_core_transcripts::Sources {
-        transcripts: true,
-        percepts: false,
-        talents: solstone_core_transcripts::TalentSource::Disabled,
-        voices,
-        heard_owner: None,
-    };
-    let (screen_transcript, _counts, _memory) =
-        solstone_core_transcripts::cluster_span_with_memory(
-            journal, day, segments, &sources, stream,
-        )?;
+    let speech_sources = solstone_core_transcripts::speech_evidence_for_span(
+        journal, day, segments, voices, stream,
+    )?;
 
     let mut segment_labels = BTreeMap::<std::path::PathBuf, SegmentWho>::new();
     let mut numbered = NumberedVoices::default();
 
-    for entry_source in screen_transcript.sources.iter().flatten() {
+    for entry_source in speech_sources {
         let Some(segment_dir) = entry_source.path.parent() else {
             continue;
         };
@@ -682,9 +677,7 @@ fn collect_numbered_lines(
                 }
             });
 
-        let file_stem = std::path::Path::new(&entry_source.file)
-            .file_stem()
-            .and_then(|s| s.to_str());
+        let file_stem = entry_source.path.file_stem().and_then(|s| s.to_str());
         let labelled_stem = file_stem.filter(|stem| Some(*stem) == labels.labelled.as_deref());
         if let Some(stem) = labelled_stem
             && !labels.answers.is_empty()
@@ -694,29 +687,13 @@ fn collect_numbered_lines(
                 &entry_source.path,
                 stem,
                 &labels.answers,
-            ));
+            )?);
         }
 
-        // Each rendered chunk is a clone of one of the file's records, in
-        // file order; the records carry the line coordinates.
-        let mut records = entry_source.records.iter();
-        let mut ordinal = 0;
-        for (_content, record) in &entry_source.chunks {
-            let mut line = None;
-            for candidate in records.by_ref() {
-                let coordinate =
-                    solstone_core_transcripts::next_line_coordinate(candidate, &mut ordinal);
-                if candidate == record {
-                    line = coordinate;
-                    break;
-                }
-            }
-            let Some(number) = record.get("speaker").and_then(Value::as_i64) else {
-                continue;
-            };
-            let line = line.filter(|_| labelled_stem.is_some());
+        for observation in entry_source.lines {
+            let line = observation.coordinate.filter(|_| labelled_stem.is_some());
             numbered.lines.push(NumericLine {
-                number,
+                number: observation.number,
                 owner: line.is_some_and(|sid| labels.owner_ids.contains(&sid)),
                 answered: line.is_some_and(|sid| labels.answers.contains_key(&sid)),
             });
@@ -1837,6 +1814,14 @@ mod tests {
         fs::write(dir.join("audio.jsonl"), jsonl).unwrap();
     }
 
+    fn pad_speech(path: &Path, padding: usize) {
+        let text = fs::read_to_string(path).unwrap();
+        let (header, body) = text.split_once('\n').unwrap();
+        let mut header: Value = serde_json::from_str(header).unwrap();
+        header["ignored"] = Value::String("x".repeat(padding));
+        fs::write(path, format!("{header}\n{body}")).unwrap();
+    }
+
     fn write_principal(root: &Path, id: &str, name: &str) {
         write_json(
             &root.join("config/journal.json"),
@@ -2051,16 +2036,13 @@ mod tests {
 
     /// A meeting whose three lines are all Speaker 3, every one answered by
     /// the owner as `speaker`.
-    fn answered_numbered_voice(root: &Path, speaker: &str) -> Value {
+    fn write_line_answers(dir: &Path, answers: &[(i64, &str)]) {
         use solstone_core_speaker_id::owner_line_labels::{
             LineFingerprint, OwnerLineEntry, encode_owner_line_labels, owner_line_labels_path,
         };
-        write_principal(root, "jordan", "Jordan Rivers");
-        write_participation_fixture(root, json!({"labels":[]}), json!([]));
-        let dir = root.join(format!("chronicle/{DAY}/{SEGMENT}"));
-        write_unembedded_segment(&dir, &[3, 3, 3]);
-        let entries = (1..=3)
-            .map(|line| OwnerLineEntry {
+        let entries = answers
+            .iter()
+            .map(|&(line, speaker)| OwnerLineEntry {
                 source: "audio".to_owned(),
                 sentence_id: line,
                 fingerprint: LineFingerprint::of_record(
@@ -2073,10 +2055,32 @@ mod tests {
             })
             .collect::<Vec<_>>();
         fs::write(
-            owner_line_labels_path(&dir),
+            owner_line_labels_path(dir),
             encode_owner_line_labels(&entries),
         )
         .unwrap();
+    }
+
+    fn answered_numbered_voice(root: &Path, speaker: &str, padding: usize) -> Value {
+        write_principal(root, "jordan", "Jordan Rivers");
+        write_participation_fixture(root, json!({"labels":[]}), json!([]));
+        let dir = root.join(format!("chronicle/{DAY}/{SEGMENT}"));
+        write_unembedded_segment(&dir, &[3, 3, 3]);
+        write_line_answers(&dir, &[(1, speaker), (2, speaker), (3, speaker)]);
+        pad_speech(&dir.join("audio.jsonl"), padding);
+        let sources = solstone_core_transcripts::speech_evidence_for_span(
+            root,
+            DAY,
+            &[SEGMENT],
+            crate::transcript::voice_names(root),
+            None,
+        )
+        .unwrap();
+        assert_eq!(sources.len(), 1);
+        assert!(
+            sources[0].lines.is_empty(),
+            "every line is named, but the source remains"
+        );
         apply(
             root,
             json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
@@ -2085,18 +2089,118 @@ mod tests {
 
     #[test]
     fn a_numbered_voice_whose_every_line_the_owner_says_is_theirs_is_not_listed() {
-        let root = tempfile::tempdir().expect("temporary journal");
-        let entry = answered_numbered_voice(root.path(), "jordan");
-        assert!(entry.is_null(), "{entry}");
+        for padding in [0, solstone_core_transcripts::ENTRY_SOURCE_MAX_BYTES + 1] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            let entry = answered_numbered_voice(root.path(), "jordan", padding);
+            assert!(entry.is_null(), "{entry}");
+        }
     }
 
     #[test]
     fn a_numbered_voice_whose_every_line_the_owner_gives_one_person_is_that_person() {
-        let root = tempfile::tempdir().expect("temporary journal");
-        let entry = answered_numbered_voice(root.path(), "person");
-        assert_eq!(entry["name"], "Ada Lovelace", "{entry}");
-        assert_eq!(entry["entity_id"], "person");
-        assert_eq!(entry["role"], "attendee");
+        for padding in [0, solstone_core_transcripts::ENTRY_SOURCE_MAX_BYTES + 1] {
+            let root = tempfile::tempdir().expect("temporary journal");
+            let entry = answered_numbered_voice(root.path(), "person", padding);
+            assert_eq!(entry["name"], "Ada Lovelace", "{entry}");
+            assert_eq!(entry["entity_id"], "person");
+            assert_eq!(entry["role"], "attendee");
+        }
+    }
+
+    #[test]
+    fn large_numbered_speech_keeps_corroboration() {
+        for padding in [0, solstone_core_transcripts::ENTRY_SOURCE_MAX_BYTES + 1] {
+            let root = tempfile::tempdir().unwrap();
+            write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+            let dir = root.path().join(format!("chronicle/{DAY}/{SEGMENT}"));
+            write_unembedded_segment(&dir, &[3, 3]);
+            pad_speech(&dir.join("audio.jsonl"), padding);
+            let entry = apply(
+                root.path(),
+                json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+            );
+            assert_eq!(entry["name"], "Speaker 3");
+            assert_eq!(entry["role"], "attendee");
+            assert_eq!(entry["entity_id"], Value::Null);
+        }
+    }
+
+    #[test]
+    fn a_large_independent_unanswered_source_defeats_unanimity() {
+        for speaker in ["jordan", "person"] {
+            for padding in [0, solstone_core_transcripts::ENTRY_SOURCE_MAX_BYTES + 1] {
+                let root = tempfile::tempdir().unwrap();
+                write_principal(root.path(), "jordan", "Jordan Rivers");
+                write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+                let first = root.path().join(format!("chronicle/{DAY}/{SEGMENT}"));
+                write_unembedded_segment(&first, &[3, 3]);
+                write_line_answers(&first, &[(1, speaker), (2, speaker)]);
+                let second = root.path().join(format!("chronicle/{DAY}/101000_300"));
+                write_unembedded_segment(&second, &[3, 3]);
+                pad_speech(&second.join("audio.jsonl"), padding);
+                let mut act = activity();
+                act.insert("segments".into(), json!([SEGMENT, "101000_300"]));
+                let rows = apply_for_activity(
+                    root.path(),
+                    &act,
+                    &[json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"})],
+                );
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0]["name"], "Speaker 3");
+                assert_eq!(rows[0]["entity_id"], Value::Null);
+                assert_eq!(rows[0]["role"], "attendee");
+            }
+        }
+    }
+
+    #[test]
+    fn the_unanswered_or_conflicting_tail_is_never_sampled_out() {
+        for conflicting in [false, true] {
+            for padding in [0, solstone_core_transcripts::ENTRY_SOURCE_MAX_BYTES + 1] {
+                let root = tempfile::tempdir().unwrap();
+                write_principal(root.path(), "jordan", "Jordan Rivers");
+                write_participation_fixture(root.path(), json!({"labels":[]}), json!([]));
+                let dir = root.path().join(format!("chronicle/{DAY}/{SEGMENT}"));
+                write_unembedded_segment(&dir, &[3; 64]);
+                let mut answers = (1..64).map(|line| (line, "person")).collect::<Vec<_>>();
+                if conflicting {
+                    answers.push((64, "jordan"));
+                }
+                write_line_answers(&dir, &answers);
+                pad_speech(&dir.join("audio.jsonl"), padding);
+                let numbered = collect_numbered_lines(
+                    root.path(),
+                    DAY,
+                    &[SEGMENT],
+                    None,
+                    crate::transcript::voice_names(root.path()),
+                )
+                .unwrap();
+                assert_eq!(numbered.sole_answer(3), None);
+                assert_eq!(numbered.lines.len(), if conflicting { 0 } else { 1 });
+                let entry = apply(
+                    root.path(),
+                    json!({"name":"Speaker 3","role":"attendee","source":"speaker_label"}),
+                );
+                assert!(
+                    entry.is_null(),
+                    "no unanimous identity and fewer than two unnamed lines: {entry}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unreadable_answer_source_is_not_an_empty_answer_set() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("audio.jsonl");
+        assert!(answered_numbers(root.path(), &path, "audio", &BTreeMap::new()).is_err());
+        fs::write(&path, "").unwrap();
+        assert!(
+            answered_numbers(root.path(), &path, "audio", &BTreeMap::new())
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -2189,6 +2293,56 @@ mod tests {
         write_json(&talents3.join("speakers.json"), json!([]));
 
         let span = ["100000_300", "100500_300", "101000_300"];
+        let evidence = solstone_core_transcripts::speech_evidence_for_span(
+            root.path(),
+            DAY,
+            &span,
+            crate::transcript::voice_names(root.path()),
+            None,
+        )
+        .unwrap();
+        let occurrences = evidence
+            .iter()
+            .flat_map(|source| {
+                source.lines.iter().map(|line| {
+                    (
+                        source.path.strip_prefix(&chronicle).unwrap().to_path_buf(),
+                        line.number,
+                        line.coordinate,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            occurrences,
+            vec![
+                (
+                    Path::new("100000_300/audio.jsonl").to_path_buf(),
+                    1,
+                    Some(1)
+                ),
+                (
+                    Path::new("100000_300/audio.jsonl").to_path_buf(),
+                    2,
+                    Some(2)
+                ),
+                (
+                    Path::new("100500_300/audio.jsonl").to_path_buf(),
+                    1,
+                    Some(1)
+                ),
+                (
+                    Path::new("101000_300/audio.jsonl").to_path_buf(),
+                    4,
+                    Some(1)
+                ),
+                (
+                    Path::new("101000_300/audio.jsonl").to_path_buf(),
+                    4,
+                    Some(2)
+                ),
+            ]
+        );
         let lines = collect_numbered_lines(
             root.path(),
             DAY,
