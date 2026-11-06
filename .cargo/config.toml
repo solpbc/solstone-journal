@@ -5,3 +5,9 @@
 [env]
 NODE_PATH = { value = "tests/node", relative = true }
 NODE_OPTIONS = "--require=solstone-node-test-guard"
+
+[profile.dev.build-override]
+strip = "none"
+
+[profile.release.build-override]
+strip = "none"
