@@ -317,6 +317,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     }
 
     // Body faces: composed from their windows, after the day's own items.
+    let mut places = BTreeMap::new();
     for f in &scope {
         let faces = around
             .get(f)
@@ -342,19 +343,10 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
                 if !beside.is_empty() {
                     item["beside"] = Value::Array(beside);
                 }
+                // Where a device was at its middle, as that device timed it.
                 let middle = span.0 + (span.1 - span.0) / 2;
-                if let Some((on, seconds)) =
-                    solstone_core_location::body_records::owner_moment(root, middle)
-                {
-                    let place = if on == day {
-                        location.beside((seconds, seconds + 1), None)
-                    } else {
-                        solstone_core_location::DayBeside::read(root, &on)
-                            .beside((seconds, seconds + 1), None)
-                    };
-                    if let Some(place) = place {
-                        item["place"] = json!({"device": place.device, "words": place.words});
-                    }
+                if let Some(place) = solstone_core_location::place_at(root, middle, &mut places) {
+                    item["place"] = json!({"device": place.device, "words": place.words});
                 }
             }
             items.push(item);

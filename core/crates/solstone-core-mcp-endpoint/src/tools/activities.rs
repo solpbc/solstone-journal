@@ -954,19 +954,15 @@ pub(crate) fn execute_list(
                 if !beside.is_empty() {
                     activity["beside"] = Value::Array(beside);
                 }
-                if sees_calendar {
-                    let middle = span.0 + (span.1 - span.0) / 2;
-                    if let Some((on, seconds)) =
-                        solstone_core_location::body_records::owner_moment(journal_root, middle)
-                    {
-                        let location = locations.entry(on.clone()).or_insert_with(|| {
-                            solstone_core_location::DayBeside::read(journal_root, &on)
-                        });
-                        if let Some(beside) = location.beside((seconds, seconds + 1), None) {
-                            activity["place"] =
-                                json!({"device": beside.device, "words": beside.words});
-                        }
-                    }
+                // Where a device was at its middle, as that device timed it.
+                if sees_calendar
+                    && let Some(beside) = solstone_core_location::place_at(
+                        journal_root,
+                        span.0 + (span.1 - span.0) / 2,
+                        &mut locations,
+                    )
+                {
+                    activity["place"] = json!({"device": beside.device, "words": beside.words});
                 }
             }
             activities.push(activity);

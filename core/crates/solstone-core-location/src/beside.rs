@@ -50,6 +50,81 @@ impl DayBeside {
     pub fn beside(&self, span: (u32, u32), stream: Option<&str>) -> Option<Beside> {
         location_beside(self.day.as_ref()?, &self.store, span, stream)
     }
+
+    /// The entry covering `instant`, as each entry's device timed it, ranked
+    /// as [`location_beside`] ranks: for an item that carries instants, not a
+    /// device's clock.
+    fn at_instant(&self, instant: i64) -> Option<((u8, std::cmp::Reverse<i64>), Beside)> {
+        let day = self.day.as_ref()?;
+        let (entry, length) = day
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let (start, end) = covered_instants(entry, &day.day)?;
+                (start <= instant && instant <= end).then_some((entry, end - start))
+            })
+            .max_by_key(|(entry, length)| (rank(entry), std::cmp::Reverse(*length)))?;
+        Some((
+            (rank(entry), std::cmp::Reverse(length)),
+            describe(day, &self.store, entry)?,
+        ))
+    }
+}
+
+/// Where a device was at `instant`. A device's own day can differ from the
+/// owner's, so the owner's day it falls on and the days either side are read,
+/// once each through `days`.
+pub fn place_at(
+    journal: &Path,
+    instant: i64,
+    days: &mut std::collections::BTreeMap<String, DayBeside>,
+) -> Option<Beside> {
+    let owner = solstone_core_journal_config::owner_zone(journal);
+    let date = chrono::DateTime::from_timestamp(instant, 0)?
+        .with_timezone(&owner)
+        .date_naive();
+    [date.pred_opt(), Some(date), date.succ_opt()]
+        .into_iter()
+        .flatten()
+        .filter_map(|date| {
+            let on = date.format("%Y%m%d").to_string();
+            days.entry(on.clone())
+                .or_insert_with(|| DayBeside::read(journal, &on))
+                .at_instant(instant)
+        })
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, beside)| beside)
+}
+
+/// The instants an entry covers. An end its device didn't report is the end of
+/// its day on that device's clock, and a start the start.
+fn covered_instants(entry: &Entry, day: &str) -> Option<(i64, i64)> {
+    let (first, last) = match entry {
+        Entry::Readings { first, last, .. } | Entry::Stay { first, last, .. } => {
+            (Some(first), Some(last))
+        }
+        Entry::Visit {
+            arrival, departure, ..
+        } => (arrival.as_ref(), departure.as_ref()),
+        Entry::Unreadable { .. } => return None,
+    };
+    let offset = first.or(last)?.offset;
+    let date = NaiveDate::parse_from_str(day, "%Y%m%d").ok()?;
+    let edge = |date: NaiveDate| {
+        date.and_hms_opt(0, 0, 0)?
+            .and_local_timezone(offset)
+            .single()
+            .map(|time| time.timestamp())
+    };
+    let start = match first {
+        Some(time) => time.utc.timestamp(),
+        None => edge(date)?,
+    };
+    let end = match last {
+        Some(time) => time.utc.timestamp(),
+        None => edge(date.succ_opt()?)?,
+    };
+    (start <= end).then_some((start, end))
 }
 
 /// The entry covering the middle of `span`. The device that recorded the
@@ -228,6 +303,40 @@ mod tests {
 
     fn at(h: u32, m: u32) -> u32 {
         h * 3600 + m * 60
+    }
+
+    #[test]
+    fn an_instant_finds_where_a_device_was_whatever_the_owners_zone() {
+        let root = tempfile::tempdir().unwrap();
+        seed(root.path());
+        crate::projection::rebuild_day(
+            root.path(),
+            DAY,
+            tier(),
+            None,
+            &PlaceStore::default(),
+            &directory(),
+            chrono_tz::America::Denver,
+        )
+        .unwrap();
+        // 14:02 in Denver, where the phone read near Golden; 16:02 in New York
+        // and the next morning in Tokyo.
+        let instant = chrono::DateTime::parse_from_rfc3339("2026-10-01T20:02:00Z")
+            .unwrap()
+            .timestamp();
+        for zone in ["America/Denver", "America/New_York", "Asia/Tokyo"] {
+            let config = root.path().join("config/journal.json");
+            std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+            std::fs::write(
+                &config,
+                serde_json::json!({"identity": {"timezone": zone}}).to_string(),
+            )
+            .unwrap();
+            let mut days = std::collections::BTreeMap::new();
+            let place = place_at(root.path(), instant, &mut days)
+                .unwrap_or_else(|| panic!("{zone}: nothing"));
+            assert!(place.words.starts_with("near Golden"), "{zone}: {place:?}");
+        }
     }
 
     #[test]

@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 
 pub use area::{AreaName, AreaTier, Boundary, Bounds, TownPoint};
 pub use asset::area_tier;
-pub use beside::{Beside, DayBeside, location_beside};
+pub use beside::{Beside, DayBeside, location_beside, place_at};
 pub use day::{
     DayLocation, DeviceDirectory, Entry, SegmentContext, SourceRef, read_day, read_days,
 };
