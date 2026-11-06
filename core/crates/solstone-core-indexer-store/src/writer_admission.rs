@@ -579,8 +579,7 @@ pub(crate) mod tests {
                 return;
             }
 
-            let root =
-                std::env::temp_dir().join(format!("solstone-test-excl-{}", std::process::id()));
+            let root = temp_root("excl");
             let seam = root.join("seam");
             fs::create_dir_all(&seam).unwrap();
 
@@ -670,8 +669,7 @@ pub(crate) mod tests {
                 return;
             }
 
-            let root =
-                std::env::temp_dir().join(format!("solstone-test-death-{}", std::process::id()));
+            let root = temp_root("death");
             let seam = root.join("seam");
             fs::create_dir_all(&seam).unwrap();
 
@@ -820,8 +818,7 @@ pub(crate) mod tests {
                 return;
             }
 
-            let root = std::env::temp_dir()
-                .join(format!("solstone-test-mem-prune-{}", std::process::id()));
+            let root = temp_root("mem-prune");
             let seam = root.join("seam");
             fs::create_dir_all(&seam).unwrap();
 
@@ -883,6 +880,7 @@ pub(crate) mod tests {
                 "memory_originals row must be removed by prune"
             );
 
+            drop(ro_conn);
             let _ = fs::remove_dir_all(&root);
         }
 
@@ -986,8 +984,7 @@ pub(crate) mod tests {
                 return;
             }
 
-            let root =
-                std::env::temp_dir().join(format!("solstone-test-cls-rel-{}", std::process::id()));
+            let root = temp_root("cls-rel");
             let seam = root.join("seam");
             fs::create_dir_all(&seam).unwrap();
 
