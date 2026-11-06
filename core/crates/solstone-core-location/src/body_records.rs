@@ -126,6 +126,28 @@ fn window_span(name: &str) -> Option<(u32, u32)> {
     Some((start, start + length.max(1)))
 }
 
+/// What one window holds now.
+fn read_held(path: &Path) -> Held {
+    if path.join(TOMBSTONE).exists() {
+        return Held::Deleted;
+    }
+    match fs::read_to_string(path.join(BODY_RECORDS_FILE)) {
+        Ok(text) => decode_rows(&text).map_or(Held::Unreadable, Held::Rows),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Held::Rows(Vec::new()),
+        Err(_) => Held::Unreadable,
+    }
+}
+
+/// The experience row `row_id` a window holds, if it's live and holds it.
+fn experience_row<'a>(held: &'a Held, row_id: &str) -> Option<&'a BodyRow> {
+    match held {
+        Held::Rows(rows) => rows
+            .iter()
+            .find(|row| row.kind == RowKind::Experience && row.id == row_id),
+        _ => None,
+    }
+}
+
 fn read_windows(journal: &Path, day: &str, stream: &str) -> Vec<Window> {
     let dir = journal.join("chronicle").join(day).join(stream);
     let Ok(entries) = fs::read_dir(&dir) else {
@@ -140,18 +162,7 @@ fn read_windows(journal: &Path, day: &str, stream: &str) -> Vec<Window> {
         let Some((start, end)) = window_span(&name) else {
             continue;
         };
-        let path = entry.path();
-        let held = if path.join(TOMBSTONE).exists() {
-            Held::Deleted
-        } else {
-            match fs::read_to_string(path.join(BODY_RECORDS_FILE)) {
-                Ok(text) => decode_rows(&text).map_or(Held::Unreadable, Held::Rows),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    Held::Rows(Vec::new())
-                }
-                Err(_) => Held::Unreadable,
-            }
-        };
+        let held = read_held(&entry.path());
         windows.push(Window {
             name,
             start,
@@ -184,16 +195,6 @@ struct Day {
 }
 
 impl Day {
-    fn find(&self, row_id: &str) -> Option<(&Window, &BodyRow)> {
-        self.windows.iter().find_map(|window| match &window.held {
-            Held::Rows(rows) => rows
-                .iter()
-                .find(|row| row.kind == RowKind::Experience && row.id == row_id)
-                .map(|row| (window, row)),
-            _ => None,
-        })
-    }
-
     fn surviving_tile(&self, row_id: &str) -> Option<&BodyRow> {
         self.windows.iter().find_map(|window| match &window.held {
             Held::Rows(rows) => rows.iter().find(|row| {
@@ -246,12 +247,6 @@ fn locate(
     };
     load(days, day);
     let today = &days[&(day.to_owned(), stream.to_owned())];
-    if let Some((window, row)) = today.find(row_id) {
-        return (
-            Some(window.name.clone()),
-            Account::Live(Box::new(row.clone())),
-        );
-    }
     let covering = today.covering(day, start);
     let deleted = covering
         .iter()
@@ -396,8 +391,8 @@ type Listing = (Vec<(String, u32, u32)>, Option<Tz>);
 #[derive(Default)]
 pub struct Windows {
     names: BTreeMap<(String, String), Listing>,
-    /// The experience ids each live window holds, read once.
-    holds: BTreeMap<std::path::PathBuf, std::collections::BTreeSet<String>>,
+    /// What each window holds, read once.
+    held: BTreeMap<std::path::PathBuf, Held>,
     days: BTreeMap<(String, String), Day>,
 }
 
@@ -446,27 +441,14 @@ impl Windows {
             .join("chronicle")
             .join(&stored.day)
             .join(&stored.stream);
-        let holds = &mut self.holds;
+        let held = &mut self.held;
         let holding = covering.iter().find(|name| {
-            let window = dir.join(name.as_str());
-            holds
-                .entry(window.clone())
-                .or_insert_with(|| {
-                    if window.join(TOMBSTONE).exists() {
-                        return std::collections::BTreeSet::new();
-                    }
-                    fs::read_to_string(window.join(BODY_RECORDS_FILE))
-                        .ok()
-                        .and_then(|text| decode_rows(&text).ok())
-                        .map(|rows| {
-                            rows.into_iter()
-                                .filter(|row| row.kind == RowKind::Experience)
-                                .map(|row| row.id)
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                })
-                .contains(&stored.row_id)
+            experience_row(
+                held.entry(dir.join(name.as_str()))
+                    .or_insert_with_key(|window| read_held(window)),
+                &stored.row_id,
+            )
+            .is_some()
         });
         match holding {
             Some(name) => vec![name.clone()],
@@ -490,16 +472,34 @@ impl Windows {
             .all(|window| readable(&stored.day, &stored.stream, Some(window)))
     }
 
-    /// The account as its window says now.
+    /// The account as its window says now: the row as the live window the
+    /// gate checked holds it, and only that window.
     pub fn compose(&mut self, journal: &Path, stored: StoredBody) -> ComposedBody {
-        let (window, account) = locate(
-            journal,
-            &stored.day,
-            &stored.stream,
-            &stored.row_id,
-            &stored.stored_start,
-            &mut self.days,
-        );
+        let windows = self.account_windows(journal, &stored);
+        let live = match windows.as_slice() {
+            [name] => {
+                let window = journal
+                    .join("chronicle")
+                    .join(&stored.day)
+                    .join(&stored.stream)
+                    .join(name);
+                self.held
+                    .get(&window)
+                    .and_then(|held| experience_row(held, &stored.row_id))
+                    .map(|row| (Some(name.clone()), Account::Live(Box::new(row.clone()))))
+            }
+            _ => None,
+        };
+        let (window, account) = live.unwrap_or_else(|| {
+            locate(
+                journal,
+                &stored.day,
+                &stored.stream,
+                &stored.row_id,
+                &stored.stored_start,
+                &mut self.days,
+            )
+        });
         ComposedBody {
             id: stored.id,
             facet: stored.facet,

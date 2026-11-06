@@ -723,3 +723,18 @@ fn a_range_of_days_shows_the_faces_each_day_shows_alone() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn an_account_composes_only_from_a_window_its_start_falls_in() {
+    let journal = journal();
+    let root = journal.path();
+    // The night starts at 22:10; its row sits only in a noon window, which a
+    // reader's gate never checks for it.
+    window(root, DAY, "220000_3600", &[]);
+    window(root, DAY, "120000_3600", &[night()]);
+    record(root, json!({}));
+    let found = composed(root);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].account, Account::NotFound);
+    assert_eq!(found[0].window.as_deref(), Some("220000_3600"));
+}
