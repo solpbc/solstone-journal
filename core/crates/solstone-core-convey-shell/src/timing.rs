@@ -22,8 +22,8 @@ pub(crate) fn is_dashboard_response(response: &Response) -> bool {
 
 pub(crate) fn append(response: &mut Response, name: &'static str, duration: Duration) {
     let value = format!("{name};dur={:.3}", duration.as_secs_f64() * 1000.0);
-    response.headers_mut().append(
-        header::HeaderName::from_static("server-timing"),
+    solstone_core_convey_http::server_timing::append(
+        response.headers_mut(),
         value
             .parse()
             .expect("fixed timing vocabulary and numeric duration"),
@@ -48,7 +48,7 @@ mod tests {
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn app_timing_appends_to_every_existing_header_and_skips_streams_and_media() {
+    async fn app_timing_joins_the_existing_entries_and_skips_streams_and_media() {
         for content_type in [
             "text/html; charset=utf-8",
             "application/json",
@@ -62,8 +62,10 @@ mod tests {
                     get(move || async move {
                         Response::builder()
                             .header(header::CONTENT_TYPE, content_type)
-                            .header("server-timing", "coalesced;desc=\"immediate\"")
-                            .header("server-timing", "month-fold;dur=1.25")
+                            .header(
+                                "server-timing",
+                                "coalesced;desc=\"immediate\", month-fold;dur=1.25",
+                            )
                             .body(Body::empty())
                             .unwrap()
                     }),
@@ -73,34 +75,23 @@ mod tests {
                 .oneshot(Request::get("/read").body(Body::empty()).unwrap())
                 .await
                 .unwrap();
-            let values: Vec<_> = response
-                .headers()
-                .get_all("server-timing")
-                .iter()
-                .map(|v| v.to_str().unwrap())
-                .collect();
-            assert_eq!(
-                &values[..2],
-                ["coalesced;desc=\"immediate\"", "month-fold;dur=1.25"]
-            );
+            let lines: Vec<_> = response.headers().get_all("server-timing").iter().collect();
+            assert_eq!(lines.len(), 1, "{content_type}");
+            let line = lines[0].to_str().unwrap();
+            let handler_entries = "coalesced;desc=\"immediate\", month-fold;dur=1.25";
             if is_dashboard_response(&response) {
-                assert_eq!(values.len(), 3);
-                assert!(
-                    values[2]
-                        .strip_prefix("app;dur=")
-                        .unwrap()
-                        .parse::<f64>()
-                        .unwrap()
-                        >= 0.0
-                );
+                let app = line
+                    .strip_prefix(handler_entries)
+                    .and_then(|rest| rest.strip_prefix(", app;dur="))
+                    .unwrap();
+                assert!(app.parse::<f64>().unwrap() >= 0.0);
             } else {
-                assert_eq!(values.len(), 2);
+                assert_eq!(line, handler_entries);
             }
         }
     }
 
-    #[tokio::test]
-    async fn dashboard_routes_report_app_and_gate_timings() {
+    fn established_journal() -> tempfile::TempDir {
         let journal = tempfile::tempdir().unwrap();
         std::fs::create_dir(journal.path().join("config")).unwrap();
         std::fs::write(
@@ -108,6 +99,12 @@ mod tests {
             br#"{"setup":{"completed_at":1}}"#,
         )
         .unwrap();
+        journal
+    }
+
+    #[tokio::test]
+    async fn dashboard_routes_report_app_and_gate_timings() {
+        let journal = established_journal();
         let app = crate::router(journal.path().to_owned());
         for path in [
             "/app/home/",
@@ -121,12 +118,8 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), 200, "{path}");
-            let timings = response
-                .headers()
-                .get_all("server-timing")
-                .iter()
-                .map(|v| v.to_str().unwrap())
-                .collect::<Vec<_>>();
+            let line = response.headers()["server-timing"].to_str().unwrap();
+            let timings: Vec<_> = line.split(", ").collect();
             for metric in ["app;dur=", "gate;dur="] {
                 assert!(
                     timings.iter().any(|value| value.starts_with(metric)),
@@ -141,6 +134,43 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    // solstone macOS through 2.0.59 refuses a response with any repeated header
+    // name, so this guards every name rather than only server-timing.
+    #[tokio::test]
+    async fn gated_and_coalesced_routes_repeat_no_header_name() {
+        let journal = established_journal();
+        let app = crate::router(journal.path().to_owned());
+        for path in [
+            "/app/home/",
+            "/api/shell",
+            "/app/link/api/identity",
+            "/app/network/api/status",
+            "/app/health/api/state",
+            "/app/transcripts/api/stats/202611",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(path)
+                        .extension(solstone_core_convey_http::identity::AccessBasis::Localhost)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200, "{path}");
+            for name in response.headers().keys() {
+                let lines: Vec<_> = response.headers().get_all(name).iter().collect();
+                assert_eq!(lines.len(), 1, "{path} repeats {name}: {lines:?}");
+            }
+            let line = response.headers()["server-timing"].to_str().unwrap();
+            assert!(
+                line.contains("gate;dur=") && line.contains("app;dur="),
+                "{path}: {line}"
+            );
         }
     }
 }

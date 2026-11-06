@@ -15,8 +15,8 @@
 //!   remainder of the in-flight run plus one full run.
 //! - `immediate`: this request arrived when nothing was in flight and started that run.
 //!   `queued`: it waited, including the first registrant of the next run. Each waiter
-//!   appends `Server-Timing` via `HeaderMap::append` (`coalesced;desc="immediate"` or
-//!   `coalesced;desc="queued"`). Do not replace a `Server-Timing` value the handler set.
+//!   adds a `Server-Timing` entry through `server_timing::append` (`coalesced;desc="immediate"`
+//!   or `coalesced;desc="queued"`). Do not replace a `Server-Timing` value the handler set.
 //!   A shared `dur`, when the handler set one, is the run's duration, not a queued
 //!   waiter's wait.
 //! - The run executes the opener request only. A handler that reads another header, or
@@ -51,9 +51,8 @@ use axum::http::{Method, Request, StatusCode};
 use axum::response::Response;
 use tower::{Layer, Service};
 
-const SERVER_TIMING: HeaderName = HeaderName::from_static("server-timing");
-
 use crate::identity::AccessBasis;
+use crate::server_timing;
 
 pub const COALESCED_RESPONSE_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
@@ -226,7 +225,7 @@ fn answer_waiters(waiters: &mut Vec<Waiter>, outcome: &SharedOutcome) {
         } else {
             HeaderValue::from_static("coalesced;desc=\"queued\"")
         };
-        headers.append(SERVER_TIMING, timing_val);
+        server_timing::append(&mut headers, timing_val);
 
         let mut response = Response::new(Body::from(outcome.body.clone()));
         *response.status_mut() = outcome.status;
@@ -389,8 +388,8 @@ where
                     n.notify(JoinEvent::Registered(Disposition::Immediate));
                 }
                 let mut response = inner.call(request).await?;
-                response.headers_mut().append(
-                    SERVER_TIMING,
+                server_timing::append(
+                    response.headers_mut(),
                     HeaderValue::from_static("coalesced;desc=\"immediate\""),
                 );
                 if let Some(n) = &notice {
@@ -464,8 +463,8 @@ where
                 Err(_) => {
                     let outcome = panic_outcome();
                     let mut headers = outcome.headers.clone();
-                    headers.append(
-                        SERVER_TIMING,
+                    server_timing::append(
+                        &mut headers,
                         HeaderValue::from_static("coalesced;desc=\"queued\""),
                     );
                     let mut response = Response::new(Body::from(outcome.body));
@@ -494,6 +493,7 @@ mod tests {
 
     use super::*;
     use crate::identity::{AccessBasis, Carrier};
+    use crate::server_timing::SERVER_TIMING;
 
     // --- Minimal RFC 1952 / RFC 1951 Gzip / Deflate decompressor for test 6 ---
 
@@ -1736,19 +1736,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        let timing_values: Vec<_> = resp
-            .headers()
-            .get_all(SERVER_TIMING)
-            .iter()
-            .map(|v| v.to_str().unwrap())
-            .collect();
-
-        assert!(timing_values.iter().any(|v| v.contains("dur=42")));
-        assert!(
-            timing_values
-                .iter()
-                .any(|v| v.contains("coalesced;desc=\"immediate\""))
-        );
+        let timing_lines: Vec<_> = resp.headers().get_all(SERVER_TIMING).iter().collect();
+        assert_eq!(timing_lines, ["dur=42, coalesced;desc=\"immediate\""]);
     }
 
     struct OversizedBody {

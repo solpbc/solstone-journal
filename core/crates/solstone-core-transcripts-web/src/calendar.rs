@@ -7,19 +7,18 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Extension, Path as RoutePath, State};
+use axum::http::StatusCode;
 use axum::http::header::HeaderValue;
-use axum::http::{HeaderName, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
+use solstone_core_convey_http::server_timing;
 use solstone_core_journal_io::{JournalRoot, day_dirs, day_path};
 use solstone_core_journal_stats_cli::load_fresh_day_cache;
 
 use crate::counts_flight::{self, Delivery, Disposition, RequestRole};
 use crate::day::prepare_day;
 use crate::{AppState, TranscriptError, legacy_error_response};
-
-const SERVER_TIMING: HeaderName = HeaderName::from_static("server-timing");
 
 /// `complete: true` covers every change whose stream-marker bump committed before the read, and every change to a live day. A change on an older day whose producer committed but did not bump appears within about an hour of it while the calendar is in use.
 pub(crate) async fn index(
@@ -45,7 +44,7 @@ pub(crate) async fn index(
             } else {
                 HeaderValue::from_static("coalesced;desc=\"queued\"")
             };
-            response.headers_mut().append(SERVER_TIMING, val);
+            server_timing::append(response.headers_mut(), val);
             response
         }
         Delivery::Failed {
@@ -57,7 +56,7 @@ pub(crate) async fn index(
             } else {
                 HeaderValue::from_static("coalesced;desc=\"queued\"")
             };
-            response.headers_mut().append(SERVER_TIMING, val);
+            server_timing::append(response.headers_mut(), val);
             response
         }
     }
@@ -123,9 +122,9 @@ pub(crate) async fn stats(
             } else {
                 HeaderValue::from_static("coalesced;desc=\"queued\"")
             };
-            response.headers_mut().append(SERVER_TIMING, val);
+            server_timing::append(response.headers_mut(), val);
             if let Ok(timing_val) = HeaderValue::from_str(&format!("month-fold;dur={dur_ms}")) {
-                response.headers_mut().append(SERVER_TIMING, timing_val);
+                server_timing::append(response.headers_mut(), timing_val);
             }
             response
         }
@@ -138,7 +137,7 @@ pub(crate) async fn stats(
             } else {
                 HeaderValue::from_static("coalesced;desc=\"queued\"")
             };
-            response.headers_mut().append(SERVER_TIMING, val);
+            server_timing::append(response.headers_mut(), val);
             response
         }
     }
