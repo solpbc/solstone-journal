@@ -8,6 +8,18 @@
  * Provides window.appEvents API for subscribing to events by tract.
  */
 (function(){
+  // The status marks sit beside this script in its asset tree. Under a hashed
+  // address they resolve hashed too, so a repeat visit takes them from cache;
+  // anywhere else they keep their stable path.
+  const STATUS_MARKS = (() => {
+    try {
+      const src = document.currentScript && document.currentScript.src;
+      if (src && /^\/static\/[0-9a-f]{16}\//.test(new URL(src).pathname)) {
+        return new URL('sol-status/', src).pathname;
+      }
+    } catch (_) {}
+    return '/static/sol-status/';
+  })();
   const DISCONNECT_FIRST_PHASE_MS = 5000;
   const DISCONNECT_SECOND_PHASE_MS = 30000;
   const listeners = {};
@@ -271,7 +283,7 @@
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     const stem = mark.connecting && !reduced ? 'mark-connecting-animated' : mark.variant;
     img.style.visibility = '';
-    img.src = '/static/sol-status/' + stem + '.svg';
+    img.src = STATUS_MARKS + stem + '.svg';
     img.classList.toggle('status-indicator--connecting', mark.connecting);
     lastRenderedVariant = mark.variant;
     lastRenderedConnecting = mark.connecting;

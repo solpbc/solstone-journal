@@ -2,6 +2,18 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
+  // The status marks sit beside this script in its asset tree. Under a hashed
+  // address they resolve hashed too, so a repeat visit takes them from cache;
+  // anywhere else they keep their stable path.
+  const STATUS_MARKS = (() => {
+    try {
+      const src = document.currentScript && document.currentScript.src;
+      if (src && /^\/static\/[0-9a-f]{16}\//.test(new URL(src).pathname)) {
+        return new URL('sol-status/', src).pathname;
+      }
+    } catch (_) {}
+    return '/static/sol-status/';
+  })();
   const DAY_RE = /^\d{8}$/;
 
   function pathContext() {
@@ -199,7 +211,7 @@
     if (!instrument) return;
     if (!instrument.querySelector('.status-icon')) instrument.innerHTML =
       '<a class="status-icon" href="/app/health/#healthSystemDetails" aria-label="connecting" title="connecting">' +
-      '<img class="status-indicator status-indicator--connecting" src="/static/sol-status/mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
+      '<img class="status-indicator status-indicator--connecting" src="' + STATUS_MARKS + 'mark-connecting.svg" width="22" height="22" alt="" aria-hidden="true">' +
       '<span id="quiet-notif-badge" class="quiet-notif-badge" style="display:none"></span>' +
       '</a>' +
       '<span id="status-live-region" role="status" class="visually-hidden"></span>';

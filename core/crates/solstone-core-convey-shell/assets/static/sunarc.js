@@ -104,6 +104,19 @@ root.createNightLayer=function(container,{read,fullMotion=false}={}){
 (function () {
   'use strict';
 
+  // The status marks sit beside this script in its asset tree. Under a hashed
+  // address they resolve hashed too, so a repeat visit takes them from cache;
+  // anywhere else they keep their stable path.
+  const STATUS_MARKS = (() => {
+    try {
+      const src = document.currentScript && document.currentScript.src;
+      if (src && /^\/static\/[0-9a-f]{16}\//.test(new URL(src).pathname)) {
+        return new URL('sol-status/', src).pathname;
+      }
+    } catch (_) {}
+    return '/static/sol-status/';
+  })();
+
   // § 5 rung 2 — the system timezone's tzdb reference point. Bundled with the build: § 12
   // accepts no network call attributable to this pattern, so the table is never fetched.
   // Regenerate the block between the markers with:
@@ -752,7 +765,7 @@ root.createNightLayer=function(container,{read,fullMotion=false}={}){
     if (!sunEl) {
       sunEl = document.createElement('img');
       sunEl.className = 'sunarc-sun';
-      sunEl.src = '/static/sol-status/mark.svg';
+      sunEl.src = STATUS_MARKS + 'mark.svg';
       sunEl.alt = '';
       sunEl.setAttribute('aria-hidden', 'true');
       sunEl.draggable = false;

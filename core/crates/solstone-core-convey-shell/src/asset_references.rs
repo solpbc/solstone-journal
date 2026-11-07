@@ -14,32 +14,31 @@ use crate::asset_cache::{
 };
 use crate::assets::{self, AssetKind, INVENTORY};
 
-/// Paths built at runtime, or named absolutely from inside their own tree (a
-/// tree can't name its own hash), with how each one resolves.
+/// Paths built at runtime, with how each one resolves.
 const RUNTIME_ASSETS: &[(&str, &str)] = &[
     (
         "/static/sol-status/mark-connecting.svg",
-        "status table and boot mark; stays unhashed, revalidated",
+        "status table and boot mark; resolved beside the script's own hashed address",
     ),
     (
         "/static/sol-status/mark-connecting-animated.svg",
-        "status table when motion is allowed; stays unhashed, revalidated",
+        "status table when motion is allowed; resolved beside the script's own hashed address",
     ),
     (
         "/static/sol-status/mark-offline.svg",
-        "status table; stays unhashed, revalidated",
+        "status table; resolved beside the script's own hashed address",
     ),
     (
         "/static/sol-status/mark-attention.svg",
-        "status table; stays unhashed, revalidated",
+        "status table; resolved beside the script's own hashed address",
     ),
     (
         "/static/sol-status/mark-paused.svg",
-        "status table; stays unhashed, revalidated",
+        "status table; resolved beside the script's own hashed address",
     ),
     (
         "/static/sol-status/mark.svg",
-        "status table and sun-arc mark; stays unhashed, revalidated",
+        "status table and sun-arc mark; resolved beside the script's own hashed address",
     ),
     (
         "/static/vendor/leaflet/images/marker-icon.png",
@@ -55,14 +54,11 @@ const RUNTIME_ASSETS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Absolute references to a file in the same tree as the file making them.
+/// The stable fallback each status-mark script keeps for when it isn't served
+/// under a hashed address (a page from before hashing, the setup window).
 const SAME_TREE_ABSOLUTE: &[(&str, &str)] = &[
-    (
-        "/static/shell_boot.js",
-        "/static/sol-status/mark-connecting.svg",
-    ),
-    ("/static/sunarc.js", "/static/sol-status/mark.svg"),
-    // websocket.js appends a status stem and .svg; every expansion is listed above.
+    ("/static/shell_boot.js", "/static/sol-status/"),
+    ("/static/sunarc.js", "/static/sol-status/"),
     ("/static/websocket.js", "/static/sol-status/"),
 ];
 
