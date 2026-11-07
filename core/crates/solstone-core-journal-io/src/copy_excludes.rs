@@ -64,6 +64,10 @@ pub const COPY_EXCLUDES: &[&str] = &[
     // is carried, so a restored journal still knows the run didn't finish.
     "imports/.apple_health-run/scan",
     "imports/.apple_health-run/placed",
+    // Oura's run stages the pages it fetched, which a run fetches again.
+    "imports/.oura-run/scan",
+    "imports/.oura-run/placed",
+    "imports/.oura-run/pages",
 ];
 
 /// Whether a slash-separated journal-relative path is operational copy state.
@@ -143,6 +147,18 @@ mod tests {
         assert!(copy_excluded("imports/.apple_health-run/placed/000000.run"));
         assert!(!copy_excluded("imports/.apple_health-run/state.json"));
         assert!(!copy_excluded("imports/20261104_120000/body-touched.jsonl"));
+    }
+
+    #[test]
+    fn an_oura_runs_staging_and_pages_are_left_out_and_its_state_is_carried() {
+        assert!(copy_excluded("imports/.oura-run/scan/000001.run"));
+        assert!(copy_excluded("imports/.oura-run/placed/000000.run"));
+        assert!(copy_excluded("imports/.oura-run/pages/index.json"));
+        assert!(copy_excluded("imports/.oura-run/pages/sleep/0-0.json"));
+        assert!(!copy_excluded("imports/.oura-run/state.json"));
+        assert!(!copy_excluded("imports/.oura-zone.json"));
+        assert!(!copy_excluded("imports/.oura-coverage.json"));
+        assert!(!copy_excluded("imports/oura.json"));
     }
 
     #[test]
