@@ -41,7 +41,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
-- if your journal was stopped just as it was starting a task, for example by a restart or a shutdown, it could refuse to start again every time after that, saying "this start could not continue." your journal now sets aside what that stop left behind and starts, and your memories are untouched.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
 
 ## [2.0.71] - 2026-11-07
@@ -71,6 +70,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the date picker on the transcripts page no longer makes you wait each time on a journal with many older days.
 - on windows, turning on encrypted backup could show an error and not open the services portal, even though setup had started. the services portal now opens.
 - on windows, `solstone journal service start` or `restart`, or setup, could say your journal was ready, then report a failure, even though your journal was running. the command now finishes its own cleanup before it ends.
+- on mac and linux, if your journal was stopped just as it was starting a task, for example by a restart or a shutdown, it could refuse to start again every time after that, saying "this start could not continue." your journal now sets aside what that stop left behind and starts, and your memories are untouched.
 
 ## [2.0.70] - 2026-11-06
 
