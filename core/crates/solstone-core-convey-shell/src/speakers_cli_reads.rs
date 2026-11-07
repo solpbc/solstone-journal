@@ -218,7 +218,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                     "speaker_owner_identity_invalid",
                     "speaker status couldn't be loaded because your configured owner identity needs attention.",
                     "configured owner identity is not admitted",
-                    StatusCode::BAD_REQUEST,
+                    StatusCode::CONFLICT,
                 );
             }
         };

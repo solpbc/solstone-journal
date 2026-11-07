@@ -56,7 +56,7 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
             "speaker_owner_identity_invalid",
             "that speaker command couldn't run because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
-            StatusCode::BAD_REQUEST,
+            StatusCode::CONFLICT,
         ),
         Ok(value) => Json(value).into_response(),
         Err(error) => err(
@@ -201,7 +201,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
             "speaker_owner_identity_invalid",
             "that speaker command couldn't run because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
-            StatusCode::BAD_REQUEST,
+            StatusCode::CONFLICT,
         );
     }
     if matches!(

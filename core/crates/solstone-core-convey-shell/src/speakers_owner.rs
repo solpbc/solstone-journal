@@ -25,6 +25,17 @@ use solstone_core_speaker_resolve::owner_voice::{
 use solstone_core_speaker_resolve::segment_catalog::{CatalogBuildError, catalog_journal};
 
 const OWNER_BOOTSTRAP_MIN_STATEMENTS: usize = 30;
+/// Owner status when the owner hasn't added their name yet.
+pub(crate) const OWNER_IDENTITY_NEEDED_STATUS: &str = "identity_needed";
+
+/// Whether a journal with no admitted owner is simply one whose owner hasn't
+/// added their name. No setup path asks for it, so a new journal is like this
+/// until the owner does; that is a state to show, not a failed read. A name
+/// that is set but admits no one, or a config that can't be read, still needs
+/// attention.
+pub(crate) fn owner_identity_needed(root: &Path) -> bool {
+    matches!(solstone_core_entity::owner_name_configured(root), Ok(false))
+}
 const OWNER_DETECT_CANDIDATE_GUIDANCE: &str =
     "Analyze available voice patterns to look for an owner voice candidate.";
 const OWNER_REJECTION_COOLDOWN_GUIDANCE: &str = "Wait for the owner voice rejection cooldown before running detection again, \
@@ -39,7 +50,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                 "speaker_owner_identity_invalid",
                 "your owner voice couldn't be loaded because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
-                StatusCode::BAD_REQUEST,
+                StatusCode::CONFLICT,
             )
             .into_response(),
             Err(OwnerStatusError::Catalog(error)) => error_envelope(
@@ -81,7 +92,11 @@ fn owner_setup_status(root: &Path) -> Result<Value, OwnerStatusError> {
     {
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
-            return Err(OwnerStatusError::IdentityInvalid);
+            return if owner_identity_needed(root) {
+                Ok(json!({"status": OWNER_IDENTITY_NEEDED_STATUS}))
+            } else {
+                Err(OwnerStatusError::IdentityInvalid)
+            };
         }
     };
     let lock = solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(root)
@@ -372,6 +387,57 @@ fn owner_embedding_inventory(root: &Path) -> Result<(usize, usize), OwnerStatusE
         }
     }
     Ok((segments_available, embeddings_available))
+}
+
+// Owner identity states read only a temporary journal, so they run in the
+// routine unit lane.
+#[cfg(test)]
+mod identity_tests {
+    use std::fs;
+
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn owner_status_reports_a_journal_with_no_admitted_owner_as_a_state() {
+        // No first-run path collects a name, so a new journal has no principal
+        // until the owner adds one, and its two entries here are not it.
+        let temp = tempfile::tempdir().expect("tempdir");
+        for (id, value) in [
+            ("someone", json!({"id":"someone","type":"Person"})),
+            (
+                "tool",
+                json!({"id":"tool","type":"Tool","is_principal":true}),
+            ),
+        ] {
+            fs::create_dir_all(temp.path().join("entities").join(id)).expect("entity dir");
+            fs::write(
+                temp.path().join("entities").join(id).join("entity.json"),
+                value.to_string(),
+            )
+            .expect("entity writes");
+        }
+        assert_eq!(
+            owner_status(temp.path()).expect("owner status reads"),
+            json!({"status": OWNER_IDENTITY_NEEDED_STATUS})
+        );
+    }
+
+    #[test]
+    fn a_configured_name_that_admits_no_owner_is_not_the_needed_state() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("config")).expect("config dir");
+        fs::write(
+            temp.path().join("config/journal.json"),
+            json!({"identity":{"name":"Field"}}).to_string(),
+        )
+        .expect("config writes");
+        assert!(matches!(
+            owner_status(temp.path()),
+            Err(OwnerStatusError::IdentityInvalid)
+        ));
+    }
 }
 
 #[cfg(all(test, feature = "full-tests"))]

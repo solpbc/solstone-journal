@@ -56,7 +56,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
                 "speaker_owner_identity_invalid",
                 "that speaker attribution couldn't be changed because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
-                StatusCode::BAD_REQUEST,
+                StatusCode::CONFLICT,
             );
         }
     };
@@ -210,7 +210,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
             "speaker_owner_identity_invalid",
             "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
             "configured owner identity is not admitted",
-            StatusCode::BAD_REQUEST,
+            StatusCode::CONFLICT,
         );
     }
     err(

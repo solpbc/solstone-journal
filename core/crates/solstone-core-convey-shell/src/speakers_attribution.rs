@@ -48,7 +48,7 @@ const OWNER_DAMAGED: (&str, &str, StatusCode) = (
 const OWNER_IDENTITY_INVALID: (&str, &str, StatusCode) = (
     OWNER_IDENTITY_INVALID_REASON,
     "that speaker command couldn't run because your configured owner identity needs attention.",
-    StatusCode::BAD_REQUEST,
+    StatusCode::CONFLICT,
 );
 
 pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -1473,7 +1473,9 @@ mod tests {
         };
         let response = contamination_allowed(&journal.0, &fields, &[1.0; 256])
             .expect_err("the direct correction gate remains independently refused");
-        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+        // A journal with no admitted owner is a state the command conflicts
+        // with, not a malformed request, like its other owner-voice refusals.
+        assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
         let body: Value = serde_json::from_slice(
             &to_bytes(response.into_body(), usize::MAX)
                 .await

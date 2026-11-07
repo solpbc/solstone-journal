@@ -35,7 +35,7 @@ pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                 "speaker_owner_identity_invalid",
                 "speaker quality couldn't be loaded because your configured owner identity needs attention.",
                 "configured owner identity is not admitted",
-                StatusCode::BAD_REQUEST,
+                StatusCode::CONFLICT,
             )
             .into_response(),
             Err(QualityError::Archive(error)) => error_envelope(
@@ -62,9 +62,17 @@ enum QualityError {
 }
 
 fn quality_status(root: &Path) -> Result<QualityStatus, QualityError> {
+    // The label counts don't depend on who the owner is. While the owner
+    // hasn't added their name they are still true, and only the owner's own
+    // voice has nothing to report yet.
     let principal_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(root)
     {
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => Some(id),
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid
+            if crate::speakers_owner::owner_identity_needed(root) =>
+        {
+            None
+        }
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
             return Err(QualityError::IdentityInvalid);
         }
@@ -91,8 +99,11 @@ fn quality_status(root: &Path) -> Result<QualityStatus, QualityError> {
         corrections_window_count: counters.corrections_window_count,
         unreadable_files: counters.unreadable_files,
         empty_labels_without_skipped_segments: counters.empty_labels_without_skipped_segments,
-        owner_voice: owner_voice_state(root, &principal_id)
-            .map_err(|error| QualityError::Archive(error.to_string()))?,
+        owner_voice: match principal_id {
+            Some(principal_id) => owner_voice_state(root, &principal_id)
+                .map_err(|error| QualityError::Archive(error.to_string()))?,
+            None => OwnerVoice::identity_needed(),
+        },
     })
 }
 
@@ -159,6 +170,21 @@ struct OwnerVoice {
     manual_tag_lookup_error_count: usize,
     built_at: Option<String>,
     refreshed_at: Option<String>,
+}
+
+impl OwnerVoice {
+    fn identity_needed() -> Self {
+        Self {
+            bootstrap_state: crate::speakers_owner::OWNER_IDENTITY_NEEDED_STATUS,
+            status: crate::speakers_owner::OWNER_IDENTITY_NEEDED_STATUS.to_owned(),
+            centroid_saved: false,
+            evidence_tier: None,
+            evidence_count: 0,
+            manual_tag_lookup_error_count: 0,
+            built_at: None,
+            refreshed_at: None,
+        }
+    }
 }
 
 fn count_segment_quality(
@@ -614,6 +640,24 @@ mod tests {
         assert_eq!(status["quality_window_count"], 0);
         assert_eq!(status["owner_voice"]["bootstrap_state"], "pre_bootstrap");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn quality_counts_without_an_admitted_owner_and_says_the_owner_is_needed() {
+        // A journal whose owner hasn't added their name has no principal.
+        let root = tempfile::tempdir().expect("temporary journal");
+        std::fs::create_dir_all(root.path().join("chronicle")).expect("chronicle creates");
+        std::fs::create_dir_all(root.path().join("entities/someone")).expect("person creates");
+        std::fs::write(
+            root.path().join("entities/someone/entity.json"),
+            r#"{"id":"someone","type":"Person"}"#,
+        )
+        .expect("person writes");
+        let status = serde_json::to_value(quality_status(root.path()).expect("quality builds"))
+            .expect("quality serializes");
+        assert_eq!(status["quality_window_count"], 0);
+        assert_eq!(status["owner_voice"]["bootstrap_state"], "identity_needed");
+        assert_eq!(status["owner_voice"]["centroid_saved"], false);
     }
 
     #[test]

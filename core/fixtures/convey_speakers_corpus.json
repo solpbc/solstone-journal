@@ -13,7 +13,8 @@
         "owner_min_statements": 30,
         "owner_status_routing_tokens": {
           "candidate": "candidate",
-          "confirmed": "confirmed"
+          "confirmed": "confirmed",
+          "identity_needed": "identity_needed"
         },
         "speaker_copy": {
           "SPK_ACTION_NOT_NOW": "not now",
@@ -111,6 +112,8 @@
           "SPK_OWNER_CANDIDATE_TITLE": "is this your voice?",
           "SPK_OWNER_CONFIRM_LABEL": "yes, that's me",
           "SPK_OWNER_COOLDOWN_TEMPLATE": "that voice won't be offered again. your journal looks for your voice again after {date}, or you can teach it now.",
+          "SPK_OWNER_IDENTITY_NEEDED": "add your name in settings so your journal can tell which voice is yours.",
+          "SPK_OWNER_IDENTITY_NEEDED_LABEL": "add my name",
           "SPK_OWNER_NOT_READY_NEEDS_MORE": "your journal looks for your voice each day and asks you when it finds one. you can also teach it now.",
           "SPK_OWNER_NOT_READY_SHORT_OR_MIXED": "so far your statements are mostly short or mixed with other voices, so teaching your voice helps most.",
           "SPK_OWNER_RECORDINGS_TEMPLATE": "{count} recordings with audio so far",

@@ -75,7 +75,7 @@ fn established_shell_case(path: &str) -> Value {
 }
 
 #[tokio::test]
-async fn quality_route_refuses_an_unconfigured_owner_identity() {
+async fn quality_route_reports_its_counts_when_no_owner_is_admitted() {
     let journal = EmptyEstablishedJournal::new();
     std::fs::create_dir_all(journal.0.join("chronicle/20260731/080000_300")).expect("direct");
     let response = router(journal.0.clone())
@@ -86,14 +86,39 @@ async fn quality_route_refuses_an_unconfigured_owner_identity() {
         )
         .await
         .expect("response");
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::OK);
     let body: Value = serde_json::from_slice(
         &to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("response reads"),
     )
     .expect("response JSON parses");
-    assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
+    assert_eq!(body["owner_voice"]["bootstrap_state"], "identity_needed");
+    assert_eq!(body["owner_voice"]["centroid_saved"], false);
+    assert!(body["tier_histogram"].is_object(), "{body}");
+}
+
+#[tokio::test]
+async fn a_configured_name_that_admits_no_owner_still_needs_attention() {
+    // The owner's name is set but no person in the journal is them, so
+    // "add my name" would be untrue: both reads keep refusing, as a conflict.
+    let journal = EmptyEstablishedJournal::new();
+    fs::write(
+        journal.0.join("config/journal.json"),
+        br#"{"setup":{"completed_at":1767225600},"identity":{"name":"Field","preferred":"Field"}}"#,
+    )
+    .expect("journal config writes");
+    for path in [
+        "/app/speakers/api/owner/status",
+        "/app/speakers/api/quality",
+    ] {
+        let (status, _, body) = request_json(router(journal.0.clone()), path).await;
+        assert_eq!(status, StatusCode::CONFLICT.as_u16(), "{path}: {body}");
+        assert_eq!(
+            body["reason_code"], "speaker_owner_identity_invalid",
+            "{path}"
+        );
+    }
 }
 
 async fn assert_case(app: axum::Router, path: &str, expected: Value) {
@@ -229,8 +254,8 @@ async fn quality_and_known_voices_match_the_empty_established_shell_corpus() {
     let journal = EmptyEstablishedJournal::new();
     let app = router(journal.0.clone());
     let (status, _, body) = request_json(app.clone(), "/app/speakers/api/quality").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST.as_u16());
-    assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
+    assert_eq!(status, StatusCode::OK.as_u16());
+    assert_eq!(body["owner_voice"]["bootstrap_state"], "identity_needed");
     assert_case(
         app,
         "/app/speakers/api/speakers/known",
@@ -240,7 +265,7 @@ async fn quality_and_known_voices_match_the_empty_established_shell_corpus() {
 }
 
 #[tokio::test]
-async fn owner_status_matches_the_populated_corpus_and_refuses_empty_identity() {
+async fn owner_status_matches_the_populated_corpus_and_reports_a_missing_owner() {
     let journal = support::build_populated_journal();
     assert_case(
         router(journal.root().to_path_buf()),
@@ -252,6 +277,6 @@ async fn owner_status_matches_the_populated_corpus_and_refuses_empty_identity() 
     let journal = EmptyEstablishedJournal::new();
     let (status, _, body) =
         request_json(router(journal.0.clone()), "/app/speakers/api/owner/status").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST.as_u16());
-    assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
+    assert_eq!(status, StatusCode::OK.as_u16());
+    assert_eq!(body, serde_json::json!({"status": "identity_needed"}));
 }

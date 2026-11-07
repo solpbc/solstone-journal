@@ -193,6 +193,18 @@ pub fn ensure_configured_principal(journal_root: &Path) -> Result<Option<String>
     Ok(Some(id))
 }
 
+/// Whether the owner has configured a name a profile save would make into
+/// their principal: the same first name `ensure_configured_principal` uses,
+/// and not a placeholder. A config that can't be read is an error, so a
+/// caller can tell "no name yet" from "could not read".
+pub fn owner_name_configured(
+    journal_root: &Path,
+) -> Result<bool, solstone_core_journal_config::ConfigLoadError> {
+    Ok(read_owner_names_for_principal_grant(journal_root)?
+        .first()
+        .is_some_and(|name| !super::journal_entities::is_placeholder_name(name)))
+}
+
 /// The owner's configured email addresses, trimmed, without blanks. Empty
 /// when the config is absent; an unreadable config is an error, so a caller
 /// can tell "none set" from "could not read".
