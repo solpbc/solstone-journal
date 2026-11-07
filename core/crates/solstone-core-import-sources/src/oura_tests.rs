@@ -131,6 +131,30 @@ fn a_workout_restates_distance_in_metres_and_energy_and_the_owners_label_only() 
     assert_eq!(run.values["distance"], "8020.0 m");
 }
 
+/// What the reader keeps as the owner's words is exactly what the owner wrote: a
+/// workout's label and a tag's name and comment. The sandbox's literal "None"
+/// label is no words, and neither is anything Oura assesses.
+#[test]
+fn the_owners_words_are_a_workouts_label_and_a_tags_name_and_comment_and_never_none() {
+    use solstone_core_format::content::body_records::owner_words;
+    let workouts = fixture_page("workout");
+    assert_eq!(workouts[1]["label"], json!("None"), "fixture");
+    assert!(owner_words("oura", &row("workout", &workouts[1]).row).is_empty());
+    assert_eq!(
+        owner_words("oura", &row("workout", &workouts[2]).row),
+        ["synthetic hill loop"]
+    );
+    let mut tag = fixture_page("enhanced_tag")[1].clone();
+    tag["comment"] = json!("after the long run");
+    assert_eq!(
+        owner_words("oura", &row("enhanced_tag", &tag).row),
+        ["synthetic sauna", "after the long run"]
+    );
+    let mut session = fixture_page("session")[0].clone();
+    session["mood"] = json!("bad");
+    assert!(owner_words("oura", &row("session", &session).row).is_empty());
+}
+
 #[test]
 fn a_session_is_mindfulness_on_the_grid_and_a_nap_is_sleep() {
     let pages = fixture_page("session");

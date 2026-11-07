@@ -19,7 +19,7 @@ use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use solstone_core_facets::{activity_field_held, is_body_record, update_activity_record_with};
 use solstone_core_format::content::body_records::{
-    BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time,
+    BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time, user_entered,
 };
 
 const TOMBSTONE: &str = "tombstone.json";
@@ -1141,14 +1141,6 @@ fn clock_time(text: Option<&str>, zone: Tz, day: &str) -> Option<Value> {
         "time": local.format("%H:%M").to_string(),
         "date": (date != day).then_some(date),
     }))
-}
-
-fn user_entered(row: &BodyRow) -> bool {
-    row.fields
-        .get("metadata")
-        .and_then(|metadata| metadata.get("HKWasUserEntered"))
-        .and_then(Value::as_str)
-        .is_some_and(|value| value == "1")
 }
 
 /// One group as the owner's home shows it: what, when, how far, and what

@@ -18,7 +18,7 @@ use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time,
-    source_label,
+    source_label, user_entered,
 };
 use solstone_core_journal_io::{HealthMarkerKind, day_dirs};
 
@@ -159,16 +159,6 @@ impl Tally {
             _ => self.count.to_string(),
         }
     }
-}
-
-/// Apple marks an entry the owner typed in themselves; nothing else counts as
-/// the owner's.
-fn user_entered(row: &BodyRow) -> bool {
-    row.fields
-        .get("metadata")
-        .and_then(|metadata| metadata.get("HKWasUserEntered"))
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|value| value == "1")
 }
 
 fn by_words(row: &BodyRow) -> String {

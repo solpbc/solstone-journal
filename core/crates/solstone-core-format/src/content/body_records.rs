@@ -178,6 +178,30 @@ pub fn owner_words(source: &str, row: &BodyRow) -> Vec<String> {
         .collect()
 }
 
+/// Whether the owner entered a row themselves, by the source's own mark. Apple
+/// marks one with `HKWasUserEntered`. Oura marks a workout added by hand with
+/// `source: manual`, and every tag is one: tags are what Oura's owners enter.
+/// Nothing else counts as the owner's.
+#[must_use]
+pub fn user_entered(row: &BodyRow) -> bool {
+    match row.source.as_str() {
+        "oura" => match row.kind {
+            RowKind::Logged => true,
+            RowKind::Experience => {
+                row.experience.as_deref() == Some("workout")
+                    && row.fields.get("source").and_then(Value::as_str) == Some("manual")
+            }
+            _ => false,
+        },
+        _ => row
+            .fields
+            .get("metadata")
+            .and_then(|metadata| metadata.get("HKWasUserEntered"))
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "1"),
+    }
+}
+
 /// A name a source writes itself: a part of the day and a type, or the type alone.
 fn generated_name(words: &str, record_type: &str) -> bool {
     const PARTS: [&str; 6] = [
@@ -505,6 +529,86 @@ mod tests {
 
     use super::*;
     use crate::content::{ContentResolution, Family, classify, produce_chunks};
+
+    fn oura(kind: RowKind, record_type: &str, label: &str) -> BodyRow {
+        let mut row = BodyRow::new(kind, "o1".into(), "oura", record_type, label.into());
+        row.by = Some("Oura".into());
+        row
+    }
+
+    #[test]
+    fn owner_words_for_oura_are_a_workouts_label_and_a_tags_name_and_comment() {
+        let mut run = oura(RowKind::Experience, "running", "running");
+        run.experience = Some("workout".into());
+        run.words = vec!["synthetic hill loop".into()];
+        assert_eq!(owner_words("oura", &run), ["synthetic hill loop"]);
+        let mut sauna = oura(RowKind::Logged, "custom", "custom");
+        sauna.words = vec!["synthetic sauna".into(), "after the long run".into()];
+        assert_eq!(
+            owner_words("oura", &sauna),
+            ["synthetic sauna", "after the long run"]
+        );
+        // A workout with no label of its own has no words.
+        run.words.clear();
+        assert!(owner_words("oura", &run).is_empty());
+    }
+
+    #[test]
+    fn a_row_is_the_owners_own_entry_only_where_its_source_marks_it() {
+        // Apple: `HKWasUserEntered`, on any kind of row, and nothing else.
+        let mut apple = BodyRow::new(
+            RowKind::Logged,
+            "a1".into(),
+            "apple_health",
+            "HKQuantityTypeIdentifierDietaryWater",
+            "dietary water".into(),
+        );
+        assert!(!user_entered(&apple));
+        apple
+            .fields
+            .insert("metadata".into(), json!({"HKWasUserEntered": "0"}));
+        assert!(!user_entered(&apple));
+        apple
+            .fields
+            .insert("metadata".into(), json!({"HKWasUserEntered": "1"}));
+        assert!(user_entered(&apple));
+        // Oura: every tag.
+        assert!(user_entered(&oura(
+            RowKind::Logged,
+            "tag_generic_caffeine",
+            "caffeine"
+        )));
+        // A workout only when Oura says it was added by hand.
+        let mut workout = oura(RowKind::Experience, "running", "running");
+        workout.experience = Some("workout".into());
+        assert!(!user_entered(&workout));
+        for detected in ["autodetected", "confirmed", "workout_heart_rate"] {
+            workout.fields.insert("source".into(), json!(detected));
+            assert!(!user_entered(&workout), "{detected}");
+        }
+        workout.fields.insert("source".into(), json!("manual"));
+        assert!(user_entered(&workout));
+        // Nothing else Oura sends, whatever its fields say.
+        let mut session = oura(RowKind::Experience, "meditation", "meditation session");
+        session.experience = Some("mindfulness".into());
+        session.fields.insert("source".into(), json!("manual"));
+        assert!(!user_entered(&session));
+        let mut reading = oura(RowKind::Reading, "heartrate", "heart rate");
+        reading.fields.insert("source".into(), json!("manual"));
+        assert!(!user_entered(&reading));
+        assert!(!user_entered(&oura(
+            RowKind::Dated,
+            "daily_readiness",
+            "daily readiness"
+        )));
+        // Apple's mark on an Oura row isn't Oura's.
+        let mut marked = oura(RowKind::Experience, "running", "running");
+        marked.experience = Some("workout".into());
+        marked
+            .fields
+            .insert("metadata".into(), json!({"HKWasUserEntered": "1"}));
+        assert!(!user_entered(&marked));
+    }
 
     const REL: &str = "20261010/import.apple_health/063000_300/body.jsonl";
 
