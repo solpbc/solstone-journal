@@ -202,6 +202,10 @@ pub struct ScanFindings {
     /// by [`UNSURE_SEPARATOR`], how many.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub unsure: BTreeMap<String, u64>,
+    /// Oura nights in this import that overlap another of its nights. Oura gives a
+    /// night one id, so two that overlap can be one night revised under a new id.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub overlapping_nights: u64,
     /// Plain sentences for the summary.
     #[serde(default)]
     pub notes: Vec<String>,
@@ -746,6 +750,7 @@ pub fn scan_pages(
     let mut counts = ScanCounts::default();
     let mut findings = ScanFindings::default();
     let mut spill = Spill::new(dir, spill_bytes)?;
+    let mut nights: Vec<(i64, i64)> = Vec::new();
     let mut lookup = Lookup {
         journal,
         source,
@@ -884,6 +889,12 @@ pub fn scan_pages(
                 .begins()
                 .and_then(parse_source_time)
                 .map_or(0, |time| time.timestamp_millis());
+            if read.row.kind == RowKind::Experience
+                && read.row.experience.as_deref() == Some("sleep")
+                && let Some(end) = read.row.end.as_deref().and_then(parse_source_time)
+            {
+                nights.push((start_ms, end.timestamp_millis()));
+            }
             let rank = u8::from(read.row.kind != RowKind::Experience);
             let bytes = read.identity.len() + content.len() + 48;
             spill.push(
@@ -898,5 +909,45 @@ pub fn scan_pages(
     }
     counts.runs = spill.finish()?;
     progress(counts.rows);
+    findings.overlapping_nights = overlapping(&mut nights);
     Ok((counts, findings))
+}
+
+fn is_zero(count: &u64) -> bool {
+    *count == 0
+}
+
+/// How many of these spans overlap another of them.
+fn overlapping(spans: &mut [(i64, i64)]) -> u64 {
+    spans.sort_unstable();
+    let mut overlapping = vec![false; spans.len()];
+    // The span, among those before, that reaches furthest.
+    let mut reach: Option<(usize, i64)> = None;
+    for (index, &(start, end)) in spans.iter().enumerate() {
+        if let Some((before, until)) = reach
+            && start < until
+        {
+            overlapping[index] = true;
+            overlapping[before] = true;
+        }
+        if reach.is_none_or(|(_, until)| end > until) {
+            reach = Some((index, end));
+        }
+    }
+    overlapping.iter().filter(|&&overlaps| overlaps).count() as u64
+}
+
+#[cfg(test)]
+mod overlap_tests {
+    use super::overlapping;
+
+    #[test]
+    fn spans_that_overlap_any_other_are_counted_once_each() {
+        assert_eq!(overlapping(&mut []), 0);
+        assert_eq!(overlapping(&mut [(0, 10), (10, 20)]), 0);
+        assert_eq!(overlapping(&mut [(0, 10), (5, 20)]), 2);
+        // A long span covering two short ones that don't touch each other.
+        assert_eq!(overlapping(&mut [(0, 100), (10, 20), (30, 40)]), 3);
+        assert_eq!(overlapping(&mut [(30, 40), (0, 5), (35, 50)]), 2);
+    }
 }

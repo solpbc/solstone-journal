@@ -1402,6 +1402,8 @@ pub struct SummaryCounts {
     /// stored, kept as first written.
     #[serde(default)]
     pub deferred: u64,
+    /// Oura nights that overlap another of its nights in this import.
+    pub overlapping_nights: u64,
     /// Entries not added because the journal can't tell whether they were in what
     /// the owner deleted: endpoint, the deleted days, how many.
     pub unsure: Vec<(String, Vec<String>, u64)>,
@@ -1441,6 +1443,7 @@ impl SummaryCounts {
             activities_refreshed: 0,
             activities_refused: Vec::new(),
             deferred: 0,
+            overlapping_nights: 0,
             unsure: Vec::new(),
             moved: 0,
             entries_stayed_deleted: 0,
@@ -1551,6 +1554,13 @@ pub fn summary_text(
         let _ = writeln!(
             text,
             "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"
+        );
+    }
+    if counts.overlapping_nights > 0 {
+        let _ = writeln!(
+            text,
+            "{} of Oura's nights in this import overlap another. Each is kept as Oura gave it, so if Oura filed a changed night as a new one, both show.\n",
+            counts.overlapping_nights
         );
     }
     if counts.entries_stayed_deleted > 0 {

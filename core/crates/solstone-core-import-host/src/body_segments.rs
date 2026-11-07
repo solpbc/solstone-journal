@@ -1318,6 +1318,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         activities_refreshed: state.totals.activities_refreshed,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         deferred: state.findings.deferred,
+        overlapping_nights: state.findings.overlapping_nights,
         unsure: state
             .findings
             .unsure

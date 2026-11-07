@@ -1956,3 +1956,74 @@ fn a_plain_file_among_the_facets_stops_no_oura_run_and_its_records_are_written()
     let again = run(root, &fixture(), "20261104_120001", Some("health"));
     assert_eq!(again.published, 0, "{}", again.summary);
 }
+
+#[test]
+fn oura_nights_that_overlap_each_other_are_counted_and_nights_apart_are_not() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    // One night Oura gave twice, under two ids, and a night on its own.
+    let pages = stage(
+        scratch.path(),
+        &[(
+            "sleep",
+            vec![
+                sleep(
+                    "n1",
+                    "long_sleep",
+                    "2026-01-05T22:40:00-07:00",
+                    "2026-01-06T06:30:00-07:00",
+                ),
+                sleep(
+                    "n2",
+                    "long_sleep",
+                    "2026-01-05T23:10:00-07:00",
+                    "2026-01-06T06:40:00-07:00",
+                ),
+                sleep(
+                    "n3",
+                    "long_sleep",
+                    "2026-01-06T22:50:00-07:00",
+                    "2026-01-07T06:20:00-07:00",
+                ),
+            ],
+        )],
+    );
+    let outcome = run(root, &pages, "20261104_120000", Some("health"));
+    assert!(
+        outcome
+            .summary
+            .contains("2 of Oura's nights in this import overlap another."),
+        "{}",
+        outcome.summary
+    );
+    // Twin: nights apart say nothing.
+    let journal = self::journal();
+    let root = journal.path();
+    let apart = stage(
+        &scratch.path().join("apart"),
+        &[(
+            "sleep",
+            vec![
+                sleep(
+                    "n1",
+                    "long_sleep",
+                    "2026-01-05T22:40:00-07:00",
+                    "2026-01-06T06:30:00-07:00",
+                ),
+                sleep(
+                    "n3",
+                    "long_sleep",
+                    "2026-01-06T22:50:00-07:00",
+                    "2026-01-07T06:20:00-07:00",
+                ),
+            ],
+        )],
+    );
+    let outcome = run(root, &apart, "20261104_120000", Some("health"));
+    assert!(
+        !outcome.summary.contains("overlap another"),
+        "{}",
+        outcome.summary
+    );
+}
