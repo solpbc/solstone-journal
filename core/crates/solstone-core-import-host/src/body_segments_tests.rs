@@ -2751,3 +2751,41 @@ fn a_record_follows_its_night_when_a_later_export_ends_it_later_and_keeps_the_ow
         again.summary
     );
 }
+
+/// Moving Oura's documents changes nothing Apple writes or keeps:
+/// its tiles keep their index ids, and a run's state holds no field of the moves.
+#[test]
+fn an_apple_runs_state_holds_nothing_of_moves_and_its_tiles_keep_their_index_ids() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    let stop = stopping_at("pending", 2);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join(RUN_DIR_REL).join(STATE_FILE)).unwrap())
+            .unwrap();
+    for field in ["drops", "unfinished", "findings"] {
+        assert!(state.get(field).is_none(), "{field}: {state}");
+    }
+    for field in ["moved", "unfinished", "holes"] {
+        assert!(state["pending"].get(field).is_none(), "{field}: {state}");
+    }
+    run_apple_health_segments(root, &request(&source, "20261104_130000")).unwrap();
+    let mut tiles = 0;
+    for path in snapshot(root)
+        .into_keys()
+        .filter(|path| path.ends_with("body.jsonl"))
+    {
+        for row in decode_rows(&fs::read_to_string(root.join(&path)).unwrap()).unwrap() {
+            if row.kind == RowKind::ExperienceTile {
+                tiles += 1;
+                let of = row.of.as_deref().unwrap();
+                assert_eq!(row.id, format!("{of}-{}", row.index.unwrap()), "{path}");
+            }
+        }
+    }
+    assert!(tiles > 0);
+}

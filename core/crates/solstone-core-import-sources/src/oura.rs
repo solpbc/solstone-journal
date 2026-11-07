@@ -387,6 +387,9 @@ pub enum HoleReason {
     RecordRefused,
     /// A reading held back because its other place couldn't be read as rows.
     ReadingHeldBack,
+    /// A document moving to its new time on the same day, not yet written
+    /// everywhere it was and everywhere it goes.
+    Converging,
 }
 
 impl HoleReason {
@@ -402,6 +405,9 @@ impl HoleReason {
             }
             Self::RecordRefused => {
                 "it couldn't be shown on its day; an import that asks for this day again tries again"
+            }
+            Self::Converging => {
+                "changed in Oura since, and the journal is still moving it to its new time; an import that asks for this day again finishes it"
             }
         }
     }

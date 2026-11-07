@@ -19,8 +19,15 @@
 //! everything after them, are the writer Apple's export uses. The scan keeps one
 //! version of each Oura document, the last fetched, so the placer never sees two
 //! contents for one id. Before a document is staged, it is looked up where it
-//! could already be stored. A revision that would move or shorten what is stored
-//! isn't staged at all, so nothing is placed by a span that isn't written.
+//! could already be stored.
+//!
+//! A document's live rows end up exactly its new tiling. Every other live row of
+//! it, a first row in another window or a tile its new span doesn't have, is
+//! staged as a `moved` mark in that row's own window, so a start that moves, an
+//! end that shrinks and a tile named by an older scheme all converge alike. That
+//! holds while the start stays on its owner day, by the fixed zone. A start that
+//! crosses the owner's midnight isn't staged at all, so nothing is placed by a
+//! span that isn't written.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -37,9 +44,9 @@ use solstone_core_segment::{is_body_only_dir, owner_deleted};
 
 use crate::apple_health::{
     HOUR_SECONDS, MAX_ROW_BYTES, StoredRowsError, WINDOW_SECONDS, WindowId, floor_to_window,
-    resolve_key, stored_rows, stream_dir, window_id, window_seconds, windows_of,
+    resolve_key, row_window, stored_rows, stream_dir, tile_experience, window_id, window_seconds,
 };
-use crate::apple_health_run::{ScanCounts, ScanItem, Spill};
+use crate::apple_health_run::{ScanCounts, ScanItem, Spill, placed_identity};
 use crate::body_stream::BodySource;
 use crate::oura::{Document, Hole, HoleReason, Shape, holes_of, read_document, read_endpoint};
 
@@ -152,6 +159,24 @@ fn page_items(bytes: &[u8]) -> Option<Vec<Value>> {
     }
 }
 
+/// A document whose stored rows this run converges to its new tiling: what the
+/// writer needs to decide, at its start day, whether the owner deleted where it
+/// moves from or to, and to say when it is done.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Converging {
+    /// The owner day its start is on, before and after: the day written first.
+    pub day: String,
+    /// The windows its live first rows were in when the scan read them.
+    pub firsts: Vec<WindowId>,
+    /// Its new first window, before any step around older content.
+    pub first: WindowId,
+    /// Whether Oura changed its times or its window's length: no first row was
+    /// already in its new first window with its new span.
+    pub revised: bool,
+    /// What it is a hole in until it is done.
+    pub holes: BTreeSet<Hole>,
+}
+
 /// What the scan found besides its counts. Kept in the run's state with the scan,
 /// so a resumed run reports what the scan it carries on from found.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,6 +196,9 @@ pub struct ScanFindings {
     /// Plain sentences for the summary.
     #[serde(default)]
     pub notes: Vec<String>,
+    /// Documents this run converges, by row id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub converging: BTreeMap<String, Converging>,
 }
 
 impl ScanFindings {
@@ -187,13 +215,14 @@ struct Placed {
     end: Option<String>,
 }
 
-/// What a day's stream holds that the lookup asks about: ids, windows and spans,
-/// never row contents. An experience's tiles are the windows of its stored span,
-/// so they needn't be held.
+/// What a day's stream holds that the lookup asks about: ids, windows, `of` and
+/// spans, never row contents.
 #[derive(Default)]
 struct DayIndex {
     /// Experience and logged rows by id.
     firsts: HashMap<String, Vec<Placed>>,
+    /// Live tiles by the id of their experience: each one's window and id.
+    tiles: HashMap<String, Vec<(String, String)>>,
     /// The owner deleted a body window here.
     deleted: bool,
     /// A window here can't be read as rows.
@@ -203,16 +232,37 @@ struct DayIndex {
     records: HashMap<String, (String, String)>,
 }
 
+/// The rows a document converges: each live row its new tiling doesn't have, by
+/// window and id, and what the writer needs to know of it.
+#[derive(Debug)]
+struct Plan {
+    marks: Vec<(WindowId, String)>,
+    converging: Converging,
+}
+
 /// What the lookup decided for one document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 enum Verdict {
-    Stage,
-    /// Kept as first written: staging it would move or shorten what is stored.
+    /// Staged, with the marks that converge what is stored to it, if any.
+    Stage(Option<Box<Plan>>),
+    /// Kept as first written: its start crosses the owner's midnight.
     Defer,
     /// A window it could already be in can't be read, so nothing is added on a guess.
     Hold,
-    /// The owner deleted its stored experience.
+    /// The owner deleted its stored experience, or where it would go.
     StayedDeleted,
+    /// Not stored anywhere it could be, with no record to say whether the owner
+    /// deleted it, beside a body window the owner deleted on these days.
+    Refused(Vec<String>),
+}
+
+/// A span's two ends as instants, for telling a revised time from a rendering.
+fn instants(start: Option<&str>, end: Option<&str>) -> (Option<i64>, Option<i64>) {
+    let at = |text: Option<&str>| {
+        text.and_then(parse_source_time)
+            .map(|time| time.timestamp_millis())
+    };
+    (at(start), at(end))
 }
 
 struct Lookup<'a> {
@@ -281,15 +331,27 @@ impl Lookup<'_> {
                 }
                 Err(StoredRowsError::Read(error)) => return Err(error),
             };
-            for row in rows.into_iter().filter(|row| {
-                row.source == self.source.source
-                    && matches!(row.kind, RowKind::Experience | RowKind::Logged)
-            }) {
-                index.firsts.entry(row.id).or_default().push(Placed {
-                    key: key.clone(),
-                    start: row.start,
-                    end: row.end,
-                });
+            for row in rows
+                .into_iter()
+                .filter(|row| row.source == self.source.source)
+            {
+                match (row.kind, row.of) {
+                    (RowKind::Experience | RowKind::Logged, _) => {
+                        index.firsts.entry(row.id).or_default().push(Placed {
+                            key: key.clone(),
+                            start: row.start,
+                            end: row.end,
+                        });
+                    }
+                    (RowKind::ExperienceTile, Some(of)) => {
+                        index
+                            .tiles
+                            .entry(of)
+                            .or_default()
+                            .push((key.clone(), row.id));
+                    }
+                    _ => {}
+                }
             }
         }
         index.records = self.records_on(day)?;
@@ -384,6 +446,36 @@ impl Lookup<'_> {
             .collect()
     }
 
+    /// The owner days a span is on, by the fixed zone: no more than an
+    /// experience can hold.
+    fn span_days(&self, from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec<String> {
+        let first = from.with_timezone(&self.zone).date_naive();
+        let last = to.with_timezone(&self.zone).date_naive();
+        let mut days = Vec::new();
+        let mut day = first;
+        while day <= last && days.len() <= 15 {
+            days.push(day_key(day));
+            day += Duration::days(1);
+        }
+        days
+    }
+
+    /// A document's new tiling: each of its rows' windows, before any step around
+    /// older content, and ids.
+    fn tiling(&self, id: &str, row: &BodyRow) -> Result<Vec<(WindowId, String)>, String> {
+        let mut first = row.clone();
+        first.id = id.to_owned();
+        if row.kind == RowKind::Experience {
+            return Ok(
+                tile_experience(self.journal, self.source, &first, self.zone)?
+                    .into_iter()
+                    .map(|(window, row)| (window, row.id))
+                    .collect(),
+            );
+        }
+        Ok(vec![(row_window(&first, self.zone, false)?, first.id)])
+    }
+
     fn judge(
         &mut self,
         id: &str,
@@ -391,7 +483,7 @@ impl Lookup<'_> {
         oura_day: Option<NaiveDate>,
     ) -> Result<Verdict, String> {
         let Some(start) = row.start.as_deref().and_then(parse_source_time) else {
-            return Ok(Verdict::Stage);
+            return Ok(Verdict::Stage(None));
         };
         let end = row
             .end
@@ -402,69 +494,144 @@ impl Lookup<'_> {
         for day in &days {
             self.load(day)?;
         }
+        // Live first rows: rows whose id is the document's. Tiles on other days, a
+        // night's next morning say, aren't placements.
+        let firsts: Vec<(String, Placed)> = self
+            .placements(&days, id)
+            .into_iter()
+            .map(|(day, placed)| {
+                (
+                    day.to_owned(),
+                    Placed {
+                        key: placed.key.clone(),
+                        start: placed.start.clone(),
+                        end: placed.end.clone(),
+                    },
+                )
+            })
+            .collect();
+        // Every day of each stored span holds its tiles, so the lookup reaches them
+        // all and can't see them whole if one can't be read. The new span's days
+        // may hold tiles an earlier run left there.
+        let mut watched: BTreeSet<String> = days.iter().cloned().collect();
+        for (_, placed) in &firsts {
+            if let (Some(from), Some(to)) = (
+                placed.start.as_deref().and_then(parse_source_time),
+                placed.end.as_deref().and_then(parse_source_time),
+            ) {
+                watched.extend(self.span_days(from, to));
+            }
+        }
+        let mut reach = watched.clone();
+        reach.extend(self.span_days(start, end));
+        for day in &reach {
+            self.load(day)?;
+        }
         let index = |day: &String| self.days.get(day).expect("loaded above");
-        if days.iter().any(|day| index(day).unparseable) {
+        if watched.iter().any(|day| index(day).unparseable) {
             return Ok(Verdict::Hold);
         }
         let length = window_seconds(row, false);
-        let placed = self.placements(&days, id);
-        match placed.as_slice() {
-            [] => {}
-            [(day, stored)] => {
-                let first = window_id(floor_to_window(start, self.zone, length), length);
-                let key = resolve_key(self.journal, self.source, &first.0, &first.1);
-                // A start in another window, or a window of another length, is a move.
-                if first.0 != *day || key != stored.key {
-                    return Ok(Verdict::Defer);
+        let new_day = day_key(start.with_timezone(&self.zone).date_naive());
+        let account = format!("{}\u{1f}{id}", self.source.stream);
+        if firsts.is_empty() {
+            // Its own window is one the owner deleted: it stays deleted, as any new
+            // row does there.
+            if self.window_deleted(start, length)? {
+                return Ok(Verdict::StayedDeleted);
+            }
+            if row.kind == RowKind::Experience {
+                for day in &days {
+                    if let Some((start, activity)) = index(day).records.get(&account)
+                        && self.record_window_deleted(start, activity)?
+                    {
+                        return Ok(Verdict::StayedDeleted);
+                    }
                 }
-                if row.kind != RowKind::Experience {
-                    return Ok(Verdict::Stage);
-                }
-                // An earlier end may not leave a stored tile outside the new span.
-                // A stored span that can't be read can't say, so it's kept.
-                let tiled: BTreeSet<WindowId> = windows_of(start, end, self.zone, length)
+            }
+            // Not stored live anywhere it could be, and nothing says whether the
+            // owner deleted it. Beside a body window the owner deleted, it's left
+            // out rather than brought back.
+            let deleted: Vec<String> = days
+                .iter()
+                .filter(|day| index(day).deleted)
+                .cloned()
+                .collect();
+            if !deleted.is_empty() {
+                return Ok(Verdict::Refused(deleted));
+            }
+        } else {
+            // A start that crosses the owner's midnight, or a place or a record on
+            // another day, is kept as first written.
+            if firsts.iter().any(|(day, _)| *day != new_day) {
+                return Ok(Verdict::Defer);
+            }
+            if row.kind == RowKind::Experience
+                && days
+                    .iter()
+                    .any(|day| *day != new_day && index(day).records.contains_key(&account))
+            {
+                return Ok(Verdict::Defer);
+            }
+            // Moving into a first window the owner deleted: it stays deleted, and
+            // nothing of it is staged anywhere.
+            if self.window_deleted(start, length)? {
+                return Ok(Verdict::StayedDeleted);
+            }
+        }
+        let mut live: BTreeSet<(WindowId, String)> = firsts
+            .iter()
+            .map(|(day, placed)| ((day.clone(), placed.key.clone()), id.to_owned()))
+            .collect();
+        for day in &reach {
+            for (key, tile) in index(day).tiles.get(id).into_iter().flatten() {
+                live.insert(((day.clone(), key.clone()), tile.clone()));
+            }
+        }
+        // Nothing of it is stored: there is nothing to converge.
+        if live.is_empty() {
+            return Ok(Verdict::Stage(None));
+        }
+        let tiling = self.tiling(id, row)?;
+        let resolve = |(day, key): &WindowId| {
+            (
+                day.clone(),
+                resolve_key(self.journal, self.source, day, key),
+            )
+        };
+        let tiled: BTreeSet<(WindowId, String)> = tiling
+            .iter()
+            .map(|(window, tile)| (resolve(window), tile.clone()))
+            .collect();
+        // The trigger is the difference: a move, a changed span, or tiles named by
+        // an older scheme.
+        let marks: Vec<(WindowId, String)> = live.difference(&tiled).cloned().collect();
+        if marks.is_empty() {
+            return Ok(Verdict::Stage(None));
+        }
+        let first = tiling[0].0.clone();
+        let placed_first = resolve(&first);
+        let now = instants(row.start.as_deref(), row.end.as_deref());
+        // A revision Oura made, rather than a copy left by a stopped run or tiles
+        // named by an older scheme: no first row is already where and when it is.
+        let revised = !firsts.is_empty()
+            && !firsts.iter().any(|(day, placed)| {
+                (day.clone(), placed.key.clone()) == placed_first
+                    && instants(placed.start.as_deref(), placed.end.as_deref()) == now
+            });
+        Ok(Verdict::Stage(Some(Box::new(Plan {
+            marks,
+            converging: Converging {
+                day: new_day,
+                firsts: firsts
                     .into_iter()
-                    .collect();
-                let inside = match (
-                    stored.start.as_deref().and_then(parse_source_time),
-                    stored.end.as_deref().and_then(parse_source_time),
-                ) {
-                    (Some(from), Some(to)) => windows_of(from, to, self.zone, length)
-                        .into_iter()
-                        .all(|window| tiled.contains(&window)),
-                    _ => false,
-                };
-                return Ok(if inside {
-                    Verdict::Stage
-                } else {
-                    Verdict::Defer
-                });
-            }
-            // A half-written move, or one beyond the lookup's reach.
-            _ => return Ok(Verdict::Defer),
-        }
-        // Its own window is one the owner deleted: it stays deleted, as any new
-        // row does there, and nothing about Oura changed.
-        if self.window_deleted(start, length)? {
-            return Ok(Verdict::StayedDeleted);
-        }
-        if row.kind == RowKind::Experience {
-            let account = format!("{}\u{1f}{id}", self.source.stream);
-            for day in &days {
-                if let Some((start, activity)) = index(day).records.get(&account)
-                    && self.record_window_deleted(start, activity)?
-                {
-                    return Ok(Verdict::StayedDeleted);
-                }
-            }
-        }
-        // Not stored live anywhere it could be. Where the owner deleted a body
-        // window that could have held it, it's left as it is rather than brought
-        // back.
-        if days.iter().any(|day| index(day).deleted) {
-            return Ok(Verdict::Defer);
-        }
-        Ok(Verdict::Stage)
+                    .map(|(day, placed)| (day, placed.key))
+                    .collect(),
+                first,
+                revised,
+                holes: holes_of([row], HoleReason::Converging),
+            },
+        }))))
     }
 
     /// The owner day of a night stored live under `id`, when there is one.
@@ -491,6 +658,37 @@ impl Lookup<'_> {
             .first()
             .map(|(day, _)| (*day).to_owned()))
     }
+}
+
+/// Whether the owner deleted a window a converging document moves from or into,
+/// since the scan read it: its live first rows' windows, or its new first window,
+/// or the one beside older content there. Then nothing of the move is written.
+pub fn converging_dropped(
+    journal: &Path,
+    source: &BodySource,
+    converging: &Converging,
+) -> Result<bool, String> {
+    let deleted = |day: &str, key: &str| -> Result<bool, String> {
+        let dir = stream_dir(journal, source, day).join(key);
+        Ok(dir.is_dir()
+            && owner_deleted(&dir).map_err(io_text)?
+            && is_body_only_dir(source.stream, &dir))
+    };
+    for (day, key) in &converging.firsts {
+        if deleted(day, key)? {
+            return Ok(true);
+        }
+    }
+    let (day, key) = &converging.first;
+    let beside = key
+        .split_once('_')
+        .and_then(|(clock, length)| Some(format!("{clock}_{}", length.parse::<u64>().ok()? + 1)));
+    for key in std::iter::once(key.clone()).chain(beside) {
+        if deleted(day, &key)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn readable_day(day: &str) -> String {
@@ -608,17 +806,17 @@ pub fn scan_pages(
                 continue;
             }
             *counts.read.entry(endpoint.to_owned()).or_default() += 1;
+            let id = crate::oura::row_id(&read.identity);
             let verdict = if matches!(
                 shape,
                 Shape::Sleep | Shape::Workout | Shape::Session | Shape::Tag
             ) {
-                let id = crate::oura::row_id(&read.identity);
                 lookup.judge(&id, &read.row, read.oura_day)?
             } else {
-                Verdict::Stage
+                Verdict::Stage(None)
             };
-            match verdict {
-                Verdict::Stage => {}
+            let plan = match verdict {
+                Verdict::Stage(plan) => plan,
                 Verdict::Defer => {
                     findings.deferred += 1;
                     findings
@@ -637,6 +835,39 @@ pub fn scan_pages(
                     findings.stayed_deleted += 1;
                     continue;
                 }
+                // Re-reading never fills it, so it is no hole.
+                Verdict::Refused(days) => {
+                    let days: Vec<String> = days.iter().map(|day| readable_day(day)).collect();
+                    *counts
+                        .refused
+                        .entry(format!(
+                            "{endpoint}: not added, because you deleted part of this day ({}) in the journal",
+                            days.join(", ")
+                        ))
+                        .or_default() += 1;
+                    continue;
+                }
+            };
+            if let Some(plan) = plan {
+                // Each mark goes in its row's own window, under that row's id, and
+                // replaces it there or nothing.
+                for (window, mark) in &plan.marks {
+                    let mut row = BodyRow::new(
+                        RowKind::Moved,
+                        mark.clone(),
+                        source.source,
+                        "",
+                        String::new(),
+                    );
+                    row.of = Some(id.clone());
+                    let content = serde_json::to_string(&row).expect("a body row serializes");
+                    let identity = placed_identity(window, mark);
+                    let bytes = identity.len() + content.len() + 48;
+                    spill.push(ScanItem(0, 2, identity, content, Vec::new()), bytes)?;
+                }
+                let Plan { converging, .. } = *plan;
+                findings.holes.extend(converging.holes.iter().cloned());
+                findings.converging.insert(id, converging);
             }
             let start_ms = read
                 .row

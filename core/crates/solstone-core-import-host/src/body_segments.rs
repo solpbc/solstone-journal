@@ -52,7 +52,9 @@ use solstone_core_import_sources::apple_health_run::{
 };
 use solstone_core_import_sources::body_stream::{APPLE, BodySource, OURA};
 use solstone_core_import_sources::oura::{Hole, HoleReason, holes_of};
-use solstone_core_import_sources::oura_run::{ScanFindings, pages_identity, scan_pages};
+use solstone_core_import_sources::oura_run::{
+    ScanFindings, converging_dropped, pages_identity, scan_pages,
+};
 use solstone_core_import_sources::save::{self, RenderedImport, SegmentFile};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, remove_dir_all,
@@ -370,6 +372,12 @@ struct Pending {
     /// What this day couldn't write whole, so a redone day reports the same.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     holes: BTreeSet<Hole>,
+    /// Per window that had rows become `moved`: its key and how many.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    moved: Vec<(String, u64)>,
+    /// Converging documents with a window here that couldn't be read as rows.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    unfinished: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -405,6 +413,16 @@ struct RunState {
     /// ended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fetch: Option<FetchState>,
+    /// Whether each converging document whose start day has been reached was
+    /// dropped, because the owner deleted a window it moves from or to. Decided
+    /// once, before that day's first file, and kept past that day, so a redone day
+    /// and every later one do as it said.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    drops: BTreeMap<String, bool>,
+    /// Converging documents a window of which couldn't be read as rows, so the
+    /// move isn't done.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    unfinished: BTreeSet<String>,
 }
 
 enum Read {
@@ -789,6 +807,12 @@ impl Run<'_, '_> {
     /// Decide, write and publish one day, its readings already settled. `redo` is
     /// the same day's recorded decisions, from a run that stopped partway through
     /// it, whose counts stand in for this attempt's.
+    ///
+    /// A day is written in two passes, so a document moving within it is never
+    /// live nowhere: first every window that gains a new row, keeping the old rows
+    /// it holds, then every window where a document's old first row becomes
+    /// `moved`. A stop between them leaves it live twice, which the next read of it
+    /// heals.
     fn write_day(
         &self,
         state: &mut RunState,
@@ -798,10 +822,68 @@ impl Run<'_, '_> {
     ) -> Result<(), Stop> {
         let facet = self.request.facet;
         let redo = state.pending.take().filter(|pending| pending.day == day);
-        let mut decided: Vec<(WindowId, Decision)> = Vec::with_capacity(windows.len());
-        for (window, rows) in windows {
+        // Before any of the day's files: a document moving from or into a window
+        // the owner has deleted since the scan is dropped, here and on every later
+        // day. A redone day keeps what was decided.
+        if redo.is_none() {
+            for (id, converging) in &state.findings.converging {
+                if converging.day == day && !state.drops.contains_key(id) {
+                    let dropped = converging_dropped(self.journal, self.source, converging)?;
+                    state.drops.insert(id.clone(), dropped);
+                }
+            }
+        }
+        let dropped: BTreeSet<&str> = state
+            .drops
+            .iter()
+            .filter(|(_, dropped)| **dropped)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        let converging = &state.findings.converging;
+        // The converging document a row is of, when it is one's.
+        let document = |row: &BodyRow| -> Option<String> {
+            [Some(row.id.as_str()), row.of.as_deref()]
+                .into_iter()
+                .flatten()
+                .find(|id| converging.contains_key(*id))
+                .map(str::to_owned)
+        };
+        let first_mark = |row: &BodyRow| {
+            row.kind == RowKind::Moved && row.of.as_deref() == Some(row.id.as_str())
+        };
+        let mut decided: Vec<(WindowId, Decision, bool)> = Vec::with_capacity(windows.len());
+        // The first pass's decision for a window the second pass writes too.
+        let mut early: BTreeMap<WindowId, Decision> = BTreeMap::new();
+        let mut unfinished = BTreeSet::new();
+        for (window, mut rows) in windows {
+            if !dropped.is_empty() {
+                rows.retain(|_, row| document(row).is_none_or(|id| !dropped.contains(id.as_str())));
+                if rows.is_empty() {
+                    continue;
+                }
+            }
             // A window left alone as unreadable is a hole for what its rows say.
             let unwritten = holes_of(rows.values(), HoleReason::Unreadable);
+            let touched: BTreeSet<String> = rows.values().filter_map(document).collect();
+            let marks_first = rows.values().any(first_mark);
+            if marks_first {
+                let before: BTreeMap<String, BodyRow> = rows
+                    .iter()
+                    .filter(|(_, row)| !first_mark(row))
+                    .map(|(id, row)| (id.clone(), row.clone()))
+                    .collect();
+                if !before.is_empty() {
+                    let decision = decide(
+                        self.journal,
+                        self.source,
+                        &window,
+                        before,
+                        facet,
+                        Some(&self.import_id),
+                    )?;
+                    early.insert(window.clone(), decision);
+                }
+            }
             let decision = decide(
                 self.journal,
                 self.source,
@@ -812,8 +894,9 @@ impl Run<'_, '_> {
             )?;
             if decision.unreadable {
                 holes.extend(unwritten);
+                unfinished.extend(touched);
             }
-            decided.push((window, decision));
+            decided.push((window, decision, marks_first));
         }
         let pending = match redo {
             // The recorded decisions stand: a window written last time now
@@ -825,8 +908,12 @@ impl Run<'_, '_> {
                     ..Totals::default()
                 };
                 let mut listing = Vec::new();
+                let mut moved = Vec::new();
                 let mut recorded = Vec::new();
-                for (window, decision) in &decided {
+                for (window, decision, _) in &decided {
+                    if decision.absent {
+                        continue;
+                    }
                     counts.stayed_deleted += u64::from(decision.stayed_deleted);
                     counts.unreadable += u64::from(decision.unreadable);
                     if decision.stayed_deleted || decision.unreadable {
@@ -849,6 +936,9 @@ impl Run<'_, '_> {
                         decision.updated_rows,
                         decision.unchanged_rows,
                     ));
+                    if decision.moved_rows > 0 {
+                        moved.push((window.1.clone(), decision.moved_rows));
+                    }
                     recorded.push(PendingWindow {
                         key: window.1.clone(),
                         write: decision.contents.is_some(),
@@ -862,6 +952,8 @@ impl Run<'_, '_> {
                     counts,
                     listing,
                     holes,
+                    moved,
+                    unfinished,
                 }
             }
         };
@@ -873,41 +965,33 @@ impl Run<'_, '_> {
         if let Some(facet) = facet {
             self.write_facets(&day, &pending.windows, facet)?;
         }
-        let mut written = 0;
-        for (window, decision) in decided {
-            let Some(contents) = decision.contents else {
-                continue;
-            };
-            let rendered = RenderedImport {
-                skipped: 0,
-                source: self.source.registry,
-                entries: decision.units,
-                files: vec![SegmentFile {
-                    day: window.0.clone(),
-                    segment: window.1.clone(),
-                    name: BODY_RECORDS_FILE.to_owned(),
-                    units: decision.units,
-                    contents,
-                    calendar: false,
-                }],
-                items: Vec::new(),
-                summary: String::new(),
-                calendar_counts: Default::default(),
-            };
-            let outcome = save::write_rendered(self.journal, None, &rendered);
-            if let Some(error) = outcome.error {
-                if !solstone_core_import::work_continues() {
-                    return Err(Stop::Stopped);
+        // Each window as each pass has it: a window gaining a first row's mark is
+        // written in the first pass with its other rows, if it has any.
+        let mut passes: [Vec<(WindowId, Decision)>; 2] = [Vec::new(), Vec::new()];
+        for (window, decision, marks_first) in decided {
+            if marks_first {
+                if let Some(before) = early.remove(&window) {
+                    passes[0].push((window.clone(), before));
                 }
-                return Err(Stop::Failed(format!(
-                    "{}: {}",
-                    error.path.display(),
-                    error.detail
-                )));
+                passes[1].push((window, decision));
+            } else {
+                passes[0].push((window, decision));
             }
-            written += 1;
-            if written == 1 {
-                self.point("written")?;
+        }
+        let mut written = 0;
+        for (pass, writes) in passes.into_iter().enumerate() {
+            if pass == 1 && !writes.is_empty() {
+                self.point("marking")?;
+            }
+            for (window, decision) in writes {
+                let Some(contents) = decision.contents else {
+                    continue;
+                };
+                self.write_window(&window, (contents, decision.units))?;
+                written += 1;
+                if written == 1 {
+                    self.point("written")?;
+                }
             }
         }
         if let Some(facet) = facet {
@@ -938,6 +1022,7 @@ impl Run<'_, '_> {
         }
         state.totals.add(&records);
         state.holes.extend(pending.holes.iter().cloned());
+        state.unfinished.extend(pending.unfinished.iter().cloned());
         state.failed.extend(failed);
         state.done_through = Some(day.clone());
         state.pending = None;
@@ -945,6 +1030,42 @@ impl Run<'_, '_> {
         take_back(self.journal, self.source, &holes_in(state))?;
         self.write_progress(state);
         self.stop_if_stuck(&day)
+    }
+
+    /// Write one window's rows, as the ordinary save writes a file.
+    fn write_window(
+        &self,
+        window: &WindowId,
+        (contents, units): (String, u64),
+    ) -> Result<(), Stop> {
+        let rendered = RenderedImport {
+            skipped: 0,
+            source: self.source.registry,
+            entries: units,
+            files: vec![SegmentFile {
+                day: window.0.clone(),
+                segment: window.1.clone(),
+                name: BODY_RECORDS_FILE.to_owned(),
+                units,
+                contents,
+                calendar: false,
+            }],
+            items: Vec::new(),
+            summary: String::new(),
+            calendar_counts: Default::default(),
+        };
+        let outcome = save::write_rendered(self.journal, None, &rendered);
+        if let Some(error) = outcome.error {
+            if !solstone_core_import::work_continues() {
+                return Err(Stop::Stopped);
+            }
+            return Err(Stop::Failed(format!(
+                "{}: {}",
+                error.path.display(),
+                error.detail
+            )));
+        }
+        Ok(())
     }
 
     /// One line per day of what this run touched, kept under the import whose run
@@ -968,11 +1089,15 @@ impl Run<'_, '_> {
             .map_err(|error| error.to_string())?;
         file.seek(SeekFrom::Start(state.listing_len))
             .map_err(|error| error.to_string())?;
-        let mut line = serde_json::to_string(&serde_json::json!({
+        let mut entry = serde_json::json!({
             "day": pending.day,
             "windows": pending.listing,
-        }))
-        .map_err(|error| error.to_string())?;
+        });
+        // Rows that became moved, apart from the rows a window gained or changed.
+        if !pending.moved.is_empty() {
+            entry["moved"] = serde_json::json!(pending.moved);
+        }
+        let mut line = serde_json::to_string(&entry).map_err(|error| error.to_string())?;
         line.push('\n');
         file.write_all(line.as_bytes())
             .map_err(|error| error.to_string())?;
@@ -1139,6 +1264,28 @@ fn holes_section(holes: &BTreeSet<Hole>) -> String {
     text
 }
 
+/// Clear the `converging` hole of every document this run wrote everywhere it was
+/// and goes, or dropped, once every converging document sharing that hole is done.
+/// A hole carried from a run this one took over isn't its scan's, so it stays.
+fn settle_converging(state: &mut RunState) {
+    let open: BTreeSet<Hole> = state
+        .findings
+        .converging
+        .iter()
+        .filter(|(id, _)| state.unfinished.contains(*id))
+        .flat_map(|(_, converging)| converging.holes.iter().cloned())
+        .collect();
+    state
+        .findings
+        .holes
+        .retain(|hole| hole.reason != HoleReason::Converging || open.contains(hole));
+}
+
+/// Converging documents the owner's deletes dropped.
+fn dropped_count(state: &RunState) -> u64 {
+    state.drops.values().filter(|dropped| **dropped).count() as u64
+}
+
 /// Every hole a state holds, its scan's included.
 fn holes_in(state: &RunState) -> BTreeSet<Hole> {
     let mut holes = state.holes.clone();
@@ -1161,7 +1308,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         written: state.totals.written,
         unchanged: state.totals.unchanged,
         stayed_deleted: state.totals.stayed_deleted,
-        entries_stayed_deleted: state.findings.stayed_deleted,
+        entries_stayed_deleted: state.findings.stayed_deleted + dropped_count(state),
         held_back: state.totals.held_back,
         unreadable: state.totals.unreadable,
         kept_facet: state.totals.kept_facet,
@@ -1171,6 +1318,16 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         activities_refreshed: state.totals.activities_refreshed,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         deferred: state.findings.deferred,
+        moved: state
+            .findings
+            .converging
+            .iter()
+            .filter(|(id, converging)| {
+                converging.revised
+                    && !state.drops.get(*id).copied().unwrap_or(false)
+                    && !state.unfinished.contains(*id)
+            })
+            .count() as u64,
         held: state.findings.held.clone(),
         not_saved: state
             .failed
@@ -1732,7 +1889,8 @@ fn run_phases(
 
     // Coverage: what this run fetched whole is added now that its last day is
     // done, whether or not every window published, and before the run folder or
-    // its state goes. Its holes stay out of it.
+    // its state goes. Its holes stay out of it. A move it finished is no hole.
+    settle_converging(&mut state);
     if source.source == OURA.source {
         let holes = holes_in(&state);
         update_coverage(journal, |coverage| match &state.fetch {

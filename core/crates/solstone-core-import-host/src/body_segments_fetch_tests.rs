@@ -475,25 +475,30 @@ fn a_deferral_takes_back_a_day_an_earlier_run_covered_and_names_it_and_its_twin_
         let journal = connected("America/Denver");
         let root = journal.path();
         let range = Some(("2026-01-01", "2026-01-10"));
+        // Begun at 23:40 on Oura's day 2026-01-04, and revised to begin after the
+        // owner's midnight, on Oura's day 2026-01-05.
         let first = Oura::new();
         first.serve(
             "workout",
             vec![one_day_workout(
                 "w1",
-                "2026-01-05T08:00:00.000-07:00",
-                "2026-01-05T08:30:00.000-07:00",
+                "2026-01-04T23:40:00.000-07:00",
+                "2026-01-05T00:20:00.000-07:00",
             )],
         );
         finished(root, &first, &ask("20261104_120000", range));
         let second = Oura::new();
-        let start = if revised { "08:40" } else { "08:00" };
-        let end = if revised { "09:10" } else { "08:30" };
+        let start = if revised {
+            "2026-01-05T00:10"
+        } else {
+            "2026-01-04T23:40"
+        };
         second.serve(
             "workout",
             vec![one_day_workout(
                 "w1",
-                &format!("2026-01-05T{start}:00.000-07:00"),
-                &format!("2026-01-05T{end}:00.000-07:00"),
+                &format!("{start}:00.000-07:00"),
+                "2026-01-05T00:20:00.000-07:00",
             )],
         );
         let outcome = finished(root, &second, &ask("20261104_120001", range));
@@ -866,6 +871,7 @@ fn a_fetched_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes() 
         ("pending", 3),
         ("written", 1),
         ("written", 2),
+        ("marking", 1),
         ("published", 1),
         ("published", 4),
         ("written-all", 1),
@@ -925,8 +931,8 @@ fn a_killed_run_claims_nothing_and_its_holes_are_taken_back_at_once() {
         "workout",
         vec![one_day_workout(
             "w1",
-            "2026-01-05T08:00:00.000-07:00",
-            "2026-01-05T08:30:00.000-07:00",
+            "2026-01-04T23:40:00.000-07:00",
+            "2026-01-05T00:20:00.000-07:00",
         )],
     );
     finished(root, &first, &ask("20261104_120000", range));
@@ -935,8 +941,8 @@ fn a_killed_run_claims_nothing_and_its_holes_are_taken_back_at_once() {
         "workout",
         vec![one_day_workout(
             "w1",
-            "2026-01-05T08:40:00.000-07:00",
-            "2026-01-05T09:10:00.000-07:00",
+            "2026-01-05T00:10:00.000-07:00",
+            "2026-01-05T00:20:00.000-07:00",
         )],
     );
     // Stopped right after its scan's holes are saved: the deferred day is
@@ -1105,23 +1111,23 @@ fn a_restored_run_carries_its_hole_and_with_none_the_earlier_claim_stands() {
             "workout",
             vec![one_day_workout(
                 "w1",
-                "2026-01-05T08:00:00.000-07:00",
-                "2026-01-05T08:30:00.000-07:00",
+                "2026-01-04T23:40:00.000-07:00",
+                "2026-01-05T00:20:00.000-07:00",
             )],
         );
         finished(root, &first, &ask("20261104_120000", range));
         let second = Oura::new();
-        let (start, end) = if revised {
-            ("08:40", "09:10")
+        let start = if revised {
+            "2026-01-05T00:10"
         } else {
-            ("08:00", "08:30")
+            "2026-01-04T23:40"
         };
         second.serve(
             "workout",
             vec![one_day_workout(
                 "w1",
-                &format!("2026-01-05T{start}:00.000-07:00"),
-                &format!("2026-01-05T{end}:00.000-07:00"),
+                &format!("{start}:00.000-07:00"),
+                "2026-01-05T00:20:00.000-07:00",
             )],
         );
         // Stopped in its write phase, its deferral saved.
@@ -1923,3 +1929,6 @@ fn a_fetched_run_whose_pages_went_before_its_scan_repairs_and_finishes() {
         json!([["2026-01-01", "2026-01-10"]])
     );
 }
+
+#[path = "body_segments_moves_tests.rs"]
+mod moves;

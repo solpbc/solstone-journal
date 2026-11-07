@@ -641,7 +641,7 @@ fn a_later_end_grows_a_night_and_an_earlier_end_within_its_last_tile_is_an_edit(
 }
 
 #[test]
-fn an_earlier_end_that_would_leave_a_tile_outside_is_kept_as_first_written() {
+fn an_earlier_end_marks_the_tiles_it_leaves_outside_on_the_next_day() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -651,90 +651,224 @@ fn an_earlier_end_that_would_leave_a_tile_outside_is_kept_as_first_written() {
         "20261104_120000",
         None,
     );
-    let before = stream_bytes(root);
+    let rid = oura_row_id("sleep", "n1");
+    let before = rows_of(root, &rid);
     let outcome = run(
         root,
         &night_pages(&scratch.path().join("2"), "2026-01-06T05:20:00.000-07:00"),
         "20261104_120001",
         None,
     );
-    assert_eq!(outcome.published, 0);
-    assert_eq!(stream_bytes(root), before);
+    assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
     assert!(
         outcome
             .summary
-            .contains("Oura has since changed 1 entry; the journal keeps it as first written."),
+            .contains("Oura has since changed the time of 1 entry"),
         "{}",
         outcome.summary
     );
-    assert_eq!(
-        outcome.holes,
-        [Hole {
-            endpoint: "sleep".to_owned(),
-            at: "2026-01-06".to_owned(),
-            reason: HoleReason::Deferred,
-        }]
-    );
+    let mut windows = windows_from("20260105", (22, 0), 3600, 2);
+    windows.extend(windows_from("20260106", (0, 0), 3600, 6));
+    assert_converged(root, &rid, &before, &tiling(&rid, &as_refs(&windows)));
+    // The two hours it no longer reaches hold only their marks.
+    for key in ["060000_3600", "070000_3600"] {
+        let rows = &stored(root)[&("20260106".to_owned(), key.to_owned())];
+        assert!(
+            rows.iter().all(|row| row.kind == RowKind::Moved),
+            "{rows:?}"
+        );
+    }
+}
+/// The row id the writer gives Oura's document `id` from `endpoint`.
+fn oura_row_id(endpoint: &str, id: &str) -> String {
+    Sha256::digest(format!("oura\u{1f}{endpoint}\u{1f}{id}\u{1f}0").as_bytes())[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A place in the stream: day, window and row id.
+type Place = (String, String, String);
+
+/// Every row of a document across the stream, live or moved: its first rows, its
+/// tiles and its marks.
+fn rows_of(root: &Path, rid: &str) -> BTreeMap<Place, BodyRow> {
+    let mut found = BTreeMap::new();
+    for ((day, key), rows) in stored(root) {
+        for row in rows {
+            if row.id == rid || row.of.as_deref() == Some(rid) {
+                found.insert((day.clone(), key.clone(), row.id.clone()), row);
+            }
+        }
+    }
+    found
+}
+
+/// A document's tiling over these windows: its first row in the first, and a tile
+/// named by its window in each of the others.
+fn tiling(rid: &str, windows: &[(&str, &str)]) -> BTreeSet<Place> {
+    windows
+        .iter()
+        .enumerate()
+        .map(|(index, (day, key))| {
+            let id = if index == 0 {
+                rid.to_owned()
+            } else {
+                format!("{rid}@{day}/{key}")
+            };
+            ((*day).to_owned(), (*key).to_owned(), id)
+        })
+        .collect()
+}
+
+/// Windows: `count` of `length` seconds on `day`, from `clock`.
+fn windows_from(day: &str, clock: (u32, u32), length: u32, count: u32) -> Vec<(String, String)> {
+    (0..count)
+        .map(|step| {
+            let seconds = clock.0 * 3600 + clock.1 * 60 + step * length;
+            (
+                day.to_owned(),
+                format!(
+                    "{:02}{:02}{:02}_{length}",
+                    seconds / 3600,
+                    (seconds % 3600) / 60,
+                    seconds % 60
+                ),
+            )
+        })
+        .collect()
+}
+
+fn as_refs(windows: &[(String, String)]) -> Vec<(&str, &str)> {
+    windows
+        .iter()
+        .map(|(day, key)| (day.as_str(), key.as_str()))
+        .collect()
+}
+
+/// After a run that wrote every day of a document, its live rows across the
+/// stream are exactly `expected`, and every live row it had before that isn't is
+/// now `moved`: that row's id byte for byte, its document as `of`, its run, source,
+/// type and label, and nothing else.
+fn assert_converged(
+    root: &Path,
+    rid: &str,
+    before: &BTreeMap<Place, BodyRow>,
+    expected: &BTreeSet<Place>,
+) {
+    let after = rows_of(root, rid);
+    let live: BTreeSet<Place> = after
+        .iter()
+        .filter(|(_, row)| row.kind != RowKind::Moved)
+        .map(|(place, _)| place.clone())
+        .collect();
+    assert_eq!(&live, expected, "{after:#?}");
+    for (place, old) in before {
+        if old.kind == RowKind::Moved || expected.contains(place) {
+            continue;
+        }
+        let mut mark = BodyRow::new(
+            RowKind::Moved,
+            old.id.clone(),
+            &old.source,
+            &old.record_type,
+            old.label.clone(),
+        );
+        mark.of = Some(rid.to_owned());
+        mark.run.clone_from(&old.run);
+        assert_eq!(after.get(place), Some(&mark), "{place:?}: {after:#?}");
+    }
 }
 
 #[test]
-fn a_moved_start_is_kept_as_first_written() {
+fn a_start_across_the_owners_midnight_is_kept_as_first_written_and_within_its_window_is_an_edit() {
+    for (first, revised) in [
+        // 00:10 to 23:40 the day before, and 23:40 to 00:10 the day after.
+        (
+            (
+                "2026-01-05T00:10:00.000-07:00",
+                "2026-01-05T00:40:00.000-07:00",
+            ),
+            (
+                "2026-01-04T23:40:00.000-07:00",
+                "2026-01-05T00:40:00.000-07:00",
+            ),
+        ),
+        (
+            (
+                "2026-01-05T23:40:00.000-07:00",
+                "2026-01-06T00:20:00.000-07:00",
+            ),
+            (
+                "2026-01-06T00:10:00.000-07:00",
+                "2026-01-06T00:20:00.000-07:00",
+            ),
+        ),
+    ] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let pages = |name: &str, (start, end): (&str, &str)| {
+            stage(
+                &scratch.path().join(name),
+                &[("workout", vec![workout("w1", "running", start, end)])],
+            )
+        };
+        run(root, &pages("1", first), "20261104_120000", None);
+        let before = stream_bytes(root);
+        let outcome = run(root, &pages("2", revised), "20261104_120001", None);
+        assert_eq!(stream_bytes(root), before, "{revised:?}");
+        assert!(
+            outcome
+                .summary
+                .contains("Oura has since changed 1 entry; the journal keeps it as first written."),
+            "{}",
+            outcome.summary
+        );
+        assert!(
+            !outcome.summary.contains("now shows"),
+            "{}",
+            outcome.summary
+        );
+        assert_eq!(
+            outcome.holes,
+            [Hole {
+                endpoint: "workout".to_owned(),
+                at: revised.0[..10].to_owned(),
+                reason: HoleReason::Deferred,
+            }]
+        );
+        assert!(
+            outcome.summary.contains(&format!(
+                "- workout, {}: changed in Oura since",
+                &revised.0[..10]
+            )),
+            "{}",
+            outcome.summary
+        );
+    }
+    // A start moved within its first window is an edit, and no move.
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
-    let at = |start: &str, end: &str| {
+    let at = |start: &str| {
         vec![workout(
             "w1",
             "running",
             &format!("2026-01-05T{start}:00.000-07:00"),
-            &format!("2026-01-05T{end}:00.000-07:00"),
+            "2026-01-05T08:30:00.000-07:00",
         )]
     };
     run(
         root,
-        &stage(
-            &scratch.path().join("1"),
-            &[("workout", at("08:00", "08:30"))],
-        ),
+        &stage(&scratch.path().join("1"), &[("workout", at("08:00"))]),
         "20261104_120000",
         None,
     );
-    let before = stream_bytes(root);
-    let outcome = run(
-        root,
-        &stage(
-            &scratch.path().join("2"),
-            &[("workout", at("08:40", "09:10"))],
-        ),
-        "20261104_120001",
-        None,
-    );
-    assert_eq!(stream_bytes(root), before);
-    assert!(!window(root, "20260105", "084000_300").exists());
-    assert!(outcome.summary.contains("Oura has since changed 1 entry"));
-    assert_eq!(outcome.holes.len(), 1);
-    // Thirty minutes earlier, with the same end: every stored tile is inside the
-    // new span, and its first window is still another one.
-    let earlier = run(
-        root,
-        &stage(
-            &scratch.path().join("2a"),
-            &[("workout", at("07:30", "08:30"))],
-        ),
-        "20261104_120003",
-        None,
-    );
-    assert_eq!(stream_bytes(root), before);
-    assert!(!window(root, "20260105", "073000_300").exists());
-    assert!(earlier.summary.contains("Oura has since changed 1 entry"));
-    // A start moved within its first window is an edit.
     let within = run(
         root,
-        &stage(
-            &scratch.path().join("3"),
-            &[("workout", at("08:02", "08:30"))],
-        ),
-        "20261104_120002",
+        &stage(&scratch.path().join("2"), &[("workout", at("08:02"))]),
+        "20261104_120001",
         None,
     );
     assert!(
@@ -742,14 +876,20 @@ fn a_moved_start_is_kept_as_first_written() {
         "{}",
         within.summary
     );
+    assert!(within.holes.is_empty());
+    let rid = oura_row_id("workout", "w1");
+    assert!(
+        rows_of(root, &rid)
+            .values()
+            .all(|row| row.kind != RowKind::Moved)
+    );
     assert_eq!(
         placed(root, "w1")[0].2.start.as_deref(),
         Some("2026-01-05T08:02:00.000-07:00")
     );
 }
-
 #[test]
-fn a_tag_moved_to_another_hour_is_kept_as_first_written_and_within_its_hour_is_an_edit() {
+fn a_tag_moved_to_another_hour_moves_there_and_within_its_hour_is_an_edit() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -765,34 +905,48 @@ fn a_tag_moved_to_another_hour_is_kept_as_first_written_and_within_its_hour_is_a
         "20261104_120000",
         None,
     );
-    let before = stream_bytes(root);
+    let rid = oura_row_id("enhanced_tag", "t1");
+    let before = rows_of(root, &rid);
     let moved = run(
         root,
         &pages("2", "2026-01-05T11:15:00-07:00"),
         "20261104_120001",
         None,
     );
-    assert_eq!(stream_bytes(root), before);
-    assert!(moved.summary.contains("Oura has since changed 1 entry"));
-    assert_eq!(moved.holes[0].endpoint, "enhanced_tag");
+    assert!(moved.holes.is_empty(), "{:?}", moved.holes);
+    assert!(
+        moved.summary.contains(
+            "Oura has since changed the time of 1 entry; the journal now shows it at the new time."
+        ),
+        "{}",
+        moved.summary
+    );
+    assert_converged(
+        root,
+        &rid,
+        &before,
+        &tiling(&rid, &[("20260105", "110000_3600")]),
+    );
+    // No record: a tag has none.
+    assert!(!root.join("facets/health/activities").exists());
     let within = run(
         root,
-        &pages("3", "2026-01-05T09:45:00-07:00"),
+        &pages("3", "2026-01-05T11:45:00-07:00"),
         "20261104_120002",
         None,
     );
     assert!(within.holes.is_empty());
+    assert!(!within.summary.contains("has since changed"));
     let found = placed(root, "t1");
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].1, "090000_3600");
+    assert_eq!(found[0].1, "110000_3600");
     assert_eq!(
         found[0].2.start.as_deref(),
-        Some("2026-01-05T09:45:00-07:00")
+        Some("2026-01-05T11:45:00-07:00")
     );
 }
-
 #[test]
-fn a_meditation_that_becomes_a_nap_is_kept_as_first_written() {
+fn a_meditation_that_becomes_a_nap_moves_to_its_hour() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -810,21 +964,34 @@ fn a_meditation_that_becomes_a_nap_is_kept_as_first_written() {
             )],
         )
     };
-    run(root, &pages("1", "meditation"), "20261104_120000", None);
-    let before = stream_bytes(root);
-    let outcome = run(root, &pages("2", "nap"), "20261104_120001", None);
-    assert_eq!(stream_bytes(root), before);
-    assert!(!window(root, "20260105", "130000_3600").exists());
-    assert_eq!(
-        outcome.holes,
-        [Hole {
-            endpoint: "session".to_owned(),
-            at: "2026-01-05".to_owned(),
-            reason: HoleReason::Deferred,
-        }]
+    run(
+        root,
+        &pages("1", "meditation"),
+        "20261104_120000",
+        Some("health"),
     );
+    let rid = oura_row_id("session", "s1");
+    let before = rows_of(root, &rid);
+    assert_eq!(before.len(), 4, "13:00 to 13:20 on the grid");
+    let outcome = run(root, &pages("2", "nap"), "20261104_120001", Some("health"));
+    assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
+    assert_converged(
+        root,
+        &rid,
+        &before,
+        &tiling(&rid, &[("20260105", "130000_3600")]),
+    );
+    // Its one record follows: a nap is sleep.
+    let records = fs::read_to_string(root.join("facets/health/activities/20260105.jsonl")).unwrap();
+    assert_eq!(records.lines().count(), 1, "{records}");
+    assert!(records.contains("\"activity\":\"sleep\""), "{records}");
     // A type that keeps the window's length is an edit.
-    let breathing = run(root, &pages("3", "breathing"), "20261104_120002", None);
+    let breathing = run(
+        root,
+        &pages("3", "breathing"),
+        "20261104_120002",
+        Some("health"),
+    );
     assert!(breathing.holes.is_empty());
     assert_eq!(placed(root, "s1")[0].2.label, "breathing session");
 }
@@ -895,7 +1062,7 @@ fn an_owner_deleted_window_with_a_record_stays_deleted_where_it_was_or_moved() {
 }
 
 #[test]
-fn with_no_record_a_deleted_window_on_the_lookup_days_keeps_a_revision_out() {
+fn with_no_record_a_deleted_window_on_the_lookup_days_refuses_a_revision_by_its_day() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -920,8 +1087,17 @@ fn with_no_record_a_deleted_window_on_the_lookup_days_keeps_a_revision_out() {
     );
     assert!(placed(root, "t1").is_empty());
     assert!(!window(root, "20260105", "110000_3600").exists());
-    assert!(outcome.summary.contains("Oura has since changed 1 entry"));
-    assert_eq!(outcome.holes.len(), 1);
+    // Refused, naming the deleted window's day, and no hole: re-reading never
+    // fills it.
+    assert!(
+        outcome.summary.contains(
+            "## Refused\n\n- enhanced_tag: not added, because you deleted part of this day (2026-01-05) in the journal: 1"
+        ),
+        "{}",
+        outcome.summary
+    );
+    assert!(!outcome.summary.contains("has since changed"));
+    assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
 
     // The twin: the same tag unchanged, into the hour the owner deleted, stays
     // deleted, and says nothing of Oura changing it.
@@ -937,9 +1113,13 @@ fn with_no_record_a_deleted_window_on_the_lookup_days_keeps_a_revision_out() {
         "{}",
         again.summary
     );
+    assert!(
+        again.summary.contains("1 entry wasn't added"),
+        "{}",
+        again.summary
+    );
     assert!(again.holes.is_empty(), "{:?}", again.holes);
 }
-
 #[test]
 fn a_window_on_the_lookup_days_that_isnt_rows_holds_a_document_back_and_its_twin_lands() {
     for readable in [false, true] {
@@ -1194,13 +1374,14 @@ fn a_revision_kept_as_first_written_pulls_no_reading_onto_its_new_slot() {
         root,
         &one_workout(
             &scratch.path().join("1"),
-            "2026-01-05T11:00:00.000-07:00",
-            "2026-01-05T11:30:00.000-07:00",
+            "2026-01-05T00:10:00.000-07:00",
+            "2026-01-05T00:40:00.000-07:00",
         ),
         "20261104_120000",
         None,
     );
-    // Revised to begin half an hour earlier, with a reading in the new half hour.
+    // Revised to begin half an hour earlier, across midnight, with a reading in
+    // the new half hour.
     let pages = stage(
         &scratch.path().join("2"),
         &[
@@ -1209,22 +1390,22 @@ fn a_revision_kept_as_first_written_pulls_no_reading_onto_its_new_slot() {
                 vec![workout(
                     "w1",
                     "running",
-                    "2026-01-05T10:30:00.000-07:00",
-                    "2026-01-05T11:30:00.000-07:00",
+                    "2026-01-04T23:40:00.000-07:00",
+                    "2026-01-05T00:40:00.000-07:00",
                 )],
             ),
             (
                 "heartrate",
-                vec![heart("2026-01-05T17:40:00.000Z", 150, "workout")],
+                vec![heart("2026-01-05T06:50:00.000Z", 150, "workout")],
             ),
         ],
     );
     let outcome = run(root, &pages, "20261104_120001", None);
     assert!(outcome.summary.contains("Oura has since changed 1 entry"));
     let windows = stored(root);
-    assert!(!windows.contains_key(&("20260105".to_owned(), "104000_300".to_owned())));
-    assert!(!windows.contains_key(&("20260105".to_owned(), "103000_300".to_owned())));
-    let hour = &windows[&("20260105".to_owned(), "100000_3600".to_owned())];
+    assert!(!windows.contains_key(&("20260104".to_owned(), "235000_300".to_owned())));
+    assert!(!windows.contains_key(&("20260104".to_owned(), "234000_300".to_owned())));
+    let hour = &windows[&("20260104".to_owned(), "230000_3600".to_owned())];
     assert_eq!(hour.len(), 1);
     assert_eq!(hour[0].kind, RowKind::Reading);
 }
@@ -1283,6 +1464,20 @@ fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
     files
 }
 
+/// The days an import wrote, in the order it wrote them, from its listing.
+fn written_days(root: &Path, import_id: &str) -> Vec<String> {
+    fs::read_to_string(root.join("imports").join(import_id).join(LISTING_FILE))
+        .unwrap()
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<Value>(line).unwrap()["day"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect()
+}
+
 fn stopping_at(point: &'static str, nth: usize) -> impl Fn(&str) -> bool {
     let seen = std::cell::Cell::new(0);
     move |name| {
@@ -1303,21 +1498,37 @@ fn kill_base(root: &Path, scratch: &Path) {
         &[
             (
                 "workout",
-                vec![workout(
-                    "w-moved",
-                    "running",
-                    "2026-01-06T08:00:00.000-07:00",
-                    "2026-01-06T08:30:00.000-07:00",
-                )],
+                vec![
+                    workout(
+                        "w-moved",
+                        "running",
+                        "2026-01-06T08:00:00.000-07:00",
+                        "2026-01-06T08:30:00.000-07:00",
+                    ),
+                    workout(
+                        "w-deferred",
+                        "running",
+                        "2026-01-10T00:10:00.000-07:00",
+                        "2026-01-10T00:40:00.000-07:00",
+                    ),
+                ],
             ),
             (
                 "sleep",
-                vec![sleep(
-                    "n-grown",
-                    "long_sleep",
-                    "2026-01-06T22:10:00.000-07:00",
-                    "2026-01-07T05:20:00.000-07:00",
-                )],
+                vec![
+                    sleep(
+                        "n-grown",
+                        "long_sleep",
+                        "2026-01-06T22:10:00.000-07:00",
+                        "2026-01-07T05:20:00.000-07:00",
+                    ),
+                    sleep(
+                        "n-moved",
+                        "long_sleep",
+                        "2026-01-08T22:10:00.000-07:00",
+                        "2026-01-09T06:30:00.000-07:00",
+                    ),
+                ],
             ),
         ],
     );
@@ -1363,16 +1574,32 @@ fn kill_pages(scratch: &Path) -> PathBuf {
                         "2026-01-24T08:00:00.000-07:00",
                         "2026-01-24T08:20:00.000-07:00",
                     ),
+                    // Across the owner's midnight: kept as first written.
+                    workout(
+                        "w-deferred",
+                        "running",
+                        "2026-01-09T23:40:00.000-07:00",
+                        "2026-01-10T00:40:00.000-07:00",
+                    ),
                 ],
             ),
             (
                 "sleep",
-                vec![sleep(
-                    "n-grown",
-                    "long_sleep",
-                    "2026-01-06T22:10:00.000-07:00",
-                    "2026-01-07T07:40:00.000-07:00",
-                )],
+                vec![
+                    sleep(
+                        "n-grown",
+                        "long_sleep",
+                        "2026-01-06T22:10:00.000-07:00",
+                        "2026-01-07T07:40:00.000-07:00",
+                    ),
+                    // A two-day night whose start moves within its day.
+                    sleep(
+                        "n-moved",
+                        "long_sleep",
+                        "2026-01-08T23:10:00.000-07:00",
+                        "2026-01-09T06:30:00.000-07:00",
+                    ),
+                ],
             ),
             (
                 "heartrate",
@@ -1431,6 +1658,10 @@ fn an_oura_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes_with
         reason: HoleReason::RecordRefused,
     }));
 
+    // The two-day night converges on its start day and the next: either side of
+    // each, and between the passes of the days that have two.
+    let order = written_days(whole.path(), &done.import_id);
+    let at = |day: &str| order.iter().position(|written| written == day).unwrap() + 1;
     for (point, nth) in [
         ("scanned", 1),
         ("placed", 1),
@@ -1438,8 +1669,14 @@ fn an_oura_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes_with
         ("pending", 3),
         ("written", 1),
         ("written", 2),
+        ("marking", 1),
+        ("marking", 2),
         ("published", 1),
         ("published", 4),
+        ("pending", at("20260108")),
+        ("published", at("20260108")),
+        ("pending", at("20260109")),
+        ("published", at("20260109")),
         ("written-all", 1),
         ("finished", 1),
     ] {
@@ -1477,9 +1714,9 @@ fn a_takeover_by_other_pages_carries_the_stopped_runs_holes() {
         &scratch.path().join("other"),
         &[("daily_readiness", vec![readiness("r9", "2026-02-01", 70)])],
     );
-    // Stopped once the scan's holes are saved, and once the third day, whose
+    // Stopped once the scan's holes are saved, and once the fifth day, whose
     // readings couldn't all be written, is pending.
-    for (point, nth) in [("placed", 1), ("pending", 3)] {
+    for (point, nth) in [("placed", 1), ("pending", 5)] {
         let journal = journal();
         let root = journal.path();
         kill_base(root, scratch.path());
@@ -1497,13 +1734,19 @@ fn a_takeover_by_other_pages_carries_the_stopped_runs_holes() {
         for hole in [
             Hole {
                 endpoint: "workout".to_owned(),
-                at: "2026-01-06".to_owned(),
+                at: "2026-01-09".to_owned(),
                 reason: HoleReason::Deferred,
             },
             Hole {
                 endpoint: "workout".to_owned(),
                 at: "2026-01-12".to_owned(),
                 reason: HoleReason::HeldBack,
+            },
+            // A move the stopped run hadn't finished stays a hole of its own.
+            Hole {
+                endpoint: "workout".to_owned(),
+                at: "2026-01-06".to_owned(),
+                reason: HoleReason::Converging,
             },
         ] {
             assert!(
@@ -1551,47 +1794,68 @@ fn a_page_whose_bytes_arent_what_its_index_records_saves_nothing() {
 }
 
 #[test]
-fn two_live_placements_of_one_id_keep_a_revision_out() {
-    let journal = journal();
-    let root = journal.path();
-    let scratch = tempfile::tempdir().unwrap();
-    run(
-        root,
-        &one_workout(
-            &scratch.path().join("1"),
+fn two_live_first_rows_on_one_day_heal_to_the_current_and_on_two_days_keep_a_revision_out() {
+    for apart in [false, true] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        run(
+            root,
+            &one_workout(
+                &scratch.path().join("1"),
+                "2026-01-05T08:00:00.000-07:00",
+                "2026-01-05T08:20:00.000-07:00",
+            ),
+            "20261104_120000",
+            None,
+        );
+        // A second live copy of its first row, as a stopped move leaves, on its day
+        // or the day after.
+        let (_, _, first) = placed(root, "w1").remove(0);
+        let copy = if apart {
+            window(root, "20260106", "090000_300")
+        } else {
+            window(root, "20260105", "090000_300")
+        };
+        fs::create_dir_all(&copy).unwrap();
+        fs::write(
+            copy.join(BODY_RECORDS_FILE),
+            solstone_core_format::content::body_records::encode_rows(&[first]),
+        )
+        .unwrap();
+        let rid = oura_row_id("workout", "w1");
+        let before = rows_of(root, &rid);
+        let bytes = stream_bytes(root);
+        let mut revised = workout(
+            "w1",
+            "running",
             "2026-01-05T08:00:00.000-07:00",
             "2026-01-05T08:20:00.000-07:00",
-        ),
-        "20261104_120000",
-        None,
-    );
-    // A second live copy of its first row, as a half-written move would leave.
-    let (_, _, first) = placed(root, "w1").remove(0);
-    let copy = window(root, "20260105", "090000_300");
-    fs::create_dir_all(&copy).unwrap();
-    fs::write(
-        copy.join(BODY_RECORDS_FILE),
-        solstone_core_format::content::body_records::encode_rows(&[first]),
-    )
-    .unwrap();
-    let before = stream_bytes(root);
-    let mut revised = workout(
-        "w1",
-        "running",
-        "2026-01-05T08:00:00.000-07:00",
-        "2026-01-05T08:20:00.000-07:00",
-    );
-    revised["calories"] = json!(500.0);
-    let outcome = run(
-        root,
-        &stage(&scratch.path().join("2"), &[("workout", vec![revised])]),
-        "20261104_120001",
-        None,
-    );
-    assert_eq!(stream_bytes(root), before);
-    assert!(outcome.summary.contains("Oura has since changed 1 entry"));
+        );
+        revised["calories"] = json!(500.0);
+        let outcome = run(
+            root,
+            &stage(&scratch.path().join("2"), &[("workout", vec![revised])]),
+            "20261104_120001",
+            None,
+        );
+        if apart {
+            assert_eq!(stream_bytes(root), bytes);
+            assert!(outcome.summary.contains("Oura has since changed 1 entry"));
+        } else {
+            let windows = windows_from("20260105", (8, 0), 300, 4);
+            assert_converged(root, &rid, &before, &tiling(&rid, &as_refs(&windows)));
+            assert_eq!(placed(root, "w1")[0].2.values["energy"], "500.0 kcal");
+            assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
+            // Healing a copy is no change Oura made to its time.
+            assert!(
+                !outcome.summary.contains("has since changed"),
+                "{}",
+                outcome.summary
+            );
+        }
+    }
 }
-
 #[test]
 fn the_lookup_reaches_one_day_either_side_and_no_further() {
     // A workout Oura moves a day later, by its own date and its start, is found

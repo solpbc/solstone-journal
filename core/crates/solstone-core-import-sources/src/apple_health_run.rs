@@ -231,6 +231,26 @@ pub(crate) struct ScanItem(
 /// One distinct content of an identity, and its events.
 type Content = (String, Vec<String>);
 
+/// What begins the identity of a row the scan has already placed: a `moved` mark,
+/// named by its window and id. No source's identity begins with it.
+const PLACED: char = '\u{1e}';
+/// What begins a window key named exactly, which no step around older content
+/// moves: a mark goes in the window its row is in, whatever is beside it.
+const EXACT: char = '=';
+
+/// The identity a mark is staged under: its window, exactly as stored, and its id.
+/// It is never numbered, and it goes nowhere else.
+pub(crate) fn placed_identity((day, key): &WindowId, id: &str) -> String {
+    format!("{PLACED}{day}\u{1f}{key}\u{1f}{id}")
+}
+
+/// The window a placed identity names.
+fn placed_window(identity: &str) -> Option<WindowId> {
+    let (day, rest) = identity.strip_prefix(PLACED)?.split_once('\u{1f}')?;
+    let (key, _) = rest.split_once('\u{1f}')?;
+    Some((day.to_owned(), key.to_owned()))
+}
+
 /// A final row and the window it sits in, before any step around older content.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 struct PlacedItem(String, String, String);
@@ -474,8 +494,16 @@ impl Placer<'_> {
         self.experience(&row)
     }
 
-    /// One identity's rows, numbered by content.
+    /// One identity's rows, numbered by content. A row the scan placed keeps its id
+    /// and its window.
     fn group(&mut self, identity: &str, contents: Vec<Content>) -> Result<(), String> {
+        if let Some((day, key)) = placed_window(identity) {
+            for (content, _) in contents {
+                let row: BodyRow = serde_json::from_str(&content).map_err(io_text)?;
+                self.emit((day.clone(), format!("{EXACT}{key}")), &row)?;
+            }
+            return Ok(());
+        }
         for (occurrence, (content, events)) in contents.into_iter().enumerate() {
             let mut row: BodyRow = serde_json::from_str(&content).map_err(io_text)?;
             row.id = sha256_hex(&format!("{identity}\u{1f}{occurrence}"));
@@ -632,10 +660,18 @@ impl<'a> Days<'a> {
         };
         let mut resolved: BTreeMap<String, BTreeMap<String, BodyRow>> = BTreeMap::new();
         for (key, rows) in windows {
-            resolved
-                .entry(resolve_key(self.journal, self.source, &day, &key))
-                .or_default()
-                .extend(rows);
+            let target = match key.strip_prefix(EXACT) {
+                Some(exact) => exact.to_owned(),
+                None => resolve_key(self.journal, self.source, &day, &key),
+            };
+            let held = resolved.entry(target).or_default();
+            for (id, row) in rows {
+                // A row this run writes keeps its place over a mark with its id.
+                if row.kind == RowKind::Moved && held.contains_key(&id) {
+                    continue;
+                }
+                held.insert(id, row);
+            }
         }
         let windows = resolved
             .into_iter()

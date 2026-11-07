@@ -535,6 +535,132 @@ fn oura_row(kind: RowKind, id: &str) -> BodyRow {
     row
 }
 
+fn mark(id: &str, of: &str) -> BodyRow {
+    let mut row = BodyRow::new(RowKind::Moved, id.to_owned(), "oura", "", String::new());
+    row.of = Some(of.to_owned());
+    row
+}
+
+/// A mark only ever replaces: where its row is, it takes that row's id, names and
+/// run; where the row or the window isn't, it writes nothing; and a window that
+/// gains only marks keeps the facet it has.
+#[test]
+fn a_mark_takes_its_rows_place_and_names_or_writes_nothing() {
+    use crate::body_stream::OURA;
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    let window = ("20260105".to_owned(), "080000_300".to_owned());
+    let dir = root.join("chronicle/20260105/import.oura/080000_300");
+    fs::create_dir_all(dir.join("talents")).unwrap();
+    let mut stored = oura_row(RowKind::Experience, "w1");
+    stored.run = Some("20261104_120000".to_owned());
+    let reading = {
+        let mut row = BodyRow::new(
+            RowKind::Reading,
+            "h1".to_owned(),
+            "oura",
+            "heartrate",
+            "heart rate".to_owned(),
+        );
+        row.at = Some("2026-01-05T08:02:00.000-07:00".to_owned());
+        row
+    };
+    fs::write(
+        dir.join("body.jsonl"),
+        solstone_core_format::content::body_records::encode_rows(&[
+            stored.clone(),
+            reading.clone(),
+        ]),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("talents/facets.json"),
+        crate::apple_health::facet_file_text("other"),
+    )
+    .unwrap();
+    let marks = BTreeMap::from([
+        ("w1".to_owned(), mark("w1", "w1")),
+        ("w1-9".to_owned(), mark("w1-9", "w1")),
+    ]);
+    let decision = decide(
+        root,
+        &OURA,
+        &window,
+        marks,
+        Some("health"),
+        Some("20261104_120001"),
+    )
+    .unwrap();
+    assert!(!decision.facet_changed && !decision.refiled && !decision.kept_facet);
+    assert_eq!((decision.moved_rows, decision.new_rows), (1, 0));
+    let rows = decode_rows(&decision.contents.unwrap()).unwrap();
+    let mut moved = BodyRow::new(
+        RowKind::Moved,
+        "w1".to_owned(),
+        "oura",
+        "running",
+        "running".to_owned(),
+    );
+    moved.of = Some("w1".to_owned());
+    moved.run = Some("20261104_120000".to_owned());
+    assert_eq!(rows, vec![moved, reading]);
+
+    // Into a window that isn't there, nothing.
+    let missing = ("20260105".to_owned(), "090000_300".to_owned());
+    let decision = decide(
+        root,
+        &OURA,
+        &missing,
+        BTreeMap::from([("w1".to_owned(), mark("w1", "w1"))]),
+        Some("health"),
+        Some("20261104_120001"),
+    )
+    .unwrap();
+    assert!(decision.absent && decision.contents.is_none() && !decision.publish);
+}
+
+/// The day reader puts a mark in the window it names, past any step around older
+/// content, and a row this run writes keeps its place over a mark of its id.
+#[test]
+fn a_placed_mark_goes_in_its_exact_window_and_never_over_a_live_row() {
+    use crate::body_stream::OURA;
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    // Older content at 08:00 sends new rows beside it, to 080000_301.
+    let card = root.join("chronicle/20260105/import.oura/080000_300");
+    fs::create_dir_all(&card).unwrap();
+    fs::write(card.join("day_summary_transcript.md"), "a card\n").unwrap();
+    let dir = root.join("placed");
+    let mut spill: Spill<PlacedItem> = Spill::new(&dir, 1 << 20).unwrap();
+    let text = |row: &BodyRow| serde_json::to_string(row).unwrap();
+    let live = oura_row(RowKind::Experience, "w1");
+    for item in [
+        PlacedItem(
+            "20260105".into(),
+            format!("{EXACT}080000_300"),
+            text(&mark("w2", "w2")),
+        ),
+        PlacedItem("20260105".into(), "080000_300".into(), text(&live)),
+        PlacedItem(
+            "20260105".into(),
+            format!("{EXACT}080000_301"),
+            text(&mark("w1", "w1")),
+        ),
+    ] {
+        spill.push(item, 64).unwrap();
+    }
+    spill.finish().unwrap();
+    let refused = BTreeSet::new();
+    let mut days = Days::open(root, &OURA, &dir, &refused, None).unwrap();
+    let (_, windows) = days.next_day().unwrap().unwrap();
+    let windows: BTreeMap<String, BTreeMap<String, BodyRow>> = windows
+        .into_iter()
+        .map(|((_, key), rows)| (key, rows))
+        .collect();
+    assert_eq!(windows["080000_300"].keys().collect::<Vec<_>>(), ["w2"]);
+    assert_eq!(windows["080000_301"]["w1"], live);
+}
+
 /// Apple names a tile by its place in the span, Oura by its window.
 #[test]
 fn a_tile_is_named_by_its_index_for_apple_and_by_its_window_for_oura() {

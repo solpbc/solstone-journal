@@ -892,6 +892,11 @@ pub struct Decision {
     pub new_rows: u64,
     pub updated_rows: u64,
     pub unchanged_rows: u64,
+    /// Rows that became `moved`.
+    pub moved_rows: u64,
+    /// No window is there, and nothing this run has for it would make one: every
+    /// row it has is a mark, and a mark only ever replaces.
+    pub absent: bool,
 }
 
 /// A value with every time in it as its instant, so two renderings of one time at
@@ -923,10 +928,29 @@ fn same_row(new: &BodyRow, stored: &BodyRow) -> bool {
     plain(new) == plain(stored)
 }
 
+/// The `moved` row that takes `row`'s place: its id, source, type, label and run,
+/// its document as `of`, and nothing else.
+fn moved_row(row: &BodyRow, of: Option<String>) -> BodyRow {
+    let mut moved = BodyRow::new(
+        RowKind::Moved,
+        row.id.clone(),
+        &row.source,
+        &row.record_type,
+        row.label.clone(),
+    );
+    moved.of = of;
+    moved.run.clone_from(&row.run);
+    moved
+}
+
 /// Merge one window's rows from this run into what it holds. A row takes the
 /// stored row's place by id and keeps the run that first wrote it; the rest are
 /// kept, because an export that omits a record isn't a deletion. `run` marks rows
 /// this window didn't hold.
+///
+/// A `moved` row is a mark: it takes the place of the row with its id, carrying
+/// that row's names and run, and where no such row is it writes nothing. A
+/// window that gains only marks keeps the facet it has.
 pub fn decide(
     journal: &Path,
     source: &BodySource,
@@ -950,10 +974,21 @@ pub fn decide(
         Err(StoredRowsError::Read(error)) => return Err(error),
     };
     let (stored_text, stored_rows) = stored.unzip();
+    let marks_only = rows.values().all(|row| row.kind == RowKind::Moved);
     let mut merged_rows = stored_rows.unwrap_or_default();
     let mut incoming = rows;
     for row in &mut merged_rows {
         if let Some(mut new) = incoming.remove(&row.id) {
+            if new.kind == RowKind::Moved {
+                let moved = moved_row(row, new.of.take());
+                if moved == *row {
+                    decision.unchanged_rows += 1;
+                } else {
+                    decision.moved_rows += 1;
+                    *row = moved;
+                }
+                continue;
+            }
             new.run.clone_from(&row.run);
             if same_row(&new, row) {
                 decision.unchanged_rows += 1;
@@ -963,21 +998,29 @@ pub fn decide(
             }
         }
     }
-    for mut new in incoming.into_values() {
+    // A mark whose row isn't here has nothing to replace.
+    for mut new in incoming
+        .into_values()
+        .filter(|row| row.kind != RowKind::Moved)
+    {
         decision.new_rows += 1;
         new.run = run.map(str::to_owned);
         merged_rows.push(new);
+    }
+    if stored_text.is_none() && merged_rows.is_empty() {
+        decision.absent = true;
+        return Ok(decision);
     }
     sort_rows(&mut merged_rows);
     let contents = encode_rows(&merged_rows);
     let rows_changed = stored_text.as_deref() != Some(contents.as_str());
     decision.facet_changed =
-        facet.is_some_and(|facet| !facet_file_holds(journal, source, window, facet));
+        !marks_only && facet.is_some_and(|facet| !facet_file_holds(journal, source, window, facet));
     let unbound = !dir.join("stream.json").exists();
     decision.refiled = decision.facet_changed && stored_text.is_some();
     // A window carries one facet, so its rows share whichever it has.
     decision.kept_facet =
-        facet.is_none() && rows_changed && dir.join("talents/facets.json").exists();
+        !marks_only && facet.is_none() && rows_changed && dir.join("talents/facets.json").exists();
     decision.units = merged_rows.len() as u64;
     if rows_changed {
         decision.contents = Some(contents);
@@ -1359,6 +1402,9 @@ pub struct SummaryCounts {
     /// stored, kept as first written.
     #[serde(default)]
     pub deferred: u64,
+    /// Documents a source revised to new times on the same day, now written there.
+    #[serde(default)]
+    pub moved: u64,
     /// Documents not placed because the owner deleted where they belong.
     pub entries_stayed_deleted: u64,
     /// Documents held back, by name, because a window they could already be in
@@ -1392,6 +1438,7 @@ impl SummaryCounts {
             activities_refreshed: 0,
             activities_refused: Vec::new(),
             deferred: 0,
+            moved: 0,
             entries_stayed_deleted: 0,
             held: BTreeMap::new(),
             not_saved: Vec::new(),
@@ -1527,6 +1574,19 @@ pub fn summary_text(
                 format!("{} entries", counts.deferred)
             },
             if counts.deferred == 1 { "it" } else { "them" }
+        );
+    }
+    if counts.moved > 0 {
+        let _ = writeln!(
+            text,
+            "{source} has since changed the {}; the journal now shows {} at the new {}.\n",
+            if counts.moved == 1 {
+                "time of 1 entry".to_owned()
+            } else {
+                format!("times of {} entries", counts.moved)
+            },
+            if counts.moved == 1 { "it" } else { "them" },
+            if counts.moved == 1 { "time" } else { "times" }
         );
     }
     if !counts.held.is_empty() {
