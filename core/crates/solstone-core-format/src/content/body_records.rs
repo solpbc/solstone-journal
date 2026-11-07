@@ -217,15 +217,20 @@ pub fn recorder_id(stream: &str, by: Option<&str>) -> String {
 
 /// A workout's type in one shared vocabulary, so one recorder's run can pair
 /// with another's: Apple's `HKWorkoutActivityTypeRunning`, Strava's `Run` and
-/// Oura's `running` are all `running`. A type outside the table pairs with
-/// nothing.
+/// Oura's `running` are all `running`. Underscores are ignored, so Oura's
+/// `strength_training` reads as Apple's `StrengthTraining`. A type outside the
+/// table pairs with nothing.
 #[must_use]
 pub fn mapped_workout_type(source: &str, record_type: &str) -> Option<&'static str> {
     let name = match source {
         "apple_health" => record_type.strip_prefix("HKWorkoutActivityType")?,
         _ => record_type,
     };
-    let lower = name.to_ascii_lowercase();
+    let lower: String = name
+        .chars()
+        .filter(|character| *character != '_')
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
     Some(match lower.as_str() {
         "running" | "run" | "trailrun" | "virtualrun" => "running",
         "cycling" | "ride" | "virtualride" | "ebikeride" => "cycling",
@@ -615,6 +620,62 @@ mod tests {
         let bytes = encode_rows(&rows);
         assert_eq!(encode_rows(&decode_rows(&bytes).unwrap()), bytes);
         assert!(decode_rows("{not json\n").is_err());
+    }
+
+    #[test]
+    fn workout_types_map_alike_with_or_without_underscores() {
+        // Oura names its activities in snake case.
+        for (oura, shared) in [
+            ("running", "running"),
+            ("cycling", "cycling"),
+            ("walking", "walking"),
+            ("hiking", "hiking"),
+            ("swimming", "swimming"),
+            ("rowing", "rowing"),
+            ("yoga", "yoga"),
+            ("elliptical", "elliptical"),
+            ("hiit", "hiit"),
+            ("strength_training", "strength"),
+            ("weight_training", "strength"),
+            ("high_intensity_interval_training", "hiit"),
+        ] {
+            assert_eq!(mapped_workout_type("oura", oura), Some(shared), "{oura}");
+        }
+        assert_eq!(mapped_workout_type("oura", "dancing"), None);
+        assert_eq!(mapped_workout_type("oura", "_"), None);
+        // Apple's and Strava's names map as they did.
+        for (source, name, shared) in [
+            (
+                "apple_health",
+                "HKWorkoutActivityTypeRunning",
+                Some("running"),
+            ),
+            (
+                "apple_health",
+                "HKWorkoutActivityTypeTraditionalStrengthTraining",
+                Some("strength"),
+            ),
+            (
+                "apple_health",
+                "HKWorkoutActivityTypeHighIntensityIntervalTraining",
+                Some("hiit"),
+            ),
+            (
+                "apple_health",
+                "HKWorkoutActivityTypeRowing",
+                Some("rowing"),
+            ),
+            ("apple_health", "HKWorkoutActivityTypeDance", None),
+            ("apple_health", "Running", None),
+            ("strava", "Run", Some("running")),
+            ("strava", "TrailRun", Some("running")),
+            ("strava", "EBikeRide", Some("cycling")),
+            ("strava", "WeightTraining", Some("strength")),
+            ("strava", "RowingMachine", Some("rowing")),
+            ("strava", "Kayaking", None),
+        ] {
+            assert_eq!(mapped_workout_type(source, name), shared, "{source} {name}");
+        }
     }
 
     #[test]
