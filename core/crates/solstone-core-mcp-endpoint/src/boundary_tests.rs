@@ -14079,3 +14079,181 @@ fn a_reference_reaches_its_face_after_another_member_on_another_day_became_its_a
         "{fetched}"
     );
 }
+
+/// Grow a filed workout's account in its window, as a later export does, and
+/// bring its record along as the importer's refresh does.
+fn grow_workout(
+    root: &Path,
+    day: &str,
+    row_id: &str,
+    by: &str,
+    start: &str,
+    end: &str,
+    refresh: bool,
+) {
+    use solstone_core_format::content::body_records::{decode_rows, encode_rows, recorder_id};
+    let hour = &start[11..13];
+    let rows = root.join(format!(
+        "chronicle/{day}/import.apple_health/{hour}0000_3600/body.jsonl"
+    ));
+    let mut held = decode_rows(&fs::read_to_string(&rows).unwrap()).unwrap();
+    for row in &mut held {
+        if row.id == row_id {
+            row.end = Some(end.to_owned());
+        }
+    }
+    fs::write(&rows, encode_rows(&held)).unwrap();
+    if refresh {
+        let outcome = solstone_core_facets::refresh_body_account(
+            root,
+            "alpha",
+            day,
+            &format!("body_{:0>16}", row_id),
+            "workout",
+            start,
+            end,
+            &recorder_id("import.apple_health", Some(by)),
+            Some("running"),
+        )
+        .unwrap();
+        assert_eq!(outcome, solstone_core_facets::BodyAccountRefresh::Refreshed);
+    }
+}
+
+/// How many accounts each body face holds, in each reader.
+fn body_accounts_in_every_reader(
+    journal: &tempfile::TempDir,
+    day: &str,
+) -> Vec<(&'static str, Vec<usize>)> {
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    let listed = probe(journal, "list_activities", json!({"from": day, "to": day})).unwrap();
+    let bodies: Vec<&Value> = listed["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|activity| activity["source"] == "body")
+        .collect();
+    let counts = |value: &Value| value["accounts"].as_array().map_or(0, Vec::len);
+    let listed_counts = bodies.iter().map(|activity| counts(activity)).collect();
+    let mut sourced = Vec::new();
+    let mut fetched = Vec::new();
+    for activity in &bodies {
+        let reference = activity["reference"].clone();
+        let sources = probe(
+            journal,
+            "get_activity_sources",
+            json!({"reference": reference}),
+        )
+        .unwrap();
+        // Sources names a body record's accounts as its units.
+        sourced.push(sources["units"].as_array().map_or(0, Vec::len));
+        let text = probe(journal, "fetch", json!({"reference": reference})).unwrap();
+        let face = serde_json::from_str::<Value>(text["text"].as_str().unwrap()).unwrap();
+        fetched.push(counts(&face));
+    }
+    // The week the day is in: its Sunday.
+    let week = probe(journal, "get_week", json!({"week": "20260308"})).unwrap();
+    assert!(day >= "20260308" && day <= "20260314");
+    let weekly = week["body"]
+        .as_array()
+        .map(|items| items.iter().map(counts).collect())
+        .unwrap_or_default();
+    vec![
+        ("list_activities", listed_counts),
+        ("get_activity_sources", sourced),
+        ("fetch", fetched),
+        ("get_week", weekly),
+    ]
+}
+
+#[test]
+fn a_workout_that_grows_into_another_recorders_groups_with_it_once_its_record_follows() {
+    for refresh in [false, true] {
+        let journal = body_record_journal(false);
+        let root = journal.path();
+        fs::create_dir_all(root.join("imports")).unwrap();
+        fs::write(
+            root.join("imports/.apple_health-zone.json"),
+            r#"{"zone":"America/New_York"}"#,
+        )
+        .unwrap();
+        // 20 minutes beside 40: all of the shorter but half the longer, so apart.
+        file_workout(
+            root,
+            "20260310",
+            "g1",
+            "Synthetic Watch",
+            "2026-03-10 07:00:00 -0400",
+            "2026-03-10 07:20:00 -0400",
+        );
+        file_workout(
+            root,
+            "20260310",
+            "g2",
+            "Synthetic App",
+            "2026-03-10 07:00:00 -0400",
+            "2026-03-10 07:40:00 -0400",
+        );
+        // A later export ends the watch's at 07:40.
+        grow_workout(
+            root,
+            "20260310",
+            "g1",
+            "Synthetic Watch",
+            "2026-03-10 07:00:00 -0400",
+            "2026-03-10 07:40:00 -0400",
+            refresh,
+        );
+        let readers = body_accounts_in_every_reader(&journal, "20260310");
+        for (reader, counts) in readers {
+            let expected = if refresh { vec![2] } else { vec![1, 1] };
+            assert_eq!(counts, expected, "{reader}, refresh {refresh}");
+        }
+    }
+}
+
+#[test]
+fn a_workout_that_grows_past_its_group_stands_alone_once_its_record_follows() {
+    let journal = body_record_journal(false);
+    let root = journal.path();
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"America/New_York"}"#,
+    )
+    .unwrap();
+    file_workout(
+        root,
+        "20260310",
+        "g1",
+        "Synthetic Watch",
+        "2026-03-10 07:00:00 -0400",
+        "2026-03-10 07:40:00 -0400",
+    );
+    file_workout(
+        root,
+        "20260310",
+        "g2",
+        "Synthetic App",
+        "2026-03-10 07:00:00 -0400",
+        "2026-03-10 07:40:00 -0400",
+    );
+    for (reader, counts) in body_accounts_in_every_reader(&journal, "20260310") {
+        assert_eq!(counts, vec![2], "{reader} before");
+    }
+    // The watch's account now runs to 09:00: a third of the longer.
+    grow_workout(
+        root,
+        "20260310",
+        "g1",
+        "Synthetic Watch",
+        "2026-03-10 07:00:00 -0400",
+        "2026-03-10 09:00:00 -0400",
+        true,
+    );
+    for (reader, counts) in body_accounts_in_every_reader(&journal, "20260310") {
+        assert_eq!(counts, vec![1, 1], "{reader} after");
+    }
+}

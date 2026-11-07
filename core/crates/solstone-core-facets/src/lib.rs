@@ -30,8 +30,8 @@ pub use speculative_facets::{
 };
 pub use store::{
     ActivityIconMigrationReport, ActivityRecord, ActivityRecordStoreError, AppendOutcome,
-    AwarenessStoreError, BODY_RECORD_SOURCE, BackfillReport, BulkBlockReport, BulkJournalError,
-    BulkUnblockReport, ConnectionsHorizon, DEFAULT_FACET, DeclaredFacetInventory,
+    AwarenessStoreError, BODY_RECORD_SOURCE, BackfillReport, BodyAccountRefresh, BulkBlockReport,
+    BulkJournalError, BulkUnblockReport, ConnectionsHorizon, DEFAULT_FACET, DeclaredFacetInventory,
     DestinationObservation, DetectedEntityInput, DetectedLinkRef, DetectionUpsertReport,
     EDIT_BEFORE, EDIT_LINES, EDIT_REMOVED, EDIT_SET, EDIT_SPEAKER, EditRefusal, EntityBlockReport,
     EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference, EntityReferenceBreakdown,
@@ -82,9 +82,9 @@ pub use store::{
     read_log_file, read_news_file, read_retired_facets, record_facet_candidates,
     record_facet_candidates_checked, record_import, record_import_nudge,
     record_import_offer_declined, record_observation_ops_strict, record_retired_facet,
-    refresh_connections_horizon, remove_activity, remove_activity_edit, require_declared_facet,
-    require_facet_write_identity, require_observed_facet_write_identity, resolve_facet_id,
-    resolve_observation_entity_dir, restore_retired_files, retired_facet_entry,
+    refresh_body_account, refresh_connections_horizon, remove_activity, remove_activity_edit,
+    require_declared_facet, require_facet_write_identity, require_observed_facet_write_identity,
+    resolve_facet_id, resolve_observation_entity_dir, restore_retired_files, retired_facet_entry,
     retired_facets_path, retitle_facet, review_promotion_snapshot, save_detected_entity,
     save_facet_entity_link, scan_facet_relationships, seed_entities, serialize_observation_rows,
     set_activity_hidden, set_activity_hidden_checked, set_facet_entity_link_detached,

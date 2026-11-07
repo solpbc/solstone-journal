@@ -896,6 +896,82 @@ fn update_activity_record_with_check(
     })
 }
 
+/// What refreshing a body record's account did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyAccountRefresh {
+    /// The account's fields changed to the ones given.
+    Refreshed,
+    /// They already were the ones given; nothing was written.
+    Unchanged,
+    /// No body record with that id is in the day file.
+    NotFound,
+}
+
+/// The fields code wrote on a body record's account, set to what its account
+/// says now: `account.start`, `end`, `recorder` and `type`, and the record's
+/// `activity`. A `None` type removes it. The record is re-read under the day
+/// file's lock and nothing else in it changes, so an owner's title, hide,
+/// `apart` or edit made a moment before stays. Lines the store can't read stay
+/// as they are.
+///
+/// # Errors
+///
+/// The store's errors for the day file and the facet.
+#[allow(clippy::too_many_arguments)]
+pub fn refresh_body_account(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    record_id: &str,
+    activity: &str,
+    start: &str,
+    end: &str,
+    recorder: &str,
+    workout_type: Option<&str>,
+) -> Result<BodyAccountRefresh, ActivityRecordStoreError> {
+    let current_id = admit_activity_destination(root, facet)?;
+    locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        let mut outcome = BodyAccountRefresh::NotFound;
+        let updated = rows
+            .into_iter()
+            .map(|mut row| {
+                if id(&row) != record_id || !is_body_record(&row) {
+                    return row;
+                }
+                let Some(Value::Object(account)) = row.get_mut("account") else {
+                    return row;
+                };
+                let mut changed = false;
+                for (field, value) in [("start", start), ("end", end), ("recorder", recorder)] {
+                    if account.get(field).and_then(Value::as_str) != Some(value) {
+                        account.insert(field.to_owned(), Value::String(value.to_owned()));
+                        changed = true;
+                    }
+                }
+                match workout_type {
+                    Some(kind) if account.get("type").and_then(Value::as_str) != Some(kind) => {
+                        account.insert("type".to_owned(), Value::String(kind.to_owned()));
+                        changed = true;
+                    }
+                    None if account.remove("type").is_some() => changed = true,
+                    _ => {}
+                }
+                if row.get("activity").and_then(Value::as_str) != Some(activity) {
+                    row.insert("activity".to_owned(), Value::String(activity.to_owned()));
+                    changed = true;
+                }
+                outcome = if changed {
+                    BodyAccountRefresh::Refreshed
+                } else {
+                    BodyAccountRefresh::Unchanged
+                };
+                row
+            })
+            .collect();
+        Ok((updated, outcome))
+    })
+}
+
 #[allow(clippy::too_many_arguments)] // These fields are the public hidden-state mutation contract.
 pub fn set_activity_hidden(
     root: &Path,
@@ -2250,6 +2326,90 @@ mod kept_line_tests {
 
     fn row(id: &str) -> String {
         serde_json::json!({"id": id, "activity": "meeting", "segments": ["090000_300"]}).to_string()
+    }
+
+    fn body(id: &str, hidden: bool) -> String {
+        serde_json::json!({"id": id, "source": "body", "activity": "workout", "hidden": hidden,
+            "title": "Hill repeats", "apart": ["body_0000000000000001"],
+            "account": {"key": format!("import.apple_health\u{1f}{id}"), "start": "2026-10-16 07:00:00 -0600",
+                "end": "2026-10-16 07:20:00 -0600", "recorder": "aaaaaaaaaaaa", "type": "running"}})
+        .to_string()
+    }
+
+    #[test]
+    fn a_refresh_changes_only_the_accounts_fields_keeps_a_bad_line_and_a_later_hide() {
+        let first = body("body_0000000000000a", false);
+        let (root, path) = journal_with(&[HALF, &first, NOT_A_RECORD]);
+        // A hide lands after the importer read the day's keys and before it refreshes.
+        set_activity_hidden(
+            root.path(),
+            "work",
+            DAY,
+            "body_0000000000000a",
+            true,
+            "owner:web",
+            None,
+            "t",
+        )
+        .unwrap();
+        let hidden = lines(&path)[1].clone();
+        let refresh = |end: &str, kind: Option<&str>| {
+            refresh_body_account(
+                root.path(),
+                "work",
+                DAY,
+                "body_0000000000000a",
+                "workout",
+                "2026-10-16 07:00:00 -0600",
+                end,
+                "aaaaaaaaaaaa",
+                kind,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            refresh("2026-10-16 07:40:00 -0600", Some("running")),
+            BodyAccountRefresh::Refreshed
+        );
+        let now = lines(&path);
+        assert_eq!(now[0], HALF);
+        assert_eq!(now[2], NOT_A_RECORD);
+        let mut expected: Value = serde_json::from_str(&hidden).unwrap();
+        expected["account"]["end"] = Value::from("2026-10-16 07:40:00 -0600");
+        assert_eq!(serde_json::from_str::<Value>(&now[1]).unwrap(), expected);
+        // The same fields again write nothing.
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            refresh("2026-10-16 07:40:00 -0600", Some("running")),
+            BodyAccountRefresh::Unchanged
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        // A type the shared vocabulary no longer maps goes.
+        assert_eq!(
+            refresh("2026-10-16 07:40:00 -0600", None),
+            BodyAccountRefresh::Refreshed
+        );
+        let record: Value = serde_json::from_str(&lines(&path)[1]).unwrap();
+        assert!(record["account"].get("type").is_none(), "{record}");
+        // Only a body record is ever refreshed.
+        let (root, path) = journal_with(&[&row("body_0000000000000a")]);
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            refresh_body_account(
+                root.path(),
+                "work",
+                DAY,
+                "body_0000000000000a",
+                "workout",
+                "a",
+                "b",
+                "c",
+                None
+            )
+            .unwrap(),
+            BodyAccountRefresh::NotFound
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 
     #[test]

@@ -10,13 +10,16 @@
 //! read that window. Code creates a record once and never edits it; the owner's
 //! edits, hides and separates are the only later writes.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_facets::{AppendOutcome, BODY_RECORD_SOURCE, append_activity_record};
+use solstone_core_facets::{
+    AppendOutcome, BODY_RECORD_SOURCE, BodyAccountRefresh, append_activity_record,
+    refresh_body_account,
+};
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, mapped_workout_type, recorder_id,
 };
@@ -32,6 +35,8 @@ const KINDS: [&str; 3] = ["workout", "sleep", "mindfulness"];
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct RecordCounts {
     pub written: u64,
+    /// Records whose account's times, type or recorder changed, set to the new ones.
+    pub refreshed: u64,
     /// Experiences in a window with no facet, which get no record.
     pub no_facet: u64,
     /// Appends the store refused, with the facet and why. The next run tries again.
@@ -68,12 +73,24 @@ fn window_facet(window: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Every account key a body record names on `day`, in any facet, read line by
-/// line as bytes: a line that can't be read names none, and the rest still
-/// name theirs. A day file that exists but can't be read at all is an error, so
-/// no record is written twice beside it. A store write keeps a bad line as it is.
-fn recorded_keys(journal: &Path, day: &str) -> Result<BTreeSet<String>, (String, String)> {
-    let mut keys = BTreeSet::new();
+/// What a stored record holds that code wrote: the facet whose file holds it,
+/// its `activity`, and its account's `start`, `end`, `recorder` and `type`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Recorded {
+    facet: String,
+    fields: [Option<String>; 5],
+}
+
+/// Every account key a body record names on `day`, in any facet, with what
+/// code wrote on it, read line by line as bytes: a line that can't be read
+/// names none, and the rest still name theirs. A day file that exists but
+/// can't be read at all is an error, so no record is written twice beside it.
+/// A store write keeps a bad line as it is.
+fn recorded_keys(
+    journal: &Path,
+    day: &str,
+) -> Result<BTreeMap<String, Recorded>, (String, String)> {
+    let mut keys = BTreeMap::new();
     let Ok(facets) = fs::read_dir(journal.join("facets")) else {
         return Ok(keys);
     };
@@ -99,7 +116,24 @@ fn recorded_keys(journal: &Path, day: &str) -> Result<BTreeSet<String>, (String,
                     .and_then(|account| account.get("key"))
                     .and_then(Value::as_str)
             {
-                keys.insert(key.to_owned());
+                let text = |path: &[&str]| {
+                    path.iter()
+                        .try_fold(&Value::Object(record.clone()), |value, step| {
+                            value.get(step)
+                        })
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                };
+                keys.entry(key.to_owned()).or_insert_with(|| Recorded {
+                    facet: facet.file_name().to_string_lossy().into_owned(),
+                    fields: [
+                        text(&["activity"]),
+                        text(&["account", "start"]),
+                        text(&["account", "end"]),
+                        text(&["account", "recorder"]),
+                        text(&["account", "type"]),
+                    ],
+                });
             }
         }
     }
@@ -126,6 +160,21 @@ fn window_experiences(window: &Path) -> Option<(Option<String>, Vec<BodyRow>)> {
         })
         .collect::<Vec<_>>();
     Some((window_facet(window), experiences))
+}
+
+/// What code writes on a record for `row`: its `activity`, and its account's
+/// `start`, `end`, `recorder` and workout `type`, in [`Recorded`]'s order.
+fn written_fields(row: &BodyRow) -> [Option<String>; 5] {
+    let kind = (row.experience.as_deref() == Some("workout"))
+        .then(|| mapped_workout_type(&row.source, &row.record_type))
+        .flatten();
+    [
+        row.experience.clone(),
+        row.start.clone(),
+        row.end.clone(),
+        Some(recorder_id(STREAM, row.by.as_deref())),
+        kind.map(str::to_owned),
+    ]
 }
 
 /// The record: a reference to the account, its instants, what groups read
@@ -156,9 +205,11 @@ fn record_for(key: &str, row: &BodyRow, arrived: &str) -> Map<String, Value> {
     record
 }
 
-/// Create the record of every experience on `day` that has none, and nothing
-/// else. It is safe to call for any day, any number of times: a day whose
-/// experiences all have records appends nothing.
+/// Create the record of every experience on `day` that has none, and bring a
+/// record whose account changed (a night a later import ended later, a
+/// revised type) to its account's times, type and recorder. Nothing else is
+/// written: an owner's fields are never touched. It is safe to call for any
+/// day, any number of times: a day whose records all match appends nothing.
 pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
     let mut counts = RecordCounts::default();
     let stream_dir = journal.join("chronicle").join(day).join(STREAM);
@@ -191,7 +242,31 @@ pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
         };
         for row in experiences {
             let key = account_key(STREAM, &row.id);
-            if recorded.contains(&key) {
+            if let Some(stored) = recorded.get(&key) {
+                let fields = written_fields(&row);
+                if stored.fields == fields {
+                    continue;
+                }
+                let [Some(activity), Some(start), Some(end), Some(recorder), kind] = fields else {
+                    continue;
+                };
+                match refresh_body_account(
+                    journal,
+                    &stored.facet,
+                    day,
+                    &record_id(&key),
+                    &activity,
+                    &start,
+                    &end,
+                    &recorder,
+                    kind.as_deref(),
+                ) {
+                    Ok(BodyAccountRefresh::Refreshed) => counts.refreshed += 1,
+                    Ok(BodyAccountRefresh::Unchanged | BodyAccountRefresh::NotFound) => {}
+                    Err(error) => counts
+                        .refused
+                        .push((stored.facet.clone(), error.to_string())),
+                }
                 continue;
             }
             let Some(facet) = facet.as_deref() else {
@@ -199,12 +274,17 @@ pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
                 continue;
             };
             match append_activity_record(journal, facet, day, record_for(&key, &row, &arrived)) {
-                Ok(AppendOutcome::Written(_)) => {
-                    counts.written += 1;
-                    recorded.insert(key);
-                }
-                Ok(AppendOutcome::AlreadyExists) => {
-                    recorded.insert(key);
+                Ok(outcome) => {
+                    if matches!(outcome, AppendOutcome::Written(_)) {
+                        counts.written += 1;
+                    }
+                    recorded.insert(
+                        key,
+                        Recorded {
+                            facet: facet.to_owned(),
+                            fields: written_fields(&row),
+                        },
+                    );
                 }
                 Err(error) => counts.refused.push((facet.to_owned(), error.to_string())),
             }

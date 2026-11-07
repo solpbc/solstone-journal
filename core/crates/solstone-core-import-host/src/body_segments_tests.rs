@@ -2637,3 +2637,116 @@ fn an_import_adds_one_activity_per_workout_and_again_adds_none() {
     );
     assert!(!fresh.path().join("facets").exists());
 }
+
+/// The one activity file line for `record_id` on `day`, under `facet`.
+fn record_line(root: &Path, facet: &str, day: &str, record_id: &str) -> serde_json::Value {
+    let text =
+        fs::read_to_string(root.join(format!("facets/{facet}/activities/{day}.jsonl"))).unwrap();
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|record| record["id"] == record_id)
+        .unwrap()
+}
+
+#[test]
+fn a_record_follows_its_night_when_a_later_export_ends_it_later_and_keeps_the_owners_word() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let night = [stage_record(
+        "2026-10-10 22:00:00 -0600",
+        "2026-10-11 02:00:00 -0600",
+        "AsleepCore",
+    )];
+    run(
+        root,
+        &export(scratch.path(), &night),
+        "20261012_120000",
+        Some("health"),
+    );
+    let text = fs::read_to_string(root.join("facets/health/activities/20261010.jsonl")).unwrap();
+    let id = serde_json::from_str::<serde_json::Value>(text.lines().next().unwrap()).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // The owner titles, describes, details and hides it; a pair is kept apart.
+    let mut patch = serde_json::Map::new();
+    for (field, value) in [
+        ("title", "Long night"),
+        ("description", "after the flight"),
+        ("details", "slept in"),
+        ("playback", "none"),
+    ] {
+        patch.insert(field.to_owned(), json!(value));
+    }
+    solstone_core_facets::update_activity_record(
+        root,
+        "health",
+        "20261010",
+        &id,
+        &patch,
+        "owner:web",
+        "",
+        "2026-10-12T13:00:00Z",
+    )
+    .unwrap()
+    .expect("edited");
+    solstone_core_facets::set_activity_hidden(
+        root,
+        "health",
+        "20261010",
+        &id,
+        true,
+        "owner:web",
+        None,
+        "2026-10-12T13:01:00Z",
+    )
+    .unwrap();
+    let path = root.join("facets/health/activities/20261010.jsonl");
+    let mut record = record_line(root, "health", "20261010", &id);
+    record["apart"] = json!(["body_0000000000000000"]);
+    fs::write(&path, format!("{record}\n")).unwrap();
+    let before = record_line(root, "health", "20261010", &id);
+
+    // A later export ends the night four hours later.
+    let longer = [
+        night[0].clone(),
+        stage_record(
+            "2026-10-11 02:00:00 -0600",
+            "2026-10-11 06:00:00 -0600",
+            "AsleepDeep",
+        ),
+    ];
+    let outcome = run(
+        root,
+        &export(&scratch.path().join("longer"), &longer),
+        "20261012_120001",
+        Some("health"),
+    );
+    assert!(
+        outcome.summary.contains("changed its times or type"),
+        "{}",
+        outcome.summary
+    );
+    let after = record_line(root, "health", "20261010", &id);
+    assert_eq!(after["account"]["end"], "2026-10-11 06:00:00 -0600");
+    // Nothing but the account's end moved: the owner's word stands.
+    let mut expected = before.clone();
+    expected["account"]["end"] = json!("2026-10-11 06:00:00 -0600");
+    assert_eq!(after, expected);
+
+    // The same export again changes nothing, and says nothing.
+    let bytes = fs::read(&path).unwrap();
+    let again = run(
+        root,
+        &export(&scratch.path().join("again"), &longer),
+        "20261012_120002",
+        Some("health"),
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert!(
+        !again.summary.contains("changed its times or type"),
+        "{}",
+        again.summary
+    );
+}

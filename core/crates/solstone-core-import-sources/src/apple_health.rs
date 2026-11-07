@@ -1307,6 +1307,8 @@ pub struct SummaryCounts {
     /// Experiences in a window with no facet, which get no activity record.
     #[serde(default)]
     pub activities_no_facet: u64,
+    /// Activity records brought to their account's new times or type.
+    pub activities_refreshed: u64,
     /// Facets whose activity file refused a record.
     #[serde(default)]
     pub activities_refused: Vec<String>,
@@ -1334,6 +1336,7 @@ impl SummaryCounts {
             refiled: plan.refiled,
             activities: 0,
             activities_no_facet: 0,
+            activities_refreshed: 0,
             activities_refused: Vec::new(),
             not_saved: Vec::new(),
             notes: Vec::new(),
@@ -1409,6 +1412,20 @@ pub fn summary_text(counts: &SummaryCounts, facet: Option<&str>, zone: Tz) -> St
                 format!(
                     "{} of the workouts, nights of sleep and mindfulness sessions don't show on their days, because their windows have no facet.",
                     counts.activities_no_facet
+                )
+            }
+        );
+    }
+    if counts.activities_refreshed > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.activities_refreshed == 1 {
+                "1 workout, night of sleep or mindfulness session changed its times or type in this import, and now shows the new ones.".to_owned()
+            } else {
+                format!(
+                    "{} of the workouts, nights of sleep and mindfulness sessions changed their times or type in this import, and now show the new ones.",
+                    counts.activities_refreshed
                 )
             }
         );

@@ -1226,3 +1226,77 @@ fn a_distance_reads_as_a_person_says_it() {
         assert_eq!(line_distance(value).as_deref(), said, "{value:?}");
     }
 }
+
+#[test]
+fn a_workout_that_grows_into_a_group_reads_as_one_on_the_home_and_the_day_view_keeping_its_title() {
+    for refresh in [false, true] {
+        let journal = journal();
+        let root = journal.path();
+        let mut watch = workout_row(
+            "w",
+            "Synthetic Watch",
+            "2026-10-10 07:00:00 -0600",
+            "2026-10-10 07:20:00 -0600",
+        );
+        let app = workout_row(
+            "x",
+            "Synthetic App",
+            "2026-10-10 07:00:00 -0600",
+            "2026-10-10 07:40:00 -0600",
+        );
+        arrived_record(root, DAY, &watch, Some(DAY), json!({}));
+        arrived_record(root, DAY, &app, Some(DAY), json!({}));
+        let mut patch = Map::new();
+        patch.insert("title".to_owned(), json!("Hill repeats"));
+        solstone_core_facets::update_activity_record(
+            root,
+            "body",
+            DAY,
+            "body_w",
+            &patch,
+            "owner:web",
+            "",
+            "2026-10-11T00:00:00Z",
+        )
+        .unwrap()
+        .expect("titled");
+        // A later export ends the watch's at 07:40, in its window.
+        watch.end = Some("2026-10-10 07:40:00 -0600".to_owned());
+        window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+        window(root, DAY, "070000_300", std::slice::from_ref(&app));
+        if refresh {
+            let outcome = solstone_core_facets::refresh_body_account(
+                root,
+                "body",
+                DAY,
+                "body_w",
+                "workout",
+                "2026-10-10 07:00:00 -0600",
+                "2026-10-10 07:40:00 -0600",
+                &solstone_core_format::content::body_records::recorder_id(
+                    STREAM,
+                    Some("Synthetic Watch"),
+                ),
+                Some("running"),
+            )
+            .unwrap();
+            assert_eq!(outcome, solstone_core_facets::BodyAccountRefresh::Refreshed);
+        }
+        let faces = body_faces_range(root, "body", DAY, DAY, None, true).unwrap();
+        let sizes: Vec<usize> = faces[DAY].iter().map(|face| face.members.len()).collect();
+        let lines = lines_on(root, DAY);
+        if refresh {
+            assert_eq!(sizes, [2]);
+            assert_eq!(lines.len(), 1);
+            // The owner's title still names the group.
+            assert_eq!(lines[0]["name"], "Hill repeats");
+            assert_eq!(
+                lines[0]["from"],
+                json!(["Synthetic Watch", "Synthetic App"])
+            );
+        } else {
+            assert_eq!(sizes, [1, 1]);
+            assert_eq!(lines.len(), 2);
+        }
+    }
+}

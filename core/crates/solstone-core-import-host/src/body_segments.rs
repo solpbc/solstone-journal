@@ -146,6 +146,9 @@ struct Totals {
     /// Experiences in a window with no facet, which get no activity record.
     #[serde(default)]
     activities_no_facet: u64,
+    /// Activity records brought to their account's new times, type or recorder.
+    #[serde(default)]
+    activities_refreshed: u64,
     /// Facets whose activity file refused a record; the next run tries again.
     #[serde(default)]
     activities_refused: BTreeSet<String>,
@@ -163,6 +166,7 @@ impl Totals {
         self.published += other.published;
         self.activities += other.activities;
         self.activities_no_facet += other.activities_no_facet;
+        self.activities_refreshed += other.activities_refreshed;
         self.activities_refused
             .extend(other.activities_refused.iter().cloned());
         self.entries += other.entries;
@@ -827,6 +831,7 @@ fn activity_totals(journal: &Path, day: &str) -> Totals {
     Totals {
         activities: counts.written,
         activities_no_facet: counts.no_facet,
+        activities_refreshed: counts.refreshed,
         activities_refused: counts.refused.into_iter().map(|(facet, _)| facet).collect(),
         ..Totals::default()
     }
@@ -850,6 +855,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         refiled: state.totals.refiled,
         activities: state.totals.activities,
         activities_no_facet: state.totals.activities_no_facet,
+        activities_refreshed: state.totals.activities_refreshed,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         not_saved: state
             .failed
