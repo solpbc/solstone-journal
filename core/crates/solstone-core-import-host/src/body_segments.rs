@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! An Apple Health export through the ordinary import lifecycle, into body
-//! windows, in bounded memory and one day at a time. `docs/BODY_SEGMENTS.md` is
-//! the contract.
+//! An Apple Health export, or a folder of staged Oura pages, through the ordinary
+//! import lifecycle, into body windows, in bounded memory and one day at a time.
+//! `docs/BODY_SEGMENTS.md` is the contract. Only the scan is each source's own;
+//! placing, deciding, writing, publishing and resuming are one writer.
 //!
 //! No owner route reaches this yet: every owner command still saves a bundle, and
-//! this function's one caller outside tests is `examples/apple_body_segments.rs`.
+//! the only callers outside tests are `examples/apple_body_segments.rs` and
+//! `examples/oura_body_segments.rs`.
 //!
-//! A run keeps one small state file, `imports/.apple_health-run/state.json`,
-//! replaced atomically. Its cursor and the day being written move in one replace,
-//! so a kill anywhere leaves either a day not yet counted, which the next run
-//! redoes and publishes whether or not its bytes now match, or a day done.
+//! A run keeps one small state file, `imports/.<source>-run/state.json`, replaced
+//! atomically. Its cursor and the day being written move in one replace, so a kill
+//! anywhere leaves either a day not yet counted, which the next run redoes and
+//! publishes whether or not its bytes now match, or a day done.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,6 +24,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
+use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
 use solstone_core_import::metadata::{
     AttemptRead, AttemptState, hold_import_lock, read_attempt_facts, read_provenance,
     record_unconfirmed_attempt_unlocked,
@@ -34,12 +37,14 @@ use solstone_core_import::publish::{
 use solstone_core_import::text::TextCreated;
 use solstone_core_import_sources::apple_health::{
     DayRows, Decision, SummaryCounts, WindowId, decide, facet_file_text, read_or_create_zone,
-    settle_readings, stored_windows_of_day, stream_days, summary_text,
+    settle_readings_noting, stored_windows_of_day, stream_days, summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
     DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan, sync_folder,
 };
-use solstone_core_import_sources::body_stream::{APPLE, BodySource};
+use solstone_core_import_sources::body_stream::{APPLE, BodySource, OURA};
+use solstone_core_import_sources::oura::{Hole, HoleReason, holes_of};
+use solstone_core_import_sources::oura_run::{ScanFindings, pages_identity, scan_pages};
 use solstone_core_import_sources::save::{self, RenderedImport, SegmentFile};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, remove_dir_all,
@@ -99,6 +104,81 @@ pub struct AppleSegmentsOutcome {
     pub published: u64,
     /// Nothing is left to do: every window is saved and the run state is gone.
     pub finished: bool,
+}
+
+/// What one Oura run was asked to do.
+pub struct OuraSegmentsRequest<'a> {
+    /// A folder of staged pages and their `index.json`.
+    pub pages: &'a Path,
+    /// `YYYYMMDD_HHMMSS`, as every import's id.
+    pub timestamp: &'a str,
+    pub facet: Option<&'a str>,
+    /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
+    pub spill_bytes: usize,
+    /// Test seam: called at each named point, and the run stops there, as if
+    /// killed, when it returns true.
+    pub stop_at: Option<&'a dyn Fn(&str) -> bool>,
+}
+
+impl<'a> OuraSegmentsRequest<'a> {
+    #[must_use]
+    pub fn new(pages: &'a Path, timestamp: &'a str, facet: Option<&'a str>) -> Self {
+        Self {
+            pages,
+            timestamp,
+            facet,
+            spill_bytes: DEFAULT_SPILL_BYTES,
+            stop_at: None,
+        }
+    }
+}
+
+/// What one Oura run did.
+#[derive(Debug)]
+pub struct OuraSegmentsOutcome {
+    pub import_id: String,
+    pub summary: String,
+    pub published: u64,
+    /// Nothing is left to do: every window is saved and the run state is gone.
+    pub finished: bool,
+    /// What Oura answered for that the journal couldn't write whole, this run's and
+    /// any carried from a run it took over.
+    pub holes: Vec<Hole>,
+}
+
+/// What a run reads: the only part of a request that is each source's own.
+#[derive(Clone, Copy)]
+enum Input<'a> {
+    /// An Apple Health export, a zip or a folder.
+    Apple(&'a Path),
+    /// A folder of staged Oura pages.
+    Oura(&'a Path),
+}
+
+impl Input<'_> {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Apple(path) | Self::Oura(path) => path,
+        }
+    }
+}
+
+/// One run's request, whichever source it reads.
+struct RunRequest<'a> {
+    input: Input<'a>,
+    timestamp: &'a str,
+    facet: Option<&'a str>,
+    spill_bytes: usize,
+    stop_at: Option<&'a dyn Fn(&str) -> bool>,
+}
+
+/// What one run did, whichever source it read.
+struct RunOutcome {
+    import_id: String,
+    summary: String,
+    published: u64,
+    finished: bool,
+    holes: Vec<Hole>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -190,6 +270,9 @@ struct Pending {
     counts: Totals,
     /// Per window: key, rows new, updated and unchanged.
     listing: Vec<(String, u64, u64, u64)>,
+    /// What this day couldn't write whole, so a redone day reports the same.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    holes: BTreeSet<Hole>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -204,11 +287,18 @@ struct RunState {
     import_id: String,
     facet: Option<String>,
     scan: ScanCounts,
+    /// What a source's scan found besides its counts. Apple's finds nothing here.
+    #[serde(default, skip_serializing_if = "ScanFindings::is_empty")]
+    findings: ScanFindings,
     place: PlaceResult,
     /// The last day written; the next run continues after it.
     done_through: Option<String>,
     totals: Totals,
     failed: BTreeSet<Failed>,
+    /// What the days written so far couldn't write whole, and what a run this one
+    /// took over couldn't.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    holes: BTreeSet<Hole>,
     pending: Option<Pending>,
     listing_len: u64,
     /// The import whose run this state is: kept apart from the current one
@@ -305,7 +395,7 @@ impl From<String> for Stop {
 struct Run<'a> {
     journal: &'a Path,
     source: &'a BodySource,
-    request: &'a AppleSegmentsRequest<'a>,
+    request: &'a RunRequest<'a>,
     import_id: String,
     generation: u64,
     /// Windows that couldn't be published since one last was.
@@ -577,12 +667,14 @@ impl Run<'_> {
         state: &mut RunState,
         day: String,
         windows: DayRows,
-        held_back: u64,
+        (held_back, mut holes): (u64, BTreeSet<Hole>),
     ) -> Result<(), Stop> {
         let facet = self.request.facet;
         let redo = state.pending.take().filter(|pending| pending.day == day);
         let mut decided: Vec<(WindowId, Decision)> = Vec::with_capacity(windows.len());
         for (window, rows) in windows {
+            // A window left alone as unreadable is a hole for what its rows say.
+            let unwritten = holes_of(rows.values(), HoleReason::Unreadable);
             let decision = decide(
                 self.journal,
                 self.source,
@@ -591,6 +683,9 @@ impl Run<'_> {
                 facet,
                 Some(&self.import_id),
             )?;
+            if decision.unreadable {
+                holes.extend(unwritten);
+            }
             decided.push((window, decision));
         }
         let pending = match redo {
@@ -639,6 +734,7 @@ impl Run<'_> {
                     windows: recorded,
                     counts,
                     listing,
+                    holes,
                 }
             }
         };
@@ -707,9 +803,14 @@ impl Run<'_> {
         }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
-        state
-            .totals
-            .add(&activity_totals(self.journal, self.source, &day));
+        let records = activity_totals(self.journal, self.source, &day);
+        if !records.activities_refused.is_empty() {
+            state
+                .holes
+                .extend(record_holes(self.journal, self.source, &day));
+        }
+        state.totals.add(&records);
+        state.holes.extend(pending.holes.iter().cloned());
         state.failed.extend(failed);
         state.done_through = Some(day.clone());
         state.pending = None;
@@ -857,6 +958,40 @@ fn activity_totals(journal: &Path, source: &BodySource, day: &str) -> Totals {
     }
 }
 
+/// The holes of a day whose activity records couldn't all be written: every
+/// experience its stream holds. Only Oura's rows give any.
+fn record_holes(journal: &Path, source: &BodySource, day: &str) -> BTreeSet<Hole> {
+    let mut holes = BTreeSet::new();
+    let Ok(windows) = stored_windows_of_day(journal, source, day) else {
+        return holes;
+    };
+    for window in windows {
+        let Ok(text) =
+            fs::read_to_string(window_dir(journal, source, &window).join(BODY_RECORDS_FILE))
+        else {
+            continue;
+        };
+        let Ok(rows) = decode_rows(&text) else {
+            continue;
+        };
+        let experiences = rows
+            .iter()
+            .filter(|row: &&BodyRow| row.kind == RowKind::Experience);
+        holes.extend(holes_of(experiences, HoleReason::RecordRefused));
+    }
+    holes
+}
+
+/// Every hole a state holds, its scan's included.
+fn holes_in(state: &RunState) -> BTreeSet<Hole> {
+    let mut holes = state.holes.clone();
+    holes.extend(state.findings.holes.iter().cloned());
+    if let Some(pending) = &state.pending {
+        holes.extend(pending.holes.iter().cloned());
+    }
+    holes
+}
+
 fn summary_of(state: &RunState) -> SummaryCounts {
     let mut refused = state.scan.refused.clone();
     for (stage, count) in &state.place.refused {
@@ -868,7 +1003,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         refused,
         written: state.totals.written,
         unchanged: state.totals.unchanged,
-        stayed_deleted: state.totals.stayed_deleted,
+        stayed_deleted: state.totals.stayed_deleted + state.findings.stayed_deleted,
         held_back: state.totals.held_back,
         unreadable: state.totals.unreadable,
         kept_facet: state.totals.kept_facet,
@@ -877,6 +1012,8 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         activities_no_facet: state.totals.activities_no_facet,
         activities_refreshed: state.totals.activities_refreshed,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
+        deferred: state.findings.deferred,
+        held: state.findings.held.clone(),
         not_saved: state
             .failed
             .iter()
@@ -885,7 +1022,13 @@ fn summary_of(state: &RunState) -> SummaryCounts {
                 None => format!("{}: {}", failed.day, failed.stage),
             })
             .collect(),
-        notes: state.notes.clone(),
+        notes: state
+            .findings
+            .notes
+            .iter()
+            .chain(&state.notes)
+            .cloned()
+            .collect(),
     }
 }
 
@@ -952,7 +1095,70 @@ pub fn run_apple_health_segments(
     journal: &Path,
     request: &AppleSegmentsRequest<'_>,
 ) -> Result<AppleSegmentsOutcome, String> {
-    let source = &APPLE;
+    let run = RunRequest {
+        input: Input::Apple(request.source),
+        timestamp: request.timestamp,
+        facet: request.facet,
+        spill_bytes: request.spill_bytes,
+        stop_at: request.stop_at,
+    };
+    run_segments(journal, &APPLE, &run, &|| {
+        let source_hash = solstone_core_import::hash_source(request.source)
+            .map_err(|error| error.to_string())?
+            .into_inner();
+        let export_hash = match solstone_core_body_ingest::apple_folder_export(request.source)
+            .map_err(|error| refusal_text(&error.to_string()))?
+        {
+            Some(export) => solstone_core_import::hash_source(&export)
+                .map_err(|error| error.to_string())?
+                .into_inner(),
+            None => String::new(),
+        };
+        Ok((source_hash, export_hash))
+    })
+    .map(|outcome| AppleSegmentsOutcome {
+        import_id: outcome.import_id,
+        summary: outcome.summary,
+        published: outcome.published,
+        finished: outcome.finished,
+    })
+}
+
+/// Publish a folder of staged Oura pages as body windows, on the writer Apple's
+/// exports use. Runs under Oura's own lock. The same pages carry on a run that
+/// stopped, under the import it began as.
+pub fn run_oura_segments(
+    journal: &Path,
+    request: &OuraSegmentsRequest<'_>,
+) -> Result<OuraSegmentsOutcome, String> {
+    let run = RunRequest {
+        input: Input::Oura(request.pages),
+        timestamp: request.timestamp,
+        facet: request.facet,
+        spill_bytes: request.spill_bytes,
+        stop_at: request.stop_at,
+    };
+    // The pages' own hashes say what they hold, so nothing else needs checking.
+    run_segments(journal, &OURA, &run, &|| {
+        Ok((pages_identity(request.pages)?, String::new()))
+    })
+    .map(|outcome| OuraSegmentsOutcome {
+        import_id: outcome.import_id,
+        summary: outcome.summary,
+        published: outcome.published,
+        finished: outcome.finished,
+        holes: outcome.holes,
+    })
+}
+
+/// One run of any source, under its lock. `identity` says what the input is,
+/// so the same input carries on an earlier run.
+fn run_segments(
+    journal: &Path,
+    source: &BodySource,
+    request: &RunRequest<'_>,
+    identity: &dyn Fn() -> Result<(String, String), String>,
+) -> Result<RunOutcome, String> {
     if let Some(facet) = request.facet {
         crate::cli_argv::require_enabled_facet(facet, journal)?;
     }
@@ -967,19 +1173,9 @@ pub fn run_apple_health_segments(
     )
     .map_err(|_| source.lock_unavailable.to_owned())?;
     let zone = read_or_create_zone(journal, source)?;
-    let source_hash = solstone_core_import::hash_source(request.source)
-        .map_err(|error| error.to_string())?
-        .into_inner();
     // Before anything touches an earlier run: an export that can't be read this
     // moment says nothing about whether that run should carry on.
-    let export_hash = match solstone_core_body_ingest::apple_folder_export(request.source)
-        .map_err(|error| refusal_text(&error.to_string()))?
-    {
-        Some(export) => solstone_core_import::hash_source(&export)
-            .map_err(|error| error.to_string())?
-            .into_inner(),
-        None => String::new(),
-    };
+    let (source_hash, export_hash) = identity()?;
 
     // The run state is read before any binding, so the same export resumes under
     // the import it began as, whatever timestamp this request carries.
@@ -1003,7 +1199,7 @@ pub fn run_apple_health_segments(
             solstone_core_import::bind_import_record_where(
                 journal,
                 &requested,
-                Some(request.source),
+                Some(request.input.path()),
                 &|existing| !holds_a_run(journal, existing),
             )
             .map_err(|error| error.to_string())?
@@ -1082,13 +1278,13 @@ fn run_phases(
     resume: bool,
     (source_hash, export_hash): (&str, &str),
     zone: chrono_tz::Tz,
-) -> Result<AppleSegmentsOutcome, Stop> {
+) -> Result<RunOutcome, Stop> {
     let journal = run.journal;
     let source = run.source;
     let request = run.request;
     let dir = run_dir(journal, source);
     let run_dir_rel = source.run_dir_rel;
-    let fresh = |failed: BTreeSet<Failed>, notes: Vec<String>| RunState {
+    let fresh = |failed: BTreeSet<Failed>, notes: Vec<String>, holes: BTreeSet<Hole>| RunState {
         schema: STATE_SCHEMA,
         phase: Phase::Scan,
         source_hash: source_hash.to_owned(),
@@ -1096,6 +1292,7 @@ fn run_phases(
         import_id: run.import_id.clone(),
         facet: request.facet.map(str::to_owned),
         failed,
+        holes,
         notes,
         ..RunState::default()
     };
@@ -1107,9 +1304,12 @@ fn run_phases(
             }
             run.repair(&mut old)?;
             let carried = std::mem::take(&mut old.failed);
-            fresh(carried, std::mem::take(&mut old.notes))
+            fresh(carried, std::mem::take(&mut old.notes), holes_in(&old))
         }
         Read::Trusted(mut old) => {
+            // What the old run couldn't write whole stays a hole: this run won't
+            // redo its days.
+            let mut holes = holes_in(&old);
             // Another export, or a finished run's leftovers: everything the old
             // run wrote is bound and queued before its staging goes.
             // Its half-done day's windows are on disk as far as they got; what it
@@ -1135,23 +1335,32 @@ fn run_phases(
                     old.totals.add(&pending.counts);
                 }
                 // A record its run didn't get to; the totals are this run's.
-                let _ = activity_totals(journal, source, &pending.day);
+                if !activity_totals(journal, source, &pending.day)
+                    .activities_refused
+                    .is_empty()
+                {
+                    holes.extend(record_holes(journal, source, &pending.day));
+                }
             }
             run.retry_failed(&mut old.failed)?;
             if old.phase != Phase::Retry && old.import_id != run.import_id {
                 close_superseded(journal, source, &old, zone);
             }
-            fresh(std::mem::take(&mut old.failed), Vec::new())
+            fresh(std::mem::take(&mut old.failed), Vec::new(), holes)
         }
         Read::Untrusted(old) => {
             if let Some(old) = old.filter(|old| *old != run.import_id) {
                 close_attempt(journal, &old);
             }
-            let mut repairing = fresh(BTreeSet::new(), Vec::new());
+            let mut repairing = fresh(BTreeSet::new(), Vec::new(), BTreeSet::new());
             run.repair(&mut repairing)?;
-            fresh(std::mem::take(&mut repairing.failed), repairing.notes)
+            fresh(
+                std::mem::take(&mut repairing.failed),
+                repairing.notes,
+                BTreeSet::new(),
+            )
         }
-        Read::Absent => fresh(BTreeSet::new(), Vec::new()),
+        Read::Absent => fresh(BTreeSet::new(), Vec::new(), BTreeSet::new()),
     };
     if state.phase == Phase::Scan {
         let _ = remove_dir_all(journal, &format!("{run_dir_rel}/scan"));
@@ -1159,15 +1368,32 @@ fn run_phases(
         save_state(journal, source, &state)?;
         run.retry_failed(&mut state.failed)?;
         let progress = run.import_dir().join(PROGRESS_FILE);
-        state.scan = scan(
-            request.source,
-            &dir.join("scan"),
-            request.spill_bytes,
-            &mut |rows| {
-                let line = serde_json::json!({"phase": Phase::Scan, "rows_scanned": rows, "at_ms": now_ms()});
-                let _ = atomic_replace(&progress, line.to_string().as_bytes(), PRIVATE);
-            },
-        )?;
+        let mut progress = |rows| {
+            let line =
+                serde_json::json!({"phase": Phase::Scan, "rows_scanned": rows, "at_ms": now_ms()});
+            let _ = atomic_replace(&progress, line.to_string().as_bytes(), PRIVATE);
+        };
+        match request.input {
+            Input::Apple(export) => {
+                state.scan = scan(
+                    export,
+                    &dir.join("scan"),
+                    request.spill_bytes,
+                    &mut progress,
+                )?;
+            }
+            Input::Oura(pages) => {
+                (state.scan, state.findings) = scan_pages(
+                    journal,
+                    source,
+                    zone,
+                    pages,
+                    &dir.join("scan"),
+                    request.spill_bytes,
+                    &mut progress,
+                )?;
+            }
+        }
         state.phase = Phase::Place;
         save_state(journal, source, &state)?;
         run.write_progress(&state);
@@ -1199,8 +1425,10 @@ fn run_phases(
         state.done_through.clone(),
     )?;
     while let Some((day, windows)) = days.next_day()? {
-        let (windows, held_back) = settle_readings(journal, source, &day, zone, windows)?;
-        run.write_day(&mut state, day, windows, held_back)?;
+        let (windows, held_back, unreadable) =
+            settle_readings_noting(journal, source, &day, zone, windows)?;
+        let holes = holes_of(&unreadable, HoleReason::ReadingHeldBack);
+        run.write_day(&mut state, day, windows, (held_back, holes))?;
     }
     // Close the placed runs before anything removes them.
     drop(days);
@@ -1290,14 +1518,19 @@ fn run_phases(
         save_state(journal, source, &retry)?;
     }
     run.write_progress(&state);
-    Ok(AppleSegmentsOutcome {
+    Ok(RunOutcome {
         import_id: run.import_id.clone(),
         summary,
         published: state.totals.published,
         finished,
+        holes: holes_in(&state).into_iter().collect(),
     })
 }
 
 #[cfg(test)]
 #[path = "body_segments_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "body_segments_oura_tests.rs"]
+mod oura_tests;

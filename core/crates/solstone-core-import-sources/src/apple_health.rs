@@ -1351,6 +1351,14 @@ pub struct SummaryCounts {
     /// Facets whose activity file refused a record.
     #[serde(default)]
     pub activities_refused: Vec<String>,
+    /// Documents a source revised in a way that would move or shorten what is
+    /// stored, kept as first written.
+    #[serde(default)]
+    pub deferred: u64,
+    /// Documents held back, by name, because a window they could already be in
+    /// couldn't be read.
+    #[serde(default)]
+    pub held: BTreeMap<String, u64>,
     /// Windows or days that couldn't be published, as "day key: stage".
     #[serde(default)]
     pub not_saved: Vec<String>,
@@ -1377,6 +1385,8 @@ impl SummaryCounts {
             activities_no_facet: 0,
             activities_refreshed: 0,
             activities_refused: Vec::new(),
+            deferred: 0,
+            held: BTreeMap::new(),
             not_saved: Vec::new(),
             notes: Vec::new(),
         }
@@ -1484,6 +1494,27 @@ pub fn summary_text(
             text,
             "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"
         );
+    }
+    if counts.deferred > 0 {
+        let _ = writeln!(
+            text,
+            "{source} has since changed {}; the journal keeps {} as first written.\n",
+            if counts.deferred == 1 {
+                "1 entry".to_owned()
+            } else {
+                format!("{} entries", counts.deferred)
+            },
+            if counts.deferred == 1 { "it" } else { "them" }
+        );
+    }
+    if !counts.held.is_empty() {
+        text.push_str(
+            "## Held back\n\nNot added yet: each may already be in a part of the journal that couldn't be read. The next import tries again.\n\n",
+        );
+        for (name, count) in &counts.held {
+            let _ = writeln!(text, "- {name}: {count}");
+        }
+        text.push('\n');
     }
     let mut section = |title: &str, items: Vec<(String, u64)>| {
         if !items.is_empty() {
