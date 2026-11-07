@@ -151,6 +151,64 @@ fn a_workout_keeps_every_field_and_tiles_its_real_span() {
     assert!(event.iter().any(|row| row.kind == RowKind::Event));
 }
 
+/// A modern export, as the repo's shape fixture has it, says a workout's
+/// distance only as a statistic. Each kind reaches `distance`; the attribute
+/// wins where both exist, and nothing else becomes `distance`.
+#[test]
+fn a_modern_workout_says_its_distance_by_statistic_for_every_kind() {
+    let workout = |kind: &str, at: &str, statistics: &str, attributes: &str| {
+        format!(
+            r#"<Workout workoutActivityType="HKWorkoutActivityType{kind}" {WATCH} duration="10" durationUnit="min" {attributes} startDate="2026-10-10 {at}:00:00 -0600" endDate="2026-10-10 {at}:10:00 -0600">{statistics}</Workout>"#
+        )
+    };
+    let statistic = |kind: &str, sum: &str, unit: &str| {
+        format!(
+            r#"<WorkoutStatistics type="HKQuantityTypeIdentifier{kind}" startDate="2026-10-10 08:00:00 -0600" endDate="2026-10-10 08:10:00 -0600" sum="{sum}" unit="{unit}"/>"#
+        )
+    };
+    let energy = statistic("ActiveEnergyBurned", "90", "kcal");
+    let export = read(&[
+        workout(
+            "Running",
+            "08",
+            &format!(
+                "{energy}{}",
+                statistic("DistanceWalkingRunning", "1.2", "km")
+            ),
+            "",
+        ),
+        workout(
+            "Cycling",
+            "09",
+            &statistic("DistanceCycling", "6.4", "km"),
+            "",
+        ),
+        workout(
+            "Swimming",
+            "10",
+            &statistic("DistanceSwimming", "750", "m"),
+            "",
+        ),
+        workout(
+            "Walking",
+            "11",
+            &statistic("DistanceWalkingRunning", "2.0", "km"),
+            r#"totalDistance="2.1" totalDistanceUnit="km""#,
+        ),
+        workout("Yoga", "12", &energy, ""),
+    ]);
+    let distance = |label: &str| {
+        let workouts = experience(&export, "workout");
+        let row = workouts.iter().find(|row| row.label == label).unwrap();
+        row.values.get("distance").cloned()
+    };
+    assert_eq!(distance("running").as_deref(), Some("1.2 km"));
+    assert_eq!(distance("cycling").as_deref(), Some("6.4 km"));
+    assert_eq!(distance("swimming").as_deref(), Some("750 m"));
+    assert_eq!(distance("walking").as_deref(), Some("2.1 km"));
+    assert_eq!(distance("yoga"), None);
+}
+
 #[test]
 fn a_night_is_this_sources_adjacent_stages_and_says_so() {
     let export = read(&fixture());

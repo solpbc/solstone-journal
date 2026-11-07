@@ -527,6 +527,15 @@ fn workout_values(element: &AppleElement) -> BTreeMap<String, String> {
     for statistic in &element.statistics {
         let name = statistic.get("type").map_or("", String::as_str);
         let unit = statistic.get("unit").map_or("", String::as_str);
+        // A modern export says a workout's distance only as a statistic, one
+        // kind per activity. The first one reaches `distance`; the attribute wins.
+        if name.contains("Distance")
+            && let Some(sum) = statistic.get("sum")
+        {
+            values
+                .entry("distance".to_owned())
+                .or_insert_with(|| format!("{sum} {unit}").trim().to_owned());
+        }
         for measure in ["sum", "average", "minimum", "maximum"] {
             if let Some(value) = statistic.get(measure) {
                 values.insert(
