@@ -1670,3 +1670,6 @@ fn the_lookup_reaches_one_day_either_side_and_no_further() {
     assert_eq!(placed(root, "n1").len(), 1);
     assert_eq!(placed(root, "n1")[0].0, "20260105");
 }
+
+#[path = "body_segments_fetch_tests.rs"]
+mod fetch;

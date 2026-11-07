@@ -5277,6 +5277,7 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-location",
  "solstone-core-pdf",
  "solstone-core-processing-record",
  "solstone-core-retention",

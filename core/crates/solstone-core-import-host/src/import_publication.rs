@@ -11,7 +11,7 @@ use solstone_core_import::ImportError;
 use solstone_core_import::metadata::{
     AttemptFacts, AttemptRead, AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON,
     hold_import_lock, read_attempt_facts, read_provenance, record_completed_attempt_unlocked,
-    record_unconfirmed_attempt_unlocked,
+    record_completed_attempt_with_input_failures_unlocked, record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::publish::{
     CreatedSegment, NativePublicationOperations, PublicationInput, PublicationOperations,
@@ -22,13 +22,16 @@ use solstone_core_import::text::TextCreated;
 /// Input to terminal import attempt handling.
 pub enum ImportTerminalInput<'a> {
     Success(&'a [TextCreated]),
+    /// A success that couldn't read some of its inputs, named here: the attempt
+    /// records how many, so the import reads as partly failed.
+    Partial(&'a [TextCreated], &'a [String]),
     Failed(&'a [TextCreated]),
 }
 
 impl<'a> ImportTerminalInput<'a> {
     pub fn created(&self) -> &'a [TextCreated] {
         match self {
-            Self::Success(slice) | Self::Failed(slice) => slice,
+            Self::Success(slice) | Self::Partial(slice, _) | Self::Failed(slice) => slice,
         }
     }
 }
@@ -187,7 +190,7 @@ fn finish_import_attempt_inner(
     let stopped = !solstone_core_import::work_continues();
     let should_publish = !stopped
         && match &input {
-            ImportTerminalInput::Success(_) => true,
+            ImportTerminalInput::Success(_) | ImportTerminalInput::Partial(..) => true,
             ImportTerminalInput::Failed(created) => !created.is_empty(),
         };
 
@@ -261,16 +264,28 @@ fn finish_import_attempt_inner(
                 None,
             ),
         },
-        ImportTerminalInput::Success(_) => match seams.record_unconfirmed_fn {
-            Some(custom) => custom(journal, import_id, generation, finished_at_ms, None),
-            None => record_unconfirmed_attempt_unlocked(
+        ImportTerminalInput::Partial(_, inputs) if !publication_failed => {
+            record_completed_attempt_with_input_failures_unlocked(
                 journal,
                 import_id,
                 generation,
                 finished_at_ms,
                 None,
-            ),
-        },
+                inputs.len() as u64,
+            )
+        }
+        ImportTerminalInput::Success(_) | ImportTerminalInput::Partial(..) => {
+            match seams.record_unconfirmed_fn {
+                Some(custom) => custom(journal, import_id, generation, finished_at_ms, None),
+                None => record_unconfirmed_attempt_unlocked(
+                    journal,
+                    import_id,
+                    generation,
+                    finished_at_ms,
+                    None,
+                ),
+            }
+        }
         ImportTerminalInput::Failed(_) => match seams.record_unconfirmed_fn {
             Some(custom) => custom(
                 journal,

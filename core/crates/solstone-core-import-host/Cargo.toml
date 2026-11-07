@@ -62,6 +62,7 @@ ureq = { workspace = true, features = ["rustls"] }
 axum = { workspace = true, features = ["tokio"] }
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 solstone-core-import-web.workspace = true
+solstone-core-location.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 tower.workspace = true

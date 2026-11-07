@@ -14,6 +14,12 @@
 //! atomically. Its cursor and the day being written move in one replace, so a kill
 //! anywhere leaves either a day not yet counted, which the next run redoes and
 //! publishes whether or not its bytes now match, or a day done.
+//!
+//! An Oura run that asks Oura itself ([`import_oura`]) fetches first, into
+//! `imports/.oura-run/pages/` (`oura_fetch.rs`), and reads those pages as its
+//! export. Its coverage (`oura_coverage.rs`) is written here and nowhere else:
+//! each hole takes back what it touches as soon as the state holds it, and what
+//! the run fetched whole is added once its last day is done.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,7 +28,9 @@ use std::io::{Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use solstone_core_body_ingest::oura_sync::OuraHttp;
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
 use solstone_core_import::metadata::{
@@ -53,6 +61,12 @@ use solstone_core_journal_io::{
 use crate::import_publication::{
     ImportFinish, ImportTerminalInput, finish_import_attempt_indexing,
 };
+use crate::oura_coverage::{Coverage, hole_place, read_coverage, update_coverage};
+pub use crate::oura_fetch::{
+    EndpointReport, LiveOuraTransport, OLD_LOCK_TIMEOUT, OuraAuth, OuraImportError, OuraStop,
+    RecordedOura, ResultKind, USER_AGENT,
+};
+use crate::oura_fetch::{FetchInput, FetchRun, FetchState, fetch, plan};
 use crate::registry::now_ms;
 
 const RAW_RETENTION: &str = "discard";
@@ -146,6 +160,65 @@ pub struct OuraSegmentsOutcome {
     pub holes: Vec<Hole>,
 }
 
+/// What one Oura import that asks Oura itself was asked to do.
+pub struct OuraImportRequest<'a> {
+    /// `YYYYMMDD_HHMMSS`, as every import's id.
+    pub timestamp: &'a str,
+    pub facet: Option<&'a str>,
+    /// Owner days, first and last inclusive. `None` asks each endpoint from seven
+    /// days before what it last covered, or the last 30 days.
+    pub range: Option<(NaiveDate, NaiveDate)>,
+    /// Oura, or something answering as it.
+    pub transport: &'a mut dyn OuraHttp,
+    pub auth: OuraAuth,
+    /// How long a refresh waits for the old sync's lock.
+    pub old_lock_timeout: Duration,
+    /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
+    pub spill_bytes: usize,
+    /// Test seam: called at each named point, and the run stops there, as if
+    /// killed, when it returns true.
+    pub stop_at: Option<&'a dyn Fn(&str) -> bool>,
+    /// Test seam: the clock the run reads for today and for when a record arrived.
+    pub clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+}
+
+impl<'a> OuraImportRequest<'a> {
+    #[must_use]
+    pub fn new(
+        timestamp: &'a str,
+        facet: Option<&'a str>,
+        transport: &'a mut dyn OuraHttp,
+    ) -> Self {
+        Self {
+            timestamp,
+            facet,
+            range: None,
+            transport,
+            auth: OuraAuth::Journal,
+            old_lock_timeout: OLD_LOCK_TIMEOUT,
+            spill_bytes: DEFAULT_SPILL_BYTES,
+            stop_at: None,
+            clock: None,
+        }
+    }
+}
+
+/// What one Oura import that asked Oura itself did.
+#[derive(Debug)]
+pub struct OuraImportOutcome {
+    pub import_id: String,
+    pub summary: String,
+    pub published: u64,
+    /// Nothing is left to do: every window is saved and the run state is gone.
+    pub finished: bool,
+    /// How each endpoint ended, in the order Oura was asked.
+    pub results: Vec<EndpointReport>,
+    /// What this run, and any it took over, couldn't write whole.
+    pub holes: Vec<Hole>,
+    /// The journal's coverage as this run left it.
+    pub coverage: Coverage,
+}
+
 /// What a run reads: the only part of a request that is each source's own.
 #[derive(Clone, Copy)]
 enum Input<'a> {
@@ -153,12 +226,16 @@ enum Input<'a> {
     Apple(&'a Path),
     /// A folder of staged Oura pages.
     Oura(&'a Path),
+    /// Oura itself, fetched into the run's own staging first.
+    Fetch(&'a FetchInput<'a>),
 }
 
 impl Input<'_> {
-    fn path(&self) -> &Path {
+    /// What the import record is bound to, when the input is there to hash.
+    fn path(&self) -> Option<&Path> {
         match self {
-            Self::Apple(path) | Self::Oura(path) => path,
+            Self::Apple(path) | Self::Oura(path) => Some(path),
+            Self::Fetch(_) => None,
         }
     }
 }
@@ -170,6 +247,7 @@ struct RunRequest<'a> {
     facet: Option<&'a str>,
     spill_bytes: usize,
     stop_at: Option<&'a dyn Fn(&str) -> bool>,
+    clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
 }
 
 /// What one run did, whichever source it read.
@@ -179,11 +257,30 @@ struct RunOutcome {
     published: u64,
     finished: bool,
     holes: Vec<Hole>,
+    results: Vec<EndpointReport>,
+}
+
+/// How a run ended short.
+enum RunError {
+    /// One of the stops an Oura fetch makes for the whole run.
+    Stop(OuraStop),
+    Failed(String),
+}
+
+impl RunError {
+    fn text(self) -> String {
+        match self {
+            Self::Stop(stop) => stop.words().to_owned(),
+            Self::Failed(error) => error,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum Phase {
+    /// Asking Oura for its pages, into the run's staging.
+    Fetch,
     #[default]
     Scan,
     Place,
@@ -304,14 +401,27 @@ struct RunState {
     /// The import whose run this state is: kept apart from the current one
     /// while a repair or takeover runs under a newer attempt.
     notes: Vec<String>,
+    /// What an Oura run that asks Oura itself asked for, and how each endpoint
+    /// ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fetch: Option<FetchState>,
 }
 
 enum Read {
     Absent,
     Trusted(Box<RunState>),
-    /// Carrying the import whose run it was, when the state can still say.
-    Untrusted(Option<String>),
+    Untrusted {
+        /// The import whose run it was, when the state can still say.
+        import_id: Option<String>,
+        /// Its holes, when the state still parses and only its staging is gone.
+        holes: Option<BTreeSet<Hole>>,
+    },
 }
+
+const UNPARSED: Read = Read::Untrusted {
+    import_id: None,
+    holes: None,
+};
 
 fn run_dir(journal: &Path, source: &BodySource) -> PathBuf {
     journal.join(source.run_dir_rel)
@@ -332,12 +442,12 @@ fn read_state(journal: &Path, source: &BodySource) -> Read {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             // A run folder without its state is a run that didn't finish.
             return if run_dir(journal, source).exists() {
-                Read::Untrusted(None)
+                UNPARSED
             } else {
                 Read::Absent
             };
         }
-        Err(_) => return Read::Untrusted(None),
+        Err(_) => return UNPARSED,
     };
     let import_id = || {
         serde_json::from_slice::<serde_json::Value>(&bytes)
@@ -352,19 +462,30 @@ fn read_state(journal: &Path, source: &BodySource) -> Read {
             let needs = match state.phase {
                 Phase::Place => Some(("scan", state.scan.runs)),
                 Phase::Write => Some(("placed", state.place.runs)),
-                Phase::Scan | Phase::Repair | Phase::Retry => None,
+                Phase::Fetch | Phase::Scan | Phase::Repair | Phase::Retry => None,
             };
-            let whole = needs.is_none_or(|(folder, runs)| {
+            let mut whole = needs.is_none_or(|(folder, runs)| {
                 runs_in(&run_dir(journal, source).join(folder))
                     .is_ok_and(|found| found.len() as u64 == runs)
             });
+            // A fetched run about to scan needs the very pages it fetched.
+            if state.phase == Phase::Scan && state.fetch.is_some() {
+                whole &= pages_identity(&run_dir(journal, source).join("pages"))
+                    .is_ok_and(|identity| identity == state.source_hash);
+            }
             if whole {
                 Read::Trusted(Box::new(state))
             } else {
-                Read::Untrusted(Some(state.import_id))
+                Read::Untrusted {
+                    holes: Some(holes_in(&state)),
+                    import_id: Some(state.import_id),
+                }
             }
         }
-        _ => Read::Untrusted(import_id()),
+        _ => Read::Untrusted {
+            import_id: import_id(),
+            holes: None,
+        },
     }
 }
 
@@ -376,7 +497,7 @@ fn save_state(journal: &Path, source: &BodySource, state: &RunState) -> Result<(
 }
 
 /// How a run stopped short.
-enum Stop {
+pub(crate) enum Stop {
     /// An injected stop point: the disk is as a kill there would leave it.
     Injected(String),
     /// The owner asked the import to stop.
@@ -384,6 +505,8 @@ enum Stop {
     /// Another attempt owns this import now.
     Superseded,
     Failed(String),
+    /// An Oura fetch stopped the whole run.
+    Oura(OuraStop),
 }
 
 impl From<String> for Stop {
@@ -392,17 +515,17 @@ impl From<String> for Stop {
     }
 }
 
-struct Run<'a> {
+struct Run<'a, 'r> {
     journal: &'a Path,
     source: &'a BodySource,
-    request: &'a RunRequest<'a>,
+    request: &'a RunRequest<'r>,
     import_id: String,
     generation: u64,
     /// Windows that couldn't be published since one last was.
     failed_in_a_row: Cell<u32>,
 }
 
-impl Run<'_> {
+impl Run<'_, '_> {
     fn point(&self, name: &str) -> Result<(), Stop> {
         if self.request.stop_at.is_some_and(|stop| stop(name)) {
             return Err(Stop::Injected(name.to_owned()));
@@ -415,6 +538,10 @@ impl Run<'_> {
 
     fn import_dir(&self) -> PathBuf {
         self.journal.join("imports").join(&self.import_id)
+    }
+
+    fn now(&self) -> DateTime<Utc> {
+        self.request.clock.map_or_else(Utc::now, |clock| clock())
     }
 
     fn still_this_attempt(&self) -> bool {
@@ -803,7 +930,7 @@ impl Run<'_> {
         }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
-        let records = activity_totals(self.journal, self.source, &day);
+        let records = activity_totals(self.journal, self.source, &day, self.now());
         if !records.activities_refused.is_empty() {
             state
                 .holes
@@ -815,6 +942,7 @@ impl Run<'_> {
         state.done_through = Some(day.clone());
         state.pending = None;
         save_state(self.journal, self.source, state)?;
+        take_back(self.journal, self.source, &holes_in(state))?;
         self.write_progress(state);
         self.stop_if_stuck(&day)
     }
@@ -947,8 +1075,8 @@ fn reconcile_stream(journal: &Path, source: &BodySource) -> Result<Option<String
 }
 
 /// Create the activity records of a day's experiences, as totals.
-fn activity_totals(journal: &Path, source: &BodySource, day: &str) -> Totals {
-    let counts = crate::body_activity::write_records(journal, source, day);
+fn activity_totals(journal: &Path, source: &BodySource, day: &str, now: DateTime<Utc>) -> Totals {
+    let counts = crate::body_activity::write_records_at(journal, source, day, now);
     Totals {
         activities: counts.written,
         activities_no_facet: counts.no_facet,
@@ -980,6 +1108,35 @@ fn record_holes(journal: &Path, source: &BodySource, day: &str) -> BTreeSet<Hole
         holes.extend(holes_of(experiences, HoleReason::RecordRefused));
     }
     holes
+}
+
+/// Take back the coverage a run's holes touch, as soon as the state holds them.
+/// Only Oura's rows give holes, and doing it again changes nothing.
+fn take_back(journal: &Path, source: &BodySource, holes: &BTreeSet<Hole>) -> Result<(), String> {
+    if source.source != OURA.source || holes.is_empty() {
+        return Ok(());
+    }
+    update_coverage(journal, |coverage| coverage.take_back(holes))
+}
+
+/// The summary's list of holes.
+fn holes_section(holes: &BTreeSet<Hole>) -> String {
+    if holes.is_empty() {
+        return String::new();
+    }
+    let mut text = String::from(
+        "## Not written whole\n\nOura answered for these, and the journal couldn't write all of it. An import that asks for these days again tries them again.\n\n",
+    );
+    for hole in holes {
+        text.push_str(&format!(
+            "- {}, {}: {}\n",
+            hole.endpoint,
+            hole_place(&hole.endpoint, &hole.at),
+            hole.reason.words()
+        ));
+    }
+    text.push('\n');
+    text
 }
 
 /// Every hole a state holds, its scan's included.
@@ -1102,6 +1259,7 @@ pub fn run_apple_health_segments(
         facet: request.facet,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
+        clock: None,
     };
     run_segments(journal, &APPLE, &run, &|| {
         let source_hash = solstone_core_import::hash_source(request.source)
@@ -1123,6 +1281,7 @@ pub fn run_apple_health_segments(
         published: outcome.published,
         finished: outcome.finished,
     })
+    .map_err(RunError::text)
 }
 
 /// Publish a folder of staged Oura pages as body windows, on the writer Apple's
@@ -1138,6 +1297,7 @@ pub fn run_oura_segments(
         facet: request.facet,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
+        clock: None,
     };
     // The pages' own hashes say what they hold, so nothing else needs checking.
     run_segments(journal, &OURA, &run, &|| {
@@ -1150,6 +1310,48 @@ pub fn run_oura_segments(
         finished: outcome.finished,
         holes: outcome.holes,
     })
+    .map_err(RunError::text)
+}
+
+/// Ask Oura for a range of days, with the journal's own tokens or through any
+/// transport that answers as Oura does, and publish what it answers as body
+/// windows, on the writer Apple's exports use. Runs under Oura's own lock, and
+/// takes the old sync's lock only around a token refresh. A run that stopped
+/// carries on when asked again with the same range, or with none.
+pub fn import_oura(
+    journal: &Path,
+    request: OuraImportRequest<'_>,
+) -> Result<OuraImportOutcome, OuraImportError> {
+    let fetch = FetchInput {
+        range: request.range,
+        transport: std::cell::RefCell::new(request.transport),
+        auth: request.auth,
+        old_lock_timeout: request.old_lock_timeout,
+    };
+    let run = RunRequest {
+        input: Input::Fetch(&fetch),
+        timestamp: request.timestamp,
+        facet: request.facet,
+        spill_bytes: request.spill_bytes,
+        stop_at: request.stop_at,
+        clock: request.clock,
+    };
+    // A fetched run is known by what it asked; its pages' hash is set once fetched.
+    let outcome = run_segments(journal, &OURA, &run, &|| Ok((String::new(), String::new())))
+        .map_err(|error| match error {
+            RunError::Stop(stop) => OuraImportError::Stop(stop),
+            RunError::Failed(error) => OuraImportError::Failed(error),
+        })?;
+    let coverage = read_coverage(journal).map_err(OuraImportError::Failed)?;
+    Ok(OuraImportOutcome {
+        import_id: outcome.import_id,
+        summary: outcome.summary,
+        published: outcome.published,
+        finished: outcome.finished,
+        results: outcome.results,
+        holes: outcome.holes,
+        coverage,
+    })
 }
 
 /// One run of any source, under its lock. `identity` says what the input is,
@@ -1159,11 +1361,23 @@ fn run_segments(
     source: &BodySource,
     request: &RunRequest<'_>,
     identity: &dyn Fn() -> Result<(String, String), String>,
-) -> Result<RunOutcome, String> {
+) -> Result<RunOutcome, RunError> {
+    run_segments_text(journal, source, request, identity).map_err(|error| match error {
+        Ok(stop) => RunError::Stop(stop),
+        Err(text) => RunError::Failed(text),
+    })
+}
+
+fn run_segments_text(
+    journal: &Path,
+    source: &BodySource,
+    request: &RunRequest<'_>,
+    identity: &dyn Fn() -> Result<(String, String), String>,
+) -> Result<RunOutcome, Result<OuraStop, String>> {
     if let Some(facet) = request.facet {
-        crate::cli_argv::require_enabled_facet(facet, journal)?;
+        crate::cli_argv::require_enabled_facet(facet, journal).map_err(Err)?;
     }
-    fs::create_dir_all(journal.join("imports")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(journal.join("imports")).map_err(|error| Err(error.to_string()))?;
     let _lock = hold_lock(
         journal.join(source.lock_rel),
         LockOptions {
@@ -1172,21 +1386,34 @@ fn run_segments(
             ..LockOptions::default()
         },
     )
-    .map_err(|_| source.lock_unavailable.to_owned())?;
-    let zone = read_or_create_zone(journal, source)?;
+    .map_err(|_| Err(source.lock_unavailable.to_owned()))?;
+    let zone = read_or_create_zone(journal, source).map_err(Err)?;
     // Before anything touches an earlier run: an export that can't be read this
     // moment says nothing about whether that run should carry on.
-    let (source_hash, export_hash) = identity()?;
+    let (source_hash, export_hash) = identity().map_err(Err)?;
 
     // The run state is read before any binding, so the same export resumes under
     // the import it began as, whatever timestamp this request carries.
     let previous = read_state(journal, source);
     let resumable = match &previous {
         Read::Trusted(state)
-            if state.source_hash == source_hash
-                && state.export_hash == export_hash
-                && state.facet.as_deref() == request.facet
-                && matches!(state.phase, Phase::Scan | Phase::Place | Phase::Write) =>
+            if state.facet.as_deref() == request.facet
+                && matches!(
+                    state.phase,
+                    Phase::Fetch | Phase::Scan | Phase::Place | Phase::Write
+                )
+                && match request.input {
+                    // A fetch carries on the range it saved.
+                    Input::Fetch(fetch) => state
+                        .fetch
+                        .as_ref()
+                        .is_some_and(|saved| saved.resumed_by(fetch.range)),
+                    Input::Apple(_) | Input::Oura(_) => {
+                        state.fetch.is_none()
+                            && state.source_hash == source_hash
+                            && state.export_hash == export_hash
+                    }
+                } =>
         {
             Some(state.import_id.clone())
         }
@@ -1196,21 +1423,21 @@ fn run_segments(
         Some(id) => id,
         None => {
             let requested = solstone_core_import::validate_timestamp(request.timestamp)
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| Err(e.to_string()))?;
             solstone_core_import::bind_import_record_where(
                 journal,
                 &requested,
-                Some(request.input.path()),
+                request.input.path(),
                 &|existing| !holds_a_run(journal, existing),
             )
-            .map_err(|error| error.to_string())?
+            .map_err(|error| Err(error.to_string()))?
             .import_id
             .as_str()
             .to_owned()
         }
     };
     if solstone_core_import::refuse_if_live_running(journal, &import_id, source.stream).is_some() {
-        return Err("this import is already running".to_owned());
+        return Err(Err("this import is already running".to_owned()));
     }
     let generation = solstone_core_import::admit_running_attempt(
         journal,
@@ -1218,7 +1445,7 @@ fn run_segments(
         now_ms(),
         Some(source.registry.name()),
     )
-    .map_err(|error| error.to_string())?
+    .map_err(|error| Err(error.to_string()))?
     .generation;
     let run = Run {
         journal,
@@ -1245,16 +1472,20 @@ fn run_segments(
         Err(Stop::Injected(point)) => {
             // As a process that died there would: its attempt lock goes with it.
             solstone_core_import::metadata::release_attempt(journal, &import_id);
-            Err(format!("stopped at {point}"))
+            Err(Err(format!("stopped at {point}")))
         }
-        Err(Stop::Superseded) => Err("this import was superseded".to_owned()),
+        Err(Stop::Superseded) => Err(Err("this import was superseded".to_owned())),
         Err(Stop::Stopped) => {
             let _ = finish(ImportTerminalInput::Failed(&[]), &[]);
-            Err("import stopped".to_owned())
+            Err(Err("import stopped".to_owned()))
         }
         Err(Stop::Failed(error)) => {
             let _ = finish(ImportTerminalInput::Failed(&[]), &[]);
-            Err(refusal_text(&error))
+            Err(Err(refusal_text(&error)))
+        }
+        Err(Stop::Oura(stop)) => {
+            let _ = finish(ImportTerminalInput::Failed(&[]), &[]);
+            Err(Ok(stop))
         }
     }
 }
@@ -1274,7 +1505,7 @@ fn refusal_text(error: &str) -> String {
 }
 
 fn run_phases(
-    run: &Run<'_>,
+    run: &Run<'_, '_>,
     previous: Read,
     resume: bool,
     (source_hash, export_hash): (&str, &str),
@@ -1336,7 +1567,7 @@ fn run_phases(
                     old.totals.add(&pending.counts);
                 }
                 // A record its run didn't get to; the totals are this run's.
-                if !activity_totals(journal, source, &pending.day)
+                if !activity_totals(journal, source, &pending.day, run.now())
                     .activities_refused
                     .is_empty()
                 {
@@ -1349,20 +1580,78 @@ fn run_phases(
             }
             fresh(std::mem::take(&mut old.failed), Vec::new(), holes)
         }
-        Read::Untrusted(old) => {
+        Read::Untrusted {
+            import_id: old,
+            holes,
+        } => {
             if let Some(old) = old.filter(|old| *old != run.import_id) {
                 close_attempt(journal, &old);
             }
+            // A state that still parses carries its holes. One that doesn't can't
+            // say what its run would have written whole, so every Oura claim goes,
+            // which only ever claims too little.
+            let holes = match holes {
+                Some(holes) => holes,
+                None => {
+                    if source.source == OURA.source {
+                        update_coverage(journal, |coverage| {
+                            coverage.take_back_all();
+                            Ok(())
+                        })?;
+                    }
+                    BTreeSet::new()
+                }
+            };
             let mut repairing = fresh(BTreeSet::new(), Vec::new(), BTreeSet::new());
             run.repair(&mut repairing)?;
             fresh(
                 std::mem::take(&mut repairing.failed),
                 repairing.notes,
-                BTreeSet::new(),
+                holes,
             )
         }
         Read::Absent => fresh(BTreeSet::new(), Vec::new(), BTreeSet::new()),
     };
+    // A new fetched run works out its range now, after anything above took claims
+    // back, and starts from no staged pages.
+    if let Input::Fetch(input) = request.input
+        && !resume
+    {
+        let today = run.now().with_timezone(&zone).date_naive();
+        state.fetch = Some(plan(input.range, &read_coverage(journal)?, today, zone)?);
+        state.phase = Phase::Fetch;
+        let _ = remove_dir_all(journal, &format!("{run_dir_rel}/pages"));
+    }
+    if state.phase == Phase::Fetch {
+        save_state(journal, source, &state)?;
+        let Input::Fetch(input) = request.input else {
+            return Err(Stop::Failed(
+                "a fetch can only carry on from Oura itself".to_owned(),
+            ));
+        };
+        let mut fetching = state.fetch.take().unwrap_or_default();
+        let point = |name: &str| run.point(name);
+        let ended = fetch(
+            &FetchRun {
+                journal,
+                pages: dir.join("pages"),
+                zone,
+                point: &point,
+            },
+            &mut fetching,
+            input,
+            &mut |fetching| {
+                state.fetch = Some(fetching.clone());
+                save_state(journal, source, &state)
+            },
+        );
+        state.fetch = Some(fetching);
+        ended?;
+        state.source_hash = pages_identity(&dir.join("pages"))?;
+        state.phase = Phase::Scan;
+        save_state(journal, source, &state)?;
+        run.point("fetched")?;
+    }
     if state.phase == Phase::Scan {
         let _ = remove_dir_all(journal, &format!("{run_dir_rel}/scan"));
         let _ = remove_dir_all(journal, &format!("{run_dir_rel}/placed"));
@@ -1383,12 +1672,16 @@ fn run_phases(
                     &mut progress,
                 )?;
             }
-            Input::Oura(pages) => {
+            Input::Oura(_) | Input::Fetch(_) => {
+                let pages = match request.input {
+                    Input::Oura(pages) => pages.to_path_buf(),
+                    _ => dir.join("pages"),
+                };
                 (state.scan, state.findings) = scan_pages(
                     journal,
                     source,
                     zone,
-                    pages,
+                    &pages,
                     &dir.join("scan"),
                     request.spill_bytes,
                     &mut progress,
@@ -1397,6 +1690,7 @@ fn run_phases(
         }
         state.phase = Phase::Place;
         save_state(journal, source, &state)?;
+        take_back(journal, source, &holes_in(&state))?;
         run.write_progress(&state);
         run.point("scanned")?;
     }
@@ -1436,10 +1730,28 @@ fn run_phases(
     run.retry_failed(&mut state.failed)?;
     run.point("written-all")?;
 
+    // Coverage: what this run fetched whole is added now that its last day is
+    // done, whether or not every window published, and before the run folder or
+    // its state goes. Its holes stay out of it.
+    if source.source == OURA.source {
+        let holes = holes_in(&state);
+        update_coverage(journal, |coverage| match &state.fetch {
+            Some(fetched) => coverage.add(&fetched.claims(), &holes),
+            None => coverage.take_back(&holes),
+        })?;
+        run.point("covered")?;
+    }
+
     // Finish: the summary, the manifest, and one terminal attempt that lists
     // only the windows still failing, so the import reads as partly failed
-    // until they're saved.
-    let summary = summary_text(source, &summary_of(&state), request.facet, zone);
+    // until they're saved, and any endpoint Oura refused or that failed.
+    let mut summary = summary_text(source, &summary_of(&state), request.facet, zone);
+    if let Some(fetched) = &state.fetch {
+        summary.push_str(&fetched.summary_section(zone));
+    }
+    if source.source == OURA.source {
+        summary.push_str(&holes_section(&holes_in(&state)));
+    }
     let import_dir = run.import_dir();
     let summary_path = import_dir.join("summary.md");
     atomic_replace(&summary_path, summary.as_bytes(), PRIVATE)
@@ -1478,12 +1790,22 @@ fn run_phases(
         }
     }
     let index_only = [summary_path];
+    let not_read = state
+        .fetch
+        .as_ref()
+        .map(FetchState::not_read)
+        .unwrap_or_default();
+    let terminal = if not_read.is_empty() {
+        ImportTerminalInput::Success(&failing)
+    } else {
+        ImportTerminalInput::Partial(&failing, &not_read)
+    };
     match finish_import_attempt_indexing(
         journal,
         &run.import_id,
         run.generation,
         source.registry.name(),
-        ImportTerminalInput::Success(&failing),
+        terminal,
         &index_only,
     ) {
         Ok(ImportFinish::Applied) => {}
@@ -1517,6 +1839,7 @@ fn run_phases(
             ..RunState::default()
         };
         save_state(journal, source, &retry)?;
+        run.point("retry-saved")?;
     }
     run.write_progress(&state);
     Ok(RunOutcome {
@@ -1525,6 +1848,11 @@ fn run_phases(
         published: state.totals.published,
         finished,
         holes: holes_in(&state).into_iter().collect(),
+        results: state
+            .fetch
+            .as_ref()
+            .map(|fetched| fetched.reports(zone))
+            .unwrap_or_default(),
     })
 }
 

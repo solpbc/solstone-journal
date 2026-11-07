@@ -209,7 +209,13 @@ fn record_for(source: &BodySource, key: &str, row: &BodyRow, arrived: &str) -> M
 /// later, a revised type) to its account's times, type and recorder. Nothing else
 /// is written: an owner's fields are never touched. It is safe to call for any
 /// day, any number of times: a day whose records all match appends nothing.
-pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> RecordCounts {
+/// `now` is the clock a record's arrival is read from.
+pub(crate) fn write_records_at(
+    journal: &Path,
+    source: &BodySource,
+    day: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> RecordCounts {
     let mut counts = RecordCounts::default();
     let stream_dir = journal.join("chronicle").join(day).join(source.stream);
     let Ok(entries) = fs::read_dir(&stream_dir) else {
@@ -231,7 +237,7 @@ pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> R
             return counts;
         }
     };
-    let arrived = chrono::Utc::now()
+    let arrived = now
         .with_timezone(&solstone_core_journal_config::owner_zone(journal))
         .format("%Y%m%d")
         .to_string();
@@ -295,6 +301,12 @@ pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> R
         }
     }
     counts
+}
+
+/// [`write_records_at`] on the wall clock.
+#[cfg(test)]
+pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> RecordCounts {
+    write_records_at(journal, source, day, chrono::Utc::now())
 }
 
 #[cfg(test)]
