@@ -540,6 +540,26 @@ pub fn load_activity_records(
         .collect())
 }
 
+/// [`load_activity_records`] for the owner's day view: a line that isn't text,
+/// or isn't a record, costs only itself rather than the day.
+///
+/// # Errors
+///
+/// When the file can't be read at all.
+pub fn load_activity_records_readable(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    include_hidden: bool,
+) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
+    Ok(read_activity_records_readable(root, facet, day)?
+        .into_iter()
+        .filter(|row| {
+            !is_retired_plan(row) && !is_body_record(row) && (include_hidden || !hidden(row))
+        })
+        .collect())
+}
+
 pub fn read_activity_records_strict(
     root: &Path,
     facet: &str,

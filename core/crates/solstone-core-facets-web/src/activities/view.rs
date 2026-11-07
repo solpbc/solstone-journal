@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_facets::{
     ActivityRecord, PlacedRecord, ScheduledEvent, activity_field_held, activity_value_truthy,
     calendar_beside, calendar_on_day, edit_removable, edit_removed, list_activity_day_stems,
-    list_declared_facet_names, load_activity_records, observe_facet_declaration,
+    list_declared_facet_names, load_activity_records_readable, observe_facet_declaration,
     place_activity_records, read_activity_definitions,
 };
 
@@ -80,7 +80,8 @@ pub fn compute_day_counts(root: &Path, query: Option<&str>) -> BTreeMap<String, 
     for day in days_set {
         let mut total = 0;
         for f in &facets {
-            let visible_rows = load_activity_records(root, f, &day, false).unwrap_or_default();
+            let visible_rows =
+                load_activity_records_readable(root, f, &day, false).unwrap_or_default();
             total += visible_rows.len() + body.get(f).map_or(0, |groups| groups.on(&day).len());
         }
         if total > 0 {
@@ -135,7 +136,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
 
     let mut facet_entries = Vec::new();
     for f in &declared {
-        let count = load_activity_records(root, f, day, false)
+        let count = load_activity_records_readable(root, f, day, false)
             .unwrap_or_default()
             .len()
             + around.get(f).map_or(0, |faces| shown_on(faces, day));
@@ -168,7 +169,7 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     let mut scoped_rows: Vec<(String, ActivityRecord)> = Vec::new();
     let mut hidden_count = 0;
     for f in &scope {
-        let rows = load_activity_records(root, f, day, true).map_err(|e| e.to_string())?;
+        let rows = load_activity_records_readable(root, f, day, true).map_err(|e| e.to_string())?;
         for row in rows {
             if row.get("hidden").is_some_and(activity_value_truthy) {
                 hidden_count += 1;
@@ -302,7 +303,9 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
     // A night shown today ends tomorrow: its morning's activities sit beside it.
     if faces_today && let Some(next) = solstone_core_location::body_records::next_day(day) {
         for f in &scope {
-            for row in load_activity_records(root, f, &next, include_hidden).unwrap_or_default() {
+            for row in
+                load_activity_records_readable(root, f, &next, include_hidden).unwrap_or_default()
+            {
                 if let Some(span) =
                     solstone_core_location::body_records::capture_instants(root, &next, &row)
                 {

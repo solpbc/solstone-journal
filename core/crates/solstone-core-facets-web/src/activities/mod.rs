@@ -2759,11 +2759,11 @@ mod tests {
     async fn a_bad_line_costs_only_itself_in_the_day_view() {
         let root = body_journal();
         let activities = root.path().join("facets/body/activities");
-        // A half-written line on the day, and a line that isn't text, on a day
-        // whose records group with it.
+        // A half-written line and a line that isn't text on the day itself, and
+        // one that isn't text on a day whose records group with it.
         let today = activities.join(format!("{BODY_DAY}.jsonl"));
         let mut bytes = std::fs::read(&today).unwrap();
-        bytes.extend_from_slice(b"{\"id\":\"body_q\",\"sou\n");
+        bytes.extend_from_slice(b"{\"id\":\"body_q\",\"sou\n\xff\xfe not text\n");
         std::fs::write(&today, &bytes).unwrap();
         std::fs::write(activities.join("20261008.jsonl"), b"\xff\xfe not a line\n").unwrap();
         let (status, view) = body_call(root.path(), "view", None, None).await;
@@ -2780,9 +2780,29 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        let text = std::fs::read_to_string(&today).unwrap();
+        let bytes = std::fs::read(&today).unwrap();
+        // The write kept the line that isn't text, byte for byte.
+        assert!(bytes.windows(2).any(|pair| pair == b"\xff\xfe"));
+        let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("{\"id\":\"body_q\",\"sou"), "{text}");
         assert_eq!(text.matches("\"hidden\":true").count(), 2, "{text}");
+    }
+
+    #[tokio::test]
+    async fn a_line_that_isnt_text_costs_only_itself_for_a_capture_owner() {
+        let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let activities = root.path().join("facets/work/activities");
+        std::fs::create_dir_all(&activities).unwrap();
+        let capture = json!({"id":"cap","activity":"reading","title":"Early pages","segments":["060000_300"],"source":"user"});
+        let mut bytes = format!("{capture}\n").into_bytes();
+        bytes.extend_from_slice(b"\xff\xfe not text\n");
+        std::fs::write(activities.join(format!("{BODY_DAY}.jsonl")), &bytes).unwrap();
+        let (status, view) = body_call(root.path(), "view", None, None).await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+        let items = view["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{view}");
+        assert_eq!(items[0]["id"], "cap", "{view}");
     }
 
     #[tokio::test]
@@ -2818,6 +2838,48 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let rows =
             solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
+                .unwrap();
+        assert!(rows.iter().all(|row| row["hidden"] == false), "{rows:?}");
+    }
+
+    #[tokio::test]
+    async fn an_unhide_whose_other_member_cant_be_written_says_so_and_a_retry_finishes() {
+        let root = body_journal();
+        add_late_run_across_midnight(root.path());
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_lw/mute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        // The other member's day is busy: its write can't finish.
+        let other = root.path().join("facets/body/activities/20261011.jsonl");
+        let held = solstone_core_journal_io::hold_lock(
+            &other,
+            solstone_core_journal_io::LockOptions::default(),
+        )
+        .unwrap();
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_lw/unmute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_ne!(status, StatusCode::OK);
+        drop(held);
+        let (status, _) = body_call(
+            root.path(),
+            "record/body_lw/unmute?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows =
+            solstone_core_facets::read_activity_records_strict(root.path(), "body", "20261011")
                 .unwrap();
         assert!(rows.iter().all(|row| row["hidden"] == false), "{rows:?}");
     }
