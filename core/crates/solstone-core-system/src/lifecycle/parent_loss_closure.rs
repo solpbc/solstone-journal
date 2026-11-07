@@ -1853,6 +1853,22 @@ pub(crate) fn close_abandoned_generation(
         // Re-audit those admissions; their self-reported digest alone is insufficient.
         record.as_mut().expect("legacy record present").closure = None;
     }
+    // A coordinator that cannot seal its admissions (a launch stopped between
+    // its intent and its result, say) still binds its unresolved terminal to a
+    // sealed ledger: the empty one. That ledger certifies no admission, so this
+    // audit supersedes it exactly as it does a ledger no record binds. Holding
+    // it as binding would contradict every audit with an admitted row and
+    // refuse every later start.
+    let empty_ledger = digest_bytes(&canonical_json(&Vec::<SealedAdmission>::new())?);
+    if let Some(r) = record.as_mut()
+        && matches!(
+            r.terminal,
+            Some(ParentLossTerminalDisposition::Unresolved { .. })
+        )
+        && r.sealed_ledger_digest.as_ref() == Some(&empty_ledger)
+    {
+        r.sealed_ledger_digest = None;
+    }
 
     if has_census_refusal_or_wedged(ledger, generation) {
         return Ok(ClosureOutcome::Refused(
@@ -3921,6 +3937,103 @@ mod tests {
             .expect("closed");
 
         assert_eq!(successor.generation, active.generation + 1);
+    }
+
+    #[test]
+    fn a_launch_interrupted_before_its_result_does_not_refuse_every_later_start() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, active) = open_generation(&directory);
+        let coordinator = active.coordinator.expect("coordinator");
+        admit(
+            directory.path(),
+            active.generation,
+            "sense-a",
+            Some(HostedServiceKind::Sense),
+            Some(instance(4242, 42)),
+        );
+        // Stops between a launch's intent and its result, before and after
+        // the child's identity was recorded.
+        admit(
+            directory.path(),
+            active.generation,
+            "task-worker-a",
+            None,
+            None,
+        );
+        admit(
+            directory.path(),
+            active.generation,
+            "task-worker-b",
+            None,
+            None,
+        );
+        write_parent_loss_admission_spawn_identity(
+            directory.path(),
+            &AdmissionIdentity {
+                generation: active.generation,
+                launch_id: "task-worker-b".to_owned(),
+                instance: instance(4343, 43),
+                uid: 501,
+                parent_launch_id: None,
+            },
+        )
+        .expect("spawn identity");
+        // What the coordinator writes when its seal finds that launch.
+        ledger.seal(active.generation, coordinator).expect("seal");
+        let digest = ledger
+            .write_sealed_ledger(active.generation, &Vec::<SealedAdmission>::new())
+            .expect("sealed ledger");
+        ledger
+            .write_terminal_with_digest(
+                active.generation,
+                coordinator,
+                ParentLossTerminalDisposition::Unresolved {
+                    reason: ParentLossUnresolvedReason::AdmissionUnconfirmed,
+                },
+                Some(digest),
+            )
+            .expect("terminal");
+        let (source, retirer) = fake(&[], &[], &[]);
+        let lease = acquire_lease(&ledger);
+
+        let successor = ledger
+            .reserve_generation_closing_abandoned(
+                instance(11, 3),
+                [],
+                &lease,
+                &authority(&source, &retirer, AMPLE_BUDGET),
+            )
+            .expect("an interrupted launch must not refuse every later start");
+
+        assert_eq!(successor.generation, active.generation + 1);
+        let closure = closure_of(&ledger, active.generation);
+        let findings: HashMap<_, _> = closure
+            .admissions
+            .iter()
+            .map(|admission| (admission.launch_id.as_str(), admission.finding))
+            .collect();
+        assert_eq!(findings["sense-a"], AdmissionFinding::Exited);
+        assert_eq!(
+            findings["task-worker-a"],
+            AdmissionFinding::NeverAcknowledged
+        );
+        assert_eq!(findings["task-worker-b"], AdmissionFinding::Exited);
+        assert!(
+            closure
+                .set_aside
+                .iter()
+                .any(|name| name.starts_with("ledger.wedged-")),
+            "the empty ledger is kept beside the audited one"
+        );
+        let sealed = fs::read(ledger.sealed_ledger_path(active.generation)).expect("ledger");
+        assert_eq!(
+            ledger
+                .record(active.generation)
+                .expect("record")
+                .expect("record")
+                .sealed_ledger_digest,
+            Some(digest_bytes(&sealed))
+        );
     }
 
     #[test]
