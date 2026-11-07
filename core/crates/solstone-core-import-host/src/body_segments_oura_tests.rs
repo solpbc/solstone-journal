@@ -2027,3 +2027,85 @@ fn oura_nights_that_overlap_each_other_are_counted_and_nights_apart_are_not() {
         outcome.summary
     );
 }
+
+#[test]
+fn a_move_under_an_import_naming_no_facet_keeps_the_record_readable_under_its_facet() {
+    for crowded in [false, true] {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        let first = one_workout(
+            &scratch.path().join("1"),
+            "2026-01-05T08:00:00.000-07:00",
+            "2026-01-05T08:20:00.000-07:00",
+        );
+        run(root, &first, "20261104_120000", Some("health"));
+        if crowded {
+            // The window the workout moves into already carries another facet.
+            let other = stage(
+                &scratch.path().join("other"),
+                &[(
+                    "session",
+                    vec![session(
+                        "s1",
+                        "meditation",
+                        "2026-01-05T09:00:00.000-07:00",
+                        "2026-01-05T09:04:00.000-07:00",
+                    )],
+                )],
+            );
+            run(root, &other, "20261104_120001", Some("other"));
+        }
+        // Oura moves it an hour later on its day; the owner imports with no facet.
+        let moved = one_workout(
+            &scratch.path().join("2"),
+            "2026-01-05T09:00:00.000-07:00",
+            "2026-01-05T09:20:00.000-07:00",
+        );
+        let outcome = run(root, &moved, "20261104_120002", None);
+        let experience = placed(root, "w1")
+            .into_iter()
+            .find(|(.., row)| row.kind == RowKind::Experience)
+            .unwrap();
+        assert_eq!(experience.1, "090000_300");
+        // A connection limited to the health facet reads windows filed under it.
+        let health_only = |day: &str, stream: &str, name: Option<&str>| {
+            name.is_some_and(|name| {
+                solstone_core_indexer_store::classification::read_segment_facet_assignments(
+                    root,
+                    &format!("{day}/{stream}/{name}/{BODY_RECORDS_FILE}"),
+                )
+                .iter()
+                .any(|facet| facet == "health")
+            })
+        };
+        let faces = solstone_core_location::body_records::body_faces_range(
+            root,
+            "health",
+            "20260105",
+            "20260105",
+            Some(&health_only),
+            true,
+        )
+        .unwrap();
+        let shown = faces.get("20260105").map_or(0, Vec::len);
+        assert_eq!(shown, usize::from(!crowded), "crowded: {crowded}");
+        let facet_of = |key: &str| {
+            fs::read_to_string(window(root, "20260105", key).join("talents/facets.json")).ok()
+        };
+        let health = Some(facet_file_text("health"));
+        if crowded {
+            assert_eq!(facet_of("090000_300"), Some(facet_file_text("other")));
+            assert!(
+                outcome.summary.contains("1 window already carries a facet"),
+                "{}",
+                outcome.summary
+            );
+        } else {
+            // Every window of its new tiling, its first and its tiles.
+            for key in ["090000_300", "090500_300", "091000_300", "091500_300"] {
+                assert_eq!(facet_of(key), health, "{key}");
+            }
+        }
+    }
+}

@@ -122,7 +122,7 @@ Later work opts in explicitly: code-written activity records.
 
 ## Facets
 
-Code writes `talents/facets.json` as `[{"facet":"<name>"}]` when the owner chose a facet for the import. A muted or missing facet is refused before anything is written. With none chosen there's no file: a connection that sees the whole journal reads the window and one limited to chosen facets doesn't, and the summary says so. Importing again with no facet leaves the file alone. Another facet replaces it and queues the window, so search reclassifies it. **A window carries one facet, so its rows share it:** rows from two imports in one window are readable under whichever facet it has, and the import's summary says when that happened. `body.md` is journal-wide, so a limited connection never sees it.
+Code writes `talents/facets.json` as `[{"facet":"<name>"}]` when the owner chose a facet for the import. A muted or missing facet is refused before anything is written. With none chosen there's no file: a connection that sees the whole journal reads the window and one limited to chosen facets doesn't, and the summary says so. Importing again with no facet leaves the file alone. When Oura moves a document and the import names no facet, a window it moves into that has no facet takes the one the document had, so a connection that read it before still does. Another facet replaces it and queues the window, so search reclassifies it. **A window carries one facet, so its rows share it:** rows from two imports in one window are readable under whichever facet it has, and the import's summary says when that happened. `body.md` is journal-wide, so a limited connection never sees it.
 
 ## Activities
 

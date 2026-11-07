@@ -60,6 +60,7 @@ use solstone_core_journal_io::{
     AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, remove_dir_all,
 };
 
+use crate::body_activity::window_facet;
 use crate::import_publication::{
     ImportFinish, ImportTerminalInput, finish_import_attempt_indexing,
 };
@@ -359,6 +360,10 @@ struct PendingWindow {
     write: bool,
     facet: bool,
     publish: bool,
+    /// Under a run that names no facet, the facet a document this window now
+    /// holds had where it was before it moved here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    taken: Option<String>,
 }
 
 /// The day being written: its decisions, made before any of its files.
@@ -783,15 +788,20 @@ impl Run<'_, '_> {
         );
     }
 
-    /// Give windows their facet, where they hold records: a folder holding only a
-    /// facet would stop being body-only.
+    /// Give windows their facet, the run's or one a moved document takes with it,
+    /// where they hold records: a folder holding only a facet would stop being
+    /// body-only.
     fn write_facets(
         &self,
         day: &str,
         windows: &[PendingWindow],
-        facet: &str,
+        facet: Option<&str>,
     ) -> Result<(), String> {
-        for window in windows.iter().filter(|window| window.facet) {
+        for window in windows {
+            let chosen = facet.filter(|_| window.facet);
+            let Some(facet) = chosen.or(window.taken.as_deref()) else {
+                continue;
+            };
             let dir = window_dir(
                 self.journal,
                 self.source,
@@ -861,6 +871,7 @@ impl Run<'_, '_> {
         // The first pass's decision for a window the second pass writes too.
         let mut early: BTreeMap<WindowId, Decision> = BTreeMap::new();
         let mut unfinished = BTreeSet::new();
+        let mut taken: BTreeMap<WindowId, String> = BTreeMap::new();
         for (window, mut rows) in windows {
             if !dropped.is_empty() {
                 rows.retain(|_, row| document(row).is_none_or(|id| !dropped.contains(id.as_str())));
@@ -871,6 +882,23 @@ impl Run<'_, '_> {
             // A window left alone as unreadable is a hole for what its rows say.
             let unwritten = holes_of(rows.values(), HoleReason::Unreadable);
             let touched: BTreeSet<String> = rows.values().filter_map(document).collect();
+            // Under a run that names no facet, a window with none that gains a moved
+            // document's rows takes the facet the document had where it was, so a
+            // connection that read it there still does. A window with another facet
+            // keeps its own.
+            if facet.is_none()
+                && !window_dir(self.journal, self.source, &window)
+                    .join("talents/facets.json")
+                    .exists()
+                && let Some(had) = rows
+                    .values()
+                    .filter(|row| row.kind != RowKind::Moved)
+                    .filter_map(document)
+                    .flat_map(|id| converging[&id].firsts.iter())
+                    .find_map(|first| window_facet(&window_dir(self.journal, self.source, first)))
+            {
+                taken.insert(window.clone(), had);
+            }
             let marks_first = rows.values().any(first_mark);
             if marks_first {
                 let before: BTreeMap<String, BodyRow> = rows
@@ -925,14 +953,17 @@ impl Run<'_, '_> {
                     if decision.stayed_deleted || decision.unreadable {
                         continue;
                     }
+                    let taken = taken.remove(window);
+                    // Search reclassifies a window that takes a facet.
+                    let publish = decision.publish || taken.is_some();
                     counts.kept_facet += u64::from(decision.kept_facet);
                     counts.refiled += u64::from(decision.refiled);
-                    counts.unchanged += u64::from(decision.unchanged);
+                    counts.unchanged += u64::from(!publish);
                     if decision.contents.is_some() {
                         counts.written += 1;
                         counts.entries += decision.units;
                     }
-                    if decision.publish {
+                    if publish {
                         counts.published += 1;
                         counts.days.insert(day.clone());
                     }
@@ -949,7 +980,8 @@ impl Run<'_, '_> {
                         key: window.1.clone(),
                         write: decision.contents.is_some(),
                         facet: decision.facet_changed,
-                        publish: decision.publish,
+                        publish,
+                        taken,
                     });
                 }
                 Pending {
@@ -968,9 +1000,7 @@ impl Run<'_, '_> {
         self.point("pending")?;
         // A window holding records takes its new facet first, so new rows never sit
         // under its old one. A new window takes it after its records.
-        if let Some(facet) = facet {
-            self.write_facets(&day, &pending.windows, facet)?;
-        }
+        self.write_facets(&day, &pending.windows, facet)?;
         // Each window as each pass has it: a window gaining a first row's mark is
         // written in the first pass with its other rows, if it has any.
         let mut passes: [Vec<(WindowId, Decision)>; 2] = [Vec::new(), Vec::new()];
@@ -1000,9 +1030,7 @@ impl Run<'_, '_> {
                 }
             }
         }
-        if let Some(facet) = facet {
-            self.write_facets(&day, &pending.windows, facet)?;
-        }
+        self.write_facets(&day, &pending.windows, facet)?;
 
         let publish: Vec<WindowId> = pending
             .windows
@@ -1722,9 +1750,7 @@ fn run_phases(
             // Its half-done day's windows are on disk as far as they got; what it
             // owed them is publication, which is all this does.
             if let Some(pending) = old.pending.take() {
-                if let Some(facet) = &old.facet {
-                    run.write_facets(&pending.day, &pending.windows, facet)?;
-                }
+                run.write_facets(&pending.day, &pending.windows, old.facet.as_deref())?;
                 let windows: Vec<WindowId> = pending
                     .windows
                     .iter()

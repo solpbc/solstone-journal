@@ -61,7 +61,7 @@ pub(crate) fn record_id(key: &str) -> String {
 }
 
 /// The facet a window was filed under, when it has one.
-fn window_facet(window: &Path) -> Option<String> {
+pub(crate) fn window_facet(window: &Path) -> Option<String> {
     let text = fs::read_to_string(window.join("talents/facets.json")).ok()?;
     let value = serde_json::from_str::<Value>(&text).ok()?;
     value
