@@ -13,6 +13,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- moving between pages of your journal's dashboard is faster, most of all on a slow connection, because your browser now keeps the dashboard's code and styles instead of downloading them again for every page. nothing from your journal itself is kept this way.
+
 ### Fixed
 
 - if your name was set but your journal hadn't added you to its people, the speakers page showed an error where your voice belongs until you saved your profile again. your journal now adds you when it starts.
