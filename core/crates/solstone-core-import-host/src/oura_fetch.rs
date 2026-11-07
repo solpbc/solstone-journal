@@ -234,6 +234,17 @@ pub(crate) struct EndpointPlan {
     pub(crate) result: Option<Outcome>,
 }
 
+impl EndpointPlan {
+    /// How many of its chunks arrived whole.
+    fn whole(&self) -> usize {
+        match &self.result {
+            Some(Outcome::Read { .. } | Outcome::Empty) => self.chunks.len(),
+            Some(Outcome::Refused { whole, .. } | Outcome::Failed { whole, .. }) => *whole,
+            None => 0,
+        }
+    }
+}
+
 /// A run's fetch, kept in its state.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FetchState {
@@ -385,12 +396,7 @@ impl FetchState {
     pub(crate) fn claims(&self) -> BTreeMap<String, Vec<Claim>> {
         let mut claims = BTreeMap::new();
         for (endpoint, plan) in &self.endpoints {
-            let whole = match &plan.result {
-                Some(Outcome::Read { .. } | Outcome::Empty) => plan.chunks.len(),
-                Some(Outcome::Refused { whole, .. } | Outcome::Failed { whole, .. }) => *whole,
-                None => 0,
-            };
-            let chunks: Vec<Claim> = plan.chunks[..whole]
+            let chunks: Vec<Claim> = plan.chunks[..plan.whole()]
                 .iter()
                 .filter_map(|[from, to]| {
                     if endpoint == HEARTRATE {
@@ -403,6 +409,30 @@ impl FetchState {
             claims.insert(endpoint.clone(), chunks);
         }
         claims
+    }
+
+    /// Whether `pages` still holds every page of each chunk an endpoint finished,
+    /// as the index recorded it. A restore carries the state and leaves the pages
+    /// out, and a fetch skips an endpoint it has finished, so without them its
+    /// documents would never be written and its days would still be claimed.
+    pub(crate) fn staged_whole(&self, pages: &Path) -> bool {
+        let Ok(index) = read_index(pages) else {
+            return false;
+        };
+        self.endpoints.iter().all(|(endpoint, plan)| {
+            (0..plan.whole()).all(|chunk| {
+                let mut staged = index
+                    .pages
+                    .iter()
+                    .filter(|entry| entry.endpoint == *endpoint && entry.chunk == chunk)
+                    .peekable();
+                staged.peek().is_some()
+                    && staged.all(|entry| {
+                        fs::read(pages.join(&entry.file))
+                            .is_ok_and(|bytes| sha256_hex(&bytes) == entry.sha256)
+                    })
+            })
+        })
     }
 
     /// Endpoints Oura refused or that failed, which make the import partly failed.

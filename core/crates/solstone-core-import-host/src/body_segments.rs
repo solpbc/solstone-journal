@@ -486,6 +486,12 @@ fn read_state(journal: &Path, source: &BodySource) -> Read {
                 runs_in(&run_dir(journal, source).join(folder))
                     .is_ok_and(|found| found.len() as u64 == runs)
             });
+            // A fetch carries on only over the pages of the endpoints it finished.
+            if state.phase == Phase::Fetch {
+                whole &= state.fetch.as_ref().is_none_or(|fetch| {
+                    fetch.staged_whole(&run_dir(journal, source).join("pages"))
+                });
+            }
             // A fetched run about to scan needs the very pages it fetched.
             if state.phase == Phase::Scan && state.fetch.is_some() {
                 whole &= pages_identity(&run_dir(journal, source).join("pages"))

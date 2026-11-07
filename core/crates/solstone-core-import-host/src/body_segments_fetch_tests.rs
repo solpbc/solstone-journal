@@ -1930,5 +1930,80 @@ fn a_fetched_run_whose_pages_went_before_its_scan_repairs_and_finishes() {
     );
 }
 
+/// How the pages of a run stopped mid-fetch stand when the next run starts.
+#[derive(Clone, Copy, Debug)]
+enum Staged {
+    Kept,
+    Gone,
+    Changed,
+}
+
+#[test]
+fn a_run_stopped_mid_fetch_carries_on_only_over_the_pages_it_finished() {
+    for staged in [Staged::Kept, Staged::Gone, Staged::Changed] {
+        let journal = connected("America/Denver");
+        let root = journal.path();
+        let oura = Oura::new();
+        oura.serve(
+            "workout",
+            vec![one_day_workout(
+                "w1",
+                "2026-01-05T08:00:00.000-07:00",
+                "2026-01-05T08:20:00.000-07:00",
+            )],
+        );
+        let range = Some(("2026-01-01", "2026-01-10"));
+        // Stopped on session's page, once workout's result is saved.
+        let stop = stopping_at("page-landed", 11);
+        import(
+            root,
+            &oura,
+            &Ask {
+                stop_at: Some(&stop),
+                ..ask("20261104_120000", range)
+            },
+        )
+        .unwrap_err();
+        let state = fs::read_to_string(root.join(OURA.run_dir_rel).join(STATE_FILE)).unwrap();
+        let state: Value = serde_json::from_str(&state).unwrap();
+        assert_eq!(
+            state["fetch"]["endpoints"]["workout"]["result"]["result"],
+            "read"
+        );
+        let pages = root.join(OURA.run_dir_rel).join("pages");
+        match staged {
+            Staged::Kept => {}
+            // A restore carries the state and leaves the pages out.
+            Staged::Gone => fs::remove_dir_all(&pages).unwrap(),
+            Staged::Changed => fs::write(
+                pages.join("workout/0-0.json"),
+                json!({"data": [], "next_token": null}).to_string(),
+            )
+            .unwrap(),
+        }
+        let asked_before = oura.gets().len();
+        let outcome = finished(root, &oura, &ask("20261104_130000", range));
+        let asked_workout = oura.gets()[asked_before..]
+            .iter()
+            .any(|(endpoint, ..)| endpoint == "workout");
+        assert_eq!(placed(root, "w1").len(), 1, "{staged:?}");
+        assert_eq!(
+            covered(root, "workout"),
+            json!([["2026-01-01", "2026-01-10"]]),
+            "{staged:?}"
+        );
+        match staged {
+            Staged::Kept => {
+                assert_eq!(outcome.import_id, "20261104_120000");
+                assert!(!asked_workout);
+            }
+            Staged::Gone | Staged::Changed => {
+                assert_ne!(outcome.import_id, "20261104_120000", "{staged:?}");
+                assert!(asked_workout, "{staged:?}");
+            }
+        }
+    }
+}
+
 #[path = "body_segments_moves_tests.rs"]
 mod moves;
