@@ -270,7 +270,11 @@ fn render_source(
     lines.extend(experiences.into_iter().map(|(_, _, line)| line));
     lines.extend(continuing.into_iter().map(|(_, line)| line));
     if !documents.is_empty() {
-        dated.push(format!("- for this date: {}", plain_list(documents)));
+        dated.push(format!(
+            "- {}'s daily documents for this date: {}",
+            solstone_core_format::content::body_records::source_words(source),
+            plain_list(documents)
+        ));
     }
     dated.sort();
     lines.extend(dated);
@@ -830,7 +834,7 @@ mod tests {
         // Every daily document is named, on one line of Oura's own section.
         let named: Vec<&str> = oura
             .lines()
-            .filter(|line| line.starts_with("- for this date:"))
+            .filter(|line| line.starts_with("- Oura's daily documents for this date: "))
             .collect();
         assert_eq!(named.len(), 1, "{text}");
         for label in oura_daily_documents().iter().map(|row| row.label.clone()) {
