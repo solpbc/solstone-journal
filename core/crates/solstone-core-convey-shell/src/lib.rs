@@ -280,6 +280,7 @@ pub struct ConveyServeHandle {
     door_outcome: DoorOutcome,
     door: Arc<door::DoorLifecycle>,
     loopback_task: tokio::task::JoinHandle<()>,
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     owner_socket: Option<local_endpoint::OwnerSocket>,
     link_health_task: tokio::task::JoinHandle<()>,
     weekly_heads_up_task: tokio::task::JoinHandle<()>,
@@ -304,6 +305,7 @@ impl ConveyServeHandle {
     }
     pub fn shutdown(&self) {
         self.loopback_task.abort();
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         if let Some(socket) = &self.owner_socket {
             socket.shutdown();
         }
@@ -995,6 +997,7 @@ pub async fn bind_with_authorization(
             door.clone(),
             door::open_after_finalize,
         ));
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
     let (loopback_router, owner_socket) = {
         let programs = local_endpoint::TcpPrograms::default();
         let socket_path = solstone_core_local_endpoint::socket_for_journal(&options.journal_root)
@@ -1056,6 +1059,7 @@ pub async fn bind_with_authorization(
         door_outcome,
         door,
         loopback_task,
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         owner_socket,
         link_health_task,
         weekly_heads_up_task,
@@ -1103,9 +1107,19 @@ async fn serve_loopback(
                     return;
                 }
             };
-            #[cfg(not(windows))]
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             let served = solstone_core_convey_http::serve::serve_connection_unstamped(
                 stream, router, &builder,
+            )
+            .await;
+            // Elsewhere (no browser-authorization gate) every connection here is
+            // `Localhost`, the owner.
+            #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+            let served = solstone_core_convey_http::serve::serve_connection(
+                stream,
+                router,
+                solstone_core_convey_http::identity::AccessBasis::Localhost,
+                &builder,
             )
             .await;
             if let Err(error) = served {
