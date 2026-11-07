@@ -1640,11 +1640,11 @@ pub fn summary_text(
         };
         refused.push(if *count == 1 {
             format!(
-                "{endpoint}, {days}: 1 not added; the journal can't tell whether it was in what you deleted from {days}"
+                "{endpoint}: 1 not added; the journal can't tell whether it was in what you deleted from {days}"
             )
         } else {
             format!(
-                "{endpoint}, {days}: {count} not added; the journal can't tell whether they were in what you deleted from {days}"
+                "{endpoint}: {count} not added; the journal can't tell whether they were in what you deleted from {days}"
             )
         });
     }

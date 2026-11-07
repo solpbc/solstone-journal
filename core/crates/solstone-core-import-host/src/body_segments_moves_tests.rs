@@ -579,7 +579,7 @@ fn a_tag_the_owner_deleted_after_its_move_stays_out_wherever_oura_moves_it_next(
         assert!(
             outcome
                 .summary
-                .contains("- enhanced_tag, 2026-01-05: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
+                .contains("- enhanced_tag: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
             "{back}: {}",
             outcome.summary
         );
@@ -1382,7 +1382,7 @@ fn a_tag_refused_beside_an_owners_delete_is_no_hole_and_its_day_is_claimed() {
     let outcome = finished(root, &second, &ask("20261104_120001", range));
     assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
     assert!(
-        outcome.summary.contains("- enhanced_tag, 2026-01-05: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
+        outcome.summary.contains("- enhanced_tag: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
         "{}",
         outcome.summary
     );

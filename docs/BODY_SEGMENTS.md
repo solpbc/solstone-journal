@@ -83,7 +83,7 @@ Apple gives sleep stages, not nights. Per source name, ordered by start, stage i
 Oura's API gives whole documents, each with an id. The thirteen endpoints the existing Oura command reads land as rows, each document kept whole in `fields`, with `by` set to Oura:
 
 - A night (`sleep` of type `long_sleep`, `sleep` or `late_nap`), a workout and a session are experiences, placed by the instant they began on the source's fixed zone, so Oura's own `day` never moves them. A `nap` session is sleep; every other session is mindfulness. A sleep Oura marks `deleted` or `rest` isn't read as a night, and the summary names any night already stored under its id.
-- A tag is a logged entry, the owner's own, and its note and custom name are the owner's words. A workout Oura shows as added by hand reads as the owner's on the home's line too.
+- A tag is a logged entry, the owner's own, and its note and custom name are the owner's words. A workout Oura shows as added by hand reads as the owner's on its line on the owner's home (§ Activities).
 - `heartrate` gives readings, one per instant. Oura's `source` for a reading is part of what it says, so a reading Oura reclassifies is an edit.
 - The daily documents are dated rows on Oura's `day`, with no value. `body.md` names which of them exist for the date and says nothing of what they hold, so a score or Oura's word for a day never reaches the journal's own text. An agent reads every field, attributed to Oura.
 - A workout's distance is in metres, as Oura documents it.
