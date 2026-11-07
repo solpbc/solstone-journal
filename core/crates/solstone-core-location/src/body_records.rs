@@ -1097,7 +1097,14 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
             });
         }
     }
-    faces.sort_by(|left, right| left.anchor.stored_start.cmp(&right.anchor.stored_start));
+    // By instant: sources write their times in different forms and offsets, so
+    // their text doesn't sort as time does.
+    faces.sort_by_cached_key(|face| {
+        (
+            parse_source_time(&face.anchor.stored_start).map(|start| start.timestamp()),
+            face.anchor.stored_start.clone(),
+        )
+    });
     Ok(faces)
 }
 

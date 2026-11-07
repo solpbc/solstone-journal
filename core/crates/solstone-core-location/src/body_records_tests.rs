@@ -1300,3 +1300,317 @@ fn a_workout_that_grows_into_a_group_reads_as_one_on_the_home_and_the_day_view_k
         }
     }
 }
+
+const OURA: &str = "import.oura";
+
+/// [`journal`], with Oura placed on the same zone as Apple.
+fn journal_with_oura() -> tempfile::TempDir {
+    let journal = journal();
+    fs::write(
+        journal.path().join("imports/.oura-zone.json"),
+        r#"{"zone":"America/Denver"}"#,
+    )
+    .unwrap();
+    journal
+}
+
+/// A window in any body stream.
+fn window_in(root: &Path, stream: &str, day: &str, key: &str, rows: &[BodyRow]) -> PathBuf {
+    let dir = root.join("chronicle").join(day).join(stream).join(key);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(BODY_RECORDS_FILE), encode_rows(rows)).unwrap();
+    dir
+}
+
+/// A record for an account in any body stream, as the writer files it: its
+/// stream's recorder, and a workout's type in the shared vocabulary.
+fn record_in(root: &Path, stream: &str, day: &str, row: &BodyRow) {
+    use solstone_core_format::content::body_records::{mapped_workout_type, recorder_id};
+    let mut account = json!({"key": format!("{stream}\u{1f}{}", row.id), "start": row.start,
+        "end": row.end, "recorder": recorder_id(stream, row.by.as_deref()), "arrived": day});
+    if row.experience.as_deref() == Some("workout")
+        && let Some(kind) = mapped_workout_type(&row.source, &row.record_type)
+    {
+        account["type"] = json!(kind);
+    }
+    let record = json!({"id": format!("body_{}", row.id), "source": "body",
+        "activity": row.experience, "account": account});
+    let path = root.join(format!("facets/body/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!("{record}\n"));
+    fs::write(path, text).unwrap();
+}
+
+/// An experience as Oura's reader writes it, the whole document in `fields`.
+fn oura_experience(
+    id: &str,
+    experience: &str,
+    record_type: &str,
+    label: &str,
+    (start, end): (&str, &str),
+    document: serde_json::Value,
+) -> BodyRow {
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        id.to_owned(),
+        "oura",
+        record_type,
+        label.to_owned(),
+    );
+    row.experience = Some(experience.to_owned());
+    row.start = Some(start.to_owned());
+    row.end = Some(end.to_owned());
+    row.by = Some("Oura".to_owned());
+    row.fields = document
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    row
+}
+
+fn oura_walk(source: &str) -> BodyRow {
+    let mut walk = oura_experience(
+        "ow",
+        "workout",
+        "walking",
+        "walking",
+        (
+            "2026-10-10T08:05:00.000-06:00",
+            "2026-10-10T08:41:00.000-06:00",
+        ),
+        json!({"id": "synthetic-workout-walk", "activity": "walking", "calories": 148.5,
+            "distance": 2412.9, "intensity": "hard", "label": null, "source": source}),
+    );
+    walk.values
+        .insert("distance".to_owned(), "2412.9 m".to_owned());
+    walk.values
+        .insert("energy".to_owned(), "148.5 kcal".to_owned());
+    walk
+}
+
+#[test]
+fn an_oura_line_says_its_distance_as_a_person_says_it_and_nothing_else() {
+    let journal = journal_with_oura();
+    let root = journal.path();
+    let walk = oura_walk("confirmed");
+    window_in(root, OURA, DAY, "080500_300", std::slice::from_ref(&walk));
+    record_in(root, OURA, DAY, &walk);
+    let lines = lines_on(root, DAY);
+    assert_eq!(
+        lines,
+        [
+            json!({"name": "walking", "start": at("08:05", None), "end": at("08:41", None),
+            "distance": "2.4 km", "from": ["Oura"], "logged": false, "part_removed": false})
+        ]
+    );
+    let text = lines[0].to_string();
+    for statistic in ["kcal", "148", "2412", "intensity", "hard", "confirmed"] {
+        assert!(!text.contains(statistic), "{statistic}: {text}");
+    }
+}
+
+#[test]
+fn a_workout_added_by_hand_in_oura_reads_logged_and_one_oura_detected_doesnt() {
+    for (source, logged, from) in [
+        ("manual", true, json!([])),
+        ("autodetected", false, json!(["Oura"])),
+    ] {
+        let journal = journal_with_oura();
+        let root = journal.path();
+        let walk = oura_walk(source);
+        window_in(root, OURA, DAY, "080500_300", std::slice::from_ref(&walk));
+        record_in(root, OURA, DAY, &walk);
+        let line = &lines_on(root, DAY)[0];
+        assert_eq!(line["logged"], logged, "{source}: {line}");
+        assert_eq!(line["from"], from, "{source}: {line}");
+    }
+}
+
+/// A watch's run from 07:00 to 08:00, in Apple's stream.
+fn watch_run() -> BodyRow {
+    workout_row(
+        "wr",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 08:00:00 -0600",
+    )
+}
+
+/// Faces from Oura's stream and Apple's side by side, read through the range
+/// and the home: each day's faces as their account ids, in any order, and how
+/// many lines the home shows that day.
+fn faces_across_streams(root: &Path) -> (Vec<Vec<Vec<String>>>, Vec<usize>) {
+    let range = body_faces_range(root, "body", DAY, NEXT, None, true).unwrap();
+    let faces = [DAY, NEXT]
+        .iter()
+        .map(|day| {
+            range
+                .get(*day)
+                .map_or(&[][..], Vec::as_slice)
+                .iter()
+                .map(|face| {
+                    face.members
+                        .iter()
+                        .map(|member| member.id.clone())
+                        .collect()
+                })
+                .collect::<std::collections::BTreeSet<Vec<String>>>()
+                .into_iter()
+                .collect()
+        })
+        .collect();
+    let lines = [DAY, NEXT]
+        .iter()
+        .map(|day| lines_on(root, day).len())
+        .collect();
+    (faces, lines)
+}
+
+#[test]
+fn an_oura_night_and_a_watchs_night_of_the_same_sleep_group() {
+    let journal = journal_with_oura();
+    let root = journal.path();
+    // 22:30 to 06:30 beside 22:10 to 06:20: 470 of 480 and 490 minutes.
+    let ring = oura_experience(
+        "on",
+        "sleep",
+        "long_sleep",
+        "long sleep",
+        (
+            "2026-10-10T22:30:00.000-06:00",
+            "2026-10-11T06:30:00.000-06:00",
+        ),
+        json!({"id": "synthetic-night", "type": "long_sleep", "efficiency": 91,
+            "readiness": {"score": 82}}),
+    );
+    window_in(root, OURA, DAY, "220000_3600", std::slice::from_ref(&ring));
+    record_in(root, OURA, DAY, &ring);
+    window(root, DAY, "220000_3600", &[night()]);
+    record_in(root, STREAM, DAY, &night());
+    let (faces, lines) = faces_across_streams(root);
+    assert_eq!(faces, [vec![vec!["body_n1", "body_on"]], vec![]]);
+    assert_eq!(lines, [1, 0]);
+    let line = &lines_on(root, DAY)[0];
+    assert_eq!(line["name"], "sleep");
+    assert_eq!(line["from"], json!(["Synthetic Watch", "Oura"]), "{line}");
+    for judged in ["91", "82", "score", "efficiency"] {
+        assert!(!line.to_string().contains(judged), "{judged}: {line}");
+    }
+}
+
+#[test]
+fn an_oura_nap_inside_a_watchs_night_stands_alone() {
+    let journal = journal_with_oura();
+    let root = journal.path();
+    // All of the nap, an eighth of the night.
+    let nap = oura_experience(
+        "op",
+        "sleep",
+        "nap",
+        "nap",
+        (
+            "2026-10-11T02:00:00.000-06:00",
+            "2026-10-11T03:00:00.000-06:00",
+        ),
+        json!({"id": "synthetic-nap", "type": "nap", "mood": "bad"}),
+    );
+    window_in(root, OURA, NEXT, "020000_3600", std::slice::from_ref(&nap));
+    record_in(root, OURA, NEXT, &nap);
+    window(root, DAY, "220000_3600", &[night()]);
+    record_in(root, STREAM, DAY, &night());
+    let (faces, lines) = faces_across_streams(root);
+    assert_eq!(faces, [vec![vec!["body_n1"]], vec![vec!["body_op"]]]);
+    assert_eq!(lines, [1, 1]);
+}
+
+#[test]
+fn a_walk_oura_detected_inside_a_watchs_run_stands_alone() {
+    let journal = journal_with_oura();
+    let root = journal.path();
+    // 07:10 to 07:50: all of the walk and two thirds of the run, so only the
+    // type keeps them apart.
+    let walk = oura_experience(
+        "ow",
+        "workout",
+        "walking",
+        "walking",
+        (
+            "2026-10-10T07:10:00.000-06:00",
+            "2026-10-10T07:50:00.000-06:00",
+        ),
+        json!({"id": "synthetic-walk", "activity": "walking", "source": "autodetected"}),
+    );
+    window_in(root, OURA, DAY, "071000_300", std::slice::from_ref(&walk));
+    record_in(root, OURA, DAY, &walk);
+    window(root, DAY, "070000_3600", &[watch_run()]);
+    record_in(root, STREAM, DAY, &watch_run());
+    let (faces, lines) = faces_across_streams(root);
+    assert_eq!(faces, [vec![vec!["body_ow"], vec!["body_wr"]], vec![]]);
+    assert_eq!(lines, [2, 0]);
+}
+
+#[test]
+fn an_oura_run_over_half_the_watchs_run_stands_alone_and_over_two_thirds_groups() {
+    for (end, grouped) in [("07:30", false), ("07:40", true)] {
+        let journal = journal_with_oura();
+        let root = journal.path();
+        let run = oura_experience(
+            "or",
+            "workout",
+            "running",
+            "running",
+            (
+                "2026-10-10T07:00:00.000-06:00",
+                &format!("2026-10-10T{end}:00.000-06:00"),
+            ),
+            json!({"id": "synthetic-run", "activity": "running", "source": "autodetected"}),
+        );
+        window_in(root, OURA, DAY, "070000_300", std::slice::from_ref(&run));
+        record_in(root, OURA, DAY, &run);
+        window(root, DAY, "070000_3600", &[watch_run()]);
+        record_in(root, STREAM, DAY, &watch_run());
+        let (faces, lines) = faces_across_streams(root);
+        if grouped {
+            assert_eq!(faces, [vec![vec!["body_wr", "body_or"]], vec![]], "{end}");
+            assert_eq!(lines, [1, 0], "{end}");
+        } else {
+            assert_eq!(
+                faces,
+                [vec![vec!["body_or"], vec!["body_wr"]], vec![]],
+                "{end}"
+            );
+            assert_eq!(lines, [2, 0], "{end}");
+        }
+    }
+}
+
+/// The home says a day's lines in time order whichever source wrote them, though
+/// Apple and Oura write their times in different forms.
+#[test]
+fn the_home_says_oura_and_apple_lines_in_time_order() {
+    let journal = journal_with_oura();
+    let root = journal.path();
+    let walk = oura_experience(
+        "ow",
+        "workout",
+        "walking",
+        "walking",
+        (
+            "2026-10-10T06:00:00.000-06:00",
+            "2026-10-10T06:30:00.000-06:00",
+        ),
+        json!({"id": "synthetic-walk", "activity": "walking", "source": "autodetected"}),
+    );
+    window_in(root, OURA, DAY, "060000_300", std::slice::from_ref(&walk));
+    record_in(root, OURA, DAY, &walk);
+    window(root, DAY, "070000_3600", &[watch_run()]);
+    record_in(root, STREAM, DAY, &watch_run());
+    let names: Vec<serde_json::Value> = lines_on(root, DAY)
+        .iter()
+        .map(|line| line["name"].clone())
+        .collect();
+    assert_eq!(names, [json!("walking"), json!("running")]);
+}
