@@ -64,7 +64,7 @@ pub fn sync_folder(dir: &Path) -> Result<(), String> {
 }
 
 /// Sorted runs of one item type in one folder.
-struct Spill<T> {
+pub(crate) struct Spill<T> {
     dir: PathBuf,
     limit: usize,
     buffer: Vec<T>,
@@ -75,7 +75,7 @@ struct Spill<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Ord> Spill<T> {
-    fn new(dir: &Path, limit: usize) -> Result<Self, String> {
+    pub(crate) fn new(dir: &Path, limit: usize) -> Result<Self, String> {
         fs::create_dir_all(dir).map_err(io_text)?;
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -87,7 +87,7 @@ impl<T: Serialize + DeserializeOwned + Ord> Spill<T> {
         })
     }
 
-    fn push(&mut self, item: T, bytes: usize) -> Result<(), String> {
+    pub(crate) fn push(&mut self, item: T, bytes: usize) -> Result<(), String> {
         self.buffer.push(item);
         self.bytes += bytes;
         if self.bytes >= self.limit {
@@ -121,7 +121,7 @@ impl<T: Serialize + DeserializeOwned + Ord> Spill<T> {
     /// The last run, then merges until a reader can hold every run open at once. A
     /// phase is recorded done only after this returns, so a stop in here repeats it.
     /// Returns how many runs are left.
-    fn finish(mut self) -> Result<u64, String> {
+    pub(crate) fn finish(mut self) -> Result<u64, String> {
         self.flush()?;
         while self.runs.len() > MAX_OPEN_RUNS {
             let batch: Vec<PathBuf> = self.runs.drain(..MAX_OPEN_RUNS).collect();
@@ -220,7 +220,13 @@ impl<T: DeserializeOwned + Ord> Merge<T> {
 /// tie-break, so two workouts identical but for their events collapse to the one
 /// whose events sort last, in any export order.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-struct ScanItem(i64, u8, String, String, Vec<String>);
+pub(crate) struct ScanItem(
+    pub(crate) i64,
+    pub(crate) u8,
+    pub(crate) String,
+    pub(crate) String,
+    pub(crate) Vec<String>,
+);
 
 /// One distinct content of an identity, and its events.
 type Content = (String, Vec<String>);

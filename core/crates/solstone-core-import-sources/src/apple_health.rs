@@ -68,7 +68,7 @@ pub(crate) fn window_seconds(row: &BodyRow, covered: bool) -> i64 {
 }
 
 pub(crate) const MAX_EXPERIENCE_SECONDS: i64 = 14 * 86_400;
-const MAX_ROW_BYTES: usize = 32 * 1024;
+pub(crate) const MAX_ROW_BYTES: usize = 32 * 1024;
 /// The rule a night is assembled by, Apple giving only stage intervals.
 pub(crate) const NIGHT_GAP_SECONDS: i64 = 30 * 60;
 pub(crate) const NIGHT_RULE: &str = "assembled from this source's adjacent sleep stage intervals 30 minutes or less apart, not a session Apple Health reported";
@@ -646,7 +646,7 @@ pub fn read_or_create_zone(journal: &Path, source: &BodySource) -> Result<Tz, St
 
 pub type WindowId = (String, String);
 
-fn floor_to_window(time: DateTime<FixedOffset>, zone: Tz, length: i64) -> DateTime<Tz> {
+pub(crate) fn floor_to_window(time: DateTime<FixedOffset>, zone: Tz, length: i64) -> DateTime<Tz> {
     let local = time.with_timezone(&zone);
     let into_window = i64::from(local.num_seconds_from_midnight()) % length;
     zone.timestamp_opt(local.timestamp() - into_window, 0)
@@ -654,7 +654,7 @@ fn floor_to_window(time: DateTime<FixedOffset>, zone: Tz, length: i64) -> DateTi
         .expect("a timestamp maps to one zone time")
 }
 
-fn window_id(time: DateTime<Tz>, length: i64) -> WindowId {
+pub(crate) fn window_id(time: DateTime<Tz>, length: i64) -> WindowId {
     (
         time.format("%Y%m%d").to_string(),
         format!("{}_{length}", time.format("%H%M%S")),
@@ -663,7 +663,7 @@ fn window_id(time: DateTime<Tz>, length: i64) -> WindowId {
 
 /// The windows a span covers, in order. An end on a window's first second doesn't
 /// reach into it.
-fn windows_of(
+pub(crate) fn windows_of(
     start: DateTime<FixedOffset>,
     end: DateTime<FixedOffset>,
     zone: Tz,
@@ -1016,6 +1016,20 @@ pub fn settle_readings(
     zone: Tz,
     windows: DayRows,
 ) -> Result<(DayRows, u64), String> {
+    settle_readings_noting(journal, source, day, zone, windows)
+        .map(|(windows, held_back, _)| (windows, held_back))
+}
+
+/// [`settle_readings`], also returning the readings it held back because their
+/// other place couldn't be read as rows. Those can be written once it reads
+/// again; one held back beside an owner's delete never can.
+pub fn settle_readings_noting(
+    journal: &Path,
+    source: &BodySource,
+    day: &str,
+    zone: Tz,
+    windows: DayRows,
+) -> Result<(DayRows, u64, Vec<BodyRow>), String> {
     let mut by_key: BTreeMap<String, BTreeMap<String, BodyRow>> = windows
         .into_iter()
         .map(|((_, key), rows)| (key, rows))
@@ -1040,8 +1054,9 @@ pub fn settle_readings(
         stored.insert(key.to_owned(), found.clone());
         Ok(found)
     };
-    // (window, id, where it goes: another window, or nowhere)
-    let mut moves: Vec<(String, String, Option<String>)> = Vec::new();
+    // (window, id, where it goes: another window, or nowhere, and whether nowhere
+    // is because the other place can't be read)
+    let mut moves: Vec<(String, String, Option<String>, bool)> = Vec::new();
     for (key, rows) in &by_key {
         let Some(length) = key_length(key) else {
             continue;
@@ -1069,12 +1084,12 @@ pub fn settle_readings(
                 .clone();
             match holds(&mut stored, &other)? {
                 Ok(ids) if ids.contains(id) => {
-                    moves.push((key.clone(), id.clone(), Some(other)));
+                    moves.push((key.clone(), id.clone(), Some(other), false));
                     continue;
                 }
                 Ok(_) => {}
                 Err(()) => {
-                    moves.push((key.clone(), id.clone(), None));
+                    moves.push((key.clone(), id.clone(), None, true));
                     continue;
                 }
             }
@@ -1094,11 +1109,12 @@ pub fn settle_readings(
             if holds(&mut stored, key)?.is_ok_and(|ids| ids.contains(id)) {
                 continue;
             }
-            moves.push((key.clone(), id.clone(), None));
+            moves.push((key.clone(), id.clone(), None, false));
         }
     }
     let mut held_back = 0_u64;
-    for (from, id, to) in moves {
+    let mut unreadable = Vec::new();
+    for (from, id, to, unread) in moves {
         let Some(row) = by_key.get_mut(&from).and_then(|rows| rows.remove(&id)) else {
             continue;
         };
@@ -1106,7 +1122,12 @@ pub fn settle_readings(
             Some(to) => {
                 by_key.entry(to).or_default().insert(id, row);
             }
-            None => held_back += 1,
+            None => {
+                held_back += 1;
+                if unread {
+                    unreadable.push(row);
+                }
+            }
         }
     }
     let windows = by_key
@@ -1114,7 +1135,7 @@ pub fn settle_readings(
         .filter(|(_, rows)| !rows.is_empty())
         .map(|(key, rows)| ((day.to_owned(), key), rows))
         .collect();
-    Ok((windows, held_back))
+    Ok((windows, held_back, unreadable))
 }
 
 /// The whole-export reference: merge an export's rows into their windows and

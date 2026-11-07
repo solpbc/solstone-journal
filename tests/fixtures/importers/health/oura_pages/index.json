@@ -1,0 +1,102 @@
+{
+ "pages": [
+  {
+   "endpoint": "sleep",
+   "chunk": 0,
+   "n": 0,
+   "file": "sleep/0-0.json",
+   "sha256": "d21b7cda2ffe510d658cb955090643b85f6f1e55f1c4c36ad47bf3b0015c036a"
+  },
+  {
+   "endpoint": "workout",
+   "chunk": 0,
+   "n": 0,
+   "file": "workout/0-0.json",
+   "sha256": "dcff80fdccbe2fffea2e2a4b164a73315544baaea4f8b42a187f03cb8d85da56"
+  },
+  {
+   "endpoint": "session",
+   "chunk": 0,
+   "n": 0,
+   "file": "session/0-0.json",
+   "sha256": "3eeb39122e7057562b9be5f5d97e1908b716665b1926910e4dc626684789fa5f"
+  },
+  {
+   "endpoint": "enhanced_tag",
+   "chunk": 0,
+   "n": 0,
+   "file": "enhanced_tag/0-0.json",
+   "sha256": "c8d12d502cccd692bd893a181a95a8dfbe5245006166e21cd13f344f528dcea8"
+  },
+  {
+   "endpoint": "heartrate",
+   "chunk": 0,
+   "n": 0,
+   "file": "heartrate/0-0.json",
+   "sha256": "255782eca1b6b01fe8b4971f69de3c7f29d9d7ce963365a20c8698948128e5a0"
+  },
+  {
+   "endpoint": "daily_readiness",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_readiness/0-0.json",
+   "sha256": "356cb22a9ed7d632443f505706309080f0ccae005a42cc6c5224b87d88e62734"
+  },
+  {
+   "endpoint": "daily_sleep",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_sleep/0-0.json",
+   "sha256": "22848a162ea4512dcc822a56c62b3dcffd329074d0bfa5a90bfcbc8f35fc8aa9"
+  },
+  {
+   "endpoint": "daily_stress",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_stress/0-0.json",
+   "sha256": "c9aac41ae1aeed40b3b5c2774de879750a8662fc69f8462c9d4d35f227e6c08a"
+  },
+  {
+   "endpoint": "daily_resilience",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_resilience/0-0.json",
+   "sha256": "4f9b8756c3653e78e8832491394bb2e473edbddabb00a826e543954049cbad06"
+  },
+  {
+   "endpoint": "daily_spo2",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_spo2/0-0.json",
+   "sha256": "33fe903cb57a5b3e95210c30ce7238d5284ab17207153b9714d43390a745fa4a"
+  },
+  {
+   "endpoint": "daily_activity",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_activity/0-0.json",
+   "sha256": "8821891e9a92233d512f706d33dd5418f1ffc4c611174c75c67d25f132953a8c"
+  },
+  {
+   "endpoint": "daily_cardiovascular_age",
+   "chunk": 0,
+   "n": 0,
+   "file": "daily_cardiovascular_age/0-0.json",
+   "sha256": "aba33573750ab622706ceb95f35ef8cfa43f9ad221d2ead2770462eb98957927"
+  },
+  {
+   "endpoint": "vO2_max",
+   "chunk": 0,
+   "n": 0,
+   "file": "vO2_max/0-0.json",
+   "sha256": "d66f6c4249bcd90250cbe23975df680262cf7d8e300000068e217d8ef8c83064"
+  },
+  {
+   "endpoint": "blood_glucose",
+   "chunk": 0,
+   "n": 0,
+   "file": "blood_glucose/0-0.json",
+   "sha256": "faac736191be4fbc97818451e274ac1d92c8c8c00fa6e9cb3db82679eae1b5e4"
+  }
+ ]
+}

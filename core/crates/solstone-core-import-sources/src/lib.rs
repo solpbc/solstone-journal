@@ -20,6 +20,7 @@ pub mod ics_notes;
 pub mod image;
 pub mod obsidian;
 pub mod oura;
+pub mod oura_run;
 pub mod producer;
 pub mod registry;
 pub mod save;

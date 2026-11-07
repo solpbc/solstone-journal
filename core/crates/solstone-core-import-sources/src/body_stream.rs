@@ -53,3 +53,15 @@ pub const APPLE: BodySource = BodySource {
     lock_unavailable: "apple_health_lock_unavailable",
     zone_unrecognised: "apple_health_zone_unrecognised",
 };
+
+pub const OURA: BodySource = BodySource {
+    stream: "import.oura",
+    source: "oura",
+    registry: RegistrySource::Oura,
+    lock_rel: "imports/.oura",
+    run_dir_rel: "imports/.oura-run",
+    zone_rel: "imports/.oura-zone.json",
+    span: SpanPolicy::Document,
+    lock_unavailable: "oura_lock_unavailable",
+    zone_unrecognised: "oura_zone_unrecognised",
+};

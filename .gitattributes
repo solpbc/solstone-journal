@@ -20,3 +20,6 @@ core/distribution/mobile/*.patch whitespace=-blank-at-eol
 
 # Vendored Leaflet keeps its exact upstream bytes.
 core/crates/solstone-core-convey-shell/assets/static/vendor/leaflet/* -text -whitespace
+
+# A staged page is hashed by its index, so its bytes stay as written.
+tests/fixtures/importers/health/oura_pages/** -text

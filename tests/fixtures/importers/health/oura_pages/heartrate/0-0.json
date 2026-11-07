@@ -1,0 +1,1 @@
+{"data":[{"timestamp":"2026-01-02T15:20:00.000Z","bpm":112,"producer_timestamp":null,"source":"workout"},{"timestamp":"2026-01-02T23:00:00.000Z","bpm":64,"producer_timestamp":null,"source":"awake"},{"timestamp":"2026-01-03T00:05:00+00:00","timestamp_unix":1767398700000,"bpm":63,"source":"awake"}],"next_token":null}
