@@ -1163,7 +1163,8 @@ async fn sse_is_gated_and_exposes_a_heartbeat_after_establishment() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["content-type"], "text/event-stream");
-    assert_eq!(response.headers()["cache-control"], "no-cache");
+    // The live stream depends on the journal and the moment, so nothing stores it.
+    assert_eq!(response.headers()["cache-control"], "no-store");
     assert_eq!(response.headers()["x-accel-buffering"], "no");
 }
 

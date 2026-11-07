@@ -245,7 +245,12 @@ async fn network_corpus_replays_gated_cases_without_native_deferrals() {
                 assert_eq!(actual, expected, "{phase} {path} body");
             } else if phase == "established" && path == "/app/network/" {
                 // The shared status/navigation presentation has deliberately changed.
-                assert_eq!(response.3, include_bytes!("../assets/static/shell.html"));
+                assert_eq!(
+                    response.3,
+                    solstone_core_convey_shell::assets::served_from_source(include_bytes!(
+                        "../assets/static/shell.html"
+                    ))
+                );
             } else {
                 let body = normalized_raw(&response.3, fields, &journal.0);
                 assert_eq!(

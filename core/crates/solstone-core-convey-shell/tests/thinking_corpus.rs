@@ -1163,7 +1163,12 @@ fn assert_superseded_presentation_case(
         "{phase} {path} content type"
     );
     assert_eq!(response.2, None, "{phase} {path} location");
-    assert_eq!(response.3, expected_asset, "{phase} {path} native asset");
+    // References in the served bytes point at this build's hashed paths.
+    assert_eq!(
+        response.3,
+        solstone_core_convey_shell::assets::served_from_source(expected_asset),
+        "{phase} {path} native asset"
+    );
 }
 
 fn is_established_phase(phase: &str) -> bool {

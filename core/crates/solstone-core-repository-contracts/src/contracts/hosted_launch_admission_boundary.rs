@@ -297,6 +297,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "asset_cache",
+        include_str!("../../../solstone-core-convey-shell/src/asset_cache.rs"),
+    ),
+    (
+        "convey",
         "asset_references",
         include_str!("../../../solstone-core-convey-shell/src/asset_references.rs"),
     ),

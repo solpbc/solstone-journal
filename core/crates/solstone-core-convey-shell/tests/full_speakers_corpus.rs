@@ -92,7 +92,12 @@ async fn sweep_populated_corpus(app: axum::Router) -> usize {
             assert_json_case(path, actual, expected_json.clone());
         } else if path == "/app/speakers/20260731" {
             // Pin the intentionally revised shell while retaining the captured API/audio cases.
-            assert_eq!(body, include_bytes!("../assets/static/shell.html"));
+            assert_eq!(
+                body,
+                solstone_core_convey_shell::assets::served_from_source(include_bytes!(
+                    "../assets/static/shell.html"
+                ))
+            );
         } else {
             assert_eq!(
                 body.len(),

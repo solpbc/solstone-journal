@@ -246,6 +246,30 @@ fn ac16_settings_adds_no_native_linkage() {
             let name = package["name"].as_str()?;
             (closure.contains(name) && !package["links"].is_null()).then_some(name.to_owned())
         })
+        // A dashboard asset list handed to the shell's build script: links no
+        // library, and its build script may not ask the linker for one.
+        .filter(|name| {
+            let package = metadata["packages"]
+                .as_array()
+                .expect("metadata packages")
+                .iter()
+                .find(|package| package["name"] == name.as_str())
+                .expect("linked package");
+            let assets_only = package["links"]
+                .as_str()
+                .is_some_and(|links| links.starts_with("solstone_convey_assets_"));
+            if assets_only {
+                let manifest =
+                    std::path::Path::new(package["manifest_path"].as_str().expect("manifest path"));
+                let build = std::fs::read_to_string(manifest.with_file_name("build.rs"))
+                    .expect("an asset-list crate has a build script");
+                assert!(
+                    !build.contains("rustc-link"),
+                    "{name} hands over an asset list and links nothing"
+                );
+            }
+            !assets_only
+        })
         .collect::<BTreeSet<_>>();
     let expected = BTreeSet::from([
         "ffmpeg-sys-next".to_owned(),
