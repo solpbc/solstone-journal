@@ -14257,3 +14257,206 @@ fn a_workout_that_grows_past_its_group_stands_alone_once_its_record_follows() {
         assert_eq!(counts, vec![1, 1], "{reader} after");
     }
 }
+
+/// Oura's walk, its meditation and its night on 20260308, each in an
+/// alpha-filed window of `import.oura` with its record, holding what Oura
+/// judges in `fields`.
+fn oura_record_journal() -> tempfile::TempDir {
+    use solstone_core_format::content::body_records::{
+        BodyRow, RowKind, encode_rows, mapped_workout_type, recorder_id,
+    };
+    let journal = base_activity_journal();
+    let root = journal.path();
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.oura-zone.json"),
+        r#"{"zone":"America/New_York"}"#,
+    )
+    .unwrap();
+    let accounts = [
+        (
+            "ow",
+            "070000_300",
+            "workout",
+            "walking",
+            "walking",
+            (
+                "2026-03-08T07:00:00.000-04:00",
+                "2026-03-08T07:36:00.000-04:00",
+            ),
+            json!({"activity": "walking", "calories": 148.5, "distance": 2412.9,
+                "intensity": "hard", "source": "confirmed"}),
+        ),
+        (
+            "om",
+            "120000_300",
+            "mindfulness",
+            "meditation",
+            "meditation session",
+            (
+                "2026-03-08T12:00:00.000-04:00",
+                "2026-03-08T12:10:00.000-04:00",
+            ),
+            json!({"type": "meditation", "mood": "bad"}),
+        ),
+        (
+            "on",
+            "220000_3600",
+            "sleep",
+            "long_sleep",
+            "long sleep",
+            (
+                "2026-03-08T22:30:00.000-04:00",
+                "2026-03-09T06:30:00.000-04:00",
+            ),
+            json!({"type": "long_sleep", "efficiency": 91, "readiness": {"score": 82},
+                "sleep_score_delta": 3}),
+        ),
+    ];
+    for (id, key, experience, record_type, label, (start, end), document) in accounts {
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            id.to_owned(),
+            "oura",
+            record_type,
+            label.to_owned(),
+        );
+        row.experience = Some(experience.to_owned());
+        row.start = Some(start.to_owned());
+        row.end = Some(end.to_owned());
+        row.by = Some("Oura".to_owned());
+        row.fields = document
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        if experience == "workout" {
+            row.values
+                .insert("distance".to_owned(), "2412.9 m".to_owned());
+            row.values
+                .insert("energy".to_owned(), "148.5 kcal".to_owned());
+        }
+        let window = root.join("chronicle/20260308/import.oura").join(key);
+        fs::create_dir_all(window.join("talents")).unwrap();
+        fs::write(
+            window.join("body.jsonl"),
+            encode_rows(std::slice::from_ref(&row)),
+        )
+        .unwrap();
+        fs::write(window.join("stream.json"), "{}\n").unwrap();
+        fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+        let mut account = json!({"key": format!("import.oura\u{1f}{id}"), "start": start,
+            "end": end, "recorder": recorder_id("import.oura", Some("Oura"))});
+        if let Some(kind) =
+            mapped_workout_type("oura", record_type).filter(|_| experience == "workout")
+        {
+            account["type"] = json!(kind);
+        }
+        let record = json!({"id": format!("body_{id:0>16}"), "source": "body",
+            "activity": experience, "account": account});
+        let path = root.join("facets/alpha/activities/20260308.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut text = fs::read_to_string(&path).unwrap_or_default();
+        text.push_str(&format!("{record}\n"));
+        fs::write(&path, text).unwrap();
+    }
+    journal
+}
+
+/// A reader's answer with every reference taken out, since a reference is
+/// minted per call and holds arbitrary text.
+fn without_references(mut value: Value) -> Value {
+    fn strip(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                map.remove("reference");
+                map.values_mut().for_each(strip);
+            }
+            Value::Array(items) => items.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    strip(&mut value);
+    value
+}
+
+/// Every record reader shows Oura's accounts as Oura recorded them, with the
+/// workout's chosen values, and none of what Oura judges: no intensity, mood,
+/// score or efficiency, by name or by value.
+#[test]
+fn every_record_reader_shows_an_oura_account_and_nothing_oura_judges() {
+    let journal = oura_record_journal();
+    let listed = probe(
+        &journal,
+        "list_activities",
+        json!({"from": "20260308", "to": "20260308"}),
+    )
+    .unwrap();
+    let bodies: Vec<Value> = listed["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|activity| activity["source"] == "body")
+        .cloned()
+        .collect();
+    let mut kinds: Vec<&str> = bodies
+        .iter()
+        .map(|activity| activity["kind"].as_str().unwrap())
+        .collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, ["mindfulness", "sleep", "workout"], "{listed}");
+    let walk = bodies
+        .iter()
+        .find(|activity| activity["kind"] == "workout")
+        .unwrap();
+    assert_eq!(walk["title"], "walking", "{walk}");
+    assert_eq!(walk["accounts"][0]["by"], "Oura", "{walk}");
+    assert_eq!(
+        walk["accounts"][0]["values"]["distance"], "2412.9 m",
+        "{walk}"
+    );
+
+    let mut answers = vec![("list_activities", without_references(listed.clone()))];
+    for activity in &bodies {
+        let reference = activity["reference"].clone();
+        let sources = probe(
+            &journal,
+            "get_activity_sources",
+            json!({"reference": reference}),
+        )
+        .unwrap();
+        assert_eq!(sources["units"][0]["by"], "Oura", "{sources}");
+        answers.push(("get_activity_sources", without_references(sources)));
+        let fetched = probe(&journal, "fetch", json!({"reference": reference})).unwrap();
+        let face = serde_json::from_str::<Value>(fetched["text"].as_str().unwrap()).unwrap();
+        assert_eq!(face["accounts"][0]["by"], "Oura", "{face}");
+        answers.push(("fetch", without_references(face)));
+    }
+    let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+    let weekly = week["body"].as_array().unwrap();
+    assert_eq!(weekly.len(), 3, "{week}");
+    assert!(
+        weekly
+            .iter()
+            .all(|item| item["accounts"][0]["by"] == "Oura"),
+        "{week}"
+    );
+    answers.push(("get_week", without_references(week)));
+
+    for (reader, answer) in answers {
+        let text = answer.to_string();
+        for judged in [
+            "intensity",
+            "\"hard\"",
+            "mood",
+            "\"bad\"",
+            "score",
+            "efficiency",
+            "readiness",
+            "import.oura",
+        ] {
+            assert!(!text.contains(judged), "{reader} says {judged}: {text}");
+        }
+    }
+}

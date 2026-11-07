@@ -104,7 +104,19 @@ fn workout() -> BodyRow {
 
 /// A window as the real writer leaves it: file, lock and stream marker.
 fn window(root: &Path, day: &str, key: &str, rows: &[BodyRow], facet: Option<&str>) {
-    let dir = root.join("chronicle").join(day).join(STREAM).join(key);
+    window_in(root, STREAM, day, key, rows, facet);
+}
+
+/// [`window`], in any body stream.
+fn window_in(
+    root: &Path,
+    stream: &str,
+    day: &str,
+    key: &str,
+    rows: &[BodyRow],
+    facet: Option<&str>,
+) {
+    let dir = root.join("chronicle").join(day).join(stream).join(key);
     fs::create_dir_all(dir.join("talents")).unwrap();
     fs::write(dir.join("body.jsonl"), encode_rows(rows)).unwrap();
     fs::write(dir.join("body.jsonl.lock"), "").unwrap();
@@ -1377,4 +1389,336 @@ fn an_interval_that_began_before_the_look_back_is_found_by_a_whole_day_read() {
     );
     let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
     assert!(entries.join("\n").contains("val900"), "{entries:?}");
+}
+
+const OURA: &str = "import.oura";
+const OURA_LABEL: &str = "Oura · imported";
+
+/// [`journal`], with Oura's stream as its writer registers it and the zone it
+/// placed its windows on.
+fn oura_journal() -> tempfile::TempDir {
+    let journal = journal();
+    let root = journal.path();
+    fs::write(
+        root.join("streams/import.oura.json"),
+        json!({
+            "name": OURA, "kind": "import:oura", "host": null, "platform": null,
+            "created_at": 1, "last_day": null, "last_segment": null, "seq": 1,
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("imports")).unwrap();
+    fs::write(
+        root.join("imports/.oura-zone.json"),
+        r#"{"zone":"America/Denver"}"#,
+    )
+    .unwrap();
+    journal
+}
+
+/// A row as Oura's reader writes it: `by` Oura, the whole document in `fields`.
+fn oura_row(kind: RowKind, id: &str, record_type: &str, label: &str, document: Value) -> BodyRow {
+    let mut row = BodyRow::new(kind, id.into(), "oura", record_type, label.into());
+    row.by = Some("Oura".into());
+    row.fields = document
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    row
+}
+
+fn oura_heart_rate(id: &str, at: &str, bpm: &str, source: &str) -> BodyRow {
+    let mut row = oura_row(
+        RowKind::Reading,
+        id,
+        "heartrate",
+        "heart rate",
+        json!({"timestamp": at, "bpm": bpm.parse::<u32>().unwrap(), "source": source}),
+    );
+    row.at = Some(at.into());
+    row.value = Some(bpm.into());
+    row.unit = Some("count/min".into());
+    row
+}
+
+/// A day of Oura: every daily document, with what each judges, a walk the owner
+/// labelled with heart rate during it, heart rate either side, and a tag.
+fn oura_day(root: &Path) {
+    let daily = [
+        (
+            "daily_readiness",
+            "daily readiness",
+            json!({"score": 82,
+            "contributors": {"hrv_balance": 63, "resting_heart_rate": 91}}),
+        ),
+        (
+            "daily_sleep",
+            "daily sleep",
+            json!({"score": 74, "contributors": {"deep_sleep": 63}}),
+        ),
+        (
+            "daily_activity",
+            "daily activity",
+            json!({"score": 91, "class_5_min": "0012345"}),
+        ),
+        (
+            "daily_stress",
+            "daily stress",
+            json!({"day_summary": "stressful",
+            "stress_high": 5400, "recovery_high": 1800}),
+        ),
+        (
+            "daily_resilience",
+            "daily resilience",
+            json!({"level": "limited",
+            "contributors": {"sleep_recovery": 41.2}}),
+        ),
+        (
+            "daily_spo2",
+            "daily SpO2",
+            json!({"spo2_percentage": {"average": 96.5}}),
+        ),
+        (
+            "daily_cardiovascular_age",
+            "cardiovascular age",
+            json!({"vascular_age": 47}),
+        ),
+        ("vO2_max", "VO2 max", json!({"vo2_max": 39})),
+    ]
+    .into_iter()
+    .map(|(endpoint, label, mut document)| {
+        document["id"] = json!(format!("synthetic-{endpoint}"));
+        document["day"] = json!("2026-10-10");
+        let mut row = oura_row(RowKind::Dated, endpoint, endpoint, label, document);
+        row.date = Some("2026-10-10".into());
+        row
+    })
+    .collect::<Vec<_>>();
+    window_in(root, OURA, DAY, "000000_86400", &daily, None);
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "060000_3600",
+        &[
+            oura_heart_rate("h1", "2026-10-10T12:10:00.000Z", "7001", "rest"),
+            oura_heart_rate("h2", "2026-10-10T12:15:00.000Z", "7002", "rest"),
+        ],
+        None,
+    );
+    let mut walk = oura_row(
+        RowKind::Experience,
+        "walk",
+        "walking",
+        "walking",
+        json!({"id": "synthetic-workout-walk", "activity": "walking", "calories": 148.5,
+            "day": "2026-10-10", "distance": 2412.9, "intensity": "hard",
+            "label": "synthetic hill loop", "source": "confirmed",
+            "start_datetime": "2026-10-10T08:05:00.000-06:00",
+            "end_datetime": "2026-10-10T08:41:00.000-06:00"}),
+    );
+    walk.experience = Some("workout".into());
+    walk.start = Some("2026-10-10T08:05:00.000-06:00".into());
+    walk.end = Some("2026-10-10T08:41:00.000-06:00".into());
+    walk.words = vec!["synthetic hill loop".into()];
+    walk.values.insert("distance".into(), "2412.9 m".into());
+    walk.values.insert("energy".into(), "148.5 kcal".into());
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "080500_300",
+        &[
+            walk,
+            oura_heart_rate("h3", "2026-10-10T14:06:00.000Z", "7003", "workout"),
+            oura_heart_rate("h4", "2026-10-10T14:08:00.000Z", "7004", "workout"),
+        ],
+        None,
+    );
+    let mut tag = oura_row(
+        RowKind::Logged,
+        "tag",
+        "tag_generic_caffeine",
+        "caffeine",
+        json!({"id": "synthetic-tag", "tag_type_code": "tag_generic_caffeine",
+            "start_time": "2026-10-10T09:15:00-06:00", "comment": "second cup"}),
+    );
+    tag.start = Some("2026-10-10T09:15:00-06:00".into());
+    tag.words = vec!["second cup".into()];
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "090000_3600",
+        &[
+            tag,
+            oura_heart_rate("h5", "2026-10-10T15:20:00.000Z", "7005", "awake"),
+        ],
+        None,
+    );
+    solstone_core_location::body_day::BodyDays::default().reconcile(root);
+}
+
+/// The proof Apple's first test gives, on Oura: a search hit, its day, the
+/// workout whole, and a source's heart rate paged across a day with its gaps.
+#[test]
+fn an_agent_finds_an_oura_workout_and_its_day_and_pages_its_heart_rate() {
+    let journal = oura_journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    oura_day(root);
+    index(root);
+
+    // Search finds the workout by the words a person would type, and its day.
+    for query in ["walking", "synthetic hill loop"] {
+        let found = call(root, "search", json!({"query": query, "day": DAY}));
+        let hit = found["results"].as_array().unwrap().iter().find(|result| {
+            result["snippet"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("hill loop")
+        });
+        assert!(hit.is_some(), "{query}: {found}");
+    }
+    for query in ["Saturday October", "daily readiness", "caffeine"] {
+        let day = call(root, "search", json!({"query": query, "day": DAY}));
+        assert!(
+            !day["results"].as_array().unwrap().is_empty(),
+            "{query}: {day}"
+        );
+    }
+    // Never a heart rate value or a field nobody chose to restate.
+    for query in ["7003", "7001", "intensity", "confirmed"] {
+        let found = call(root, "search", json!({"query": query, "day": DAY}));
+        assert!(
+            found["results"].as_array().unwrap().is_empty(),
+            "{query}: {found}"
+        );
+    }
+
+    // The hit's link reaches the workout with every field.
+    let found = call(
+        root,
+        "search",
+        json!({"query": "synthetic hill loop", "day": DAY}),
+    );
+    let fetched = call(
+        root,
+        "fetch",
+        json!({"reference": found["results"][0]["reference"]}),
+    );
+    assert!(fetched.to_string().contains("2412.9 m"), "{fetched}");
+    let link = fetched["segments"][0]["reference"].as_str().unwrap();
+    let tile = call(root, "get_transcript", json!({"reference": link}));
+    let text = tile["entries"].to_string().replace('\\', "");
+    for field in [
+        "workout walking",
+        "Oura",
+        "intensity: hard",
+        "source: confirmed",
+        "calories: 148.5",
+        "distance: 2412.9",
+        "label: synthetic hill loop",
+    ] {
+        assert!(text.contains(field), "{field}: {text}");
+    }
+    assert_eq!(tile["source"], OURA_LABEL, "{tile}");
+    assert!(!tile.to_string().contains(OURA), "{tile}");
+
+    // One source's heart rate across the morning: the windows holding it, and
+    // what no window covers. The whole-day documents cover nothing.
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "time_from": "06:00", "time_to": "10:00",
+            "source": OURA_LABEL, "kind": "heart rate"}),
+    );
+    let times: Vec<&str> = list["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|listed| listed["time"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        times,
+        ["06:00-07:00", "08:05-08:10", "09:00-10:00"],
+        "{list}"
+    );
+    assert_eq!(
+        list["gaps"],
+        json!([{"from": "07:00", "to": "08:05"}, {"from": "08:10", "to": "09:00"}]),
+        "{list}"
+    );
+    assert!(!list.to_string().contains(OURA), "{list}");
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 5, "{entries:?}");
+    for (entry, bpm) in entries.iter().zip(["7001", "7002", "7003", "7004", "7005"]) {
+        assert!(
+            entry.contains(&format!("heart rate {bpm} count/min")) && entry.contains("Oura"),
+            "{entry}"
+        );
+    }
+    assert!(
+        !entries
+            .iter()
+            .any(|entry| entry.contains("walking") || entry.contains("caffeine"))
+    );
+}
+
+/// What Oura judges stays out of everything the journal writes, and an agent
+/// still reads it whole, attributed to Oura.
+#[test]
+fn oura_judgements_never_reach_search_and_an_agent_reads_them_attributed() {
+    let journal = oura_journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    oura_day(root);
+    index(root);
+    for query in ["stressful", "limited", "contributors", "day_summary"] {
+        let found = call(root, "search", json!({"query": query}));
+        assert!(
+            found["results"].as_array().unwrap().is_empty(),
+            "{query}: {found}"
+        );
+    }
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": OURA_LABEL}),
+    );
+    let whole_day = list["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|listed| listed["time"] == "00:00-23:59")
+        .unwrap_or_else(|| panic!("{list}"));
+    let read = call(
+        root,
+        "get_transcript",
+        json!({"reference": whole_day["reference"]}),
+    );
+    assert_eq!(read["source"], OURA_LABEL, "{read}");
+    // Entries are escaped for markdown, as every transcript's are.
+    let entries: Vec<String> = read["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry.as_str().unwrap().replace('\\', ""))
+        .collect();
+    assert_eq!(entries.len(), 8, "{read}");
+    let stress = entries
+        .iter()
+        .find(|entry| entry.contains("daily stress"))
+        .unwrap_or_else(|| panic!("{read}"));
+    assert!(
+        stress.starts_with("for 2026-10-10 daily stress · Oura"),
+        "{stress}"
+    );
+    assert!(stress.contains("day_summary: stressful"), "{stress}");
+    let text = entries.join("\n");
+    assert!(text.contains("level: limited"), "{text}");
+    assert!(text.contains("score: 82"), "{text}");
 }
