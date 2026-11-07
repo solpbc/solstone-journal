@@ -1414,6 +1414,19 @@ async fn init_action(
                 }
                 Err(error) => return config_error(error),
             }
+            // Finishing setup here is the same step as `/init/finalize`, so it
+            // makes the owner's person from their configured name the same way.
+            if let Err(error) =
+                solstone_core_entity::ensure_configured_principal(&state.journal_root)
+            {
+                return error_envelope(
+                    "owner_identity_failed",
+                    "Internal Server Error",
+                    error,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .into_response();
+            }
         }
         _ => {
             return error_envelope(
