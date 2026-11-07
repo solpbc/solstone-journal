@@ -68,20 +68,29 @@ fn window_facet(window: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Every account key a body record names on `day`, in any facet. A line that
-/// can't be read names none, and a store write keeps it as it is.
-fn recorded_keys(journal: &Path, day: &str) -> BTreeSet<String> {
+/// Every account key a body record names on `day`, in any facet, read line by
+/// line as bytes: a line that can't be read names none, and the rest still
+/// name theirs. A day file that exists but can't be read at all is an error, so
+/// no record is written twice beside it. A store write keeps a bad line as it is.
+fn recorded_keys(journal: &Path, day: &str) -> Result<BTreeSet<String>, (String, String)> {
     let mut keys = BTreeSet::new();
     let Ok(facets) = fs::read_dir(journal.join("facets")) else {
-        return keys;
+        return Ok(keys);
     };
     for facet in facets.flatten() {
         let path = facet.path().join("activities").join(format!("{day}.jsonl"));
-        let Ok(text) = fs::read_to_string(&path) else {
-            continue;
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err((
+                    facet.file_name().to_string_lossy().into_owned(),
+                    error.to_string(),
+                ));
+            }
         };
-        for line in text.lines().filter(|line| !line.trim().is_empty()) {
-            let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
+        for line in bytes.split(|&byte| byte == b'\n') {
+            let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
                 continue;
             };
             if solstone_core_facets::is_body_record(&record)
@@ -94,7 +103,7 @@ fn recorded_keys(journal: &Path, day: &str) -> BTreeSet<String> {
             }
         }
     }
-    keys
+    Ok(keys)
 }
 
 /// The experiences a live window holds, with its facet.
@@ -165,7 +174,13 @@ pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
         .map(|entry| entry.path())
         .collect::<Vec<_>>();
     windows.sort();
-    let mut recorded = recorded_keys(journal, day);
+    let mut recorded = match recorded_keys(journal, day) {
+        Ok(keys) => keys,
+        Err(refused) => {
+            counts.refused.push(refused);
+            return counts;
+        }
+    };
     let arrived = chrono::Utc::now()
         .with_timezone(&solstone_core_journal_config::owner_zone(journal))
         .format("%Y%m%d")

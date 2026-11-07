@@ -288,3 +288,57 @@ fn a_day_holding_a_half_written_line_keeps_it_and_says_what_was_written() {
         "{text}"
     );
 }
+
+/// A line that isn't text, beside a record in the same file, names no key and
+/// hides no other: a refiled window gets no second record, so a hide holds.
+#[test]
+fn a_line_that_isnt_text_doesnt_make_a_refiled_window_record_twice() {
+    let journal = journal();
+    let root = journal.path();
+    let rows_in = [experience(
+        "w1",
+        "workout",
+        "2026-10-10 08:00:00 -0600",
+        "2026-10-10 08:40:00 -0600",
+    )];
+    window(root, "080000_3600", Some("body"), &rows_in);
+    assert_eq!(write_records(root, DAY).written, 1);
+    let mut bytes = fs::read(file(root, "body")).unwrap();
+    bytes.extend_from_slice(b"{\"id\":\"torn\",\"title\":\"\xff\xfe\"}\n");
+    fs::write(file(root, "body"), &bytes).unwrap();
+    window(root, "080000_3600", Some("other"), &rows_in);
+    assert_eq!(write_records(root, DAY), RecordCounts::default());
+    assert!(rows(root, "other").is_empty());
+    assert_eq!(fs::read(file(root, "body")).unwrap(), bytes);
+}
+
+/// A day file that is there but can't be read is refused for the day: nothing
+/// is written beside it, and the next run tries again.
+#[cfg(unix)]
+#[test]
+fn a_day_file_that_cant_be_read_writes_nothing_that_day() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let journal = journal();
+    let root = journal.path();
+    let rows_in = [experience(
+        "w1",
+        "workout",
+        "2026-10-10 08:00:00 -0600",
+        "2026-10-10 08:40:00 -0600",
+    )];
+    window(root, "080000_3600", Some("body"), &rows_in);
+    assert_eq!(write_records(root, DAY).written, 1);
+    window(root, "080000_3600", Some("other"), &rows_in);
+    fs::set_permissions(file(root, "body"), fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(file(root, "body")).is_ok() {
+        // Running as root: the mode can't stop a read.
+        return;
+    }
+    let counts = write_records(root, DAY);
+    fs::set_permissions(file(root, "body"), fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(counts.written, 0);
+    assert_eq!(counts.refused.len(), 1);
+    assert_eq!(counts.refused[0].0, "body");
+    assert!(rows(root, "other").is_empty());
+}
