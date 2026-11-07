@@ -177,11 +177,15 @@ pub struct Converging {
     pub holes: BTreeSet<Hole>,
 }
 
+/// Separates an endpoint from its days in [`ScanFindings::unsure`]'s keys.
+pub const UNSURE_SEPARATOR: char = '\u{1f}';
+
 /// What the scan found besides its counts. Kept in the run's state with the scan,
 /// so a resumed run reports what the scan it carries on from found.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScanFindings {
-    /// Revisions that would move or shorten what is stored, kept as first written.
+    /// Revisions kept as first written: a start that crosses the owner's midnight,
+    /// or a placement or record on another day.
     #[serde(default)]
     pub deferred: u64,
     /// Documents whose stored experience the owner deleted.
@@ -193,6 +197,11 @@ pub struct ScanFindings {
     pub held: BTreeMap<String, u64>,
     #[serde(default)]
     pub holes: BTreeSet<Hole>,
+    /// Documents with no record, not added because the owner deleted part of the
+    /// days they could have been on: keyed by the endpoint and those days, joined
+    /// by [`UNSURE_SEPARATOR`], how many.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unsure: BTreeMap<String, u64>,
     /// Plain sentences for the summary.
     #[serde(default)]
     pub notes: Vec<String>,
@@ -838,12 +847,9 @@ pub fn scan_pages(
                 // Re-reading never fills it, so it is no hole.
                 Verdict::Refused(days) => {
                     let days: Vec<String> = days.iter().map(|day| readable_day(day)).collect();
-                    *counts
-                        .refused
-                        .entry(format!(
-                            "{endpoint}: not added, because you deleted part of this day ({}) in the journal",
-                            days.join(", ")
-                        ))
+                    *findings
+                        .unsure
+                        .entry(format!("{endpoint}{UNSURE_SEPARATOR}{}", days.join(",")))
                         .or_default() += 1;
                     continue;
                 }

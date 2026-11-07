@@ -1318,6 +1318,17 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         activities_refreshed: state.totals.activities_refreshed,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         deferred: state.findings.deferred,
+        unsure: state
+            .findings
+            .unsure
+            .iter()
+            .filter_map(|(key, count)| {
+                let (endpoint, days) =
+                    key.split_once(solstone_core_import_sources::oura_run::UNSURE_SEPARATOR)?;
+                let days = days.split(',').map(str::to_owned).collect();
+                Some((endpoint.to_owned(), days, *count))
+            })
+            .collect(),
         moved: state
             .findings
             .converging

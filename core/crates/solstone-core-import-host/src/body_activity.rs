@@ -7,8 +7,9 @@
 //! activity record, in the facet its window has, on its window's day. The record
 //! refers to the account by its stream and row id and copies nothing else: what
 //! it shows is composed from the window when read, for a connection allowed to
-//! read that window. Code creates a record once and never edits it; the owner's
-//! edits, hides and separates are the only later writes.
+//! read that window. Code creates a record once and later changes only the
+//! fields it wrote, when its account changes; nothing else but the owner's
+//! edits, hides and separates writes it.
 
 use std::collections::BTreeMap;
 use std::fs;

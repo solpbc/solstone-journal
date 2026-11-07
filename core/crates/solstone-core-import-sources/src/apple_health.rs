@@ -1402,6 +1402,9 @@ pub struct SummaryCounts {
     /// stored, kept as first written.
     #[serde(default)]
     pub deferred: u64,
+    /// Entries not added because the journal can't tell whether they were in what
+    /// the owner deleted: endpoint, the deleted days, how many.
+    pub unsure: Vec<(String, Vec<String>, u64)>,
     /// Documents a source revised to new times on the same day, now written there.
     #[serde(default)]
     pub moved: u64,
@@ -1438,6 +1441,7 @@ impl SummaryCounts {
             activities_refreshed: 0,
             activities_refused: Vec::new(),
             deferred: 0,
+            unsure: Vec::new(),
             moved: 0,
             entries_stayed_deleted: 0,
             held: BTreeMap::new(),
@@ -1623,14 +1627,34 @@ pub fn summary_text(
             .map(|(name, count)| (name.clone(), *count))
             .collect(),
     );
-    section(
-        "Refused",
-        counts
-            .refused
-            .iter()
-            .map(|(name, count)| (name.clone(), *count))
-            .collect(),
-    );
+    let mut refused: Vec<String> = counts
+        .refused
+        .iter()
+        .map(|(name, count)| format!("{name}: {count}"))
+        .collect();
+    for (endpoint, days, count) in &counts.unsure {
+        let days = match days.as_slice() {
+            [one] => one.clone(),
+            [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+            [] => String::new(),
+        };
+        refused.push(if *count == 1 {
+            format!(
+                "{endpoint}, {days}: 1 not added; the journal can't tell whether it was in what you deleted from {days}"
+            )
+        } else {
+            format!(
+                "{endpoint}, {days}: {count} not added; the journal can't tell whether they were in what you deleted from {days}"
+            )
+        });
+    }
+    if !refused.is_empty() {
+        let _ = writeln!(text, "## Refused\n");
+        for line in refused {
+            let _ = writeln!(text, "- {line}");
+        }
+        text.push('\n');
+    }
     if !counts.not_saved.is_empty() {
         let _ = writeln!(text, "## Not saved\n");
         for line in &counts.not_saved {

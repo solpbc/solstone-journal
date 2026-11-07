@@ -376,7 +376,8 @@ fn read_heartrate(document: &Map<String, Value>) -> Result<ReadRow, String> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HoleReason {
-    /// A revision that would move or shorten what is stored, kept as first written.
+    /// A revision kept as first written: a start that crosses the owner's midnight,
+    /// or a placement or record on another day.
     Deferred,
     /// A document held back because a window it could already be in couldn't be
     /// read as rows.
@@ -407,7 +408,7 @@ impl HoleReason {
                 "it couldn't be shown on its day; an import that asks for this day again tries again"
             }
             Self::Converging => {
-                "changed in Oura since, and the journal is still moving it to its new time; an import that asks for this day again finishes it"
+                "changed in Oura since, and the journal hasn't finished moving it to its new time; an import that asks for this day again finishes it"
             }
         }
     }

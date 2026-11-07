@@ -579,7 +579,7 @@ fn a_tag_the_owner_deleted_after_its_move_stays_out_wherever_oura_moves_it_next(
         assert!(
             outcome
                 .summary
-                .contains("- enhanced_tag: not added, because you deleted part of this day (2026-01-05) in the journal: 1"),
+                .contains("- enhanced_tag, 2026-01-05: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
             "{back}: {}",
             outcome.summary
         );
@@ -1067,7 +1067,7 @@ fn takeovers_inside_the_start_day_print_the_move_and_the_next_read_leaves_one_fi
             );
             assert!(
                 taken.summary.contains(&format!(
-                    "- {}, 2026-01-05: changed in Oura since, and the journal is still moving it to its new time; an import that asks for this day again finishes it",
+                    "- {}, 2026-01-05: changed in Oura since, and the journal hasn't finished moving it to its new time; an import that asks for this day again finishes it",
                     variant.endpoint
                 )),
                 "{label}: {}",
@@ -1197,7 +1197,7 @@ fn a_takeover_after_the_start_day_leaves_a_printed_hole_and_a_later_read_converg
     assert!(taken.holes.contains(&hole), "{:?}", taken.holes);
     assert!(
         taken.summary.contains(
-            "- sleep, 2026-01-06: changed in Oura since, and the journal is still moving it"
+            "- sleep, 2026-01-06: changed in Oura since, and the journal hasn't finished moving it"
         ),
         "{}",
         taken.summary
@@ -1382,7 +1382,7 @@ fn a_tag_refused_beside_an_owners_delete_is_no_hole_and_its_day_is_claimed() {
     let outcome = finished(root, &second, &ask("20261104_120001", range));
     assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
     assert!(
-        outcome.summary.contains("- enhanced_tag: not added, because you deleted part of this day (2026-01-05) in the journal: 1"),
+        outcome.summary.contains("- enhanced_tag, 2026-01-05: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
         "{}",
         outcome.summary
     );
@@ -1483,7 +1483,7 @@ fn a_restore_after_the_start_days_files_prints_the_move_until_a_run_writes_that_
     );
     assert!(
         repaired.summary.contains(
-            "- workout, 2026-01-05: changed in Oura since, and the journal is still moving it"
+            "- workout, 2026-01-05: changed in Oura since, and the journal hasn't finished moving it"
         ),
         "{}",
         repaired.summary

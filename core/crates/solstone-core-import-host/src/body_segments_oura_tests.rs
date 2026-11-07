@@ -1091,7 +1091,7 @@ fn with_no_record_a_deleted_window_on_the_lookup_days_refuses_a_revision_by_its_
     // fills it.
     assert!(
         outcome.summary.contains(
-            "## Refused\n\n- enhanced_tag: not added, because you deleted part of this day (2026-01-05) in the journal: 1"
+            "## Refused\n\n- enhanced_tag, 2026-01-05: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"
         ),
         "{}",
         outcome.summary
