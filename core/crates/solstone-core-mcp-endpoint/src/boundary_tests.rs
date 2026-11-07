@@ -14155,7 +14155,7 @@ fn body_accounts_in_every_reader(
     }
     // The week the day is in: its Sunday.
     let week = probe(journal, "get_week", json!({"week": "20260308"})).unwrap();
-    assert!(day >= "20260308" && day <= "20260314");
+    assert!(("20260308"..="20260314").contains(&day));
     let weekly = week["body"]
         .as_array()
         .map(|items| items.iter().map(counts).collect())

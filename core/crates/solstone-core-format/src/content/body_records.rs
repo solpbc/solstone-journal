@@ -388,9 +388,10 @@ fn search_text(row: &BodyRow) -> String {
     if !row.words.is_empty() {
         lines.push(row.words.join(" · "));
     }
+    // A source that is its own recorder, as Oura is, is named once.
     let attribution = match row.by.as_deref() {
-        Some(by) => format!("as {source} recorded it, from {by}"),
-        None => format!("as {source} recorded it"),
+        Some(by) if by != source => format!("as {source} recorded it, from {by}"),
+        _ => format!("as {source} recorded it"),
     };
     if row.values.is_empty() {
         lines.push(attribution);
@@ -418,8 +419,9 @@ fn field_text(value: &Value) -> String {
 pub fn render_row(row: &BodyRow) -> String {
     let source = source_words(&row.source);
     let attribution = match row.by.as_deref() {
-        Some(by) => format!("{source}, {by}"),
-        None => source.to_owned(),
+        // A source that is its own recorder, as Oura is, is named once.
+        Some(by) if by != source => format!("{source}, {by}"),
+        _ => source.to_owned(),
     };
     let span = match (row.start.as_deref(), row.end.as_deref()) {
         (Some(start), Some(end)) => format!("{start} to {end}"),
@@ -684,6 +686,23 @@ mod tests {
         assert!(line.contains("Apple Health, Synthetic Watch"));
         assert!(line.contains("sync-123"));
         assert!(render_row(&experience()).contains("uuid:ABC-DEF"));
+    }
+
+    #[test]
+    fn a_source_that_is_its_own_recorder_is_named_once() {
+        let mut row = experience();
+        row.source = "oura".into();
+        row.by = Some("Oura".into());
+        let line = render_row(&row);
+        assert!(
+            line.contains("Oura") && !line.contains("Oura, Oura"),
+            "{line}"
+        );
+        let text = search_text(&row);
+        assert!(text.contains("as Oura recorded it"), "{text}");
+        assert!(!text.contains("from Oura"), "{text}");
+        // Apple names its device as well.
+        assert!(render_row(&experience()).contains("Apple Health, Synthetic Watch"));
     }
 
     #[test]

@@ -202,6 +202,7 @@ fn render_source(
     let mut dated = Vec::new();
     let mut documents = BTreeSet::new();
     let mut words = BTreeSet::new();
+    let mut owners = BTreeSet::new();
     for row in rows {
         match row.kind {
             RowKind::Experience => {
@@ -252,7 +253,15 @@ fn render_source(
                 };
                 tallies.entry(key).or_default().add(row);
                 if row.kind == RowKind::Logged {
-                    words.extend(row.words.iter().cloned());
+                    // The owner's own words, where the source marks them so, say
+                    // whose they are; any other words are the source's.
+                    let own =
+                        solstone_core_format::content::body_records::owner_words(&row.source, row);
+                    if own.is_empty() {
+                        words.extend(row.words.iter().cloned());
+                    } else {
+                        owners.extend(own);
+                    }
                 }
             }
         }
@@ -289,6 +298,10 @@ fn render_source(
     if !words.is_empty() {
         let words = words.into_iter().collect::<Vec<_>>().join(", ");
         lines.push(format!("- in the source's words: {words}"));
+    }
+    if !owners.is_empty() {
+        let words = owners.into_iter().collect::<Vec<_>>().join(", ");
+        lines.push(format!("- in the owner's words: {words}"));
     }
     lines.push(String::new());
 }
@@ -834,6 +847,12 @@ mod tests {
             .find(|line| line.starts_with("- caffeine:"))
             .unwrap_or_else(|| panic!("{text}"));
         assert!(tag.contains("entered by the owner in Oura"), "{text}");
+        // The tag's note is the owner's, and says so.
+        assert!(
+            oura.contains("- in the owner's words: second cup"),
+            "{text}"
+        );
+        assert!(!oura.contains("source's words"), "{text}");
         assert!(
             oura.contains("- workout: running, 07:00 to 07:50 (Oura)"),
             "{text}"
