@@ -349,7 +349,8 @@ assert gpu == [expected], (expected, gpu)
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
             port=$(cat "$HOME/journal/health/convey.port")
-            origin="http://127.0.0.1:${port}"
+            # The link and its cookie are for localhost, not 127.0.0.1.
+            origin="http://localhost:${port}"
             test "$(curl --silent --output /dev/null --write-out "%{http_code}" "$origin/init/api/state")" = 409
             link=$(solstone journal open /init --print-url)
             jar=$(mktemp)
