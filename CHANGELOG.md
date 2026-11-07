@@ -8,34 +8,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- on windows, you can close local access in your journal's settings, so other accounts on your computer get a page that shows nothing from it. your browser keeps working.
-- on windows, one journal runs on a computer at a time, and the journal app says so when another account's journal is running, instead of showing that journal as yours.
-- on windows, a journal folder other accounts can read is made private to your account and this computer's administrators when your journal starts. a folder that's already private is left alone.
-- `solstone journal open` now opens your journal on windows with a one-time link, and `--print-url` prints it.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
-### Changed
-
-- a new journal now starts with local access closed, on mac, linux and windows, so other accounts on your computer get a page that shows nothing from it. a journal you already have stays as it is, and you can change this either way in your journal's settings.
-- on mac and linux, a closed journal opens in your browser with a one-time link, from the journal app on a mac or with `solstone journal open` on linux, and a script or program that uses `localhost:5015` gets refused until it's updated or you open local access.
-- on windows, a closed journal opens directly for your windows account, with no link, and programs running under your windows account keep working. one running as a service or inside WSL gets refused until you open local access.
-- if you close local access on a journal you already have, devices already paired and agents already connected keep their access, so look over your devices and your agents in case another account added one.
-- the empty "your · journal" mark, on the network page and in the journal app on windows, is now easy to see on any background.
-
 ### Fixed
 
-- when an agent reads your week with `get_week`, it now gets up to seven of your week's activities by name, instead of one for each activity type, so a week of meetings no longer reads as one meeting. it also gets how many activities the week holds in all.
-- searching your journal from a connected agent is much faster on a large journal, and it finds the same things.
-- when your journal can't reach your thinking provider, it now tries again every few minutes instead of nonstop, and leaves far fewer log files behind. once the provider is back, your journal starts catching up by itself soon after, and a daily briefing that failed during the outage no longer waits up to a day to try again.
-- if a provider's answer for a step on a recording is cut off on its way back, your journal now stops asking for that step after several tries over a couple of hours and lists it in health, so the same step doesn't keep costing you on your own key. you can try it again from health.
-- fixed cases where long transcripts lost a speaker from an activity's people list or gave a voice someone else's name.
-- the date picker on the transcripts page no longer makes you wait each time on a journal with many older days.
-- on windows, turning on encrypted backup could show an error and not open the services portal, even though setup had started. the services portal now opens.
-- on windows, `solstone journal service start` or `restart`, or setup, could say your journal was ready, then report a failure, even though your journal was running. the command now finishes its own cleanup before it ends.
-- reduced repeated work when building an activity's people list.
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
@@ -63,6 +42,34 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.71] - 2026-11-07
+
+### Added
+
+- on windows, you can close local access in your journal's settings, so other accounts on your computer get a page that shows nothing from it. your browser keeps working.
+- on windows, one journal runs on a computer at a time, and the journal app says so when another account's journal is running, instead of showing that journal as yours.
+- on windows, a journal folder other accounts can read is made private to your windows account and this computer's administrators when your journal starts. a folder that's already private is left alone.
+- `solstone journal open` now works on windows too, and `--print-url` prints a one-time link.
+
+### Changed
+
+- a new journal now starts with local access closed, on mac, linux and windows, so other accounts on your computer get a page that shows nothing from it. a journal you already have stays as it is, and you can change this either way in your journal's settings.
+- on mac and linux, a closed journal opens in your browser with a one-time link, from the journal app on a mac or with `solstone journal open` on linux, and a script or program that uses `localhost:5015` gets refused until it's updated or you open local access.
+- on windows, a closed journal opens directly for your windows account, with no link, and programs running under your windows account keep working. one running as a service or inside WSL gets refused until you open local access.
+- if you close local access on a journal you already have, devices already paired and agents already connected keep their access, so look over your devices and your agents in case another account added one.
+- the empty "your · journal" mark, on the network page and in the journal app on windows, is now easy to see on any background.
+
+### Fixed
+
+- when an agent reads your week with `get_week`, it now gets up to seven of your week's activities by name, instead of one for each activity type, so a week of meetings no longer reads as one meeting. it also gets how many activities the week holds in all.
+- searching your journal from a connected agent is much faster on a large journal, and it finds the same things.
+- when your journal can't reach your thinking provider, it now tries again every few minutes instead of nonstop, and leaves far fewer log files behind. once the provider is back, your journal starts catching up by itself soon after, and a daily briefing that failed during the outage no longer waits up to a day to try again.
+- if you use your own key with a cloud provider and its answer for a step on a recording is cut off on its way back, your journal now stops asking for that step after several tries over a couple of hours and lists it in health, so the same step doesn't keep costing you. you can try it again from health.
+- fixed cases where long transcripts lost a speaker from an activity's people list or gave a voice someone else's name.
+- the date picker on the transcripts page no longer makes you wait each time on a journal with many older days.
+- on windows, turning on encrypted backup could show an error and not open the services portal, even though setup had started. the services portal now opens.
+- on windows, `solstone journal service start` or `restart`, or setup, could say your journal was ready, then report a failure, even though your journal was running. the command now finishes its own cleanup before it ends.
 
 ## [2.0.70] - 2026-11-06
 
