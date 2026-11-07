@@ -322,6 +322,16 @@ impl Lookup<'_> {
         } else {
             WINDOW_SECONDS
         };
+        self.window_deleted(start, length)
+    }
+
+    /// Whether the owner deleted the body window a row starting at `start`, on
+    /// windows of `length`, sits in, or the one stepped around older content.
+    fn window_deleted(
+        &self,
+        start: chrono::DateTime<chrono::FixedOffset>,
+        length: i64,
+    ) -> Result<bool, String> {
         let (day, key) = window_id(floor_to_window(start, self.zone, length), length);
         let clock = key.split_once('_').map_or(key.as_str(), |(clock, _)| clock);
         let stream = stream_dir(self.journal, self.source, &day);
@@ -403,6 +413,11 @@ impl Lookup<'_> {
             }
             // A half-written move, or one beyond the lookup's reach.
             _ => return Ok(Verdict::Defer),
+        }
+        // Its own window is one the owner deleted: it stays deleted, as any new
+        // row does there, and nothing about Oura changed.
+        if self.window_deleted(start, length)? {
+            return Ok(Verdict::StayedDeleted);
         }
         if row.kind == RowKind::Experience {
             let account = format!("{}\u{1f}{id}", self.source.stream);

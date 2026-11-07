@@ -920,6 +920,22 @@ fn with_no_record_a_deleted_window_on_the_lookup_days_keeps_a_revision_out() {
     assert!(!window(root, "20260105", "110000_3600").exists());
     assert!(outcome.summary.contains("Oura has since changed 1 entry"));
     assert_eq!(outcome.holes.len(), 1);
+
+    // The twin: the same tag unchanged, into the hour the owner deleted, stays
+    // deleted, and says nothing of Oura changing it.
+    let again = run(
+        root,
+        &pages("3", "2026-01-05T09:15:00-07:00"),
+        "20261104_120002",
+        None,
+    );
+    assert!(placed(root, "t1").is_empty());
+    assert!(
+        !again.summary.contains("Oura has since changed"),
+        "{}",
+        again.summary
+    );
+    assert!(again.holes.is_empty(), "{:?}", again.holes);
 }
 
 #[test]
