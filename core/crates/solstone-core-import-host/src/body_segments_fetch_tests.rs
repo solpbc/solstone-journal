@@ -391,7 +391,7 @@ fn an_uninterrupted_run_covers_exactly_the_oura_days_asked() {
     );
     assert_eq!(
         result_of(&outcome, "daily_readiness").words,
-        "1 document for Oura's days 2026-01-01 to 2026-01-20"
+        "1 entry for Oura's days 2026-01-01 to 2026-01-20"
     );
     assert_eq!(result_of(&outcome, "heartrate").kind, ResultKind::Read);
     assert_eq!(result_of(&outcome, "workout").kind, ResultKind::Empty);
@@ -399,7 +399,7 @@ fn an_uninterrupted_run_covers_exactly_the_oura_days_asked() {
     assert!(
         outcome
             .summary
-            .contains("## From Oura\n\n- daily_readiness: read: 1 document"),
+            .contains("## From Oura\n\n- daily_readiness: read: 1 entry"),
         "{}",
         outcome.summary
     );
@@ -453,7 +453,7 @@ fn when_chunk_3_of_5_fails_coverage_holds_chunks_1_and_2() {
     assert_eq!(
         report.words,
         format!(
-            "read whole through Oura's day {second_last}, then Oura was busy or unavailable each time it was asked"
+            "read in full through Oura's day {second_last}, then Oura was busy or unavailable each time it was asked"
         )
     );
     // No chunk after the one that failed is asked.
@@ -508,7 +508,7 @@ fn a_deferral_takes_back_a_day_an_earlier_run_covered_and_names_it_and_its_twin_
             );
             assert!(
                 outcome.summary.contains(
-                    "## Not written whole\n\nOura answered for these, and the journal couldn't write all of it."
+                    "## Not written in full\n\nOura answered for these, and the journal couldn't write all of it."
                 ) && outcome.summary.contains(
                     "- workout, 2026-01-05: changed in Oura since; the journal keeps it as first written"
                 ),
@@ -521,7 +521,7 @@ fn a_deferral_takes_back_a_day_an_earlier_run_covered_and_names_it_and_its_twin_
                 json!([["2026-01-01", "2026-01-10"]])
             );
             assert_eq!(holes_of_file(root, "workout"), Value::Null);
-            assert!(!outcome.summary.contains("Not written whole"));
+            assert!(!outcome.summary.contains("Not written in full"));
         }
     }
 }
@@ -1170,7 +1170,7 @@ fn a_restored_run_carries_its_hole_and_with_none_the_earlier_claim_stands() {
                 json!([{"at": "2026-01-05", "reason": "deferred"}])
             );
         } else {
-            assert!(!repaired.summary.contains("Not written whole"));
+            assert!(!repaired.summary.contains("Not written in full"));
             assert_eq!(
                 covered(root, "workout"),
                 json!([["2026-01-01", "2026-01-10"], ["2026-01-12", "2026-01-13"]])
@@ -1431,7 +1431,7 @@ fn each_endpoint_ends_in_exactly_one_result_and_a_refused_one_makes_the_import_p
         (
             "daily_readiness",
             ResultKind::Read,
-            "1 document for Oura's days 2025-01-01 to 2026-01-31",
+            "1 entry for Oura's days 2025-01-01 to 2026-01-31",
         ),
         (
             "daily_sleep",
@@ -1446,23 +1446,23 @@ fn each_endpoint_ends_in_exactly_one_result_and_a_refused_one_makes_the_import_p
         (
             "heartrate",
             ResultKind::Refused,
-            "Oura says this needs the heartrate permission",
+            "Oura says this needs the \"heartrate\" permission; to bring it in, connect Oura again and allow it",
         ),
         (
             "sleep",
             ResultKind::Refused,
-            "this needs the daily permission",
+            "this needs the \"daily\" permission; to bring it in, connect Oura again and allow it",
         ),
         ("workout", ResultKind::Refused, "Oura said: nope"),
         (
             "session",
             ResultKind::RefusedPartWay,
-            "read whole through Oura's day 2025-12-30, then refused: Oura says this needs the session permission",
+            "read in full through Oura's day 2025-12-30, then Oura says this needs the \"session\" permission; to bring it in, connect Oura again and allow it",
         ),
         (
             "daily_activity",
             ResultKind::FailedPartWay,
-            "read whole through Oura's day 2025-12-30, then Oura was busy or unavailable each time it was asked",
+            "read in full through Oura's day 2025-12-30, then Oura was busy or unavailable each time it was asked",
         ),
         (
             "daily_spo2",

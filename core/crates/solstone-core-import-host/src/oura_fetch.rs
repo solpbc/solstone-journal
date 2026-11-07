@@ -107,7 +107,7 @@ impl OuraStop {
         match self {
             Self::Authorization => "Oura's authorization needs renewing: connect Oura again.",
             Self::Membership => {
-                "Oura says this account's membership has lapsed, so it shares no data. Run this again once the membership is active."
+                "Oura says this account has no active membership, so it shares no data. Run this again once the membership is active."
             }
             Self::AnotherSync => "Another Oura sync is running; run this again when it finishes.",
         }
@@ -194,10 +194,16 @@ impl Refusal {
     fn words(&self) -> String {
         match self {
             Self::Named { scopes } => format!(
-                "Oura says this needs the {} permission",
-                scopes.join(" and ")
+                "Oura says this needs the {} permission; to bring it in, connect Oura again and allow it",
+                scopes
+                    .iter()
+                    .map(|scope| format!("\"{scope}\""))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
             ),
-            Self::Documented { scope } => format!("this needs the {scope} permission"),
+            Self::Documented { scope } => format!(
+                "this needs the \"{scope}\" permission; to bring it in, connect Oura again and allow it"
+            ),
             Self::NotNamed => "Oura didn't say which permission this needs".to_owned(),
             Self::Said { detail } => format!("Oura said: {detail}"),
         }
@@ -332,9 +338,9 @@ pub(crate) fn plan(
         && from > to
     {
         return Err(format!(
-            "the range starts on {} and ends before it, on {}",
-            day_text(from),
-            day_text(to)
+            "the range ends on {}, before it starts on {}: put the earlier date first",
+            day_text(to),
+            day_text(from)
         ));
     }
     let mut endpoints = BTreeMap::new();
@@ -460,8 +466,8 @@ fn report(endpoint: &str, plan: &EndpointPlan, outcome: &Outcome, zone: Tz) -> E
             let noun = match (endpoint == HEARTRATE, *count == 1) {
                 (true, true) => "reading",
                 (true, false) => "readings",
-                (false, true) => "document",
-                (false, false) => "documents",
+                (false, true) => "entry",
+                (false, false) => "entries",
             };
             (ResultKind::Read, format!("{count} {noun} for {days}"))
         }
@@ -470,7 +476,7 @@ fn report(endpoint: &str, plan: &EndpointPlan, outcome: &Outcome, zone: Tz) -> E
         Outcome::Refused { whole, why } => (
             ResultKind::RefusedPartWay,
             format!(
-                "read whole through {}, then refused: {}",
+                "read in full through {}, then {}",
                 through(*whole),
                 why.words()
             ),
@@ -478,7 +484,7 @@ fn report(endpoint: &str, plan: &EndpointPlan, outcome: &Outcome, zone: Tz) -> E
         Outcome::Failed { whole: 0, error } => (ResultKind::Failed, error.clone()),
         Outcome::Failed { whole, error } => (
             ResultKind::FailedPartWay,
-            format!("read whole through {}, then {error}", through(*whole)),
+            format!("read in full through {}, then {error}", through(*whole)),
         ),
     };
     EndpointReport {
@@ -635,7 +641,8 @@ impl From<Fault> for Stop {
     }
 }
 
-const TOKEN_STORE_WORDS: &str = "Oura renewed its authorization and the journal couldn't save it, so Oura will need connecting again.";
+const TOKEN_STORE_WORDS: &str =
+    "Oura renewed its authorization and the journal couldn't save it: connect Oura again.";
 
 /// The journal's tokens, as config holds them.
 fn load_settings(journal: &Path) -> Result<OuraSettings, Fault> {

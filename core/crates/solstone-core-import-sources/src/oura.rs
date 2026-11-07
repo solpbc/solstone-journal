@@ -395,10 +395,14 @@ impl HoleReason {
         match self {
             Self::Deferred => "changed in Oura since; the journal keeps it as first written",
             Self::HeldBack | Self::ReadingHeldBack => {
-                "not added yet: it may already be in a part of the journal that couldn't be read; the next import tries again"
+                "not added yet: it may already be in a part of the journal that couldn't be read; an import that asks for this day again tries again"
             }
-            Self::Unreadable => "the part of the journal it belongs in couldn't be read",
-            Self::RecordRefused => "it couldn't be shown on its day",
+            Self::Unreadable => {
+                "the part of the journal it belongs in couldn't be read; an import that asks for this day again tries again"
+            }
+            Self::RecordRefused => {
+                "it couldn't be shown on its day; an import that asks for this day again tries again"
+            }
         }
     }
 }

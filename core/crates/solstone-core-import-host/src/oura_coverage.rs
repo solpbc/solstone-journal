@@ -349,7 +349,7 @@ pub(crate) fn hole_place(endpoint: &str, at: &str) -> String {
 /// Each endpoint's covered ranges and its holes, for the entry to print.
 #[must_use]
 pub fn coverage_text(coverage: &Coverage) -> String {
-    let mut text = String::from("Read from Oura and written whole so far:\n");
+    let mut text = String::from("Read from Oura and written in full so far:\n");
     for name in ENDPOINTS {
         let held = coverage.endpoints.get(name).cloned().unwrap_or_default();
         let ranges = if held.covered.is_empty() {
@@ -379,7 +379,7 @@ pub fn coverage_text(coverage: &Coverage) -> String {
         for hole in &held.holes {
             let _ = writeln!(
                 text,
-                "  - not written whole, {}: {}",
+                "  - not written in full, {}: {}",
                 hole_place(name, &hole.at),
                 hole.reason.words()
             );

@@ -1125,7 +1125,7 @@ fn holes_section(holes: &BTreeSet<Hole>) -> String {
         return String::new();
     }
     let mut text = String::from(
-        "## Not written whole\n\nOura answered for these, and the journal couldn't write all of it. An import that asks for these days again tries them again.\n\n",
+        "## Not written in full\n\nOura answered for these, and the journal couldn't write all of it.\n\n",
     );
     for hole in holes {
         text.push_str(&format!(
