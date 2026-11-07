@@ -9,7 +9,7 @@ mod bounded_file;
 mod bundle;
 mod oura;
 mod oura_connect;
-mod oura_sync;
+pub mod oura_sync;
 mod zip_names;
 
 pub use apple::{

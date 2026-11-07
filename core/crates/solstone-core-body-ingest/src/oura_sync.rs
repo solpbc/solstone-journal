@@ -23,8 +23,8 @@ use crate::oura::{
     OURA_SYNC_ENDPOINTS, OuraDocuments, OuraImportOptions, normalize_oura_documents, save_documents,
 };
 
-const API_BASE: &str = "https://api.ouraring.com/v2/usercollection";
-const TOKEN_URL: &str = "https://api.ouraring.com/oauth/token";
+pub const API_BASE: &str = "https://api.ouraring.com/v2/usercollection";
+pub const TOKEN_URL: &str = "https://api.ouraring.com/oauth/token";
 const CURSOR_SCHEMA: &str = "solstone.import_sync.oura.v1";
 const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_PAGES: usize = 100;
@@ -117,9 +117,9 @@ impl OuraSyncReport {
     }
 }
 
-struct HttpResponse {
-    status: u16,
-    body: String,
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
 }
 
 struct FetchBudget {
@@ -167,7 +167,7 @@ impl FetchBudget {
     }
 }
 
-trait OuraHttp {
+pub trait OuraHttp {
     fn get(
         &mut self,
         endpoint: &str,
@@ -186,7 +186,7 @@ trait OuraHttp {
     }
 }
 
-struct LiveOuraHttp {
+pub struct LiveOuraHttp {
     agent: ureq::Agent,
 }
 
@@ -205,7 +205,7 @@ impl LiveOuraHttp {
         }
     }
 
-    fn response(
+    pub fn response(
         response: ureq::http::Response<ureq::Body>,
     ) -> Result<HttpResponse, BodyIngestError> {
         let status = response.status().as_u16();
@@ -279,13 +279,13 @@ pub(crate) fn post_oura_token_form(
 }
 
 #[derive(Clone)]
-struct OuraSettings {
-    client_id: String,
-    client_secret: Option<String>,
-    access_token: String,
-    refresh_token: String,
-    token_type: String,
-    timezone: String,
+pub struct OuraSettings {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_type: String,
+    pub timezone: String,
 }
 
 pub fn sync_oura(
@@ -296,7 +296,7 @@ pub fn sync_oura(
     sync_with_http(journal, options, &mut http)
 }
 
-fn sync_with_http(
+pub fn sync_with_http(
     journal: &Path,
     options: &OuraSyncOptions,
     http: &mut dyn OuraHttp,
@@ -333,7 +333,7 @@ fn sync_with_http_before_lock(
     sync_locked(journal, options, None, settings, http)
 }
 
-pub(crate) fn hold_oura_lock(journal: &Path) -> Result<FileLock, BodyIngestError> {
+pub fn hold_oura_lock(journal: &Path) -> Result<FileLock, BodyIngestError> {
     create_directory_with_mode(&journal.join("imports"), 0o700)
         .map_err(|_| failure(BodyIngestErrorKind::Publication, "sync_lock"))?;
     hold_lock(
@@ -507,7 +507,7 @@ fn sync_locked(
     })
 }
 
-fn settings(journal: &Path) -> Result<OuraSettings, BodyIngestError> {
+pub fn settings(journal: &Path) -> Result<OuraSettings, BodyIngestError> {
     let read = read_journal_config(journal)
         .map_err(|_| failure(BodyIngestErrorKind::Source, "journal_config"))?;
     let config = read
@@ -562,7 +562,7 @@ fn authorization_header(settings: &OuraSettings) -> String {
     format!("{scheme} {}", settings.access_token)
 }
 
-fn request_with_retry(
+pub fn request_with_retry(
     http: &mut dyn OuraHttp,
     endpoint: &str,
     query: &BTreeMap<String, String>,
@@ -599,12 +599,12 @@ fn request_with_retry(
 }
 
 #[derive(Debug)]
-enum ResponseClass {
+pub enum ResponseClass {
     Page(Map<String, Value>),
     Permission,
 }
 
-fn classify_response(
+pub fn classify_response(
     _endpoint: &str,
     response: &HttpResponse,
 ) -> Result<ResponseClass, BodyIngestError> {
@@ -638,7 +638,7 @@ fn classify_response(
     }
 }
 
-fn refresh(
+pub fn refresh(
     http: &mut dyn OuraHttp,
     settings: &mut OuraSettings,
     journal: &Path,
@@ -963,7 +963,7 @@ fn write_cursor(
     .map_err(|_| failure(BodyIngestErrorKind::Publication, "cursor_write"))
 }
 
-fn encode_form(values: &BTreeMap<String, String>) -> String {
+pub fn encode_form(values: &BTreeMap<String, String>) -> String {
     values
         .iter()
         .map(|(key, value)| format!("{}={}", percent_encode(key), percent_encode(value)))

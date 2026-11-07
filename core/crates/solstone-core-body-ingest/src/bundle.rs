@@ -62,7 +62,7 @@ pub struct BodyIngestError {
 }
 
 impl BodyIngestError {
-    pub(crate) const fn new(kind: BodyIngestErrorKind, stage: &'static str) -> Self {
+    pub const fn new(kind: BodyIngestErrorKind, stage: &'static str) -> Self {
         Self { kind, stage }
     }
 
