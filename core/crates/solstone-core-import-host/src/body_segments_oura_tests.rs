@@ -2109,3 +2109,71 @@ fn a_move_under_an_import_naming_no_facet_keeps_the_record_readable_under_its_fa
         }
     }
 }
+
+#[test]
+fn nothing_oura_scores_or_judges_reaches_the_days_document_or_search() {
+    use solstone_core_format::content::{Family, produce_chunks};
+    let journal = journal();
+    let root = journal.path();
+    run(root, &fixture(), "20261104_120000", Some("health"));
+    solstone_core_location::body_day::BodyDays::default().reconcile(root);
+    // Every text the journal makes of the import: each day's document and each
+    // window's search chunks.
+    let mut texts: Vec<(String, String)> = Vec::new();
+    for day in fs::read_dir(root.join("chronicle")).unwrap().flatten() {
+        let name = day.file_name().to_string_lossy().into_owned();
+        if let Ok(text) = fs::read_to_string(day.path().join("body.md")) {
+            texts.push((format!("{name}/body.md"), text));
+        }
+        for window in fs::read_dir(day.path().join(STREAM)).unwrap().flatten() {
+            let Ok(text) = fs::read_to_string(window.path().join(BODY_RECORDS_FILE)) else {
+                continue;
+            };
+            let rel = format!(
+                "{name}/{STREAM}/{}/{BODY_RECORDS_FILE}",
+                window.file_name().to_string_lossy()
+            );
+            let produced = produce_chunks(Family::BodyRecords, &rel, &text);
+            assert!(produced.error.is_none(), "{rel}: {:?}", produced.error);
+            for chunk in produced.chunks.into_iter().map(|chunk| chunk.content) {
+                texts.push((rel.clone(), chunk));
+            }
+            if let Some(header) = produced.header {
+                texts.push((rel.clone(), header));
+            }
+        }
+    }
+    // The instrument reads what it should: the walk, its distance and the day's
+    // documents by name.
+    let all: String = texts.iter().map(|(_, text)| text.as_str()).collect();
+    for expected in ["walking", "2412.9 m", "daily readiness"] {
+        assert!(all.contains(expected), "{expected}: {all}");
+    }
+    // The fixture's scores, levels and measures, and the words Oura judges with.
+    let judged = [
+        "82",
+        "85",
+        "74",
+        "93",
+        "38",
+        "44",
+        "96.4",
+        "41.2",
+        "5400",
+        "112",
+        "stressful",
+        "limited",
+        "good",
+        "moderate",
+        "hard",
+    ];
+    for (place, text) in &texts {
+        let words: Vec<&str> = text
+            .split(|c: char| !(c.is_alphanumeric() || c == '.'))
+            .map(|word| word.trim_matches('.'))
+            .collect();
+        for word in judged {
+            assert!(!words.contains(&word), "{word} in {place}: {text}");
+        }
+    }
+}
