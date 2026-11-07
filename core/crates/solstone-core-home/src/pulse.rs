@@ -138,20 +138,22 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         )
     };
     let body_data = solstone_core_location::body_records::has_body_data(context.journal_root());
+    let not_yet_phase = briefing_not_yet_phase(
+        briefing_exists,
+        briefing_not_yet,
+        segment_count > 0 || last_observe_relative.is_some(),
+    );
+    // Nothing the owner did yesterday, so no briefing is coming: nothing may
+    // say one is late, pending or due. A not-yet phase says what the first
+    // briefing waits on and keeps its place, except beside body lines, which
+    // stand alone.
     let briefing_phase = if !briefing_exists
-        && body_data
+        && (body_data || not_yet_phase.is_none())
         && !owes_a_briefing(context.journal_root(), &context.yesterday())
     {
-        // Nothing the owner did yesterday, so no briefing is coming: nothing
-        // may say one is late, pending or due, and the body lines stand alone.
         "none_owed"
     } else {
-        briefing_not_yet_phase(
-            briefing_exists,
-            briefing_not_yet,
-            segment_count > 0 || last_observe_relative.is_some(),
-        )
-        .unwrap_or_else(|| {
+        not_yet_phase.unwrap_or_else(|| {
             compute_briefing_phase(segment_count, context.local_hour(), briefing_exists)
         })
     };
@@ -417,10 +419,12 @@ fn summarize_yesterday_processing(context: &HomeContext, journal_age_days: i64) 
     let today = context.today();
     let pipeline = summarize_pipeline_day(context, &yesterday);
     let briefing = briefing_freshness(context, &today);
+    // A yesterday that owes no briefing can't be missing one.
     let briefing_valid = briefing
         .get("valid")
         .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || !owes_a_briefing(context.journal_root(), &yesterday);
     let overnight_passed = overnight_window_passed(context.local_hour());
     let sparse = (transcript_seconds > 0.0 || transcript_segments > 0)
         && !has_facet_activity
@@ -690,6 +694,76 @@ mod tests {
         assert_ne!(pulse["briefing_phase"], "none_owed");
     }
 
+    /// Without body data too, a yesterday that owes no briefing says so at
+    /// every hour, and the overnight gap lines never call it missing. One
+    /// holding something the owner did keeps the clock and the gap line.
+    #[test]
+    fn a_capture_only_yesterday_that_owes_nothing_is_never_late_or_missing() {
+        let root = september_journal();
+        engine_chosen(root.path());
+        let day = |hour: u32| {
+            HomeContext::with_zone(
+                root.path(),
+                Utc.with_ymd_and_hms(2026, 9, 6, hour, 0, 0).unwrap(),
+                mountain_day(),
+            )
+        };
+        // 09-05 held only calendar notes.
+        fs::remove_dir_all(root.path().join("chronicle/20260905/090000_300")).unwrap();
+        fs::create_dir_all(root.path().join("streams")).unwrap();
+        fs::write(
+            root.path().join("streams/phone_calendar.json"),
+            r#"{"name":"phone_calendar","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"calendar"}"#,
+        )
+        .unwrap();
+        let notes = root
+            .path()
+            .join("chronicle/20260905/phone_calendar/094000_300");
+        fs::create_dir_all(&notes).unwrap();
+        fs::write(
+            notes.join(format!("calendar_{}.jsonl", "a".repeat(64))),
+            "{}\n",
+        )
+        .unwrap();
+        // 14:00, 18:00 and 23:00 UTC are 08:00, noon and 17:00 in Denver.
+        for hour in [14, 18, 23] {
+            let payload = pulse_payload(&day(hour));
+            assert_eq!(payload["briefing_phase"], "none_owed", "hour {hour}");
+            assert_eq!(payload["briefing_lateness"]["late"], false, "hour {hour}");
+            let processing = summarize_yesterday_processing(&day(hour), 2).unwrap();
+            assert!(
+                !processing["status_reasons"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("briefing_missing")),
+                "hour {hour}: {processing}"
+            );
+            assert!(
+                processing["gap_links"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|link| {
+                        !link["href"]
+                            .as_str()
+                            .unwrap()
+                            .ends_with("/morning_briefing")
+                    }),
+                "hour {hour}: {processing}"
+            );
+        }
+        // Something the owner did yesterday keeps the briefing's clock.
+        captured(root.path(), "20260905");
+        assert_eq!(pulse_payload(&day(18))["briefing_phase"], "missing");
+        let processing = summarize_yesterday_processing(&day(18), 2).unwrap();
+        assert!(
+            processing["status_reasons"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("briefing_missing"))
+        );
+    }
+
     #[test]
     fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
         let root = TempDir::new().unwrap();
@@ -790,6 +864,14 @@ mod tests {
         ));
         assert!(day1["health_glance"].get("note").is_none());
         assert!(has_unclear(&day1), "{}", day1["health_glance"]);
+        // Nothing went in on day 0, so day 1 owes no briefing; had something
+        // gone in, the briefing it owes is missing.
+        assert_eq!(day1["briefing_phase"], "none_owed");
+        captured(root.path(), "20260814");
+        let day1 = pulse_payload(&utc_context(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 15, 10, 0, 0).unwrap(),
+        ));
         assert_eq!(day1["briefing_phase"], "missing");
     }
 
@@ -1029,9 +1111,11 @@ mod tests {
     #[test]
     fn empty_journal_phase_tracks_the_injected_hour() {
         let root = TempDir::new().unwrap();
-        // A way to think is chosen and the first night is long past, so the
-        // briefing clock alone decides the phase (day 0 is briefing_not_yet_phase's).
+        // A way to think is chosen, the first night is long past and yesterday
+        // owes a briefing, so the briefing clock alone decides the phase (day 0
+        // is briefing_not_yet_phase's).
         engine_chosen_and_first_night_past(root.path());
+        captured(root.path(), "20260813");
         for hour in 0..24 {
             let context = utc_context(
                 root.path(),
@@ -1105,6 +1189,7 @@ mod tests {
                 stats,
             )
             .unwrap();
+            captured(root.path(), day);
         }
         root
     }
@@ -1251,6 +1336,7 @@ mod tests {
             r#"{"stats":{"transcript_duration":60,"transcript_segments":1},"facet_data":{}}"#,
         )
         .unwrap();
+        captured(root.path(), "20260813");
         let context = utc_context(
             root.path(),
             Utc.with_ymd_and_hms(2026, 8, 14, 13, 0, 0).unwrap(),
@@ -1589,6 +1675,13 @@ mod tests {
     fn engine_chosen_and_first_night_past(root: &Path) {
         engine_chosen(root);
         fs::create_dir_all(root.join("chronicle/20200101")).unwrap();
+    }
+
+    /// A segment holding something the owner did, so `day` owes a briefing.
+    fn captured(root: &Path, day: &str) {
+        let segment = root.join("chronicle").join(day).join("090000_300");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("audio.jsonl"), "{}\n").unwrap();
     }
 
     fn engine_chosen(root: &Path) {

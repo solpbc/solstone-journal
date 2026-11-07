@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- home no longer says yesterday's write-up is coming, late or missing on a day when nothing you did went into your journal.
 - `solstone journal mcp token create --help`, `mcp permission set --help` and the other `solstone journal mcp` subcommands now show their own usage and options, instead of the `solstone journal mcp` usage. thanks @dvanduzer for the report (#413).
 - `solstone call journal facet create --help`, `rename` and `delete` now say what `--consent` does: it notes in the facet's log that you approved the change, and on delete it's accepted but changes nothing, since `--yes` is what confirms a delete (#413).
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
