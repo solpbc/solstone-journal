@@ -1,0 +1,115 @@
+--- a/ggml/src/ggml-cpu/CMakeLists.txt
++++ b/ggml/src/ggml-cpu/CMakeLists.txt
+@@ -106,6 +106,17 @@
+             ggml-cpu/arch/arm/repack.cpp
+             )
+ 
++        # Keep the portable Android backend at its baseline ISA. Repacked
++        # matrices have their own runtime capability gate, so only their kernels
++        # may use DOTPROD. Disable LTO across that instruction boundary.
++        if (ANDROID AND ANDROID_ABI STREQUAL "arm64-v8a" AND
++            NOT GGML_NATIVE AND NOT GGML_CPU_ALL_VARIANTS AND NOT GGML_CPU_ARM_ARCH)
++            set_property(SOURCE ggml-cpu/arch/arm/repack.cpp APPEND PROPERTY
++                COMPILE_OPTIONS -march=armv8-a+dotprod -fno-lto)
++            set_property(SOURCE ggml-cpu/repack.cpp APPEND PROPERTY
++                COMPILE_DEFINITIONS GGML_CPU_ARM_RUNTIME_DOTPROD)
++        endif()
++
+         # MSVC proper (not clang-cl) has no -mcpu/-march for ARM: features can only be
+         # selected by probing the host at configure time and forwarding -D__ARM_FEATURE_*
+         if (MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+--- a/ggml/src/ggml-cpu/repack.cpp
++++ b/ggml/src/ggml-cpu/repack.cpp
+@@ -17,6 +17,20 @@
+ #include <cstdio>  // for GGML_ASSERT
+ 
+ #include "repack.h"
++
++#if defined(GGML_CPU_ARM_RUNTIME_DOTPROD)
++#include <asm/hwcap.h>
++#include <sys/auxv.h>
++#endif
++
++static bool ggml_repack_has_dotprod() {
++#if defined(GGML_CPU_ARM_RUNTIME_DOTPROD)
++    static const bool supported = (getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0;
++    return supported;
++#else
++    return ggml_cpu_has_dotprod();
++#endif
++}
+ 
+ #if defined(__GNUC__)
+ #pragma GCC diagnostic ignored "-Woverlength-strings"
+@@ -4987,7 +5001,7 @@
+                 return &q4_0_4x8_q8_0;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 4 == 0) {
+                 return &q4_0_4x4_q8_0;
+             }
+@@ -5019,7 +5033,7 @@
+                 return &q4_K_8x8_q8_K;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 8 == 0) {
+                 return &q4_K_8x4_q8_K;
+             }
+@@ -5058,7 +5072,7 @@
+                 return &q5_K_8x8_q8_K;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 8 == 0) {
+                 return &q5_K_8x4_q8_K;
+             }
+@@ -5069,7 +5083,7 @@
+                 return &q6_K_8x8_q8_K;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 8 == 0) {
+                 return &q6_K_8x4_q8_K;
+             }
+@@ -5080,7 +5094,7 @@
+                 return &iq4_nl_8x8_q8_0;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 4 == 0) {
+                 return &iq4_nl_4x4_q8_0;
+             }
+@@ -5102,7 +5116,7 @@
+                 return &mxfp4_8x8_q8_0;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 4 == 0) {
+                 return &mxfp4_4x4_q8_0;
+             }
+@@ -5113,7 +5127,7 @@
+                 return &q8_0_4x8_q8_0;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 4 == 0) {
+                 return &q8_0_4x4_q8_0;
+             }
+@@ -5135,7 +5149,7 @@
+                 return &q1_0_4x8_q8_0;
+             }
+         }
+-        if (ggml_cpu_has_neon() && ggml_cpu_has_dotprod()) {
++        if (ggml_cpu_has_neon() && ggml_repack_has_dotprod()) {
+             if (cur->ne[1] % 4 == 0) {
+                 return &q1_0_4x4_q8_0;
+             }

@@ -66,6 +66,44 @@ class BuildControls(unittest.TestCase):
                 for file in ("common.c", "metal.metal", "cpu.c"):
                     self.assertEqual((ggml / file).read_text(), "fixed\n")
 
+    def test_android_llama_patch_binds_only_a_successfully_patched_tree(self):
+        for before, succeeds in (("base", True), ("different", False)):
+            with self.subTest(before=before), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                          jobs=1, platform="android", components=["llama"], full_run=False)
+                build = mobile.Build(args)
+                source = build.sources / "llama"
+                source.mkdir()
+                (source / "kernel.cpp").write_text(before + "\n")
+                patch = root / "core/distribution/mobile/llama-android-dotprod-repack.patch"
+                patch.parent.mkdir(parents=True)
+                patch.write_text(self.patch("kernel.cpp"))
+                with mock.patch.object(mobile, "ROOT", root), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    if succeeds:
+                        build.patch_llama(source)
+                    else:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            build.patch_llama(source)
+                if succeeds:
+                    self.assertEqual((source / "kernel.cpp").read_text(), "fixed\n")
+                    self.assertEqual(build.summary["inputs"]["llama-patched-source"]["tree_sha256"], mobile.tree_digest(source))
+                    self.assertEqual(build.summary["patches"][0]["sha256"], mobile.sha256(patch))
+                else:
+                    self.assertNotIn("llama-patched-source", build.summary["inputs"])
+                    self.assertEqual(build.summary["patches"], [])
+
+    def test_ios_llama_does_not_require_or_apply_the_android_patch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                      jobs=1, platform="ios", components=["llama"], full_run=False)
+            build = mobile.Build(args)
+            with mock.patch.object(mobile, "ROOT", root), mock.patch.object(build, "run", side_effect=AssertionError("unexpected patch")):
+                build.patch_llama(root / "missing-source")
+            self.assertEqual(build.summary["patches"], [])
+            self.assertNotIn("llama-patched-source", build.summary["inputs"])
+
     def test_conflicting_media_patch_cannot_publish_a_closure_binding(self):
         with tempfile.TemporaryDirectory() as directory:
             build, sources = self.media_fixture(Path(directory))

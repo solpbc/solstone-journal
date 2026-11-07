@@ -39,6 +39,12 @@ API callers as well as CLI compilation. nvattest produces its SDK library on
 iOS and its CLI plus SDK on Android. The recipes preserve the SDK's crypto
 dependencies and trust restrictions.
 
+The Android llama recipe applies `llama-android-dotprod-repack.patch` to the
+verified upstream source. Only the Arm repack kernels are compiled with
+DOTPROD; baseline dispatch checks the phone's hardware capability before using
+them. CPUs without DOTPROD keep the generic path. The receipt records the patch
+hash and resulting source-tree hash. The iOS llama recipe does not apply it.
+
 `inputs.json` fixes external inputs by source coordinate and archive digest.
 The nvattest patch is applied to that exact source, with forward and reverse
 checks. Parakeet and RF-DETR use the same union of their pinned GGML patch

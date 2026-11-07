@@ -42,13 +42,24 @@ fn verify_model(path: &Path) -> Result<(), String> {
         }
         hash.update(&buffer[..n]);
     }
-    if format!("{:x}", hash.finalize()) != pin.sha256 {
+    let actual_sha256 = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if actual_sha256 != pin.sha256 {
         return Err("Parakeet model digest differs from pinned model".into());
     }
     Ok(())
 }
 
 impl Parakeet {
+    /// Revalidate the pinned bytes before reusing an already loaded context.
+    /// A path or unchanged file metadata alone is not a model identity.
+    pub fn verify_model(model: &Path) -> Result<(), String> {
+        verify_model(model)
+    }
+
     /// Observe the outstanding native call without recording samples or output.
     /// `true` brackets only the C API invocation, after input/model admission;
     /// `false` is delivered before copying or decoding its returned JSON.

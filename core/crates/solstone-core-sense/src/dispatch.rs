@@ -57,7 +57,17 @@ pub enum SenseJobResult {
     Hold,
 }
 
+/// Resources owned only by one dispatcher worker thread. The scope is dropped
+/// before that worker is joined, including when the worker unwinds.
+pub trait SenseWorkerScope {
+    /// Release retained resources when idle or waiting for memory admission.
+    fn checkpoint(&self, release: bool);
+}
+
 pub trait SenseExecutor: Send + Sync {
+    fn worker_scope(&self, _handler: &str) -> Option<Box<dyn SenseWorkerScope>> {
+        None
+    }
     fn cancelled(&self) -> bool {
         false
     }
@@ -497,7 +507,7 @@ impl SenseDispatcher {
                 };
                 let worker = thread::Builder::new()
                     .name(format!("{handler}-worker"))
-                    .spawn(move || worker(queue, state, outbound, context))
+                    .spawn(move || worker(queue, state, outbound, context, handler))
                     .expect("sense worker thread");
                 worker_handles.push(worker);
             }
@@ -1217,7 +1227,12 @@ fn worker(
     state: Arc<Mutex<State>>,
     outbound: mpsc::Sender<Outbound>,
     context: WorkerContext,
+    handler: &str,
 ) {
+    let scope = context
+        .executor
+        .as_ref()
+        .and_then(|executor| executor.worker_scope(handler));
     loop {
         let stopping = {
             let state = state.lock().expect("sense state");
@@ -1230,8 +1245,11 @@ fn worker(
             let mut queue = queue.lock().expect("sense handler queue");
             queue.pop_best()
         };
+        if let Some(scope) = &scope {
+            scope.checkpoint(job.is_none());
+        }
         match job {
-            Some(job) => run_job(job, &queue, &state, &outbound, &context),
+            Some(job) => run_job(job, &queue, &state, &outbound, &context, scope.as_deref()),
             None => thread::sleep(Duration::from_millis(50)),
         }
     }
@@ -1243,6 +1261,7 @@ fn run_job(
     state: &Arc<Mutex<State>>,
     outbound: &mpsc::Sender<Outbound>,
     worker_context: &WorkerContext,
+    scope: Option<&dyn SenseWorkerScope>,
 ) {
     let admission_stopping = || {
         let state = state.lock().expect("sense state");
@@ -1258,6 +1277,9 @@ fn run_job(
             &job.config,
             || admission_stopping() || executor.cancelled(),
             |available, floor| {
+                if let Some(scope) = scope {
+                    scope.checkpoint(true);
+                }
                 let _ = outbound.send(Outbound {
                     tract: "observe",
                     event: "memory_throttle_started",
@@ -3328,6 +3350,113 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
+    fn worker_scope_stays_on_its_worker_and_drops_before_join_even_on_unwind() {
+        type Events = Arc<Mutex<Vec<(&'static str, thread::ThreadId)>>>;
+        struct Executor {
+            state: Arc<Mutex<State>>,
+            events: Events,
+            unwind: bool,
+        }
+        struct Scope {
+            state: Arc<Mutex<State>>,
+            events: Events,
+            unwind: bool,
+            _thread_owned: std::rc::Rc<()>,
+        }
+        impl SenseWorkerScope for Scope {
+            fn checkpoint(&self, idle: bool) {
+                assert!(idle);
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(("idle", thread::current().id()));
+                assert!(!self.unwind, "scope unwind fixture");
+                self.state.lock().unwrap().stopping = true;
+            }
+        }
+        impl Drop for Scope {
+            fn drop(&mut self) {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(("drop", thread::current().id()));
+            }
+        }
+        impl SenseExecutor for Executor {
+            fn worker_scope(&self, handler: &str) -> Option<Box<dyn SenseWorkerScope>> {
+                assert_eq!(handler, "transcribe");
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(("start", thread::current().id()));
+                Some(Box::new(Scope {
+                    state: Arc::clone(&self.state),
+                    events: Arc::clone(&self.events),
+                    unwind: self.unwind,
+                    _thread_owned: std::rc::Rc::new(()),
+                }))
+            }
+            fn execute(
+                &self,
+                _: &str,
+                _: &Path,
+                _: &SegmentContext,
+                _: Option<&solstone_core_system::work_retry::Attempt>,
+                _: &AtomicBool,
+            ) -> SenseJobResult {
+                unreachable!("empty worker has no job")
+            }
+        }
+        for unwind in [false, true] {
+            let state = Arc::new(Mutex::new(State {
+                segments: HashMap::new(),
+                pending_files: HashSet::new(),
+                health: Health::default(),
+                stopping: false,
+                day_leases: HashMap::new(),
+                lease_deferred: Vec::new(),
+            }));
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let executor = Arc::new(Executor {
+                state: Arc::clone(&state),
+                events: Arc::clone(&events),
+                unwind,
+            });
+            let context = WorkerContext {
+                journal: PathBuf::new(),
+                admission: Admission::new(Arc::new(SystemMemoryProbe)),
+                verbose: false,
+                debug: false,
+                batch: BatchContext::default(),
+                program: Err(DispatcherResolveError::Missing {
+                    path: PathBuf::new(),
+                }),
+                tally: Arc::new(JobTally::new()),
+                cleanups: Arc::new(Mutex::new(Vec::new())),
+                hosted_parent: None,
+                executor: Some(executor),
+            };
+            let (outbound, _receiver) = mpsc::channel();
+            let handle = thread::spawn(move || {
+                worker(
+                    Arc::new(Mutex::new(HandlerQueue::new(1))),
+                    state,
+                    outbound,
+                    context,
+                    "transcribe",
+                )
+            });
+            let id = handle.thread().id();
+            assert_eq!(handle.join().is_err(), unwind);
+            assert_eq!(
+                *events.lock().unwrap(),
+                vec![("start", id), ("idle", id), ("drop", id)]
+            );
+        }
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
     fn cancelled_completion_waiting_for_state_cannot_publish_a_marker_or_event() {
         for cancel in [false, true] {
             let temp = tempfile::tempdir().unwrap();
@@ -3416,7 +3545,29 @@ mod tests {
 
     #[cfg(feature = "full-tests")]
     #[test]
-    fn executor_hold_for_describe_defers_and_leaves_no_stream_marker() {
+    fn executor_hold_for_describe_releases_memory_and_leaves_no_stream_marker() {
+        struct RecoveringMemory(AtomicU64);
+        impl crate::memory::MemoryProbe for RecoveringMemory {
+            fn available_bytes(&self) -> Option<u64> {
+                Some(if self.0.fetch_add(1, Ordering::Relaxed) == 0 {
+                    0
+                } else {
+                    u64::MAX
+                })
+            }
+            fn total_bytes(&self) -> Option<u64> {
+                Some(u64::MAX)
+            }
+            fn unified_memory(&self) -> bool {
+                false
+            }
+        }
+        struct Released(std::cell::Cell<bool>);
+        impl SenseWorkerScope for Released {
+            fn checkpoint(&self, release: bool) {
+                self.0.set(release);
+            }
+        }
         let temp = tempfile::tempdir().expect("temp journal");
         let (outbound, _receiver) = mpsc::channel();
         let tally = Arc::new(JobTally::new());
@@ -3427,7 +3578,7 @@ mod tests {
         });
         let worker_context = WorkerContext {
             journal: temp.path().to_path_buf(),
-            admission: Admission::new(Arc::new(SystemMemoryProbe)),
+            admission: Admission::new(Arc::new(RecoveringMemory(AtomicU64::new(0)))),
             verbose: false,
             debug: false,
             batch: BatchContext::default(),
@@ -3440,7 +3591,9 @@ mod tests {
             executor: Some(executor),
         };
         let file = temp.path().join("frame.jpg");
-        let job = test_job("describe", &file, "1:20261016120000".parse().unwrap());
+        let mut job = test_job("describe", &file, "1:20261016120000".parse().unwrap());
+        job.config
+            .insert("memory".into(), serde_json::json!({"floor_mib":1}));
         let key = job.item.context.key.clone();
         let queue = Arc::new(Mutex::new(HandlerQueue::new(1)));
         let mut segment_state = SegmentState::new(job.item.context.clone());
@@ -3456,8 +3609,20 @@ mod tests {
             lease_deferred: Vec::new(),
         }));
 
-        run_job(job, &queue, &state, &outbound, &worker_context);
+        let scope = Released(std::cell::Cell::new(false));
+        run_job(
+            job,
+            &queue,
+            &state,
+            &outbound,
+            &worker_context,
+            Some(&scope),
+        );
 
+        assert!(
+            scope.0.get(),
+            "memory admission must release retained worker resources"
+        );
         assert!(called.load(Ordering::SeqCst), "executor must be called");
         assert_eq!(tally.deferred(), 1);
         let (failed, _ran) = tally.snapshot();
@@ -3516,7 +3681,7 @@ mod tests {
             lease_deferred: Vec::new(),
         }));
 
-        run_job(job, &queue, &state, &outbound, &worker_context);
+        run_job(job, &queue, &state, &outbound, &worker_context, None);
 
         assert!(called.load(Ordering::SeqCst), "executor must be called");
         let (failed, ran) = tally.snapshot();

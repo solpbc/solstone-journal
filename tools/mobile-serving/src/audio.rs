@@ -30,12 +30,22 @@ struct LocalAsr<'a> {
     scratch: &'a Path,
     loaded: RefCell<Option<journal_mobile_audio::Parakeet>>,
     load_ms: Cell<Option<f64>>,
+    verify_loaded: Cell<bool>,
+    reused: Cell<bool>,
+    inferred: Cell<bool>,
     native_call: &'a dyn Fn(bool),
 }
 
 impl solstone_core_transcribe::EmbeddedAsr for LocalAsr<'_> {
     fn transcribe(&self, samples: &[f32]) -> Result<Value, String> {
         let mut loaded = self.loaded.borrow_mut();
+        if self.verify_loaded.replace(false) {
+            if let Err(error) = journal_mobile_audio::Parakeet::verify_model(self.model) {
+                loaded.take();
+                return Err(error);
+            }
+            self.reused.set(true);
+        }
         if loaded.is_none() {
             let started = Instant::now();
             *loaded = Some(journal_mobile_audio::Parakeet::new(
@@ -45,10 +55,16 @@ impl solstone_core_transcribe::EmbeddedAsr for LocalAsr<'_> {
             self.load_ms
                 .set(Some(started.elapsed().as_secs_f64() * 1000.));
         }
-        loaded
+        let result = loaded
             .as_ref()
             .unwrap()
-            .transcribe_observed(samples, self.native_call)
+            .transcribe_observed(samples, self.native_call);
+        if result.is_err() {
+            loaded.take();
+        } else {
+            self.inferred.set(true);
+        }
+        result
     }
 
     fn model_info(&self) -> solstone_core_transcribe::EmbeddedModelInfo {
@@ -64,6 +80,7 @@ struct State {
     external_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
     status: Mutex<Value>,
     recent_failures: Mutex<VecDeque<Value>>,
+    recent_completions: Mutex<VecDeque<Value>>,
     wake: Condvar,
 }
 
@@ -130,6 +147,7 @@ impl State {
                 || (self.external_cancelled)()
         );
         status["recent_failures"] = json!(self.recent_failures.lock().unwrap().clone());
+        status["recent_completions"] = json!(self.recent_completions.lock().unwrap().clone());
         status
     }
 
@@ -155,11 +173,117 @@ pub(super) struct AudioWorker {
 
 #[cfg(feature = "processing")]
 struct HostAudioConfig {
+    cache_id: u64,
     root: Arc<solstone_core_journal_io::JournalRoot>,
     models: PathBuf,
     model: PathBuf,
     scratch: PathBuf,
     held: Mutex<(u64, HashSet<PathBuf>)>,
+}
+
+// Only the maintained transcribe dispatcher worker enables this single slot.
+// It never transfers a native context across threads or keeps a worker alive.
+#[cfg(feature = "processing")]
+thread_local! {
+    static HOST_ASR: RefCell<Option<ScopedAsr>> = const { RefCell::new(None) };
+}
+
+#[cfg(feature = "processing")]
+struct CachedAsr<T = journal_mobile_audio::Parakeet> {
+    configuration: Option<Vec<u8>>,
+    model: T,
+}
+
+#[cfg(feature = "processing")]
+struct ScopedAsr<T = journal_mobile_audio::Parakeet> {
+    id: u64,
+    generation: u64,
+    state: std::sync::Weak<State>,
+    cached: Option<CachedAsr<T>>,
+}
+
+#[cfg(feature = "processing")]
+impl<T> ScopedAsr<T> {
+    fn checkpoint(&mut self, idle: bool) {
+        if idle
+            || self.state.upgrade().is_none_or(|state| {
+                state.stop.load(Ordering::Acquire)
+                    || state.cancel.load(Ordering::Acquire)
+                    || state.generation.load(Ordering::Acquire) != self.generation
+            })
+        {
+            self.cached = None;
+        }
+    }
+
+    fn take(&mut self, id: u64, generation: u64) -> Option<CachedAsr<T>> {
+        let cached = self.cached.take();
+        let compatible = self.id == id && self.generation == generation;
+        self.generation = generation;
+        cached.filter(|_| compatible)
+    }
+
+    fn retain(&mut self, id: u64, generation: u64, cached: CachedAsr<T>) {
+        if self.id == id && self.generation == generation {
+            self.cached = Some(cached);
+        }
+    }
+}
+
+#[cfg(feature = "processing")]
+struct AudioScope;
+
+#[cfg(feature = "processing")]
+impl solstone_core_sense::dispatch::SenseWorkerScope for AudioScope {
+    fn checkpoint(&self, idle: bool) {
+        HOST_ASR.with(|slot| {
+            if let Some(scope) = slot.borrow_mut().as_mut() {
+                scope.checkpoint(idle);
+            }
+        });
+    }
+}
+
+#[cfg(feature = "processing")]
+impl Drop for AudioScope {
+    fn drop(&mut self) {
+        HOST_ASR.with(|slot| slot.borrow_mut().take());
+    }
+}
+
+#[cfg(feature = "processing")]
+fn take_cached_asr(id: u64, generation: u64) -> Option<CachedAsr> {
+    HOST_ASR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        slot.as_mut()?.take(id, generation)
+    })
+}
+
+#[cfg(feature = "processing")]
+fn retain_cached_asr(id: u64, generation: u64, cached: CachedAsr) {
+    HOST_ASR.with(|slot| {
+        if let Some(scope) = slot.borrow_mut().as_mut() {
+            scope.retain(id, generation, cached);
+        }
+    });
+}
+
+#[cfg(feature = "processing")]
+fn completed_local_model<T>(
+    outcome: TranscribeOutcome,
+    inferred: bool,
+    loaded: Option<T>,
+) -> Option<T> {
+    loaded.filter(|_| outcome == TranscribeOutcome::Transcribed && inferred)
+}
+
+#[cfg(feature = "processing")]
+fn configuration_witness(root: &Path) -> std::io::Result<Option<Vec<u8>>> {
+    match std::fs::read(root.join("config/journal.json")) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 impl AudioWorker {
@@ -173,7 +297,7 @@ impl AudioWorker {
         Self::start_with_cancellation(root, models, model, scratch, Arc::new(|| false))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     pub fn start_with_cancellation(
         root: PathBuf,
         models: PathBuf,
@@ -201,6 +325,7 @@ impl AudioWorker {
             external_cancelled,
             status: Mutex::new(json!({"state":"starting"})),
             recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
         });
         let shared = state.clone();
@@ -248,10 +373,15 @@ impl AudioWorker {
                 external_cancelled,
                 status: Mutex::new(json!({"state":"ready"})),
                 recent_failures: Mutex::new(VecDeque::new()),
+                recent_completions: Mutex::new(VecDeque::new()),
                 wake: Condvar::new(),
             }),
             thread: None,
             host_config: Some(HostAudioConfig {
+                cache_id: {
+                    static NEXT: AtomicU64 = AtomicU64::new(1);
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                },
                 root,
                 models,
                 model,
@@ -259,6 +389,27 @@ impl AudioWorker {
                 held: Mutex::new((0, HashSet::new())),
             }),
         }
+    }
+
+    #[cfg(feature = "processing")]
+    pub(crate) fn worker_scope(
+        &self,
+    ) -> Option<Box<dyn solstone_core_sense::dispatch::SenseWorkerScope>> {
+        // Only iOS opts into queued recognizer reuse. Other targets retain
+        // per-record construction and destruction.
+        if !cfg!(target_os = "ios") {
+            return None;
+        }
+        let config = self.host_config.as_ref()?;
+        HOST_ASR.with(|slot| {
+            *slot.borrow_mut() = Some(ScopedAsr {
+                id: config.cache_id,
+                generation: self.state.generation.load(Ordering::Acquire),
+                state: Arc::downgrade(&self.state),
+                cached: None,
+            });
+        });
+        Some(Box::new(AudioScope))
     }
 
     #[cfg(feature = "processing")]
@@ -272,11 +423,14 @@ impl AudioWorker {
             .host_config
             .as_ref()
             .ok_or("audio configuration unavailable")?;
+        // Taking the slot first makes every refusal, skipped input, deferred
+        // provider, cancellation and error drop the previous context.
+        let generation = self.state.generation.load(Ordering::Acquire);
+        let cached = take_cached_asr(config.cache_id, generation);
         config
             .root
             .revalidate_canonical_binding()
             .map_err(|e| e.to_string())?;
-        let generation = self.state.generation.load(Ordering::Acquire);
         let interrupted = || {
             self.state.cancelled(generation)
                 || self.state.stop.load(Ordering::Acquire)
@@ -287,6 +441,8 @@ impl AudioWorker {
             return Ok(false);
         }
         let root = config.root.canonical_path();
+        let configuration = configuration_witness(root).ok();
+        let cached = cached.filter(|cached| configuration.as_ref() == Some(&cached.configuration));
         let retry = {
             let mut held = config.held.lock().unwrap();
             if held.0 != generation {
@@ -353,7 +509,10 @@ impl AudioWorker {
         let asr = LocalAsr {
             model: &config.model,
             scratch: &config.scratch,
-            loaded: RefCell::new(None),
+            verify_loaded: Cell::new(cached.is_some()),
+            reused: Cell::new(false),
+            inferred: Cell::new(false),
+            loaded: RefCell::new(cached.map(|cached| cached.model)),
             load_ms: Cell::new(None),
             native_call: &native_call,
         };
@@ -395,12 +554,38 @@ impl AudioWorker {
                     self.state.status.lock().unwrap()["state"] = json!("cancelled");
                     return Ok(false);
                 }
-                *self.state.status.lock().unwrap() = json!({
-                    "state":"ready",
-                    "last":{"input":input,"outcome":format!("{:?}",result.outcome),
+                let last = json!({"input":input,"outcome":format!("{:?}",result.outcome),
                     "transcript":result.transcript_path,
-                    "processing_ms":started.elapsed().as_secs_f64()*1000.}
+                    "model_load_ms":asr.load_ms.get(),
+                    "model_reused":asr.reused.get(),
+                    "processing_ms":started.elapsed().as_secs_f64()*1000.
                 });
+                *self.state.status.lock().unwrap() = json!({"state":"ready","last":last});
+                {
+                    let mut recent = self.state.recent_completions.lock().unwrap();
+                    if recent.len() == 64 {
+                        recent.pop_front();
+                    }
+                    recent.push_back(last);
+                }
+                if !cancel()
+                    && let Some(configuration) = configuration
+                    && configuration_witness(root).ok().as_ref() == Some(&configuration)
+                    && let Some(model) = completed_local_model(
+                        result.outcome,
+                        asr.inferred.get(),
+                        asr.loaded.into_inner(),
+                    )
+                {
+                    retain_cached_asr(
+                        config.cache_id,
+                        generation,
+                        CachedAsr {
+                            configuration,
+                            model,
+                        },
+                    );
+                }
                 Ok(result.outcome != TranscribeOutcome::Skipped)
             }
             Err(error) => {
@@ -512,6 +697,9 @@ fn run(
         scratch,
         loaded: RefCell::new(None),
         load_ms: Cell::new(None),
+        verify_loaded: Cell::new(false),
+        reused: Cell::new(false),
+        inferred: Cell::new(false),
         native_call: &native_call,
     };
     let worker_start_ms = started.elapsed().as_secs_f64() * 1000.;
@@ -737,7 +925,104 @@ mod tests {
             external_cancelled: Arc::new(|| false),
             status: Mutex::new(json!({"state":"ready"})),
             recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
+        }
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn recognizer_slot_reuses_only_the_same_worker_generation() {
+        // Rc is intentionally not Send: the slot must accept thread-owned native
+        // resources without weakening their ownership contract.
+        let state = Arc::new(completion_state());
+        let model = std::rc::Rc::new(());
+        let mut scope = ScopedAsr {
+            id: 1,
+            generation: 0,
+            state: Arc::downgrade(&state),
+            cached: None,
+        };
+        for _ in 0..3 {
+            scope.retain(
+                1,
+                0,
+                CachedAsr {
+                    configuration: None,
+                    model: model.clone(),
+                },
+            );
+            scope.checkpoint(false);
+            let cached = scope
+                .take(1, 0)
+                .expect("queued compatible job reuses model");
+            assert!(std::rc::Rc::ptr_eq(&cached.model, &model));
+        }
+        for (id, generation) in [(2, 0), (1, 1)] {
+            scope.generation = 0;
+            scope.retain(
+                1,
+                0,
+                CachedAsr {
+                    configuration: None,
+                    model: model.clone(),
+                },
+            );
+            assert!(scope.take(id, generation).is_none());
+            assert_eq!(std::rc::Rc::strong_count(&model), 1);
+        }
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn recognizer_slot_releases_at_idle_cancel_stop_generation_or_owner_loss() {
+        for reason in 0..5 {
+            let state = Arc::new(completion_state());
+            let model = std::rc::Rc::new(());
+            let mut scope = ScopedAsr {
+                id: 1,
+                generation: 0,
+                state: Arc::downgrade(&state),
+                cached: Some(CachedAsr {
+                    configuration: None,
+                    model: model.clone(),
+                }),
+            };
+            match reason {
+                0 => {}
+                1 => state.cancel.store(true, Ordering::Release),
+                2 => state.stop.store(true, Ordering::Release),
+                3 => {
+                    state.generation.fetch_add(1, Ordering::AcqRel);
+                }
+                4 => drop(state),
+                _ => unreachable!(),
+            }
+            scope.checkpoint(reason == 0);
+            assert!(scope.cached.is_none(), "release reason {reason}");
+            assert_eq!(std::rc::Rc::strong_count(&model), 1);
+        }
+    }
+
+    #[cfg(feature = "processing")]
+    #[test]
+    fn recognizer_slot_never_retains_a_recording_that_did_not_complete_local_inference() {
+        for outcome in [
+            TranscribeOutcome::Transcribed,
+            TranscribeOutcome::Preserved,
+            TranscribeOutcome::Skipped,
+            TranscribeOutcome::Failed,
+        ] {
+            for inferred in [false, true] {
+                let model = std::rc::Rc::new(());
+                let retained = completed_local_model(outcome, inferred, Some(model.clone()));
+                assert_eq!(
+                    retained.is_some(),
+                    outcome == TranscribeOutcome::Transcribed && inferred
+                );
+                drop(retained);
+                assert_eq!(std::rc::Rc::strong_count(&model), 1);
+            }
         }
     }
 
@@ -1229,6 +1514,7 @@ mod tests {
             external_cancelled: Arc::new(|| false),
             status: Mutex::new(json!({"state":"ready"})),
             recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
         };
         let mut held = HashSet::new();
@@ -1561,6 +1847,7 @@ mod tests {
             external_cancelled: Arc::new(|| false),
             status: Mutex::new(json!({"state":"ready"})),
             recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
         };
         let err_str = day_errors.join("; ");
@@ -1589,6 +1876,7 @@ mod tests {
             external_cancelled: Arc::new(|| false),
             status: Mutex::new(json!({"state":"ready"})),
             recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
         };
         assert!(
@@ -1613,6 +1901,7 @@ mod tests {
             external_cancelled: Arc::new(|| false),
             status: Mutex::new(json!({})),
             recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
         };
         let active = state.generation.load(Ordering::Acquire);
@@ -1647,6 +1936,7 @@ mod tests {
                 external_cancelled: Arc::new(|| false),
                 status: Mutex::new(json!({"state":"processing"})),
                 recent_failures: Mutex::new(VecDeque::new()),
+                recent_completions: Mutex::new(VecDeque::new()),
                 wake: Condvar::new(),
             }),
             thread: None,

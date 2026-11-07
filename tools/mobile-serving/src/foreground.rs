@@ -1389,6 +1389,23 @@ struct HostSenseExecutor {
     audio_state: Arc<Mutex<Option<AudioConfig>>>,
 }
 impl SenseExecutor for HostSenseExecutor {
+    fn worker_scope(
+        &self,
+        handler: &str,
+    ) -> Option<Box<dyn solstone_core_sense::dispatch::SenseWorkerScope>> {
+        #[cfg(feature = "audio")]
+        if handler == "transcribe" {
+            return self
+                .audio_state
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|config| config.worker.worker_scope());
+        }
+        let _ = handler;
+        None
+    }
+
     fn cancelled(&self) -> bool {
         (self.cancelled)()
     }
@@ -2413,7 +2430,7 @@ impl ForegroundProcessingHost {
         }
         result
     }
-    #[cfg(test)]
+    #[cfg(all(test, feature = "full-tests"))]
     pub(super) fn stop_discovery_for_test(&self) {
         if let Some(mut discovery) = self.discovery.lock().unwrap().take() {
             discovery.shutdown_checked().unwrap();

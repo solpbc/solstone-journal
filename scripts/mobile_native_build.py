@@ -349,10 +349,22 @@ class Build:
         self.inspect("openssl-ssl", prefix / "lib/libssl.a")
         return prefix
 
+    def patch_llama(self, source):
+        if self.args.platform != "android":
+            return
+        patch = ROOT / "core/distribution/mobile/llama-android-dotprod-repack.patch"
+        self.run("llama-repack-patch", ["git", "apply", "--no-index", patch], source)
+        self.run("llama-repack-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
+        self.summary["patches"].append({"component": "llama", "path": str(patch.relative_to(ROOT)),
+                                        "sha256": sha256(patch)})
+        self.summary["inputs"]["llama-patched-source"] = {"tree_sha256": tree_digest(source)}
+        self.save()
+
     def cpp(self, name):
         source = self.source(name)
         flags = []
         if name == "llama":
+            self.patch_llama(source)
             openssl = self.openssl()
             flags = ["-DLLAMA_BUILD_TESTS=OFF", "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_BUILD_SERVER=ON", "-DLLAMA_BUILD_TOOLS=ON", "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11960", "-DLLAMA_BUILD_COMMIT=8642541", f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include", f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a", f"-DOPENSSL_SSL_LIBRARY={openssl}/lib/libssl.a", "-DOPENSSL_USE_STATIC_LIBS=TRUE"]
             if self.args.platform == "android":
