@@ -20,6 +20,17 @@ pub enum SpanPolicy {
     Document,
 }
 
+/// How an experience's tiles are named.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TileIds {
+    /// `<id>-<index>`: a tile is its place in the span.
+    Index,
+    /// `<id>@<YYYYMMDD>/<window key>`, the window before any step around older
+    /// content: a tile is its window, so one that stays in its window when the
+    /// span moves is the same row, edited.
+    Window,
+}
+
 /// A body source's stream, its row and file names, and its span policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BodySource {
@@ -36,6 +47,7 @@ pub struct BodySource {
     /// The zone fixed at this source's first import.
     pub zone_rel: &'static str,
     pub span: SpanPolicy,
+    pub tiles: TileIds,
     /// The error when another run holds the lock.
     pub lock_unavailable: &'static str,
     /// The error when the fixed zone can't be read.
@@ -50,6 +62,7 @@ pub const APPLE: BodySource = BodySource {
     run_dir_rel: "imports/.apple_health-run",
     zone_rel: "imports/.apple_health-zone.json",
     span: SpanPolicy::Union,
+    tiles: TileIds::Index,
     lock_unavailable: "apple_health_lock_unavailable",
     zone_unrecognised: "apple_health_zone_unrecognised",
 };
@@ -62,6 +75,7 @@ pub const OURA: BodySource = BodySource {
     run_dir_rel: "imports/.oura-run",
     zone_rel: "imports/.oura-zone.json",
     span: SpanPolicy::Document,
+    tiles: TileIds::Window,
     lock_unavailable: "oura_lock_unavailable",
     zone_unrecognised: "oura_zone_unrecognised",
 };

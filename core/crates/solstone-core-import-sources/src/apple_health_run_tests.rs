@@ -525,3 +525,39 @@ fn a_long_export_fits_within_a_low_open_file_limit() {
     let (windows, _, _) = staged(journal.path(), source.path());
     assert!(!windows.is_empty());
 }
+
+fn oura_row(kind: RowKind, id: &str) -> BodyRow {
+    let mut row = BodyRow::new(kind, id.to_owned(), "oura", "running", "running".to_owned());
+    row.by = Some("Oura".to_owned());
+    row.start = Some("2026-01-05T08:00:00.000-07:00".to_owned());
+    row.end = Some("2026-01-05T08:30:00.000-07:00".to_owned());
+    row.experience = Some("workout".to_owned());
+    row
+}
+
+/// Apple names a tile by its place in the span, Oura by its window.
+#[test]
+fn a_tile_is_named_by_its_index_for_apple_and_by_its_window_for_oura() {
+    use crate::apple_health::tile_experience;
+    use crate::body_stream::OURA;
+    let journal = tempfile::tempdir().unwrap();
+    let row = oura_row(RowKind::Experience, "w1");
+    let ids = |source| {
+        tile_experience(journal.path(), source, &row, Denver)
+            .unwrap()
+            .into_iter()
+            .map(|(_, tile)| tile.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&APPLE)[1..], ["w1-1", "w1-2", "w1-3", "w1-4", "w1-5"]);
+    assert_eq!(
+        ids(&OURA)[1..],
+        [
+            "w1@20260105/080500_300",
+            "w1@20260105/081000_300",
+            "w1@20260105/081500_300",
+            "w1@20260105/082000_300",
+            "w1@20260105/082500_300",
+        ]
+    );
+}

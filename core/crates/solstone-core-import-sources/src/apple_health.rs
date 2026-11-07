@@ -30,7 +30,7 @@ use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
 use solstone_core_segment::{holds_foreign_content, owner_deleted};
 
-use crate::body_stream::{APPLE, BodySource, SpanPolicy};
+use crate::body_stream::{APPLE, BodySource, SpanPolicy, TileIds};
 use crate::save::{RenderedImport, SegmentFile};
 
 pub const STREAM: &str = APPLE.stream;
@@ -745,9 +745,13 @@ pub(crate) fn tile_experience(
             placed.push((window, first.clone()));
             continue;
         }
+        let id = match source.tiles {
+            TileIds::Index => format!("{}-{index}", first.id),
+            TileIds::Window => format!("{}@{}/{}", first.id, window.0, window.1),
+        };
         let mut tile = BodyRow::new(
             RowKind::ExperienceTile,
-            format!("{}-{index}", first.id),
+            id,
             source.source,
             &first.record_type,
             first.label.clone(),
