@@ -277,12 +277,23 @@
       // shell_boot.js seeds this <img> before this module ever runs, so this
       // must attach regardless of whether the element pre-existed or was just
       // created above.
-      img.onerror = () => { img.style.visibility = 'hidden'; };
+      // A page from before an upgrade names marks by its own build's hash,
+      // which the upgraded journal no longer serves; those come from the
+      // stable path instead, once, before the mark is hidden.
+      img.onerror = () => {
+        const stable = '/static/sol-status/' + img.dataset.stem + '.svg';
+        if (img.dataset.stem && new URL(img.src, window.location.href).pathname !== stable) {
+          img.src = stable;
+          return;
+        }
+        img.style.visibility = 'hidden';
+      };
     }
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     const stem = mark.connecting && !reduced ? 'mark-connecting-animated' : mark.variant;
     img.style.visibility = '';
+    img.dataset.stem = stem;
     img.src = STATUS_MARKS + stem + '.svg';
     img.classList.toggle('status-indicator--connecting', mark.connecting);
     lastRenderedVariant = mark.variant;
