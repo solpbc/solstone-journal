@@ -11,9 +11,9 @@
 
 use std::process::ExitCode;
 
-use crate::{
-    EXIT_TEMPFAIL, EXIT_UNAVAILABLE, eprint_journal_path_error, resolve_process_journal_path,
-};
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+use crate::EXIT_UNAVAILABLE;
+use crate::{EXIT_TEMPFAIL, eprint_journal_path_error, resolve_process_journal_path};
 
 /// The path to open: what the owner typed, rooted at `/`.
 fn rooted(path: &str) -> String {
@@ -33,32 +33,45 @@ pub(crate) fn run(path: String, print_url: bool) -> ExitCode {
         }
     };
     let path = rooted(&path);
-    let url = match mint(&journal.path, &path) {
-        Ok(url) => url,
-        Err(message) => {
-            eprintln!("{message}");
-            return ExitCode::from(EXIT_UNAVAILABLE);
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    {
+        let url = match mint(&journal.path, &path) {
+            Ok(url) => url,
+            Err(message) => {
+                eprintln!("{message}");
+                return ExitCode::from(EXIT_UNAVAILABLE);
+            }
+        };
+        if print_url {
+            println!("{url}");
+            return ExitCode::SUCCESS;
         }
-    };
-    if print_url {
-        println!("{url}");
-        return ExitCode::SUCCESS;
-    }
-    if launch(&url) {
-        return ExitCode::SUCCESS;
-    }
-    eprintln!(
-        "a browser could not be opened here. run this command again with --print-url, and open the link it prints within a minute."
-    );
-    if let Some(port) = link_port(&url) {
+        if launch(&url) {
+            return ExitCode::SUCCESS;
+        }
         eprintln!(
-            "to open it from another computer, first forward the journal's ports over SSH, and keep that terminal open:"
+            "a browser could not be opened here. run this command again with --print-url, and open the link it prints within a minute."
         );
-        eprintln!(
-            "  ssh -N -L {port}:127.0.0.1:{port} -L 7659:127.0.0.1:7659 YOUR_LOGIN@JOURNAL_COMPUTER"
-        );
+        if let Some(port) = link_port(&url) {
+            eprintln!(
+                "to open it from another computer, first forward the journal's ports over SSH, and keep that terminal open:"
+            );
+            eprintln!(
+                "  ssh -N -L {port}:127.0.0.1:{port} -L 7659:127.0.0.1:7659 YOUR_LOGIN@JOURNAL_COMPUTER"
+            );
+        }
+        ExitCode::FAILURE
     }
-    ExitCode::FAILURE
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        // No owner socket here, so the browser port is open to this computer.
+        let _ = print_url;
+        println!(
+            "open your journal: {}{path}",
+            crate::settings::journal_url(&journal.path)
+        );
+        ExitCode::SUCCESS
+    }
 }
 
 // A mac journal runs inside the journal app, so the app is what starts it.
@@ -76,6 +89,7 @@ const OLDER_JOURNAL: &str = "your running journal is older than this command. re
 const OLDER_JOURNAL: &str = "your running journal is older than this command. restart it from the journal app, and try again.";
 
 /// The port of a minted link, for the SSH forwarding line.
+#[cfg(any(target_os = "linux", target_os = "macos", windows))]
 fn link_port(url: &str) -> Option<&str> {
     let port = url.strip_prefix("http://localhost:")?.split('/').next()?;
     (!port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit())).then_some(port)
