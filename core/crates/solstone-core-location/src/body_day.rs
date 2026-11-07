@@ -161,6 +161,17 @@ impl Tally {
     }
 }
 
+/// Names as a person lists them, "a, b and c", in an order that doesn't
+/// depend on case.
+fn plain_list(names: BTreeSet<String>) -> String {
+    let mut names: Vec<String> = names.into_iter().collect();
+    names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+    match names.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => names.concat(),
+    }
+}
+
 fn by_words(row: &BodyRow) -> String {
     row.by
         .as_deref()
@@ -189,6 +200,7 @@ fn render_source(
     // only where the source says so.
     let mut tallies: BTreeMap<(u8, String, String, bool), Tally> = BTreeMap::new();
     let mut dated = Vec::new();
+    let mut documents = BTreeSet::new();
     let mut words = BTreeSet::new();
     for row in rows {
         match row.kind {
@@ -221,10 +233,14 @@ fn render_source(
                     ));
                 }
             }
-            RowKind::Dated => {
-                let value = row.value.as_deref().unwrap_or_default();
-                dated.push(format!("- for this date: {} {value}", row.label));
-            }
+            // A dated row with a value says it. One without, such as Oura's daily
+            // documents, is named only: what it holds stays for an agent to read.
+            RowKind::Dated => match row.value.as_deref() {
+                Some(value) => dated.push(format!("- for this date: {} {value}", row.label)),
+                None => {
+                    documents.insert(row.label.clone());
+                }
+            },
             RowKind::Event => {}
             RowKind::Stage | RowKind::Reading | RowKind::Count | RowKind::Logged => {
                 let by = row.by.clone().unwrap_or_default();
@@ -244,6 +260,9 @@ fn render_source(
     experiences.sort();
     lines.extend(experiences.into_iter().map(|(_, _, line)| line));
     lines.extend(continuing.into_iter().map(|(_, line)| line));
+    if !documents.is_empty() {
+        dated.push(format!("- for this date: {}", plain_list(documents)));
+    }
     dated.sort();
     lines.extend(dated);
     for ((order, first, second, entered), tally) in &tallies {
@@ -445,7 +464,11 @@ mod tests {
     }
 
     fn window(root: &Path, day: &str, key: &str, rows: &[BodyRow]) -> PathBuf {
-        let dir = root.join("chronicle").join(day).join(STREAM).join(key);
+        window_in(root, STREAM, day, key, rows)
+    }
+
+    fn window_in(root: &Path, stream: &str, day: &str, key: &str, rows: &[BodyRow]) -> PathBuf {
+        let dir = root.join("chronicle").join(day).join(stream).join(key);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(BODY_RECORDS_FILE), encode_rows(rows)).unwrap();
         // The real writer leaves a lock beside the window and one inside it.
@@ -636,6 +659,205 @@ mod tests {
         days.reconcile(root);
         assert_eq!(document(root, "20261011").unwrap(), next);
         assert!(document(root, "20261010").is_none());
+    }
+
+    const OURA: &str = "import.oura";
+
+    /// A row as Oura's reader writes it: `by` Oura, the whole document in `fields`.
+    fn oura_row(
+        kind: RowKind,
+        id: &str,
+        record_type: &str,
+        label: &str,
+        document: serde_json::Value,
+    ) -> BodyRow {
+        let mut row = BodyRow::new(kind, id.into(), "oura", record_type, label.into());
+        row.by = Some("Oura".into());
+        row.fields = document
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        row
+    }
+
+    /// Every daily document Oura sends, with each score and assessment it holds.
+    fn oura_daily_documents() -> Vec<BodyRow> {
+        use serde_json::json;
+        [
+            (
+                "daily_readiness",
+                "daily readiness",
+                json!({"score": 82, "temperature_deviation": -0.31,
+                "contributors": {"hrv_balance": 63, "resting_heart_rate": 91}}),
+            ),
+            (
+                "daily_sleep",
+                "daily sleep",
+                json!({"score": 74, "contributors": {"deep_sleep": 63}}),
+            ),
+            (
+                "daily_activity",
+                "daily activity",
+                json!({"score": 91, "class_5_min": "0012345",
+                "contributors": {"stay_active": 63}, "inactivity_alerts": 3}),
+            ),
+            (
+                "daily_stress",
+                "daily stress",
+                json!({"day_summary": "stressful",
+                "stress_high": 5400, "recovery_high": 1800}),
+            ),
+            (
+                "daily_resilience",
+                "daily resilience",
+                json!({"level": "limited",
+                "contributors": {"sleep_recovery": 41.2, "stress": 66.0}}),
+            ),
+            (
+                "daily_spo2",
+                "daily SpO2",
+                json!({"spo2_percentage": {"average": 96.5},
+                "breathing_disturbance_index": 23}),
+            ),
+            (
+                "daily_cardiovascular_age",
+                "cardiovascular age",
+                json!({"vascular_age": 47}),
+            ),
+            ("vO2_max", "VO2 max", json!({"vo2_max": 39})),
+        ]
+        .into_iter()
+        .map(|(endpoint, label, mut document)| {
+            document["id"] = json!(format!("synthetic-{endpoint}"));
+            document["day"] = json!("2026-10-10");
+            let mut row = oura_row(RowKind::Dated, endpoint, endpoint, label, document);
+            row.date = Some("2026-10-10".into());
+            row
+        })
+        .collect()
+    }
+
+    /// Oura's daily documents are named on one line for their date, and nothing
+    /// they or a session or workout judge reaches the day: no score, no level, no
+    /// summary, no mood and no intensity. Tags are the owner's own entries.
+    #[test]
+    fn oura_documents_are_named_for_their_date_and_nothing_oura_judges_reaches_the_day() {
+        use serde_json::json;
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        fs::create_dir_all(root.join("imports")).unwrap();
+        fs::write(
+            root.join("imports/.oura-zone.json"),
+            r#"{"zone":"America/Denver"}"#,
+        )
+        .unwrap();
+        window_in(
+            root,
+            OURA,
+            "20261010",
+            "000000_86400",
+            &oura_daily_documents(),
+        );
+        let mut session = oura_row(
+            RowKind::Experience,
+            "session",
+            "meditation",
+            "meditation session",
+            json!({"id": "synthetic-session", "type": "meditation", "mood": "bad"}),
+        );
+        session.experience = Some("mindfulness".into());
+        session.start = Some("2026-10-10T06:00:00.000-06:00".into());
+        session.end = Some("2026-10-10T06:30:00.000-06:00".into());
+        window_in(root, OURA, "20261010", "060000_300", &[session]);
+        let mut workout = oura_row(
+            RowKind::Experience,
+            "workout",
+            "running",
+            "running",
+            json!({"id": "synthetic-workout", "activity": "running", "intensity": "hard",
+                "source": "autodetected", "calories": 410.0, "distance": 8020.0}),
+        );
+        workout.experience = Some("workout".into());
+        workout.start = Some("2026-10-10T07:00:00.000-06:00".into());
+        workout.end = Some("2026-10-10T07:50:00.000-06:00".into());
+        workout.values.insert("distance".into(), "8020.0 m".into());
+        workout.values.insert("energy".into(), "410.0 kcal".into());
+        window_in(root, OURA, "20261010", "070000_300", &[workout]);
+        let mut caffeine = oura_row(
+            RowKind::Logged,
+            "tag",
+            "tag_generic_caffeine",
+            "caffeine",
+            json!({"id": "synthetic-tag", "tag_type_code": "tag_generic_caffeine",
+                "comment": "second cup", "custom_name": null}),
+        );
+        caffeine.start = Some("2026-10-10T09:15:00-06:00".into());
+        caffeine.words = vec!["second cup".into()];
+        window_in(root, OURA, "20261010", "090000_3600", &[caffeine]);
+        // Apple's dated row with a value, beside it, reads as it always has.
+        let mut apple = BodyRow::new(
+            RowKind::Dated,
+            "apple-dated".into(),
+            "apple_health",
+            "HKDataTypeSleepDurationGoal",
+            "sleep duration goal".into(),
+        );
+        apple.date = Some("2026-10-10".into());
+        apple.value = Some("8 hr".into());
+        window(root, "20261010", "000000_86400", &[apple]);
+
+        BodyDays::default().reconcile(root);
+        let text = document(root, "20261010").unwrap();
+
+        let (apple, oura) = text
+            .split_once("## Oura · imported")
+            .unwrap_or_else(|| panic!("{text}"));
+        // Every daily document is named, on one line of Oura's own section.
+        let named: Vec<&str> = oura
+            .lines()
+            .filter(|line| line.starts_with("- for this date:"))
+            .collect();
+        assert_eq!(named.len(), 1, "{text}");
+        for label in oura_daily_documents().iter().map(|row| row.label.clone()) {
+            assert!(named[0].contains(&label), "{label}: {text}");
+        }
+        assert!(
+            apple.ends_with(
+                "## Apple Health · imported\n\n- for this date: sleep duration goal 8 hr\n\n"
+            ),
+            "{text}"
+        );
+        let tag = oura
+            .lines()
+            .find(|line| line.starts_with("- caffeine:"))
+            .unwrap_or_else(|| panic!("{text}"));
+        assert!(tag.contains("entered by the owner in Oura"), "{text}");
+        assert!(
+            oura.contains("- workout: running, 07:00 to 07:50 (Oura)"),
+            "{text}"
+        );
+        for judged in [
+            "stressful",
+            "limited",
+            "bad",
+            "hard",
+            "intensity",
+            "mood",
+            "score",
+            "level",
+            "summary",
+            "contributor",
+        ] {
+            assert!(!text.contains(judged), "{judged}: {text}");
+        }
+        for number in [
+            "82", "74", "91", "63", "0.31", "5400", "1800", "41.2", "66", "96.5", "23", "47", "39",
+            "8020", "410",
+        ] {
+            assert!(!text.contains(number), "{number}: {text}");
+        }
     }
 
     #[test]
