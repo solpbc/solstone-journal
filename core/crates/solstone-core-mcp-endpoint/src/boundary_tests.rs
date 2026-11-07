@@ -11992,6 +11992,143 @@ fn search_derived_flags_across_record_types() {
     assert!(hit5.get("derived").is_none());
 }
 
+/// The morning briefing and the weekly page are read from the whole journal.
+/// A connection limited to chosen facets finds neither through search, and a
+/// reference to either is refused by `fetch`, even one minted for its own grant.
+/// The facet's own activity is the control that the chosen grant can read.
+#[test]
+fn a_chosen_facet_connection_reaches_neither_the_briefing_nor_the_weekly_page() {
+    use crate::references::{EntryReference, ReferenceTarget};
+
+    let journal = base_activity_journal();
+    let day = "20260308";
+    write_activity_line(
+        journal.path(),
+        "alpha",
+        day,
+        "act_alpha",
+        "Alpha Activity facetcontrolneedle",
+        100,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let briefing = format!("{day}/talents/morning_briefing.json");
+    write_activity(
+        journal.path(),
+        &format!("chronicle/{briefing}"),
+        &json!({
+            "metadata": {"coverage_preamble": "Daily briefing."},
+            "yesterday": ["Sleep from 22:10 to 06:20 briefingbodyneedle."],
+            "forward_look": ["Prepare."]
+        })
+        .to_string(),
+    );
+    let weekly = format!("reflections/weekly/{day}.md");
+    write_activity(
+        journal.path(),
+        &weekly,
+        "# Weekly Reflection\n\nSleep from 22:10 to 06:20 weeklybodyneedle.\n",
+    );
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+
+    let row_of = |path: &str| -> i64 {
+        solstone_core_indexer_store::db::open_index(journal.path())
+            .unwrap()
+            .query_row(
+                "SELECT rowid FROM chunks WHERE path = ?1 AND idx = 0",
+                [path],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    let briefing_row = row_of(&briefing);
+    let weekly_row = row_of(&weekly);
+    let reference_now = |path: &str, row_id: i64| -> String {
+        let PermissionDecision::Snapshot(snapshot) =
+            evaluate_connection_read(journal.path(), CONNECTION)
+        else {
+            panic!("the connection has a grant");
+        };
+        crate::dispatch::codec()
+            .mint(
+                CONNECTION,
+                snapshot.generation,
+                ReferenceTarget::Entry(EntryReference {
+                    day: day.to_owned(),
+                    stream: String::new(),
+                    path: path.to_owned(),
+                    idx: 0,
+                    row_id,
+                    activity_proof: None,
+                    record_identity: None,
+                    source_digest: None,
+                    byte_offset: None,
+                }),
+            )
+            .unwrap()
+    };
+    let hits = |query: &str| -> usize {
+        probe(&journal, "search", json!({"query": query, "limit": 10})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+
+    // The whole journal: the weekly page is found and fetched, so the
+    // references below are well formed. The briefing is never a connection's read.
+    assert_eq!(hits("weeklybodyneedle"), 1);
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": reference_now(&weekly, weekly_row)}),
+    )
+    .unwrap();
+    assert!(
+        fetched["text"]
+            .as_str()
+            .unwrap()
+            .contains("weeklybodyneedle")
+    );
+    assert_eq!(hits("briefingbodyneedle"), 0);
+    assert_eq!(
+        probe(
+            &journal,
+            "fetch",
+            json!({"reference": reference_now(&briefing, briefing_row)})
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+
+    let mut chosen = ReadPermission::default_whole_journal();
+    chosen.scope = ReadScope::Facets {
+        ids: vec![FACET_A.to_owned()],
+    };
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, chosen)
+        .unwrap();
+
+    assert_eq!(hits("facetcontrolneedle"), 1);
+    assert_eq!(hits("weeklybodyneedle"), 0);
+    assert_eq!(hits("briefingbodyneedle"), 0);
+    for (path, row_id) in [(&weekly, weekly_row), (&briefing, briefing_row)] {
+        assert_eq!(
+            probe(
+                &journal,
+                "fetch",
+                json!({"reference": reference_now(path, row_id)})
+            ),
+            Err(McpProbeError::Unavailable),
+            "{path}"
+        );
+    }
+    assert!(probe(&journal, "get_week", json!({"week": day})).is_err());
+}
+
 #[test]
 fn get_week_grounded_activities_and_memories() {
     let journal = base_activity_journal();
