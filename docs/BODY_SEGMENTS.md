@@ -96,7 +96,7 @@ A body-only segment isn't processed by Sense and owes no daily work, at any age:
 - `scan_day` finds no modality and skips it, as with a location-only segment.
 - A day holding only such segments, or calendar notes, owes no work. Daily evidence, the schedule's active times, weekly reflection, reprocessing and both active-facet walks leave them out, so they neither hold nor change a day's daily work.
 
-Later work opts in explicitly: code-written activity records, and a day's body document as a daily input.
+Later work opts in explicitly: code-written activity records.
 
 ## Facets
 
@@ -108,7 +108,7 @@ Every workout, night's sleep and mindfulness session from Apple Health gets one 
 
 Besides the home's lines, five readers show records, composed from the window as it now is and only for a connection that may read that window: the activities day view, MCP `list_activities`, `fetch`, `get_activity_sources` and `get_week`. A record whose window moved to another facet still shows to the owner and to a connection that reads the whole journal, and to a connection limited to chosen facets only when both facets are among them. When the window of its start was deleted, the owner's day view shows its account's `state` as `removed_by_you` (or `removed`, below), or `part_removed` when a later piece of its span is still there, shown from that piece; no connection sees the record. A record keeps its kind and times after that.
 
-- `removed_by_you` means the owner's own delete. A window removed any other way, by retention or by releasing an import run, shows as `removed`.
+- `removed_by_you` means the owner's own delete. A window removed any other way, by retention or by releasing an import run, shows as `removed`. So does a start that two deleted windows cover when only one was the owner's: a tombstone doesn't say which rows it removed.
 - A window that can't be read, where the account is or might be, shows as `unreadable`.
 - When the window's directory is gone and there's no tombstone, the owner's day view shows `not_found`, and no connection sees the record. A live window that no longer holds its row also shows `not_found`, to any reader of that window.
 - An answer names in its audit every window its records were composed from, as `get_transcript` names the windows it read.
