@@ -1395,6 +1395,8 @@ pub struct SummaryCounts {
     pub activities_no_facet: u64,
     /// Activity records brought to their account's new times or type.
     pub activities_refreshed: u64,
+    /// Windows with no facet that took the facet of an entry that moved into them.
+    pub took_facet: u64,
     /// Facets whose activity file refused a record.
     #[serde(default)]
     pub activities_refused: Vec<String>,
@@ -1441,6 +1443,7 @@ impl SummaryCounts {
             activities: 0,
             activities_no_facet: 0,
             activities_refreshed: 0,
+            took_facet: 0,
             activities_refused: Vec::new(),
             deferred: 0,
             overlapping_nights: 0,
@@ -1484,6 +1487,20 @@ pub fn summary_text(
         None => text.push_str(
             "Filed under no facet: a connection that can see the whole journal reads it, and one limited to chosen facets doesn't.\n\n",
         ),
+    }
+    if counts.took_facet > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.took_facet == 1 {
+                "1 window took the facet of the entry Oura moved into it, so what's in it is readable under that facet.".to_owned()
+            } else {
+                format!(
+                    "{} windows each took the facet of the entry Oura moved into it, so what's in them is readable under that facet.",
+                    counts.took_facet
+                )
+            }
+        );
     }
     if counts.kept_facet > 0 {
         let _ = writeln!(

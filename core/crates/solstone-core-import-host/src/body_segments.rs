@@ -329,6 +329,9 @@ struct Totals {
     /// Activity records brought to their account's new times, type or recorder.
     #[serde(default)]
     activities_refreshed: u64,
+    /// Windows with no facet that took the facet of the document that moved into them.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    took_facet: u64,
     /// Facets whose activity file refused a record; the next run tries again.
     #[serde(default)]
     activities_refused: BTreeSet<String>,
@@ -347,6 +350,7 @@ impl Totals {
         self.activities += other.activities;
         self.activities_no_facet += other.activities_no_facet;
         self.activities_refreshed += other.activities_refreshed;
+        self.took_facet += other.took_facet;
         self.activities_refused
             .extend(other.activities_refused.iter().cloned());
         self.entries += other.entries;
@@ -954,6 +958,7 @@ impl Run<'_, '_> {
                         continue;
                     }
                     let taken = taken.remove(window);
+                    counts.took_facet += u64::from(taken.is_some());
                     // Search reclassifies a window that takes a facet.
                     let publish = decision.publish || taken.is_some();
                     counts.kept_facet += u64::from(decision.kept_facet);
@@ -1350,6 +1355,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         activities: state.totals.activities,
         activities_no_facet: state.totals.activities_no_facet,
         activities_refreshed: state.totals.activities_refreshed,
+        took_facet: state.totals.took_facet,
         activities_refused: state.totals.activities_refused.iter().cloned().collect(),
         deferred: state.findings.deferred,
         overlapping_nights: state.findings.overlapping_nights,
@@ -2065,3 +2071,7 @@ mod tests;
 #[cfg(test)]
 #[path = "body_segments_oura_tests.rs"]
 mod oura_tests;
+
+fn is_zero(count: &u64) -> bool {
+    *count == 0
+}

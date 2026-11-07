@@ -2106,6 +2106,13 @@ fn a_move_under_an_import_naming_no_facet_keeps_the_record_readable_under_its_fa
             for key in ["090000_300", "090500_300", "091000_300", "091500_300"] {
                 assert_eq!(facet_of(key), health, "{key}");
             }
+            assert!(
+                outcome
+                    .summary
+                    .contains("4 windows each took the facet of the entry Oura moved into it, so what's in them is readable under that facet."),
+                "{}",
+                outcome.summary
+            );
         }
     }
 }
