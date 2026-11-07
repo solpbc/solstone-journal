@@ -47,7 +47,7 @@ FireRedVAD attribution and source details ship in `share/licenses/models/NOTICE.
 ## bundled place names (area tier)
 
 `lib/solstone_journal_models/assets/geo/area-tier.bin` (SHA-256
-`4069b3e35c0de206d0842ae49c348223a56c711d329c1038a5a370698e40f978`) names a
+`883e9490bc3ecc83d64a006632d6d06ee65b4860a4eb5899a0e33d996beb62f8`) names a
 location reading after a nearby town, and gives the map app its country and
 state borders. The journal reads it on the owner's own computer; nothing is
 looked up anywhere. It is built by `scripts/build_location_area_tier.py` from
