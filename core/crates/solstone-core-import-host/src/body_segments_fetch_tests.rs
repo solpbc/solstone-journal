@@ -47,7 +47,8 @@ struct Server {
     issued: u32,
     /// Tokens it issues are refused by its API all the same.
     refuse_issued: bool,
-    /// Heartrate answers a reading at `end_datetime` too, as Oura may.
+    /// Heartrate answers a reading at `end_datetime` too, as Oura may, and as
+    /// though it had changed its `source` since.
     heartrate_inclusive: bool,
     /// Page tokens carry this; one from another generation is refused.
     generation: u32,
@@ -204,7 +205,11 @@ impl OuraHttp for Oura {
                             .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
                             == end
                     })
-                    .cloned(),
+                    .map(|document| {
+                        let mut changed = document.clone();
+                        changed["source"] = json!("rest");
+                        changed
+                    }),
             );
         }
         let size = server
@@ -1833,6 +1838,8 @@ fn a_reading_at_a_chunks_end_comes_from_one_chunk_whichever_way_oura_reads_the_e
         .filter(|row| row.kind == RowKind::Reading)
         .collect();
     assert_eq!(rows.len(), 1, "{rows:?}");
+    // The chunk it begins is the one that reads it.
+    assert_eq!(rows[0].fields["source"], json!("awake"));
     assert_eq!(
         result_of(&outcome, "heartrate").words,
         "1 reading for 2026-01-01 to 2026-02-05"
