@@ -10,6 +10,11 @@
 //! <pages>/<endpoint>/<chunk>-<n>.json   the body exactly as Oura returned it
 //! ```
 //!
+//! A heartrate page the fetch staged also names its chunk's instants, `from` and
+//! `to`, and only its readings in `from <= at < to` are read. Chunks meet end to
+//! start, so a reading at a boundary comes from one chunk whichever way Oura reads
+//! the end it was asked for.
+//!
 //! This is Oura's half of the scan phase: the place and days phases, and
 //! everything after them, are the writer Apple's export uses. The scan keeps one
 //! version of each Oura document, the last fetched, so the placer never sees two
@@ -52,6 +57,30 @@ struct PageEntry {
     endpoint: String,
     file: String,
     sha256: String,
+    /// A heartrate chunk's first instant, when the fetch staged it.
+    #[serde(default)]
+    from: Option<String>,
+    /// The instant after its last.
+    #[serde(default)]
+    to: Option<String>,
+}
+
+impl PageEntry {
+    /// Whether a reading at `at` is this page's to read.
+    fn holds(&self, at: Option<&str>) -> bool {
+        let (Some(from), Some(to)) = (self.from.as_deref(), self.to.as_deref()) else {
+            return true;
+        };
+        let (Some(from), Some(to), Some(at)) = (
+            parse_source_time(from),
+            parse_source_time(to),
+            at.and_then(parse_source_time),
+        ) else {
+            // A reading with no time is the reader's to refuse.
+            return true;
+        };
+        from <= at && at < to
+    }
 }
 
 fn io_text(error: impl std::fmt::Display) -> String {
@@ -531,6 +560,11 @@ pub fn scan_pages(
             if shape != Shape::Heartrate
                 && let Some(id) = document.get("id").and_then(Value::as_str)
                 && last.get(&(endpoint.to_owned(), id.to_owned())) != Some(&(page, item))
+            {
+                continue;
+            }
+            if shape == Shape::Heartrate
+                && !entry.holds(document.get("timestamp").and_then(Value::as_str))
             {
                 continue;
             }
