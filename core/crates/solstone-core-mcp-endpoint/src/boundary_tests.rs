@@ -13604,6 +13604,214 @@ fn every_body_answer_names_the_windows_it_read() {
     }
 }
 
+/// A second account of the fixture's run, by another recorder, in alpha too.
+fn add_second_account(root: &Path) {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        "w2".to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    row.experience = Some("workout".to_owned());
+    row.start = Some("2026-03-08 07:01:00 -0400".to_owned());
+    row.end = Some("2026-03-08 07:41:00 -0400".to_owned());
+    row.by = Some("Synthetic App".to_owned());
+    let window = root.join("chronicle/20260308/import.apple_health/070000_300");
+    fs::create_dir_all(window.join("talents")).unwrap();
+    fs::write(
+        window.join("body.jsonl"),
+        encode_rows(std::slice::from_ref(&row)),
+    )
+    .unwrap();
+    fs::write(window.join("stream.json"), "{}\n").unwrap();
+    fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    let record = json!({
+        "id": "body_fedcba9876543210", "source": "body", "activity": "workout",
+        "account": {"key": "import.apple_health\u{1f}w2", "start": row.start, "end": row.end,
+            "type": "running", "recorder": recorder_id("import.apple_health", row.by.as_deref())},
+    });
+    let path = root.join("facets/alpha/activities/20260308.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str(&format!("{record}\n"));
+    fs::write(path, text).unwrap();
+}
+
+/// Hide one member of a group by id, as an owner's write leaves it.
+fn hide_member(root: &Path, id: &str) {
+    let path = root.join("facets/alpha/activities/20260308.jsonl");
+    let text = fs::read_to_string(&path).unwrap().replace(
+        &format!("\"id\":\"{id}\""),
+        &format!("\"id\":\"{id}\",\"hidden\":true"),
+    );
+    assert!(text.contains("\"hidden\":true"), "{text}");
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn get_week_leaves_out_a_group_any_member_of_which_is_hidden() {
+    for hidden in ["body_0123456789abcdef", "body_fedcba9876543210"] {
+        let journal = body_record_journal(true);
+        add_second_account(journal.path());
+        let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+        assert_eq!(week["body"].as_array().unwrap().len(), 1, "{week}");
+        hide_member(journal.path(), hidden);
+        let week = probe(&journal, "get_week", json!({"week": "20260308"})).unwrap();
+        assert!(
+            week.get("body")
+                .and_then(Value::as_array)
+                .is_none_or(Vec::is_empty),
+            "{hidden}: {week}"
+        );
+    }
+}
+
+/// A live window that no longer holds the row: the face shows, and sits
+/// beside nothing, either way.
+#[test]
+fn a_face_whose_row_is_gone_from_its_live_window_sits_beside_nothing() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    fs::create_dir_all(root.join("chronicle/20260308/phone/070000_300")).unwrap();
+    write_activity_line(
+        root,
+        "alpha",
+        "20260308",
+        "act_alpha_run",
+        "alpha capture",
+        50,
+        Some("running"),
+        Some(&["070000_300"]),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let by_title = |res: &Value, title: &str| {
+        res["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|activity| activity["title"] == title)
+            .unwrap_or_else(|| panic!("{title}: {res}"))
+            .clone()
+    };
+    let res = listed(&journal, None);
+    assert!(
+        by_title(&res, "alpha capture").get("beside").is_some(),
+        "{res}"
+    );
+    fs::write(
+        root.join("chronicle/20260308/import.apple_health/070000_3600/body.jsonl"),
+        "",
+    )
+    .unwrap();
+    let res = listed(&journal, None);
+    let body = res["activities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|activity| activity["source"] == "body")
+        .unwrap_or_else(|| panic!("{res}"))
+        .clone();
+    assert!(body.to_string().contains("not_found"), "{body}");
+    assert!(body.get("beside").is_none(), "{body}");
+    assert!(
+        by_title(&res, "alpha capture").get("beside").is_none(),
+        "{res}"
+    );
+}
+
+/// Where a device was during a body item reaches only a connection that reads
+/// the whole journal.
+#[test]
+fn a_body_item_says_where_a_device_was_only_to_a_whole_journal_connection() {
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    // A visit the phone reported near Denver, over the run.
+    let segment = root.join("chronicle/20260308/phone_mobile-segment/070000_300");
+    fs::create_dir_all(&segment).unwrap();
+    fs::write(
+        segment.join("location.jsonl"),
+        concat!(
+            r#"{"accuracy":"full","fix_count":0,"gap":false,"kind":"location","platform":"ios","schema":"solstone.location.segment/1","source":"location","tier":"full"}"#,
+            "\n",
+            r#"{"arrival":"2026-03-08T11:00:00Z","departure":"2026-03-08T12:00:00Z","h_acc":40,"lat":39.7527,"lon":-105.0001,"schema":"solstone.location.visit/1"}"#,
+            "\n"
+        ),
+    )
+    .unwrap();
+    solstone_core_location::reconcile_journal(
+        root,
+        &mut solstone_core_location::Reconciler::default(),
+    )
+    .unwrap();
+    let place = |permission: ReadPermission| {
+        listed(&journal, Some(permission))["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|activity| activity["source"] == "body")
+            .map(|activity| activity.get("place").cloned().unwrap_or(Value::Null))
+    };
+    let whole = place(ReadPermission::default_whole_journal()).unwrap();
+    assert!(
+        whole["words"]
+            .as_str()
+            .is_some_and(|words| words.starts_with("near Denver")),
+        "{whole}"
+    );
+    assert_eq!(place(alpha_reader()), Some(Value::Null));
+}
+
+/// Each way a list reads a body window names it, alone: a page holding only the
+/// body item, and a page holding only a capture a body face could sit beside.
+#[test]
+fn a_list_page_names_the_body_windows_it_read_with_or_without_capture_on_it() {
+    let window = "20260308/import.apple_health/070000_3600";
+    let journal = body_record_journal(true);
+    let root = journal.path();
+    let outcomes = |root: &Path| {
+        find_audit_files(root, solstone_core_mcp_audit::OUTCOME_FILE)
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    };
+    let mut cursor: Option<Value> = None;
+    let mut pages = Vec::new();
+    loop {
+        let before = outcomes(root);
+        let mut arguments = json!({"from": "20260308", "to": "20260314", "limit": 1});
+        if let Some(cursor) = &cursor {
+            arguments["cursor"] = cursor.clone();
+        }
+        let res = probe(&journal, "list_activities", arguments).unwrap();
+        let new = outcomes(root)
+            .difference(&before)
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(new.len(), 1, "{new:?}");
+        let outcome: Value = serde_json::from_str(&fs::read_to_string(&new[0]).unwrap()).unwrap();
+        let named = outcome["result"]["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|target| target == window);
+        let items = res["activities"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{res}");
+        pages.push((items[0]["source"] == "body", named));
+        match res.get("next_cursor").filter(|next| !next.is_null()) {
+            Some(next) => cursor = Some(next.clone()),
+            None => break,
+        }
+    }
+    assert_eq!(pages.len(), 2, "{pages:?}");
+    assert!(pages.iter().any(|(body, _)| *body), "{pages:?}");
+    assert!(pages.iter().any(|(body, _)| !*body), "{pages:?}");
+    assert!(pages.iter().all(|(_, named)| *named), "{pages:?}");
+}
+
 fn alpha_reader() -> ReadPermission {
     ReadPermission {
         categories: vec!["facets".to_owned(), "transcripts".to_owned()],
