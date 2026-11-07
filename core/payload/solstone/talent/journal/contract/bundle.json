@@ -411,6 +411,7 @@
             "type": "integer"
           },
           "kind": {
+            "description": "moved: a row that has moved to another window. It keeps the old row's id, source, type, label and run, names its document in of, and holds nothing else. Readers skip it.",
             "enum": [
               "experience",
               "experience_tile",
@@ -419,7 +420,8 @@
               "reading",
               "count",
               "logged",
-              "dated"
+              "dated",
+              "moved"
             ],
             "type": "string"
           },

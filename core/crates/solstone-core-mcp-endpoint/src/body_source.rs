@@ -13,7 +13,8 @@ use std::path::Path;
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
 use serde_json::{Value, json};
 use solstone_core_format::content::body_records::{
-    BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, parse_source_time, render_row,
+    BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, only_moved_rows, parse_source_time,
+    render_row,
 };
 use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::paths::{
@@ -64,7 +65,14 @@ fn released(journal_root: &Path, day: &str, stream: &str, name: &str) -> bool {
     crate::source_release::check_segment_transcript_release(journal_root, day, stream, name)
 }
 
-/// The body window a live, in-scope, unreleased segment is, in time order.
+/// Whether a body window holds only rows that moved elsewhere, which a reader
+/// treats as no window at all. One that can't be read stays, so it's counted.
+pub(crate) fn holds_only_moved(window: &Path) -> bool {
+    std::fs::read_to_string(window.join(BODY_RECORDS_FILE)).is_ok_and(|text| only_moved_rows(&text))
+}
+
+/// The body window a live, in-scope, unreleased segment is, in time order. One
+/// holding only moved rows is left out.
 fn readable_windows(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
@@ -82,6 +90,7 @@ fn readable_windows(
         if identity.stream != stream
             || !segment.path().join(BODY_RECORDS_FILE).is_file()
             || !solstone_core_segment::is_body_only_segment(&segment)
+            || holds_only_moved(segment.path())
         {
             continue;
         }
@@ -361,7 +370,8 @@ fn window_rows(
         match serde_json::from_str::<BodyRow>(line) {
             Ok(row) => {
                 good += 1;
-                if kind.is_some_and(|kind| !is_kind(&row, kind))
+                if row.kind == RowKind::Moved
+                    || kind.is_some_and(|kind| !is_kind(&row, kind))
                     || (behind
                         && !matches!(row.kind, RowKind::Count | RowKind::Stage | RowKind::Logged))
                     || !within(&row, clock, window, from, to)

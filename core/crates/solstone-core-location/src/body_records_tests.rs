@@ -158,6 +158,53 @@ fn a_live_window_without_the_row_and_an_unreadable_one_say_so_apart() {
     assert_eq!(composed(root)[0].account, Account::Unreadable);
 }
 
+fn moved(id: &str) -> BodyRow {
+    let mut row = BodyRow::new(
+        RowKind::Moved,
+        id.to_owned(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "Sleep".to_owned(),
+    );
+    row.of = Some("n1".to_owned());
+    row
+}
+
+/// A moved row is no account: the record reads from the window its start is in
+/// now, a record left at a moved row finds nothing there, and a moved tile is
+/// no piece of the span that survives a delete.
+#[test]
+fn a_moved_row_is_never_the_account_or_a_piece_of_it() {
+    let journal = journal();
+    let root = journal.path();
+    // The night now starts an hour later; its old first window holds a mark.
+    window(root, DAY, "210000_3600", &[moved("n1")]);
+    window(root, DAY, "220000_3600", &[night()]);
+    record(root, json!({}));
+    let found = composed(root);
+    assert_eq!(found[0].window.as_deref(), Some("220000_3600"));
+    assert_eq!(found[0].account, Account::Live(Box::new(night())));
+
+    // A record still at the old start reads as nothing found, never as the mark.
+    let journal = self::journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[moved("n1")]);
+    record(root, json!({}));
+    assert_eq!(composed(root)[0].account, Account::NotFound);
+    let mut windows = Windows::default();
+    let stored = stored_body_records(root, "body", DAY).unwrap().remove(0);
+    assert_eq!(windows.account_windows(root, &stored), ["220000_3600"]);
+
+    // Its first window deleted, a moved tile later on isn't a piece that survives.
+    let journal = self::journal();
+    let root = journal.path();
+    let start = window(root, DAY, "220000_3600", &[night()]);
+    window(root, NEXT, "000000_3600", &[moved("n1#1")]);
+    record(root, json!({}));
+    delete(&start);
+    assert_eq!(composed(root)[0].account, Account::RemovedByYou);
+}
+
 #[test]
 fn a_reader_that_may_not_read_the_window_gets_no_record() {
     let journal = journal();

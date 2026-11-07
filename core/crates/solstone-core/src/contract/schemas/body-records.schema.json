@@ -9,7 +9,8 @@
     "v": { "type": "integer", "const": 1 },
     "kind": {
       "type": "string",
-      "enum": ["experience", "experience_tile", "stage", "event", "reading", "count", "logged", "dated"]
+      "enum": ["experience", "experience_tile", "stage", "event", "reading", "count", "logged", "dated", "moved"],
+      "description": "moved: a row that has moved to another window. It keeps the old row's id, source, type, label and run, names its document in of, and holds nothing else. Readers skip it."
     },
     "id": { "type": "string", "minLength": 1, "description": "Stable across re-imports. A changed value keeps its id." },
     "source": { "type": "string", "description": "The source family, such as apple_health." },

@@ -1722,3 +1722,251 @@ fn oura_judgements_never_reach_search_and_an_agent_reads_them_attributed() {
     assert!(text.contains("level: limited"), "{text}");
     assert!(text.contains("score: 82"), "{text}");
 }
+
+fn oura_moved(id: &str, of: &str) -> BodyRow {
+    let mut row = oura_row(RowKind::Moved, id, "walking", "walking", json!({}));
+    row.by = None;
+    row.fields.clear();
+    row.of = Some(of.into());
+    row
+}
+
+fn oura_walk(start: &str, end: &str) -> BodyRow {
+    let mut walk = oura_row(
+        RowKind::Experience,
+        "walk",
+        "walking",
+        "walking",
+        json!({"id": "synthetic-workout-walk", "label": "synthetic hill loop"}),
+    );
+    walk.experience = Some("workout".into());
+    walk.start = Some(start.into());
+    walk.end = Some(end.into());
+    walk.words = vec!["synthetic hill loop".into()];
+    walk
+}
+
+/// A window whose rows all moved elsewhere is no window to any reader: search
+/// loses its chunk, a listing covers nothing with it and names no source for it,
+/// and a read's window budget doesn't spend on it. Its twin, a mark beside a live
+/// reading, is a window like any other.
+#[test]
+fn a_window_holding_only_moved_rows_is_absent_and_one_with_a_live_reading_is_present() {
+    let journal = oura_journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    // The walk first written at 07:00, and found by search there.
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "070000_300",
+        &[oura_walk(
+            "2026-10-10T07:00:00.000-06:00",
+            "2026-10-10T07:04:00.000-06:00",
+        )],
+        None,
+    );
+    index(root);
+    let hits = |root: &Path| {
+        call(
+            root,
+            "search",
+            json!({"query": "synthetic hill loop", "day": DAY}),
+        )["results"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    assert_eq!(hits(root), 1);
+
+    // Oura moved it to 08:05: the old window holds only its mark, the new one the
+    // walk and its old tile's mark, and an hour holds a mark beside a reading.
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "070000_300",
+        &[oura_moved("walk", "walk")],
+        None,
+    );
+    // The index reads a file again when its time moves, as a publication's does.
+    fs::File::options()
+        .write(true)
+        .open(
+            root.join("chronicle")
+                .join(DAY)
+                .join(OURA)
+                .join("070000_300/body.jsonl"),
+        )
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
+        .unwrap();
+    let mut moved_walk = oura_walk(
+        "2026-10-10T08:05:00.000-06:00",
+        "2026-10-10T08:09:00.000-06:00",
+    );
+    moved_walk.id = "walk".into();
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "080500_300",
+        &[moved_walk, oura_moved("walk-1", "walk")],
+        None,
+    );
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "090000_3600",
+        &[
+            oura_moved("walk@20261010/090000_3600", "walk"),
+            oura_heart_rate("h5", "2026-10-10T15:20:00.000Z", "7005", "awake"),
+        ],
+        None,
+    );
+    index(root);
+    // Search holds one chunk for the walk, from its new window.
+    let found = call(
+        root,
+        "search",
+        json!({"query": "synthetic hill loop", "day": DAY}),
+    );
+    let results = found["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "{found}");
+    assert!(
+        results[0]["snippet"]
+            .as_str()
+            .unwrap_or_default()
+            .replace('\\', "")
+            .contains("08:05 -0600"),
+        "{found}"
+    );
+
+    // The listing: the marked hour is listed, the moved-only window isn't, and
+    // what it covered is a gap.
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": OURA_LABEL}),
+    );
+    let times: Vec<&str> = list["transcripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|listed| listed["time"].as_str().unwrap())
+        .collect();
+    assert_eq!(times, ["08:05-08:10", "09:00-10:00"], "{list}");
+    assert_eq!(
+        list["gaps"],
+        json!([
+            {"from": "00:00", "to": "08:05"},
+            {"from": "08:10", "to": "09:00"},
+            {"from": "10:00", "to": "24:00"},
+        ]),
+        "{list}"
+    );
+    // Its entries are the live rows only.
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(
+        entries[0].starts_with("workout walking, 2026-10-10T08:05"),
+        "{entries:?}"
+    );
+    assert!(entries[1].contains("heart rate 7005"), "{entries:?}");
+    // A window's own page reads its live rows and no mark.
+    let marked = list["transcripts"][0]["reference"].as_str().unwrap();
+    let page = call(root, "get_transcript", json!({"reference": marked}));
+    assert_eq!(page["entries"].as_array().unwrap().len(), 1, "{page}");
+
+    // A day of only marks names no source, and a dayless list says no body data.
+    let next = "20261011";
+    window_in(
+        root,
+        OURA,
+        next,
+        "070000_300",
+        &[oura_moved("walk-2", "walk")],
+        None,
+    );
+    let day = call(root, "list_transcripts", json!({"day": next}));
+    assert!(day.get("other_sources").is_none(), "{day}");
+    let only_marks = oura_journal();
+    grant(only_marks.path(), ReadScope::WholeJournal);
+    window_in(
+        only_marks.path(),
+        OURA,
+        DAY,
+        "070000_300",
+        &[oura_moved("walk", "walk")],
+        None,
+    );
+    let note = empty_note(only_marks.path(), json!({}));
+    assert!(!note.contains("List a day"), "{note}");
+    assert!(
+        call(only_marks.path(), "list_transcripts", json!({"day": DAY}))
+            .get("other_sources")
+            .is_none()
+    );
+    // The twin: a mark beside a live reading is body data, and names its source.
+    window_in(
+        only_marks.path(),
+        OURA,
+        DAY,
+        "090000_3600",
+        &[
+            oura_moved("walk@20261010/090000_3600", "walk"),
+            oura_heart_rate("h5", "2026-10-10T15:20:00.000Z", "7005", "awake"),
+        ],
+        None,
+    );
+    assert!(empty_note(only_marks.path(), json!({})).contains("List a day"));
+    assert_eq!(
+        call(only_marks.path(), "list_transcripts", json!({"day": DAY}))["other_sources"],
+        json!([OURA_LABEL])
+    );
+}
+
+/// Windows of marks don't spend a read's budget: a day with more of them than one
+/// read visits still serves its live rows on the first page.
+#[test]
+fn moved_only_windows_spend_nothing_of_a_reads_window_budget() {
+    let journal = oura_journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    for minute in 0..30 {
+        let key = format!("06{:02}00_300", minute * 2);
+        window_in(
+            root,
+            OURA,
+            DAY,
+            &key,
+            &[oura_moved(&format!("walk@{DAY}/{key}"), "walk")],
+            None,
+        );
+    }
+    window_in(
+        root,
+        OURA,
+        DAY,
+        "070000_3600",
+        &[
+            oura_heart_rate("h1", "2026-10-10T13:10:00.000Z", "7001", "rest"),
+            oura_heart_rate("h2", "2026-10-10T13:15:00.000Z", "7002", "rest"),
+        ],
+        None,
+    );
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": OURA_LABEL}),
+    );
+    let page = call(
+        root,
+        "get_transcript",
+        json!({"reference": list["span_reference"]}),
+    );
+    assert_eq!(page["entries"].as_array().unwrap().len(), 2, "{page}");
+    assert!(page["next_cursor"].is_null(), "{page}");
+}

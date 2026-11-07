@@ -2715,6 +2715,7 @@ fn list_transcripts(
                         .path()
                         .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
                         .is_file()
+                        && !crate::body_source::holds_only_moved(segment.path())
                         && live_allows(
                             journal_root,
                             &boundary,

@@ -90,7 +90,9 @@ fn read_rows(journal: &Path, day: &str) -> Result<BTreeMap<String, Vec<BodyRow>>
                 path,
                 detail: error.to_string(),
             })?;
-            for row in rows {
+            // A moved row marks what is in another window now, so a source whose
+            // rows here are all moved has nothing to say for the day.
+            for row in rows.into_iter().filter(|row| row.kind != RowKind::Moved) {
                 by_source.entry(row.source.clone()).or_default().push(row);
             }
         }
@@ -242,7 +244,7 @@ fn render_source(
                     documents.insert(row.label.clone());
                 }
             },
-            RowKind::Event => {}
+            RowKind::Event | RowKind::Moved => {}
             RowKind::Stage | RowKind::Reading | RowKind::Count | RowKind::Logged => {
                 let by = row.by.clone().unwrap_or_default();
                 let key = match row.kind {
@@ -881,6 +883,68 @@ mod tests {
         ] {
             assert!(!text.contains(number), "{number}: {text}");
         }
+    }
+
+    fn moved(id: &str, of: &str) -> BodyRow {
+        let mut row = BodyRow::new(
+            RowKind::Moved,
+            id.into(),
+            "oura",
+            "running",
+            "running".into(),
+        );
+        row.of = Some(of.into());
+        row
+    }
+
+    /// A day whose Oura rows have all moved says nothing of Oura, and a moved row
+    /// beside live ones never reads as one of them.
+    #[test]
+    fn moved_rows_say_nothing_and_a_day_of_only_them_has_no_heading_for_their_source() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        window_in(root, OURA, "20261010", "070000_300", &[moved("w", "w")]);
+        window_in(
+            root,
+            OURA,
+            "20261010",
+            "080000_3600",
+            &[moved("w@20261010/080000_3600", "w")],
+        );
+        window(
+            root,
+            "20261010",
+            "063000_300",
+            &[reading("a", "2026-10-10 06:31:10 -0600", "70")],
+        );
+        BodyDays::default().reconcile(root);
+        let text = document(root, "20261010").unwrap();
+        assert!(!text.contains("Oura"), "{text}");
+        assert!(text.contains("## Apple Health · imported"), "{text}");
+
+        // With a live row of Oura's beside the marks, only it reads.
+        let mut walk = oura_row(
+            RowKind::Experience,
+            "walk",
+            "walking",
+            "walking",
+            serde_json::json!({"id": "synthetic-walk"}),
+        );
+        walk.experience = Some("workout".into());
+        walk.start = Some("2026-10-10T09:00:00.000-06:00".into());
+        walk.end = Some("2026-10-10T09:20:00.000-06:00".into());
+        window_in(root, OURA, "20261010", "090000_300", &[walk]);
+        BodyDays::default().reconcile(root);
+        let text = document(root, "20261010").unwrap();
+        let (_, oura) = text
+            .split_once("## Oura · imported")
+            .unwrap_or_else(|| panic!("{text}"));
+        assert_eq!(
+            oura.trim(),
+            "- workout: walking, 09:00 to 09:20 (Oura)",
+            "{text}"
+        );
+        assert!(!text.contains("running"), "{text}");
     }
 
     #[test]

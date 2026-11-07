@@ -437,7 +437,8 @@ fn endpoint_of(row: &BodyRow) -> Option<&'static str> {
             Some("sleep") => Some("sleep"),
             _ => None,
         },
-        RowKind::Stage | RowKind::Event | RowKind::Count => None,
+        // A moved row marks a place, so its absence is no hole.
+        RowKind::Stage | RowKind::Event | RowKind::Count | RowKind::Moved => None,
     }
 }
 

@@ -38,6 +38,10 @@ pub enum RowKind {
     Count,
     Logged,
     Dated,
+    /// A row that was here and has moved: the old row's id, its document's id as
+    /// `of`, and its source, type, label and run, nothing else. Every reader
+    /// skips it, and a window holding only these reads as holding nothing.
+    Moved,
 }
 
 /// One row. Fields are declared in sorted order, so a row's bytes are stable.
@@ -325,6 +329,21 @@ pub fn encode_rows(rows: &[BodyRow]) -> String {
     text
 }
 
+/// Whether a window's file holds rows, every one of them `moved`: a window that
+/// stays on disk and reads as holding nothing. A line that isn't a row leaves the
+/// window there, so the damage shows.
+#[must_use]
+pub fn only_moved_rows(text: &str) -> bool {
+    let mut lines = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .peekable();
+    lines.peek().is_some()
+        && lines.all(|line| {
+            serde_json::from_str::<BodyRow>(line).is_ok_and(|row| row.kind == RowKind::Moved)
+        })
+}
+
 /// A window's rows, or the first line that isn't one. A caller that merges into
 /// a window refuses it rather than dropping what it couldn't read.
 pub fn decode_rows(text: &str) -> Result<Vec<BodyRow>, serde_json::Error> {
@@ -415,6 +434,7 @@ fn field_text(value: &Value) -> String {
 }
 
 /// One row as an agent reads it, attributed, with every field the source gave.
+/// A `moved` row reads as nothing: what it marks is in another window now.
 #[must_use]
 pub fn render_row(row: &BodyRow) -> String {
     let source = source_words(&row.source);
@@ -460,6 +480,7 @@ pub fn render_row(row: &BodyRow) -> String {
                 row.label
             )
         }
+        RowKind::Moved => return String::new(),
     };
     let mut parts = vec![what, attribution];
     if !row.words.is_empty() {
@@ -743,6 +764,54 @@ mod tests {
         let bytes = encode_rows(&rows);
         assert_eq!(encode_rows(&decode_rows(&bytes).unwrap()), bytes);
         assert!(decode_rows("{not json\n").is_err());
+    }
+
+    fn moved(id: &str) -> BodyRow {
+        let mut row = BodyRow::new(
+            RowKind::Moved,
+            id.into(),
+            "oura",
+            "running",
+            "running".into(),
+        );
+        row.of = Some("o1".into());
+        row.run = Some("20261104_120000".into());
+        row
+    }
+
+    #[test]
+    fn a_moved_row_reads_as_nothing_and_holds_only_what_it_replaces() {
+        let row = moved("o1");
+        let bytes = encode_rows(std::slice::from_ref(&row));
+        assert_eq!(
+            bytes,
+            "{\"id\":\"o1\",\"kind\":\"moved\",\"label\":\"running\",\"of\":\"o1\",\"run\":\"20261104_120000\",\"source\":\"oura\",\"type\":\"running\",\"v\":1}\n"
+        );
+        assert_eq!(decode_rows(&bytes).unwrap(), vec![row.clone()]);
+        assert_eq!(render_row(&row), "");
+        assert_eq!(render_line(bytes.trim_end()), "");
+        // Search holds no chunk for it, beside an experience that keeps one.
+        let mut live = experience();
+        live.source = "oura".into();
+        let produced = produce_chunks(Family::BodyRecords, REL, &bytes);
+        assert!(produced.chunks.is_empty());
+        let both = encode_rows(&[row, live]);
+        assert_eq!(
+            produce_chunks(Family::BodyRecords, REL, &both).chunks.len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_window_of_only_moved_rows_is_one_and_any_other_line_keeps_it() {
+        let marks = encode_rows(&[moved("o1"), moved("o1@20261010/070000_3600")]);
+        assert!(only_moved_rows(&marks));
+        assert!(!only_moved_rows(""));
+        assert!(!only_moved_rows(&format!(
+            "{marks}{}",
+            encode_rows(&[reading()])
+        )));
+        assert!(!only_moved_rows(&format!("{marks}{{not a row\n")));
     }
 
     #[test]
