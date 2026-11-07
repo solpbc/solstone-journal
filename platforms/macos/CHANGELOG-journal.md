@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.71 (build 123)] - 2026-11-07
+
 ### Changed
 
-- the empty "your · journal" mark, in the app and on its icon, is now easy to see on any background.
+- updated the bundled journal to [2.0.71](https://solstone.app/releases#v2.0.71) →
+- the "your · journal" mark, in the journal app and on its icon, is now easy to see on any background.
 
 ## [2.0.70 (build 122)] - 2026-11-06
 
