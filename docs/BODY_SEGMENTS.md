@@ -2,7 +2,7 @@
 
 How body data lands in the journal as ordinary segments. Apple Health proves this contract first, Oura follows, and Strava relates to it as described below. Parsers stay source-specific: there is no generic body framework, and every source on this contract writes these rows.
 
-**Status:** the Apple Health writer exists and no shipped command reaches it (`core/crates/solstone-core-import-host/examples/apple_body_segments.rs` runs it). Every Apple Health and Oura owner command still saves a bundle, as [`health_imports.md`](health_imports.md) describes. The readers below are live and hold nothing until a window exists.
+**Status:** the Apple Health and Oura writers exist and no shipped command reaches them (`core/crates/solstone-core-import-host/examples/apple_body_segments.rs` and `oura_body_segments.rs` run them). Every Apple Health and Oura owner command still saves a bundle, as [`health_imports.md`](health_imports.md) describes. The readers below are live and hold nothing until a window exists.
 
 A body import isn't an authoritative copy of the details, which live in the source's own system. It tells the story of what the owner did and experienced.
 
@@ -19,6 +19,7 @@ imports/<id>/body-touched.jsonl                                      what the im
 imports/<id>/body-progress.json                                      how far a run has got
 imports/.<source>-zone.json                                          the zone fixed at first import
 imports/.<source>-run/state.json                                     a run that hasn't finished
+imports/.oura-coverage.json                                          what Oura has answered for and the journal wrote in full
 ```
 
 A **window** is one segment on a civil grid, floored to its length. A workout or a mindfulness session takes 300 seconds: its first row, its tiles, its events, and every reading from its own source inside its span, so deleting it takes its own series with it. Everything else with a time takes 3,600 seconds: a night and its stages, readings no session of their source covers, counts and logged entries. Only windows holding a row exist. Every row states its own exact times, so nothing reads meaning from the key: the length is used for placement and nothing else.
@@ -39,13 +40,14 @@ A window whose directory holds older content, live or deleted (Apple's retired d
 | `reading` | the window of `at`: its session's slot when a workout or mindfulness session from the same `by` covers it, its hour otherwise | one point reading: exact time, value, unit, source |
 | `count` | the window of its start | an interval count, its source interval unsplit |
 | `logged` | the window of its start | an entry or event the source recorded, by the shape it gave: `start` alone or `start` and `end`. `by` says who recorded it |
+| `moved` | where a document's row was, before a revision moved it | the old row's `id`, `source`, `type`, `label` and `run`, and `of`, the document's row id. Every reader skips it; a window holding only `moved` rows reads as absent |
 | `dated` | `000000_86400` of its date | a daily score or summary: `date`, no time at all. A whole-day segment reads `00:00-23:59`, because a midnight window would read as something that happened at midnight |
 
 `value` is the source's exact string. `by` is the app or device's own name. Device strings, uuids and sync ids stay in `fields`, readable by an agent and never indexed. Every row also carries `run`, the import that first wrote it: set once, kept through edits, outside identity and never indexed.
 
 ## What is read
 
-One table per source, in code: `read_kind` in `solstone-core-import-sources/src/apple_health.rs` for Apple. Any other type or element is counted and named in `imports/<id>/summary.md`, and its values are never held. A record that can't be read is counted by stage, with no value in the message. A row over 32 KiB, an experience over 14 days, an `end` before its `start` or one element with more than 10,000 children is refused the same way.
+One table per source, in code: `read_kind` in `solstone-core-import-sources/src/apple_health.rs` for Apple, `read_endpoint` in `oura.rs` for Oura. Any other type or element is counted and named in `imports/<id>/summary.md`, and its values are never held. A record that can't be read is counted by stage, with no value in the message. A row over 32 KiB, an experience over 14 days, an `end` before its `start` or one element with more than 10,000 children is refused the same way.
 
 An export is read in bounded memory, so there's no count of records or rows. Its bounds are size, an `export.xml` over 64 GiB, and one XML tag over 1 MiB; either refuses the export, and the import says which. A zip can be over 4 GiB; its directory is held to the same limits as a smaller zip's. An export's sorted staging is merged down in batches, so a long export can't run out of open files.
 
@@ -76,10 +78,30 @@ Apple gives sleep stages, not nights. Per source name, ordered by start, stage i
 
 **Known limits,** each needing someone to edit stages in Apple Health: a new earlier first stage makes a second night beside the first; a stage bridging two nights, or a missing middle stage, leaves two overlapping nights; and a night whose first tile was deleted has no stored span to keep.
 
+## Oura
+
+Oura's API gives whole documents, each with an id. The thirteen endpoints an owner's Oura is read by today land as rows, each document kept whole in `fields`, with `by` set to Oura:
+
+- A night (`sleep` of type `long_sleep`, `sleep` or `late_nap`), a workout and a session are experiences, placed by the instant they began on the source's fixed zone, so Oura's own `day` never moves them. A `nap` session is sleep; every other session is mindfulness. A sleep Oura marks `deleted` or `rest` isn't read as a night, and the summary names any night already stored under its id.
+- A tag is a logged entry, the owner's own, and its note and custom name are the owner's words. A workout Oura shows as added by hand reads as the owner's entry too.
+- `heartrate` gives readings, one per instant. Oura's `source` for a reading is part of what it says, so a reading Oura reclassifies is an edit.
+- The daily documents are dated rows on Oura's `day`, with no value. `body.md` names which of them exist for the date and says nothing of what they hold, so a score or Oura's word for a day never reaches the journal's own text. An agent reads every field, attributed to Oura.
+- A workout's distance is in metres, as Oura documents it.
+
+**One version per document.** A fetch can return a document twice (a range read again, or a page asked again); the last one fetched is the one read.
+
+**A revised document.** Oura revises documents in place, and the owner can edit a night's times in Oura. A revision replaces the document's rows where they are. When its start moves to another window on the same owner day, or its span changes, the document's rows are brought to its new tiling: new rows are written and every old row of it becomes `moved`, in each day's own write. A start that moves across the owner's midnight, in either direction, is kept as first written and printed in the summary with its date. Oura tile ids name their window, so a tile that stays in its window is an edit.
+
+**Deletes.** A document whose window the owner deleted stays deleted, through a revision too, where an activity record says so. A document with no record (every tag, and an entry in a window with no facet), arriving on a day where the owner deleted part of this source's data, isn't added, and the summary names the day: nothing records which entries a delete removed.
+
+**Reading from Oura.** A run takes an explicit range of the owner's dates, or with none starts seven days before what each endpoint last covered, or the last 30 days. Each endpoint ends in one result: read, empty, refused (naming the permission where Oura or its documentation does), refused part-way, failed part-way (naming the last day read in full) or failed. Three things stop a run, each saying what to do: an authorization that needs renewing, a membership that isn't active, and another Oura sync holding its lock. The tokens are the ones the existing Oura command uses; a run renews them only while holding that command's lock, and reads them again first.
+
+**Coverage.** `imports/.oura-coverage.json` holds, per endpoint, the days (for heartrate, the hours) Oura answered for and the journal wrote in full. Something the journal couldn't write in full (a revision kept as first written, a window that couldn't be read, a record that couldn't be written) takes its day back as soon as the run saves it, and is listed with its reason until a later run covers that day. A refused or failed request takes nothing back: Oura's earlier answer is still true. Additions are written once, after the last day. The existing Oura command's own cursor isn't read or moved.
+
 ## What is indexed
 
 - **One entry per experience**, from the `experience` row: label, name and the source's words on this record, times, `by`, and the `values` its reader chose. `fields` never reaches this text, so a key nobody listed can't reach search.
-- **One entry per day**, `chronicle/<day>/body.md`: experiences, each kind's count and first and last time, logged entries grouped under who recorded them, the words the source recorded on them, dated values. An entry reads as the owner's only where the source marks it as entered by the owner (Apple's `HKWasUserEntered`). Its times read on the source's fixed zone. It's deterministic and rebuilt from the windows that survive, on the `location.md` pattern. It holds no reading values.
+- **One entry per day**, `chronicle/<day>/body.md`: experiences, each kind's count and first and last time, logged entries grouped under who recorded them, the words the source recorded on them, and the owner's own words where the source says they're the owner's, dated values, or for a source whose dated documents carry none, their names. An entry reads as the owner's only where the source marks it as entered by the owner (Apple's `HKWasUserEntered`; for Oura, a tag or a workout added by hand). Its times read on the source's fixed zone. It's deterministic and rebuilt from the windows that survive, on the `location.md` pattern. It holds no reading values.
 - **One entry per import**, `imports/<id>/summary.md`: names and counts.
 - **Nothing else.** Readings, counts, stages and tiles produce no search entry.
 
@@ -104,7 +126,7 @@ Code writes `talents/facets.json` as `[{"facet":"<name>"}]` when the owner chose
 
 ## Activities
 
-Every workout, night's sleep and mindfulness session from Apple Health gets one activity record, in the facet its window has, on its window's day. A window with no facet gives none, and the import's summary says so. Code creates a record once and never edits it. Only the owner's edits and hides change it, and anyone else's write finds no such record. A record is a reference to its account, one recorder's experience row: the account's stream and row id, its start and end, the workout's type in one shared vocabulary (`running`, `cycling` and so on), an opaque id for who recorded it, and the owner's day it arrived on. It copies no name, value or words and holds no `segments`. Search, daily evidence and every talent skip it, so a day owes nothing because of one. The owner's home shows a day's records beside its morning briefing, one plain line for each group, composed when read and never stored: what it was, when, its distance if it has one, and what recorded it. No other value is shown there. `solstone_core_location::body_records`.
+Every workout, night's sleep and mindfulness session from Apple Health gets one activity record, in the facet its window has, on its window's day. A window with no facet gives none, and the import's summary says so. Code creates a record once and later changes only the account fields it wrote (its times, type and recorder), when its account changes: a night a later import ends later, a revised type. The owner's edits, hides and `apart` are never touched, and anyone else's write finds no such record. A record is a reference to its account, one recorder's experience row: the account's stream and row id, its start and end, the workout's type in one shared vocabulary (`running`, `cycling` and so on), an opaque id for who recorded it, and the owner's day it arrived on. It copies no name, value or words and holds no `segments`. Search, daily evidence and every talent skip it, so a day owes nothing because of one. The owner's home shows a day's records beside its morning briefing, one plain line for each group, composed when read and never stored: what it was, when, its distance if it has one, and what recorded it. A distance reads as a person says it: whole metres under a kilometre, otherwise kilometres to one decimal, whole yards and feet, any other unit to one decimal, and none for a number with no unit. No other value is shown there. `solstone_core_location::body_records`.
 
 Besides the home's lines, five readers show records, composed from the window as it now is and only for a connection that may read that window: the activities day view, MCP `list_activities`, `fetch`, `get_activity_sources` and `get_week`. A record whose window moved to another facet still shows to the owner and to a connection that reads the whole journal, and to a connection limited to chosen facets only when both facets are among them. When the window of its start was deleted, the owner's day view shows its account's `state` as `removed_by_you` (or `removed`, below), or `part_removed` when a later piece of its span is still there, shown from that piece; no connection sees the record. A record keeps its kind and times after that.
 
@@ -143,4 +165,4 @@ Strava keeps `workout.json` and its start-anchored keys. A Strava tile is an exp
 1. A parser and read table, source-specific, producing these rows.
 2. Its stream in `BODY_RECORD_STREAMS`, a family pattern in `content/mod.rs`, and a name in `source_words`.
 3. Its zone file and its run, on `solstone-core-import-host/src/body_segments.rs`.
-4. Its stream in the activity record writer, `solstone-core-import-host/src/body_activity.rs`, which today reads only Apple Health, as one constant, and any workout type names `mapped_workout_type` doesn't know yet.
+4. Its `BodySource` in `solstone-core-import-sources/src/body_stream.rs`, which names its stream, files and span policy for the shared writer and the activity record writer, and any workout type names `mapped_workout_type` doesn't know yet.
