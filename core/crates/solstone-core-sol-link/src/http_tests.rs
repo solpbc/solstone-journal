@@ -1973,3 +1973,96 @@ async fn thinking_line_uses_the_admitted_transfer_total_before_reprobing_the_hos
         99
     );
 }
+
+/// A journal whose setup is ready to finish, with the owner's name only in
+/// config, the way a new journal's defaults write it.
+async fn ready_to_finalize_with_configured_name(people: &[&str]) -> TempDir {
+    let temporary = committed_journal();
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        json!({"identity":{"name":"Ada Lovelace","preferred":"Ada"}}).to_string(),
+    )
+    .unwrap();
+    for id in people {
+        let entity = temporary.path().join("entities").join(id);
+        fs::create_dir_all(&entity).unwrap();
+        fs::write(
+            entity.join("entity.json"),
+            json!({"id":id,"name":"Ada","type":"Person"}).to_string(),
+        )
+        .unwrap();
+    }
+    let saved = request(
+        temporary.path(),
+        AccessBasis::Localhost,
+        Method::POST,
+        "/init/api/action",
+        Some(json!({"action":"save_thinking","choice":"later"})),
+    )
+    .await;
+    assert_eq!(saved.status(), StatusCode::OK);
+    temporary
+}
+
+#[tokio::test]
+async fn both_finalize_paths_make_the_owners_person_from_the_configured_name() {
+    for (uri, body) in [
+        ("/init/finalize", json!({"lane":"byo"})),
+        ("/init/api/action", json!({"action":"finalize"})),
+    ] {
+        let temporary = ready_to_finalize_with_configured_name(&[]).await;
+        let response = request(
+            temporary.path(),
+            AccessBasis::Localhost,
+            Method::POST,
+            uri,
+            Some(body),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        let principal = solstone_core_entity::read_journal_principal(temporary.path())
+            .unwrap()
+            .unwrap_or_else(|| panic!("{uri}: finishing setup makes the owner's person"));
+        assert_eq!(principal["name"], "Ada", "{uri}");
+        assert_eq!(principal["aka"], json!(["Ada Lovelace"]), "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn neither_finalize_path_picks_an_owner_among_two_matching_people() {
+    for (uri, body) in [
+        ("/init/finalize", json!({"lane":"byo"})),
+        ("/init/api/action", json!({"action":"finalize"})),
+    ] {
+        let temporary = ready_to_finalize_with_configured_name(&["ada_one", "ada_two"]).await;
+        let response = request(
+            temporary.path(),
+            AccessBasis::Localhost,
+            Method::POST,
+            uri,
+            Some(body),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        assert!(
+            solstone_core_entity::read_journal_principal(temporary.path())
+                .unwrap()
+                .is_none(),
+            "{uri}: two people named like the owner leave the choice to the owner"
+        );
+        let mut people = fs::read_dir(temporary.path().join("entities"))
+            .unwrap()
+            .filter_map(|entry| {
+                let entry = entry.unwrap();
+                entry
+                    .path()
+                    .join("entity.json")
+                    .exists()
+                    .then(|| entry.file_name().into_string().unwrap())
+            })
+            .collect::<Vec<_>>();
+        people.sort();
+        assert_eq!(people, ["ada_one", "ada_two"], "{uri}: no person is added");
+    }
+}
