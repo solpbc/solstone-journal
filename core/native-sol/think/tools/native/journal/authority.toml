@@ -18,7 +18,7 @@ params=[{name="day",kind="argument",type="text",required=false,nargs=1,multiple=
 [[entries]]
 path=["journal","facet","create"]
 kind="command"
-help="Create a new facet."
+help="Create a new facet.\n\n--consent records in the facet's audit log that the owner approved this. An\nagent passes it after the owner approves a change the agent proposed, not for\none the owner asked for. It does not change what is created."
 operation_id="journal.facet.create"
 entry_type="http"
 method="POST"
@@ -29,7 +29,7 @@ params=[{name="title",kind="argument",type="text",required=true,nargs=1,multiple
 [[entries]]
 path=["journal","facet","delete"]
 kind="command"
-help="Delete a facet and all its data."
+help="Delete a facet and all its data.\n\n--yes is required; without it the command refuses. Every delete is recorded in\nthe journal's action log as owner-approved, and --consent is accepted but changes\nnothing."
 operation_id="journal.facet.delete"
 entry_type="http"
 method="DELETE"
@@ -51,7 +51,7 @@ params=[{name="name",kind="argument",type="text",required=true,nargs=1,multiple=
 [[entries]]
 path=["journal","facet","rename"]
 kind="command"
-help="Rename a facet."
+help="Rename a facet.\n\n--consent records in the facet's audit log that the owner approved this. An\nagent passes it after the owner approves a change the agent proposed, not for\none the owner asked for. It does not change the rename."
 operation_id="journal.facet.rename"
 entry_type="http"
 method="POST"

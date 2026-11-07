@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 6ae896385631d8abde3ecbf70d1ab47c7f2f7f0a8ee5568915de89470ed239dd
+// authority-source-sha256: 1c3fe576db55b3530cf1a316f953691cf2663ce6b4cc56ef35e313a7011a697c
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -2115,7 +2115,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["journal", "facet", "create"],
         kind: "command",
-        help: "Create a new facet.",
+        help: "Create a new facet.\n\n--consent records in the facet's audit log that the owner approved this. An\nagent passes it after the owner approves a change the agent proposed, not for\none the owner asked for. It does not change what is created.",
         authority_path: "core/native-sol/think/tools/native/journal/authority.toml",
         params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"title\",\"nargs\":1,\"options\":[\"title\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":\"📦\",\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"emoji\",\"nargs\":1,\"options\":[\"--emoji\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":\"#667eea\",\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"color\",\"nargs\":1,\"options\":[\"--color\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":\"\",\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"description\",\"nargs\":1,\"options\":[\"--description\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":\"\",\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"icon\",\"nargs\":1,\"options\":[\"--icon\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"consent\",\"nargs\":1,\"options\":[\"--consent\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
@@ -2130,7 +2130,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["journal", "facet", "delete"],
         kind: "command",
-        help: "Delete a facet and all its data.",
+        help: "Delete a facet and all its data.\n\n--yes is required; without it the command refuses. Every delete is recorded in\nthe journal's action log as owner-approved, and --consent is accepted but changes\nnothing.",
         authority_path: "core/native-sol/think/tools/native/journal/authority.toml",
         params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"name\",\"nargs\":1,\"options\":[\"name\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"consent\",\"nargs\":1,\"options\":[\"--consent\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
@@ -2160,7 +2160,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         surface: "sol-call",
         path: &["journal", "facet", "rename"],
         kind: "command",
-        help: "Rename a facet.",
+        help: "Rename a facet.\n\n--consent records in the facet's audit log that the owner approved this. An\nagent passes it after the owner approves a change the agent proposed, not for\none the owner asked for. It does not change the rename.",
         authority_path: "core/native-sol/think/tools/native/journal/authority.toml",
         params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"name\",\"nargs\":1,\"options\":[\"name\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"new_name\",\"nargs\":1,\"options\":[\"new_name\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"consent\",\"nargs\":1,\"options\":[\"--consent\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",

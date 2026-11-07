@@ -662,7 +662,7 @@ pub const MCP_HELP: &str = concat!(
     "\n",
     "subcommands:\n",
     "  service               Run the MCP endpoint\n",
-    "  local-door            Run the direct local door\n",
+    "  local-door            Run the connection for agents on this computer\n",
     "  status                Show MCP endpoint status\n",
     "  token                 Manage MCP bearer tokens\n",
     "  pairing               Manage the agent pairing code\n",
@@ -671,6 +671,166 @@ pub const MCP_HELP: &str = concat!(
     "  activity              Show what connections asked for and how each request ended\n",
     "  probe                 Invoke one MCP read without opening a port\n",
 );
+
+/// The help for each `journal mcp` subcommand, chosen by [`mcp_help`].
+fn mcp_subcommand_help(words: &[&str]) -> &'static str {
+    match words {
+        ["service", ..] => concat!(
+            "usage: solstone journal mcp service [-h]\n\nRun the MCP endpoint.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n",
+        ),
+        ["local-door", ..] => concat!(
+            "usage: solstone journal mcp local-door [-h]\n\nRun the connection for agents on this computer.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n",
+        ),
+        ["status", ..] => concat!(
+            "usage: solstone journal mcp status [-h]\n\nShow MCP endpoint status.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n",
+        ),
+        ["token", "create", ..] => concat!(
+            "usage: solstone journal mcp token create [-h] --label LABEL\n\n",
+            "Create a bearer token for a connection. The token is shown once.\n\n",
+            "options:\n  -h, --help     show this help message and exit\n",
+            "  --label LABEL  a name for the connection the token is for\n",
+        ),
+        ["token", "list", ..] => concat!(
+            "usage: solstone journal mcp token list [-h]\n\n",
+            "List each token's label and when it was created.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n",
+        ),
+        ["token", "revoke", ..] => concat!(
+            "usage: solstone journal mcp token revoke [-h] --label LABEL\n\n",
+            "Revoke the bearer token for a label.\n\n",
+            "options:\n  -h, --help     show this help message and exit\n",
+            "  --label LABEL  the label of the token to revoke\n",
+        ),
+        ["token", ..] => concat!(
+            "usage: solstone journal mcp token [-h] {create,list,revoke} ...\n\n",
+            "Manage MCP bearer tokens.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n\n",
+            "subcommands:\n",
+            "  create      Create a bearer token for a connection\n",
+            "  list        List tokens\n",
+            "  revoke      Revoke a token\n",
+        ),
+        ["pairing", "generate", ..] => concat!(
+            "usage: solstone journal mcp pairing generate [-h] [--door {local,lan,solstone.me,hostname}]\n\n",
+            "Generate a pairing code for an agent, valid for 10 minutes and one use. It is shown once.\n\n",
+            "options:\n  -h, --help            show this help message and exit\n",
+            "  --door {local,lan,solstone.me,hostname}\n",
+            "                        where the code works (default: local, an agent on this computer)\n",
+        ),
+        ["pairing", "revoke", ..] => concat!(
+            "usage: solstone journal mcp pairing revoke [-h]\n\n",
+            "Revoke the current pairing code.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n",
+        ),
+        ["pairing", ..] => concat!(
+            "usage: solstone journal mcp pairing [-h] {generate,revoke} ...\n\n",
+            "Manage the agent pairing code.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n\n",
+            "subcommands:\n",
+            "  generate    Generate a pairing code\n",
+            "  revoke      Revoke the current pairing code\n",
+        ),
+        ["oauth", "list", ..] => concat!(
+            "usage: solstone journal mcp oauth list [-h]\n\n",
+            "List registered OAuth clients.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n",
+        ),
+        ["oauth", "revoke", ..] => concat!(
+            "usage: solstone journal mcp oauth revoke [-h] --client-id CLIENT_ID\n\n",
+            "Revoke a registered OAuth client.\n\n",
+            "options:\n  -h, --help             show this help message and exit\n",
+            "  --client-id CLIENT_ID  the client to revoke\n",
+        ),
+        ["oauth", ..] => concat!(
+            "usage: solstone journal mcp oauth [-h] {list,revoke} ...\n\n",
+            "Manage registered OAuth clients.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n\n",
+            "subcommands:\n",
+            "  list        List registered OAuth clients\n",
+            "  revoke      Revoke a registered OAuth client\n",
+        ),
+        ["permission", "show", ..] => concat!(
+            "usage: solstone journal mcp permission show [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]\n\n",
+            "Show read permissions, for every connection or for one.\n\n",
+            "options:\n  -h, --help           show this help message and exit\n",
+            "  --token LABEL        a bearer-token connection, by its label\n",
+            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
+            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+        ),
+        ["permission", "set", ..] => concat!(
+            "usage: solstone journal mcp permission set [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n",
+            "                                           --category CATEGORY [--category CATEGORY ...]\n",
+            "                                           [--facet FACET ...]\n\n",
+            "Set what one connection may read.\n\n",
+            "options:\n  -h, --help           show this help message and exit\n",
+            "  --token LABEL        a bearer-token connection, by its label\n",
+            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
+            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+            "  --category CATEGORY  what it may read: transcripts, entities, facets or screen_text; repeat for more\n",
+            "  --facet FACET        only this facet, by name; repeat for more (default: the whole journal)\n",
+        ),
+        ["permission", "clear", ..] => concat!(
+            "usage: solstone journal mcp permission clear [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n\n",
+            "Clear one connection's read permission.\n\n",
+            "options:\n  -h, --help           show this help message and exit\n",
+            "  --token LABEL        a bearer-token connection, by its label\n",
+            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
+            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+        ),
+        ["permission", ..] => concat!(
+            "usage: solstone journal mcp permission [-h] {show,set,clear} ...\n\n",
+            "Manage connection read permissions.\n\n",
+            "options:\n  -h, --help  show this help message and exit\n\n",
+            "subcommands:\n",
+            "  show        Show read permissions, for every connection or one\n",
+            "  set         Set what one connection may read\n",
+            "  clear       Clear one connection's read permission\n",
+        ),
+        ["activity", ..] => concat!(
+            "usage: solstone journal mcp activity [-h] [--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP]]\n",
+            "                                     [--tool TOOL] [--outcome OUTCOME] [--day-from YYYYMMDD]\n",
+            "                                     [--day-to YYYYMMDD] [--limit N] [--json]\n\n",
+            "Show what connections asked for and how each request ended.\n\n",
+            "options:\n  -h, --help           show this help message and exit\n",
+            "  --token LABEL        only a bearer-token connection, by its label\n",
+            "  --oauth CLIENT_ID    only an OAuth connection, by its client id\n",
+            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+            "  --tool TOOL          only requests to this tool\n",
+            "  --outcome OUTCOME    only requests that ended this way\n",
+            "  --day-from YYYYMMDD  from this day\n",
+            "  --day-to YYYYMMDD    up to and including this day\n",
+            "  --limit N            at most N requests, 1 to 1000 (default: 20)\n",
+            "  --json               print JSON\n",
+        ),
+        ["probe", ..] => concat!(
+            "usage: solstone journal mcp probe [-h] (--token LABEL | --oauth CLIENT_ID [--created TIMESTAMP])\n",
+            "                                  --tool TOOL --arguments JSON\n\n",
+            "Invoke one MCP read as a connection, without opening a port.\n\n",
+            "options:\n  -h, --help           show this help message and exit\n",
+            "  --token LABEL        a bearer-token connection, by its label\n",
+            "  --oauth CLIENT_ID    an OAuth connection, by its client id\n",
+            "  --created TIMESTAMP  with --oauth, which grant, when one client id has several\n",
+            "  --tool TOOL          the tool to call\n",
+            "  --arguments JSON     the tool's arguments, as a JSON object\n",
+        ),
+        _ => MCP_HELP,
+    }
+}
+
+/// `journal mcp ... --help` prints the help of the deepest subcommand named
+/// before the help flag; with none named, the `journal mcp` help.
+fn mcp_help(args: &[OsString]) -> &'static str {
+    let words: Vec<&str> = args
+        .iter()
+        .take_while(|argument| *argument != OsStr::new("--help") && *argument != OsStr::new("-h"))
+        .take(2)
+        .filter_map(|argument| argument.to_str())
+        .collect();
+    mcp_subcommand_help(&words)
+}
 
 pub const BACKFILL_FACET_IDS_USAGE: &str =
     "usage: solstone journal backfill-facet-ids [-h] [--commit]\n";
@@ -768,7 +928,7 @@ pub enum Command {
     SplHelp,
     Mcp(McpCommand),
     McpUsage(McpUsageError),
-    McpHelp,
+    McpHelp(&'static str),
     Sense(SenseOptions),
     SenseUsage,
     SenseHelp,
@@ -1719,7 +1879,7 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
                 argument == OsStr::new("--help") || argument == OsStr::new("-h")
             };
             if rest.iter().any(help) {
-                return Ok(Command::McpHelp);
+                return Ok(Command::McpHelp(mcp_help(rest)));
             }
             match parse_mcp(rest) {
                 Ok(command) => Ok(Command::Mcp(command)),
@@ -9912,8 +10072,104 @@ mod tests {
         );
         assert_eq!(
             evaluate_args(&args(&["mcp", "--help"])),
-            Ok(Command::McpHelp)
+            Ok(Command::McpHelp(MCP_HELP))
         );
+    }
+
+    #[test]
+    fn mcp_subcommand_help_prints_that_subcommands_usage() {
+        let cases: &[(&[&str], &str)] = &[
+            (&["mcp", "-h"], "usage: solstone journal mcp [-h]"),
+            (&["mcp", "-h", "token"], "usage: solstone journal mcp [-h]"),
+            (
+                &["mcp", "service", "-h"],
+                "usage: solstone journal mcp service ",
+            ),
+            (
+                &["mcp", "local-door", "--help"],
+                "usage: solstone journal mcp local-door ",
+            ),
+            (
+                &["mcp", "status", "-h"],
+                "usage: solstone journal mcp status ",
+            ),
+            (
+                &["mcp", "token", "-h"],
+                "usage: solstone journal mcp token [-h] {",
+            ),
+            (
+                &["mcp", "token", "create", "--help"],
+                "usage: solstone journal mcp token create ",
+            ),
+            (
+                &["mcp", "token", "create", "--label", "x", "-h"],
+                "usage: solstone journal mcp token create ",
+            ),
+            (
+                &["mcp", "token", "list", "-h"],
+                "usage: solstone journal mcp token list ",
+            ),
+            (
+                &["mcp", "token", "revoke", "-h"],
+                "usage: solstone journal mcp token revoke ",
+            ),
+            (
+                &["mcp", "pairing", "-h"],
+                "usage: solstone journal mcp pairing [-h] {",
+            ),
+            (
+                &["mcp", "pairing", "generate", "-h"],
+                "usage: solstone journal mcp pairing generate ",
+            ),
+            (
+                &["mcp", "pairing", "revoke", "-h"],
+                "usage: solstone journal mcp pairing revoke ",
+            ),
+            (
+                &["mcp", "oauth", "-h"],
+                "usage: solstone journal mcp oauth [-h] {",
+            ),
+            (
+                &["mcp", "oauth", "list", "-h"],
+                "usage: solstone journal mcp oauth list ",
+            ),
+            (
+                &["mcp", "oauth", "revoke", "-h"],
+                "usage: solstone journal mcp oauth revoke ",
+            ),
+            (
+                &["mcp", "permission", "-h"],
+                "usage: solstone journal mcp permission [-h] {",
+            ),
+            (
+                &["mcp", "permission", "show", "-h"],
+                "usage: solstone journal mcp permission show ",
+            ),
+            (
+                &["mcp", "permission", "set", "--token", "t", "-h"],
+                "usage: solstone journal mcp permission set ",
+            ),
+            (
+                &["mcp", "permission", "clear", "-h"],
+                "usage: solstone journal mcp permission clear ",
+            ),
+            (
+                &["mcp", "activity", "--tool", "search", "-h"],
+                "usage: solstone journal mcp activity ",
+            ),
+            (
+                &["mcp", "probe", "-h"],
+                "usage: solstone journal mcp probe ",
+            ),
+        ];
+        for (argv, prefix) in cases {
+            match evaluate_args(&args(argv)) {
+                Ok(Command::McpHelp(help)) => {
+                    assert!(help.starts_with(prefix), "{argv:?} printed {help:?}");
+                }
+                other => panic!("{argv:?} parsed as {other:?}"),
+            }
+        }
     }
 
     #[test]
