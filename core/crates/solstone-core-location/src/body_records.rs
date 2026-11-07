@@ -331,8 +331,11 @@ fn split_key(key: &str) -> Option<(&str, &str)> {
 }
 
 fn text(record: &Map<String, Value>, path: &[&str]) -> String {
-    let mut value = Some(&Value::Object(record.clone()));
-    for step in path {
+    let Some((first, rest)) = path.split_first() else {
+        return String::new();
+    };
+    let mut value = record.get(*first);
+    for step in rest {
         value = value.and_then(|value| value.get(*step));
     }
     value.and_then(Value::as_str).unwrap_or_default().to_owned()
@@ -893,17 +896,22 @@ pub fn body_groups_range(
     ) else {
         return Ok(groups);
     };
-    let mut on = first - chrono::Duration::days(GROUP_DAYS_BACK);
-    let end = last + chrono::Duration::days(GROUP_DAYS_FORWARD);
+    let start = (first - chrono::Duration::days(GROUP_DAYS_BACK))
+        .format("%Y%m%d")
+        .to_string();
+    let end = (last + chrono::Duration::days(GROUP_DAYS_FORWARD))
+        .format("%Y%m%d")
+        .to_string();
     let mut every = Vec::new();
-    while on <= end {
+    // Only the days the facet has a file for: one listing, not a look per day.
+    let days = solstone_core_facets::list_activity_day_stems(journal, facet).unwrap_or_default();
+    for day in days
+        .iter()
+        .filter(|day| day.as_str() >= start.as_str() && day.as_str() <= end.as_str())
+    {
         // A day's file that can't be read at all costs only its records' part
         // in grouping: the day's own reader reports it.
-        every.extend(
-            stored_body_records(journal, facet, &on.format("%Y%m%d").to_string())
-                .unwrap_or_default(),
-        );
-        on += chrono::Duration::days(1);
+        every.extend(stored_body_records(journal, facet, day).unwrap_or_default());
     }
     // Hidden is the owner's word on the group as the owner sees it: a member
     // in one with a hidden account hides for every reader, whatever else that
