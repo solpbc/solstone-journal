@@ -23,9 +23,8 @@ use solstone_core_facets::{
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, mapped_workout_type, recorder_id,
 };
+use solstone_core_import_sources::body_stream::BodySource;
 
-/// The body stream whose experiences become records.
-const STREAM: &str = "import.apple_health";
 const TOMBSTONE: &str = "tombstone.json";
 /// Separates the stream from the row id in an account key: neither holds it.
 const KEY_SEPARATOR: char = '\u{1f}';
@@ -164,7 +163,7 @@ fn window_experiences(window: &Path) -> Option<(Option<String>, Vec<BodyRow>)> {
 
 /// What code writes on a record for `row`: its `activity`, and its account's
 /// `start`, `end`, `recorder` and workout `type`, in [`Recorded`]'s order.
-fn written_fields(row: &BodyRow) -> [Option<String>; 5] {
+fn written_fields(source: &BodySource, row: &BodyRow) -> [Option<String>; 5] {
     let kind = (row.experience.as_deref() == Some("workout"))
         .then(|| mapped_workout_type(&row.source, &row.record_type))
         .flatten();
@@ -172,7 +171,7 @@ fn written_fields(row: &BodyRow) -> [Option<String>; 5] {
         row.experience.clone(),
         row.start.clone(),
         row.end.clone(),
-        Some(recorder_id(STREAM, row.by.as_deref())),
+        Some(recorder_id(source.stream, row.by.as_deref())),
         kind.map(str::to_owned),
     ]
 }
@@ -181,12 +180,12 @@ fn written_fields(row: &BodyRow) -> [Option<String>; 5] {
 /// without opening a window (the workout's shared type and an opaque recorder
 /// id), and the owner's day it arrived on, by this code's clock. Nothing the
 /// owner or the source wrote is copied.
-fn record_for(key: &str, row: &BodyRow, arrived: &str) -> Map<String, Value> {
+fn record_for(source: &BodySource, key: &str, row: &BodyRow, arrived: &str) -> Map<String, Value> {
     let mut account = json!({
         "key": key,
         "start": row.start,
         "end": row.end,
-        "recorder": recorder_id(STREAM, row.by.as_deref()),
+        "recorder": recorder_id(source.stream, row.by.as_deref()),
         "arrived": arrived,
     });
     if row.experience.as_deref() == Some("workout")
@@ -205,14 +204,14 @@ fn record_for(key: &str, row: &BodyRow, arrived: &str) -> Map<String, Value> {
     record
 }
 
-/// Create the record of every experience on `day` that has none, and bring a
-/// record whose account changed (a night a later import ended later, a
-/// revised type) to its account's times, type and recorder. Nothing else is
-/// written: an owner's fields are never touched. It is safe to call for any
+/// Create the record of every experience in `source`'s stream on `day` that has
+/// none, and bring a record whose account changed (a night a later import ended
+/// later, a revised type) to its account's times, type and recorder. Nothing else
+/// is written: an owner's fields are never touched. It is safe to call for any
 /// day, any number of times: a day whose records all match appends nothing.
-pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
+pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> RecordCounts {
     let mut counts = RecordCounts::default();
-    let stream_dir = journal.join("chronicle").join(day).join(STREAM);
+    let stream_dir = journal.join("chronicle").join(day).join(source.stream);
     let Ok(entries) = fs::read_dir(&stream_dir) else {
         return counts;
     };
@@ -241,9 +240,9 @@ pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
             continue;
         };
         for row in experiences {
-            let key = account_key(STREAM, &row.id);
+            let key = account_key(source.stream, &row.id);
             if let Some(stored) = recorded.get(&key) {
-                let fields = written_fields(&row);
+                let fields = written_fields(source, &row);
                 if stored.fields == fields {
                     continue;
                 }
@@ -273,7 +272,12 @@ pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
                 counts.no_facet += 1;
                 continue;
             };
-            match append_activity_record(journal, facet, day, record_for(&key, &row, &arrived)) {
+            match append_activity_record(
+                journal,
+                facet,
+                day,
+                record_for(source, &key, &row, &arrived),
+            ) {
                 Ok(outcome) => {
                     if matches!(outcome, AppendOutcome::Written(_)) {
                         counts.written += 1;
@@ -282,7 +286,7 @@ pub(crate) fn write_records(journal: &Path, day: &str) -> RecordCounts {
                         key,
                         Recorded {
                             facet: facet.to_owned(),
-                            fields: written_fields(&row),
+                            fields: written_fields(source, &row),
                         },
                     );
                 }

@@ -26,18 +26,17 @@ use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, DATED_WINDOW, RowKind, decode_rows, encode_rows, parse_source_time,
     plain_words, sort_rows, source_words,
 };
-use solstone_core_import::RegistrySource;
 use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
 use solstone_core_segment::{holds_foreign_content, owner_deleted};
 
+use crate::body_stream::{APPLE, BodySource, SpanPolicy};
 use crate::save::{RenderedImport, SegmentFile};
 
-pub const STREAM: &str = "import.apple_health";
-pub(crate) const SOURCE: &str = "apple_health";
-/// Held for a whole run, so merging into a window can't race another Apple import.
-pub const LOCK_REL: &str = "imports/.apple_health";
-const ZONE_FILE_REL: &str = "imports/.apple_health-zone.json";
+pub const STREAM: &str = APPLE.stream;
+/// What an Apple export's rows name as their source, and what their identities
+/// and night ids begin with.
+pub(crate) const SOURCE: &str = APPLE.source;
 /// A workout's or a mindfulness session's tiles, its events and its own series:
 /// the ~300-second grid. Rows state their own times, so nothing reads meaning
 /// from a window's length but placement.
@@ -623,16 +622,15 @@ pub(crate) fn number_events(workout: &str, events: Vec<BodyRow>) -> Vec<BodyRow>
 
 /// The zone fixed at this source's first import, so importing again under a later
 /// owner zone writes the same coordinates.
-pub fn read_or_create_zone(journal: &Path) -> Result<Tz, String> {
-    let path = journal.join(ZONE_FILE_REL);
+pub fn read_or_create_zone(journal: &Path, source: &BodySource) -> Result<Tz, String> {
+    let path = journal.join(source.zone_rel);
     if let Ok(bytes) = fs::read(&path) {
-        let value: Value =
-            serde_json::from_slice(&bytes).map_err(|_| "apple_health_zone_unrecognised")?;
+        let value: Value = serde_json::from_slice(&bytes).map_err(|_| source.zone_unrecognised)?;
         return value
             .get("zone")
             .and_then(Value::as_str)
             .and_then(parse_zone)
-            .ok_or_else(|| "apple_health_zone_unrecognised".to_owned());
+            .ok_or_else(|| source.zone_unrecognised.to_owned());
     }
     let zone = owner_zone(journal);
     let body = format!("{{\"zone\":\"{}\"}}\n", zone.name());
@@ -698,9 +696,11 @@ pub(crate) fn row_window(row: &BodyRow, zone: Tz, covered: bool) -> Result<Windo
 }
 
 /// An experience's first row and its tiles, each with the window it sits in.
-/// Nothing shrinks: a stored end later than this export's is kept.
+/// Under `SpanPolicy::Union` nothing shrinks: a stored end later than this
+/// export's is kept. Under `SpanPolicy::Document` the span is this export's own.
 pub(crate) fn tile_experience(
     journal: &Path,
+    source: &BodySource,
     experience: &BodyRow,
     zone: Tz,
 ) -> Result<Vec<(WindowId, BodyRow)>, String> {
@@ -716,24 +716,26 @@ pub(crate) fn tile_experience(
         .and_then(parse_source_time)
         .ok_or("a kept experience has no end")?;
     let mut first = experience.clone();
-    let first_window = window_id(floor_to_window(start, zone, length), length);
-    let stored_at = (
-        first_window.0.clone(),
-        resolve_key(journal, &first_window.0, &first_window.1),
-    );
-    // A file that can't be read says nothing of what's stored, and a shorter end
-    // staged on that silence would stand once it reads again.
-    let stored_rows = match stored_rows(journal, &stored_at) {
-        Ok(stored) => stored.map_or_else(Vec::new, |(_, rows)| rows),
-        Err(StoredRowsError::NotRows) => Vec::new(),
-        Err(StoredRowsError::Read(error)) => return Err(error),
-    };
-    if let Some(stored) = stored_rows.iter().find(|row| row.id == experience.id)
-        && let Some(stored_end) = stored.end.as_deref().and_then(parse_source_time)
-        && stored_end > end
-    {
-        end = stored_end;
-        first.end.clone_from(&stored.end);
+    if source.span == SpanPolicy::Union {
+        let first_window = window_id(floor_to_window(start, zone, length), length);
+        let stored_at = (
+            first_window.0.clone(),
+            resolve_key(journal, source, &first_window.0, &first_window.1),
+        );
+        // A file that can't be read says nothing of what's stored, and a shorter end
+        // staged on that silence would stand once it reads again.
+        let stored_rows = match stored_rows(journal, source, &stored_at) {
+            Ok(stored) => stored.map_or_else(Vec::new, |(_, rows)| rows),
+            Err(StoredRowsError::NotRows) => Vec::new(),
+            Err(StoredRowsError::Read(error)) => return Err(error),
+        };
+        if let Some(stored) = stored_rows.iter().find(|row| row.id == experience.id)
+            && let Some(stored_end) = stored.end.as_deref().and_then(parse_source_time)
+            && stored_end > end
+        {
+            end = stored_end;
+            first.end.clone_from(&stored.end);
+        }
     }
     let tiles = windows_of(start, end, zone, length);
     let count = tiles.len() as u64;
@@ -746,7 +748,7 @@ pub(crate) fn tile_experience(
         let mut tile = BodyRow::new(
             RowKind::ExperienceTile,
             format!("{}-{index}", first.id),
-            SOURCE,
+            source.source,
             &first.record_type,
             first.label.clone(),
         );
@@ -780,14 +782,14 @@ pub struct Plan {
     pub refiled: u64,
 }
 
-pub(crate) fn stream_dir(journal: &Path, day: &str) -> PathBuf {
-    journal.join("chronicle").join(day).join(STREAM)
+pub(crate) fn stream_dir(journal: &Path, source: &BodySource, day: &str) -> PathBuf {
+    journal.join("chronicle").join(day).join(source.stream)
 }
 
 /// Where a window's records go: beside older content, never into it. An existing
 /// `_301` keeps its records there even after what it stepped around is gone.
-pub(crate) fn resolve_key(journal: &Path, day: &str, key: &str) -> String {
-    let stream = stream_dir(journal, day);
+pub(crate) fn resolve_key(journal: &Path, source: &BodySource, day: &str, key: &str) -> String {
+    let stream = stream_dir(journal, source, day);
     let Some((clock, length)) = key.split_once('_') else {
         return key.to_owned();
     };
@@ -819,9 +821,12 @@ pub(crate) enum StoredRowsError {
 /// The rows stored in a window, and `None` for a window with no file.
 pub(crate) fn stored_rows(
     journal: &Path,
+    source: &BodySource,
     (day, key): &WindowId,
 ) -> Result<Option<(String, Vec<BodyRow>)>, StoredRowsError> {
-    let path = stream_dir(journal, day).join(key).join(BODY_RECORDS_FILE);
+    let path = stream_dir(journal, source, day)
+        .join(key)
+        .join(BODY_RECORDS_FILE);
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -847,8 +852,13 @@ pub(crate) fn stored_rows(
     Ok(Some((text, rows)))
 }
 
-fn facet_file_holds(journal: &Path, (day, key): &WindowId, facet: &str) -> bool {
-    let path = stream_dir(journal, day)
+fn facet_file_holds(
+    journal: &Path,
+    source: &BodySource,
+    (day, key): &WindowId,
+    facet: &str,
+) -> bool {
+    let path = stream_dir(journal, source, day)
         .join(key)
         .join("talents/facets.json");
     fs::read_to_string(path).is_ok_and(|text| text == facet_file_text(facet))
@@ -915,18 +925,19 @@ fn same_row(new: &BodyRow, stored: &BodyRow) -> bool {
 /// this window didn't hold.
 pub fn decide(
     journal: &Path,
+    source: &BodySource,
     window: &WindowId,
     rows: BTreeMap<String, BodyRow>,
     facet: Option<&str>,
     run: Option<&str>,
 ) -> Result<Decision, String> {
-    let dir = stream_dir(journal, &window.0).join(&window.1);
+    let dir = stream_dir(journal, source, &window.0).join(&window.1);
     let mut decision = Decision::default();
     if owner_deleted(&dir).map_err(|error| error.to_string())? {
         decision.stayed_deleted = true;
         return Ok(decision);
     }
-    let stored = match stored_rows(journal, window) {
+    let stored = match stored_rows(journal, source, window) {
         Ok(stored) => stored,
         Err(StoredRowsError::NotRows) => {
             decision.unreadable = true;
@@ -956,7 +967,8 @@ pub fn decide(
     sort_rows(&mut merged_rows);
     let contents = encode_rows(&merged_rows);
     let rows_changed = stored_text.as_deref() != Some(contents.as_str());
-    decision.facet_changed = facet.is_some_and(|facet| !facet_file_holds(journal, window, facet));
+    decision.facet_changed =
+        facet.is_some_and(|facet| !facet_file_holds(journal, source, window, facet));
     let unbound = !dir.join("stream.json").exists();
     decision.refiled = decision.facet_changed && stored_text.is_some();
     // A window carries one facet, so its rows share whichever it has.
@@ -999,6 +1011,7 @@ fn key_length(key: &str) -> Option<i64> {
 /// left with nothing, and how many readings were held back.
 pub fn settle_readings(
     journal: &Path,
+    source: &BodySource,
     day: &str,
     zone: Tz,
     windows: DayRows,
@@ -1017,7 +1030,7 @@ pub fn settle_readings(
         if let Some(known) = stored.get(key) {
             return Ok(known.clone());
         }
-        let found = match stored_rows(journal, &(day.to_owned(), key.to_owned())) {
+        let found = match stored_rows(journal, source, &(day.to_owned(), key.to_owned())) {
             Ok(rows) => Ok(rows.map_or_else(BTreeSet::new, |(_, rows)| {
                 rows.into_iter().map(|row| row.id).collect()
             })),
@@ -1052,7 +1065,7 @@ pub fn settle_readings(
             }
             let other = resolved
                 .entry(raw.clone())
-                .or_insert_with(|| resolve_key(journal, day, &raw))
+                .or_insert_with(|| resolve_key(journal, source, day, &raw))
                 .clone();
             match holds(&mut stored, &other)? {
                 Ok(ids) if ids.contains(id) => {
@@ -1068,7 +1081,7 @@ pub fn settle_readings(
             let gone = match deleted.get(&other) {
                 Some(gone) => *gone,
                 None => {
-                    let gone = owner_deleted(&stream_dir(journal, day).join(&other))
+                    let gone = owner_deleted(&stream_dir(journal, source, day).join(&other))
                         .map_err(|error| error.to_string())?;
                     deleted.insert(other.clone(), gone);
                     gone
@@ -1127,9 +1140,10 @@ pub(crate) fn plan_with(
     facet: Option<&str>,
     repair: bool,
 ) -> Result<Plan, String> {
+    let source = &APPLE;
     let mut desired: BTreeMap<WindowId, BTreeMap<String, BodyRow>> = BTreeMap::new();
     let mut place = |window: &WindowId, row: BodyRow| {
-        let key = resolve_key(journal, &window.0, &window.1);
+        let key = resolve_key(journal, source, &window.0, &window.1);
         desired
             .entry((window.0.clone(), key))
             .or_default()
@@ -1141,7 +1155,7 @@ pub(crate) fn plan_with(
     };
     let mut sessions = Vec::new();
     for experience in &export.experiences {
-        let tiles = tile_experience(journal, experience, zone)?;
+        let tiles = tile_experience(journal, source, experience, zone)?;
         if is_session(experience)
             && let (Some(start), Some(end)) = (
                 millis(experience.start.as_deref()),
@@ -1166,12 +1180,12 @@ pub(crate) fn plan_with(
     }
     let mut plan = Plan::default();
     for (window, rows) in desired {
-        let decision = decide(journal, &window, rows, facet, None)?;
+        let decision = decide(journal, source, &window, rows, facet, None)?;
         plan.absorb(&window, decision);
     }
     if repair {
         let already: BTreeSet<WindowId> = plan.publish.iter().cloned().collect();
-        for window in stored_windows(journal)? {
+        for window in stored_windows(journal, source)? {
             if !already.contains(&window) {
                 plan.publish.push(window);
             }
@@ -1182,32 +1196,36 @@ pub(crate) fn plan_with(
 
 /// Every live body window in the stream.
 #[cfg(test)]
-fn stored_windows(journal: &Path) -> Result<Vec<WindowId>, String> {
+fn stored_windows(journal: &Path, source: &BodySource) -> Result<Vec<WindowId>, String> {
     let mut windows = Vec::new();
     for day in day_dirs(journal)
         .map_err(|error| error.to_string())?
         .into_keys()
     {
-        windows.extend(stored_windows_of_day(journal, &day)?);
+        windows.extend(stored_windows_of_day(journal, source, &day)?);
     }
     Ok(windows)
 }
 
 /// The days that hold this stream, in order.
-pub fn stream_days(journal: &Path) -> Result<Vec<String>, String> {
+pub fn stream_days(journal: &Path, source: &BodySource) -> Result<Vec<String>, String> {
     let mut days: Vec<String> = day_dirs(journal)
         .map_err(|error| error.to_string())?
         .into_keys()
-        .filter(|day| stream_dir(journal, day).is_dir())
+        .filter(|day| stream_dir(journal, source, day).is_dir())
         .collect();
     days.sort();
     Ok(days)
 }
 
 /// Every live body window on one day.
-pub fn stored_windows_of_day(journal: &Path, day: &str) -> Result<Vec<WindowId>, String> {
+pub fn stored_windows_of_day(
+    journal: &Path,
+    source: &BodySource,
+    day: &str,
+) -> Result<Vec<WindowId>, String> {
     let mut windows = Vec::new();
-    let Ok(entries) = fs::read_dir(stream_dir(journal, day)) else {
+    let Ok(entries) = fs::read_dir(stream_dir(journal, source, day)) else {
         return Ok(windows);
     };
     for entry in entries.flatten() {
@@ -1267,7 +1285,7 @@ impl Plan {
     pub fn rendered(&mut self) -> RenderedImport {
         RenderedImport {
             skipped: 0,
-            source: RegistrySource::AppleHealth,
+            source: APPLE.registry,
             entries: self.files.iter().map(|file| file.units).sum(),
             files: std::mem::take(&mut self.files),
             items: Vec::new(),
@@ -1347,8 +1365,13 @@ impl SummaryCounts {
 /// The import's summary: what was read, what wasn't and what was refused, by name
 /// and count. Never a value.
 #[must_use]
-pub fn summary_text(counts: &SummaryCounts, facet: Option<&str>, zone: Tz) -> String {
-    let source = source_words(SOURCE);
+pub fn summary_text(
+    source: &BodySource,
+    counts: &SummaryCounts,
+    facet: Option<&str>,
+    zone: Tz,
+) -> String {
+    let source = source_words(source.source);
     let mut text = format!(
         "# {source} import\n\n{} written, {} unchanged, {} stayed deleted, {} unreadable and left alone.{} Days and times placed using {}.\n\n",
         count_of_windows(counts.written),

@@ -38,6 +38,7 @@ use crate::apple_health::{
     SOURCE, WindowId, is_session, number_events, resolve_key, row_window, sha256_hex,
     tile_experience,
 };
+use crate::body_stream::BodySource;
 
 /// How much a spill buffer holds before it is sorted and written.
 pub const DEFAULT_SPILL_BYTES: usize = 64 * 1024 * 1024;
@@ -326,6 +327,7 @@ pub struct PlaceResult {
 
 struct Placer<'a> {
     journal: &'a Path,
+    source: &'a BodySource,
     zone: Tz,
     out: Spill<PlacedItem>,
     nights: BTreeMap<String, OpenNight>,
@@ -383,7 +385,7 @@ impl Placer<'_> {
     }
 
     fn experience(&mut self, experience: &BodyRow) -> Result<(), String> {
-        let tiles = tile_experience(self.journal, experience, self.zone)?;
+        let tiles = tile_experience(self.journal, self.source, experience, self.zone)?;
         if is_session(experience) {
             let millis = |text: Option<&str>| {
                 text.and_then(parse_source_time)
@@ -493,6 +495,7 @@ impl Placer<'_> {
 /// Merge a scan's runs into final rows, spilled by window under `dir`.
 pub fn place(
     journal: &Path,
+    source: &BodySource,
     zone: Tz,
     scan_dir: &Path,
     dir: &Path,
@@ -503,6 +506,7 @@ pub fn place(
     let mut merge: Merge<ScanItem> = Merge::open(&runs)?;
     let mut placer = Placer {
         journal,
+        source,
         zone,
         out: Spill::new(dir, spill_bytes)?,
         nights: BTreeMap::new(),
@@ -550,6 +554,7 @@ pub type DayWindows = (String, DayRows);
 /// already stepped around older content, and a refused night's stages are gone.
 pub struct Days<'a> {
     journal: &'a Path,
+    source: &'a BodySource,
     merge: Merge<PlacedItem>,
     refused_nights: &'a BTreeSet<String>,
     peeked: Option<PlacedItem>,
@@ -559,6 +564,7 @@ pub struct Days<'a> {
 impl<'a> Days<'a> {
     pub fn open(
         journal: &'a Path,
+        source: &'a BodySource,
         dir: &Path,
         refused_nights: &'a BTreeSet<String>,
         after: Option<String>,
@@ -566,6 +572,7 @@ impl<'a> Days<'a> {
         let runs = runs_in(dir)?;
         Ok(Self {
             journal,
+            source,
             merge: Merge::open(&runs)?,
             refused_nights,
             peeked: None,
@@ -620,7 +627,7 @@ impl<'a> Days<'a> {
         let mut resolved: BTreeMap<String, BTreeMap<String, BodyRow>> = BTreeMap::new();
         for (key, rows) in windows {
             resolved
-                .entry(resolve_key(self.journal, &day, &key))
+                .entry(resolve_key(self.journal, self.source, &day, &key))
                 .or_default()
                 .extend(rows);
         }

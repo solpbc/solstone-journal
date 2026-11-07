@@ -10,6 +10,7 @@ use solstone_core_format::content::body_records::decode_rows;
 
 use super::*;
 use crate::apple_health::{decide, plan_with, read_export};
+use crate::body_stream::APPLE;
 
 const WATCH: &str = r#"sourceName="Synthetic Watch" sourceVersion="11.0" device="&lt;&lt;HKDevice: 0x1&gt;, name:Watch&gt;" creationDate="2026-10-10 08:00:00 -0600""#;
 const RING: &str = r#"sourceName="Other Ring" sourceVersion="2""#;
@@ -179,15 +180,24 @@ fn streamed(journal: &Path, source: &Path, spill: usize) -> (Windows, ScanCounts
     let placed_dir = staging.path().join("placed");
     let mut counts = scan(source, &scan_dir, spill, &mut |_| {}).unwrap();
     assert!(runs_in(&scan_dir).unwrap().len() > 1, "the scan spilled");
-    let placed = place(journal, Denver, &scan_dir, &placed_dir, spill, &mut |_| {}).unwrap();
+    let placed = place(
+        journal,
+        &APPLE,
+        Denver,
+        &scan_dir,
+        &placed_dir,
+        spill,
+        &mut |_| {},
+    )
+    .unwrap();
     for (stage, count) in &placed.refused {
         *counts.refused.entry(stage.clone()).or_default() += count;
     }
-    let mut days = Days::open(journal, &placed_dir, &placed.refused_nights, None).unwrap();
+    let mut days = Days::open(journal, &APPLE, &placed_dir, &placed.refused_nights, None).unwrap();
     let mut windows = Windows::new();
     while let Some((_, day)) = days.next_day().unwrap() {
         for (window, rows) in day {
-            let decision = decide(journal, &window, rows, None, None).unwrap();
+            let decision = decide(journal, &APPLE, &window, rows, None, None).unwrap();
             if let Some(contents) = decision.contents {
                 windows.insert(window, contents);
             }
@@ -384,6 +394,7 @@ fn days_resume_from_a_cursor() {
     scan(source.path(), &scan_dir, 20_000, &mut |_| {}).unwrap();
     let placed = place(
         journal.path(),
+        &APPLE,
         Denver,
         &scan_dir,
         &placed_dir,
@@ -392,7 +403,14 @@ fn days_resume_from_a_cursor() {
     )
     .unwrap();
     let mut all = Vec::new();
-    let mut days = Days::open(journal.path(), &placed_dir, &placed.refused_nights, None).unwrap();
+    let mut days = Days::open(
+        journal.path(),
+        &APPLE,
+        &placed_dir,
+        &placed.refused_nights,
+        None,
+    )
+    .unwrap();
     while let Some((day, _)) = days.next_day().unwrap() {
         all.push(day);
     }
@@ -402,6 +420,7 @@ fn days_resume_from_a_cursor() {
     let mut later = Vec::new();
     let mut days = Days::open(
         journal.path(),
+        &APPLE,
         &placed_dir,
         &placed.refused_nights,
         Some(after),
@@ -436,13 +455,22 @@ fn staged(journal: &Path, source: &Path) -> (Windows, u64, u64) {
     let placed_dir = staging.path().join("placed");
     let counts = scan(source, &scan_dir, 1, &mut |_| {}).unwrap();
     assert_eq!(runs_in(&scan_dir).unwrap().len() as u64, counts.runs);
-    let placed = place(journal, Denver, &scan_dir, &placed_dir, 1, &mut |_| {}).unwrap();
+    let placed = place(
+        journal,
+        &APPLE,
+        Denver,
+        &scan_dir,
+        &placed_dir,
+        1,
+        &mut |_| {},
+    )
+    .unwrap();
     assert_eq!(runs_in(&placed_dir).unwrap().len() as u64, placed.runs);
-    let mut days = Days::open(journal, &placed_dir, &placed.refused_nights, None).unwrap();
+    let mut days = Days::open(journal, &APPLE, &placed_dir, &placed.refused_nights, None).unwrap();
     let mut windows = Windows::new();
     while let Some((_, day)) = days.next_day().unwrap() {
         for (window, rows) in day {
-            let decision = decide(journal, &window, rows, None, None).unwrap();
+            let decision = decide(journal, &APPLE, &window, rows, None, None).unwrap();
             windows.insert(window, decision.contents.unwrap());
         }
     }

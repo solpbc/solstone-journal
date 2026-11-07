@@ -7,6 +7,7 @@ use std::fs;
 
 use serde_json::json;
 use solstone_core_format::content::body_records::decode_rows;
+use solstone_core_import_sources::apple_health::STREAM;
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_retention::door;
 use solstone_core_retention::tombstone::RemovalReason;

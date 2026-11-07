@@ -22,7 +22,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
-use solstone_core_import::RegistrySource;
 use solstone_core_import::metadata::{
     AttemptRead, AttemptState, hold_import_lock, read_attempt_facts, read_provenance,
     record_unconfirmed_attempt_unlocked,
@@ -34,12 +33,13 @@ use solstone_core_import::publish::{
 };
 use solstone_core_import::text::TextCreated;
 use solstone_core_import_sources::apple_health::{
-    DayRows, Decision, LOCK_REL, STREAM, SummaryCounts, WindowId, decide, facet_file_text,
-    read_or_create_zone, settle_readings, stored_windows_of_day, stream_days, summary_text,
+    DayRows, Decision, SummaryCounts, WindowId, decide, facet_file_text, read_or_create_zone,
+    settle_readings, stored_windows_of_day, stream_days, summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
     DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan, sync_folder,
 };
+use solstone_core_import_sources::body_stream::{APPLE, BodySource};
 use solstone_core_import_sources::save::{self, RenderedImport, SegmentFile};
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, remove_dir_all,
@@ -52,8 +52,8 @@ use crate::registry::now_ms;
 
 const RAW_RETENTION: &str = "discard";
 const LOCK_TIMEOUT: Duration = Duration::from_secs(30);
-/// The run's own folder. Only `scan/` and `placed/` are left out of copies.
-pub const RUN_DIR_REL: &str = "imports/.apple_health-run";
+/// An Apple run's own folder. Only `scan/` and `placed/` are left out of copies.
+pub const RUN_DIR_REL: &str = APPLE.run_dir_rel;
 const STATE_FILE: &str = "state.json";
 /// 3: staging records how many runs it holds, and places rows without a note of
 /// whether another source's session covers them.
@@ -223,21 +223,25 @@ enum Read {
     Untrusted(Option<String>),
 }
 
-fn run_dir(journal: &Path) -> PathBuf {
-    journal.join(RUN_DIR_REL)
+fn run_dir(journal: &Path, source: &BodySource) -> PathBuf {
+    journal.join(source.run_dir_rel)
 }
 
-fn window_dir(journal: &Path, (day, key): &WindowId) -> PathBuf {
-    journal.join("chronicle").join(day).join(STREAM).join(key)
+fn window_dir(journal: &Path, source: &BodySource, (day, key): &WindowId) -> PathBuf {
+    journal
+        .join("chronicle")
+        .join(day)
+        .join(source.stream)
+        .join(key)
 }
 
-fn read_state(journal: &Path) -> Read {
-    let path = run_dir(journal).join(STATE_FILE);
+fn read_state(journal: &Path, source: &BodySource) -> Read {
+    let path = run_dir(journal, source).join(STATE_FILE);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             // A run folder without its state is a run that didn't finish.
-            return if run_dir(journal).exists() {
+            return if run_dir(journal, source).exists() {
                 Read::Untrusted(None)
             } else {
                 Read::Absent
@@ -261,7 +265,7 @@ fn read_state(journal: &Path) -> Read {
                 Phase::Scan | Phase::Repair | Phase::Retry => None,
             };
             let whole = needs.is_none_or(|(folder, runs)| {
-                runs_in(&run_dir(journal).join(folder))
+                runs_in(&run_dir(journal, source).join(folder))
                     .is_ok_and(|found| found.len() as u64 == runs)
             });
             if whole {
@@ -274,10 +278,10 @@ fn read_state(journal: &Path) -> Read {
     }
 }
 
-fn save_state(journal: &Path, state: &RunState) -> Result<(), String> {
+fn save_state(journal: &Path, source: &BodySource, state: &RunState) -> Result<(), String> {
     let bytes = serde_json::to_vec(state).map_err(|error| error.to_string())?;
-    fs::create_dir_all(run_dir(journal)).map_err(|error| error.to_string())?;
-    atomic_replace(run_dir(journal).join(STATE_FILE), &bytes, PRIVATE)
+    fs::create_dir_all(run_dir(journal, source)).map_err(|error| error.to_string())?;
+    atomic_replace(run_dir(journal, source).join(STATE_FILE), &bytes, PRIVATE)
         .map_err(|error| error.to_string())
 }
 
@@ -300,6 +304,7 @@ impl From<String> for Stop {
 
 struct Run<'a> {
     journal: &'a Path,
+    source: &'a BodySource,
     request: &'a AppleSegmentsRequest<'a>,
     import_id: String,
     generation: u64,
@@ -337,9 +342,9 @@ impl Run<'_> {
         TextCreated {
             day: window.0.clone(),
             segment: window.1.clone(),
-            stream: STREAM.to_owned(),
-            hints: save::stream_hints(RegistrySource::AppleHealth),
-            path: window_dir(self.journal, window).join(BODY_RECORDS_FILE),
+            stream: self.source.stream.to_owned(),
+            hints: save::stream_hints(self.source.registry),
+            path: window_dir(self.journal, self.source, window).join(BODY_RECORDS_FILE),
         }
     }
 
@@ -357,7 +362,7 @@ impl Run<'_> {
             journal: self.journal,
             import_dir: None,
             import_id: &self.import_id,
-            importer: RegistrySource::AppleHealth.name(),
+            importer: self.source.registry.name(),
             revision: None,
             segments: &segments,
             files_created: &files,
@@ -381,7 +386,7 @@ impl Run<'_> {
         let windows: Vec<WindowId> = windows
             .iter()
             .filter(|window| {
-                window_dir(self.journal, window)
+                window_dir(self.journal, self.source, window)
                     .join(BODY_RECORDS_FILE)
                     .is_file()
             })
@@ -422,7 +427,8 @@ impl Run<'_> {
         }
         for errored in &record.indexing.errored {
             if let Some(window) = windows.iter().find(|window| {
-                errored.path == window_dir(self.journal, window).join(BODY_RECORDS_FILE)
+                errored.path
+                    == window_dir(self.journal, self.source, window).join(BODY_RECORDS_FILE)
             }) {
                 failed.push(Failed {
                     day: window.0.clone(),
@@ -492,7 +498,7 @@ impl Run<'_> {
                 }
                 Some(key) => {
                     let window = (entry.day.clone(), key.clone());
-                    let dir = window_dir(self.journal, &window);
+                    let dir = window_dir(self.journal, self.source, &window);
                     if !dir.join(BODY_RECORDS_FILE).is_file()
                         || solstone_core_segment::owner_deleted(&dir).unwrap_or(false)
                     {
@@ -545,7 +551,11 @@ impl Run<'_> {
         facet: &str,
     ) -> Result<(), String> {
         for window in windows.iter().filter(|window| window.facet) {
-            let dir = window_dir(self.journal, &(day.to_owned(), window.key.clone()));
+            let dir = window_dir(
+                self.journal,
+                self.source,
+                &(day.to_owned(), window.key.clone()),
+            );
             if !dir.join(BODY_RECORDS_FILE).is_file() {
                 continue;
             }
@@ -573,7 +583,14 @@ impl Run<'_> {
         let redo = state.pending.take().filter(|pending| pending.day == day);
         let mut decided: Vec<(WindowId, Decision)> = Vec::with_capacity(windows.len());
         for (window, rows) in windows {
-            let decision = decide(self.journal, &window, rows, facet, Some(&self.import_id))?;
+            let decision = decide(
+                self.journal,
+                self.source,
+                &window,
+                rows,
+                facet,
+                Some(&self.import_id),
+            )?;
             decided.push((window, decision));
         }
         let pending = match redo {
@@ -626,7 +643,7 @@ impl Run<'_> {
             }
         };
         state.pending = Some(pending.clone());
-        save_state(self.journal, state)?;
+        save_state(self.journal, self.source, state)?;
         self.point("pending")?;
         // A window holding records takes its new facet first, so new rows never sit
         // under its old one. A new window takes it after its records.
@@ -640,7 +657,7 @@ impl Run<'_> {
             };
             let rendered = RenderedImport {
                 skipped: 0,
-                source: RegistrySource::AppleHealth,
+                source: self.source.registry,
                 entries: decision.units,
                 files: vec![SegmentFile {
                     day: window.0.clone(),
@@ -686,15 +703,17 @@ impl Run<'_> {
         // A window's own folder is synced as its file lands. What holds that folder
         // has to last too, before the day counts as done and its staging can go.
         if pending.windows.iter().any(|window| window.write) {
-            sync_day_folders(self.journal, &day)?;
+            sync_day_folders(self.journal, self.source, &day)?;
         }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
-        state.totals.add(&activity_totals(self.journal, &day));
+        state
+            .totals
+            .add(&activity_totals(self.journal, self.source, &day));
         state.failed.extend(failed);
         state.done_through = Some(day.clone());
         state.pending = None;
-        save_state(self.journal, state)?;
+        save_state(self.journal, self.source, state)?;
         self.write_progress(state);
         self.stop_if_stuck(&day)
     }
@@ -739,20 +758,20 @@ impl Run<'_> {
         if state.phase != Phase::Repair {
             state.phase = Phase::Repair;
             state.done_through = None;
-            save_state(self.journal, state)?;
+            save_state(self.journal, self.source, state)?;
         }
-        if let Some(note) = reconcile_stream(self.journal)? {
+        if let Some(note) = reconcile_stream(self.journal, self.source)? {
             state.notes.push(note);
         }
-        for day in stream_days(self.journal)? {
+        for day in stream_days(self.journal, self.source)? {
             if state.done_through.as_ref().is_some_and(|done| day <= *done) {
                 continue;
             }
-            let windows = stored_windows_of_day(self.journal, &day)?;
+            let windows = stored_windows_of_day(self.journal, self.source, &day)?;
             let failed = self.publish_day(&windows)?;
             state.failed.extend(failed);
             state.done_through = Some(day.clone());
-            save_state(self.journal, state)?;
+            save_state(self.journal, self.source, state)?;
             self.point("repaired")?;
             self.stop_if_stuck(&day)?;
         }
@@ -774,25 +793,26 @@ fn readable_day(day: &str) -> String {
 
 /// Make a day's new folders last: the windows in the stream, the stream in the day,
 /// and the day in the chronicle. A day that got no window has none to keep.
-fn sync_day_folders(journal: &Path, day: &str) -> Result<(), String> {
+fn sync_day_folders(journal: &Path, source: &BodySource, day: &str) -> Result<(), String> {
     let chronicle = journal.join("chronicle");
     let day_dir = chronicle.join(day);
-    if !day_dir.join(STREAM).is_dir() {
+    if !day_dir.join(source.stream).is_dir() {
         return Ok(());
     }
-    sync_folder(&day_dir.join(STREAM))?;
+    sync_folder(&day_dir.join(source.stream))?;
     sync_folder(&day_dir)?;
     sync_folder(&chronicle)
 }
 
 /// Move the stream's record up to its markers' tail, as the streams command does,
 /// and say so if two windows already claim one place in the stream.
-fn reconcile_stream(journal: &Path) -> Result<Option<String>, String> {
+fn reconcile_stream(journal: &Path, source: &BodySource) -> Result<Option<String>, String> {
     let mut tail: Option<(u64, String, String)> = None;
     let mut seen: BTreeMap<u64, u32> = BTreeMap::new();
-    for day in stream_days(journal)? {
-        for window in stored_windows_of_day(journal, &day)? {
-            let Ok(bytes) = fs::read(window_dir(journal, &window).join("stream.json")) else {
+    for day in stream_days(journal, source)? {
+        for window in stored_windows_of_day(journal, source, &day)? {
+            let Ok(bytes) = fs::read(window_dir(journal, source, &window).join("stream.json"))
+            else {
                 continue;
             };
             let Some(seq) = serde_json::from_slice::<serde_json::Value>(&bytes)
@@ -810,7 +830,7 @@ fn reconcile_stream(journal: &Path) -> Result<Option<String>, String> {
     if let Some((max_seq, last_day, last_segment)) = &tail {
         let _ = solstone_core_segment::repair_stream_tail_from_markers(
             journal,
-            STREAM,
+            source.stream,
             &solstone_core_segment::MarkerTail {
                 last_day,
                 last_segment,
@@ -826,8 +846,8 @@ fn reconcile_stream(journal: &Path) -> Result<Option<String>, String> {
 }
 
 /// Create the activity records of a day's experiences, as totals.
-fn activity_totals(journal: &Path, day: &str) -> Totals {
-    let counts = crate::body_activity::write_records(journal, day);
+fn activity_totals(journal: &Path, source: &BodySource, day: &str) -> Totals {
+    let counts = crate::body_activity::write_records(journal, source, day);
     Totals {
         activities: counts.written,
         activities_no_facet: counts.no_facet,
@@ -870,7 +890,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
 }
 
 /// Close an earlier import whose run another export replaced, as unconfirmed.
-fn close_superseded(journal: &Path, state: &RunState, zone: chrono_tz::Tz) {
+fn close_superseded(journal: &Path, source: &BodySource, state: &RunState, zone: chrono_tz::Tz) {
     let Ok(_lock) = hold_import_lock(journal, &state.import_id) else {
         return;
     };
@@ -882,7 +902,7 @@ fn close_superseded(journal: &Path, state: &RunState, zone: chrono_tz::Tz) {
     {
         return;
     }
-    let summary = summary_text(&summary_of(state), state.facet.as_deref(), zone);
+    let summary = summary_text(source, &summary_of(state), state.facet.as_deref(), zone);
     let _ = atomic_replace(
         journal
             .join("imports")
@@ -932,20 +952,21 @@ pub fn run_apple_health_segments(
     journal: &Path,
     request: &AppleSegmentsRequest<'_>,
 ) -> Result<AppleSegmentsOutcome, String> {
+    let source = &APPLE;
     if let Some(facet) = request.facet {
         crate::cli_argv::require_enabled_facet(facet, journal)?;
     }
     fs::create_dir_all(journal.join("imports")).map_err(|error| error.to_string())?;
     let _lock = hold_lock(
-        journal.join(LOCK_REL),
+        journal.join(source.lock_rel),
         LockOptions {
             timeout: LOCK_TIMEOUT,
             mode: Some(0o600),
             ..LockOptions::default()
         },
     )
-    .map_err(|_| "apple_health_lock_unavailable".to_owned())?;
-    let zone = read_or_create_zone(journal)?;
+    .map_err(|_| source.lock_unavailable.to_owned())?;
+    let zone = read_or_create_zone(journal, source)?;
     let source_hash = solstone_core_import::hash_source(request.source)
         .map_err(|error| error.to_string())?
         .into_inner();
@@ -962,7 +983,7 @@ pub fn run_apple_health_segments(
 
     // The run state is read before any binding, so the same export resumes under
     // the import it began as, whatever timestamp this request carries.
-    let previous = read_state(journal);
+    let previous = read_state(journal, source);
     let resumable = match &previous {
         Read::Trusted(state)
             if state.source_hash == source_hash
@@ -991,19 +1012,20 @@ pub fn run_apple_health_segments(
             .to_owned()
         }
     };
-    if solstone_core_import::refuse_if_live_running(journal, &import_id, STREAM).is_some() {
+    if solstone_core_import::refuse_if_live_running(journal, &import_id, source.stream).is_some() {
         return Err("this import is already running".to_owned());
     }
     let generation = solstone_core_import::admit_running_attempt(
         journal,
         &import_id,
         now_ms(),
-        Some("apple_health"),
+        Some(source.registry.name()),
     )
     .map_err(|error| error.to_string())?
     .generation;
     let run = Run {
         journal,
+        source,
         request,
         import_id: import_id.clone(),
         generation,
@@ -1014,7 +1036,7 @@ pub fn run_apple_health_segments(
             journal,
             &import_id,
             generation,
-            RegistrySource::AppleHealth.name(),
+            source.registry.name(),
             input,
             index_only,
         )
@@ -1062,8 +1084,10 @@ fn run_phases(
     zone: chrono_tz::Tz,
 ) -> Result<AppleSegmentsOutcome, Stop> {
     let journal = run.journal;
+    let source = run.source;
     let request = run.request;
-    let dir = run_dir(journal);
+    let dir = run_dir(journal, source);
+    let run_dir_rel = source.run_dir_rel;
     let fresh = |failed: BTreeSet<Failed>, notes: Vec<String>| RunState {
         schema: STATE_SCHEMA,
         phase: Phase::Scan,
@@ -1102,7 +1126,7 @@ fn run_phases(
                     .collect();
                 let failed = run.publish_day(&windows)?;
                 old.failed.extend(failed);
-                sync_day_folders(journal, &pending.day)?;
+                sync_day_folders(journal, source, &pending.day)?;
                 // That day's rows name the old import, so its listing has to, whichever
                 // of the windows it had got to. A window it hadn't is listed too.
                 let import = journal.join("imports").join(&old.import_id);
@@ -1111,11 +1135,11 @@ fn run_phases(
                     old.totals.add(&pending.counts);
                 }
                 // A record its run didn't get to; the totals are this run's.
-                let _ = activity_totals(journal, &pending.day);
+                let _ = activity_totals(journal, source, &pending.day);
             }
             run.retry_failed(&mut old.failed)?;
             if old.phase != Phase::Retry && old.import_id != run.import_id {
-                close_superseded(journal, &old, zone);
+                close_superseded(journal, source, &old, zone);
             }
             fresh(std::mem::take(&mut old.failed), Vec::new())
         }
@@ -1130,9 +1154,9 @@ fn run_phases(
         Read::Absent => fresh(BTreeSet::new(), Vec::new()),
     };
     if state.phase == Phase::Scan {
-        let _ = remove_dir_all(journal, &format!("{RUN_DIR_REL}/scan"));
-        let _ = remove_dir_all(journal, &format!("{RUN_DIR_REL}/placed"));
-        save_state(journal, &state)?;
+        let _ = remove_dir_all(journal, &format!("{run_dir_rel}/scan"));
+        let _ = remove_dir_all(journal, &format!("{run_dir_rel}/placed"));
+        save_state(journal, source, &state)?;
         run.retry_failed(&mut state.failed)?;
         let progress = run.import_dir().join(PROGRESS_FILE);
         state.scan = scan(
@@ -1145,14 +1169,15 @@ fn run_phases(
             },
         )?;
         state.phase = Phase::Place;
-        save_state(journal, &state)?;
+        save_state(journal, source, &state)?;
         run.write_progress(&state);
         run.point("scanned")?;
     }
     if state.phase == Phase::Place {
-        let _ = remove_dir_all(journal, &format!("{RUN_DIR_REL}/placed"));
+        let _ = remove_dir_all(journal, &format!("{run_dir_rel}/placed"));
         state.place = place(
             journal,
+            source,
             zone,
             &dir.join("scan"),
             &dir.join("placed"),
@@ -1160,20 +1185,21 @@ fn run_phases(
             &mut |_| {},
         )?;
         state.phase = Phase::Write;
-        save_state(journal, &state)?;
-        let _ = remove_dir_all(journal, &format!("{RUN_DIR_REL}/scan"));
+        save_state(journal, source, &state)?;
+        let _ = remove_dir_all(journal, &format!("{run_dir_rel}/scan"));
         run.write_progress(&state);
         run.point("placed")?;
     }
     let refused = state.place.refused_nights.clone();
     let mut days = Days::open(
         journal,
+        source,
         &dir.join("placed"),
         &refused,
         state.done_through.clone(),
     )?;
     while let Some((day, windows)) = days.next_day()? {
-        let (windows, held_back) = settle_readings(journal, &day, zone, windows)?;
+        let (windows, held_back) = settle_readings(journal, source, &day, zone, windows)?;
         run.write_day(&mut state, day, windows, held_back)?;
     }
     // Close the placed runs before anything removes them.
@@ -1184,7 +1210,7 @@ fn run_phases(
     // Finish: the summary, the manifest, and one terminal attempt that lists
     // only the windows still failing, so the import reads as partly failed
     // until they're saved.
-    let summary = summary_text(&summary_of(&state), request.facet, zone);
+    let summary = summary_text(source, &summary_of(&state), request.facet, zone);
     let import_dir = run.import_dir();
     let summary_path = import_dir.join("summary.md");
     atomic_replace(&summary_path, summary.as_bytes(), PRIVATE)
@@ -1193,7 +1219,7 @@ fn run_phases(
     solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
         journal_root: journal,
         import_id: &run.import_id,
-        source_type: "apple_health",
+        source_type: source.registry.name(),
         source_hash: &solstone_core_import::SourceHash::new(source_hash.to_owned()),
         entry_count: state.totals.entries,
         days_affected: &days,
@@ -1210,7 +1236,7 @@ fn run_phases(
     for failed in &state.failed {
         let window = match &failed.key {
             Some(key) => Some((failed.day.clone(), key.clone())),
-            None => stored_windows_of_day(journal, &failed.day)?
+            None => stored_windows_of_day(journal, source, &failed.day)?
                 .into_iter()
                 .next(),
         };
@@ -1227,7 +1253,7 @@ fn run_phases(
         journal,
         &run.import_id,
         run.generation,
-        RegistrySource::AppleHealth.name(),
+        source.registry.name(),
         ImportTerminalInput::Success(&failing),
         &index_only,
     ) {
@@ -1248,9 +1274,9 @@ fn run_phases(
         && record.is_some_and(|record| record.status == PublicationStatus::Success);
     let finished = completed && state.failed.is_empty();
     if finished {
-        remove_dir_all(journal, RUN_DIR_REL).map_err(|error| error.to_string())?;
+        remove_dir_all(journal, run_dir_rel).map_err(|error| error.to_string())?;
     } else {
-        let _ = remove_dir_all(journal, &format!("{RUN_DIR_REL}/placed"));
+        let _ = remove_dir_all(journal, &format!("{run_dir_rel}/placed"));
         let retry = RunState {
             schema: STATE_SCHEMA,
             phase: Phase::Retry,
@@ -1261,7 +1287,7 @@ fn run_phases(
             failed: state.failed.clone(),
             ..RunState::default()
         };
-        save_state(journal, &retry)?;
+        save_state(journal, source, &retry)?;
     }
     run.write_progress(&state);
     Ok(AppleSegmentsOutcome {

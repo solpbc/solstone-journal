@@ -9,6 +9,7 @@ use std::path::PathBuf;
 pub mod apple_health;
 pub mod apple_health_run;
 pub mod archive;
+pub mod body_stream;
 pub mod chatgpt;
 pub mod claude;
 pub mod conversations;

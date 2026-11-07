@@ -368,7 +368,10 @@ fn a_foreign_file_turning_up_doesnt_move_records_already_there() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join(BODY_RECORDS_FILE), "").unwrap();
     fs::write(dir.join("conflicted copy.txt"), "").unwrap();
-    assert_eq!(resolve_key(root, "20261010", "063000_300"), "063000_300");
+    assert_eq!(
+        resolve_key(root, &APPLE, "20261010", "063000_300"),
+        "063000_300"
+    );
 }
 
 #[test]
@@ -436,7 +439,10 @@ fn a_window_lands_beside_older_content_and_stays_there() {
     fs::remove_dir_all(&card).unwrap();
     fs::create_dir_all(&card).unwrap();
     fs::write(card.join("tombstone.json"), "{}").unwrap();
-    assert_eq!(resolve_key(root, "20261010", "000000_300"), "000000_301");
+    assert_eq!(
+        resolve_key(root, &APPLE, "20261010", "000000_300"),
+        "000000_301"
+    );
 }
 
 #[test]
@@ -460,13 +466,19 @@ fn the_summary_names_and_counts_and_holds_no_value() {
     let export = read(&fixture());
     let journal = tempfile::tempdir().unwrap();
     let planned = plan(journal.path(), &export, Denver, None, false).unwrap();
-    let summary = summary_text(&SummaryCounts::of(&export, &planned, 3), None, Denver);
+    let summary = summary_text(
+        &APPLE,
+        &SummaryCounts::of(&export, &planned, 3),
+        None,
+        Denver,
+    );
     assert!(summary.contains("HKQuantityTypeIdentifierActiveEnergyBurned: 1"));
     assert!(summary.contains("end_before_start: 2"));
     assert!(summary.contains("no facet"));
     assert!(!summary.contains("4817"));
     assert!(
         summary_text(
+            &APPLE,
             &SummaryCounts::of(&export, &planned, 3),
             Some("health"),
             Denver

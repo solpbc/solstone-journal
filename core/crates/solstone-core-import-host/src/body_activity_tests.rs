@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+use solstone_core_import_sources::apple_health::STREAM;
+use solstone_core_import_sources::body_stream::APPLE;
 
 use super::*;
 
@@ -113,7 +115,7 @@ fn each_experience_gets_one_record_that_refers_to_its_account() {
             "2026-10-11 06:20:00 -0600",
         )],
     );
-    let counts = write_records(root, DAY);
+    let counts = write_records(root, &APPLE, DAY);
     assert_eq!(counts.written, 2);
     let written = rows(root, "body");
     assert_eq!(written.len(), 2);
@@ -162,9 +164,9 @@ fn writing_again_appends_nothing() {
             "2026-10-10 08:40:00 -0600",
         )],
     );
-    assert_eq!(write_records(root, DAY).written, 1);
+    assert_eq!(write_records(root, &APPLE, DAY).written, 1);
     let before = fs::read(file(root, "body")).unwrap();
-    assert_eq!(write_records(root, DAY), RecordCounts::default());
+    assert_eq!(write_records(root, &APPLE, DAY), RecordCounts::default());
     assert_eq!(fs::read(file(root, "body")).unwrap(), before);
 }
 
@@ -179,12 +181,12 @@ fn no_facet_means_no_record_until_the_window_has_one() {
         "2026-10-10 08:40:00 -0600",
     )];
     window(root, "080000_3600", None, &rows_in);
-    let counts = write_records(root, DAY);
+    let counts = write_records(root, &APPLE, DAY);
     assert_eq!((counts.written, counts.no_facet), (0, 1));
     assert!(!root.join("facets/body/activities").exists());
     // The same export again with a facet: a record, once.
     window(root, "080000_3600", Some("body"), &rows_in);
-    assert_eq!(write_records(root, DAY).written, 1);
+    assert_eq!(write_records(root, &APPLE, DAY).written, 1);
     assert_eq!(rows(root, "body").len(), 1);
 }
 
@@ -199,9 +201,9 @@ fn a_record_stays_in_its_facet_when_the_window_moves() {
         "2026-10-10 08:40:00 -0600",
     )];
     window(root, "080000_3600", Some("body"), &rows_in);
-    assert_eq!(write_records(root, DAY).written, 1);
+    assert_eq!(write_records(root, &APPLE, DAY).written, 1);
     window(root, "080000_3600", Some("other"), &rows_in);
-    assert_eq!(write_records(root, DAY), RecordCounts::default());
+    assert_eq!(write_records(root, &APPLE, DAY), RecordCounts::default());
     assert_eq!(rows(root, "body").len(), 1);
     assert!(rows(root, "other").is_empty());
 }
@@ -222,7 +224,7 @@ fn a_deleted_window_gets_no_record() {
         )],
     );
     fs::write(dir.join("tombstone.json"), "{}").unwrap();
-    assert_eq!(write_records(root, DAY), RecordCounts::default());
+    assert_eq!(write_records(root, &APPLE, DAY), RecordCounts::default());
 }
 
 #[test]
@@ -251,7 +253,7 @@ fn a_refused_append_is_counted_and_the_next_facet_still_gets_its_record() {
             "2026-10-10 08:40:00 -0600",
         )],
     );
-    let counts = write_records(root, DAY);
+    let counts = write_records(root, &APPLE, DAY);
     assert_eq!(counts.written, 1);
     assert_eq!(counts.refused.len(), 1);
     assert_eq!(counts.refused[0].0, "gone");
@@ -276,7 +278,7 @@ fn a_day_holding_a_half_written_line_keeps_it_and_says_what_was_written() {
             "2026-10-10 08:40:00 -0600",
         )],
     );
-    let counts = write_records(root, DAY);
+    let counts = write_records(root, &APPLE, DAY);
     assert_eq!(counts.written, 1);
     assert!(counts.refused.is_empty());
     let text = fs::read_to_string(file(root, "body")).unwrap();
@@ -302,12 +304,12 @@ fn a_line_that_isnt_text_doesnt_make_a_refiled_window_record_twice() {
         "2026-10-10 08:40:00 -0600",
     )];
     window(root, "080000_3600", Some("body"), &rows_in);
-    assert_eq!(write_records(root, DAY).written, 1);
+    assert_eq!(write_records(root, &APPLE, DAY).written, 1);
     let mut bytes = fs::read(file(root, "body")).unwrap();
     bytes.extend_from_slice(b"{\"id\":\"torn\",\"title\":\"\xff\xfe\"}\n");
     fs::write(file(root, "body"), &bytes).unwrap();
     window(root, "080000_3600", Some("other"), &rows_in);
-    assert_eq!(write_records(root, DAY), RecordCounts::default());
+    assert_eq!(write_records(root, &APPLE, DAY), RecordCounts::default());
     assert!(rows(root, "other").is_empty());
     assert_eq!(fs::read(file(root, "body")).unwrap(), bytes);
 }
@@ -328,14 +330,14 @@ fn a_day_file_that_cant_be_read_writes_nothing_that_day() {
         "2026-10-10 08:40:00 -0600",
     )];
     window(root, "080000_3600", Some("body"), &rows_in);
-    assert_eq!(write_records(root, DAY).written, 1);
+    assert_eq!(write_records(root, &APPLE, DAY).written, 1);
     window(root, "080000_3600", Some("other"), &rows_in);
     fs::set_permissions(file(root, "body"), fs::Permissions::from_mode(0o000)).unwrap();
     if fs::read(file(root, "body")).is_ok() {
         // Running as root: the mode can't stop a read.
         return;
     }
-    let counts = write_records(root, DAY);
+    let counts = write_records(root, &APPLE, DAY);
     fs::set_permissions(file(root, "body"), fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(counts.written, 0);
     assert_eq!(counts.refused.len(), 1);
