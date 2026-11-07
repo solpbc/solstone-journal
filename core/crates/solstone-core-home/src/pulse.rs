@@ -137,19 +137,31 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             context.now_local().naive_local(),
         )
     };
-    let briefing_phase = briefing_not_yet_phase(
-        briefing_exists,
-        briefing_not_yet,
-        segment_count > 0 || last_observe_relative.is_some(),
-    )
-    .unwrap_or_else(|| {
-        compute_briefing_phase(segment_count, context.local_hour(), briefing_exists)
-    });
+    let body_data = solstone_core_location::body_records::has_body_data(context.journal_root());
+    let briefing_phase = if !briefing_exists
+        && body_data
+        && !owes_a_briefing(context.journal_root(), &context.yesterday())
+    {
+        // Nothing the owner did yesterday, so no briefing is coming: nothing
+        // may say one is late, pending or due, and the body lines stand alone.
+        "none_owed"
+    } else {
+        briefing_not_yet_phase(
+            briefing_exists,
+            briefing_not_yet,
+            segment_count > 0 || last_observe_relative.is_some(),
+        )
+        .unwrap_or_else(|| {
+            compute_briefing_phase(segment_count, context.local_hour(), briefing_exists)
+        })
+    };
     let briefing_lateness = briefing_lateness_state(context.now_local(), briefing_phase);
     let reflection_state = latest_weekly_reflection
         .get("state")
         .and_then(Value::as_str);
-    let show_welcome = narrative_content.is_none()
+    // A journal holding body data isn't empty, even on a day with no lines.
+    let show_welcome = !body_data
+        && narrative_content.is_none()
         && activities.is_empty()
         && !briefing_exists
         && attention.is_null()
@@ -308,6 +320,20 @@ fn briefing_not_yet_phase(
         NotYet::FirstNight if has_content => Some("first_night"),
         NotYet::FirstNight => Some("first_night_empty"),
     }
+}
+
+/// Whether `day` owes a briefing: it holds a segment, and one of its segments
+/// holds something the owner did. Calendar notes and body records alone owe no
+/// thinking, as reprocessing and the backlog read it.
+fn owes_a_briefing(journal: &std::path::Path, day: &str) -> bool {
+    // A day that can't be listed might owe one: keep the placeholder.
+    let Ok(segments) = solstone_core_journal_io::iter_segments(
+        journal,
+        solstone_core_journal_io::PathOrDay::Day(day),
+    ) else {
+        return true;
+    };
+    !segments.is_empty() && !solstone_core_segment::day_holds_nothing_the_owner_did(journal, day)
 }
 
 /// Project the briefing fields from a freshly assembled context for this request.
@@ -618,6 +644,50 @@ mod tests {
         let payload = briefing_payload(&context);
         assert_eq!(payload["body"], serde_json::json!([]));
         assert!(payload["phase"].is_string());
+    }
+
+    /// A journal holding body data is never the welcome page, and a yesterday
+    /// that owes no briefing says none is coming: the lines stand alone. A
+    /// day holding something the owner did keeps the briefing's phases, and a
+    /// journal with no body data keeps its phases and its welcome as they were.
+    #[test]
+    fn body_data_is_not_an_empty_journal_and_a_body_only_yesterday_owes_no_briefing() {
+        let root = body_journal();
+        let at = |day: u32| {
+            HomeContext::with_zone(
+                root.path(),
+                Utc.with_ymd_and_hms(2026, 10, day, 12, 0, 0).unwrap(),
+                utc_day(),
+            )
+        };
+        // Yesterday holds only the workout's window.
+        let pulse = pulse_payload(&at(11));
+        assert_eq!(pulse["home_state"], "active");
+        assert_eq!(pulse["briefing_phase"], "none_owed");
+        assert_eq!(pulse["briefing_body"].as_array().unwrap().len(), 1);
+        // Yesterday holds nothing at all: still not the welcome page.
+        let pulse = pulse_payload(&at(12));
+        assert_eq!(pulse["home_state"], "active");
+        assert_eq!(pulse["briefing_phase"], "none_owed");
+        assert_eq!(pulse["briefing_body"], json!([]));
+        // Something the owner did yesterday owes a briefing, lines or not.
+        let capture = root.path().join("chronicle/20261010/090000_300");
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(capture.join("audio.jsonl"), "{}\n").unwrap();
+        let pulse = pulse_payload(&at(11));
+        assert_ne!(pulse["briefing_phase"], "none_owed");
+        assert_eq!(pulse["briefing_body"].as_array().unwrap().len(), 1);
+
+        // With no body data, an empty yesterday reads as it always has.
+        let plain = TempDir::new().unwrap();
+        let context = HomeContext::with_zone(
+            plain.path(),
+            Utc.with_ymd_and_hms(2026, 10, 12, 12, 0, 0).unwrap(),
+            utc_day(),
+        );
+        let pulse = pulse_payload(&context);
+        assert_eq!(pulse["home_state"], "welcome");
+        assert_ne!(pulse["briefing_phase"], "none_owed");
     }
 
     #[test]

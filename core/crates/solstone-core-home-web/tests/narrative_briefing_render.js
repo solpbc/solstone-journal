@@ -230,6 +230,30 @@ assert(notYet.includes('running, '), notYet);
 assert.strictEqual(notYet.includes('written at'), false, notYet);
 assert.strictEqual(ready.includes('from your devices and apps'), false, ready);
 
+// A yesterday that owes no briefing: nothing on the side says one is late,
+// pending, due or missing, and the lines stand alone. With none, it says only
+// that there was nothing to write up.
+const bodyOnly = renderYesterdaySideHtml(
+  { phase: 'none_owed', exists: false, analysis_day: '20261023', meta: null, sections: {}, body: lines },
+  { briefing_lateness: { late: true, late_hours: 3 }, briefing_analysis_day: '20261023' },
+);
+assert(bodyOnly.includes('running, '), bodyOnly);
+assert.strictEqual(bodyOnly.includes('pulse-briefing-placeholder'), false, bodyOnly);
+assert.strictEqual(/written|late|being|shows here|<a/.test(bodyOnly), false, bodyOnly);
+const nothingOwed = renderYesterdaySideHtml(
+  { phase: 'none_owed', exists: false, analysis_day: '20261023', meta: null, sections: {}, body: [] },
+  { briefing_lateness: { late: true, late_hours: 3 }, briefing_analysis_day: '20261023' },
+);
+assert(nothingOwed.includes('nothing from yesterday to write up.'), nothingOwed);
+assert.strictEqual(/late|being|shows here|<a/.test(nothingOwed), false, nothingOwed);
+// A capture day whose briefing is late keeps saying so, lines or not.
+const lateWithLines = renderYesterdaySideHtml(
+  { phase: 'pending', exists: false, analysis_day: '20261023', meta: null, sections: {}, body: lines },
+  { briefing_lateness: { late: true, late_hours: 3 }, briefing_analysis_day: '20261023' },
+);
+assert(lateWithLines.includes('3h late'), lateWithLines);
+assert(lateWithLines.indexOf('3h late') < lateWithLines.indexOf('running, '), lateWithLines);
+
 // The stamp is the journal's wall time: its hour and minute as written,
 // whatever zone the browser is in.
 assert(writtenAtTime('2026-10-24T07:12:00').includes('7:12'));

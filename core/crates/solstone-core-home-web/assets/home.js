@@ -1499,6 +1499,12 @@
   // The yesterday side never renders empty. Silence is the worst failure mode.
   function briefingPlaceholderHtml(data, pulseContext) {
     if (data.exists) return '';
+    // Nothing the owner did yesterday, so no briefing is coming. The body
+    // lines stand alone; with none, say only that.
+    if (data.phase === 'none_owed') {
+      if (Array.isArray(data.body) && data.body.length) return '';
+      return '<div class="pulse-briefing-placeholder">nothing from yesterday to write up.</div>';
+    }
     const run = esc(briefingRunHref(data, pulseContext));
     if (data.phase === 'awaiting_engine') {
       const text = BRIEFING_AWAITING_ENGINE_LANES[data.saved_lane] || BRIEFING_NOT_YET.awaiting_engine;
