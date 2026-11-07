@@ -2391,8 +2391,11 @@ mod kept_line_tests {
         );
         let record: Value = serde_json::from_str(&lines(&path)[1]).unwrap();
         assert!(record["account"].get("type").is_none(), "{record}");
-        // Only a body record is ever refreshed.
-        let (root, path) = journal_with(&[&row("body_0000000000000a")]);
+        // Only a body record is ever refreshed, even one carrying an account.
+        let other = serde_json::json!({"id": "body_0000000000000a", "activity": "workout",
+            "account": {"start": "2026-10-16 07:00:00 -0600", "end": "2026-10-16 07:20:00 -0600"}})
+        .to_string();
+        let (root, path) = journal_with(&[&other]);
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(
             refresh_body_account(
