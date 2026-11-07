@@ -4,8 +4,14 @@
 //! Sense says where it found each entity. A heard source must have been heard.
 //!
 //! The model picks `source` itself, and a name that was only on screen can come
-//! back as `voice` or `transcript`. Three rules, applied after generation:
+//! back as `voice` or `transcript`. Rules, applied after generation:
 //!
+//! 0. A name the segment's input never says or shows is not in this segment,
+//!    and is dropped. Sense also reads the owner's known entities in the facet
+//!    list, and a name from there alone is the journal's memory, not something
+//!    seen or heard now. The check is the lenient heard test below over the
+//!    whole input, so a name the model spelled out in full ("Avery Nguyen" for
+//!    "AN") stays.
 //! 1. With no transcript in its input, nothing was heard: `voice` and
 //!    `transcript` become `screen`, or `other` without screen input either.
 //!    A `speaker_label` with screen input becomes `screen` too: a participant
@@ -25,7 +31,7 @@
 //!    transcript in it says the name by the same lenient check: a name both
 //!    said and shown stays `mentioned`. Attendees are left alone.
 //!
-//! Nothing is ever dropped for being unheard; only its source and role change.
+//! After rule 0, nothing is dropped for being unheard; only its source and role change.
 
 use crate::{JournalOwner, NamedActor, PreparedTalent};
 use serde_json::Value;
@@ -36,6 +42,7 @@ use unicode_normalization::UnicodeNormalization;
 const HEARD: [&str; 2] = ["voice", "transcript"];
 const CLOSE_ENOUGH: f64 = 75.0;
 const MIN_WORD: usize = 3;
+const MIN_PART: usize = 4;
 const FILLER: [&str; 6] = ["the", "and", "for", "inc", "llc", "app"];
 
 /// The response with grounded entity sources and roles, or `None` when nothing changed.
@@ -45,14 +52,40 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
     }
     let mut output = serde_json::from_str::<Value>(response).ok()?;
     let entities = output.get_mut("entities")?.as_array_mut()?;
-    let counts = prepared.config.get("source_counts")?;
-    let transcripts = counts.get("transcripts")?.as_u64()?;
-    let percepts = counts.get("percepts").and_then(Value::as_u64).unwrap_or(0);
+    let mut changed = false;
+    if let Some(input) = prepared
+        .config
+        .get("transcript")
+        .and_then(Value::as_str)
+        .filter(|input| !input.trim().is_empty())
+    {
+        let input = Heard::new(input);
+        let before = entities.len();
+        entities.retain(|entity| {
+            input.named(
+                entity
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            )
+        });
+        changed = entities.len() != before;
+    }
+    let counts = prepared.config.get("source_counts");
+    let Some(transcripts) = counts
+        .and_then(|counts| counts.get("transcripts"))
+        .and_then(Value::as_u64)
+    else {
+        return changed.then(|| output.to_string());
+    };
+    let percepts = counts
+        .and_then(|counts| counts.get("percepts"))
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     // Evidence and the owner are read only when rules 2 and 4 need them: the
     // owner means reading every entity. Either one missing changes nothing.
     let mut evidence = None;
     let mut owner = None;
-    let mut changed = false;
     for entity in entities.iter_mut() {
         let Some(row) = entity.as_object_mut() else {
             continue;
@@ -201,6 +234,24 @@ impl Heard {
                             >= CLOSE_ENOUGH
                 })
         })
+    }
+}
+
+impl Heard {
+    /// Rule 0's test: said, or a word of the name and a word of the input
+    /// where one holds the other ("Homebrew" for `brew`), at least
+    /// `MIN_PART` letters long.
+    fn named(&self, name: &str) -> bool {
+        self.said(name)
+            || words(name)
+                .iter()
+                .filter(|word| word.chars().count() >= MIN_PART)
+                .any(|word| {
+                    self.words.iter().any(|seen| {
+                        seen.chars().count() >= MIN_PART
+                            && (word.contains(seen.as_str()) || seen.contains(word.as_str()))
+                    })
+                })
     }
 }
 
@@ -366,13 +417,80 @@ mod tests {
     }
 
     #[test]
+    fn a_name_only_in_the_facet_list_is_not_in_the_segment() {
+        // The owner's journal knows a film from an earlier week. Sense reads it in
+        // the facet list, but this terminal segment never shows it.
+        let terminal = sense(
+            0,
+            1,
+            vec![source(
+                "tmux_0_screen.jsonl",
+                &[
+                    "~/src/harborlight $ cargo test parse",
+                    "test result: ok. 2 passed",
+                ],
+            )],
+        );
+        assert_eq!(
+            grounded(
+                &terminal,
+                vec![
+                    entity("Dogma", "Project", "screen"),
+                    entity("Kevin Smith", "Person", "transcript"),
+                    entity("harborlight", "Project", "screen"),
+                ]
+            ),
+            pairs(&[("harborlight", "screen")])
+        );
+        let speech = sense(
+            1,
+            0,
+            vec![(None, "Speaker 1: the tide table parser is fixed now")],
+        );
+        assert_eq!(
+            grounded(&speech, vec![entity("Dogma", "Project", "voice")]),
+            pairs(&[])
+        );
+    }
+
+    #[test]
+    fn a_name_the_model_spelled_out_from_the_segment_stays() {
+        let terminal = sense(
+            0,
+            1,
+            vec![source(
+                "tmux_0_screen.jsonl",
+                &[
+                    "~ $ brew upgrade",
+                    "notes: rewatch with Sam, ask AN about the deck",
+                ],
+            )],
+        );
+        assert_eq!(
+            grounded(
+                &terminal,
+                vec![
+                    entity("Homebrew", "Tool", "screen"),
+                    entity("Sam Ortiz", "Person", "screen"),
+                    entity("Avery Nguyen", "Person", "screen"),
+                ]
+            ),
+            pairs(&[
+                ("Homebrew", "screen"),
+                ("Sam Ortiz", "screen"),
+                ("Avery Nguyen", "screen")
+            ])
+        );
+    }
+
+    #[test]
     fn a_segment_without_a_transcript_hears_no_one() {
         let screen = sense(
             0,
             1,
             vec![source(
                 "tmux_1_screen.jsonl",
-                &["Ada Lovelace reviewed the LyricWhiz paper"],
+                &["Ada Lovelace reviewed the LyricWhiz paper with Grace Hopper"],
             )],
         );
         assert_eq!(
@@ -593,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unheard_name_off_screen_changes_nothing() {
+    fn a_name_neither_heard_nor_shown_is_not_in_the_segment() {
         let prepared = sense(
             1,
             1,
@@ -604,7 +722,10 @@ mod tests {
         );
         let journal = journal();
         let response = json!({"entities":[entity("Maya Chen", "Person", "voice")]}).to_string();
-        assert_eq!(ground(&prepared, journal.path(), &response), None);
+        assert_eq!(
+            ground(&prepared, journal.path(), &response).as_deref(),
+            Some(r#"{"entities":[]}"#)
+        );
     }
 
     #[test]
@@ -710,7 +831,10 @@ mod tests {
         let terminal = sense(
             0,
             1,
-            vec![source("tmux_1_screen.jsonl", &["Cifka and Suda, 2024"])],
+            vec![source(
+                "tmux_1_screen.jsonl",
+                &["Cifka and Suda, 2024", "call: Grace Hopper"],
+            )],
         );
         assert_eq!(
             roles(
@@ -798,7 +922,10 @@ mod tests {
         let audio = sense(
             1,
             0,
-            vec![source("audio.jsonl", &["[10:00:01] Speaker 1: hello"])],
+            vec![source(
+                "audio.jsonl",
+                &["[10:00:01] Speaker 1: hello from Suda"],
+            )],
         );
         assert_eq!(
             roles(&audio, vec![with_role("Suda", "mentioned", "screen")]),

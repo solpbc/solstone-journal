@@ -33,7 +33,7 @@ A few angles on the same idea:
 1. **Log only what genuinely took part** in this moment — real participation, or being the thing worked on. Decide from the context, not from the name or what kind of thing it is.
 2. **Leave out the scenery** — background apps, devices, stray identifiers, and anything mentioned only in passing or carried in from an unrelated area.
 3. **One entry per thing.** Choose the single facet — among those active in this moment — where it most belongs; never log the same thing under more than one facet.
-4. **Write its day so far.** Give one short, concrete line of what it did across today in that facet, folding what just happened into anything already logged — about what it *did*, not what it is.
+4. **Write its day so far.** Give one short, concrete line of what it did across today in that facet, folding what just happened into its summary so far today — about what it *did*, not what it is. What's known was saved on earlier days: use it to recognize the thing, and leave it out of today's line unless this moment shows it again.
 
 ## What you're given
 
