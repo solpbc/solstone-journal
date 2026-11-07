@@ -5,6 +5,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+include!("../../build-support/convey_asset_records.rs");
+
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let workspace = manifest.join("assets/transcripts/workspace.html");
@@ -19,4 +21,11 @@ fn main() {
         generated,
     )
     .expect("generated assets write");
+    // What this crate serves to the dashboard, for the shell to hash and rewrite.
+    AssetRecords::new()
+        .file(
+            "/app/transcripts/workspace",
+            "assets/transcripts/workspace.html",
+        )
+        .emit();
 }

@@ -129,10 +129,12 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                         match case["name"].as_str() {
                             Some("index") => {
                                 wanted = Value::String(
-                                    include_str!(
-                                        "../../solstone-core-convey-shell/assets/static/shell.html"
-                                    )
-                                    .into(),
+                                    String::from_utf8(solstone_core_convey_shell::assets::served_from_source(
+                                        include_bytes!(
+                                            "../../solstone-core-convey-shell/assets/static/shell.html"
+                                        ),
+                                    ))
+                                    .expect("served shell is UTF-8"),
                                 )
                             }
                             Some("workspace") => {
@@ -145,7 +147,12 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                     Some(SttRuntimeKind::LinuxCpp | SttRuntimeKind::MacosCoreml)
                                 );
                                 wanted = Value::String(
-                                    include_str!("../assets/workspace.html")
+                                    String::from_utf8(
+                                        solstone_core_convey_shell::assets::served_from_source(
+                                            include_bytes!("../assets/workspace.html"),
+                                        ),
+                                    )
+                                    .expect("served workspace is UTF-8")
                                         .replace(
                                             "{{SPEECH_SETUP_APPLICABLE}}",
                                             if applicable { "true" } else { "false" },

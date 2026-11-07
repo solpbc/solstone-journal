@@ -143,7 +143,10 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
     }
     if expected["status"] == 200 && case["name"] == "index" {
         wanted = Value::String(
-            include_str!("../../solstone-core-convey-shell/assets/static/shell.html").into(),
+            String::from_utf8(solstone_core_convey_shell::assets::served_from_source(
+                include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html"),
+            ))
+            .expect("served shell is UTF-8"),
         );
     }
 

@@ -168,7 +168,7 @@ mod tests {
         let journal = Journal::established();
         let (status, _headers, body) = routed(&journal, "GET", "/app/entities/", b"").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, include_bytes!("../assets/static/shell.html"));
+        assert_eq!(body, crate::assets::served_bytes("/static/shell.html"));
 
         let (status, _headers, body) =
             routed(&journal, "GET", "/app/entities/api/state", b"").await;

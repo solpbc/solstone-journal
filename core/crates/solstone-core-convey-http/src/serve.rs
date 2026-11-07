@@ -3,7 +3,9 @@
 
 use axum::Router;
 use axum::extract::Extension;
-use axum::http::header::{CONTENT_SECURITY_POLICY, CONTENT_TYPE, X_FRAME_OPTIONS};
+use axum::http::header::{
+    CACHE_CONTROL, CONTENT_ENCODING, CONTENT_SECURITY_POLICY, CONTENT_TYPE, ETAG, X_FRAME_OPTIONS,
+};
 use axum::http::{Extensions, HeaderMap, HeaderValue, StatusCode, Version};
 use axum::response::Response;
 use hyper::server::conn::http1;
@@ -179,7 +181,32 @@ fn common_layers(router: Router) -> Router {
         // journal-sized JSON state is ten times smaller gzipped. Only clients
         // that ask (Accept-Encoding) get it, and range responses never do.
         .layer(compression_layer())
+        .layer(axum::middleware::map_response(mark_encoded_validator))
         .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
+}
+
+/// A strong validator names one representation, and a gzipped answer is a
+/// different one from the plain bytes, so it gets its own tag. The dashboard's
+/// `If-None-Match` check accepts either form of its own tags.
+async fn mark_encoded_validator(mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    let Some(encoding) = headers
+        .get(CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+    else {
+        return response;
+    };
+    let tagged = headers
+        .get(ETAG)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|tag| tag.strip_prefix('"')?.strip_suffix('"').map(str::to_owned));
+    if let Some(tag) = tagged
+        && let Ok(value) = HeaderValue::from_str(&format!("\"{tag}-{encoding}\""))
+    {
+        headers.insert(ETAG, value);
+    }
+    response
 }
 
 async fn refuse_framing(mut response: Response) -> Response {
@@ -188,6 +215,11 @@ async fn refuse_framing(mut response: Response) -> Response {
         .entry(CONTENT_SECURITY_POLICY)
         .or_insert(HeaderValue::from_static(CONVEY_CONTENT_SECURITY_POLICY));
     headers.insert(X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    // Nothing is cached unless the router classed it: a gate's refusal, a
+    // redirect or any answer from outside the dashboard router is never kept.
+    headers
+        .entry(CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static("no-store"));
     response
 }
 
@@ -345,6 +377,7 @@ mod tests {
 
     async fn compression_exchange(path: &str, accept_gzip: bool) -> String {
         use axum::http::header::CONTENT_TYPE;
+        use axum::http::header::{CACHE_CONTROL, ETAG};
         use axum::routing::get;
 
         let big = "x".repeat(4096);
@@ -381,6 +414,22 @@ mod tests {
             .route(
                 "/small",
                 get(move || async move { ([(CONTENT_TYPE, "application/json")], small) }),
+            )
+            .route(
+                "/tagged",
+                get({
+                    let big = big.clone();
+                    move || async move {
+                        (
+                            [
+                                (CONTENT_TYPE, "text/html; charset=utf-8"),
+                                (ETAG, "\"abc\""),
+                                (CACHE_CONTROL, "no-cache"),
+                            ],
+                            big,
+                        )
+                    }
+                }),
             );
         let accept = if accept_gzip {
             "Accept-Encoding: gzip, deflate, br\r\n"
@@ -420,6 +469,33 @@ mod tests {
         for path in ["/audio", "/events", "/small"] {
             let head = compression_exchange(path, true).await;
             assert!(!head.contains("content-encoding"), "{path}: {head}");
+        }
+    }
+
+    // Nothing is cached unless the router classed it, and a gzipped answer's
+    // validator names the gzipped representation, on one header line each.
+    #[tokio::test]
+    async fn unclassed_answers_store_nothing_and_gzip_has_its_own_validator() {
+        let head = compression_exchange("/json", true).await;
+        assert!(head.contains("cache-control: no-store"), "{head}");
+        let head = compression_exchange("/tagged", true).await;
+        assert!(head.contains("cache-control: no-cache"), "{head}");
+        assert!(head.contains("etag: \"abc-gzip\""), "{head}");
+        let head = compression_exchange("/tagged", false).await;
+        assert!(head.contains("etag: \"abc\""), "{head}");
+        for path in ["/json", "/tagged"] {
+            for gzip in [true, false] {
+                let head = compression_exchange(path, gzip).await;
+                let mut names: Vec<_> = head
+                    .lines()
+                    .skip(1)
+                    .filter_map(|line| line.split_once(':').map(|(name, _)| name.to_owned()))
+                    .collect();
+                let count = names.len();
+                names.sort();
+                names.dedup();
+                assert_eq!(names.len(), count, "{path} repeats a header: {head}");
+            }
         }
     }
 }

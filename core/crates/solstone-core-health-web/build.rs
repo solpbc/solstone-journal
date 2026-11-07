@@ -14,6 +14,8 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+include!("../../build-support/convey_asset_records.rs");
+
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let static_root = manifest.join("assets/static");
@@ -55,4 +57,10 @@ fn main() {
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("output dir"));
     fs::write(out.join("static_assets.rs"), generated)
         .expect("generated health static asset source writes");
+    // What this crate serves to the dashboard, for the shell to hash and rewrite.
+    // The workspace fills in this computer's platform at response time.
+    AssetRecords::new()
+        .template("/app/health/workspace", "assets/workspace.html")
+        .tree("/app/health/static", "assets/static", &[])
+        .emit();
 }

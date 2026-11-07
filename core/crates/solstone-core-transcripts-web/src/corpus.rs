@@ -1522,8 +1522,9 @@ mod tests {
             assert_eq!(status.as_u16(), case["status"].as_u64().unwrap() as u16);
             if case["path"] == "/app/transcripts/20260731" && status == StatusCode::OK {
                 // The shared navigation shell is current; the capture predates it.
-                let shell =
-                    include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+                let shell = solstone_core_convey_shell::assets::served_from_source(include_bytes!(
+                    "../../solstone-core-convey-shell/assets/static/shell.html"
+                ));
                 assert_eq!(&body[..], &shell[..]);
                 assert_eq!(headers["content-type"], "text/html; charset=utf-8");
                 assert_eq!(headers["content-length"], shell.len().to_string());
@@ -1626,8 +1627,9 @@ mod tests {
             assert_eq!(status.as_u16(), case["status"].as_u64().unwrap() as u16);
             if case["path"] == "/app/transcripts/20260731" && status == StatusCode::OK {
                 // The shared navigation shell is current; the capture predates it.
-                let shell =
-                    include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+                let shell = solstone_core_convey_shell::assets::served_from_source(include_bytes!(
+                    "../../solstone-core-convey-shell/assets/static/shell.html"
+                ));
                 assert_eq!(&body[..], &shell[..]);
                 assert_eq!(headers["content-type"], "text/html; charset=utf-8");
                 assert_eq!(headers["content-length"], shell.len().to_string());

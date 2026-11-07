@@ -5,8 +5,12 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+include!("../../build-support/convey_asset_refs.rs");
 
 fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) {
     println!("cargo:rerun-if-changed={}", directory.display());
@@ -196,123 +200,7 @@ fn main() {
         ));
     }
     generated.push_str("];\n");
-    // Inventory sibling assets without changing which router serves them.
-    let crates = manifest.parent().expect("crate parent");
-    for (app, package, workspace, scripts) in [
-        (
-            "backup",
-            "backup-web",
-            "workspace.html",
-            &["backup.js", "backup-status.js", "backup.css"][..],
-        ),
-        (
-            "home",
-            "home-web",
-            "workspace.html",
-            &["home.js", "week.js", "removals.js"][..],
-        ),
-        (
-            "import",
-            "import-web",
-            "workspace.html",
-            &["source_connections.js", "import_detail.js"][..],
-        ),
-        (
-            "settings",
-            "settings-web",
-            "workspace.html",
-            &["settings.js"][..],
-        ),
-        (
-            "support",
-            "support-web",
-            "workspace.html",
-            &["static/support.js"][..],
-        ),
-        ("map", "map-web", "workspace.html", &[][..]),
-        ("search", "records-web", "search.html", &[][..]),
-        (
-            "transcripts",
-            "transcripts-web",
-            "transcripts/workspace.html",
-            &[][..],
-        ),
-        (
-            "activities",
-            "facets-web",
-            "activities/workspace.html",
-            &[][..],
-        ),
-        (
-            "curation",
-            "facets-web",
-            "curation/workspace.html",
-            &["curation/curation_evidence.js"][..],
-        ),
-        ("health", "health-web", "workspace.html", &[][..]),
-        ("stats", "stats-web", "workspace.html", &[][..]),
-    ] {
-        let directory = crates.join(format!("solstone-core-{package}/assets"));
-        assets.push((format!("/app/{app}/workspace"), directory.join(workspace)));
-        for script in scripts {
-            let name = Path::new(script)
-                .file_name()
-                .expect("asset name")
-                .to_string_lossy();
-            assets.push((format!("/app/{app}/static/{name}"), directory.join(script)));
-        }
-        if matches!(app, "health" | "stats") {
-            let directory = directory.join("static");
-            println!("cargo:rerun-if-changed={}", directory.display());
-            for entry in fs::read_dir(directory).expect("static directory") {
-                let path = entry.expect("static entry").path();
-                if path.is_file() {
-                    let name = path.file_name().expect("asset name").to_string_lossy();
-                    assets.push((format!("/app/{app}/static/{name}"), path));
-                }
-            }
-        }
-    }
-    for guide in [
-        "chatgpt",
-        "claude",
-        "gemini",
-        "ics",
-        "journal_archive",
-        "obsidian",
-        "strava",
-    ] {
-        assets.push((
-            format!("/app/import/api/guide/{guide}"),
-            crates.join(format!("solstone-core-import-web/assets/guides/{guide}.md")),
-        ));
-    }
-    assets.push((
-        "/init".to_owned(),
-        crates.join("solstone-core-sol-link/assets/init.html"),
-    ));
-    assets.sort_by(|a, b| a.0.cmp(&b.0));
-    assert!(
-        assets.windows(2).all(|pair| pair[0].0 != pair[1].0),
-        "duplicate asset path"
-    );
-    generated.push_str("pub static INVENTORY: &[AssetRecord] = &[\n");
-    for (route, path) in assets {
-        println!("cargo:rerun-if-changed={}", path.display());
-        let bytes = fs::read(&path).expect("inventory asset readable");
-        let hash = format!("{:x}", Sha256::digest(&bytes));
-        let template = matches!(route.as_str(), "/init" | "/app/health/workspace");
-        let kind = if route.starts_with("/app/import/api/guide/") {
-            "text/markdown; charset=utf-8"
-        } else {
-            content_type(&path)
-        };
-        generated.push_str(&format!(
-            "    AssetRecord {{ path: {route:?}, content_type: {:?}, byte_len: {}, sha256: {hash:?}, template: {template}, #[cfg(test)] bytes: include_bytes!({path:?}) }},\n",
-            kind, bytes.len(),
-        ));
-    }
-    generated.push_str("];\n");
+    generated.push_str(&inventory(&assets));
 
     generated.push_str(&format!(
         "pub(super) const SPEAKER_COPY_JSON: &str = {speaker_copy:?};\n"
@@ -333,4 +221,288 @@ fn main() {
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("output dir"));
     fs::write(output.join("embedded_assets.rs"), generated)
         .expect("generated embedded asset source writes");
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    File,
+    Template,
+    Dynamic,
+}
+
+struct Record {
+    route: String,
+    content_type: String,
+    file: PathBuf,
+    kind: Kind,
+    bytes: Vec<u8>,
+    tree: Option<String>,
+    /// (start, end, target path): a reference to rewrite to the target's hashed path.
+    edits: Vec<(usize, usize, String)>,
+}
+
+fn is_text(content_type: &str) -> bool {
+    ["text/html", "text/javascript", "text/css"]
+        .iter()
+        .any(|kind| content_type.starts_with(kind))
+}
+
+/// Every crate that serves dashboard assets hands its list over through its
+/// `links` metadata; this shell's own assets are the embedded table above.
+fn sibling_records() -> Vec<(Kind, String, String, PathBuf)> {
+    let mut lists: Vec<(String, String)> = env::vars()
+        .filter(|(name, _)| {
+            name.starts_with("DEP_SOLSTONE_CONVEY_ASSETS_") && name.ends_with("_RECORDS")
+        })
+        .collect();
+    lists.sort();
+    let mut records = Vec::new();
+    for (_, path) in lists {
+        println!("cargo:rerun-if-changed={path}");
+        let list = fs::read_to_string(&path).expect("sibling asset records readable");
+        for line in list.lines().filter(|line| !line.is_empty()) {
+            let fields: Vec<_> = line.split('\t').collect();
+            let [kind, route, content_type, file] = fields[..] else {
+                panic!("asset record line {line:?} has four fields");
+            };
+            let kind = match kind {
+                "asset" => Kind::File,
+                "template" => Kind::Template,
+                "dynamic" => Kind::Dynamic,
+                _ => panic!("asset record {route} has unknown kind {kind}"),
+            };
+            records.push((
+                kind,
+                route.to_owned(),
+                content_type.to_owned(),
+                PathBuf::from(file),
+            ));
+        }
+    }
+    records
+}
+
+/// Hash every asset tree in dependency order, rewrite each reference to a tree
+/// file to its hashed path, and emit the inventory the shell serves from.
+fn inventory(own: &[(String, PathBuf)]) -> String {
+    let mut sources: Vec<(Kind, String, String, PathBuf)> = own
+        .iter()
+        .map(|(route, path)| {
+            (
+                Kind::File,
+                route.clone(),
+                content_type(path).to_owned(),
+                path.clone(),
+            )
+        })
+        .collect();
+    sources.extend(sibling_records());
+    sources.sort_by(|a, b| a.1.cmp(&b.1));
+    for pair in sources.windows(2) {
+        assert!(pair[0].1 != pair[1].1, "two crates serve {}", pair[0].1);
+    }
+    let mut records: Vec<Record> = sources
+        .into_iter()
+        .map(|(kind, route, content_type, file)| {
+            println!("cargo:rerun-if-changed={}", file.display());
+            let bytes = fs::read(&file)
+                .unwrap_or_else(|error| panic!("asset {} readable: {error}", file.display()));
+            let tree = tree_root(&route);
+            assert!(
+                tree.is_none() || kind == Kind::File,
+                "{route} is filled in at response time, so it can't be part of a hashed tree"
+            );
+            Record {
+                route,
+                content_type,
+                file,
+                kind,
+                bytes,
+                tree,
+                edits: Vec::new(),
+            }
+        })
+        .collect();
+    let index: BTreeMap<String, usize> = records
+        .iter()
+        .enumerate()
+        .map(|(position, record)| (record.route.clone(), position))
+        .collect();
+
+    // Find each reference to a tree file, and the tree-to-tree edges they make.
+    let mut depends: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for record in &records {
+        if let Some(tree) = &record.tree {
+            depends.entry(tree.clone()).or_default();
+        }
+    }
+    for position in 0..records.len() {
+        let record = &records[position];
+        if record.kind == Kind::Dynamic || !is_text(&record.content_type) {
+            continue;
+        }
+        let source = std::str::from_utf8(&record.bytes)
+            .unwrap_or_else(|_| panic!("text asset {} is UTF-8", record.route));
+        let mut edits = Vec::new();
+        for (start, end) in reference_spans(source) {
+            let reference = &source[start..end];
+            let Some(target) = resolve_reference(&record.route, reference) else {
+                continue;
+            };
+            let Some(target_tree) = index
+                .get(&target)
+                .and_then(|found| records[*found].tree.clone())
+            else {
+                continue;
+            };
+            let path_end = start + reference.find(['?', '#']).unwrap_or(reference.len());
+            let relative = !reference.starts_with('/');
+            match &record.tree {
+                // Relative inside one tree already resolves under the hashed path.
+                // Absolute inside one tree can't name its own hash, so it stays
+                // on the stable path, which keeps being served.
+                Some(tree) if *tree == target_tree => {}
+                Some(tree) => {
+                    assert!(
+                        !relative,
+                        "{} refers to {reference} relatively, outside its tree {tree}; \
+                         under a hashed path that would not resolve. Use an absolute path.",
+                        record.route
+                    );
+                    depends.entry(tree.clone()).or_default().insert(target_tree);
+                    edits.push((start, path_end, target));
+                }
+                None => edits.push((start, path_end, target)),
+            }
+        }
+        records[position].edits = edits;
+    }
+
+    // Hash trees so that every tree a tree refers to is hashed before it.
+    let mut order = Vec::new();
+    let mut state: BTreeMap<String, u8> = BTreeMap::new();
+    fn visit(
+        tree: &str,
+        depends: &BTreeMap<String, BTreeSet<String>>,
+        state: &mut BTreeMap<String, u8>,
+        stack: &mut Vec<String>,
+        order: &mut Vec<String>,
+    ) {
+        match state.get(tree) {
+            Some(2) => return,
+            Some(1) => {
+                let from = stack
+                    .iter()
+                    .position(|item| item == tree)
+                    .expect("on stack");
+                let mut cycle = stack[from..].to_vec();
+                cycle.push(tree.to_owned());
+                panic!(
+                    "dashboard asset trees refer to each other in a cycle, so none can be \
+                     hashed first: {}",
+                    cycle.join(" -> ")
+                );
+            }
+            _ => {}
+        }
+        state.insert(tree.to_owned(), 1);
+        stack.push(tree.to_owned());
+        for next in &depends[tree] {
+            visit(next, depends, state, stack, order);
+        }
+        stack.pop();
+        state.insert(tree.to_owned(), 2);
+        order.push(tree.to_owned());
+    }
+    for tree in depends.keys() {
+        visit(tree, &depends, &mut state, &mut Vec::new(), &mut order);
+    }
+
+    let mut hashes: BTreeMap<String, String> = BTreeMap::new();
+    let hashed_of = |target: &str, hashes: &BTreeMap<String, String>| -> String {
+        let tree = records[index[target]]
+            .tree
+            .as_deref()
+            .expect("target is a tree file");
+        hashed_path(tree, &hashes[tree], target)
+    };
+    let served_of = |record: &Record, hashes: &BTreeMap<String, String>| -> Vec<u8> {
+        let edits: Vec<(usize, usize, String)> = record
+            .edits
+            .iter()
+            .map(|(start, end, target)| (*start, *end, hashed_of(target, hashes)))
+            .collect();
+        let borrowed: Vec<(usize, usize, &str)> =
+            edits.iter().map(|(s, e, t)| (*s, *e, t.as_str())).collect();
+        apply_edits(&record.bytes, &borrowed)
+    };
+    for tree in &order {
+        let served: Vec<(String, Vec<u8>)> = records
+            .iter()
+            .filter(|record| record.tree.as_deref() == Some(tree.as_str()))
+            .map(|record| (record.route.clone(), served_of(record, &hashes)))
+            .collect();
+        let hash = tree_hash(
+            tree,
+            served
+                .iter()
+                .map(|(route, bytes)| (route.as_str(), bytes.as_slice())),
+        );
+        hashes.insert(tree.clone(), hash);
+    }
+
+    let mut generated = String::from("pub static INVENTORY: &[AssetRecord] = &[\n");
+    let mut hashed_index = Vec::new();
+    for (position, record) in records.iter().enumerate() {
+        let raw = format!("{:x}", Sha256::digest(&record.bytes));
+        let hashed = record
+            .tree
+            .as_ref()
+            .map(|tree| hashed_path(tree, &hashes[tree], &record.route));
+        if let Some(hashed) = &hashed {
+            hashed_index.push((hashed.clone(), position));
+        }
+        let etag = match record.kind {
+            Kind::File => {
+                let served = served_of(record, &hashes);
+                format!("\"{}\"", &format!("{:x}", Sha256::digest(&served))[..32])
+            }
+            Kind::Template | Kind::Dynamic => String::new(),
+        };
+        let edits: Vec<String> = record
+            .edits
+            .iter()
+            .map(|(start, end, target)| {
+                format!("({start}, {end}, {:?})", hashed_of(target, &hashes))
+            })
+            .collect();
+        let kind = match record.kind {
+            Kind::File => "AssetKind::File",
+            Kind::Template => "AssetKind::Template",
+            Kind::Dynamic => "AssetKind::Dynamic",
+        };
+        generated.push_str(&format!(
+            "    AssetRecord {{ path: {:?}, content_type: {:?}, byte_len: {}, sha256: {raw:?}, kind: {kind}, tree: {:?}, hashed: {:?}, etag: {etag:?}, edits: &[{}], #[cfg(test)] bytes: include_bytes!({:?}) }},\n",
+            record.route,
+            record.content_type,
+            record.bytes.len(),
+            record.tree,
+            hashed,
+            edits.join(", "),
+            record.file,
+        ));
+    }
+    generated.push_str("];\n");
+    hashed_index.sort();
+    generated.push_str("pub static HASHED: &[(&str, usize)] = &[\n");
+    for (hashed, position) in hashed_index {
+        generated.push_str(&format!("    ({hashed:?}, {position}),\n"));
+    }
+    generated.push_str("];\n");
+    generated.push_str("pub static TREES: &[(&str, &str)] = &[\n");
+    for (tree, hash) in &hashes {
+        generated.push_str(&format!("    ({tree:?}, {hash:?}),\n"));
+    }
+    generated.push_str("];\n");
+    generated
 }

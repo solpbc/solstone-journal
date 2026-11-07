@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+# Hands the dashboard shell's build script this crate's served asset list.
+links = "solstone_convey_assets_import_web"
 
 [lints]
 workspace = true

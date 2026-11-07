@@ -197,6 +197,27 @@
     }
   }
 
+  // Reload the current page once per stamp key. A second attempt inside the
+  // window returns false and leaves the caller on its error state, so a cause
+  // a reload can't fix never turns into a loop. Without storage for the stamp
+  // there is no reload at all.
+  const RELOAD_ONCE_WINDOW_MS = 10000;
+
+  function reloadOnce(stampKey) {
+    const now = Date.now();
+    try {
+      const last = Number(window.sessionStorage.getItem(stampKey)) || 0;
+      if (last > 0 && now - last < RELOAD_ONCE_WINDOW_MS) {
+        return false;
+      }
+      window.sessionStorage.setItem(stampKey, String(now));
+    } catch (_) {
+      return false;
+    }
+    window.location.reload();
+    return true;
+  }
+
   // A phone app's in-app proxy answers 403 with this header when it refuses a
   // request itself (for example a stale capability). That is never a sign-in
   // failure, and the journal never sends it. The page reloads its current URL
@@ -204,7 +225,6 @@
   // window is left to the caller's error state instead of reloading again.
   const LOOPBACK_REFUSED_HEADER = 'X-SPL-Loopback-Refused';
   const LOOPBACK_RELOAD_STAMP_KEY = 'solstone.loopbackRefusedReloadAt';
-  const LOOPBACK_RELOAD_WINDOW_MS = 10000;
 
   function isLoopbackRefusal(response) {
     return response?.status === 403
@@ -213,19 +233,40 @@
   }
 
   function recoverFromLoopbackRefusal() {
-    const now = Date.now();
+    return reloadOnce(LOOPBACK_RELOAD_STAMP_KEY);
+  }
+
+  // Code and styles are served under a hash of the build that made them, and
+  // the journal serves only its own build's hashes. A page from an older build
+  // that asks for one after an upgrade gets a 404, so it reloads once to pick
+  // up the new build's page.
+  const STALE_ASSET_RELOAD_STAMP_KEY = 'solstone.staleAssetReloadAt';
+  const HASHED_ASSET_PATH = /^\/(?:static\/(?:vendor\/[^/]+\/)?|app\/[^/]+\/static\/)[0-9a-f]{16}\//;
+
+  function isHashedAssetUrl(value) {
     try {
-      const last = Number(window.sessionStorage.getItem(LOOPBACK_RELOAD_STAMP_KEY)) || 0;
-      if (last > 0 && now - last < LOOPBACK_RELOAD_WINDOW_MS) {
-        return false;
-      }
-      window.sessionStorage.setItem(LOOPBACK_RELOAD_STAMP_KEY, String(now));
+      const url = new URL(value, window.location.href);
+      return url.origin === window.location.origin && HASHED_ASSET_PATH.test(url.pathname);
     } catch (_) {
-      // Without a stamp a reload could repeat forever; stay on the error state.
       return false;
     }
-    window.location.reload();
-    return true;
+  }
+
+  function recoverFromStaleAsset(value) {
+    if (!isHashedAssetUrl(value)) {
+      return false;
+    }
+    return reloadOnce(STALE_ASSET_RELOAD_STAMP_KEY);
+  }
+
+  // Shell scripts and styles that fail after this file has run.
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('error', (event) => {
+      const target = event?.target;
+      if (!target || target === window) return;
+      const url = target.tagName === 'LINK' ? target.href : target.src;
+      if (url) recoverFromStaleAsset(url);
+    }, true);
   }
 
   async function apiJson(url, opts) {
@@ -385,5 +426,6 @@
   window.apiJson = apiJson;
   window.isLoopbackRefusal = isLoopbackRefusal;
   window.recoverFromLoopbackRefusal = recoverFromLoopbackRefusal;
+  window.recoverFromStaleAsset = recoverFromStaleAsset;
   window.saveControl = saveControl;
 })();

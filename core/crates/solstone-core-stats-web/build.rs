@@ -12,6 +12,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+include!("../../build-support/convey_asset_records.rs");
+
 fn main() {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let static_root = manifest.join("assets/static");
@@ -52,4 +54,9 @@ fn main() {
     output
         .write_all(generated.as_bytes())
         .expect("generated stats asset source writes");
+    // What this crate serves to the dashboard, for the shell to hash and rewrite.
+    AssetRecords::new()
+        .file("/app/stats/workspace", "assets/workspace.html")
+        .tree("/app/stats/static", "assets/static", &[])
+        .emit();
 }

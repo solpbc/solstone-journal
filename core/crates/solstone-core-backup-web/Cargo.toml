@@ -5,6 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
+# Hands the dashboard shell's build script this crate's served asset list.
+links = "solstone_convey_assets_backup_web"
 
 # std::env::set_var is unsafe. The fallback-plant tests are the only callers,
 # and each one carries its own allow.

@@ -422,11 +422,11 @@ mod tests {
             headers.get(header::CONTENT_TYPE).unwrap(),
             "text/html; charset=utf-8"
         );
-        assert_eq!(body, include_bytes!("../assets/static/shell.html"));
+        assert_eq!(body, crate::assets::served_bytes("/static/shell.html"));
 
         let (status, _, body) = call(app.clone(), "GET", "/app/more/workspace", None, b"").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, include_bytes!("../assets/more/workspace.html"));
+        assert_eq!(body, crate::assets::served_bytes("/app/more/workspace"));
 
         let (status, _, _) = call(app.clone(), "GET", "/app/more/static/more.js", None, b"").await;
         assert_eq!(status, StatusCode::OK);
@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             workspace_body,
-            include_bytes!("../assets/more/workspace.html")
+            crate::assets::served_bytes("/app/more/workspace")
         );
         let html = std::str::from_utf8(&workspace_body).expect("utf-8 workspace html");
         let mut script_sources = Vec::new();

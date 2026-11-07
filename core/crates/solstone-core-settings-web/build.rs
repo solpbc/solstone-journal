@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+include!("../../build-support/convey_asset_records.rs");
+
 fn read_json(path: &Path) -> Value {
     let source = fs::read_to_string(path).unwrap_or_else(|error| {
         panic!(
@@ -85,4 +87,20 @@ fn main() {
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
+    // What this crate serves to the dashboard, for the shell to hash and rewrite.
+    // The JSON files are compiled into the crate, never served.
+    AssetRecords::new()
+        .file("/app/settings/workspace", "assets/workspace.html")
+        .tree(
+            "/app/settings/static",
+            "assets",
+            &[
+                "workspace.html",
+                "backup_copy.json",
+                "copy.json",
+                "default_activities.json",
+                "install_copy.json",
+            ],
+        )
+        .emit();
 }

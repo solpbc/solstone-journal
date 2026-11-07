@@ -50,11 +50,12 @@ mod tests {
             )
             .await
             .expect("response");
+        // Through the composed dashboard, references point at this build's hashed paths.
         assert_eq!(
             to_bytes(workspace.into_body(), usize::MAX)
                 .await
                 .expect("body"),
-            WORKSPACE
+            solstone_core_convey_shell::assets::served_from_source(WORKSPACE)
         );
         let settings_js = router
             .oneshot(

@@ -121,6 +121,7 @@ use solstone_core_thinking::confidential::OperationRegistry;
 
 #[cfg(feature = "host")]
 mod agents_enable;
+mod asset_cache;
 #[cfg(test)]
 mod asset_references;
 pub mod assets;
@@ -1862,11 +1863,14 @@ fn router_with_roots(
         .layer(Extension(route_journal_root))
         .layer(Extension(agents_consent_cancel))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
+    // Each hashed asset path answers through these same routes, inside the gates.
+    let routes = routes.clone().merge(asset_cache::hashed_routes(routes));
     let routes =
         session_gate::apply_layer_with_owner(routes, journal_root, include_agents, target_use);
     form_body_guard::apply_layer(routes)
         .fallback(not_found)
         .layer(axum::middleware::from_fn(timing::measure))
+        .layer(axum::middleware::from_fn(asset_cache::apply))
 }
 
 pub(crate) fn asset_response(path: &str) -> Response {

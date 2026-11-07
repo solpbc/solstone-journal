@@ -60,7 +60,12 @@
         clone.addEventListener('load', () => resolve(), { once: true });
         clone.addEventListener(
           'error',
-          () => reject(new Error(`Failed to load script ${clone.src}`)),
+          () => {
+            // A view script from an older build: reload once for the new one.
+            // A second failure stays on this view's error state.
+            window.recoverFromStaleAsset?.(clone.src);
+            reject(new Error(`Failed to load script ${clone.src}`));
+          },
           { once: true }
         );
         script.replaceWith(clone);

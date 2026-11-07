@@ -278,7 +278,10 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn ac5_import_shell_matches_real_shell_bytes_in_established_phases() {
-        let shell = include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html");
+        let shell = solstone_core_convey_shell::assets::served_from_source(include_bytes!(
+            "../../solstone-core-convey-shell/assets/static/shell.html"
+        ));
+        let shell = shell.as_slice();
         for phase in ["empty", "populated"] {
             let root = phase_root(phase);
             let (status, content_type, _, body) =

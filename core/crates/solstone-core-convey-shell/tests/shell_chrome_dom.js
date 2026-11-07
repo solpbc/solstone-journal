@@ -152,6 +152,12 @@ class Element {
     this.tagName = tagName.toUpperCase();
     this.ownerDocument = ownerDocument;
     this.attributes = {};
+    // Iterable like a NamedNodeMap, without adding an enumerable key.
+    Object.defineProperty(this.attributes, Symbol.iterator, {
+      value: function* attributes() {
+        for (const [name, value] of Object.entries(this)) yield { name, value };
+      },
+    });
     this.children = [];
     this.parentElement = null;
     this.listeners = {};
@@ -279,6 +285,13 @@ class Element {
   removeChild(child) {
     this.children = this.children.filter((item) => item !== child);
     child.parentElement = null;
+  }
+
+  replaceWith(other) {
+    const parent = this.parentElement;
+    if (!parent) return;
+    parent.insertBefore(other, this);
+    parent.removeChild(this);
   }
 
   contains(candidate) {
@@ -493,7 +506,9 @@ function createHarness(options = {}) {
     origin: 'http://localhost',
     pathname: options.pathname || '/app/home/',
     assigned: null,
+    reloads: 0,
     assign(url) { this.assigned = url; },
+    reload() { this.reloads += 1; },
   };
   const window = {
     document,
@@ -582,6 +597,11 @@ function createHarness(options = {}) {
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
   const surfaceStub = window.SurfaceState;
   const servicesStub = window.AppServices;
+  if (options.api) {
+    const stubApiJson = window.apiJson;
+    vm.runInContext(read('api.js'), context, { filename: 'api.js' });
+    window.apiJson = stubApiJson;
+  }
   vm.runInContext(read('convey_icons.js'), context, { filename: 'convey_icons.js' });
   vm.runInContext(read('app.js'), context, { filename: 'app.js' });
   if (options.boot) {
@@ -1759,6 +1779,80 @@ asyncCase('a redirected fragment is followed as a page, never mounted', async ()
   assert.strictEqual(h.window.location.href, 'http://localhost/init');
   if (target) assert.strictEqual(target.innerHTML, before, 'the setup page is not mounted as the view');
   assert.strictEqual(h.marks.filter(entry => entry.name === 'view:ready').length, 0);
+});
+
+// A page from an older build asks for a hashed path the upgraded journal no
+// longer serves; it reloads once, and a second failure stays on the error state.
+const STALE = '/static/0123456789abcdef/app.js';
+
+function staleHarness(storage) {
+  const h = createHarness({ boot: true, api: true, sessionStorage: storage, fetchResponses: {
+    '/app/home/workspace': { status: 200, body: `<section></section><script src="${STALE}"></script>` },
+  }});
+  const create = h.document.createElement.bind(h.document);
+  h.document.createElement = (tagName) => {
+    const element = create(tagName);
+    if (element.tagName === 'SCRIPT') {
+      Object.defineProperty(element, 'src', { get() { return this.getAttribute('src') || ''; } });
+    }
+    return element;
+  };
+  const mount = async () => {
+    const mounted = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' }).catch(() => {});
+    await new Promise((resolve) => setImmediate(resolve));
+    const script = h.document.getElementById('main-content').querySelector('script');
+    assert.ok(script && script.src === STALE, 'the hashed view script is inserted');
+    script.dispatchEvent({ type: 'error' });
+    await mounted;
+  };
+  return { h, mount };
+}
+
+asyncCase('stale build asset: one reload, then the view error state, never a loop', async () => {
+  const storage = mapStorage();
+  const { h, mount } = staleHarness(storage);
+  await mount();
+  assert.strictEqual(h.window.location.reloads, 1, 'the first failure reloads');
+  assert.ok(storage.values.has('solstone.staleAssetReloadAt'));
+  const errorsBefore = h.surfaceCalls.filter((call) => call.kind === 'error').length;
+  await mount();
+  assert.strictEqual(h.window.location.reloads, 1, 'a second failure inside the window does not reload');
+  assert.strictEqual(
+    h.surfaceCalls.filter((call) => call.kind === 'error').length, errorsBefore + 1,
+    'the second failure shows the view error state',
+  );
+  const ready = h.marks.filter((entry) => entry.name === 'view:ready');
+  assert.strictEqual(ready[ready.length - 1].detail.state, 'error');
+});
+
+asyncCase('stale build asset: without session storage it never reloads', async () => {
+  const throwing = {
+    getItem() { throw new Error('blocked'); },
+    setItem() { throw new Error('blocked'); },
+    removeItem() { throw new Error('blocked'); },
+  };
+  const { h, mount } = staleHarness(throwing);
+  await mount();
+  assert.strictEqual(h.window.location.reloads, 0);
+  assert.strictEqual(h.surfaceCalls.filter((call) => call.kind === 'error').length, 1);
+});
+
+testCase('stale build asset: only this origin\'s hashed paths reload', () => {
+  const storage = mapStorage();
+  const h = createHarness({ api: true, sessionStorage: storage });
+  for (const url of [
+    '/static/app.js',
+    '/app/home/static/home.js',
+    '/static/0123456789ABCDEF/app.js',
+    'https://elsewhere.example/static/0123456789abcdef/app.js',
+  ]) {
+    assert.strictEqual(h.window.recoverFromStaleAsset(url), false, url);
+  }
+  assert.strictEqual(h.window.location.reloads, 0);
+  h.window.dispatchEvent({ type: 'error', target: { tagName: 'LINK', href: 'http://localhost/static/vendor/leaflet/0123456789abcdef/leaflet.css' } });
+  assert.strictEqual(h.window.location.reloads, 1, 'a failed hashed stylesheet reloads');
+  h.window.dispatchEvent({ type: 'error', target: { tagName: 'SCRIPT', src: 'http://localhost/app/home/static/0123456789abcdef/home.js' } });
+  assert.strictEqual(h.window.location.reloads, 1, 'once per window');
 });
 
 function mapStorage(seed = {}) {

@@ -335,7 +335,11 @@ mod tests {
             let response = get(router.clone(), path).await;
             assert_eq!(response.0, StatusCode::OK, "{path}");
             assert_eq!(response.1, content_type, "{path}");
-            assert_eq!(response.3, expected_body, "{path}");
+            assert_eq!(
+                response.3,
+                solstone_core_convey_shell::assets::served_from_source(expected_body),
+                "{path}"
+            );
         }
 
         let unestablished = TempDir::new().expect("temporary journal");
