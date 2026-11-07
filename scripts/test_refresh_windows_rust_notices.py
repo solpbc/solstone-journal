@@ -1299,5 +1299,42 @@ class NoticesRendering(unittest.TestCase):
             refresh.render_notices({"0" * 64: b"text"})
 
 
+class NoticeClosureCheckTest(unittest.TestCase):
+    noticed = f"regex@1.0.0 ({SOURCE})"
+    outside = f"serde@1.0.0 ({SOURCE})"
+    git_noticed = "pin@1.0.0 (git+https://example.test/pin?tag=v1#aaa)"
+
+    def index(self):
+        return {
+            "packages": [
+                {"identity": self.noticed, "windows_notice_population": True},
+                {"identity": self.outside, "windows_notice_population": False},
+                {"identity": self.git_noticed, "windows_notice_population": True},
+            ]
+        }
+
+    def test_an_edge_reaching_a_package_outside_the_notices_is_named(self):
+        self.assertEqual(
+            refresh.uncovered_notice_closure(self.index(), {self.noticed, self.outside}),
+            [self.outside],
+        )
+
+    def test_a_closure_inside_the_notices_passes_and_may_shrink(self):
+        self.assertEqual(refresh.uncovered_notice_closure(self.index(), {self.noticed}), [])
+
+    def test_a_package_absent_from_the_index_is_named(self):
+        unknown = f"new@1.0.0 ({SOURCE})"
+        self.assertEqual(refresh.uncovered_notice_closure(self.index(), {unknown}), [unknown])
+
+    def test_a_git_pin_compares_without_its_revision(self):
+        moved = "pin@1.0.0 (git+https://example.test/pin?tag=v2#bbb)"
+        self.assertEqual(refresh.uncovered_notice_closure(self.index(), {moved}), [])
+
+    def test_the_check_needs_no_prior_archive(self):
+        with patch.object(refresh, "check_notice_closure", return_value=0) as check:
+            self.assertEqual(refresh.main(["--check-closure"]), 0)
+        check.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

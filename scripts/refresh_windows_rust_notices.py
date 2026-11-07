@@ -941,6 +941,38 @@ def require_explained_notice_closure(
     return frozenset(gained)
 
 
+def uncovered_notice_closure(index: dict[str, Any], closure: set[str]) -> list[str]:
+    """What the current Windows notice closure reaches and the index doesn't mark as noticed."""
+    covered = {
+        normalize_identity(row["identity"])
+        for row in index["packages"]
+        if row["windows_notice_population"] is True
+    }
+    return sorted({normalize_identity(identity) for identity in closure} - covered)
+
+
+def check_notice_closure(repo: Path) -> int:
+    """Refuse a cut whose dependency edges reach a package the notices don't cover.
+
+    `population.source_sha256` binds which external packages the lock holds, not
+    which of them Windows reaches, so an edge to a package already in the lock
+    moves no digest. A cut with no refresh never reaches
+    `require_explained_notice_closure`, so this asks the same question directly.
+    A package leaving the closure stays noticed, which is the conservative side.
+    """
+    closure = selected_external_identities(query_cargo_metadata(repo), windows_roots(repo))
+    uncovered = uncovered_notice_closure(load_index(repo), closure)
+    if uncovered:
+        print(
+            f"the Windows notice closure reaches package(s) the notices don't cover: {uncovered}. "
+            "Review each licence, then refresh with --admit-closure-promotion NAME@VERSION.",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"Windows notice closure covered: {len(closure)} external packages")
+    return 0
+
+
 def advance_git_index_rows(
     index: dict[str, Any], moved_git: list[tuple[dict[str, Any], dict[str, Any]]]
 ) -> None:
@@ -2545,9 +2577,16 @@ def main(argv: list[str] | None = None) -> int:
         help="solstone-journal checkout root (default: this script's own checkout)",
     )
     parser.add_argument(
+        "--check-closure",
+        action="store_true",
+        help=(
+            "write nothing: refuse if the Windows notice closure reaches a package "
+            "the committed index doesn't mark as noticed"
+        ),
+    )
+    parser.add_argument(
         "--prior-archive",
         type=Path,
-        required=True,
         help="path to the currently-committed dependency_source_companion .tar.gz",
     )
     parser.add_argument(
@@ -2614,6 +2653,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     repo = args.repo.resolve()
+    if args.check_closure:
+        try:
+            return check_notice_closure(repo)
+        except RefreshError as error:
+            print(f"closure check refused: {error}", file=sys.stderr)
+            return 1
+    if args.prior_archive is None:
+        parser.error("--prior-archive is required unless --check-closure is given")
     out_dir = (
         args.out.resolve()
         if args.out
