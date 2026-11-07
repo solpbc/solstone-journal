@@ -1785,9 +1785,10 @@ asyncCase('a redirected fragment is followed as a page, never mounted', async ()
 // longer serves; it reloads once, and a second failure stays on the error state.
 const STALE = '/static/0123456789abcdef/app.js';
 
-function staleHarness(storage) {
+function staleHarness(storage, staleAnswer = { status: 404 }) {
   const h = createHarness({ boot: true, api: true, sessionStorage: storage, fetchResponses: {
     '/app/home/workspace': { status: 200, body: `<section></section><script src="${STALE}"></script>` },
+    ...(staleAnswer ? { [STALE]: staleAnswer } : {}),
   }});
   const create = h.document.createElement.bind(h.document);
   h.document.createElement = (tagName) => {
@@ -1799,11 +1800,12 @@ function staleHarness(storage) {
   };
   const mount = async () => {
     const mounted = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' }).catch(() => {});
-    await new Promise((resolve) => setImmediate(resolve));
+    await settle();
     const script = h.document.getElementById('main-content').querySelector('script');
     assert.ok(script && script.src === STALE, 'the hashed view script is inserted');
     script.dispatchEvent({ type: 'error' });
     await mounted;
+    for (let i = 0; i < 5; i += 1) await settle();
   };
   return { h, mount };
 }
@@ -1837,21 +1839,39 @@ asyncCase('stale build asset: without session storage it never reloads', async (
   assert.strictEqual(h.surfaceCalls.filter((call) => call.kind === 'error').length, 1);
 });
 
-testCase('stale build asset: only this origin\'s hashed paths reload', () => {
-  const storage = mapStorage();
-  const h = createHarness({ api: true, sessionStorage: storage });
+asyncCase('stale build asset: a journal that does not answer is waited for, not reloaded', async () => {
+  for (const answer of [null, { status: 200 }, { status: 502 }]) {
+    const { h, mount } = staleHarness(mapStorage(), answer);
+    await mount();
+    assert.strictEqual(h.window.location.reloads, 0, JSON.stringify(answer));
+    assert.strictEqual(h.surfaceCalls.filter((call) => call.kind === 'error').length, 1);
+  }
+});
+
+asyncCase('stale build asset: only this origin\'s hashed scripts and styles reload', async () => {
+  const leaflet = 'http://localhost/static/vendor/leaflet/0123456789abcdef/leaflet.css';
+  const home = 'http://localhost/app/home/static/0123456789abcdef/home.js';
+  const mark = 'http://localhost/static/0123456789abcdef/sol-status/mark-offline.svg';
+  const h = createHarness({ api: true, sessionStorage: mapStorage(), fetchResponses: {
+    [leaflet]: { status: 404 }, [home]: { status: 404 }, [mark]: { status: 404 },
+  }});
   for (const url of [
     '/static/app.js',
     '/app/home/static/home.js',
     '/static/0123456789ABCDEF/app.js',
     'https://elsewhere.example/static/0123456789abcdef/app.js',
   ]) {
-    assert.strictEqual(h.window.recoverFromStaleAsset(url), false, url);
+    assert.strictEqual(await h.window.recoverFromStaleAsset(url), false, url);
   }
-  assert.strictEqual(h.window.location.reloads, 0);
-  h.window.dispatchEvent({ type: 'error', target: { tagName: 'LINK', href: 'http://localhost/static/vendor/leaflet/0123456789abcdef/leaflet.css' } });
-  assert.strictEqual(h.window.location.reloads, 1, 'a failed hashed stylesheet reloads');
-  h.window.dispatchEvent({ type: 'error', target: { tagName: 'SCRIPT', src: 'http://localhost/app/home/static/0123456789abcdef/home.js' } });
+  h.window.dispatchEvent({ type: 'error', target: { tagName: 'IMG', src: mark } });
+  await settle();
+  assert.strictEqual(h.window.location.reloads, 0, 'a missing picture never reloads');
+  assert.ok(!h.fetchCalls.includes(mark), 'nor asks about it');
+  h.window.dispatchEvent({ type: 'error', target: { tagName: 'LINK', href: leaflet } });
+  await settle(); await settle();
+  assert.strictEqual(h.window.location.reloads, 1, 'a hashed stylesheet the journal no longer has reloads');
+  h.window.dispatchEvent({ type: 'error', target: { tagName: 'SCRIPT', src: home } });
+  await settle(); await settle();
   assert.strictEqual(h.window.location.reloads, 1, 'once per window');
 });
 

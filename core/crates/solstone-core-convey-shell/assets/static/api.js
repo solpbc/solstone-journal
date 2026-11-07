@@ -239,7 +239,9 @@
   // Code and styles are served under a hash of the build that made them, and
   // the journal serves only its own build's hashes. A page from an older build
   // that asks for one after an upgrade gets a 404, so it reloads once to pick
-  // up the new build's page.
+  // up the new build's page. It reloads only on that answer: a journal that is
+  // restarting or out of reach answers nothing, and the page waits for it
+  // rather than reloading onto nothing.
   const STALE_ASSET_RELOAD_STAMP_KEY = 'solstone.staleAssetReloadAt';
   const HASHED_ASSET_PATH = /^\/(?:static\/(?:vendor\/[^/]+\/)?|app\/[^/]+\/static\/)[0-9a-f]{16}\//;
 
@@ -252,19 +254,30 @@
     }
   }
 
-  function recoverFromStaleAsset(value) {
+  async function recoverFromStaleAsset(value) {
     if (!isHashedAssetUrl(value)) {
+      return false;
+    }
+    let response;
+    try {
+      response = await fetch(value, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' });
+    } catch (_) {
+      return false;
+    }
+    if (response?.status !== 404) {
       return false;
     }
     return reloadOnce(STALE_ASSET_RELOAD_STAMP_KEY);
   }
 
-  // Shell scripts and styles that fail after this file has run.
+  // Shell scripts and stylesheets that fail after this file has run. Images
+  // are left alone: a missing picture never warrants reloading the page.
   if (typeof window.addEventListener === 'function') {
     window.addEventListener('error', (event) => {
       const target = event?.target;
       if (!target || target === window) return;
-      const url = target.tagName === 'LINK' ? target.href : target.src;
+      const url = target.tagName === 'SCRIPT' ? target.src
+        : (target.tagName === 'LINK' ? target.href : '');
       if (url) recoverFromStaleAsset(url);
     }, true);
   }
