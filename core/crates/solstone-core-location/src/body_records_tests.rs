@@ -1019,3 +1019,181 @@ fn a_line_takes_the_owners_title_says_logged_crosses_midnight_and_a_removed_star
     assert_eq!(partial["part_removed"], true);
     assert_eq!(partial["distance"], serde_json::Value::Null);
 }
+
+/// A watch's run with no distance beside an app's with one: the line says the
+/// app's. With no distance anywhere it says none, and never another value. A
+/// logged account beside a recorded one isn't "which you logged".
+#[test]
+fn a_line_takes_the_first_distance_any_account_says_and_logged_only_when_every_one_was() {
+    let journal = journal();
+    let root = journal.path();
+    let mut watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    watch
+        .values
+        .insert("energy".to_owned(), "512 kcal".to_owned());
+    let mut app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    app.values
+        .insert("distance".to_owned(), "5.1 km".to_owned());
+    app.fields
+        .insert("metadata".to_owned(), json!({"HKWasUserEntered": "1"}));
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    let app_window = window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    arrived_record(root, DAY, &watch, Some(DAY), json!({}));
+    arrived_record(root, DAY, &app, Some(DAY), json!({}));
+    let line = &lines_on(root, DAY)[0];
+    assert_eq!(line["distance"], "5.1 km", "{line}");
+    assert_eq!(line["logged"], false, "{line}");
+    assert_eq!(
+        line["from"],
+        json!(["Synthetic Watch", "Synthetic App"]),
+        "{line}"
+    );
+    assert!(!line.to_string().contains("kcal"), "{line}");
+    // No account says a distance: the line says none, not the energy.
+    app.values.clear();
+    fs::write(app_window.join(BODY_RECORDS_FILE), encode_rows(&[app])).unwrap();
+    let line = &lines_on(root, DAY)[0];
+    assert_eq!(line["distance"], serde_json::Value::Null, "{line}");
+    assert!(!line.to_string().contains("kcal"), "{line}");
+}
+
+/// A window refiled to a muted facet is muted, wherever its record is filed.
+#[test]
+fn the_home_leaves_out_a_window_refiled_to_a_muted_facet() {
+    let journal = journal_fixture_with_live_night();
+    let root = journal.path();
+    let quiet = root.join("facets/quiet");
+    fs::create_dir_all(&quiet).unwrap();
+    fs::write(
+        quiet.join("facet.json"),
+        r#"{"title":"Quiet","muted":true}"#,
+    )
+    .unwrap();
+    let start = root
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join("220000_3600");
+    fs::create_dir_all(start.join("talents")).unwrap();
+    fs::write(
+        start.join("talents/facets.json"),
+        json!([{"facet": "quiet"}]).to_string(),
+    )
+    .unwrap();
+    assert!(day_ids(root, DAY).is_empty());
+    // Unmuted, it shows again.
+    fs::write(quiet.join("facet.json"), r#"{"title":"Quiet"}"#).unwrap();
+    assert_eq!(day_ids(root, DAY), [vec!["body_n1"]]);
+}
+
+/// Two deleted windows cover a start, one by the owner and one not. A
+/// tombstone doesn't name its rows, so it reads removed, in either order.
+#[test]
+fn removed_by_you_only_when_every_deleted_window_over_the_start_was_the_owners() {
+    for (hour, short, expected) in [
+        ("owner_segment_delete", "retention_policy", Account::Removed),
+        ("retention_policy", "owner_segment_delete", Account::Removed),
+        (
+            "owner_segment_delete",
+            "owner_segment_delete",
+            Account::RemovedByYou,
+        ),
+    ] {
+        let journal = journal();
+        let root = journal.path();
+        let hour_window = window(root, DAY, "220000_3600", &[night()]);
+        let short_window = window(root, DAY, "221000_300", &[night()]);
+        record(root, json!({}));
+        delete_for(&hour_window, hour);
+        delete_for(&short_window, short);
+        assert_eq!(composed(root)[0].account, expected, "{hour} {short}");
+    }
+}
+
+/// A group whose member that isn't its anchor is hidden shows no line.
+#[test]
+fn the_home_leaves_out_a_group_whose_other_member_is_hidden() {
+    let journal = journal();
+    let root = journal.path();
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    let app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    arrived_record(root, DAY, &watch, Some(DAY), json!({}));
+    arrived_record(root, DAY, &app, Some(DAY), json!({}));
+    let faces = day_faces(root, DAY).unwrap();
+    assert_eq!(faces.len(), 1);
+    let other = if faces[0].anchor.id == "body_w" {
+        "body_x"
+    } else {
+        "body_w"
+    };
+    let path = root.join(format!("facets/body/activities/{DAY}.jsonl"));
+    let text = fs::read_to_string(&path).unwrap().replace(
+        &format!("\"id\":\"{other}\""),
+        &format!("\"id\":\"{other}\",\"hidden\":true"),
+    );
+    fs::write(&path, text).unwrap();
+    assert!(day_ids(root, DAY).is_empty());
+}
+
+/// A window the home can't read costs the section: no line is guessed.
+#[test]
+fn the_home_reads_no_lines_when_a_window_cant_be_read() {
+    let journal = journal_fixture_with_live_night();
+    let root = journal.path();
+    let start = root
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join("220000_3600");
+    fs::write(start.join(BODY_RECORDS_FILE), "not json\n").unwrap();
+    assert!(day_lines(root, DAY).is_err());
+}
+
+/// The home's clock is the owner's: a workout an import placed on the next day
+/// by its own zone is the owner's evening, and its times are said in the
+/// owner's zone, not the source's offset.
+#[test]
+fn the_home_says_a_line_on_the_owners_day_and_clock() {
+    let journal = journal();
+    let root = journal.path();
+    fs::write(
+        root.join("imports/.apple_health-zone.json"),
+        r#"{"zone":"Europe/Lisbon"}"#,
+    )
+    .unwrap();
+    let late = workout_row(
+        "l",
+        "Synthetic Watch",
+        "2026-10-11 02:00:00 +0100",
+        "2026-10-11 02:30:00 +0100",
+    );
+    window(root, NEXT, "020000_3600", std::slice::from_ref(&late));
+    arrived_record(root, NEXT, &late, Some(NEXT), json!({}));
+    assert!(day_ids(root, NEXT).is_empty());
+    let lines = lines_on(root, DAY);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0]["start"], at("19:00", None));
+    assert_eq!(lines[0]["end"], at("19:30", None));
+}

@@ -290,14 +290,20 @@ fn locate(
     {
         return (Some(window.name.clone()), Account::Unreadable);
     }
-    let deleted = covering.iter().find_map(|window| match window.held {
-        Held::Deleted { by_owner } => Some((window.name.clone(), by_owner)),
-        _ => None,
-    });
+    let deleted = covering
+        .iter()
+        .filter_map(|window| match window.held {
+            Held::Deleted { by_owner } => Some((window.name.clone(), by_owner)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let first = covering.first().map(|window| window.name.clone());
-    let Some((name, by_owner)) = deleted else {
+    let Some((name, _)) = deleted.first().cloned() else {
         return (first, Account::NotFound);
     };
+    // A tombstone doesn't name its rows: the owner removed it only if every
+    // deleted window that covers it says so.
+    let by_owner = deleted.iter().all(|(_, by_owner)| *by_owner);
     // Deleted: say so only when no tile of the span survives, and nothing that
     // can't be read might hold one.
     let end = parse_source_time(end);
@@ -1008,12 +1014,32 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
         .map_err(|error| ComposeError(error.to_string()))?;
     let facets = solstone_core_facets::list_declared_facet_names(journal)
         .map_err(|error| ComposeError(error.to_string()))?;
-    let mut faces = Vec::new();
-    for facet in facets {
-        let muted = solstone_core_facets::observe_facet_declaration(journal, &facet)
+    let mut muted = BTreeSet::new();
+    for facet in &facets {
+        if solstone_core_facets::observe_facet_declaration(journal, facet)
             .map_err(|error| ComposeError(error.to_string()))?
-            .is_some_and(|declaration| declaration.muted == Some(true));
-        if muted {
+            .is_some_and(|declaration| declaration.muted == Some(true))
+        {
+            muted.insert(facet.clone());
+        }
+    }
+    // A window refiled to a muted facet is muted too, wherever its record is filed.
+    let in_muted_window = |member: &ComposedBody| {
+        member.window.as_ref().is_some_and(|window| {
+            solstone_core_indexer_store::classification::read_segment_facet_assignments(
+                journal,
+                &format!(
+                    "{}/{}/{window}/{BODY_RECORDS_FILE}",
+                    member.day, member.stream
+                ),
+            )
+            .iter()
+            .any(|facet| muted.contains(facet))
+        })
+    };
+    let mut faces = Vec::new();
+    for facet in &facets {
+        if muted.contains(facet) {
             continue;
         }
         let mut records = Vec::new();
@@ -1021,7 +1047,7 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
             let on = (date + chrono::Duration::days(offset))
                 .format("%Y%m%d")
                 .to_string();
-            records.extend(stored_body_records(journal, &facet, &on)?);
+            records.extend(stored_body_records(journal, facet, &on)?);
         }
         let mut windows = Windows::default();
         for group in group_partition(&records) {
@@ -1052,6 +1078,9 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
                 .any(|member| matches!(member.account, Account::Unreadable))
             {
                 return Err(ComposeError("a body window couldn't be read".to_owned()));
+            }
+            if members.iter().any(in_muted_window) {
+                continue;
             }
             if !members.iter().any(|member| member.still_there()) {
                 continue;
@@ -1137,8 +1166,15 @@ pub fn face_line(face: &Face, zone: Tz, day: &str) -> Option<Value> {
             }
         }
     }
+    // The first whole account that says one: a part-removed account's value
+    // was for a span the line no longer shows.
     let distance = (!partial)
-        .then(|| first.values.get(LINE_VALUE).cloned())
+        .then(|| {
+            there
+                .iter()
+                .filter(|(_, partial)| !partial)
+                .find_map(|(row, _)| row.values.get(LINE_VALUE).cloned())
+        })
         .flatten();
     Some(serde_json::json!({
         "name": name,
