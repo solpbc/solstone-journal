@@ -404,7 +404,7 @@ mod tests {
 #[cfg(all(test, feature = "full-tests"))]
 mod socket_tests {
     use super::*;
-    use crate::{GENERATION_ENV, fresh_generation};
+    use crate::fresh_generation;
     #[test]
     fn stale_socket_is_reclaimed_and_live_socket_is_never_replaced() {
         let dir = tempfile::tempdir().unwrap();
