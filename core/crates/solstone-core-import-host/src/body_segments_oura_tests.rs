@@ -1937,3 +1937,22 @@ fn the_lookup_reaches_one_day_either_side_and_no_further() {
 
 #[path = "body_segments_fetch_tests.rs"]
 mod fetch;
+
+#[test]
+fn a_plain_file_among_the_facets_stops_no_oura_run_and_its_records_are_written() {
+    let journal = journal();
+    let root = journal.path();
+    // A facet tool keeps its candidates in a file beside the facet folders.
+    fs::write(root.join("facets/review-candidates.jsonl"), "{}\n").unwrap();
+    let first = run(root, &fixture(), "20261104_120000", Some("health"));
+    assert!(first.published > 10, "{}", first.summary);
+    assert!(
+        root.join("facets/health/activities/20260102.jsonl")
+            .is_file(),
+        "{}",
+        first.summary
+    );
+    // And a revision, which looks up records on its days, runs through as well.
+    let again = run(root, &fixture(), "20261104_120001", Some("health"));
+    assert_eq!(again.published, 0, "{}", again.summary);
+}

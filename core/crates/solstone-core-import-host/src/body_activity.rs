@@ -95,6 +95,11 @@ fn recorded_keys(
         return Ok(keys);
     };
     for facet in facets.flatten() {
+        // A facet is a folder; a plain file beside them (a facet tool's list of
+        // candidates, say) holds no records.
+        if !facet.path().is_dir() {
+            continue;
+        }
         let path = facet.path().join("activities").join(format!("{day}.jsonl"));
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,

@@ -344,3 +344,26 @@ fn a_day_file_that_cant_be_read_writes_nothing_that_day() {
     assert_eq!(counts.refused[0].0, "body");
     assert!(rows(root, "other").is_empty());
 }
+
+#[test]
+fn a_plain_file_among_the_facets_is_no_facet_and_refuses_nothing() {
+    let journal = journal();
+    let root = journal.path();
+    // A facet tool keeps its candidates in a file beside the facet folders.
+    fs::write(root.join("facets/review-candidates.jsonl"), "{}\n").unwrap();
+    window(
+        root,
+        "080000_3600",
+        Some("body"),
+        &[experience(
+            "w1",
+            "workout",
+            "2026-10-10 08:00:00 -0600",
+            "2026-10-10 08:40:00 -0600",
+        )],
+    );
+    let counts = write_records(root, &APPLE, DAY);
+    assert!(counts.refused.is_empty(), "{:?}", counts.refused);
+    assert_eq!(counts.written, 1);
+    assert_eq!(write_records(root, &APPLE, DAY), RecordCounts::default());
+}
