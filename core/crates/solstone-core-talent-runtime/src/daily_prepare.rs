@@ -98,7 +98,6 @@ pub fn freeze(
         }
     };
     attach_daily_location(&mut prepared, &mut state, context, &hook)?;
-    attach_daily_body(&mut prepared, context, &hook);
     prepared.config.remove("_briefing_inclusion");
     Ok(
         json!({"version":1,"prepared":{"name":prepared.name,"config":prepared.config},"hook":hook,"state":state}),
@@ -112,42 +111,6 @@ thread_local! {
 
 const LOCATION_PART_BYTE_CAP: usize = 16384;
 const LOCATION_CAVEAT: &str = "These words do not establish someone else's presence and do not establish a future commitment.";
-
-/// Body facts go last and yield first: the block goes in only when it fits
-/// whole in the room every other part leaves. Its fingerprint is stored either
-/// way, taken before this decision, so freshness never re-runs the budget.
-fn attach_daily_body(prepared: &mut PreparedTalent, context: &ExecutionContext, hook: &str) {
-    use solstone_core_local::generate::compute_input_budget;
-    let Some(day) = prepared
-        .config
-        .get("day")
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-    else {
-        return;
-    };
-    let block = crate::daily_body::body_block(&context.journal, hook, &day);
-    let max_output_tokens = prepared
-        .config
-        .get("max_output_tokens")
-        .and_then(Value::as_u64)
-        .and_then(|tokens| u32::try_from(tokens).ok())
-        .unwrap_or(0);
-    let budget = compute_input_budget(
-        max_output_tokens,
-        solstone_core_local::plan::LOCAL_MIN_CONTEXT_TOKENS,
-    );
-    let used = crate::model_text_parts(&prepared.config)
-        .iter()
-        .fold(0u32, |total, text| {
-            total.saturating_add(solstone_core_tokens::count(text))
-        });
-    crate::daily_body::attach(
-        &mut prepared.config,
-        &block,
-        Some(budget.saturating_sub(used)),
-    );
-}
 
 fn attach_daily_location(
     prepared: &mut PreparedTalent,
@@ -2384,8 +2347,6 @@ mod tests {
         );
     }
 
-    /// The morning briefing's frozen request for `LOCATION_DAY` on a journal
-    /// built as `location_journal` builds it.
     fn briefing_request(root: &std::path::Path) -> (Vec<String>, serde_json::Map<String, Value>) {
         let cfg_path = root.join("config/journal.json");
         let mut cfg: Value =
@@ -2428,14 +2389,14 @@ mod tests {
     }
 
     #[test]
-    fn a_day_with_no_body_facts_prompts_as_a_journal_with_no_body_data() {
+    fn the_model_is_sent_no_body_fact_even_on_a_day_that_has_them() {
+        use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
         let plain = tempfile::tempdir().unwrap();
         location_journal(plain.path(), LOCATION_DAY);
         solstone_core_facets::create_facet(plain.path(), "body", "Body", "", "", "", None).unwrap();
         let with_body = tempfile::tempdir().unwrap();
         location_journal(with_body.path(), LOCATION_DAY);
-        // Body data elsewhere in the journal: an Apple workout and its record a
-        // month before, which can't reach this day.
+        // A workout on the very day the briefing is for.
         let root = with_body.path();
         std::fs::create_dir_all(root.join("imports")).unwrap();
         std::fs::write(
@@ -2443,26 +2404,46 @@ mod tests {
             r#"{"zone":"America/Denver"}"#,
         )
         .unwrap();
-        let day = chrono::NaiveDate::parse_from_str(LOCATION_DAY, "%Y%m%d").unwrap()
-            - chrono::Duration::days(30);
-        let earlier = day.format("%Y%m%d").to_string();
+        let date = chrono::NaiveDate::parse_from_str(LOCATION_DAY, "%Y%m%d").unwrap();
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            "w1".to_owned(),
+            "apple_health",
+            "HKWorkoutActivityTypeRunning",
+            "Running".to_owned(),
+        );
+        row.experience = Some("workout".to_owned());
+        row.start = Some(format!("{} 07:00:00 -0600", date.format("%Y-%m-%d")));
+        row.end = Some(format!("{} 07:40:00 -0600", date.format("%Y-%m-%d")));
+        row.by = Some("Synthetic Watch".to_owned());
+        row.values
+            .insert("distance".to_owned(), "5.0 km".to_owned());
         let window = root.join(format!(
-            "chronicle/{earlier}/import.apple_health/070000_3600"
+            "chronicle/{LOCATION_DAY}/import.apple_health/070000_3600"
         ));
         std::fs::create_dir_all(window.join("talents")).unwrap();
-        std::fs::write(window.join("body.jsonl"), "{}\n").unwrap();
+        std::fs::write(
+            window.join("body.jsonl"),
+            encode_rows(std::slice::from_ref(&row)),
+        )
+        .unwrap();
         solstone_core_facets::create_facet(root, "body", "Body", "", "", "", None).unwrap();
         let record = json!({"id":"body_w1","source":"body","activity":"workout",
-            "account":{"key":"import.apple_health\u{1f}w1","start":format!("{} 07:00:00 -0600", day.format("%Y-%m-%d")),
-                "end":format!("{} 07:40:00 -0600", day.format("%Y-%m-%d")),"recorder":"x","arrived":earlier}});
+            "account":{"key":"import.apple_health\u{1f}w1","start":row.start,"end":row.end,
+                "recorder":"x","type":"running","arrived":LOCATION_DAY}});
         let _ = solstone_core_facets::append_activity_record(
             root,
             "body",
-            &earlier,
+            LOCATION_DAY,
             record.as_object().unwrap().clone(),
         )
         .unwrap();
-        assert!(solstone_core_location::body_records::has_body_data(root));
+        // The day does have a body line to show.
+        assert!(
+            !solstone_core_location::body_records::day_lines(root, LOCATION_DAY)
+                .unwrap()
+                .is_empty()
+        );
 
         let (plain_parts, _) = briefing_request(plain.path());
         let (body_parts, body_config) = briefing_request(root);
@@ -2480,11 +2461,17 @@ mod tests {
         };
         assert_eq!(
             unclocked(plain_parts),
-            unclocked(body_parts),
+            unclocked(body_parts.clone()),
             "the model request differs"
         );
-        assert!(!body_config.contains_key(crate::daily_body::FINGERPRINT_KEY));
-        assert!(!body_config.contains_key(crate::daily_body::TEXT_KEY));
+        let sent = body_parts.join("\n");
+        for fact in ["Synthetic Watch", "5.0 km", "07:40", "body_w1"] {
+            assert!(!sent.contains(fact), "{fact} reached the model");
+        }
+        assert!(
+            !body_config.keys().any(|key| key.starts_with("_daily_body")),
+            "{body_config:?}"
+        );
     }
 
     #[test]

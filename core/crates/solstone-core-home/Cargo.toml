@@ -20,6 +20,7 @@ solstone-core-callosum.workspace = true
 solstone-core-entities.workspace = true
 solstone-core-entity.workspace = true
 solstone-core-facets.workspace = true
+solstone-core-location.workspace = true
 solstone-core-indexer-query.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
@@ -34,6 +35,7 @@ solstone-core-thinking.workspace = true
 
 [dev-dependencies]
 rusqlite.workspace = true
+solstone-core-format.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 tempfile = "3.24.0"
 

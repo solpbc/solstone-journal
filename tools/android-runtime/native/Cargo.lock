@@ -5824,6 +5824,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
+ "solstone-core-location",
  "solstone-core-segment",
  "solstone-core-sol-link",
  "solstone-core-speaker-id",

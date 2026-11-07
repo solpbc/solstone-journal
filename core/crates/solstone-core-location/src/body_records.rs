@@ -993,27 +993,19 @@ pub fn owner_group(
         .collect())
 }
 
-/// How long after a day its body facts may still arrive and reach its briefing.
-pub const BRIEFING_ARRIVAL_DAYS: i64 = 7;
-
-/// The faces the morning briefing for `day` may read: from every unmuted
-/// facet, grouped over records that arrived no later than a week after `day`,
-/// whose anchor starts on `day` by the owner's clock, unhidden, and with at
-/// least one account still there. A record with no arrival day never counts.
+/// The faces the owner's home shows for `day`, composed when read: from every
+/// unmuted facet, whose anchor starts on `day` by the owner's clock, unhidden,
+/// and with at least one account still there.
 ///
 /// # Errors
 ///
-/// Any read error while gathering: the caller treats the whole block as
-/// unreadable.
-pub fn briefing_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
+/// Any read error while gathering: the caller leaves the section out.
+pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
     if !has_body_data(journal) {
         return Ok(Vec::new());
     }
     let date = NaiveDate::parse_from_str(day, "%Y%m%d")
         .map_err(|error| ComposeError(error.to_string()))?;
-    let latest = (date + chrono::Duration::days(BRIEFING_ARRIVAL_DAYS))
-        .format("%Y%m%d")
-        .to_string();
     let facets = solstone_core_facets::list_declared_facet_names(journal)
         .map_err(|error| ComposeError(error.to_string()))?;
     let mut faces = Vec::new();
@@ -1029,16 +1021,7 @@ pub fn briefing_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeErr
             let on = (date + chrono::Duration::days(offset))
                 .format("%Y%m%d")
                 .to_string();
-            records.extend(
-                stored_body_records(journal, &facet, &on)?
-                    .into_iter()
-                    .filter(|record| {
-                        record
-                            .arrived
-                            .as_deref()
-                            .is_some_and(|arrived| arrived <= latest.as_str())
-                    }),
-            );
+            records.extend(stored_body_records(journal, &facet, &on)?);
         }
         let mut windows = Windows::default();
         for group in group_partition(&records) {
@@ -1087,6 +1070,103 @@ pub fn briefing_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeErr
     }
     faces.sort_by(|left, right| left.anchor.stored_start.cmp(&right.anchor.stored_start));
     Ok(faces)
+}
+
+/// The one value a line says, beside what happened and when. Adding one for a
+/// source is a deliberate choice: energy and every statistic stay out.
+pub const LINE_VALUE: &str = "distance";
+
+/// A time as the owner reads it, on their clock and with no offset: the hour
+/// and minute, and the date only when it isn't the day's. The reader formats it.
+fn clock_time(text: Option<&str>, zone: Tz, day: &str) -> Option<Value> {
+    let local = parse_source_time(text?)?.with_timezone(&zone);
+    let date = local.format("%Y%m%d").to_string();
+    Some(serde_json::json!({
+        "time": local.format("%H:%M").to_string(),
+        "date": (date != day).then_some(date),
+    }))
+}
+
+fn user_entered(row: &BodyRow) -> bool {
+    row.fields
+        .get("metadata")
+        .and_then(|metadata| metadata.get("HKWasUserEntered"))
+        .and_then(Value::as_str)
+        .is_some_and(|value| value == "1")
+}
+
+/// One group as the owner's home shows it: what, when, how far, and what
+/// recorded it, as data the reader words. No assessment and no value but
+/// distance. Accounts that aren't there aren't said; a group with none says
+/// nothing. A name the source or this code gives is lowercase; the owner's own
+/// title keeps theirs.
+#[must_use]
+pub fn face_line(face: &Face, zone: Tz, day: &str) -> Option<Value> {
+    let there = face
+        .members
+        .iter()
+        .filter_map(|member| match &member.account {
+            Account::Live(row) => Some((row.as_ref(), false)),
+            Account::PartRemoved(row) => Some((row.as_ref(), true)),
+            _ => None,
+        })
+        .collect::<Vec<(&BodyRow, bool)>>();
+    let &(first, partial) = there.first()?;
+    let title = face
+        .anchor
+        .owner
+        .iter()
+        .find(|(field, _)| field.as_str() == "title")
+        .and_then(|(_, value)| value.as_str())
+        .map(str::trim)
+        .filter(|title| !title.is_empty());
+    let name = match (title, face.anchor.activity.as_str()) {
+        (Some(title), _) => title.to_owned(),
+        (None, "sleep") => "sleep".to_owned(),
+        (None, "mindfulness") => "mindfulness".to_owned(),
+        (None, _) => first.label.to_lowercase(),
+    };
+    let logged = there.iter().all(|(row, _)| user_entered(row));
+    let mut from = Vec::new();
+    if !logged {
+        for (row, _) in &there {
+            if let Some(by) = row.by.as_deref().map(str::trim).filter(|by| !by.is_empty())
+                && !from.contains(&by)
+            {
+                from.push(by);
+            }
+        }
+    }
+    let distance = (!partial)
+        .then(|| first.values.get(LINE_VALUE).cloned())
+        .flatten();
+    Some(serde_json::json!({
+        "name": name,
+        "start": clock_time(first.start.as_deref(), zone, day),
+        "end": clock_time(first.end.as_deref(), zone, day),
+        "distance": distance,
+        "from": from,
+        "logged": logged,
+        "part_removed": partial,
+    }))
+}
+
+/// The lines the owner's home shows for `day`, one per group, composed when
+/// read and never stored.
+///
+/// # Errors
+///
+/// Any read error while gathering: the caller leaves the section out.
+pub fn day_lines(journal: &Path, day: &str) -> Result<Vec<Value>, ComposeError> {
+    let faces = day_faces(journal, day)?;
+    if faces.is_empty() {
+        return Ok(Vec::new());
+    }
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    Ok(faces
+        .iter()
+        .filter_map(|face| face_line(face, zone, day))
+        .collect())
 }
 
 fn account_json(member: &ComposedBody) -> Value {

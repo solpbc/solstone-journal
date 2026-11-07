@@ -258,16 +258,11 @@ pub(crate) fn floor_budget(config: &Map<String, Value>) -> Option<u32> {
         .get("max_output_tokens")
         .and_then(Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())?;
-    let preserved: u32 = [
-        "user_instruction",
-        "prompt",
-        "_daily_location_text",
-        crate::daily_body::TEXT_KEY,
-    ]
-    .iter()
-    .filter_map(|key| config.get(*key).and_then(Value::as_str))
-    .map(solstone_core_tokens::count)
-    .sum();
+    let preserved: u32 = ["user_instruction", "prompt", "_daily_location_text"]
+        .iter()
+        .filter_map(|key| config.get(*key).and_then(Value::as_str))
+        .map(solstone_core_tokens::count)
+        .sum();
     Some(
         solstone_core_local::generate::compute_input_budget(
             max_output_tokens,

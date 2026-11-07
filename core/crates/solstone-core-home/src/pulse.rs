@@ -237,6 +237,15 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
     fields.insert("activities".to_owned(), Value::Array(activities));
     fields.insert("needs_you_items".to_owned(), Value::Array(needs_you_items));
     fields.insert("briefing_sections".to_owned(), briefing_sections);
+    // The day's body lines, composed when read and never stored: a hide or a
+    // late import shows at once, and the briefing stays as its model wrote it.
+    // A read that fails leaves the section out, never the panel.
+    let briefing_body = solstone_core_location::body_records::day_lines(
+        context.journal_root(),
+        &context.yesterday(),
+    )
+    .unwrap_or_default();
+    fields.insert("briefing_body".to_owned(), Value::Array(briefing_body));
     fields.insert("briefing_meta".to_owned(), briefing_meta);
     fields.insert("briefing_phase".to_owned(), briefing_phase.into());
     let briefing_saved_lane = match briefing_not_yet {
@@ -271,7 +280,7 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             Value::Null
         },
     );
-    debug_assert_eq!(fields.len(), 31);
+    debug_assert_eq!(fields.len(), 32);
     PulseContext {
         fields,
         now: context.now_local(),
@@ -312,6 +321,7 @@ pub fn briefing_payload(context: &HomeContext) -> Value {
         "analysis_day": field("briefing_analysis_day"),
         "meta": field("briefing_meta"),
         "sections": field("briefing_sections"),
+        "body": field("briefing_body"),
     })
 }
 
@@ -525,6 +535,91 @@ mod tests {
         assert!(has_issue(&pulse_payload(&context)));
     }
 
+    /// A journal holding one workout on 20261010, in UTC throughout.
+    fn body_journal() -> TempDir {
+        use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows};
+        let root = TempDir::new().unwrap();
+        let journal = root.path();
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(journal.join("imports")).unwrap();
+        fs::write(
+            journal.join("imports/.apple_health-zone.json"),
+            r#"{"zone":"UTC"}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(journal.join("facets/body")).unwrap();
+        fs::write(
+            journal.join("facets/body/facet.json"),
+            r#"{"title":"Body"}"#,
+        )
+        .unwrap();
+        let mut row = BodyRow::new(
+            RowKind::Experience,
+            "w".to_owned(),
+            "apple_health",
+            "HKWorkoutActivityTypeRunning",
+            "Running".to_owned(),
+        );
+        row.experience = Some("workout".to_owned());
+        row.start = Some("2026-10-10 07:00:00 +0000".to_owned());
+        row.end = Some("2026-10-10 07:40:00 +0000".to_owned());
+        row.by = Some("Synthetic Watch".to_owned());
+        row.values
+            .insert("distance".to_owned(), "5.0 km".to_owned());
+        row.values
+            .insert("energy".to_owned(), "512 kcal".to_owned());
+        let window = journal.join("chronicle/20261010/import.apple_health/070000_3600");
+        fs::create_dir_all(&window).unwrap();
+        fs::write(
+            window.join("body.jsonl"),
+            encode_rows(std::slice::from_ref(&row)),
+        )
+        .unwrap();
+        let record = serde_json::json!({
+            "id": "body_w", "source": "body", "activity": "workout",
+            "account": {"key": "import.apple_health\u{1f}w", "start": row.start, "end": row.end,
+                "recorder": "watch", "type": "running", "arrived": "20261011"},
+        });
+        fs::create_dir_all(journal.join("facets/body/activities")).unwrap();
+        fs::write(
+            journal.join("facets/body/activities/20261010.jsonl"),
+            format!("{record}\n"),
+        )
+        .unwrap();
+        root
+    }
+
+    #[test]
+    fn the_yesterday_side_reads_its_days_body_lines_when_asked_and_stores_nothing() {
+        let root = body_journal();
+        let context = HomeContext::with_zone(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 10, 11, 12, 0, 0).unwrap(),
+            utc_day(),
+        );
+        let payload = briefing_payload(&context);
+        assert_eq!(
+            payload["body"],
+            serde_json::json!([{"name": "running", "start": {"time": "07:00", "date": null},
+                "end": {"time": "07:40", "date": null}, "distance": "5.0 km",
+                "from": ["Synthetic Watch"], "logged": false, "part_removed": false}])
+        );
+        // Composed when read: nothing is written beside the briefing.
+        assert!(!root.path().join("chronicle/20261011/talents").exists());
+        assert!(!root.path().join("chronicle/20261010/talents").exists());
+        // A day file that can't be read costs the section, never the panel.
+        let day = root.path().join("facets/body/activities/20261009.jsonl");
+        fs::create_dir_all(&day).unwrap();
+        let payload = briefing_payload(&context);
+        assert_eq!(payload["body"], serde_json::json!([]));
+        assert!(payload["phase"].is_string());
+    }
+
     #[test]
     fn empty_payload_has_exact_public_key_set_and_naive_microsecond_now() {
         let root = TempDir::new().unwrap();
@@ -537,7 +632,7 @@ mod tests {
             utc_day(),
         );
         let payload = pulse_payload(&context);
-        assert_eq!(payload.as_object().unwrap().len(), 30);
+        assert_eq!(payload.as_object().unwrap().len(), 31);
         assert_eq!(
             payload
                 .as_object()
@@ -565,6 +660,7 @@ mod tests {
                 "activities",
                 "needs_you_items",
                 "briefing_sections",
+                "briefing_body",
                 "briefing_meta",
                 "briefing_phase",
                 "briefing_saved_lane",
@@ -1490,6 +1586,7 @@ mod tests {
             sections.remove("needs_attention");
         }
         let analysis_day = pulse["briefing_analysis_day"].clone();
+        pulse.insert("briefing_body".to_owned(), json!([]));
         if let Some(processing) = pulse
             .get_mut("yesterday_processing")
             .and_then(Value::as_object_mut)
@@ -1511,6 +1608,8 @@ mod tests {
             briefing.remove(key);
         }
         briefing.insert("analysis_day".to_owned(), analysis_day);
+        // Body lines came later, and neither reference journal holds body data.
+        briefing.insert("body".to_owned(), json!([]));
         if let Some(sections) = briefing.get_mut("sections").and_then(Value::as_object_mut) {
             sections.remove("needs_attention");
         }

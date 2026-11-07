@@ -33,32 +33,10 @@ pub fn daily_location_freshness(
     day: &str,
     stored_packet: Option<&Value>,
 ) -> Result<DailyLocationFreshness, String> {
-    let location = if location_applies(journal, hook, day)? {
-        compare_fingerprint(journal, day, stored_packet)?
-    } else {
-        DailyLocationFreshness::NotApplicable
-    };
-    Ok(with_body(location, journal, hook, day, stored_packet))
-}
-
-/// A packet whose body facts no longer match is stale, whatever location says.
-/// Body never makes a packet unreadable: its unreadable state has a fingerprint.
-fn with_body(
-    location: DailyLocationFreshness,
-    journal: &Path,
-    hook: &str,
-    day: &str,
-    stored_packet: Option<&Value>,
-) -> DailyLocationFreshness {
-    match location {
-        DailyLocationFreshness::NotApplicable | DailyLocationFreshness::Reuse
-            if crate::daily_body::daily_body_freshness(journal, hook, day, stored_packet)
-                == crate::daily_body::DailyBodyFreshness::Stale =>
-        {
-            DailyLocationFreshness::Stale
-        }
-        other => other,
+    if !location_applies(journal, hook, day)? {
+        return Ok(DailyLocationFreshness::NotApplicable);
     }
+    compare_fingerprint(journal, day, stored_packet)
 }
 
 /// Publication's two reads of the fingerprint, with the test barrier between them.
@@ -72,13 +50,7 @@ pub fn publication_location_freshness(
     stored_packet: Option<&Value>,
 ) -> Result<DailyLocationFreshness, String> {
     if !location_applies(journal, hook, day)? {
-        return Ok(with_body(
-            DailyLocationFreshness::NotApplicable,
-            journal,
-            hook,
-            day,
-            stored_packet,
-        ));
+        return Ok(DailyLocationFreshness::NotApplicable);
     }
     let first = match daily_location_fingerprint(journal, day) {
         Ok(hex) => hex,
@@ -97,11 +69,10 @@ pub fn publication_location_freshness(
     if first != second {
         return Ok(DailyLocationFreshness::Stale);
     }
-    let location = match stored_fingerprint(stored_packet) {
+    Ok(match stored_fingerprint(stored_packet) {
         Some(stored) if stored == second => DailyLocationFreshness::Reuse,
         _ => DailyLocationFreshness::Stale,
-    };
-    Ok(with_body(location, journal, hook, day, stored_packet))
+    })
 }
 
 pub(crate) fn location_applies(journal: &Path, hook: &str, day: &str) -> Result<bool, String> {

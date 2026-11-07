@@ -1445,7 +1445,8 @@
       saved_lane: pulse.briefing_saved_lane,
       analysis_day: pulse.briefing_analysis_day,
       meta: pulse.briefing_meta,
-      sections: pulse.briefing_sections
+      sections: pulse.briefing_sections,
+      body: pulse.briefing_body
     });
   }
 
@@ -1456,18 +1457,25 @@
       saved_lane: data.saved_lane ?? null,
       analysis_day: typeof data.analysis_day === 'string' ? data.analysis_day : null,
       meta: isPlainObject(data.meta) ? data.meta : null,
-      sections: isPlainObject(data.sections) ? data.sections : {}
+      sections: isPlainObject(data.sections) ? data.sections : {},
+      body: Array.isArray(data.body) ? data.body.filter(isPlainObject) : []
     };
   }
 
   // The briefing's stamp is the journal's own wall time with no offset. Show
   // its hour and minute as written: parsing it as an instant would shift it
   // by the browser's zone.
-  function writtenAtTime(generated) {
-    const match = /T(\d{2}):(\d{2})/.exec(String(generated || ''));
+  function clockLabel(hhmm) {
+    const match = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ''));
     if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return '';
     return new Date(2000, 0, 1, Number(match[1]), Number(match[2]))
-      .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' });
+      .toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' })
+      .toLowerCase();
+  }
+
+  function writtenAtTime(generated) {
+    const match = /T(\d{2}:\d{2})/.exec(String(generated || ''));
+    return match ? clockLabel(match[1]) : '';
   }
 
   // Before the nightly run has had its first chance, say when the first
@@ -1515,6 +1523,51 @@
       + '</div>';
   }
 
+  // A time on the journal's clock, "HH:MM", said the way this page says every
+  // time, and on which date when it isn't the day's.
+  function bodyMoment(at) {
+    if (!isPlainObject(at)) return '';
+    const time = clockLabel(at.time);
+    if (!time) return '';
+    const date = /^(\d{4})(\d{2})(\d{2})$/.exec(String(at.date || ''));
+    if (!date) return time;
+    const day = new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]))
+      .toLocaleString(undefined, { month: 'short', day: 'numeric' })
+      .toLowerCase();
+    return time + ' on ' + day;
+  }
+
+  function listed(names) {
+    if (names.length < 2) return names.join('');
+    return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
+
+  // One workout, night or session, in plain words: what, when, how far, and
+  // what recorded it. Never an assessment.
+  function bodyLineText(line) {
+    const parts = [String(line.name || '')];
+    const start = bodyMoment(line.start);
+    const end = bodyMoment(line.end);
+    if (start && end) parts.push(start + ' to ' + end);
+    else if (start) parts.push('from ' + start);
+    if (typeof line.distance === 'string' && line.distance) parts.push(line.distance);
+    const from = Array.isArray(line.from) ? line.from.filter((name) => typeof name === 'string' && name) : [];
+    if (line.logged) parts.push('which you logged');
+    else if (from.length) parts.push('from ' + listed(from));
+    if (line.part_removed) parts.push('part of it removed');
+    return parts.join(', ') + '.';
+  }
+
+  // The day's workouts, sleep and mindfulness, one plain line each, composed
+  // when read. They sit apart from the briefing, which never wrote them.
+  function bodyLinesHtml(lines) {
+    if (!Array.isArray(lines) || !lines.length) return '';
+    return '<div class="pulse-activities-label">from your devices and apps</div>'
+      + '<div class="pulse-briefing-body"><ul>'
+      + lines.map((line) => '<li>' + esc(bodyLineText(line)) + '</li>').join('')
+      + '</ul></div>';
+  }
+
   function renderYesterdaySideHtml(data, pulseContext) {
     if (!data) return '';
     let body;
@@ -1533,6 +1586,7 @@
     } else {
       body = briefingPlaceholderHtml(data, pulseContext);
     }
+    body += bodyLinesHtml(data.body);
     return '<div class="pulse-briefing" id="pulse-briefing" data-phase="' + esc(data.phase) + '">' + body + '</div>';
   }
 

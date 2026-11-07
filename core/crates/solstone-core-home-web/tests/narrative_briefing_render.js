@@ -194,6 +194,42 @@ assert(quiet.includes('pulse-briefing-placeholder'), quiet);
 assert(quiet.includes('pulse-tell-more'), quiet);
 assert.strictEqual(quiet.includes('pulse-briefing-status-link'), false, quiet);
 
+// The day's body lines sit after the briefing and its stamp, under their own
+// label, and never inside what the briefing wrote. A day with no briefing
+// keeps its placeholder and still shows them; a day with none shows nothing.
+const lines = [
+  { name: 'running', start: { time: '07:00', date: null }, end: { time: '07:40', date: null },
+    distance: '5.0 km', from: ['Synthetic Watch', '<b>Ring</b>'], logged: false, part_removed: false },
+  { name: 'sleep', start: { time: '22:10', date: null }, end: { time: '06:20', date: '20261024' },
+    distance: null, from: ['Synthetic Watch'], logged: false, part_removed: true },
+  { name: 'mindfulness', start: { time: '07:00', date: null }, end: { time: '07:10', date: null },
+    distance: null, from: [], logged: true, part_removed: false },
+];
+const withBody = renderYesterdaySideHtml(
+  {
+    phase: 'eod', exists: true, analysis_day: '20261023',
+    meta: { generated: '2026-10-24T07:12:00' },
+    sections: { yesterday: '- a steady morning.' },
+    body: lines,
+  },
+  { briefing_analysis_day: '20261023' },
+);
+// Every time on the panel is said one way: the briefing's stamp and the lines.
+const clock = (h, m) => new Date(2000, 0, 1, h, m).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+assert(withBody.includes('from your devices and apps'), withBody);
+assert(withBody.includes('running, ' + clock(7, 0) + ' to ' + clock(7, 40) + ', 5.0 km, from Synthetic Watch and &lt;b&gt;Ring&lt;/b&gt;.'), withBody);
+assert(withBody.includes('sleep, ' + clock(22, 10) + ' to ' + clock(6, 20) + ' on oct 24, from Synthetic Watch, part of it removed.'), withBody);
+assert(withBody.includes('mindfulness, ' + clock(7, 0) + ' to ' + clock(7, 10) + ', which you logged.'), withBody);
+assert(withBody.indexOf(clock(7, 12)) < withBody.indexOf('from your devices and apps'), withBody);
+assert.strictEqual(withBody.includes('<b>Ring</b>'), false, withBody);
+const notYet = renderYesterdaySideHtml(
+  { phase: 'eod', exists: false, analysis_day: '20261023', meta: null, sections: {}, body: lines },
+  { briefing_analysis_day: '20261023' },
+);
+assert(notYet.includes('running, '), notYet);
+assert.strictEqual(notYet.includes('written at'), false, notYet);
+assert.strictEqual(ready.includes('from your devices and apps'), false, ready);
+
 // The stamp is the journal's wall time: its hour and minute as written,
 // whatever zone the browser is in.
 assert(writtenAtTime('2026-10-24T07:12:00').includes('7:12'));

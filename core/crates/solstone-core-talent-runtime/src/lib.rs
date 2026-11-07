@@ -20,7 +20,6 @@ pub mod assemble;
 mod browser_reading;
 pub mod conditional_segment;
 pub mod contract;
-pub mod daily_body;
 mod daily_execution;
 pub mod daily_location;
 pub mod daily_prepare;
@@ -1682,12 +1681,10 @@ pub(crate) fn ordinary_text_parts(config: &Map<String, Value>) -> Vec<String> {
 /// Every text part a talent's model request carries, in order.
 pub(crate) fn model_text_parts(config: &Map<String, Value>) -> Vec<String> {
     let mut parts = ordinary_text_parts(config);
-    if !parts.is_empty() {
-        for key in ["_daily_location_text", crate::daily_body::TEXT_KEY] {
-            if let Some(text) = config.get(key).and_then(Value::as_str) {
-                parts.push(text.to_owned());
-            }
-        }
+    if !parts.is_empty()
+        && let Some(text) = config.get("_daily_location_text").and_then(Value::as_str)
+    {
+        parts.push(text.to_owned());
     }
     parts
 }

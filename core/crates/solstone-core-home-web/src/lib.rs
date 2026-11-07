@@ -655,6 +655,7 @@ mod tests {
             "activities",
             "needs_you_items",
             "briefing_sections",
+            "briefing_body",
             "briefing_meta",
             "briefing_phase",
             "briefing_saved_lane",
@@ -681,6 +682,7 @@ mod tests {
             "analysis_day",
             "meta",
             "sections",
+            "body",
         ]
         .into_iter()
         .map(str::to_owned)

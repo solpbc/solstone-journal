@@ -546,8 +546,8 @@ fn arrived_record(
     fs::write(path, text).unwrap();
 }
 
-fn briefing_ids(root: &Path, day: &str) -> Vec<Vec<String>> {
-    briefing_faces(root, day)
+fn day_ids(root: &Path, day: &str) -> Vec<Vec<String>> {
+    day_faces(root, day)
         .unwrap()
         .iter()
         .map(|face| {
@@ -560,7 +560,7 @@ fn briefing_ids(root: &Path, day: &str) -> Vec<Vec<String>> {
 }
 
 #[test]
-fn the_briefing_reads_only_what_arrived_within_a_week_grouped_before_later_arrivals() {
+fn the_home_reads_a_day_whenever_its_records_arrived() {
     let journal = journal();
     let root = journal.path();
     let watch = workout_row(
@@ -593,26 +593,29 @@ fn the_briefing_reads_only_what_arrived_within_a_week_grouped_before_later_arriv
     window(root, DAY, "120000_3600", std::slice::from_ref(&bare));
     arrived_record(root, DAY, &watch, Some("20261011"), json!({}));
     arrived_record(root, DAY, &app, Some("20261017"), json!({}));
-    // Arrived at D+60: never joins the group the briefing reads.
+    // Read when the owner looks, so a late arrival counts like any other, and
+    // so does a record with no arrival day.
     arrived_record(root, DAY, &late, Some("20261209"), json!({}));
-    // No arrival day: never admitted.
     arrived_record(root, DAY, &bare, None, json!({}));
-    assert_eq!(briefing_ids(root, DAY), [vec!["body_w", "body_x"]]);
+    assert_eq!(
+        day_ids(root, DAY),
+        [vec!["body_w", "body_x", "body_l"], vec!["body_b"]]
+    );
     // Nothing on the next day: the face belongs to the day it started.
-    assert!(briefing_ids(root, NEXT).is_empty());
+    assert!(day_ids(root, NEXT).is_empty());
 }
 
 #[test]
-fn the_briefing_leaves_out_hidden_muted_and_deleted_faces_and_takes_a_night_on_its_first_day() {
+fn the_home_leaves_out_hidden_muted_and_deleted_faces_and_takes_a_night_on_its_first_day() {
     let journal = journal();
     let root = journal.path();
     let start = window(root, DAY, "220000_3600", &[night()]);
     arrived_record(root, DAY, &night(), Some(DAY), json!({}));
-    assert_eq!(briefing_ids(root, DAY), [vec!["body_n1"]]);
-    assert!(briefing_ids(root, NEXT).is_empty());
+    assert_eq!(day_ids(root, DAY), [vec!["body_n1"]]);
+    assert!(day_ids(root, NEXT).is_empty());
     // Deleted with no surviving tile: nothing.
     delete(&start);
-    assert!(briefing_ids(root, DAY).is_empty());
+    assert!(day_ids(root, DAY).is_empty());
     // Hidden: nothing.
     let journal = journal_fixture_with_live_night();
     let root = journal.path();
@@ -621,7 +624,7 @@ fn the_briefing_leaves_out_hidden_muted_and_deleted_faces_and_takes_a_night_on_i
         .unwrap()
         .replace("\"source\"", "\"hidden\":true,\"source\"");
     fs::write(&path, text).unwrap();
-    assert!(briefing_ids(root, DAY).is_empty());
+    assert!(day_ids(root, DAY).is_empty());
     // Muted facet: nothing.
     let journal = journal_fixture_with_live_night();
     let root = journal.path();
@@ -630,7 +633,7 @@ fn the_briefing_leaves_out_hidden_muted_and_deleted_faces_and_takes_a_night_on_i
         r#"{"title":"Body","muted":true}"#,
     )
     .unwrap();
-    assert!(briefing_ids(root, DAY).is_empty());
+    assert!(day_ids(root, DAY).is_empty());
 }
 
 fn journal_fixture_with_live_night() -> tempfile::TempDir {
@@ -897,4 +900,122 @@ fn a_group_the_owner_hid_hides_from_a_reader_of_one_member_alone() {
     assert_eq!(faces.len(), 1);
     assert!(faces[0].hidden);
     assert!(!face_json(&faces[0]).to_string().contains("body_w"));
+}
+
+fn lines_on(root: &Path, day: &str) -> Vec<serde_json::Value> {
+    day_lines(root, day).unwrap()
+}
+
+fn at(time: &str, date: Option<&str>) -> serde_json::Value {
+    json!({"time": time, "date": date})
+}
+
+#[test]
+fn a_line_says_what_when_how_far_and_where_from_and_nothing_else() {
+    let journal = journal();
+    let root = journal.path();
+    let mut watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    // Every value a source gives; only distance may be said.
+    for (name, value) in [
+        ("distance", "5.0 km"),
+        ("duration", "40 min"),
+        ("energy", "512 kcal"),
+        ("heart rate average", "152 count/min"),
+        ("heart rate maximum", "181 count/min"),
+    ] {
+        watch.values.insert(name.to_owned(), value.to_owned());
+    }
+    let app = workout_row(
+        "x",
+        "Synthetic App",
+        "2026-10-10 07:01:00 -0600",
+        "2026-10-10 07:41:00 -0600",
+    );
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    arrived_record(root, DAY, &watch, Some(DAY), json!({}));
+    arrived_record(root, DAY, &app, Some(DAY), json!({}));
+    let lines = lines_on(root, DAY);
+    assert_eq!(
+        lines,
+        [
+            json!({"name": "running", "start": at("07:00", None), "end": at("07:40", None),
+            "distance": "5.0 km", "from": ["Synthetic Watch", "Synthetic App"],
+            "logged": false, "part_removed": false})
+        ]
+    );
+    let text = lines[0].to_string();
+    for statistic in ["40 min", "kcal", "count/min", "152", "181", "512"] {
+        assert!(!text.contains(statistic), "{statistic}: {text}");
+    }
+}
+
+#[test]
+fn a_line_takes_the_owners_title_says_logged_crosses_midnight_and_a_removed_start() {
+    // The owner titled it.
+    let journal = journal();
+    let root = journal.path();
+    let watch = workout_row(
+        "w",
+        "Synthetic Watch",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:40:00 -0600",
+    );
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    arrived_record(root, DAY, &watch, Some(DAY), json!({}));
+    let mut patch = Map::new();
+    patch.insert("title".to_owned(), json!("Hill repeats"));
+    solstone_core_facets::update_activity_record(
+        root,
+        "body",
+        DAY,
+        "body_w",
+        &patch,
+        "owner:web",
+        "",
+        "2026-10-11T00:00:00Z",
+    )
+    .unwrap()
+    .expect("titled");
+    assert_eq!(lines_on(root, DAY)[0]["name"], "Hill repeats");
+
+    // Logged by hand.
+    let journal = self::journal();
+    let root = journal.path();
+    let mut logged = workout_row(
+        "m",
+        "Synthetic Phone",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 07:10:00 -0600",
+    );
+    logged.experience = Some("mindfulness".to_owned());
+    logged
+        .fields
+        .insert("metadata".to_owned(), json!({"HKWasUserEntered": "1"}));
+    window(root, DAY, "070000_3600", std::slice::from_ref(&logged));
+    arrived_record(root, DAY, &logged, Some(DAY), json!({}));
+    let logged = &lines_on(root, DAY)[0];
+    assert_eq!(logged["name"], "mindfulness");
+    assert_eq!(logged["logged"], true);
+    assert_eq!(logged["from"], json!([]));
+
+    // A night across midnight, then with its start deleted and a later piece left.
+    let journal = journal_fixture_with_live_night();
+    let root = journal.path();
+    let night = &lines_on(root, DAY)[0];
+    assert_eq!(night["name"], "sleep");
+    assert_eq!(night["start"], at("22:10", None));
+    assert_eq!(night["end"], at("06:20", Some(NEXT)));
+    assert_eq!(night["part_removed"], false);
+    let later = window(root, NEXT, "000000_3600", &[tile(1)]);
+    let _ = later;
+    delete(&root.join(format!("chronicle/{DAY}/{STREAM}/220000_3600")));
+    let partial = &lines_on(root, DAY)[0];
+    assert_eq!(partial["part_removed"], true);
+    assert_eq!(partial["distance"], serde_json::Value::Null);
 }

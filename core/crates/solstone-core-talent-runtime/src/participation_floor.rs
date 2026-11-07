@@ -71,9 +71,6 @@ pub(crate) fn apply(
         composed.get("user_instruction").and_then(Value::as_str),
         composed.get("prompt").and_then(Value::as_str),
         composed.get("_daily_location_text").and_then(Value::as_str),
-        composed
-            .get(crate::daily_body::TEXT_KEY)
-            .and_then(Value::as_str),
     ];
     let preserved_tokens: u32 = preserved
         .into_iter()
