@@ -1105,6 +1105,33 @@ pub fn day_faces(journal: &Path, day: &str) -> Result<Vec<Face>, ComposeError> {
 /// source is a deliberate choice: energy and every statistic stay out.
 pub const LINE_VALUE: &str = "distance";
 
+/// A distance as a person says it, from a source's exact value and its unit:
+/// metres under a kilometre in whole metres, otherwise kilometres to one
+/// decimal; yards and feet whole; and any other unit kept, to one decimal. A
+/// number with no unit can't be said without guessing what it measures, so it
+/// isn't, and neither is a distance that reads as nothing. The source's value
+/// stays exact in `values`.
+#[must_use]
+pub fn line_distance(value: &str) -> Option<String> {
+    let (number, unit) = value.trim().split_once(char::is_whitespace)?;
+    let unit = unit.trim();
+    if unit.is_empty() || unit.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let number: f64 = number
+        .parse()
+        .ok()
+        .filter(|number: &f64| number.is_finite())?;
+    let said = match unit {
+        "m" if number.round() >= 1000.0 => format!("{:.1} km", number / 1000.0),
+        // Units nobody says in tenths: a pool is counted in whole yards.
+        "m" | "yd" | "ft" => format!("{number:.0} {unit}"),
+        _ => format!("{number:.1} {unit}"),
+    };
+    let shown: f64 = said.split_whitespace().next()?.parse().ok()?;
+    (shown > 0.0).then_some(said)
+}
+
 /// A time as the owner reads it, on their clock and with no offset: the hour
 /// and minute, and the date only when it isn't the day's. The reader formats it.
 fn clock_time(text: Option<&str>, zone: Tz, day: &str) -> Option<Value> {
@@ -1175,7 +1202,8 @@ pub fn face_line(face: &Face, zone: Tz, day: &str) -> Option<Value> {
                 .filter(|(_, partial)| !partial)
                 .find_map(|(row, _)| row.values.get(LINE_VALUE).cloned())
         })
-        .flatten();
+        .flatten()
+        .and_then(|value| line_distance(&value));
     Some(serde_json::json!({
         "name": name,
         "start": clock_time(first.start.as_deref(), zone, day),

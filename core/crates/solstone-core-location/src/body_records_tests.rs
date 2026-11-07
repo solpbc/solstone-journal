@@ -1197,3 +1197,32 @@ fn the_home_says_a_line_on_the_owners_day_and_clock() {
     assert_eq!(lines[0]["start"], at("19:00", None));
     assert_eq!(lines[0]["end"], at("19:30", None));
 }
+
+#[test]
+fn a_distance_reads_as_a_person_says_it() {
+    for (value, said) in [
+        ("5.0 km", Some("5.0 km")),
+        ("5.123456 km", Some("5.1 km")),
+        ("3.14159 mi", Some("3.1 mi")),
+        ("2412.9 m", Some("2.4 km")),
+        ("1000 m", Some("1.0 km")),
+        ("999.6 m", Some("1.0 km")),
+        ("850.4 m", Some("850 m")),
+        ("0.6 m", Some("1 m")),
+        ("1760 yd", Some("1760 yd")),
+        ("5280.4 ft", Some("5280 ft")),
+        ("12.34 km", Some("12.3 km")),
+        ("0 m", None),
+        ("0.0 km", None),
+        ("0.04 km", None),
+        ("0.4 m", None),
+        ("-3 km", None),
+        ("2412.9", None),
+        ("", None),
+        ("far km", None),
+        ("NaN km", None),
+        ("5 km extra", None),
+    ] {
+        assert_eq!(line_distance(value).as_deref(), said, "{value:?}");
+    }
+}
