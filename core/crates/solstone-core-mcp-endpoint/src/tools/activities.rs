@@ -937,17 +937,22 @@ pub(crate) fn execute_list(
         let face = item.group.as_ref().map(|(stretch, group)| {
             let face = body[*stretch].1.compose(journal_root, group);
             crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
-            solstone_core_location::body_records::face_json(&face)
+            (
+                solstone_core_location::body_records::face_json(&face),
+                solstone_core_location::body_records::face_still_there(&face),
+            )
         });
-        if let Some(face) = &face {
+        if let Some((face, there)) = &face {
             let mut activity =
                 body_activity(face, &item.facet_title, &item.day, reference, &zone_str);
             if let Some(span) = face_span(face) {
                 let captures = capture_on.entry(item.day.clone()).or_insert_with(|| {
                     capture_lines_on(journal_root, &facets_to_search, &item.day)
                 });
+                // A record with nothing still there sits beside nothing, either way.
                 let beside = captures
                     .iter()
+                    .filter(|_| *there)
                     .filter(|(other, _)| {
                         solstone_core_location::body_records::half_cover(span, *other)
                     })

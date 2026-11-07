@@ -2622,6 +2622,8 @@ mod tests {
             .find(|item| item["source"] == "body")
             .unwrap_or_else(|| panic!("{view}"));
         assert_eq!(body["accounts"][0]["state"], "removed_by_you", "{view}");
+        // Nor does it list the capture: beside lines go both ways or not at all.
+        assert!(body.get("beside").is_none(), "{view}");
     }
 
     #[tokio::test]

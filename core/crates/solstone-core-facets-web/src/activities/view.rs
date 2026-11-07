@@ -333,8 +333,11 @@ pub fn build_view(root: &Path, day: &str, query: Option<&str>) -> Result<Value, 
             }
             let mut item = solstone_core_location::body_records::face_json(&face);
             if let Some(span) = solstone_core_location::body_records::shown_span(&face) {
+                // A record with nothing still there sits beside nothing, either way.
+                let there = solstone_core_location::body_records::face_still_there(&face);
                 let beside = captures
                     .iter()
+                    .filter(|_| there)
                     .filter(|(other, _, _)| {
                         solstone_core_location::body_records::half_cover(span, *other)
                     })
