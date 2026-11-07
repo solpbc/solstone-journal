@@ -875,7 +875,9 @@ fn an_owner_deleted_window_with_a_record_stays_deleted_where_it_was_or_moved() {
             Some("health"),
         );
         assert!(
-            outcome.summary.contains("1 stayed deleted"),
+            outcome
+                .summary
+                .contains("1 entry wasn't added, because you deleted"),
             "{moved}: {}",
             outcome.summary
         );

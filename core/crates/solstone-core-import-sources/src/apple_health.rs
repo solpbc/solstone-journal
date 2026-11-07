@@ -1355,6 +1355,8 @@ pub struct SummaryCounts {
     /// stored, kept as first written.
     #[serde(default)]
     pub deferred: u64,
+    /// Documents not placed because the owner deleted where they belong.
+    pub entries_stayed_deleted: u64,
     /// Documents held back, by name, because a window they could already be in
     /// couldn't be read.
     #[serde(default)]
@@ -1386,6 +1388,7 @@ impl SummaryCounts {
             activities_refreshed: 0,
             activities_refused: Vec::new(),
             deferred: 0,
+            entries_stayed_deleted: 0,
             held: BTreeMap::new(),
             not_saved: Vec::new(),
             notes: Vec::new(),
@@ -1493,6 +1496,21 @@ pub fn summary_text(
         let _ = writeln!(
             text,
             "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"
+        );
+    }
+    if counts.entries_stayed_deleted > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.entries_stayed_deleted == 1 {
+                "1 entry wasn't added, because you deleted the part of the journal it belongs to."
+                    .to_owned()
+            } else {
+                format!(
+                    "{} entries weren't added, because you deleted the part of the journal they belong to.",
+                    counts.entries_stayed_deleted
+                )
+            }
         );
     }
     if counts.deferred > 0 {
