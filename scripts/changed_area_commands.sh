@@ -41,6 +41,16 @@ if [ -n "$data" ]; then
 	done
 fi
 
+# A moved platform gate (#[cfg(windows)], cfg!(unix), target_os, ...) in a shared
+# crate changes what other targets compile, and make ci builds only this host's.
+# On 2026-11-06 one such change broke the iOS build and reached the release.
+gates=$(git diff --no-renames -U0 "$base" -- core/crates 2>/dev/null \
+	| grep -E '^[+-][^+-].*cfg!?\(.*(target_os|target_family|target_vendor|windows|unix)' || true)
+case "$gates" in
+*windows*) windows_gate=1 ;;
+*) windows_gate="" ;;
+esac
+
 if [ -z "$packages$consumers" ]; then
 	say "Changed-area commands: no workspace package changed against origin/main."
 	exit 0
@@ -53,6 +63,11 @@ case " $packages " in
 *" solstone-core-repository-contracts "*) suites="$packages$consumers" ;;
 *) suites="$packages$consumers solstone-core-repository-contracts" ;;
 esac
+if [ -n "$gates" ]; then
+	say "  (this tree moves a platform cfg gate in a shared crate, so other targets owe their own compile:)"
+	say "  make check-rust-ios   # on a Mac (pro5e), before landing"
+	[ -n "$windows_gate" ] && say "  make win-host-ci      # on sol-winbuild, before landing"
+fi
 if [ -n "${HOPPER_LID:-}" ]; then
 	say "  (ci-full is not supported inside this automated build; run the scoped ci-full after landing)"
 else
