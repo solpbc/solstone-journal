@@ -1661,3 +1661,137 @@ fn the_home_says_oura_and_apple_lines_in_time_order() {
         .collect();
     assert_eq!(names, [json!("walking"), json!("running")]);
 }
+
+/// What a night that grows into another recorder's night is kept as.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Kept {
+    Plain,
+    Hidden,
+    Apart,
+}
+
+/// Add `extra` to the stored record `id` on `day`.
+fn patch_record(root: &Path, day: &str, id: &str, extra: serde_json::Value) {
+    let path = root.join(format!("facets/body/activities/{day}.jsonl"));
+    let text = fs::read_to_string(&path).unwrap();
+    let mut patched = String::new();
+    for line in text.lines() {
+        let mut record: serde_json::Value = serde_json::from_str(line).unwrap();
+        if record["id"] == id {
+            for (key, value) in extra.as_object().unwrap() {
+                record[key] = value.clone();
+            }
+        }
+        patched.push_str(&format!("{record}\n"));
+    }
+    fs::write(path, patched).unwrap();
+}
+
+#[test]
+fn a_night_that_grows_into_another_recorders_keeps_its_hide_and_apart_in_every_reader() {
+    for kept in [Kept::Plain, Kept::Hidden, Kept::Apart] {
+        let journal = journal_with_oura();
+        let root = journal.path();
+        // The watch's night ends at 02:00: all of it inside Oura's, but under
+        // half of Oura's, so apart.
+        let mut watch = night();
+        watch.end = Some("2026-10-11 02:00:00 -0600".to_owned());
+        let ring = oura_experience(
+            "on",
+            "sleep",
+            "long_sleep",
+            "long sleep",
+            (
+                "2026-10-10T22:12:00.000-06:00",
+                "2026-10-11T06:18:00.000-06:00",
+            ),
+            json!({"type": "long_sleep", "efficiency": 93, "readiness": {"score": 82}}),
+        );
+        window(root, DAY, "220000_3600", std::slice::from_ref(&watch));
+        window_in(root, OURA, DAY, "220000_3600", std::slice::from_ref(&ring));
+        record_in(root, STREAM, DAY, &watch);
+        record_in(root, OURA, DAY, &ring);
+        match kept {
+            Kept::Plain => {}
+            Kept::Hidden => patch_record(root, DAY, "body_n1", json!({"hidden": true})),
+            Kept::Apart => patch_record(
+                root,
+                DAY,
+                "body_n1",
+                json!({"apart": [format!("{OURA}\u{1f}on")]}),
+            ),
+        }
+        // A later export ends the watch's night at 06:20, and its record follows.
+        watch.end = Some(END.to_owned());
+        window(root, DAY, "220000_3600", std::slice::from_ref(&watch));
+        let outcome = solstone_core_facets::refresh_body_account(
+            root,
+            "body",
+            DAY,
+            "body_n1",
+            "sleep",
+            START,
+            END,
+            &solstone_core_format::content::body_records::recorder_id(
+                STREAM,
+                Some("Synthetic Watch"),
+            ),
+            None,
+        )
+        .unwrap();
+        assert_eq!(outcome, solstone_core_facets::BodyAccountRefresh::Refreshed);
+
+        // The owner's day view, hidden faces included and not.
+        let shown = |include_hidden: bool| -> Vec<(usize, bool)> {
+            body_faces_range(root, "body", DAY, DAY, None, include_hidden)
+                .unwrap()
+                .remove(DAY)
+                .unwrap_or_default()
+                .iter()
+                .map(|face| (face.members.len(), face.hidden))
+                .collect()
+        };
+        // A reader gated on windows, as a connection's is.
+        let gated: Vec<usize> = body_faces(root, "body", DAY, &everyone, false)
+            .unwrap()
+            .iter()
+            .map(|face| face.members.len())
+            .collect();
+        let lines = lines_on(root, DAY);
+        match kept {
+            Kept::Plain => {
+                assert_eq!(shown(true), [(2, false)]);
+                assert_eq!(gated, [2]);
+                assert_eq!(lines.len(), 1, "{lines:?}");
+            }
+            // Grouped now, the ring's night is hidden with the watch's.
+            Kept::Hidden => {
+                assert_eq!(shown(true), [(2, true)]);
+                assert!(shown(false).is_empty());
+                assert!(gated.is_empty());
+                assert!(lines.is_empty(), "{lines:?}");
+            }
+            Kept::Apart => {
+                assert_eq!(shown(true), [(1, false), (1, false)]);
+                assert_eq!(gated, [1, 1]);
+                assert_eq!(lines.len(), 2, "{lines:?}");
+            }
+        }
+
+        // The day's document is built from the windows, which hold both nights
+        // whatever the records say, and it never groups.
+        crate::body_day::BodyDays::default().reconcile(root);
+        let document = fs::read_to_string(
+            root.join("chronicle")
+                .join(DAY)
+                .join(crate::body_day::BODY_DOCUMENT),
+        )
+        .unwrap();
+        for line in [
+            "- sleep: Sleep, 22:10 to 2026-10-11 06:20 (Synthetic Watch)",
+            "- sleep: long sleep, 22:12 to 2026-10-11 06:18 (Oura)",
+        ] {
+            assert!(document.contains(line), "{kept:?}: {document}");
+        }
+    }
+}

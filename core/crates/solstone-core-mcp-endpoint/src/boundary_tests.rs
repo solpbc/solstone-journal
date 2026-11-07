@@ -14214,6 +14214,148 @@ fn a_workout_that_grows_into_another_recorders_groups_with_it_once_its_record_fo
     }
 }
 
+/// A synthetic night's account, its window and its record, filed under `day`,
+/// with `extra` on the record.
+fn file_night(
+    root: &Path,
+    day: &str,
+    row_id: &str,
+    by: &str,
+    (start, end): (&str, &str),
+    extra: Value,
+) {
+    use solstone_core_format::content::body_records::{BodyRow, RowKind, encode_rows, recorder_id};
+    let mut row = BodyRow::new(
+        RowKind::Experience,
+        row_id.to_owned(),
+        "apple_health",
+        "HKCategoryTypeIdentifierSleepAnalysis",
+        "Sleep".to_owned(),
+    );
+    row.experience = Some("sleep".to_owned());
+    row.start = Some(start.to_owned());
+    row.end = Some(end.to_owned());
+    row.by = Some(by.to_owned());
+    let window = root.join(format!(
+        "chronicle/{day}/import.apple_health/{}0000_3600",
+        &start[11..13]
+    ));
+    fs::create_dir_all(window.join("talents")).unwrap();
+    let rows = window.join("body.jsonl");
+    let mut held = fs::read_to_string(&rows)
+        .ok()
+        .map(|text| solstone_core_format::content::body_records::decode_rows(&text).unwrap())
+        .unwrap_or_default();
+    held.retain(|stored| stored.id != row_id);
+    held.push(row);
+    fs::write(&rows, encode_rows(&held)).unwrap();
+    fs::write(window.join("stream.json"), "{}\n").unwrap();
+    fs::write(window.join("talents/facets.json"), r#"[{"facet":"alpha"}]"#).unwrap();
+    let mut record = json!({
+        "id": format!("body_{:0>16}", row_id), "source": "body", "activity": "sleep",
+        "account": {"key": format!("import.apple_health\u{1f}{row_id}"), "start": start,
+            "end": end, "recorder": recorder_id("import.apple_health", Some(by))},
+    });
+    for (key, value) in extra.as_object().unwrap() {
+        record[key] = value.clone();
+    }
+    let path = root.join(format!("facets/alpha/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!("{record}\n"));
+    fs::write(&path, text).unwrap();
+}
+
+#[test]
+fn a_night_that_grows_into_another_recorders_keeps_its_hide_and_apart_in_every_reader() {
+    for kept in ["plain", "hidden", "apart"] {
+        let journal = body_record_journal(false);
+        let root = journal.path();
+        fs::create_dir_all(root.join("imports")).unwrap();
+        fs::write(
+            root.join("imports/.apple_health-zone.json"),
+            r#"{"zone":"America/New_York"}"#,
+        )
+        .unwrap();
+        let start = "2026-03-10 22:10:00 -0400";
+        let extra = match kept {
+            "hidden" => json!({"hidden": true}),
+            "apart" => json!({"apart": ["import.apple_health\u{1f}p1"]}),
+            _ => json!({}),
+        };
+        // The watch's night ends at 02:00: all of it inside the phone's, but
+        // under half of the phone's, so apart.
+        file_night(
+            root,
+            "20260310",
+            "n1",
+            "Synthetic Watch",
+            (start, "2026-03-11 02:00:00 -0400"),
+            extra,
+        );
+        file_night(
+            root,
+            "20260310",
+            "p1",
+            "Synthetic Phone",
+            ("2026-03-10 22:12:00 -0400", "2026-03-11 06:18:00 -0400"),
+            json!({}),
+        );
+        // Before it grows, each night stands alone, and the hidden one shows nowhere.
+        for (reader, counts) in body_accounts_in_every_reader(&journal, "20260310") {
+            let expected: Vec<usize> = match kept {
+                "hidden" => vec![1],
+                _ => vec![1, 1],
+            };
+            assert_eq!(counts, expected, "{reader}, {kept} before");
+        }
+        // A later export ends the watch's night at 06:20, and its record follows.
+        let end = "2026-03-11 06:20:00 -0400";
+        let rows = root.join("chronicle/20260310/import.apple_health/220000_3600/body.jsonl");
+        let mut held = solstone_core_format::content::body_records::decode_rows(
+            &fs::read_to_string(&rows).unwrap(),
+        )
+        .unwrap();
+        for row in &mut held {
+            if row.id == "n1" {
+                row.end = Some(end.to_owned());
+            }
+        }
+        fs::write(
+            &rows,
+            solstone_core_format::content::body_records::encode_rows(&held),
+        )
+        .unwrap();
+        let outcome = solstone_core_facets::refresh_body_account(
+            root,
+            "alpha",
+            "20260310",
+            "body_00000000000000n1",
+            "sleep",
+            start,
+            end,
+            &solstone_core_format::content::body_records::recorder_id(
+                "import.apple_health",
+                Some("Synthetic Watch"),
+            ),
+            None,
+        )
+        .unwrap();
+        assert_eq!(outcome, solstone_core_facets::BodyAccountRefresh::Refreshed);
+        // A hidden group shows in no listing, so neither fetch nor sources is
+        // handed a reference to it.
+        for (reader, counts) in body_accounts_in_every_reader(&journal, "20260310") {
+            let expected: Vec<usize> = match kept {
+                "plain" => vec![2],
+                // Grouped now, the phone's night is hidden with the watch's.
+                "hidden" => Vec::new(),
+                _ => vec![1, 1],
+            };
+            assert_eq!(counts, expected, "{reader}, {kept}");
+        }
+    }
+}
+
 #[test]
 fn a_workout_that_grows_past_its_group_stands_alone_once_its_record_follows() {
     let journal = body_record_journal(false);
