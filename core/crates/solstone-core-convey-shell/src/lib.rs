@@ -1864,7 +1864,10 @@ fn router_with_roots(
         .layer(Extension(agents_consent_cancel))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
     // Each hashed asset path answers through these same routes, inside the gates.
-    let routes = routes.clone().merge(asset_cache::hashed_routes(routes));
+    let routes = routes
+        .clone()
+        .merge(asset_cache::hashed_routes(routes))
+        .route_layer(axum::middleware::from_fn(asset_cache::refuse_unknown_hash));
     let routes =
         session_gate::apply_layer_with_owner(routes, journal_root, include_agents, target_use);
     form_body_guard::apply_layer(routes)

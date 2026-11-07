@@ -107,6 +107,19 @@ fn unknown_hash_response() -> Response {
     response
 }
 
+/// Refuse a hashed path whose hash isn't this build's. It runs inside the
+/// gates, so a caller the gates turn away learns nothing about the build.
+pub(crate) async fn refuse_unknown_hash(request: Request, next: Next) -> Response {
+    let path = request.uri().path();
+    if matches!(*request.method(), Method::GET | Method::HEAD)
+        && assets::hashed_record(path).is_none()
+        && has_tree_hash_shape(path)
+    {
+        return unknown_hash_response();
+    }
+    next.run(request).await
+}
+
 /// The layer that applies the rule. It sits outside every dashboard route, so
 /// its header is the only `Cache-Control` a dashboard response carries.
 pub(crate) async fn apply(request: Request, next: Next) -> Response {
@@ -114,9 +127,6 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
     let head = *request.method() == Method::HEAD;
     let path = request.uri().path().to_owned();
     let validators = request.headers().get(IF_NONE_MATCH).cloned();
-    if readable && assets::hashed_record(&path).is_none() && has_tree_hash_shape(&path) {
-        return unknown_hash_response();
-    }
     let response = next.run(request).await;
     if !readable || response.status() != StatusCode::OK {
         return classed(response, CacheClass::Personal);
@@ -639,6 +649,27 @@ mod tests {
             assert_eq!(status, StatusCode::OK, "{path}");
             assert!(!body.is_empty(), "{path}");
         }
+    }
+
+    // A caller the gates turn away gets the gates' answer, not a verdict on the hash.
+    #[tokio::test]
+    async fn an_unknown_hash_is_judged_only_inside_the_gates() {
+        let unset = tempfile::tempdir().unwrap();
+        let app = crate::router(unset.path().to_owned());
+        for path in [
+            "/app/health/static/0123456789abcdef/health.js",
+            hashed("/app/home/static/home.js"),
+        ] {
+            let (status, headers, _) = fetch(&app, path, None).await;
+            assert_ne!(status, StatusCode::NOT_FOUND, "{path}");
+            assert_ne!(status, StatusCode::OK, "{path}");
+            assert_eq!(policy(&headers), "no-store", "{path}");
+        }
+        // The shell's own files are open before setup, hashed or not.
+        let (status, _, _) = fetch(&app, "/static/0123456789abcdef/app.js", None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _, _) = fetch(&app, hashed("/static/app.js"), None).await;
+        assert_eq!(status, StatusCode::OK);
     }
 
     #[test]
