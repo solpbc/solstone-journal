@@ -844,22 +844,37 @@ async fn owner_identity_invalid_refuses_every_owner_surface_without_writes() {
         ] {
             let before = content_snapshot(journal.root());
             let (status, response) = call(router(journal.root().to_path_buf()), path, body).await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {response}");
+            assert_eq!(status, StatusCode::CONFLICT, "{path}: {response}");
             assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
             assert_eq!(content_snapshot(journal.root()), before, "{path}");
         }
 
-        for path in [
-            "/app/speakers/api/owner/status",
-            "/app/speakers/api/quality",
-            "/app/speakers/api/status",
+        // The dashboard's two reads report that no owner is admitted as a
+        // state, and still read no owner artifacts.
+        for (path, state) in [
+            ("/app/speakers/api/owner/status", "/status"),
+            ("/app/speakers/api/quality", "/owner_voice/bootstrap_state"),
         ] {
             let before = content_snapshot(journal.root());
             let (status, response) = get(router(journal.root().to_path_buf()), path).await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {response}");
-            assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
+            assert_eq!(status, StatusCode::OK, "{path}: {response}");
+            assert_eq!(
+                response.pointer(state),
+                Some(&json!("identity_needed")),
+                "{path}: {response}"
+            );
             assert_eq!(content_snapshot(journal.root()), before, "{path}");
         }
+
+        let before = content_snapshot(journal.root());
+        let (status, response) = get(
+            router(journal.root().to_path_buf()),
+            "/app/speakers/api/status",
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{response}");
+        assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
+        assert_eq!(content_snapshot(journal.root()), before);
     }
 }
 
@@ -877,7 +892,7 @@ async fn bootstrap_routes_refuse_invalid_owner_identity_without_writes() {
             let before = content_snapshot(journal.root());
             let (status, response) =
                 call(router(journal.root().to_path_buf()), path, json!({})).await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {response}");
+            assert_eq!(status, StatusCode::CONFLICT, "{path}: {response}");
             assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
             assert_eq!(content_snapshot(journal.root()), before, "{path}");
         }
@@ -1341,11 +1356,7 @@ async fn propagate_refuses_an_invalid_owner_without_writes_in_preview_or_commit(
         )
         .await;
 
-        assert_eq!(
-            status,
-            StatusCode::BAD_REQUEST,
-            "commit={commit}: {refused}"
-        );
+        assert_eq!(status, StatusCode::CONFLICT, "commit={commit}: {refused}");
         assert_eq!(
             refused["reason_code"], OWNER_IDENTITY_INVALID_REASON,
             "commit={commit}: {refused}"
@@ -1501,7 +1512,7 @@ async fn propagation_keeps_owner_reconfiguration_outside_the_operation_boundary(
         json!({"old_speaker":"legacy","new_speaker":"new","commit":false}),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert_eq!(status, StatusCode::CONFLICT, "{refused}");
     assert_eq!(refused["reason_code"], OWNER_IDENTITY_INVALID_REASON);
     assert_eq!(
         snapshot_files(&journal.0),
@@ -1563,7 +1574,7 @@ async fn indeterminate_owner_screen_refuses_assign_confirm_and_correct_without_w
         journal.entity("other", false);
         journal.segment(labels);
         let (status, refused) = call(router(journal.0.clone()), path, body).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{path}: {refused}");
+        assert_eq!(status, StatusCode::CONFLICT, "{path}: {refused}");
         assert_eq!(
             refused["reason_code"], "speaker_owner_identity_invalid",
             "{path}: {refused}"

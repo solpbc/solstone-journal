@@ -699,7 +699,7 @@ async fn scan_invalid_owner_identity_preserves_both_cache_files() {
 
     let (status, body) = call(&journal.0, "/app/speakers/api/discovery/scan", json!({})).await;
 
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["reason_code"], "speaker_owner_identity_invalid");
     assert_eq!(snapshot(&journal.0), before);
 }

@@ -729,7 +729,7 @@ fn owner_identity_invalid() -> Response {
         OWNER_IDENTITY_INVALID,
         OWNER_IDENTITY_INVALID_MESSAGE,
         OWNER_IDENTITY_INVALID_DETAIL,
-        StatusCode::BAD_REQUEST,
+        StatusCode::CONFLICT,
     )
 }
 fn manual_count(

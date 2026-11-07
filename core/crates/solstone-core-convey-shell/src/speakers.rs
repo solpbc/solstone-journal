@@ -62,7 +62,7 @@ pub async fn state(Extension(journal): Extension<Arc<JournalRoot>>) -> Response 
     Json(json!({
         "today": today,
         "owner_min_statements": 30,
-        "owner_status_routing_tokens": {"candidate": "candidate", "confirmed": "confirmed"},
+        "owner_status_routing_tokens": {"candidate": "candidate", "confirmed": "confirmed", "identity_needed": crate::speakers_owner::OWNER_IDENTITY_NEEDED_STATUS},
         "not_in_new_voices_copy": assets::not_in_new_voices_copy(),
         "speaker_copy": speaker_copy(),
         "speaker_filter_name": Value::Null,

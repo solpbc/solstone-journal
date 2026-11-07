@@ -40,7 +40,7 @@ pub use ambiguity::{
 pub use census::{CensusEntity, IdentityCensus, scan_identity_census};
 pub use create::{
     becomes_journal_principal, create_journal_entity, ensure_configured_principal,
-    journal_identity_emails, journal_identity_names,
+    journal_identity_emails, journal_identity_names, owner_name_configured,
 };
 pub use derived::{
     entity_last_active_day, entity_last_active_ts, entity_matches_identity_name,

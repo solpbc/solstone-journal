@@ -4485,6 +4485,18 @@
     });
   }
 
+  // Nobody in the journal is its owner yet, so there is no voice to teach
+  // and the one step that helps is the owner's name in settings.
+  function ownerIdentityNeeded() {
+    ownerPanel.innerHTML = `
+      <strong>${escapeHtml(COPY.SPK_OVERVIEW_YOUR_VOICE_LEARNING)}</strong>
+      <p class="spk-card-line">${escapeHtml(COPY.SPK_OWNER_IDENTITY_NEEDED || '')}</p>
+      <div class="spk-overview-actions">
+        <a class="spk-overview-btn spk-overview-btn-primary" href="/app/settings#profile">${escapeHtml(COPY.SPK_OWNER_IDENTITY_NEEDED_LABEL || '')}</a>
+      </div>
+    `;
+  }
+
   function ownerStatusError(err) {
     ownerPanel.innerHTML = window.SurfaceState.error({
       heading: COPY.SPK_OVERVIEW_OWNER_STATUS_ERROR,
@@ -4870,6 +4882,7 @@
       .then((data) => {
         if (data.status === OWNER_STATUS_ROUTING.candidate) ownerCandidate(data);
         else if (data.status === OWNER_STATUS_ROUTING.confirmed) ownerConfirmed(data);
+        else if (data.status === OWNER_STATUS_ROUTING.identity_needed) ownerIdentityNeeded();
         else ownerNotReady(data);
         pollRelabel(data);
       })

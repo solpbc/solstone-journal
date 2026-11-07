@@ -383,7 +383,7 @@ async fn tag_cli_uses_the_admitted_owner_and_refuses_invalid_identity_without_wr
             json!({"day":"20260808","stream_layout":"named","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
         )
         .await;
-        assert_eq!(actual_status, StatusCode::BAD_REQUEST, "{response}");
+        assert_eq!(actual_status, StatusCode::CONFLICT, "{response}");
         assert_eq!(response["reason_code"], "speaker_owner_identity_invalid");
         assert_eq!(content_snapshot(journal.root()), before);
     }
