@@ -577,10 +577,10 @@ fn the_briefing_reads_only_what_arrived_within_a_week_grouped_before_later_arriv
         "2026-10-10 12:00:00 -0600",
         "2026-10-10 12:30:00 -0600",
     );
-    window(root, DAY, "070000_3600", &[watch.clone()]);
-    window(root, DAY, "070000_300", &[app.clone()]);
-    window(root, DAY, "070500_300", &[late.clone()]);
-    window(root, DAY, "120000_3600", &[bare.clone()]);
+    window(root, DAY, "070000_3600", std::slice::from_ref(&watch));
+    window(root, DAY, "070000_300", std::slice::from_ref(&app));
+    window(root, DAY, "070500_300", std::slice::from_ref(&late));
+    window(root, DAY, "120000_3600", std::slice::from_ref(&bare));
     arrived_record(root, DAY, &watch, Some("20261011"), json!({}));
     arrived_record(root, DAY, &app, Some("20261017"), json!({}));
     // Arrived at D+60: never joins the group the briefing reads.
