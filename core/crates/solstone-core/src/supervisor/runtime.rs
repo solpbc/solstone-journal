@@ -1946,9 +1946,10 @@ pub(crate) async fn boot_and_tick(
     if let Err(err) = solstone_core_entity::sweep_entity_review_policy(&journal) {
         log::error!("failed to sweep entity review policy: {err}");
     }
-    // A journal started before entity creation marked the owner has a person
-    // with the owner's name and no principal; adopt it so voice setup can run.
-    match solstone_core_entity::adopt_configured_principal(&journal) {
+    // A finished journal whose owner's name is set but who has no person yet
+    // (named before entity creation or a profile save made one) gets that
+    // person now, so voice setup can run.
+    match ensure_owner_principal(&journal) {
         Ok(Some(entity_id)) => log::info!("supervisor: marked {entity_id} as the journal's owner"),
         Ok(None) => {}
         Err(err) => log::warn!("supervisor: owner adoption skipped: {err}"),
@@ -2592,11 +2593,34 @@ async fn wait_for_callosum_connection(
     Ok(())
 }
 
+/// Give a finished journal's owner their person, as a profile save would:
+/// adopt the one admissible person named as the owner, or create one from the
+/// configured name when nothing matches. An ambiguous or blocked match is left
+/// for the owner. A journal still in setup, or one a restore holds, is left
+/// alone: finishing setup makes the owner's person.
+fn ensure_owner_principal(journal: &Path) -> Result<Option<String>, String> {
+    let setup_finished = solstone_core_journal_config::read_journal_config(journal)
+        .map_err(|error| error.to_string())?
+        .config
+        .as_ref()
+        .and_then(|config| config.get("setup"))
+        .and_then(serde_json::Value::as_object)
+        .and_then(|setup| setup.get("completed_at"))
+        .and_then(serde_json::Value::as_f64)
+        .is_some_and(|completed_at| completed_at > 0.0);
+    if !setup_finished
+        || solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(journal)
+    {
+        return Ok(None);
+    }
+    solstone_core_entity::ensure_configured_principal(journal)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        AppService, ManagedAppProcess, RuntimeBootError, cleanup_result, selected_direct_door_port,
-        shutdown_regime_for, withhold_app_direct_door,
+        AppService, ManagedAppProcess, RuntimeBootError, cleanup_result, ensure_owner_principal,
+        selected_direct_door_port, shutdown_regime_for, withhold_app_direct_door,
     };
     #[cfg(unix)]
     use super::{
@@ -2633,6 +2657,42 @@ mod tests {
     };
 
     use super::super::tick::{SupervisorSignal, SupervisorStopReason};
+
+    fn owner_journal(config: serde_json::Value) -> tempfile::TempDir {
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::write(
+            journal.path().join("config/journal.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        journal
+    }
+
+    #[test]
+    fn startup_gives_a_finished_journals_named_owner_their_person() {
+        let journal = owner_journal(serde_json::json!({
+            "setup": {"completed_at": 1767225600},
+            "identity": {"name": "Jordan Rivera"},
+        }));
+        let id = ensure_owner_principal(journal.path()).unwrap().unwrap();
+        let principal = solstone_core_entity::read_journal_principal(journal.path())
+            .unwrap()
+            .unwrap();
+        assert_eq!(principal["id"], id);
+        assert_eq!(principal["name"], "Jordan Rivera");
+        // The next start finds the owner already there.
+        assert_eq!(ensure_owner_principal(journal.path()).unwrap(), None);
+    }
+
+    #[test]
+    fn startup_leaves_a_journal_still_in_setup_to_finish_setup() {
+        let journal = owner_journal(serde_json::json!({
+            "identity": {"name": "Jordan Rivera"},
+        }));
+        assert_eq!(ensure_owner_principal(journal.path()).unwrap(), None);
+        assert!(!journal.path().join("entities").exists());
+    }
 
     #[test]
     #[cfg(unix)]

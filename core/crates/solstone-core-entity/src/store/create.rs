@@ -137,10 +137,12 @@ pub fn journal_identity_names(journal_root: &Path) -> Vec<String> {
     extract_identity_names(config.as_ref())
 }
 
-/// Complete an explicit owner-profile save with its principal Person.
-/// Existing principals are preserved. An existing name match is adopted only
-/// when unambiguous and admissible; blocked or ambiguous matches are left for
-/// owner review. Reads and background discovery must not call this writer.
+/// Give the owner their principal Person from their configured name: on an
+/// owner-profile save, when setup finishes, and at startup of a finished
+/// journal. Existing principals are preserved. An existing name match is
+/// adopted only when unambiguous and admissible; blocked or ambiguous matches
+/// are left for owner review. Reads and background discovery must not call
+/// this writer.
 pub fn ensure_configured_principal(journal_root: &Path) -> Result<Option<String>, String> {
     let _trust = hold_entity_trust_lock(journal_root).map_err(|error| error.to_string())?;
     if has_journal_principal(journal_root).map_err(|error| error.to_string())? {
