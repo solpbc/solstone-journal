@@ -20,6 +20,24 @@ import mobile_native_build as mobile
 
 
 class BuildControls(unittest.TestCase):
+    def test_cpp_only_ios_build_does_not_acquire_or_modify_rust_toolchains(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                      jobs=1, platform="ios", components=["llama"], full_run=False)
+            build = mobile.Build(args)
+            with (
+                mock.patch.object(mobile, "require_current_pins"),
+                mock.patch.object(mobile.platform, "system", return_value="Darwin"),
+                mock.patch.object(mobile.platform, "machine", return_value="arm64"),
+                mock.patch.object(build, "output", return_value="/fixture/sdk"),
+                mock.patch.object(build, "run") as calls,
+            ):
+                build.setup()
+            commands = [row.args[1] for row in calls.call_args_list]
+            self.assertFalse(any(command[0] in ("rustup", "rustc") for command in commands))
+            self.assertTrue(any(command[0] == "cmake" for command in commands))
+
     def test_qwen_dynamic_exports_are_exact_on_both_platforms(self):
         for apple in (False, True):
             symbols = ["_" + name if apple else name for name in mobile.QWEN_EXPORTS]

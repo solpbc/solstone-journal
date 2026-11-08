@@ -274,9 +274,10 @@ class Build:
         if (platform.system(), platform.machine()) != expected:
             raise ValueError(f"{self.args.platform} requires {expected[0]}/{expected[1]}")
         self.target = "aarch64-apple-ios" if ios else "aarch64-linux-android"
-        self.run("rust-version", ["rustc", "-vV"])
+        if set(self.args.components) & {"rust", "nvattest"}:
+            self.run("rust-version", ["rustc", "-vV"])
+            self.run("rust-target", ["rustup", "target", "add", self.target])
         self.run("cmake-version", ["cmake", "--version"])
-        self.run("rust-target", ["rustup", "target", "add", self.target])
         self.common = ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_SHARED_LIBS=OFF", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", "-DGGML_NATIVE=OFF", "-DGGML_OPENMP=OFF", "-DGGML_CCACHE=OFF", "-DGGML_LLAMAFILE=OFF", "-DGGML_BACKEND_DL=OFF"]
         self.native = self.work / "workspace-native"
         if ios:
