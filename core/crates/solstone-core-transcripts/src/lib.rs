@@ -67,8 +67,9 @@ pub struct Sources {
     /// read `You`; every other line keeps its diarization number. Used only
     /// where `voices` names no one.
     pub heard_owner: Option<BTreeSet<i64>>,
-    /// Whether Strava's tiles are read. A tile holding a workout alone is
-    /// body data: the owner's own page shows it, and no talent reads it.
+    /// Whether Strava's segments are read. A workout is body data: the
+    /// owner's own page shows it, and no talent reads any Strava segment,
+    /// whatever else its directory holds.
     pub strava_tiles: bool,
 }
 
@@ -795,7 +796,7 @@ fn process_segment(
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
     };
-    if !sources.strava_tiles && segment.is_strava_body_tile() {
+    if !sources.strava_tiles && segment.is_strava_tile() {
         return Vec::new();
     }
     let stream = segment
@@ -1791,10 +1792,9 @@ impl Segment {
             .is_some_and(|stream| solstone_core_segment::is_body_only_dir(stream, &self.path))
     }
 
-    /// A Strava tile holding a workout and nothing else of note.
-    fn is_strava_body_tile(&self) -> bool {
+    /// A segment of Strava's stream, whatever its directory holds.
+    fn is_strava_tile(&self) -> bool {
         self.stream.directory().and_then(std::ffi::OsStr::to_str) == Some(STRAVA_STREAM)
-            && self.is_body_window()
     }
 
     fn record_stream(&self) -> Option<&str> {
@@ -2157,12 +2157,27 @@ mod tests {
         )
         .unwrap();
         assert!(!span.contains("Morning Run"), "{span}");
-        // A tile the body-only test rejects is read as it always was, private
-        // note and all.
+        // A tile the body-only test rejects is no talent's either, private
+        // note and all, while the owner's own page still shows it.
         fs::write(tile.join("notes.md"), "something else").unwrap();
         let (day, _) = cluster(root.path(), DAY, &talent);
-        assert!(day.contains("Morning Run"), "{day}");
-        assert!(day.contains("knee"), "{day}");
+        assert!(day.contains("garden planning"), "{day}");
+        assert!(!day.contains("Morning Run"), "{day}");
+        assert!(!day.contains("knee"), "{day}");
+        assert!(!day.contains("something else"), "{day}");
+        let (segment, _) = cluster_period(
+            root.path(),
+            DAY,
+            "070000_300",
+            &talent,
+            Some("import.strava"),
+        );
+        assert!(!segment.contains("Morning Run"), "{segment}");
+        let mut owner = talent.clone();
+        owner.strava_tiles = true;
+        let (page, _) = cluster(root.path(), DAY, &owner);
+        assert!(page.contains("Morning Run"), "{page}");
+        assert!(page.contains("knee"), "{page}");
     }
 
     #[test]
