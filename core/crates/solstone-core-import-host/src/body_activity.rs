@@ -125,6 +125,11 @@ fn each_day_record(
     Ok(())
 }
 
+/// Whether a body record names `key` on `day`, in any facet folder.
+pub(crate) fn has_record(journal: &Path, day: &str, key: &str) -> Result<bool, (String, String)> {
+    recorded_keys(journal, day).map(|keys| keys.contains_key(key))
+}
+
 /// Every account key a body record names on `day`, in any facet, with what
 /// code wrote on it, read line by line as bytes: a line that can't be read
 /// names none, and the rest still name theirs. A day file that exists but
@@ -243,7 +248,7 @@ const STRAVA_TILE_SECONDS: i64 = 300;
 
 /// What deciding whether Strava workouts were already sensed reads, once per day.
 #[derive(Default)]
-struct Sensed {
+pub(crate) struct Sensed {
     /// Per day, the keys of each workout's live tiles.
     tiles: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Per day, the segment keys Strava's activity records name.
@@ -256,7 +261,7 @@ impl Sensed {
     /// A tile is known by what its window holds and by where Strava's import
     /// cuts it, so a tile the owner deleted still counts. A day file that
     /// can't be read decides nothing, so it is an error.
-    fn check(
+    pub(crate) fn check(
         &mut self,
         journal: &Path,
         day: &str,
@@ -424,10 +429,6 @@ pub(crate) fn write_records_at(
 /// record of Strava's stream already names (any of its tiles, on any day it
 /// covers, in any facet) gets none: that record stays its only one. A day file
 /// that can't be read refuses the workouts it would decide, counted.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Strava's import doesn't write records yet")
-)]
 pub(crate) fn write_strava_records_at(
     journal: &Path,
     day: &str,

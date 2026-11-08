@@ -2664,6 +2664,18 @@ mod tests {
             .in_full_pass
     }
 
+    /// Wait until no full pass is claimed. The worker clears the claim before
+    /// it counts the pass, so a count past the snapshot means it was cleared.
+    fn wait_full_pass_released(identity: ObjectIdentity) {
+        loop {
+            let snap = test_support::snapshot_worker_passes(identity);
+            if !full_pass_claimed(identity) {
+                return;
+            }
+            test_support::wait_worker_passes_after(identity, snap);
+        }
+    }
+
     async fn assert_unbumped_then_hourly(
         app: &axum::Router,
         root: &Arc<JournalRoot>,
@@ -4201,7 +4213,10 @@ mod tests {
         .unwrap();
         assert_ne!(walked(now), bumped);
         assert_eq!(month_count(now).await, bumped);
-        // The pass starts on an index read after the hour.
+        // The pass starts on an index read after the hour. A pass the first
+        // read claimed may still be running on the worker; an index read
+        // never starts a second one, so let that one finish first.
+        wait_full_pass_released(identity);
         let later = now + chrono::Duration::hours(2);
         let index = crate::router(temp.path().to_path_buf(), Clock::fixed(later), || {
             Response::new(Body::empty())

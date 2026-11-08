@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -212,7 +212,7 @@ fn names(line: &StravaNamesLine) -> Vec<(&str, &str)> {
 }
 
 fn run(root: &Path, model: &Model) -> StravaNamesOutcome {
-    record_strava_names(root, model, noon())
+    record_strava_names(root, model, &noon)
 }
 
 #[test]
@@ -370,7 +370,7 @@ fn a_failed_call_is_counted_not_kept_and_tried_again() {
     ] {
         let outcome = run(root, &model);
         assert_eq!((outcome.calls, outcome.failed), (2, 2));
-        assert!(outcome.store_error.is_none());
+        assert!(!outcome.store_unavailable);
         let lines = store(root);
         assert_eq!(lines.len(), 2);
         assert!(lines.values().all(|line| line.words_hash.is_none()));
@@ -438,7 +438,8 @@ fn a_workout_no_longer_live_loses_its_line_and_counts_for_nothing() {
     let model = Model::answering(json!([person("Sam", "with Sam")]));
     Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
     let deleted = Workout::new(2, "20261002", "Hill repeats with Sam").write(root);
-    // An earlier run read both; the second workout has been deleted since.
+    // An earlier run kept a line for both, reading the first; the second, with
+    // no facet there, wasn't read. It has been deleted since.
     let earlier = journal_with(Value::Null);
     Workout::new(1, "20261001", "Hill repeats with Sam").write(earlier.path());
     Workout::new(2, "20261002", "Hill repeats with Sam")
@@ -457,7 +458,7 @@ fn a_workout_no_longer_live_loses_its_line_and_counts_for_nothing() {
 
     let outcome = run(root, &model);
 
-    assert_eq!(model.count(), 2);
+    assert_eq!(model.count(), 1);
     assert_eq!(outcome.pruned, 1);
     assert_eq!(store(root).keys().collect::<Vec<_>>(), ["1"]);
     assert_eq!((outcome.created, outcome.below_threshold), (0, 1));
@@ -577,8 +578,367 @@ fn a_workout_with_no_facet_gives_no_entity() {
 
     let outcome = run(root, &model);
 
-    assert_eq!((outcome.no_facet, outcome.created), (2, 0));
+    assert_eq!((outcome.unfiled, outcome.created), (2, 0));
     assert!(!root.join("entities").exists());
+}
+
+#[test]
+fn a_workout_with_no_facet_is_read_only_once_it_has_one() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam")
+        .facet(None)
+        .write(root);
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+
+    let outcome = run(root, &model);
+    assert_eq!((model.count(), outcome.calls, outcome.unfiled), (0, 0, 1));
+
+    // The same download, imported with body.
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    let outcome = run(root, &model);
+    assert_eq!((model.count(), outcome.calls, outcome.unfiled), (1, 1, 0));
+}
+
+#[test]
+fn a_name_in_a_muted_facet_becomes_no_entity() {
+    let journal = journal();
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    // Filed under a facet that is gone.
+    Workout::new(3, "20261003", "Tempo with Sam")
+        .facet(Some("gone"))
+        .write(root);
+    solstone_core_facets::set_facet_muted(root, "body", true).unwrap();
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+
+    let outcome = run(root, &model);
+
+    // Their words aren't sent to the model at all.
+    assert_eq!(model.count(), 0);
+    assert_eq!(
+        (outcome.set_aside, outcome.calls, outcome.created),
+        (3, 0, 0)
+    );
+    assert!(store(root).values().all(|line| line.words_hash.is_none()));
+    assert!(!root.join("entities").exists());
+
+    // Turned back on, its workouts' words are read on the next import.
+    solstone_core_facets::set_facet_muted(root, "body", false).unwrap();
+    let outcome = run(root, &model);
+    assert_eq!(model.count(), 2);
+    assert_eq!(
+        (outcome.set_aside, outcome.calls, outcome.created),
+        (1, 2, 1)
+    );
+}
+
+#[test]
+fn names_read_before_their_facet_was_muted_become_no_entity_while_it_is() {
+    let journal = journal();
+    let root = journal.path();
+    let earlier = self::journal();
+    for (id, day) in [(1, "20261001"), (2, "20261002")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+        Workout::new(id, day, "Hill repeats with Sam").write(earlier.path());
+    }
+    run(
+        earlier.path(),
+        &Model::answering(json!([person("Sam", "with Sam")])),
+    );
+    fs::copy(
+        earlier.path().join(STRAVA_NAMES_FILE),
+        root.join(STRAVA_NAMES_FILE),
+    )
+    .unwrap();
+    solstone_core_facets::set_facet_muted(root, "body", true).unwrap();
+
+    let outcome = run(root, &Model::unused());
+
+    assert_eq!((outcome.cached, outcome.muted, outcome.created), (2, 1, 0));
+    assert!(!root.join("entities").exists());
+}
+
+// The facets are made unreadable through a link out of the journal, which
+// only Unix lets a test make.
+#[cfg(unix)]
+#[test]
+fn words_read_when_the_facets_cant_be_read_after_are_kept_and_said_so() {
+    let journal = journal();
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    // The facets become unreadable during the last call, once every
+    // workout's words are out: their folder leads out of the journal.
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().to_path_buf();
+    let path = root.to_path_buf();
+    let calls = std::cell::Cell::new(0);
+    let model = Model::new(move |_| {
+        calls.set(calls.get() + 1);
+        if calls.get() == 2 {
+            fs::rename(path.join("facets"), path.join("facets-away")).unwrap();
+            std::os::unix::fs::symlink(&target, path.join("facets")).unwrap();
+        }
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+
+    let outcome = run(root, &model);
+
+    assert_eq!((outcome.calls, outcome.failed), (2, 0));
+    assert!(outcome.promotion_unavailable);
+    assert!(!outcome.store_unavailable);
+    assert!(store(root).values().all(|line| line.words_hash.is_some()));
+}
+
+/// A clock that reads `open` the first `times` times, and `closed` after.
+fn clock_closing_after(
+    times: usize,
+    open: DateTime<Utc>,
+    closed: DateTime<Utc>,
+) -> impl Fn() -> DateTime<Utc> {
+    let read = std::cell::Cell::new(0);
+    move || {
+        read.set(read.get() + 1);
+        if read.get() <= times { open } else { closed }
+    }
+}
+
+#[test]
+fn no_call_is_made_once_the_window_closes_part_way() {
+    let journal = journal_with(json!({"mode": "deferred",
+        "gate": {"time_window": {"start": "11:00", "end": "13:00"}}}));
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002"), (3, "20261003")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+    // Noon in the owner's zone for the first call, then two in the afternoon,
+    // after the window.
+    let clock = clock_closing_after(1, noon(), noon() + chrono::Duration::hours(2));
+
+    let outcome = record_strava_names(root, &model, &clock);
+
+    assert_eq!(model.count(), 1);
+    assert_eq!((outcome.calls, outcome.waiting), (1, 2));
+    assert_eq!(outcome.wait, Some(NamesWait::WaitingForWindow));
+    let lines = store(root);
+    assert_eq!(names(&lines["1"]), [("Person", "Sam")]);
+    assert!(lines["2"].words_hash.is_none() && lines["3"].words_hash.is_none());
+}
+
+#[test]
+fn a_run_stopped_part_way_keeps_what_it_read() {
+    let journal = journal();
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002"), (3, "20261003")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    // The process ends during the second call.
+    let calls = std::cell::Cell::new(0);
+    let model = Model::new(move |_| {
+        calls.set(calls.get() + 1);
+        assert!(calls.get() < 2, "stopped during a call");
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+    let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(root, &model)));
+    assert!(stopped.is_err());
+
+    let lines = store(root);
+    assert_eq!(names(&lines["1"]), [("Person", "Sam")]);
+    assert!(lines["2"].words_hash.is_none() && lines["3"].words_hash.is_none());
+    // The next import reads only what's left.
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+    let outcome = run(root, &model);
+    assert_eq!((model.count(), outcome.cached), (2, 1));
+}
+
+/// Take a first tile out as a delete does, leaving its tombstone.
+fn delete_tile(window: &Path) {
+    fs::remove_file(window.join("workout.json")).unwrap();
+    fs::write(window.join(TOMBSTONE), "{}").unwrap();
+}
+
+#[test]
+fn a_workout_deleted_part_way_through_a_run_is_not_sent() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    let second = Workout::new(2, "20261002", "Tempo with Sam").write(root);
+    Workout::new(3, "20261003", "Easy with Sam").write(root);
+    // During the first call, the second workout's tile is deleted, and the
+    // third's line is taken from the store, as a delete does.
+    let path = root.to_path_buf();
+    let deleted = std::cell::Cell::new(false);
+    let model = Model::new(move |_| {
+        if !deleted.replace(true) {
+            delete_tile(&second);
+            let held = solstone_core_import::strava_names::hold_strava_lock(&path).unwrap();
+            solstone_core_import::strava_names::remove_strava_names(
+                &path,
+                &BTreeSet::from(["3".to_owned()]),
+                &held,
+            )
+            .unwrap();
+        }
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+
+    let outcome = run(root, &model);
+
+    assert_eq!((model.count(), outcome.calls, outcome.failed), (1, 1, 0));
+    let lines = store(root);
+    assert_eq!(names(&lines["1"]), [("Person", "Sam")]);
+    assert!(!lines.contains_key("3"));
+}
+
+#[test]
+fn a_facet_muted_part_way_through_a_run_sends_no_more_of_its_workouts() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    Workout::new(2, "20261002", "Tempo with Sam").write(root);
+    Workout::new(3, "20261003", "Easy with Sam")
+        .facet(Some("other"))
+        .write(root);
+    // During the first call, body is muted; other stays on.
+    let path = root.to_path_buf();
+    let model = Model::new(move |_| {
+        solstone_core_facets::set_facet_muted(&path, "body", true).unwrap();
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+
+    let outcome = run(root, &model);
+
+    assert_eq!((model.count(), outcome.calls, outcome.set_aside), (2, 2, 1));
+    let lines = store(root);
+    assert!(lines["1"].words_hash.is_some() && lines["3"].words_hash.is_some());
+    assert!(lines["2"].words_hash.is_none());
+}
+
+#[test]
+fn a_polite_stop_part_way_keeps_what_was_read_and_calls_no_more() {
+    let journal = journal();
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002"), (3, "20261003")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    let stop = solstone_core_import::WorkStop::new();
+    let _installed = solstone_core_import::WorkStopGuard::install(&stop);
+    // The import is asked to stop during the first call.
+    let asked = stop.clone();
+    let model = Model::new(move |_| {
+        asked.request();
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+
+    let outcome = run(root, &model);
+
+    assert_eq!((model.count(), outcome.calls, outcome.waiting), (1, 1, 2));
+    assert_eq!(outcome.wait, Some(NamesWait::Stopped));
+    let lines = store(root);
+    assert_eq!(names(&lines["1"]), [("Person", "Sam")]);
+    assert!(lines["2"].words_hash.is_none() && lines["3"].words_hash.is_none());
+}
+
+#[test]
+fn a_save_that_cant_take_the_lock_is_tried_once_more() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+    // Another import holds the Strava lock through the first try only.
+    let tries = std::cell::Cell::new(0);
+    let keep = |activity_id: &str, hash: &str, names: &[StravaName]| {
+        tries.set(tries.get() + 1);
+        let held = (tries.get() == 1)
+            .then(|| solstone_core_import::strava_names::hold_strava_lock(root).unwrap());
+        let kept = keep_names(root, Duration::ZERO, activity_id, hash, names);
+        drop(held);
+        kept
+    };
+
+    let outcome = record_strava_names_keeping(root, &model, &noon, &keep);
+
+    assert_eq!(tries.get(), 2);
+    assert_eq!((outcome.calls, outcome.failed), (1, 0));
+    assert!(!outcome.store_unavailable);
+    assert_eq!(names(&store(root)["1"]), [("Person", "Sam")]);
+}
+
+#[test]
+fn a_save_that_still_cant_take_the_lock_loses_only_that_workout() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    Workout::new(2, "20261002", "Tempo with Sam").write(root);
+    // Another import takes the Strava lock during the first call and keeps
+    // it through both tries at saving it, letting go during the second.
+    let path = root.to_path_buf();
+    let held = RefCell::new(None);
+    let model = Model::new(move |_| {
+        let mut held = held.borrow_mut();
+        *held = match held.take() {
+            None => Some(solstone_core_import::strava_names::hold_strava_lock(&path).unwrap()),
+            Some(_) => None,
+        };
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+    let keep = |activity_id: &str, hash: &str, names: &[StravaName]| {
+        keep_names(root, Duration::ZERO, activity_id, hash, names)
+    };
+
+    let outcome = record_strava_names_keeping(root, &model, &noon, &keep);
+
+    assert_eq!((model.count(), outcome.calls, outcome.failed), (2, 2, 1));
+    assert!(outcome.store_unavailable);
+    let lines = store(root);
+    assert!(lines["1"].words_hash.is_none());
+    assert_eq!(names(&lines["2"]), [("Person", "Sam")]);
+}
+
+#[test]
+fn a_second_run_during_the_first_reads_none_of_its_workouts() {
+    let journal = journal();
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    // While the first run's first call is out, a second import runs.
+    let during = std::rc::Rc::new(RefCell::new(None));
+    let seen = during.clone();
+    let path = root.to_path_buf();
+    let model = Model::new(move |_| {
+        if seen.borrow().is_none() {
+            let second = run(&path, &Model::unused());
+            *seen.borrow_mut() = Some(second);
+        }
+        Ok(generated(
+            &json!({"entities": [person("Sam", "with Sam")]}).to_string(),
+        ))
+    });
+
+    let first = run(root, &model);
+
+    let second = during.borrow_mut().take().unwrap();
+    assert_eq!((second.calls, second.elsewhere), (0, 2));
+    assert_eq!((first.calls, model.count()), (2, 2));
+    assert!(store(root).values().all(|line| line.words_hash.is_some()));
 }
 
 #[test]

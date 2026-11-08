@@ -786,7 +786,11 @@ fn said_on_day(
         let Ok(records) = load_activity_records(journal, facet, day, false) else {
             continue;
         };
-        for record in records {
+        // Thinking's reading of a Strava workout is body data, which no talent reads.
+        for record in records
+            .into_iter()
+            .filter(|record| !solstone_core_format::content::is_strava_reading(record))
+        {
             let Some(record_id) = record
                 .get("id")
                 .and_then(Value::as_str)
@@ -2245,6 +2249,67 @@ mod tests {
                 "ids": ["m-20260308-0", "m-20260309-0", "m-20260310-0"]
             })
         );
+    }
+
+    /// Thinking's reading of a Strava workout never reaches the weekly input,
+    /// even with words in the owner's voice under it; the same record in a
+    /// capture stream does.
+    #[test]
+    fn said_takes_nothing_from_a_reading_of_a_strava_workout() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let write = |path: &str, text: String| {
+            let p = root.path().join(path);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, text).unwrap();
+        };
+        write(
+            "config/journal.json",
+            json!({"identity":{"name":"Jordan Rivers"}}).to_string(),
+        );
+        write(
+            "entities/jordan/entity.json",
+            json!({"id":"jordan","name":"Jordan Rivers","type":"Person","is_principal":true})
+                .to_string(),
+        );
+        for stream in ["import.strava", "phone"] {
+            write(
+                &format!("chronicle/20260309/{stream}/070000_300/audio.jsonl"),
+                r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"a long run along the river"}"#
+                    .into(),
+            );
+            write(
+                &format!("chronicle/20260309/{stream}/070000_300/talents/speaker_labels.json"),
+                json!({"labels":[{"sentence_id":1,"speaker":"jordan","method":"user_confirmed"}]})
+                    .to_string(),
+            );
+        }
+        let row = |stream: &str| {
+            json!({
+                "id":format!("exercise_{stream}"),
+                "activity":"exercise",
+                "stream":stream,
+                "segments":["070000_300"],
+                "story":{"body":"You said \"a long run along the river\"."}
+            })
+            .to_string()
+                + "\n"
+        };
+        let path = "facets/work/activities/20260309.jsonl";
+        let said = |root: &Path| {
+            said_on_day(
+                root,
+                &["work".to_owned()],
+                "20260309",
+                crate::transcript::voice_names(root).as_ref(),
+            )
+        };
+        write(path, row("import.strava"));
+        assert!(said(root.path()).is_empty());
+        write(path, row("import.strava") + &row("phone"));
+        let quotes = said(root.path());
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].record_id, "exercise_phone");
     }
 
     #[test]

@@ -51,6 +51,7 @@ solstone-core-talent-runtime.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
+solstone-core-removals.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-cortex.workspace = true
 solstone-core-journal-config-write.workspace = true
@@ -64,6 +65,7 @@ solstone-core-talent-runtime = { workspace = true, features = ["test-hooks"] }
 axum = { workspace = true, features = ["tokio"] }
 filetime = "0.2.29"
 solstone-core-transcripts-web.workspace = true
+solstone-core-retention.workspace = true
 tempfile = "3.24.0"
 tower.workspace = true
 

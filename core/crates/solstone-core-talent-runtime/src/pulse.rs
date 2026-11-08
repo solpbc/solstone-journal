@@ -490,6 +490,10 @@ fn read_activity(
         gaps.push(format!("activity record not found: {facet}/{activity}"));
         return None;
     };
+    // Thinking's reading of a Strava workout is body data, which no talent reads.
+    if solstone_core_format::content::is_strava_reading(&record) {
+        return None;
+    }
     // A hidden record is intentionally absent from the packet, not a missing source.
     if record.get("hidden").and_then(Value::as_bool) == Some(true) {
         return None;
@@ -672,6 +676,45 @@ mod tests {
             .is_none()
         );
         assert_eq!(gaps.len(), 1);
+    }
+
+    /// Thinking's reading of a Strava workout is body data, which the pulse
+    /// never reads; another stream's record beside it still reaches it.
+    #[test]
+    fn a_strava_reading_is_omitted_without_a_missing_source_gap() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("facets/work/activities");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("20261003.jsonl"),
+            [
+                json!({"id":"exercise_070000_300","details":"A run along the river.","stream":"import.strava"}),
+                json!({"id":"meeting_090000_300","details":"Design review","stream":"default"}),
+            ]
+            .map(|row| format!("{row}\n"))
+            .concat(),
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let mut gaps = Vec::new();
+        let strava = json!({"facet":"work","activity":"exercise_070000_300"});
+        assert!(
+            read_activity("20261003", strava.as_object().unwrap(), &context, &mut gaps).is_none()
+        );
+        assert!(gaps.is_empty());
+        let capture = json!({"facet":"work","activity":"meeting_090000_300"});
+        let read = read_activity(
+            "20261003",
+            capture.as_object().unwrap(),
+            &context,
+            &mut gaps,
+        )
+        .unwrap()
+        .to_string();
+        assert!(read.contains("Design review"), "{read}");
+        assert!(gaps.is_empty());
     }
 
     #[test]

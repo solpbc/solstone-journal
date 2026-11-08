@@ -1209,7 +1209,15 @@ mod tests {
                     "",
                     None,
                 );
-                solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
+                solstone_core_facets::delete_facet(
+                    &solstone_core_removals::Removal::begin(
+                        &context.journal,
+                        solstone_core_removals::Action::FacetDelete,
+                        solstone_core_removals::Surface::Cli,
+                    ),
+                    "work",
+                )
+                .unwrap();
                 // These tests recreate "work" to prove the fences against a replaced facet;
                 // the store never reuses a name, so the retired record is dropped as a hand edit would.
                 let _ = std::fs::remove_file(

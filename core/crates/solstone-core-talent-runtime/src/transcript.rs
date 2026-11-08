@@ -37,6 +37,8 @@ pub(crate) fn sources_from_config(config: &Map<String, Value>) -> Sources {
         talents: talent_source(config.get("talents")),
         voices: None,
         heard_owner: None,
+        // A talent never reads a workout: it is body data.
+        strava_tiles: false,
     }
 }
 
@@ -291,6 +293,7 @@ pub fn activity_span_transcript(
         talents: TalentSource::Disabled,
         voices: None,
         heard_owner: None,
+        strava_tiles: false,
     };
     let (transcript, _counts, _memory) =
         cluster_span_with_memory(journal, day, span, &sources, stream)?;
@@ -366,6 +369,63 @@ mod tests {
             json!({"id": "ada", "name": "Ada", "type": "Person", "is_principal": true}),
         );
         assert!(agent_speakers(journal.path()).is_none());
+    }
+
+    /// A day talent's load, and a segment load such as the entity suggestion's,
+    /// hold no Strava workout: it is body data. A capture beside it still reads.
+    #[test]
+    fn a_talent_day_load_holds_no_strava_workout_text() {
+        let journal = TempDir::new().unwrap();
+        let day = journal.path().join("chronicle/20260903");
+        let tile = day.join("import.strava/070000_300");
+        fs::create_dir_all(&tile).unwrap();
+        fs::write(
+            tile.join("workout.json"),
+            json!({
+                "schema": "solstone.import.strava.tile.v1",
+                "activity_id": 9,
+                "tile": {"index": 0, "count": 1},
+                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0,
+                    "strava_fields": {"Activity Gear": "Trek Domane SL6 (Blue Thunder)"}}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let capture = day.join("default/090000_300");
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(
+            capture.join("audio.jsonl"),
+            r#"{"start":"00:00:01","text":"garden planning"}"#,
+        )
+        .unwrap();
+        let sources = json!({"transcripts": true, "percepts": true, "talents": true});
+        let loaded = load_transcript(
+            journal.path(),
+            json!({"day": "20260903", "sources": sources})
+                .as_object()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(loaded.text.contains("garden planning"), "{}", loaded.text);
+        assert!(!loaded.text.contains("Trek"), "{}", loaded.text);
+        assert!(!loaded.text.contains("Morning Run"), "{}", loaded.text);
+        let (segment, _, _) = load_segment_transcript(
+            journal.path(),
+            "20260903",
+            "070000_300",
+            Some("import.strava"),
+            sources.as_object().unwrap(),
+        );
+        assert!(!segment.contains("Morning Run"), "{segment}");
+        // The same tile read the way the owner's own page reads it shows its
+        // gear, so the absence above is the talent's load leaving it out.
+        let owner = Sources {
+            strava_tiles: true,
+            ..sources_from_config(sources.as_object().unwrap())
+        };
+        let (page, _) = solstone_core_transcripts::cluster(journal.path(), "20260903", &owner);
+        assert!(page.contains("Trek"), "{page}");
+        assert!(page.contains("Morning Run"), "{page}");
     }
 
     #[test]

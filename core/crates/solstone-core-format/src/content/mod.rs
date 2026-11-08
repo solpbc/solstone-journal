@@ -3,7 +3,7 @@
 
 mod action_logs;
 mod activities;
-pub use activities::{BODY_RECORD_SOURCE, is_body_record, is_retired_plan};
+pub use activities::{BODY_RECORD_SOURCE, is_body_record, is_retired_plan, is_strava_reading};
 mod ai_chat;
 mod audio;
 pub mod body_records;

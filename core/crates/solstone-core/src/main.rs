@@ -2750,9 +2750,17 @@ fn wipe_speaker_artifacts_request(value: Value) -> Result<Value, String> {
         "solstone-speaker-resolve-wipe-speaker-artifacts-request-v1",
         &["schema", "journal_root", "dry_run"],
     )?;
+    let journal_root = PathBuf::from(required_string(&object, "journal_root")?);
+    let removal = (!required_bool(&object, "dry_run")?).then(|| {
+        solstone_core_removals::Removal::begin(
+            &journal_root,
+            solstone_core_removals::Action::SpeakersWipe,
+            solstone_core_removals::Surface::Cli,
+        )
+    });
     let report = solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(
-        &PathBuf::from(required_string(&object, "journal_root")?),
-        required_bool(&object, "dry_run")?,
+        &journal_root,
+        removal.as_ref(),
     )
     .map_err(|error| error.to_string())?;
     serde_json::to_value(report).map_err(|error| error.to_string())

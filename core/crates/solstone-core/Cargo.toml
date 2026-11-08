@@ -141,6 +141,7 @@ path = "tests/bin/speakers_analyze_generation_holder.rs"
 test = false
 
 [dependencies]
+solstone-core-removals.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 env_logger.workspace = true

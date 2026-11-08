@@ -9,6 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
 
 use crate::publish::{PUBLICATION_SCHEMA, PublicationRecord, SegmentBindingOutcome};
@@ -128,6 +129,12 @@ fn inspect(journal: &Path, id: &str) -> Result<Option<ImportThinking>, String> {
             false,
         )
         .map_err(|error| error.to_string())?;
+        // A Strava tile never asks for thinking, whatever its directory holds,
+        // as publication decides. One published before that rule was saved as
+        // owing thinking; it owes none.
+        if segment.stream == STRAVA_STREAM {
+            continue;
+        }
         if segment.day.len() != 8
             || chrono::NaiveDate::parse_from_str(&segment.day, "%Y%m%d").is_err()
         {
@@ -389,5 +396,67 @@ mod tests {
         let inventory = read(root.path()).unwrap();
         assert!(inventory.imports.is_empty());
         assert_eq!(inventory.unreadable.len(), 1);
+    }
+
+    #[test]
+    fn a_strava_tile_saved_as_owing_thinking_is_read_again_as_body_data() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("imports/strava-earlier");
+        std::fs::create_dir_all(&directory).unwrap();
+        let tile = |day: &str, files: &[&str]| {
+            let dir = root
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("import.strava/070000_300");
+            std::fs::create_dir_all(&dir).unwrap();
+            for file in files {
+                std::fs::write(dir.join(file), "{}").unwrap();
+            }
+            SegmentPublicationOutcome {
+                day: day.into(),
+                stream: "import.strava".into(),
+                segment: "070000_300".into(),
+                outcome: SegmentBindingOutcome::Bound {
+                    prev_day: None,
+                    prev_segment: None,
+                    seq: 1,
+                },
+                // What a publication before this change saved for every tile.
+                body_only: false,
+            }
+        };
+        let mut record = PublicationRecord {
+            schema: PUBLICATION_SCHEMA.into(),
+            status: PublicationStatus::Success,
+            segments: vec![tile("20261001", &["workout.json", "stream.json"])],
+            indexing: IndexPublicationOutcomes::default(),
+            day_markers: Vec::new(),
+        };
+        write_publication_record(Some(&directory), &record).unwrap();
+        let inventory = read(root.path()).unwrap();
+        assert!(inventory.unreadable.is_empty());
+        assert!(inventory.imports.is_empty(), "neither held nor left to do");
+
+        // A tile the body-only test rejects owes none either, as publication
+        // asks none for it; any other stream still counts.
+        record
+            .segments
+            .push(tile("20261002", &["workout.json", "notes.md"]));
+        let mut notes = record.segments[0].clone();
+        notes.stream = "import.notes".into();
+        notes.day = "20261003".into();
+        record.segments.push(notes);
+        write_publication_record(Some(&directory), &record).unwrap();
+        let import = read(root.path()).unwrap().imports.pop().unwrap();
+        assert_eq!(
+            import
+                .segments
+                .iter()
+                .map(|c| (c.day.as_str(), c.stream.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("20261003", "import.notes")]
+        );
+        assert_eq!(import.days, BTreeSet::from(["20261003".into()]));
     }
 }

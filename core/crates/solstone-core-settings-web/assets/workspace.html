@@ -2147,6 +2147,25 @@ button:focus:not(:focus-visible) {
 }
 .settings-about-block { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; }
 .settings-about-device { border-top: 1px solid var(--hairline); padding: 12px 0; }
+
+/* Removal history: read-only list of the journal's deletion record */
+.removals-block { margin-top: 2em; padding-top: 0.5em; border-top: 1px solid var(--hairline); }
+.removals-panel .log-entries { max-height: none; overflow: visible; }
+.removals-panel .log-header { display: flex; align-items: baseline; font-weight: 500; }
+.removals-panel .zone-note { color: var(--ink-faint); }
+.removal-row { align-items: flex-start; padding: 0.5em 1em; }
+.removal-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.removal-line { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 0.1em; }
+.removal-what { color: var(--ink); font-weight: 500; }
+.removal-qual { color: var(--ink-faint); font-weight: 400; }
+.removal-time { white-space: nowrap; }
+.removal-qual::before { content: "\00b7"; margin: 0 0.4em; }
+.removal-how { color: var(--ink-faint); font-size: 0.9em; margin-top: 0.1em; }
+.removal-group > summary { cursor: pointer; list-style-position: outside; }
+.removal-group > summary::marker { color: var(--ink-faint); }
+.removal-units { list-style: none; margin: 0.4em 0 0.1em; padding: 0 0 0 0.75em; border-left: 1px solid var(--hairline-2); }
+.removal-units li { padding: 0.15em 0; color: var(--ink-soft); }
+.removals-foot { padding: 0.6em 1em 0.75em; border-top: 1px solid var(--hairline); color: var(--ink-faint); font-size: 0.8em; text-align: center; }
 </style>
 
 <script src="/app/settings/static/settings.js"></script>
@@ -2719,6 +2738,17 @@ button:focus:not(:focus-visible) {
         <small style="display: block; margin-top: 0.5em; color: var(--ink-soft);">build the list of original media ready for removal, based on your retention settings. building the list does not delete anything.</small>
       </div>
       </form>
+
+      <div id="removalHistory" class="removals-block">
+        <h3 class="settings-subsection-title">removal history</h3>
+        <p class="settings-subsection-desc">a line for each thing removed from your journal or your backup: what it was, when, and where it was removed from. this history never keeps what was in it.</p>
+        <div class="log-panel removals-panel">
+          <div class="log-header" id="removalHistoryHeader" hidden>newest first</div>
+          <div class="log-entries" id="removalHistoryList" aria-live="polite"><div class="log-empty">loading…</div></div>
+          <div class="log-more" id="removalHistoryMore" hidden><button type="button" class="log-more-btn" id="removalHistoryMoreBtn">show older</button></div>
+          <div class="removals-foot" id="removalHistoryFoot" hidden></div>
+        </div>
+      </div>
     </section>
 
     <section class="settings-section" id="section-facets" role="tabpanel" aria-labelledby="tab-facets">
@@ -6725,6 +6755,215 @@ document.getElementById('field-local-access-open').addEventListener('change', (e
   else showOpenLocalAccess();
 });
 
+// Removal history: the journal's deletion record, read only.
+const REMOVAL_COPY = {
+  error: "couldn't load your removal history. reload the page to try again.",
+  empty: "nothing has been removed since your journal started keeping this history. anything removed before then isn't listed.",
+  footAll: "anything removed before your journal started keeping this history isn't listed.",
+  footSome: 'showing the newest {shown} of {total}.',
+  nameNotKept: "its name isn't kept",
+  mixed: '{n} removed together',
+};
+const REMOVAL_KIND = {
+  segment: ['segment', 'segments'],
+  original: ['original media', 'originals'],
+  memory: ['memory an agent saved', 'memories agents saved'],
+  workout: ['{source} workout', '{source} workouts'],
+  import: ['{source} import', '{source} imports'],
+  entity: ['entity', 'entities'],
+  facet: ['facet', 'facets'],
+  detected_entities: ['detected entity', 'detected entities'],
+  facet_file: ['file from a facet', 'files from a facet'],
+  speakers: ['what your journal keeps about voices', 'what your journal keeps about voices'],
+  backup: ['backup copies', 'backup copies'],
+};
+const REMOVAL_KIND_FALLBACK = ['something else', 'other things'];
+const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'facet_file', 'detected_entities']);
+const REMOVAL_SOURCE = { strava: 'Strava' };
+const REMOVAL_BACKUP = { own: 'your own storage', operated: 'storage sol pbc operates' };
+const REMOVAL_ACTION = {
+  segment_delete: 'deleted', workout_delete: 'deleted', import_delete: 'deleted',
+  entity_delete: 'deleted', detected_entities_delete: 'deleted', facet_delete: 'deleted',
+  memory_delete: 'deleted',
+  facet_merge: 'merged into another facet',
+  speakers_wipe: 'cleared',
+  originals_release: 'removed after you approved it',
+  voice_only_release: 'removed because "leave out other voices" was on',
+  backup_off: 'deleted when you turned off backup',
+  finish_stopped: 'finished deleting',
+};
+const REMOVAL_ACTION_FALLBACK = 'removed';
+const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup' };
+const REMOVAL_SURFACE = {
+  transcripts: 'in transcripts', body: 'in body', import: 'in import', entities: 'in entities',
+  settings: 'in settings', home: 'in home', backup: 'in backup', agents: 'in agents',
+  activities: 'in activities', speakers: 'in speakers',
+  cli: 'from the command line',
+};
+const REMOVAL_PAGE_SIZE = 25;
+
+function removalEl(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function removalDay(key) {
+  return window.JournalFormat.day(key).toLowerCase();
+}
+
+// A segment key is a time of day on the recording's own clock, never an instant.
+function removalSegmentTime(key) {
+  const match = /^(\d{2})(\d{2})(\d{2})_(\d+)/.exec(key || '');
+  if (!match) return null;
+  const start = new Date(2000, 0, 1, Number(match[1]), Number(match[2]), Number(match[3]));
+  const end = new Date(start.getTime() + Number(match[4]) * 1000);
+  const format = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+  return format.formatRange ? format.formatRange(start, end) : format.format(start);
+}
+
+function removalSurfaceKey(entry) {
+  return entry.surface === 'web' ? entry.page : entry.surface;
+}
+
+function removalFill(template, unit) {
+  return template.replace('{source}', REMOVAL_SOURCE[unit.source] || '').trim();
+}
+
+function removalQualifiers(unit) {
+  switch (unit.kind) {
+    case 'segment': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
+    case 'original': return [unit.file, unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
+    case 'memory': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
+    case 'backup': return [REMOVAL_BACKUP[unit.storage]].filter(Boolean);
+    default: return REMOVAL_NAMELESS.has(unit.kind) ? [REMOVAL_COPY.nameNotKept] : [];
+  }
+}
+
+function removalWhat(unit) {
+  const line = removalEl('span', 'removal-line');
+  line.append(removalEl('span', 'removal-what', removalFill((REMOVAL_KIND[unit.kind] || REMOVAL_KIND_FALLBACK)[0], unit)));
+  removalQualifiers(unit).forEach(text => line.append(removalEl('span', 'removal-qual', text)));
+  return line;
+}
+
+function removalHow(entry) {
+  const action = REMOVAL_ACTION[entry.action] || REMOVAL_ACTION_FALLBACK;
+  const surface = removalSurfaceKey(entry);
+  const place = REMOVAL_ACTION_NAMES_PLACE[entry.action] !== surface && REMOVAL_SURFACE[surface];
+  return place ? `${action} ${place}` : action;
+}
+
+function removalGroups(entries) {
+  const groups = [];
+  for (const entry of entries) {
+    const last = groups[groups.length - 1];
+    if (last && entry.operation && last.operation === entry.operation) last.units.push(entry);
+    else groups.push({ operation: entry.operation, units: [entry] });
+  }
+  return groups;
+}
+
+function removalGroupWhat(group) {
+  const kinds = new Set(group.units.map(entry => entry.unit.kind));
+  const count = group.units.length;
+  const line = removalEl('span', 'removal-line');
+  line.style.display = 'inline-flex';
+  if (kinds.size === 1) {
+    const unit = group.units[0].unit;
+    line.append(removalEl('span', 'removal-what', `${count} ${removalFill((REMOVAL_KIND[unit.kind] || REMOVAL_KIND_FALLBACK)[1], unit)}`));
+    const days = new Set(group.units.map(entry => entry.unit.day).filter(Boolean));
+    if (days.size === 1) line.append(removalEl('span', 'removal-qual', removalDay([...days][0])));
+  } else {
+    line.append(removalEl('span', 'removal-what', REMOVAL_COPY.mixed.replace('{n}', count)));
+  }
+  return line;
+}
+
+function renderRemovalHistory(history) {
+  const header = document.getElementById('removalHistoryHeader');
+  const list = document.getElementById('removalHistoryList');
+  const more = document.getElementById('removalHistoryMore');
+  const moreBtn = document.getElementById('removalHistoryMoreBtn');
+  const foot = document.getElementById('removalHistoryFoot');
+  list.replaceChildren();
+  header.hidden = true;
+  more.hidden = true;
+  foot.hidden = true;
+  const entries = history && Array.isArray(history.entries) ? history.entries : null;
+  // A failure is never shown as the empty state: that would say nothing was removed.
+  if (!entries || !Number.isFinite(history.total) || (history.total > 0 && entries.length === 0)) {
+    list.append(removalEl('div', 'log-empty', REMOVAL_COPY.error));
+    return;
+  }
+  if (entries.length === 0) {
+    list.append(removalEl('div', 'log-empty', REMOVAL_COPY.empty));
+    return;
+  }
+  header.hidden = false;
+  if (window.JournalClock) window.JournalClock.placeNote(header, { inside: true });
+  const groups = removalGroups(entries);
+  let shown = 0;
+  let lastDay = null;
+  const paint = () => {
+    const until = Math.min(groups.length, shown + REMOVAL_PAGE_SIZE);
+    for (; shown < until; shown++) {
+      const group = groups[shown];
+      const newest = group.units[0];
+      const day = window.JournalClock ? window.JournalClock.dayKey(new Date(newest.at)) : null;
+      if (day && day !== lastDay) {
+        lastDay = day;
+        const separator = removalEl('div', 'log-day');
+        separator.append(removalEl('span', 'log-day-line'), removalEl('span', 'log-day-label', removalDay(day)), removalEl('span', 'log-day-line'));
+        list.append(separator);
+      }
+      const row = removalEl('div', 'log-row removal-row');
+      row.dataset.operation = group.operation || '';
+      const body = removalEl('div', 'removal-body');
+      const how = removalEl('div', 'removal-how', `${removalHow(newest)} · `);
+      how.append(removalEl('span', 'removal-time', window.JournalFormat.time(newest.at)));
+      if (group.units.length === 1) {
+        const what = removalEl('div');
+        what.append(removalWhat(newest.unit));
+        body.append(what, how);
+      } else {
+        const details = removalEl('details', 'removal-group');
+        const summary = removalEl('summary');
+        summary.append(removalGroupWhat(group));
+        details.append(summary);
+        const units = removalEl('ul', 'removal-units');
+        group.units.forEach(entry => {
+          const item = removalEl('li');
+          item.append(removalWhat(entry.unit));
+          units.append(item);
+        });
+        details.append(units);
+        body.append(details, how);
+      }
+      row.append(body);
+      list.append(row);
+    }
+    more.hidden = shown >= groups.length;
+    foot.textContent = history.total > entries.length
+      ? REMOVAL_COPY.footSome.replace('{shown}', entries.length.toLocaleString()).replace('{total}', history.total.toLocaleString())
+      : REMOVAL_COPY.footAll;
+    foot.hidden = shown < groups.length;
+  };
+  moreBtn.onclick = paint;
+  paint();
+}
+
+async function loadRemovalHistory() {
+  let history = null;
+  try {
+    history = await window.apiJson('api/storage/removals');
+  } catch (err) {
+    history = null;
+  }
+  renderRemovalHistory(history);
+}
+
 function initSettings() {
   if (settingsInitialized) return;
   settingsInitialized = true;
@@ -6733,6 +6972,7 @@ function initSettings() {
   loadVision();
   loadSync();
   loadStorage();
+  loadRemovalHistory();
   loadLocalAccess();
   setupAutoSave();
   setupStorageListeners();

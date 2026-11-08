@@ -54,6 +54,10 @@ pub fn remove_contained_tree(root: &Path, path: &Path) -> Result<(), PathError> 
 }
 
 #[cfg(all(test, unix))]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "tests of the removal primitives themselves"
+)]
 mod tests {
     use std::fs;
     use std::os::unix::fs::symlink;

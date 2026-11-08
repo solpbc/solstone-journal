@@ -68,6 +68,38 @@ pub struct RegistryDispatch {
     pub force: bool,
     pub owner_timestamp: Option<String>,
     pub fallback_timestamp: Option<String>,
+    /// The facet a Strava import files its workouts under.
+    pub facet: ImportFacet,
+}
+
+/// The facet one Strava import files its workouts under.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub enum ImportFacet {
+    /// Nobody chose for this run: the remembered default while it is still
+    /// enabled, otherwise none. Never creates a facet and never asks.
+    #[default]
+    Unattended,
+    /// The owner chose no facet for this run.
+    None,
+    /// The owner chose this facet for this run.
+    Facet(String),
+}
+
+impl ImportFacet {
+    /// What the run's preview binds: nothing when nobody chose, otherwise the
+    /// choice in the stored form of a remembered default.
+    #[must_use]
+    pub fn preview_value(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::Unattended => None,
+            Self::None => Some(solstone_core_journal_config::body_facet_value(
+                &solstone_core_journal_config::BodyFacetChoice::None,
+            )),
+            Self::Facet(facet) => Some(solstone_core_journal_config::body_facet_value(
+                &solstone_core_journal_config::BodyFacetChoice::Facet(facet.clone()),
+            )),
+        }
+    }
 }
 
 /// A manual CLI import prints its size before the mutating invocation. Recurring
@@ -682,6 +714,21 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             return rendered(failure("", &format!("{error}\n"), 1));
         }
     }
+    if options.facet.is_some() && options.no_facet {
+        return rendered(argparse_error(
+            "argument --no-facet: not allowed with argument --facet".to_owned(),
+        ));
+    }
+    if let Some(token) = &options.preview_token
+        && let Err(error) = solstone_core_import::snapshot::verify_preview_body_facet(
+            journal_path,
+            Path::new(media),
+            token,
+            import_facet(&options).preview_value().as_ref(),
+        )
+    {
+        return rendered(failure("", &format!("{error}\n"), 1));
+    }
     if let Some(facet) = options.facet.as_deref()
         && let Err(error) = require_enabled_facet(facet, journal_path)
     {
@@ -691,7 +738,15 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
         Ok(outcome) => outcome,
         Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
     };
+    let strava = matches!(
+        outcome,
+        ResolutionOutcome::Resolved {
+            source: ResolvedSource::Registry(RegistrySource::Strava),
+            ..
+        }
+    );
     if options.facet.is_some()
+        && !strava
         && matches!(
             outcome,
             ResolutionOutcome::RouteAppleHealth
@@ -703,7 +758,14 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
     {
         return rendered(failure(
             "",
-            "--facet only applies to an audio file or a plain text file, so nothing was imported; import this one without it\n",
+            "--facet only applies to an audio file, a plain text file or a Strava download, so nothing was imported; import this one without it\n",
+            1,
+        ));
+    }
+    if options.no_facet && !strava {
+        return rendered(failure(
+            "",
+            "--no-facet only applies to a Strava download, so nothing was imported; import this one without it\n",
             1,
         ));
     }
@@ -787,6 +849,7 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
                 force: options.force,
                 owner_timestamp: options.timestamp.clone(),
                 fallback_timestamp: options.fallback_timestamp.clone(),
+                facet: import_facet(&options),
             };
             match dispatch.seams() {
                 None => CliOutcome::Registry(registry_dispatch),
@@ -812,6 +875,15 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
                 }
             }
         }
+    }
+}
+
+/// The facet a run was given on its command line.
+fn import_facet(options: &Options) -> ImportFacet {
+    match (&options.facet, options.no_facet) {
+        (Some(facet), _) => ImportFacet::Facet(facet.clone()),
+        (None, true) => ImportFacet::None,
+        (None, false) => ImportFacet::Unattended,
     }
 }
 
@@ -2195,6 +2267,7 @@ struct Options {
     date_to: Option<String>,
     path: Option<PathBuf>,
     facet: Option<String>,
+    no_facet: bool,
     setting: Option<String>,
     auto: Option<Option<String>>,
     window_days: Option<u64>,
@@ -2303,8 +2376,13 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     if options.archive_identity.is_some() && options.audio_archive.is_none() {
         return Err("--archive-identity is only valid with --audio-archive".to_owned());
     }
-    if options.facet.is_some() && (options.audio_archive.is_some() || options.sync.is_some()) {
-        return Err("--facet is only valid when importing one audio or text file".to_owned());
+    if (options.facet.is_some() || options.no_facet)
+        && (options.audio_archive.is_some() || options.sync.is_some())
+    {
+        return Err(
+            "--facet is only valid when importing one audio or text file or a Strava download"
+                .to_owned(),
+        );
     }
     if let Some(audio_archive) = options.audio_archive {
         if !positionals.is_empty() {
@@ -2487,6 +2565,7 @@ fn assign_flag(options: &mut Options, argument: &str) -> bool {
         "--scheduled" => options.scheduled = true,
         "--list-importers" => options.list_importers = true,
         "--json" => options.json = true,
+        "--no-facet" => options.no_facet = true,
         _ => return false,
     }
     true

@@ -26,13 +26,15 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
-use axum::http::StatusCode;
+use axum::http::header::USER_AGENT;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_journal_io::{LockOptions, hold_lock};
+use solstone_core_removals::{Action, Page, Removal, Surface, Unit};
 use solstone_core_retention::door;
 use solstone_core_retention::tombstone::TOMBSTONE_NAME;
 use solstone_core_retention::{Outcome, RemovalReason, Target};
@@ -166,24 +168,33 @@ fn is_strava_import(journal: &Path, id: &str) -> bool {
 pub(crate) async fn delete_workout(
     State(state): State<Arc<AppState>>,
     RoutePath(activity_id): RoutePath<String>,
+    headers: HeaderMap,
 ) -> Response {
     if !valid_workout_id(&activity_id) {
         return bad_request("that isn't a workout in your journal.");
     }
-    request(&state, Kind::Workout, activity_id).await
+    request(&state, Kind::Workout, activity_id, user_agent(&headers)).await
 }
 
 pub(crate) async fn delete_import(
     State(state): State<Arc<AppState>>,
     RoutePath(import_id): RoutePath<String>,
+    headers: HeaderMap,
 ) -> Response {
     if !valid_import_id(&import_id) {
         return bad_request("that isn't an import in your journal.");
     }
-    request(&state, Kind::Import, import_id).await
+    request(&state, Kind::Import, import_id, user_agent(&headers)).await
 }
 
-async fn request(state: &AppState, kind: Kind, id: String) -> Response {
+fn user_agent(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+}
+
+async fn request(state: &AppState, kind: Kind, id: String, user_agent: Option<String>) -> Response {
     let root = state.journal_root.clone();
     let lookup_id = id.clone();
     let resolved = tokio::task::spawn_blocking(move || pieces_of(&root, kind, &lookup_id)).await;
@@ -244,7 +255,8 @@ async fn request(state: &AppState, kind: Kind, id: String) -> Response {
         pending_id,
         StravaTarget { kind, id, pieces },
         state.delete_window,
-    );
+    )
+    .with_surface(Surface::of_request(page_of(kind), user_agent.as_deref()));
     if let Err(error) = STORE.write(&state.journal_root, &record) {
         return not_saved(&format!("Failed to save the pending delete: {error}"));
     }
@@ -363,6 +375,22 @@ fn run(
         targets: Vec::new(),
         halted: None,
     };
+    // The workouts this delete reaches, read before their pieces go, so the
+    // names read from their words go with them.
+    let activity_ids = match target.kind {
+        Kind::Workout => std::collections::BTreeSet::from([target.id.clone()]),
+        Kind::Import => target
+            .pieces
+            .iter()
+            .filter_map(|piece| {
+                std::fs::read(stream_dir(&piece.day).join(&piece.key).join("workout.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .and_then(|v| v.get("activity_id").and_then(Value::as_u64))
+                    .map(|id| id.to_string())
+            })
+            .collect(),
+    };
     let mut live = Vec::new();
     for piece in &target.pieces {
         let door_target = Target {
@@ -391,6 +419,11 @@ fn run(
         }
     }
     let notify = door::notify_index(&RetentionIndex::new(journal), &outcome);
+    // Under the lock an import's names step writes under, so a removal here is
+    // never lost to a write there.
+    let names_kept =
+        solstone_core_import::strava_names::remove_strava_names(journal, &activity_ids, &_lock)
+            .err();
 
     let gone = target
         .pieces
@@ -407,6 +440,9 @@ fn run(
     });
     if notify.is_err() {
         detail["search_not_updated"] = json!(true);
+    }
+    if let Some(error) = names_kept {
+        detail["names_kept"] = json!(error.to_string());
     }
     if left > 0 {
         let state = if gone > 0 {
@@ -438,8 +474,15 @@ fn run(
         };
         return Some((state, Some(reason), detail));
     }
+    let removal = removal_of(journal, record);
     if target.kind == Kind::Import
-        && let Err(error) = solstone_core_import::remove_import_records(journal, &target.id)
+        && let Err(error) = removal.commit(
+            Unit::Import {
+                source: SOURCE.to_owned(),
+                id: target.id.clone(),
+            },
+            |io| solstone_core_import::remove_import_records(io, &target.id),
+        )
     {
         detail["records_kept"] = json!(true);
         detail["records_error"] = json!(format!("{error:?}"));
@@ -452,7 +495,38 @@ fn run(
             detail,
         ));
     }
+    if target.kind == Kind::Workout {
+        removal.record(Unit::Workout {
+            source: SOURCE.to_owned(),
+            id: target.id.clone(),
+        });
+    }
     Some((DeleteState::Deleted, None, detail))
+}
+
+/// The deletion record names the source of a workout or an import.
+const SOURCE: &str = "strava";
+
+fn page_of(kind: Kind) -> Page {
+    match kind {
+        Kind::Workout => Page::Body,
+        Kind::Import => Page::Import,
+    }
+}
+
+/// The removal operation one held delete is; every run of it is the same one.
+fn removal_of(journal: &Path, record: &StravaRecord) -> Removal {
+    let action = match record.target.kind {
+        Kind::Workout => Action::WorkoutDelete,
+        Kind::Import => Action::ImportDelete,
+    };
+    record.removal(
+        journal,
+        action,
+        Surface::Web {
+            page: page_of(record.target.kind),
+        },
+    )
 }
 
 pub(crate) async fn preview_workout(
@@ -717,7 +791,28 @@ mod tests {
             )
             .unwrap();
         }
+        // What an import read from each workout's own words.
+        solstone_core_import::strava_names::update_strava_names(root.path(), |lines| {
+            for (id, day) in [
+                ("101", "20260810"),
+                ("102", "20260810"),
+                ("201", "20260810"),
+            ] {
+                lines.insert(
+                    id.to_owned(),
+                    solstone_core_import::strava_names::StravaNamesLine::unread(id, day),
+                );
+            }
+        })
+        .unwrap();
         root
+    }
+
+    fn names(root: &Path) -> Vec<String> {
+        solstone_core_import::strava_names::read_strava_names(root)
+            .unwrap()
+            .into_keys()
+            .collect()
     }
 
     async fn delete(root: &Path, uri: &str) -> (StatusCode, Value) {
@@ -778,6 +873,27 @@ mod tests {
             root.path().join("imports/imp_a").is_dir(),
             "a workout delete keeps the import"
         );
+        assert_eq!(names(root.path()), ["102", "201"]);
+        // One entry in the deletion record, the workout, from the body page;
+        // finishing the same delete again adds nothing.
+        commit(root.path(), &id, true);
+        let history = solstone_core_removals::history(root.path(), 10).unwrap();
+        assert_eq!(history.total, 1);
+        let entry = &history.entries[0];
+        assert_eq!(entry.action, solstone_core_removals::Action::WorkoutDelete);
+        assert_eq!(
+            entry.surface,
+            solstone_core_removals::Surface::Web {
+                page: solstone_core_removals::Page::Body
+            }
+        );
+        assert_eq!(
+            entry.unit,
+            solstone_core_removals::Unit::Workout {
+                source: "strava".to_owned(),
+                id: "101".to_owned()
+            }
+        );
     }
 
     #[tokio::test]
@@ -802,6 +918,16 @@ mod tests {
         assert!(root.path().join("imports/imp_b").is_dir());
         let record = STORE.read::<StravaTarget>(root.path(), &id).unwrap();
         assert_eq!(record.state, DeleteState::Deleted);
+        assert_eq!(names(root.path()), ["201"]);
+        let history = solstone_core_removals::history(root.path(), 10).unwrap();
+        assert_eq!(history.total, 1);
+        assert_eq!(
+            history.entries[0].unit,
+            solstone_core_removals::Unit::Import {
+                source: "strava".to_owned(),
+                id: "imp_a".to_owned()
+            }
+        );
     }
 
     #[tokio::test]
@@ -816,6 +942,13 @@ mod tests {
         let (status, _) = delete(root.path(), "/app/transcripts/api/strava/import/..").await;
         assert_ne!(status, StatusCode::OK);
         assert!(root.path().join("imports/notes_1").is_dir());
+        // A refused delete leaves nothing in the deletion record.
+        assert_eq!(
+            solstone_core_removals::history(root.path(), 10)
+                .unwrap()
+                .total,
+            0
+        );
     }
 
     #[cfg(feature = "full-tests")]

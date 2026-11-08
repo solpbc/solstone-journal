@@ -67,6 +67,7 @@ solstone-core-local.workspace = true
 solstone-core-system.workspace = true
 
 [dev-dependencies]
+solstone-core-removals.workspace = true
 pulldown-cmark.workspace = true
 solstone-core-entity = { workspace = true, features = ["test-hooks"] }
 solstone-core-journal-archive.workspace = true

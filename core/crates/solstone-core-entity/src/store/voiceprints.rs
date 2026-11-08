@@ -463,6 +463,10 @@ where
 }
 
 /// Remove rows by exact Python-equality-compatible key and metadata match.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "not moved in stage 1: a speaker correction or undo removing voiceprint rows derived from it (board row 12, a product call left to the stage that moves it)"
+)]
 pub fn remove_voiceprints_by_key(
     journal_root: &Path,
     entity_id: &str,

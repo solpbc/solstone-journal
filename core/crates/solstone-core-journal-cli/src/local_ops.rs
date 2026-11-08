@@ -2465,6 +2465,15 @@ fn facet_merge_commit_locked(
             )),
         });
     }
+    // The source's copy of each colliding file went with the source facet.
+    let removal = solstone_core_removals::Removal::begin(
+        journal,
+        solstone_core_removals::Action::FacetMerge,
+        solstone_core_removals::Surface::Cli,
+    );
+    for _ in &report.regular_file_collisions {
+        removal.record(solstone_core_removals::Unit::FacetFile);
+    }
     Ok(FacetMergeCommit {
         report,
         post_commit_failure: None,

@@ -86,6 +86,10 @@ impl ChronicleMigrationReport {
 ///
 /// A completed run proves no root day directory survived and that `chronicle/`
 /// exists; either failure is an error rather than a quiet partial migration.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: a one-time layout migration that moves content; no product caller"
+)]
 pub fn migrate_root_days_to_chronicle(
     journal: &Path,
     dry_run: bool,

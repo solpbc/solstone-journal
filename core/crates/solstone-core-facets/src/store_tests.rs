@@ -484,7 +484,17 @@ fn delete_facet_leaves_legacy_convey_selection_bytes_untouched() {
         br#"{ "facets": { "selected": "old-facet", "order": { "malformed": true } } }"#.to_vec();
     fs::write(&convey_path, &convey_bytes).unwrap();
 
-    assert!(delete_facet(temporary.path(), "old-facet").unwrap());
+    assert!(
+        delete_facet(
+            &solstone_core_removals::Removal::begin(
+                temporary.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "old-facet"
+        )
+        .unwrap()
+    );
 
     assert!(!temporary.path().join("facets/old-facet").exists());
     assert_eq!(fs::read(convey_path).unwrap(), convey_bytes);
@@ -671,7 +681,17 @@ fn deleting_a_facet_retires_its_name_and_the_name_is_never_given_out_again() {
     plain_facet(temporary.path(), "personal");
     plain_facet(temporary.path(), "work");
     let id = facet_id_of(temporary.path(), "work");
-    assert!(crate::delete_facet(temporary.path(), "work").unwrap());
+    assert!(
+        crate::delete_facet(
+            &solstone_core_removals::Removal::begin(
+                temporary.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "work"
+        )
+        .unwrap()
+    );
 
     let entry = crate::retired_facet_entry(temporary.path(), "work")
         .unwrap()
@@ -706,7 +726,17 @@ fn a_delete_interrupted_after_retiring_the_name_can_be_retried() {
     leftover.at = Some("2026-01-01T00:00:00Z".to_owned());
     crate::record_retired_facet(temporary.path(), "work", leftover).unwrap();
 
-    assert!(crate::delete_facet(temporary.path(), "work").unwrap());
+    assert!(
+        crate::delete_facet(
+            &solstone_core_removals::Removal::begin(
+                temporary.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "work"
+        )
+        .unwrap()
+    );
     let entry = crate::retired_facet_entry(temporary.path(), "work")
         .unwrap()
         .unwrap();
@@ -720,7 +750,15 @@ fn a_committed_retired_entry_is_never_replaced_by_another_facet() {
     plain_facet(temporary.path(), "personal");
     plain_facet(temporary.path(), "work");
     let work = facet_id_of(temporary.path(), "work");
-    crate::delete_facet(temporary.path(), "work").unwrap();
+    crate::delete_facet(
+        &solstone_core_removals::Removal::begin(
+            temporary.path(),
+            solstone_core_removals::Action::FacetDelete,
+            solstone_core_removals::Surface::Cli,
+        ),
+        "work",
+    )
+    .unwrap();
     // A second live folder that happens to carry the deleted facet's id.
     fs::create_dir_all(temporary.path().join("facets/x")).unwrap();
     fs::write(
@@ -759,7 +797,14 @@ fn a_damaged_retired_record_is_never_overwritten_and_blocks_new_names() {
         Err(crate::FacetWriteError::RetiredFileDamaged { .. })
     ));
     assert!(matches!(
-        crate::delete_facet(temporary.path(), "work"),
+        crate::delete_facet(
+            &solstone_core_removals::Removal::begin(
+                temporary.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "work"
+        ),
         Err(crate::FacetWriteError::RetiredFileDamaged { .. })
     ));
     assert_eq!(fs::read(&path).unwrap(), b"{not json");
@@ -771,7 +816,15 @@ fn the_default_facet_skips_a_retired_personal() {
     let temporary = TempDir::new();
     plain_facet(temporary.path(), "personal");
     plain_facet(temporary.path(), "work");
-    crate::delete_facet(temporary.path(), "personal").unwrap();
+    crate::delete_facet(
+        &solstone_core_removals::Removal::begin(
+            temporary.path(),
+            solstone_core_removals::Action::FacetDelete,
+            solstone_core_removals::Surface::Cli,
+        ),
+        "personal",
+    )
+    .unwrap();
     crate::set_facet_muted(temporary.path(), "work", true).unwrap_err();
     // Mute by hand to reach "no enabled facet", as a hand edit or older build could.
     fs::write(
@@ -809,7 +862,15 @@ fn listing_facets_ignores_the_retired_record_and_dot_folders() {
         )
     };
     let before = listed(temporary.path());
-    crate::delete_facet(temporary.path(), "work").unwrap();
+    crate::delete_facet(
+        &solstone_core_removals::Removal::begin(
+            temporary.path(),
+            solstone_core_removals::Action::FacetDelete,
+            solstone_core_removals::Surface::Cli,
+        ),
+        "work",
+    )
+    .unwrap();
     plain_facet(temporary.path(), "work-2");
     let expected = listed(temporary.path());
     // A merge scratch copy holding a live facet's declaration changes nothing.

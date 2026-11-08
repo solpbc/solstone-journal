@@ -30,6 +30,7 @@ pub mod size;
 pub mod snapshot;
 pub mod staging;
 pub mod strava_names;
+pub mod strava_refile;
 pub mod stream_name;
 pub mod sync_audio;
 pub mod sync_obsidian;
@@ -82,7 +83,7 @@ pub use folder_admit::{
 pub use force_notice::{flush_force_notice, flush_force_notice_then, force_day_notice};
 pub use heartbeat::{HeartbeatExit, ImportHeartbeat};
 pub use metadata::{
-    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, FIRST_SAVED_AT_MS,
+    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, BODY_FACET_METADATA, FIRST_SAVED_AT_MS,
     IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, ImportMetadata, RUNNING_ATTEMPT_BOUND_MS,
     StagedEntityList, StagedEntityRecord, admit_running_attempt, attempt_holder, get_attempt_facts,
     hold_import_lock, import_time_ms, journal_archive_result_metadata, queued_task_ms,
@@ -104,8 +105,8 @@ pub use publish::{
     write_publication_record,
 };
 pub use staging::{
-    SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
-    remove_import_records, stage_source,
+    SourceLocation, StageOutcome, StageRequest, classify_source_location,
+    discard_abandoned_import_records, relocate_import, remove_import_records, stage_source,
 };
 pub use sync_state::{
     AccessState, BackendName, FolderIdentityError, PublicConnection, RefreshPermit, RefreshRefusal,

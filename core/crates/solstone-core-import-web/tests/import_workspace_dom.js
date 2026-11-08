@@ -414,6 +414,113 @@ async function runGuidedSubmit() {
   cases += 1;
 }
 
+const STRAVA_FACET_COPY = {
+  heading: 'H', ask_existing: 'use {facet}?', ask_make_body: 'make body?', ask_unmute: 'unmute body?',
+  no_means: 'NO-MEANS', yes: 'Y', no: 'N', this_import: 'THIS', none_option: 'NONE',
+  files_earlier: 'EARLIER {facet}', none_hint: 'NONE-HINT', unanswered: 'UNANSWERED', answer_failed: 'FAILED',
+  offer_changed: 'CHANGED',
+};
+
+function stravaFacetHarness(ids) {
+  const harness = makeHarness({ guidedStartBtn: '', guidedSettingInput: '', ...ids });
+  vm.runInContext('let stravaFacet = null;', harness.context);
+  for (const name of ['startGuidedImport', 'stravaFacetText', 'stravaFacetTitle', 'stravaFacetChoice', 'renderStravaFacet']) {
+    vm.runInContext(functionSource(workspace, name), harness.context);
+  }
+  installRealEscapeHtml(harness.context);
+  return harness;
+}
+
+// The Strava card's facet goes with the import's settings: the one picked, none, or
+// nothing at all when the question couldn't be shown. An unanswered question stops
+// the import before anything is sent.
+async function runStravaFacetTravelsWithTheImport() {
+  const strava = { name: 'strava', display_name: 'Strava' };
+  const offer = (state, facet) => JSON.stringify({ offer: { state, facet }, facets: [{ name: 'body', title: 'Body' }, { name: 'work', title: 'Work' }], copy: STRAVA_FACET_COPY });
+  for (const [selected, expected] of [['work', { choice: 'facet', facet: 'work' }], ['', { choice: 'none' }], [null, undefined]]) {
+    const harness = stravaFacetHarness(selected === null ? {} : { guidedFacetSelect: selected });
+    if (selected !== null) vm.runInContext(`stravaFacet = ${offer('chosen', 'body')};`, harness.context);
+    vm.runInContext("currentGuidedSaved = { path: '/saved', timestamp: '20261010_120000' };", harness.context);
+    await harness.context.startGuidedImport(strava);
+    const meta = JSON.parse(harness.requests[0].options.body);
+    assert.strictEqual(harness.requests[0].url, '/app/import/api/meta');
+    assert.deepStrictEqual(meta.body_facet, expected, `select ${selected}`);
+    cases += 1;
+  }
+  const asked = stravaFacetHarness({});
+  vm.runInContext(`stravaFacet = ${offer('ask_make_body', 'body')};`, asked.context);
+  vm.runInContext("currentGuidedSaved = { path: '/saved', timestamp: '20261010_120000' };", asked.context);
+  await assert.rejects(() => asked.context.startGuidedImport(strava), /UNANSWERED/);
+  assert.deepStrictEqual(asked.requests, [], 'an unanswered question sends nothing');
+  cases += 1;
+}
+
+// The question says what a no means before it's answered; once answered, the
+// remembered facet is preselected and the hint says what picking one does.
+function runStravaFacetSaysWhatANoMeansFirst() {
+  const select = new Element('body');
+  const hint = new Element('');
+  const slot = new Element('');
+  slot.querySelectorAll = () => [];
+  slot.querySelector = (selector) => ({ '#guidedFacetSelect': select, '#guidedFacetHint': hint }[selector]);
+  const harness = stravaFacetHarness({});
+  harness.elements.guidedFacet = slot;
+  const offer = (state, facet) => JSON.stringify({ offer: { state, facet }, facets: [{ name: 'body', title: 'Body' }], copy: STRAVA_FACET_COPY });
+  for (const state of ['ask_existing', 'ask_make_body', 'ask_unmute']) {
+    vm.runInContext(`stravaFacet = ${offer(state, 'body')}; renderStravaFacet();`, harness.context);
+    assert.ok(slot.innerHTML.includes('NO-MEANS'), `${state} says what a no means`);
+    assert.ok(slot.innerHTML.includes('data-body-facet-answer="no"'), `${state} offers a no`);
+    assert.ok(!slot.innerHTML.includes('<select'), `${state} asks before offering a choice`);
+    cases += 1;
+  }
+  vm.runInContext(`stravaFacet = ${offer('chosen', 'body')}; renderStravaFacet();`, harness.context);
+  assert.ok(slot.innerHTML.includes('<option value="body" selected>'), 'the remembered facet is preselected');
+  assert.ok(slot.innerHTML.includes('NONE'), 'no facet is always a choice');
+  assert.strictEqual(hint.textContent, 'EARLIER Body');
+  vm.runInContext(`stravaFacet = ${offer('declined', null)}; renderStravaFacet();`, harness.context);
+  assert.ok(slot.innerHTML.includes('<option value="" selected>'), 'a no preselects no facet');
+  cases += 1;
+}
+
+// An answer names the question the card showed. One the journal refuses because the
+// question has changed since is not taken as answered: the card shows the question as
+// it is now. One it takes leaves the card showing the answer.
+async function runStravaFacetAnswerNamesItsQuestion() {
+  const slot = new Element('');
+  const select = new Element('health');
+  const hint = new Element('');
+  slot.querySelectorAll = () => [];
+  slot.querySelector = (selector) => ({ '#guidedFacetSelect': select, '#guidedFacetHint': hint }[selector]);
+  const offer = (state, facet) => ({ offer: { state, facet }, facets: [{ name: 'body', title: 'Body' }], copy: STRAVA_FACET_COPY });
+  for (const [postStatus, postBody, expected, errors] of [
+    [409, { error: 'CHANGED', reason_code: 'body_facet_offer_changed' }, 'ask_make_body', ['CHANGED']],
+    [200, offer('chosen', 'health'), 'chosen', []],
+  ]) {
+    const harness = stravaFacetHarness({});
+    harness.elements.guidedFacet = slot;
+    for (const name of ['loadStravaFacet', 'answerStravaFacet']) {
+      vm.runInContext(functionSource(workspace, name), harness.context);
+    }
+    const shown = [];
+    harness.context.showError = (message) => shown.push(message);
+    harness.context.document.querySelectorAll = () => [];
+    const requests = [];
+    harness.context.fetch = async (url, options) => {
+      requests.push({ url, options });
+      const post = options && options.method === 'POST';
+      const body = post ? postBody : offer('ask_make_body', 'body');
+      return { ok: !post || postStatus === 200, status: post ? postStatus : 200, async json() { return body; } };
+    };
+    vm.runInContext(`stravaFacet = ${JSON.stringify(offer('ask_existing', 'health'))};`, harness.context);
+    await harness.context.answerStravaFacet('yes');
+    assert.deepStrictEqual(JSON.parse(requests[0].options.body), { answer: 'yes', offer: { state: 'ask_existing', facet: 'health' } });
+    assert.strictEqual(vm.runInContext('stravaFacet.offer.state', harness.context), expected);
+    assert.deepStrictEqual(shown, errors);
+    assert.strictEqual(requests.length, postStatus === 409 ? 2 : 1, 'a refused answer reads the question again');
+    cases += 1;
+  }
+}
+
 async function runConfirmSubmit() {
   const harness = makeHarness({
     startBtn: '',
@@ -3918,6 +4025,9 @@ Promise.resolve()
   .then(runQuickSubmit)
   .then(runQuickSaveFailureReadsOnce)
   .then(runGuidedSubmit)
+  .then(runStravaFacetTravelsWithTheImport)
+  .then(runStravaFacetSaysWhatANoMeansFirst)
+  .then(runStravaFacetAnswerNamesItsQuestion)
   .then(runConfirmSubmit)
   .then(runSourceTimeAndProgressIdentityStaySeparate)
   .then(runHistoryHeaderSummary)

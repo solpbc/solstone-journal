@@ -472,6 +472,10 @@ pub(crate) fn publish(
     })
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: stale body bundle staging, never kept owner data"
+)]
 fn clean_stale_bundle_staging(journal: &Path, imports: &Path) -> Result<(), BodyIngestError> {
     let mut scanned = 0_usize;
     let mut removed = 0_usize;

@@ -1730,10 +1730,30 @@ pub fn place(
                             == Some(slice.end.timestamp())
                     };
 
+                    // Every other column the export kept: the owner's description,
+                    // private note and gear among them. A tile written before these
+                    // were kept has none.
+                    let fields_eq = {
+                        let stored_fields = w
+                            .and_then(|w| w.get("strava_fields"))
+                            .and_then(Value::as_object);
+                        match stored_fields {
+                            None => workout.strava_fields.is_empty(),
+                            Some(stored_fields) => {
+                                stored_fields.len() == workout.strava_fields.len()
+                                    && workout.strava_fields.iter().all(|(header, value)| {
+                                        stored_fields.get(header).and_then(Value::as_str)
+                                            == Some(value.as_str())
+                                    })
+                            }
+                        }
+                    };
+
                     name_eq
                         && type_eq
                         && hand_eq
                         && commute_eq
+                        && fields_eq
                         && start_eq
                         && tile_start_eq
                         && tile_end_eq
@@ -2022,12 +2042,10 @@ pub fn place(
     })
 }
 
-pub fn apply(
-    placement: &Placement,
-    creating_import_id: &str,
-) -> (RenderedImport, Vec<PlannedTilePublication>) {
+/// The files a placement writes. What is published afterwards is decided by
+/// [`reconcile_written`], from what was actually written.
+pub fn apply(placement: &Placement, creating_import_id: &str) -> RenderedImport {
     let mut files = Vec::new();
-    let mut written_publish = Vec::new();
 
     for action in &placement.tiles {
         match action {
@@ -2055,10 +2073,6 @@ pub fn apply(
                     calendar: false,
                     contents: json_str,
                     units: 1,
-                });
-                written_publish.push(PlannedTilePublication {
-                    day: day.clone(),
-                    segment: segment.clone(),
                 });
             }
             TileAction::Updated {
@@ -2096,18 +2110,9 @@ pub fn apply(
         }
     }
 
-    for pub_tile in &placement.publish {
-        if !written_publish
-            .iter()
-            .any(|p| p.day == pub_tile.day && p.segment == pub_tile.segment)
-        {
-            written_publish.push(pub_tile.clone());
-        }
-    }
-
     let summary = format_count_summary(&placement.counts);
 
-    let rendered = RenderedImport {
+    RenderedImport {
         calendar_counts: Default::default(),
         skipped: 0,
         source: RegistrySource::Strava,
@@ -2115,9 +2120,7 @@ pub fn apply(
         items: Vec::new(),
         entries: placement.counts.new_workouts as u64,
         summary,
-    };
-
-    (rendered, written_publish)
+    }
 }
 
 pub fn reconcile_written(
@@ -2333,6 +2336,24 @@ pub fn reconcile_written(
         } else {
             // Republish key
             planned_publish.push(pub_tile.clone());
+        }
+    }
+    // A tile rewritten because its workout changed is published again, so search
+    // reads its new text.
+    for action in &placement.tiles {
+        if let TileAction::Updated { day, segment, .. } = action {
+            let key = (day.clone(), segment.clone());
+            if written_keys.contains(&key)
+                && !skipped_keys.contains(&key)
+                && !planned_publish
+                    .iter()
+                    .any(|planned| planned.day == *day && planned.segment == *segment)
+            {
+                planned_publish.push(PlannedTilePublication {
+                    day: day.clone(),
+                    segment: segment.clone(),
+                });
+            }
         }
     }
 
@@ -3775,7 +3796,7 @@ mod tests {
         assert_eq!(placement1.counts.new_workouts, 500);
 
         // Apply and write
-        let (rendered1, _) = apply(&placement1, "20260101_100000");
+        let rendered1 = apply(&placement1, "20260101_100000");
         let written1 = crate::save::write_rendered(journal, Some("20260101_100000"), &rendered1);
         assert_eq!(written1.created.len(), total_expected_tiles);
 
@@ -3786,10 +3807,134 @@ mod tests {
         assert_eq!(placement2.counts.present_unchanged, 500);
         assert_eq!(placement2.counts.new_workouts, 0);
 
-        let (rendered2, _) = apply(&placement2, "20260101_110000");
+        let rendered2 = apply(&placement2, "20260101_110000");
         assert_eq!(rendered2.files.len(), 0);
 
         let elapsed = start_time.elapsed();
         println!("test_scale_500_workouts_library wall time: {:?}", elapsed);
+    }
+
+    fn edited_workout(description: Option<&str>) -> StravaWorkout {
+        let mut strava_fields = BTreeMap::new();
+        if let Some(description) = description {
+            strava_fields.insert("Activity Description".to_owned(), description.to_owned());
+        }
+        StravaWorkout {
+            activity_id: 77,
+            start_utc: NaiveDate::from_ymd_opt(2026, 10, 4)
+                .unwrap()
+                .and_hms_opt(7, 0, 0)
+                .unwrap(),
+            activity_name: "Hill repeats".to_owned(),
+            activity_type: "Run".to_owned(),
+            elapsed_seconds: 600,
+            moving_seconds: Some(580),
+            distance_meters: Some(5000.0),
+            elevation_gain_meters: None,
+            average_heart_rate: None,
+            max_heart_rate: None,
+            average_watts: None,
+            weighted_average_power: None,
+            calories: None,
+            commute: None,
+            entered_by_hand: false,
+            strava_fields,
+        }
+    }
+
+    /// Place `workout` and write what the placement says, as the import does,
+    /// returning the placement and the tiles it publishes.
+    fn place_and_write(
+        journal: &Path,
+        workout: &StravaWorkout,
+    ) -> (Placement, Vec<PlannedTilePublication>) {
+        let placement = place(journal, std::slice::from_ref(workout), Some(Tz::UTC), None).unwrap();
+        let rendered = apply(&placement, "20261005_090000");
+        let written = crate::save::write_rendered(journal, Some("20261005_090000"), &rendered);
+        assert!(written.error.is_none());
+        let written_keys = written
+            .created
+            .iter()
+            .map(|file| (file.day.clone(), file.segment.clone()))
+            .collect::<HashSet<_>>();
+        let skipped = written
+            .skipped_deleted
+            .iter()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let (_, publish) = reconcile_written(&placement, &written_keys, &skipped, false);
+        // Publication binds each tile it publishes to the stream.
+        for tile in &publish {
+            let dir = journal
+                .join("chronicle")
+                .join(&tile.day)
+                .join("import.strava")
+                .join(&tile.segment);
+            fs::write(dir.join("stream.json"), "{\"stream\":\"import.strava\"}\n").unwrap();
+        }
+        (placement, publish)
+    }
+
+    fn updated_tiles(placement: &Placement) -> usize {
+        placement
+            .tiles
+            .iter()
+            .filter(|tile| matches!(tile, TileAction::Updated { .. }))
+            .count()
+    }
+
+    #[test]
+    fn a_changed_description_rewrites_and_republishes_its_tiles_and_the_same_download_neither() {
+        let temp = TempDir::new().unwrap();
+        let journal = temp.path();
+        let (first, publish) = place_and_write(journal, &edited_workout(Some("easy with Sam")));
+        assert_eq!(first.counts.created_tiles, 2);
+        assert_eq!(publish.len(), 2);
+
+        // The same download: no tile is written and none is published.
+        let (same, publish) = place_and_write(journal, &edited_workout(Some("easy with Sam")));
+        assert_eq!(updated_tiles(&same), 0);
+        assert_eq!(same.counts.unchanged_tiles, 2);
+        let rendered = apply(&same, "20261005_090000");
+        assert!(rendered.files.is_empty());
+        assert!(publish.is_empty());
+
+        // Only the description changed: both tiles are rewritten and published.
+        let (edited, publish) = place_and_write(journal, &edited_workout(Some("hard with Sam")));
+        assert_eq!(updated_tiles(&edited), 2);
+        assert_eq!(edited.counts.present_updated, 1);
+        assert_eq!(publish.len(), 2);
+        let tile = fs::read_to_string(
+            journal.join("chronicle/20261004/import.strava/070000_300/workout.json"),
+        )
+        .unwrap();
+        assert!(tile.contains("hard with Sam"), "{tile}");
+        assert!(!tile.contains("easy with Sam"), "{tile}");
+    }
+
+    #[test]
+    fn a_tile_written_before_columns_were_kept_is_rewritten_only_when_the_download_has_them() {
+        let temp = TempDir::new().unwrap();
+        let journal = temp.path();
+        place_and_write(journal, &edited_workout(None));
+        for key in ["070000_300", "070500_300"] {
+            let path = journal.join(format!(
+                "chronicle/20261004/import.strava/{key}/workout.json"
+            ));
+            let mut tile: Value =
+                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            assert!(tile["workout"].get("strava_fields").is_none());
+            tile["workout"]
+                .as_object_mut()
+                .unwrap()
+                .remove("strava_fields");
+            fs::write(&path, format!("{tile}\n")).unwrap();
+        }
+        let (same, publish) = place_and_write(journal, &edited_workout(None));
+        assert_eq!(updated_tiles(&same), 0);
+        assert!(publish.is_empty());
+        let (with_fields, publish) = place_and_write(journal, &edited_workout(Some("tempo")));
+        assert_eq!(updated_tiles(&with_fields), 2);
+        assert_eq!(publish.len(), 2);
     }
 }

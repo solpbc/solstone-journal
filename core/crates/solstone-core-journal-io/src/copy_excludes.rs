@@ -141,6 +141,15 @@ fn component_matches(pattern: &str, name: &str) -> bool {
 mod tests {
     use super::{copy_excluded, copy_file_excluded};
 
+    /// The deletion record must reach every backup and come back on restore.
+    #[test]
+    fn the_deletion_record_is_always_copied() {
+        let entry = "config/removals/20261108T170000000Z-0a1b2c3d-0000.json";
+        assert!(!copy_excluded(entry));
+        assert!(!copy_file_excluded(entry));
+        assert!(!copy_excluded("config/removals"));
+    }
+
     #[test]
     fn a_body_runs_staging_is_left_out_and_its_state_is_carried() {
         assert!(copy_excluded("imports/.apple_health-run/scan/000001.run"));

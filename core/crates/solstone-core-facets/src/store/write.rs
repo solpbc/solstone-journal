@@ -4,7 +4,8 @@
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{JsonWriteOptions, remove_dir_all, write_json};
+use solstone_core_journal_io::{JsonWriteOptions, write_json};
+use solstone_core_removals::{Removal, Unit};
 
 use crate::hold_facet_trust_lock;
 
@@ -112,8 +113,10 @@ fn refuse_last_enabled(journal_root: &Path, facet_dir: &str) -> Result<(), Facet
     Ok(())
 }
 
-/// Delete a facet directory when its declaration exists.
-pub fn delete_facet(journal_root: &Path, facet_dir: &str) -> Result<bool, FacetWriteError> {
+/// Delete a facet directory when its declaration exists, as part of the
+/// owner's removal operation, which records it.
+pub fn delete_facet(removal: &Removal, facet_dir: &str) -> Result<bool, FacetWriteError> {
+    let journal_root = removal.journal_root();
     let _trust = hold_facet_trust_lock(journal_root)?;
     let path = declaration_path(journal_root, facet_dir)?;
     if read_facet_declaration(journal_root, facet_dir)?.is_none() {
@@ -137,7 +140,10 @@ pub fn delete_facet(journal_root: &Path, facet_dir: &str) -> Result<bool, FacetW
         .and_then(|snapshot| snapshot.value().get("title").and_then(Value::as_str))
         .map(str::to_owned);
     record_retired_facet(journal_root, facet_dir, RetiredFacet::deleted(id, title))?;
-    remove_dir_all(journal_root, &format!("facets/{facet_dir}"))
+    removal
+        .commit(Unit::Facet, |io| {
+            io.remove_tree(&format!("facets/{facet_dir}"))
+        })
         .map_err(FacetWriteError::EntityLinkRemoval)?;
     let _ = path;
     Ok(true)
@@ -494,19 +500,49 @@ mod default_facet_tests {
             Err(FacetWriteError::LastEnabledFacet { facet }) if facet == "work"
         ));
         assert!(matches!(
-            delete_facet(root.path(), "work"),
+            delete_facet(&solstone_core_removals::Removal::begin(root.path(), solstone_core_removals::Action::FacetDelete, solstone_core_removals::Surface::Cli), "work"),
             Err(FacetWriteError::LastEnabledFacet { facet }) if facet == "work"
         ));
         assert_eq!(enabled(root.path()), vec!["work"]);
+        // The refused delete left nothing in the deletion record.
+        assert_eq!(
+            solstone_core_removals::history(root.path(), 10)
+                .unwrap()
+                .total,
+            0
+        );
 
         // With a sibling enabled, both are ordinary again.
         create_facet(root.path(), "personal", "Personal", "", "", "", None).unwrap();
         set_facet_muted(root.path(), "work", true).unwrap();
         assert_eq!(enabled(root.path()), vec!["personal"]);
-        assert!(delete_facet(root.path(), "work").unwrap());
+        assert!(
+            delete_facet(
+                &solstone_core_removals::Removal::begin(
+                    root.path(),
+                    solstone_core_removals::Action::FacetDelete,
+                    solstone_core_removals::Surface::Cli
+                ),
+                "work"
+            )
+            .unwrap()
+        );
+        let history = solstone_core_removals::history(root.path(), 10).unwrap();
+        assert_eq!(history.total, 1);
+        assert_eq!(history.entries[0].unit, solstone_core_removals::Unit::Facet);
         // A muted facet never counts as the last enabled one.
         create_facet(root.path(), "archive", "Archive", "", "", "", None).unwrap();
         set_facet_muted(root.path(), "archive", true).unwrap();
-        assert!(delete_facet(root.path(), "archive").unwrap());
+        assert!(
+            delete_facet(
+                &solstone_core_removals::Removal::begin(
+                    root.path(),
+                    solstone_core_removals::Action::FacetDelete,
+                    solstone_core_removals::Surface::Cli
+                ),
+                "archive"
+            )
+            .unwrap()
+        );
     }
 }

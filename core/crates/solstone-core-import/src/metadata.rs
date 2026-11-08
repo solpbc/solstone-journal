@@ -32,6 +32,10 @@ pub enum AttemptState {
 /// The only failure text an attempt records for an import that definitively failed. The
 /// cause stays with the operator (the producer's returned error, the CLI, the log): an
 /// attempt's reason reaches the owner, so it is never a raw diagnostic.
+/// The staged import's key holding the facet a Strava import was given on its
+/// card, in the stored form of a remembered default. Absent when nobody chose.
+pub const BODY_FACET_METADATA: &str = "body_facet";
+
 pub const IMPORT_FAILED_REASON: &str = "import failed";
 
 /// The only reason an attempt records when its outcome could not be established.

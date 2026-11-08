@@ -34,6 +34,33 @@ pub use owned::{
     TeardownRunRefusal, run_owned_teardown,
 };
 
+/// Add a finished "turn off & delete backup" to the journal's deletion record:
+/// the copies its destination held are gone. A teardown that was held, refused
+/// or ended unknown records nothing.
+pub fn record_backup_off(
+    journal: &std::path::Path,
+    outcome: &OwnedTeardownOutcome,
+    surface: solstone_core_removals::Surface,
+) {
+    let OwnedTeardownOutcome::Finished(settled) = outcome else {
+        return;
+    };
+    // Only own storage reports whether its bucket keeps what was deleted.
+    let storage = if settled.remote().storage_retention().is_some() {
+        "own"
+    } else {
+        "operated"
+    };
+    solstone_core_removals::Removal::begin(
+        journal,
+        solstone_core_removals::Action::BackupOff,
+        surface,
+    )
+    .record(solstone_core_removals::Unit::Backup {
+        storage: storage.to_owned(),
+    });
+}
+
 /// The plain sentence an owner gets after their own storage was emptied, when
 /// that storage may still keep what was deleted.
 pub fn storage_retention_sentence(

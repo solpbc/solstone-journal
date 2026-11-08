@@ -497,6 +497,7 @@ mod tests {
                 talents: TalentSource::Disabled,
                 voices,
                 heard_owner: None,
+                strava_tiles: false,
             },
             Some("watch"),
         )

@@ -1706,6 +1706,10 @@ pub(crate) fn stream_record_path(journal: &Path, name: &str) -> PathBuf {
 ///
 /// ⛔ Already-absent is reported as [`Removed::AlreadyAbsent`], never as a
 /// removal this call performed.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "no product caller since per-source delete was excised; an owner path that adds one goes through the deletion route"
+)]
 pub fn delete_stream_record(journal: &Path, name: &str) -> Result<Removed, SegmentError> {
     if !is_safe_stream_component(name) {
         return Err(SegmentError::StreamInput(

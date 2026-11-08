@@ -3,6 +3,7 @@
 
 //! Run an already admitted reviewed removal and retain its whole owning return.
 
+use solstone_core_removals::{Action, Page, Removal, Surface};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
@@ -809,8 +810,20 @@ fn remove_local(
     }
     drop(begin);
     let mut terminal = Terminal::error("failed");
+    let journal = checked.root().canonical_path().to_path_buf();
     let actor = catch_unwind(AssertUnwindSafe(|| {
         let removal = remove_reviewed(checked, today, now);
+        // Only Home's approve starts a policy release, so its surface is Home.
+        // An offload release is media offload, which removes nothing the owner
+        // keeps, and is not recorded.
+        solstone_core_retention::record::record_released_originals(
+            &Removal::begin(
+                &journal,
+                Action::OriginalsRelease,
+                Surface::Web { page: Page::Home },
+            ),
+            removal.outcome(),
+        );
         project(
             &mut terminal,
             removal.outcome(),

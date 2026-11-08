@@ -14,6 +14,7 @@ use axum::{
 
 mod assets;
 mod audio_archive;
+mod body_facet;
 mod callosum;
 mod content;
 mod embedded_route;
@@ -83,6 +84,10 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
         )
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
+        .route(
+            "/app/import/api/body-facet",
+            get(body_facet::offer).post(body_facet::answer),
+        )
         .route("/app/import/api/preview", post(preview::preview))
         .route(mobile_import_contract::START_PATH, post(lifecycle::start))
         .route(

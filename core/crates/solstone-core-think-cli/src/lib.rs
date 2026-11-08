@@ -1178,6 +1178,7 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     mod segment_publication;
     mod settle_publication;
+    mod strava_body_data;
     use std::cell::Cell;
     use std::collections::BTreeSet;
     use std::fs;

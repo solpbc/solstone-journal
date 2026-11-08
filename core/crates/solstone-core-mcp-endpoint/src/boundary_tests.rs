@@ -1392,7 +1392,17 @@ fn a_merged_facet_name_reaches_the_survivor_in_search_and_transcripts_and_never_
 #[test]
 fn a_deleted_facet_name_is_never_given_to_a_new_facet_and_a_forced_reuse_stays_closed() {
     let journal = fixture();
-    assert!(solstone_core_facets::delete_facet(journal.path(), "alpha").unwrap());
+    assert!(
+        solstone_core_facets::delete_facet(
+            &solstone_core_removals::Removal::begin(
+                journal.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "alpha"
+        )
+        .unwrap()
+    );
     assert!(matches!(
         solstone_core_facets::create_facet(journal.path(), "alpha", "Alpha", "", "", "", None),
         Err(solstone_core_facets::FacetWriteError::NameRetired { .. })

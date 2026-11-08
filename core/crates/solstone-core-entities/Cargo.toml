@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+solstone-core-removals.workspace = true
 axum.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

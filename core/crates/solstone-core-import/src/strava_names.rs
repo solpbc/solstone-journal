@@ -8,20 +8,30 @@
 //! people and gear read from those words, and its gear. It never keeps the
 //! words themselves. Every write holds `imports/.strava`, the lock Strava's
 //! import and its delete take, so a delete's removal is never lost.
+//!
+//! Only one run reads workouts' words at a time: it holds
+//! `imports/.strava-names` while it reads, and a run that finds it held reads
+//! none. The system lets go of that lock when its process ends, however it
+//! ends, so a run that stopped part way never keeps another from reading.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock, write_jsonl,
+    AtomicWriteOptions, DEFAULT_LOCK_TIMEOUT, FileLock, LockError, LockOptions, hold_lock,
+    write_jsonl,
 };
 
 /// The store, relative to the journal.
 pub const STRAVA_NAMES_FILE: &str = "imports/.strava-owner-words.jsonl";
 /// The lock Strava's import and its delete hold, relative to the journal.
 pub const STRAVA_LOCK: &str = "imports/.strava";
+/// The lock a run holds while it reads workouts' words, relative to the
+/// journal.
+pub const STRAVA_NAMES_RUN_LOCK: &str = "imports/.strava-names";
 
 const FILE_MODE: u32 = 0o600;
 
@@ -125,7 +135,16 @@ pub fn update_strava_names(
     journal: &Path,
     change: impl FnOnce(&mut StravaNames),
 ) -> Result<StravaNames, StravaNamesError> {
-    update_strava_names_inner(journal, change, || {})
+    update_strava_names_within(journal, DEFAULT_LOCK_TIMEOUT, change)
+}
+
+/// [`update_strava_names`], waiting at most `wait` for the Strava lock.
+pub fn update_strava_names_within(
+    journal: &Path,
+    wait: Duration,
+    change: impl FnOnce(&mut StravaNames),
+) -> Result<StravaNames, StravaNamesError> {
+    update_strava_names_inner(journal, wait, change, || {})
 }
 
 #[cfg(test)]
@@ -134,15 +153,16 @@ pub(crate) fn update_strava_names_with_hook(
     change: impl FnOnce(&mut StravaNames),
     before_write: impl FnOnce(),
 ) -> Result<StravaNames, StravaNamesError> {
-    update_strava_names_inner(journal, change, before_write)
+    update_strava_names_inner(journal, DEFAULT_LOCK_TIMEOUT, change, before_write)
 }
 
 fn update_strava_names_inner(
     journal: &Path,
+    wait: Duration,
     change: impl FnOnce(&mut StravaNames),
     before_write: impl FnOnce(),
 ) -> Result<StravaNames, StravaNamesError> {
-    let lock = hold_strava_lock(journal)?;
+    let lock = hold_strava_lock_within(journal, wait)?;
     let mut lines = read_strava_names(journal)?;
     let before = lines.clone();
     change(&mut lines);
@@ -173,15 +193,36 @@ pub fn remove_strava_names(
 
 /// Take the Strava lock, as Strava's import and its delete do.
 pub fn hold_strava_lock(journal: &Path) -> Result<FileLock, StravaNamesError> {
+    hold_strava_lock_within(journal, DEFAULT_LOCK_TIMEOUT)
+}
+
+fn hold_strava_lock_within(journal: &Path, wait: Duration) -> Result<FileLock, StravaNamesError> {
     hold_lock(
         journal.join(STRAVA_LOCK),
         LockOptions {
-            timeout: DEFAULT_LOCK_TIMEOUT,
+            timeout: wait,
             mode: Some(FILE_MODE),
             ..LockOptions::default()
         },
     )
     .map_err(|error| StravaNamesError::Lock(error.to_string()))
+}
+
+/// Take the lock a run holds while it reads workouts' words, without
+/// waiting: `None` when another run holds it now.
+pub fn hold_strava_names_run(journal: &Path) -> Result<Option<FileLock>, StravaNamesError> {
+    match hold_lock(
+        journal.join(STRAVA_NAMES_RUN_LOCK),
+        LockOptions {
+            timeout: Duration::ZERO,
+            mode: Some(FILE_MODE),
+            ..LockOptions::default()
+        },
+    ) {
+        Ok(lock) => Ok(Some(lock)),
+        Err(LockError::Timeout(_)) => Ok(None),
+        Err(error) => Err(StravaNamesError::Lock(error.to_string())),
+    }
 }
 
 fn save_lines(journal: &Path, lines: &StravaNames) -> Result<(), StravaNamesError> {
@@ -266,11 +307,36 @@ mod tests {
     }
 
     #[test]
+    fn a_write_waits_no_longer_than_it_is_given_for_the_lock() {
+        let journal = journal_with(&[]);
+        let held = hold_strava_lock(journal.path()).unwrap();
+        let refused = update_strava_names_within(journal.path(), Duration::ZERO, |store| {
+            store.insert("11".to_owned(), line("11", "20261001"));
+        });
+        assert!(
+            matches!(refused, Err(StravaNamesError::Lock(_))),
+            "{refused:?}"
+        );
+        drop(held);
+        assert!(read_strava_names(journal.path()).unwrap().is_empty());
+    }
+
+    #[test]
     fn an_unchanged_store_is_not_rewritten() {
         let journal = journal_with(&[line("11", "20261001")]);
         let mut wrote = false;
         update_strava_names_with_hook(journal.path(), |_| {}, || wrote = true).unwrap();
         assert!(!wrote);
+    }
+
+    #[test]
+    fn one_run_reads_at_a_time_and_its_lock_goes_with_it() {
+        let journal = journal_with(&[]);
+        let first = hold_strava_names_run(journal.path()).unwrap();
+        assert!(first.is_some());
+        assert!(hold_strava_names_run(journal.path()).unwrap().is_none());
+        drop(first);
+        assert!(hold_strava_names_run(journal.path()).unwrap().is_some());
     }
 
     #[test]

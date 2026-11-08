@@ -135,7 +135,7 @@ pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
             if solstone_core_import::project_import_result(root, &id).status
                 == solstone_core_import::ProjectionStatus::Pending
             {
-                let _ = solstone_core_import::remove_import_records(root, &id);
+                let _ = solstone_core_import::discard_abandoned_import_records(root, &id);
             } else {
                 discard_terminal_strava_download(root, &id);
             }
@@ -1221,6 +1221,26 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
             changed.insert(key.to_owned(), value);
         }
     }
+    // The facet the Strava card chose for this import alone. It is the
+    // import's own: the remembered default is never changed here.
+    if let Some(value) = data.get(solstone_core_import::BODY_FACET_METADATA) {
+        if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE) {
+            return invalid_state("only a Strava import takes a facet here", None);
+        }
+        if !crate::body_facet::valid_import_facet(value) {
+            return invalid_state("that isn't a facet choice", None);
+        }
+        let key = solstone_core_import::BODY_FACET_METADATA;
+        let current = metadata.get(key).cloned().unwrap_or(Value::Null);
+        if current != *value {
+            if value.is_null() {
+                metadata.remove(key);
+            } else {
+                metadata.insert(key.to_owned(), value.clone());
+            }
+            changed.insert(key.to_owned(), value.clone());
+        }
+    }
     if !changed.is_empty()
         && let Err(error) = write_import_metadata(&state.root, timestamp, &metadata)
     {
@@ -1306,6 +1326,9 @@ pub(crate) fn command(
     if let Some(source_hint) = source_hint(metadata) {
         cmd.extend(["--source".to_owned(), source_hint]);
     }
+    cmd.extend(crate::body_facet::command_arguments(
+        metadata.get(solstone_core_import::BODY_FACET_METADATA),
+    ));
     if force {
         cmd.push("--force".to_owned());
     }

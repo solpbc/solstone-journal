@@ -155,6 +155,10 @@ pub fn clear_owner_candidate_in_lock(journal_root: &Path) -> Result<Removed, Own
     clear_owner_candidate_in_lock_checked(journal_root, &|| Ok(()))
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "not moved in stage 1: clearing the owner-voice candidate on confirm, reject or undo is a speaker correction (board row 12)"
+)]
 pub fn clear_owner_candidate_in_lock_checked(
     journal_root: &Path,
     checkpoint: &dyn Fn() -> Result<(), String>,

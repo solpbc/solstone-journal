@@ -229,17 +229,12 @@ pub fn verify(source: &Path, expected: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Recheck the captured options at the consuming boundary as well as HTTP start.
-/// The queued command must not silently adopt a new owner time zone or new settings.
-pub fn verify_preview(
+/// The staged import a preview source is under, its metadata, and the path
+/// below its folder.
+fn preview_metadata(
     journal: &Path,
     source: &Path,
-    token: &str,
-    timestamp: &str,
-    force: bool,
-    setting: Option<&str>,
-    source_hint: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(String, crate::ImportMetadata, std::path::PathBuf), String> {
     let lexical_imports = journal.join("imports");
     let canonical_imports = lexical_imports
         .canonicalize()
@@ -255,6 +250,22 @@ pub fn verify_preview(
         .ok_or("invalid preview source")?;
     crate::validate_timestamp(id).map_err(|error| error.to_string())?;
     let metadata = crate::read_import_metadata(journal, id).map_err(|error| error.to_string())?;
+    Ok((id.to_owned(), metadata, relative.to_path_buf()))
+}
+
+/// Recheck the captured options at the consuming boundary as well as HTTP start.
+/// The queued command must not silently adopt a new owner time zone or new settings.
+pub fn verify_preview(
+    journal: &Path,
+    source: &Path,
+    token: &str,
+    timestamp: &str,
+    force: bool,
+    setting: Option<&str>,
+    source_hint: Option<&str>,
+) -> Result<(), String> {
+    let (id, metadata, relative) = preview_metadata(journal, source)?;
+    let id = id.as_str();
     let record = metadata
         .get("preview")
         .ok_or("the saved preview is missing")?;
@@ -299,6 +310,29 @@ pub fn verify_preview(
             .as_str()
             .ok_or("the saved preview is unreadable")?,
     )
+}
+
+/// Recheck, at the consuming boundary, the facet a Strava import was previewed
+/// with: `given` is the run's own choice (`None` when it was given none), and it
+/// must be what the preview bound and what the staged import still says.
+pub fn verify_preview_body_facet(
+    journal: &Path,
+    source: &Path,
+    token: &str,
+    given: Option<&serde_json::Value>,
+) -> Result<(), String> {
+    let (_, metadata, _) = preview_metadata(journal, source)?;
+    let record = metadata
+        .get("preview")
+        .ok_or("the saved preview is missing")?;
+    let bound = record["options"].get(crate::BODY_FACET_METADATA);
+    if record["token"].as_str() != Some(token)
+        || bound != given
+        || bound != metadata.get(crate::BODY_FACET_METADATA)
+    {
+        return Err("the facet changed after preview; preview again before importing".to_owned());
+    }
+    Ok(())
 }
 
 /// Strava's download is never retained, including copies made for an earlier preview.
@@ -422,6 +456,34 @@ mod tests {
         save_preview(root.path(), &source, &relative, &digest);
         fs::write(&snapshot, b"tampered").unwrap();
         assert!(check("token", false, "office").is_err());
+    }
+    #[test]
+    fn the_consuming_boundary_binds_a_strava_imports_facet() {
+        let (root, source) = fixture();
+        let prepared = create(root.path(), ID, &source).unwrap();
+        let (relative, digest) = (prepared.relative.clone(), prepared.digest.clone());
+        prepared.persist();
+        let snapshot = root.path().join("imports").join(ID).join(&relative);
+        save_preview(root.path(), &source, &relative, &digest);
+        let body = json!({"choice": "facet", "facet": "body"});
+        let check = |given: Option<&serde_json::Value>| {
+            verify_preview_body_facet(root.path(), &snapshot, "token", given)
+        };
+        // Nobody chose: the run may be given none.
+        assert!(check(None).is_ok());
+        assert!(check(Some(&body)).is_err());
+        let mut metadata = crate::read_import_metadata(root.path(), ID).unwrap();
+        metadata.insert(crate::BODY_FACET_METADATA.into(), body.clone());
+        metadata.get_mut("preview").unwrap()["options"][crate::BODY_FACET_METADATA] = body.clone();
+        crate::write_import_metadata(root.path(), ID, &metadata).unwrap();
+        assert!(check(Some(&body)).is_ok());
+        assert!(check(None).is_err());
+        assert!(check(Some(&json!({"choice": "none"}))).is_err());
+        assert!(verify_preview_body_facet(root.path(), &snapshot, "other", Some(&body)).is_err());
+        // A facet changed on the staged import after preview.
+        metadata.insert(crate::BODY_FACET_METADATA.into(), json!({"choice": "none"}));
+        crate::write_import_metadata(root.path(), ID, &metadata).unwrap();
+        assert!(check(Some(&body)).is_err());
     }
     #[test]
     fn failed_previews_remove_new_snapshots() {

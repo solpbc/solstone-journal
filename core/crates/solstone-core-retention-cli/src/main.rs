@@ -39,6 +39,8 @@
 //! forbids itself the clock so a verdict is reproducible from a receipt; a binary
 //! that silently supplied `now` would hand that property back.
 
+use solstone_core_removals::{Action, Page, Removal, Surface};
+use solstone_core_retention::record::{record_released_originals, record_removed_segments};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -270,6 +272,28 @@ fn reason_for(name: Option<&str>) -> Result<RemovalReason, String> {
     }
 }
 
+/// Where a removal verb was asked from: Home passes `--surface home` when the
+/// owner presses "finish them"; anything else is the command line.
+fn surface(args: &Args) -> Surface {
+    match args.one("--surface") {
+        Some("home") => Surface::Web { page: Page::Home },
+        _ => Surface::Cli,
+    }
+}
+
+/// Add the segments a run removed whole to the journal's deletion record.
+fn record_segments(args: &Args, journal: &Path, action: Action, outcome: &Outcome) {
+    record_removed_segments(&Removal::begin(journal, action, surface(args)), outcome);
+}
+
+/// Add the original files a run released to the journal's deletion record.
+fn record_originals(args: &Args, journal: &Path, outcome: &Outcome) {
+    record_released_originals(
+        &Removal::begin(journal, Action::RetentionTool, surface(args)),
+        outcome,
+    );
+}
+
 fn run_remove_segments(args: &Args) -> ExitCode {
     let journal = match args.required("--journal") {
         Ok(value) => PathBuf::from(value),
@@ -324,6 +348,7 @@ fn run_remove_segments(args: &Args) -> ExitCode {
             register_errors.push(error.to_string());
         }
     }
+    record_segments(args, &journal, Action::RetentionTool, &outcome);
     finish(
         &journal,
         outcome,
@@ -359,6 +384,7 @@ fn run_recover(args: &Args) -> ExitCode {
             EXIT_REFUSED,
         );
     }
+    record_segments(args, &journal, Action::FinishStopped, &outcome);
     finish(&journal, outcome, serde_json::json!({ "verb": "recover" }))
 }
 
@@ -457,6 +483,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
             register_errors.push(error.to_string());
         }
     }
+    record_originals(args, &journal, &outcome);
     finish(
         &journal,
         outcome,
@@ -815,6 +842,7 @@ fn run_sweep(args: &Args) -> ExitCode {
         );
     }
     let (outcome, tally) = execute_sweep(&journal, &plan, now);
+    record_originals(args, &journal, &outcome);
     finish(
         &journal,
         outcome,
@@ -1126,6 +1154,7 @@ fn run_remove_marked(args: &Args) -> ExitCode {
     };
     let mut register_errors = Vec::new();
     let outcome = remove_marked(&journal, &marks, &policy, today, now, &mut register_errors);
+    record_originals(args, &journal, &outcome);
     finish(
         &journal,
         outcome,
@@ -1229,7 +1258,7 @@ solstone-retention — the retention executor
   remove-segments --journal P --at ISO --did ID --segment DAY/STREAM/DIR [--segment ...] \
 [--reason owner|policy]
   release-raw     --journal P --at ISO --segment DAY/STREAM/DIR [--segment ...]
-  recover         --journal P --at ISO --did ID [--reason owner|policy]
+  recover         --journal P --at ISO --did ID [--reason owner|policy] [--surface home]
   sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--force true]
   prune-logs      --journal P --today YYYY-MM-DD --days N [--execute true]
   mark            --journal P --today YYYY-MM-DD --now ISO [--policy JSON]

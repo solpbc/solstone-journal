@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Path as RoutePath, State};
-use axum::http::StatusCode;
+use axum::http::header::USER_AGENT;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -18,6 +19,7 @@ use solstone_core_retention::door;
 use solstone_core_retention::tombstone::TOMBSTONE_NAME;
 use solstone_core_retention::{Outcome, RemovalReason, Target};
 
+use solstone_core_removals::{Action, Page, Surface, Unit};
 use solstone_core_serving::held_delete::{Record, Registry, Settled, valid_pending_id};
 
 use crate::pending::{DeleteRecord, DeleteState, STORE, SegmentManifest, SegmentTarget};
@@ -34,6 +36,7 @@ const UNCONFIRMED_REASON: &str =
 pub(crate) async fn delete_segment(
     State(state): State<Arc<AppState>>,
     RoutePath((day, stream, key)): RoutePath<(String, String, String)>,
+    headers: HeaderMap,
 ) -> Response {
     if !valid_day(&day) {
         return invalid_day();
@@ -103,6 +106,7 @@ pub(crate) async fn delete_segment(
             );
         }
     };
+    let record_stream = stream.clone();
     let record = Record::pending(
         pending_id,
         SegmentTarget {
@@ -112,7 +116,13 @@ pub(crate) async fn delete_segment(
             manifest,
         },
         state.delete_window,
-    );
+    )
+    .with_surface(Surface::of_request(
+        page_of(&record_stream),
+        headers
+            .get(USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    ));
     // ⛔ Durable before the answer: a delete the page reports as under way must
     // survive the journal stopping inside its window.
     if let Err(error) = STORE.write(&state.journal_root, &record) {
@@ -352,6 +362,9 @@ fn commit_delete(journal_root: &Path, pending_id: &str, resumed: bool) {
             // `None`: another finisher holds the segment. The record stays pending,
             // with its claim, so the next run settles it from what is then on disk.
             let (phase, detail, state, reason) = run_delete(journal_root, record, resumed)?;
+            if state == DeleteState::Deleted {
+                record_deleted(journal_root, record);
+            }
             let marker = if resumed {
                 json!({"resumed":true})
             } else {
@@ -366,6 +379,46 @@ fn commit_delete(journal_root: &Path, pending_id: &str, resumed: bool) {
             Some((state, reason))
         },
     );
+}
+
+/// Agent memories are segments on their own stream; the agents page deletes
+/// them through this route.
+const AGENT_MEMORY_STREAM_PREFIX: &str = "agent-memory-";
+
+fn page_of(stream: &str) -> Page {
+    if stream.starts_with(AGENT_MEMORY_STREAM_PREFIX) {
+        Page::Agents
+    } else {
+        Page::Transcripts
+    }
+}
+
+/// Add the delete to the journal's deletion record. Every run of one held
+/// delete is the same operation, so a resumed run records it once.
+fn record_deleted(journal_root: &Path, record: &DeleteRecord) {
+    let target = &record.target;
+    let page = page_of(&target.stream);
+    let (action, unit) = if page == Page::Agents {
+        (
+            Action::MemoryDelete,
+            Unit::Memory {
+                day: target.day.clone(),
+                segment: target.key.clone(),
+            },
+        )
+    } else {
+        (
+            Action::SegmentDelete,
+            Unit::Segment {
+                day: target.day.clone(),
+                stream: target.stream.clone(),
+                segment: target.key.clone(),
+            },
+        )
+    };
+    record
+        .removal(journal_root, action, Surface::Web { page })
+        .record(unit);
 }
 
 fn is_tombstone_only(path: &Path) -> bool {
@@ -969,6 +1022,26 @@ mod tests {
         }
         assert!(deleted.join(TOMBSTONE_NAME).is_file());
         assert!(chronicle.join("094300_2/note.txt").is_file());
+
+        // The deletion record names a memory from the agents page, and
+        // nothing of what it said.
+        let history = solstone_core_removals::history(root.path(), 10).unwrap();
+        assert_eq!(history.total, 1);
+        let entry = &history.entries[0];
+        assert_eq!(entry.action, solstone_core_removals::Action::MemoryDelete);
+        assert_eq!(
+            entry.surface,
+            solstone_core_removals::Surface::Web {
+                page: solstone_core_removals::Page::Agents
+            }
+        );
+        assert_eq!(
+            entry.unit,
+            solstone_core_removals::Unit::Memory {
+                day: "20261103".to_owned(),
+                segment: "094200_1".to_owned()
+            }
+        );
     }
 
     #[tokio::test]
@@ -1136,6 +1209,13 @@ mod tests {
             paths
         };
         assert_eq!(snapshot_before, snapshot_after);
+        // A cancelled delete removed nothing, so it records nothing.
+        assert_eq!(
+            solstone_core_removals::history(root.path(), 10)
+                .unwrap()
+                .total,
+            0
+        );
 
         let ref_date = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
         let search_res = solstone_core_indexer_query::search(

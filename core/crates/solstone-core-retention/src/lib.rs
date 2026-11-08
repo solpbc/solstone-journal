@@ -69,6 +69,7 @@ pub mod original_deletion;
 pub mod owner_voice;
 pub mod policy;
 pub mod receipt;
+pub mod record;
 pub mod remove_marked;
 pub mod restore_intent;
 pub mod review_context;

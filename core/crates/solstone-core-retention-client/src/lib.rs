@@ -189,6 +189,8 @@ pub fn recover(journal: PathBuf, at: String) -> Result<Value, ClientError> {
         "owner".to_owned(),
         "--reason".to_owned(),
         "owner".to_owned(),
+        "--surface".to_owned(),
+        "home".to_owned(),
     ])
 }
 

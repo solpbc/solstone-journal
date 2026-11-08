@@ -662,6 +662,36 @@ fn held(
     });
 }
 
+/// Segment work held on a Strava tile: body data, which no talent reads.
+fn is_body_data_hold(unit: &Unit) -> bool {
+    matches!(unit, Unit::Segment { stream, .. }
+        if stream == solstone_core_format::content::strava_body::STRAVA_STREAM)
+}
+
+/// End segment work held on a Strava tile as its retry would, accepted and
+/// released, under the unit's execution claim, so it is neither dispatched nor
+/// shown as held. A run holding the claim ends it itself.
+fn settle_body_data_holds(
+    journal: &Path,
+    records: Vec<work_retry::Record>,
+    errors: &mut Vec<String>,
+) -> Vec<work_retry::Record> {
+    records
+        .into_iter()
+        .filter(|record| {
+            if !is_body_data_hold(&record.unit) {
+                return true;
+            }
+            if let Ok(_claim) = work_retry::execution_claim(journal, &record.unit)
+                && let Err(error) = work_retry::reconcile_accepted(journal, &record.unit)
+            {
+                errors.push(format!("{}: {error}", record.unit.day()));
+            }
+            false
+        })
+        .collect()
+}
+
 fn retry_imported(unit: &Unit, imports: &[ImportThinking]) -> bool {
     imports.iter().any(|import| match unit {
         Unit::Raw {
@@ -936,7 +966,9 @@ fn talent_retries(
         .date_naive();
     let mut candidates = Vec::new();
     for record in records.into_iter().filter(|r| {
-        r.unit.day() == day && matches!(r.unit, Unit::Segment { .. } | Unit::Activity { .. })
+        r.unit.day() == day
+            && matches!(r.unit, Unit::Segment { .. } | Unit::Activity { .. })
+            && !is_body_data_hold(&r.unit)
     }) {
         let id = record.unit.id()?;
         let current = match &record.unit {
@@ -2007,7 +2039,8 @@ fn reconcile_pass_with_roots(
     );
     asks.hold(journal, &unfinished_activities);
     let (held_activities, held_errors) = crate::discover_held_activities(journal);
-    let (held_records, retry_errors) = work_retry::list(journal);
+    let (held_records, mut retry_errors) = work_retry::list(journal);
+    let held_records = settle_body_data_holds(journal, held_records, &mut retry_errors);
     let now = chrono::Utc::now();
     let today = daily_coverage::local_day(journal, now);
     let pass_day = today.clone();
@@ -2675,6 +2708,73 @@ mod tests {
         }).to_string()).unwrap();
         root
     }
+    /// Segment work held on a Strava tile is ended by the discovery pass, never
+    /// shown as held or offered to run; held work on a capture segment stays.
+    #[test]
+    fn discovery_ends_segment_work_held_on_a_strava_tile() {
+        let root = fixture("local");
+        let journal = root.path();
+        let day = "20260102";
+        let mut units = Vec::new();
+        for (stream, key, file) in [
+            ("import.strava", "120000_300", "workout.json"),
+            ("notes", "120000_300", "audio.jsonl"),
+            ("import.strava", "130000_300", "workout.json"),
+        ] {
+            let dir = journal.join("chronicle").join(day).join(stream).join(key);
+            std::fs::create_dir_all(dir.join("talents")).unwrap();
+            std::fs::write(dir.join(file), "{}\n").unwrap();
+            std::fs::write(dir.join("talents/sense.json"), "{}").unwrap();
+            let unit = Unit::Segment {
+                day: day.into(),
+                stream: stream.into(),
+                segment: key.into(),
+                talent: "entities:detection".into(),
+                direct: false,
+            };
+            let input = work_retry::input::current(journal, &unit).unwrap();
+            work_retry::observe_held(journal, &unit, "send_failed", &input).unwrap();
+            work_retry::request(journal, &unit).unwrap();
+            units.push(unit);
+        }
+        // A run already holds the last one: it ends that work itself, and this
+        // pass still neither shows it as held nor offers it.
+        let running = work_retry::execution_claim(journal, &units[2]).unwrap();
+        let queue = queue(journal);
+        let stopped = AtomicBool::new(false);
+        let backlog = reconcile_pass(journal, &queue, &stopped, false).unwrap();
+        drop(running);
+        let held = |unit: &Unit| {
+            work_retry::read(journal, &unit.id().unwrap())
+                .unwrap()
+                .unwrap()
+                .held
+        };
+        assert!(!held(&units[0]), "the Strava tile's work is no longer held");
+        assert!(held(&units[1]), "capture work stays held");
+        assert!(held(&units[2]), "the running claim's work is left to it");
+        let holds = backlog
+            .published
+            .unwrap()
+            .holds
+            .into_iter()
+            .filter_map(|hold| hold.retry_unit)
+            .collect::<Vec<_>>();
+        assert_eq!(holds, vec![units[1].id().unwrap()]);
+        let offered = backlog
+            .admitted
+            .iter()
+            .chain(&backlog.ranked)
+            .map(|task| task.request.reference.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            offered
+                .iter()
+                .all(|reference| !reference.contains("import.strava")),
+            "{offered:?}"
+        );
+    }
+
     #[test]
     fn a_batch_observed_segment_waits_for_the_daily_catch_up() {
         let root = fixture("local");
@@ -3927,6 +4027,68 @@ mod tests {
             report.bands.iter().any(|band| band.daily_units_owed > 0),
             "daily remains owed"
         );
+    }
+
+    /// A Strava tile holding a stray file the body-only test rejects, on a day
+    /// with capture, published by an import as owing thinking: the day's
+    /// daily work is queued as it is without the tile, nothing is sent for the
+    /// tile, and the import's request is retired rather than left owed.
+    #[test]
+    fn a_strava_tile_the_body_only_test_rejects_neither_runs_nor_holds_its_day() {
+        use solstone_core_import::publish::*;
+        for stray in ["workout (1).json", "notes.md"] {
+            let root = fixture("local");
+            let day = "19990101";
+            thought_without_receipt(root.path(), day, &["120000_60"]);
+            let tile = root
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("import.strava/070000_300");
+            std::fs::create_dir_all(&tile).unwrap();
+            for file in ["workout.json", "stream.json", stray] {
+                std::fs::write(tile.join(file), "{}\n").unwrap();
+            }
+            let directory = root.path().join("imports/strava");
+            std::fs::create_dir_all(&directory).unwrap();
+            let record = PublicationRecord {
+                schema: PUBLICATION_SCHEMA.into(),
+                status: PublicationStatus::Success,
+                segments: vec![SegmentPublicationOutcome {
+                    day: day.into(),
+                    stream: "import.strava".into(),
+                    segment: "070000_300".into(),
+                    outcome: SegmentBindingOutcome::Bound {
+                        prev_day: None,
+                        prev_segment: None,
+                        seq: 1,
+                    },
+                    body_only: false,
+                }],
+                indexing: IndexPublicationOutcomes::default(),
+                day_markers: Vec::new(),
+            };
+            write_publication_record(Some(&directory), &record).unwrap();
+
+            let queue = queue(root.path());
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+
+            assert!(
+                queue.contains_reference("supervisor-work-19990101-daily"),
+                "{stray}"
+            );
+            assert!(
+                !queue.any_reference(|reference: &str| reference.contains("import.strava")),
+                "{stray}"
+            );
+            assert!(
+                solstone_core_import::thinking::read(root.path())
+                    .unwrap()
+                    .imports
+                    .is_empty(),
+                "{stray}"
+            );
+        }
     }
 
     /// Segments thought before their publication was recorded must not hold

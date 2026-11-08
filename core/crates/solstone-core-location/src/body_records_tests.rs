@@ -1839,6 +1839,20 @@ fn strava_tile(
 }
 
 #[test]
+fn a_journal_holds_body_data_once_strava_placed_a_tile() {
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    fs::create_dir_all(root.join("imports")).unwrap();
+    assert!(!has_body_data(root));
+    fs::write(
+        root.join("imports/.strava-zone.json"),
+        "{\"zone\":\"America/Denver\"}\n",
+    )
+    .unwrap();
+    assert!(has_body_data(root));
+}
+
+#[test]
 fn the_strava_zone_is_the_one_its_first_import_fixed() {
     let journal = journal_with_strava();
     assert_eq!(

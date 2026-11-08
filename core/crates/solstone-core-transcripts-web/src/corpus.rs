@@ -681,7 +681,8 @@ mod tests {
                             || path == Path::new("backup-activity.lock")
                             || path == Path::new("health/daily-location-admission.lock")
                             || path.starts_with("config/actions")
-                            || path.starts_with(crate::pending::RECORD_DIR),
+                            || path.starts_with(crate::pending::RECORD_DIR)
+                            || path.starts_with(solstone_core_removals::RECORD_DIR),
                         "unexpected journal mutation: {}",
                         path.display()
                     );

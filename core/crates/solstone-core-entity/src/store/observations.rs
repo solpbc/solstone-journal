@@ -769,6 +769,10 @@ fn enqueue_observation(journal: &Path, path: &Path) -> Result<(), ObservationWri
 }
 
 /// Single entry point for modifying facet-scoped entity observations.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "no product caller removes a whole observation file; an owner path that adds one goes through the deletion route"
+)]
 pub fn apply_observation_change(
     journal_root: &Path,
     facet_dir: &str,

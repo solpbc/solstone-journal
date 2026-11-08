@@ -19,7 +19,7 @@ use solstone_core_import_host::audio::{
 
 use super::audio::probed;
 use solstone_core_import_host::cli_argv::{
-    CliOutcome, audio_import_cli_run, audio_import_runtime, run_cli_with,
+    CliOutcome, ImportFacet, audio_import_cli_run, audio_import_runtime, run_cli_with,
 };
 use solstone_core_segment::SUPERVISOR_MESSAGE;
 
@@ -215,6 +215,65 @@ fn a_facet_never_goes_quietly_unused() {
             "{args:?}"
         );
     }
+}
+
+#[test]
+fn a_strava_download_takes_a_facet_or_none_and_a_muted_one_is_refused() {
+    let journal = journal_with_facets();
+    let download = journal.path().join("strava.zip");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/mobile_owner_import/strava.zip"),
+        &download,
+    )
+    .unwrap();
+    let download = download.to_str().unwrap();
+    let dispatch = |extra: &[&str]| {
+        let mut args = vec!["--source", "strava"];
+        args.extend_from_slice(extra);
+        args.push(download);
+        run_cli_with(
+            &args
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect::<Vec<_>>(),
+            journal.path(),
+            |name| (name == "SOL_SKIP_SUPERVISOR_CHECK").then(|| "1".to_owned()),
+            || false,
+        )
+    };
+    for (extra, expected) in [
+        (
+            &["--facet", "desk-a"][..],
+            ImportFacet::Facet("desk-a".to_owned()),
+        ),
+        (&["--no-facet"][..], ImportFacet::None),
+        (&[][..], ImportFacet::Unattended),
+    ] {
+        match dispatch(extra) {
+            CliOutcome::Registry(registry) => assert_eq!(registry.facet, expected, "{extra:?}"),
+            CliOutcome::Rendered(run) | CliOutcome::Imported { run, .. } => {
+                panic!("{extra:?}: {}", run.stderr)
+            }
+        }
+    }
+    for (extra, code) in [
+        (&["--facet", "old"][..], 1),
+        (&["--facet", "desk-a", "--no-facet"][..], 2),
+    ] {
+        match dispatch(extra) {
+            CliOutcome::Rendered(run) => assert_eq!(run.exit_code, code, "{extra:?}"),
+            _ => panic!("{extra:?} must be refused"),
+        }
+        assert!(!journal.path().join("chronicle").exists());
+        assert!(!journal.path().join("imports").exists());
+    }
+    let calendar = journal.path().join("calendar.ics");
+    fs::write(&calendar, "BEGIN:VCALENDAR\nEND:VCALENDAR\n").unwrap();
+    let refused = run_facet_import(
+        journal.path(),
+        &["--no-facet", "--source", "ics", calendar.to_str().unwrap()],
+    );
+    assert_eq!(refused.exit_code, 1, "{}", refused.stdout);
 }
 
 #[test]

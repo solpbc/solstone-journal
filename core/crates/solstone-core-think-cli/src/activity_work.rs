@@ -434,6 +434,16 @@ impl ActivityWork {
         self.record.reasons.remove(name);
         self.save()
     }
+    /// End work on an activity whose talents never run: each remaining
+    /// talent through its own completion, which reconciles and clears its
+    /// retry hold, then the finished work's receipt. No model is called and
+    /// the activity record is not touched.
+    pub(crate) fn settle(mut self, context: &ThinkContext) -> Result<(), String> {
+        for name in self.record.remaining.clone() {
+            self.complete(&name)?;
+        }
+        self.finish(context)
+    }
     pub(crate) fn finish(&mut self, context: &ThinkContext) -> Result<(), String> {
         if (context.cancel_checkpoint)() {
             return Err("cancelled before publication".into());
@@ -555,6 +565,54 @@ pub fn activity_held_input(
     work_retry::input::current(journal, unit).map(Some)
 }
 
+/// Whether an activity record is Strava's: a reading of a workout, which is
+/// body data, so no activity talent runs on it.
+pub(crate) fn is_body_data_activity(record: &solstone_core_facets::ActivityRecord) -> bool {
+    solstone_core_format::content::is_strava_reading(record)
+}
+
+/// Whether this work is on an activity that is body data.
+fn is_body_data_work(journal: &Path, record: &Record) -> Result<bool, String> {
+    let identity = &record.identity;
+    Ok(solstone_core_facets::get_activity_record(
+        journal,
+        &identity.facet,
+        &identity.day,
+        &identity.activity,
+    )
+    .map_err(|e| e.to_string())?
+    .is_some_and(|activity| is_body_data_activity(&activity)))
+}
+
+/// Settle this work at discovery when its activity is body data, whether it
+/// is unfinished, parked, blocked or muted: work never dispatched would
+/// otherwise stay held. `Ok(true)` when the work no longer counts, including
+/// when another run holds it, which finds the same activity and settles it.
+fn settled_at_discovery(journal: &Path, record: &Record, now_ms: i64) -> Result<bool, String> {
+    // A record that can't be read here stays ordinary work, as it was; its
+    // own run reports what it can't read.
+    if !is_body_data_work(journal, record).unwrap_or(false) {
+        return Ok(false);
+    }
+    let identity = &record.identity;
+    let context = ThinkContext::new_with_roots(
+        journal,
+        identity.day.clone(),
+        journal.join("chronicle").join(&identity.day),
+        now_ms,
+        std::sync::Arc::new(move || now_ms),
+        PathBuf::new(),
+        PathBuf::new(),
+    )?;
+    match ActivityWork::open_existing(&context, &identity.facet, &identity.activity) {
+        Ok(Some(work)) => work.settle(&context)?,
+        Ok(None) => {}
+        Err(error) if error == CLAIMED => {}
+        Err(error) => return Err(error),
+    }
+    Ok(true)
+}
+
 pub fn discover_held_activities(
     journal: &Path,
 ) -> (Vec<solstone_core_system::work_retry::Unit>, Vec<String>) {
@@ -576,6 +634,10 @@ pub fn discover_held_activities(
             };
             if path(journal, &record.identity)? != entry_path {
                 return Err("activity work filename mismatch".into());
+            }
+            // Settled by the same pass's snapshot, never held.
+            if is_body_data_work(journal, &record).unwrap_or(false) {
+                return Ok(());
             }
             for talent in record.parked.intersection(&record.remaining) {
                 let unit = retry_unit(&record.identity, talent);
@@ -646,6 +708,11 @@ pub(crate) fn rebuild_receipts(
     let mut proof = BTreeMap::new();
     for receipt in retained_receipts(context, day)? {
         let record = retained_record(context, day, &receipt.facet, &receipt.activity)?;
+        // Settled body data: its receipt stands whatever became of the tile.
+        if is_body_data_activity(&record) {
+            proof.insert(receipt.proof_path, receipt.input_hash);
+            continue;
+        }
         if available_input(context, day, &record)? != receipt.input_hash {
             return Err("completed activity input changed".into());
         }
@@ -785,6 +852,10 @@ pub(crate) fn reconcile_retained(
             return Err("activity receipt identity changed".into());
         }
         let record = retained_record(context, &context.day, &receipt.facet, &receipt.activity)?;
+        // A Strava activity's work is settled, never run again.
+        if is_body_data_activity(&record) {
+            continue;
+        }
         let hash = available_input(context, &context.day, &record)?;
         if hash == receipt.input_hash {
             continue;
@@ -908,6 +979,16 @@ pub fn snapshot_activity_work(journal: &Path, now_ms: i64) -> ActivityWorkSnapsh
                 continue;
             }
         };
+        if self::path(journal, &record.identity).ok().as_ref() == Some(&path) {
+            match settled_at_discovery(journal, &record, now_ms) {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(error) => {
+                    errors.push(format!("{}: {error}", path.display()));
+                    continue;
+                }
+            }
+        }
         if self::path(journal, &record.identity).ok().as_ref() == Some(&path)
             && record.blocked.is_none()
             && !record.muted_pause
@@ -1078,6 +1159,9 @@ pub(crate) fn seed_activity_retries_checked(
         else {
             continue;
         };
+        if is_body_data_activity(&record) {
+            continue;
+        }
         let input_hash = crate::segment::compute_activity_input_hash(&context, day, &record)
             .ok_or_else(|| "cannot fingerprint interrupted activity".to_owned())?;
         ActivityWork {

@@ -64,12 +64,18 @@ impl OwnedTeardownCliRun {
 }
 
 pub(super) fn run(journal: &Path) -> OwnedTeardownCliRun {
-    OwnedTeardownCliRun::receive(run_owned_teardown(
+    let outcome = run_owned_teardown(
         journal,
         Arc::new(ProductionClock),
         ArchiveCancellation::new(),
         env!("CARGO_PKG_VERSION"),
-    ))
+    );
+    solstone_core_offload::teardown::record_backup_off(
+        journal,
+        &outcome,
+        solstone_core_removals::Surface::Cli,
+    );
+    OwnedTeardownCliRun::receive(outcome)
 }
 
 /// Coverage refusals the owner can act on, with their reason and message.

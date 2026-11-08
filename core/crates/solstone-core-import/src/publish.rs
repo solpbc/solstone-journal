@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_journal_io::{AtomicWriteError, JsonWriteOptions, write_json};
 use solstone_core_segment::{
     SegmentError, StreamAdvance, StreamHints, UnboundStreamAdvanceError, advance_unbound_stream,
@@ -392,6 +393,13 @@ pub fn publish_with_operations(
         }
     }
 
+    // A Strava tile never asks for thinking, whatever its directory holds, so
+    // one the body-only test rejects is never read by a model either.
+    let thinks = |s_out: &SegmentPublicationOutcome| {
+        matches!(s_out.outcome, SegmentBindingOutcome::Bound { .. })
+            && !s_out.body_only
+            && s_out.stream != STRAVA_STREAM
+    };
     let days_where = |body_only: bool| {
         input
             .segments
@@ -406,6 +414,13 @@ pub fn publish_with_operations(
     };
     // Only what isn't body records asks for thinking.
     let days = days_where(false).into_iter().collect::<Vec<_>>();
+    let thinking_days = segments
+        .iter()
+        .filter(|s_out| thinks(s_out))
+        .map(|s_out| s_out.day.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let body_days = days_where(true)
         .into_iter()
         .filter(|day| !days.contains(day))
@@ -436,7 +451,7 @@ pub fn publish_with_operations(
         .iter()
         .filter(|path| {
             !input.segments.iter().zip(&segments).any(|(s_in, s_out)| {
-                (!matches!(s_out.outcome, SegmentBindingOutcome::Bound { .. }) || s_out.body_only)
+                !thinks(s_out)
                     && is_path_under_segment(path, &s_in.day, &s_in.stream, &s_in.segment)
             })
         })
@@ -472,7 +487,7 @@ pub fn publish_with_operations(
     record = write_publication_record(input.import_dir, &record)?;
     // The durable coordinate scope is visible before any admission wakeup.
     for segment in &record.segments {
-        if matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) && !segment.body_only {
+        if thinks(segment) {
             operations.emit_observed(
                 input.journal,
                 input.revision,
@@ -482,16 +497,16 @@ pub fn publish_with_operations(
             );
         }
     }
-    if let Some(day) = days.last() {
+    if let Some(day) = thinking_days.last() {
         operations.emit_drain(input.journal, input.revision, day);
     }
-    if thinking_file_count > 0 && !days.is_empty() {
+    if thinking_file_count > 0 && !thinking_days.is_empty() {
         operations.emit_enrichment_ready(
             input.journal,
             input.revision,
             input.import_id,
             input.importer,
-            &days,
+            &thinking_days,
             u64::try_from(thinking_file_count).expect("file count fits u64"),
         );
     }
@@ -559,6 +574,7 @@ mod tests {
         enqueues: RefCell<Vec<Result<QueueFileOutcome, String>>>,
         enqueues_seen: RefCell<Vec<PathBuf>>,
         markers: RefCell<Vec<String>>,
+        body_markers: RefCell<Vec<String>>,
         observed: RefCell<Vec<(String, String, String)>>,
         enrichment: RefCell<Vec<(Vec<String>, u64)>>,
         drains: RefCell<Vec<String>>,
@@ -589,6 +605,11 @@ mod tests {
 
         fn touch_stream_health_marker(&self, _: &Path, day: &str) -> Result<(), String> {
             self.markers.borrow_mut().push(day.to_owned());
+            Ok(())
+        }
+
+        fn touch_body_marker(&self, _: &Path, day: &str) -> Result<(), String> {
+            self.body_markers.borrow_mut().push(day.to_owned());
             Ok(())
         }
 
@@ -1005,7 +1026,7 @@ mod tests {
     #[test]
     fn a_recent_body_day_starts_thinking_like_any_other_import() {
         let temporary = tempfile::TempDir::new().unwrap();
-        for stream in ["import.apple_health", "import.oura", "import.strava"] {
+        for stream in ["import.apple_health", "import.oura"] {
             let mut s = segment("20260729", "120000_60");
             s.stream = stream.to_string();
             let file = temporary.path().join(format!(
@@ -1036,10 +1057,10 @@ mod tests {
     fn an_older_body_day_enters_the_same_paced_discovery_as_other_imports() {
         let temporary = tempfile::TempDir::new().unwrap();
         let mut old = segment("20260728", "120000_60");
-        old.stream = "import.strava".to_string();
+        old.stream = "import.oura".to_string();
         let file = temporary
             .path()
-            .join("chronicle/20260728/import.strava/120000_60/workout.json");
+            .join("chronicle/20260728/import.oura/120000_60/day.md");
         let fake = FakeOperations {
             advances: RefCell::new(vec![advance(1)]),
             enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued)]),
@@ -1137,6 +1158,111 @@ mod tests {
         assert!(!record.segments[0].body_only);
         assert_eq!(fake.observed.borrow().len(), 1);
         assert_eq!(*fake.markers.borrow(), vec!["20261011".to_owned()]);
+    }
+
+    fn strava_tile(root: &Path, day: &str, key: &str, files: &[&str]) -> (CreatedSegment, PathBuf) {
+        let dir = root
+            .join("chronicle")
+            .join(day)
+            .join("import.strava")
+            .join(key);
+        for file in files {
+            let path = dir.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "{}\n").unwrap();
+        }
+        let mut tile = segment(day, key);
+        tile.stream = "import.strava".to_owned();
+        (tile, dir.join("workout.json"))
+    }
+
+    #[test]
+    fn a_strava_tile_starts_no_thinking_while_another_segment_beside_it_does() {
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let (new_tile, new_file) = strava_tile(root, "20261020", "070000_300", &["workout.json"]);
+        // A tile Sense read before it counted as body data, written again.
+        let (sensed, sensed_file) = strava_tile(
+            root,
+            "20261021",
+            "070000_300",
+            &[
+                "workout.json",
+                "stream.json",
+                "talents/sense.json",
+                "talents/facets.json",
+            ],
+        );
+        // A tile the body-only test rejects: something else turned up in it.
+        let (odd, odd_file) = strava_tile(
+            root,
+            "20261022",
+            "070000_300",
+            &["workout.json", "notes.md"],
+        );
+        let mut other = segment("20261020", "090000_300");
+        other.stream = "import.archive".to_owned();
+        let other_file = root.join("chronicle/20261020/import.archive/090000_300/audio.jsonl");
+        let segments = vec![new_tile, sensed, odd, other];
+        let files = vec![new_file, sensed_file, odd_file, other_file];
+        let fake = FakeOperations {
+            advances: RefCell::new(vec![advance(1), advance(2), advance(3), advance(4)]),
+            enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued); 4]),
+            ..FakeOperations::default()
+        };
+        let record = publish_with_operations(input(root, None, &segments, &files), &fake).unwrap();
+        assert_eq!(record.status, PublicationStatus::Success);
+        assert_eq!(
+            *fake.enqueues_seen.borrow(),
+            files,
+            "search still gets every tile"
+        );
+        assert_eq!(
+            record
+                .segments
+                .iter()
+                .map(|s| s.body_only)
+                .collect::<Vec<_>>(),
+            vec![true, true, false, false]
+        );
+        assert_eq!(
+            *fake.observed.borrow(),
+            vec![(
+                "20261020".to_owned(),
+                "090000_300".to_owned(),
+                "import.archive".to_owned()
+            )]
+        );
+        assert_eq!(*fake.drains.borrow(), vec!["20261020".to_owned()]);
+        assert_eq!(
+            *fake.enrichment.borrow(),
+            vec![(vec!["20261020".to_owned()], 1)]
+        );
+        // The sensed tile's day gained only body data. The rejected tile's day
+        // keeps the stream marker, and still asks no thinking.
+        assert_eq!(*fake.body_markers.borrow(), vec!["20261021".to_owned()]);
+        assert_eq!(
+            *fake.markers.borrow(),
+            vec!["20261020".to_owned(), "20261022".to_owned()]
+        );
+
+        // Alone, a new tile asks for nothing and moves the body marker.
+        let (tile, file) = strava_tile(root, "20261023", "070000_300", &["workout.json"]);
+        let fake = FakeOperations {
+            advances: RefCell::new(vec![advance(1)]),
+            enqueues: RefCell::new(vec![Ok(QueueFileOutcome::Queued)]),
+            ..FakeOperations::default()
+        };
+        publish_with_operations(
+            input(root, None, &[tile], std::slice::from_ref(&file)),
+            &fake,
+        )
+        .unwrap();
+        assert!(fake.observed.borrow().is_empty());
+        assert!(fake.drains.borrow().is_empty());
+        assert!(fake.enrichment.borrow().is_empty());
+        assert!(fake.markers.borrow().is_empty());
+        assert_eq!(*fake.body_markers.borrow(), vec!["20261023".to_owned()]);
     }
 
     #[test]

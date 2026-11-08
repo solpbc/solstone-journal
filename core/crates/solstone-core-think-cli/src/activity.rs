@@ -126,6 +126,10 @@ fn selected_configs(
     if activity_contract::is_synthetic(record) || !activity_contract::has_nonempty_span(record) {
         return Ok(None);
     }
+    // A Strava activity is a reading of body data: it selects no talent.
+    if crate::activity_work::is_body_data_activity(record) {
+        return Ok(Some(Vec::new()));
+    }
     let kind = record
         .get("activity")
         .and_then(Value::as_str)
@@ -294,6 +298,9 @@ pub(crate) fn run_held(
         log_disposition(context, log, activity_id, facet, "projection_only", message);
         return Ok(failed(message));
     };
+    if crate::activity_work::is_body_data_activity(&record) {
+        return settle_body_data(context, log, activity_id, facet, held);
+    }
     let Some((configs, input_hash)) = selected_work(context, &record)? else {
         return Ok(ModeResult::default());
     };
@@ -311,6 +318,36 @@ pub(crate) fn run_held(
         input_hash,
         adopted,
     )
+}
+
+/// A Strava activity's talents never run, whether asked by a retry, by its
+/// recorded work or by the owner with `--reactivate`: any work left on it is
+/// settled through each talent's completion, and the run succeeds saying so.
+fn settle_body_data(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    activity_id: &str,
+    facet: &str,
+    held: Option<FileLock>,
+) -> Result<ModeResult, String> {
+    // This run's own claim, if it holds one, is taken again just below.
+    drop(held);
+    if let Some(work) = ActivityWork::open_existing(context, facet, activity_id)? {
+        work.settle(context)?;
+    }
+    let message = "this activity comes from a Strava workout, which is body data; nothing further runs on it.";
+    log_disposition(
+        context,
+        log,
+        activity_id,
+        facet,
+        "body_data_settled",
+        message,
+    );
+    Ok(ModeResult {
+        success_names: vec![format!("{facet}/{activity_id} settled: {message}")],
+        ..ModeResult::default()
+    })
 }
 
 /// Shared ordinary execution after its caller has admitted the actual input.

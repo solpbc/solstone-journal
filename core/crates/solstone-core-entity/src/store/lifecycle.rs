@@ -316,6 +316,10 @@ pub fn unblock_journal_entity(
 }
 
 /// Remove one resolved entity directory and rebuild the durable identity-map cache.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "owner removal recorded by its caller: the entity delete records the entity when its held delete settles as deleted"
+)]
 pub fn delete_entity_directory(
     journal_root: &Path,
     entity_id: &str,

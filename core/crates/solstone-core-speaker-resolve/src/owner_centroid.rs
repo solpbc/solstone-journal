@@ -420,6 +420,10 @@ pub fn rebuild_owner_centroid(
 }
 
 /// Remove the owner's saved voice, returning whether a file was there.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "not moved in stage 1: an owner-centroid undo is a speaker correction (board row 12)"
+)]
 pub fn remove_owner_centroid(
     journal_root: &Path,
     principal_entity_id: &str,
