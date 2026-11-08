@@ -231,6 +231,18 @@ pub(crate) fn candidates(target: &str) -> Result<Vec<RuntimeFetch>, FetchSetErro
     let mut rows = Vec::new();
 
     match target {
+        "android-aarch64" | "ios-aarch64" => {
+            for filename in ["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"] {
+                let row = find_catalog_row("local-model", filename, None);
+                rows.push(RuntimeFetch {
+                    unit: row.unit,
+                    origin_key: row.origin_key,
+                    sha256: row.sha256,
+                    size_bytes: row.size_bytes,
+                });
+            }
+            return Ok(rows);
+        }
         "linux-x86_64" => {
             // ced-engine linux-cpu-x64
             let a = find_catalog_row(
@@ -710,9 +722,36 @@ mod tests {
 
     #[test]
     fn unknown_target_is_rejected() {
-        for target in ["windows", "darwin", "invalid", "linux", ""] {
+        for target in [
+            "windows",
+            "darwin",
+            "invalid",
+            "linux",
+            "android-x86_64",
+            "ios-x86_64",
+            "",
+        ] {
             let err = runtime_fetch_set(target).expect_err("unknown target rejected");
             assert_eq!(err.to_string(), format!("unknown-target: {target}"));
+        }
+    }
+
+    #[test]
+    fn mobile_fetch_sets_exclude_every_other_catalog_component() {
+        let expected = ["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"]
+            .map(|filename| find_catalog_row("local-model", filename, None));
+        for target in ["android-aarch64", "ios-aarch64"] {
+            let set = runtime_fetch_set(target).unwrap();
+            assert_eq!(set.len(), expected.len());
+            for row in expected {
+                let member = set
+                    .iter()
+                    .find(|member| member.origin_key() == row.origin_key)
+                    .unwrap();
+                assert_eq!(member.unit(), "local-model");
+                assert_eq!(member.sha256(), row.sha256);
+                assert_eq!(member.size_bytes(), row.size_bytes);
+            }
         }
     }
 

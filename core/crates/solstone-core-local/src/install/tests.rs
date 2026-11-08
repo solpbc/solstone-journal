@@ -4141,6 +4141,85 @@ mod runtime_fetch_seam_tests {
         }
     }
 
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn mobile_model_members_cross_the_production_mint_before_download() {
+        use crate::install::{fetch_install_member_with, fetch_runtime_member_with_cancel};
+
+        assert!(!super::super::TEST_ACQUIRER_SHORT_CIRCUIT.with(|flag| flag.get()));
+        for target in ["android-aarch64", "ios-aarch64"] {
+            let root = temp(&format!("mobile-model-mint-{target}"));
+            let fake = Rc::new(MockFake::default());
+            let generation = pins::model_generation("local/qwen3.5-4b").unwrap();
+            let mut state = test_status(&root);
+            with_runtime_fetch_target(target, || {
+                with_fake_runtime_fetch(&fake, || {
+                    for member in &generation.files {
+                        let artifact =
+                            select_artifact("local-model", None, None, None, Some(&member.file))
+                                .unwrap();
+                        let error = fetch_install_member_with(
+                            &root,
+                            &mut state,
+                            artifact,
+                            &root.join(&member.file),
+                            0,
+                            generation
+                                .files
+                                .iter()
+                                .map(|member| member.size_bytes)
+                                .sum(),
+                            |query, destination, progress| {
+                                fetch_runtime_member_with_cancel(
+                                    query,
+                                    destination,
+                                    progress,
+                                    "model_download_failed",
+                                    Some(&|| false),
+                                )
+                            },
+                        )
+                        .unwrap_err();
+                        // The transport stops after the production mint admits
+                        // the exact member; no model bytes or manifest are forged.
+                        assert_eq!(
+                            error.envelope.error.unwrap().reason_code,
+                            "model_download_failed"
+                        );
+                    }
+                    let error = fetch_runtime_member_with_cancel(
+                        &RuntimeFetchQuery {
+                            unit: Some("llama-server-vulkan"),
+                            ..Default::default()
+                        },
+                        &root.join("desktop-runtime"),
+                        |_, _| {},
+                        "download_failed",
+                        Some(&|| false),
+                    )
+                    .unwrap_err();
+                    assert_eq!(
+                        error.envelope.error.unwrap().reason_code,
+                        "component_not_fetched"
+                    );
+                });
+            });
+            let calls = fake.calls.lock().unwrap();
+            assert_eq!(calls.len(), generation.files.len());
+            for ((url, sha256, size), member) in calls.iter().zip(&generation.files) {
+                let artifact =
+                    select_artifact("local-model", None, None, None, Some(&member.file)).unwrap();
+                assert_eq!(
+                    url,
+                    &format!("https://updates.solstone.app/{}", artifact.origin_key)
+                );
+                assert_eq!(sha256, &member.sha256);
+                assert_eq!(*size, member.size_bytes);
+                assert!(!root.join(&member.file).exists());
+            }
+        }
+    }
+
     #[test]
     fn five_production_runtime_fetch_callers_are_accounted() {
         let callers = [

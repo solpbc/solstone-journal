@@ -181,12 +181,22 @@ fn compiled_fetch_target() -> Result<&'static str, FetchMintError> {
     {
         Ok("windows-aarch64")
     }
+    #[cfg(all(target_os = "android", target_arch = "aarch64"))]
+    {
+        Ok("android-aarch64")
+    }
+    #[cfg(all(target_os = "ios", target_arch = "aarch64"))]
+    {
+        Ok("ios-aarch64")
+    }
     #[cfg(not(any(
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "windows", target_arch = "x86_64"),
-        all(target_os = "windows", target_arch = "aarch64")
+        all(target_os = "windows", target_arch = "aarch64"),
+        all(target_os = "android", target_arch = "aarch64"),
+        all(target_os = "ios", target_arch = "aarch64")
     )))]
     {
         Err(FetchMintError::NotFetched)
@@ -320,6 +330,84 @@ fn refusal(target: &str, set: &[RuntimeFetch], requested: &[&str]) -> FetchMintE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiled_target_uses_the_matching_runtime_fetch_authority() {
+        let expected = match (std::env::consts::OS, std::env::consts::ARCH) {
+            ("linux", "x86_64") => Ok("linux-x86_64"),
+            ("linux", "aarch64") => Ok("linux-aarch64"),
+            ("macos", "aarch64") => Ok("macos-arm64"),
+            ("windows", "x86_64") => Ok("windows-x86_64"),
+            ("windows", "aarch64") => Ok("windows-aarch64"),
+            ("android", "aarch64") => Ok("android-aarch64"),
+            ("ios", "aarch64") => Ok("ios-aarch64"),
+            _ => Err(FetchMintError::NotFetched),
+        };
+        assert_eq!(compiled_fetch_target(), expected);
+    }
+
+    #[test]
+    fn mobile_mints_only_the_pinned_local_model_and_projector() {
+        for target in ["android-aarch64", "ios-aarch64"] {
+            for filename in ["Qwen3.5-4B-Q4_K_M.gguf", "mmproj-F16.gguf"] {
+                let row = catalog()
+                    .iter()
+                    .find(|row| row.unit == "local-model" && row.filename == filename)
+                    .unwrap();
+                let handle = mint_runtime_fetch_impl(
+                    target,
+                    &RuntimeFetchQuery {
+                        unit: Some("local-model"),
+                        filename: Some(filename),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                assert_eq!(handle.unit(), row.unit);
+                assert_eq!(handle.origin_key(), row.origin_key);
+                assert_eq!(handle.sha256(), row.sha256);
+                assert_eq!(handle.size_bytes(), row.size_bytes);
+            }
+            for query in [
+                RuntimeFetchQuery {
+                    unit: Some("llama-server-vulkan"),
+                    ..Default::default()
+                },
+                RuntimeFetchQuery {
+                    unit: Some("parakeet-model"),
+                    ..Default::default()
+                },
+                RuntimeFetchQuery {
+                    unit: Some("local-model-mlx"),
+                    ..Default::default()
+                },
+                RuntimeFetchQuery {
+                    unit: Some("location-accuracy"),
+                    ..Default::default()
+                },
+                RuntimeFetchQuery {
+                    unit: Some("local-model"),
+                    filename: Some("unknown.gguf"),
+                    ..Default::default()
+                },
+                RuntimeFetchQuery {
+                    unit: Some("local-model"),
+                    platform: Some(Platform::LinuxArm64),
+                    ..Default::default()
+                },
+                RuntimeFetchQuery {
+                    unit: Some("local-model"),
+                    artifact_key: Some("aarch64-android"),
+                    ..Default::default()
+                },
+            ] {
+                assert_eq!(
+                    mint_runtime_fetch_impl(target, &query),
+                    Err(FetchMintError::NotFetched)
+                );
+            }
+        }
+    }
     #[test]
     fn macos_predecessor_assets_cannot_mint_after_migration_release() {
         for row in catalog().iter().filter(|row| {
@@ -478,6 +566,8 @@ mod tests {
             "macos-arm64",
             "windows-x86_64",
             "windows-aarch64",
+            "android-aarch64",
+            "ios-aarch64",
         ];
         let all_inventory = inventory_for_tests();
 
