@@ -438,6 +438,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
         started,
         admission_slot,
         queue_wait_ms,
+        request_timeout_ms: timeout.as_secs_f64() * 1000.0,
         attempt_index: input.attempt_index,
         timed_out,
     };
@@ -2084,6 +2085,7 @@ struct InferenceContext<'a> {
     started: Instant,
     admission_slot: Option<u32>,
     queue_wait_ms: f64,
+    request_timeout_ms: f64,
     attempt_index: u32,
     timed_out: bool,
 }
@@ -2096,6 +2098,10 @@ fn failure_with_inference(
     finish_reason: Option<String>,
     server_fields: Option<ServerInference>,
 ) -> GenerateResult {
+    // One bounded non-content failure observation. Do not log the failure
+    // detail, profile, model/path, request ID, credentials or request contents.
+    let timing = failure_timing(context, elapsed_ms(context.started));
+    log::warn!(target: "solstone_core_local", "local_inference_failure {timing}");
     if let Some(reason_code) = reason_code {
         debug_assert!(local_generate().reason_codes.contains_key(reason_code));
     }
@@ -2111,6 +2117,18 @@ fn failure_with_inference(
             reason_code.map(str::to_owned),
             server_fields,
         )),
+    })
+}
+
+fn failure_timing(context: InferenceContext<'_>, client_total_ms: f64) -> Value {
+    json!({
+        "phase": if context.admission_slot.is_some() { "admitted" } else { "admission" },
+        "admission_slot": context.admission_slot,
+        "queue_wait_ms": context.queue_wait_ms,
+        "client_total_ms": client_total_ms,
+        "deadline_ms": context.request_timeout_ms,
+        "timed_out": context.timed_out,
+        "attempt": context.attempt_index,
     })
 }
 
@@ -2215,6 +2233,53 @@ mod tests {
 
     fn completion(message: Value, finish: &str, usage: Value) -> Value {
         json!({"choices": [{"message": message, "finish_reason": finish}], "usage": usage})
+    }
+
+    #[test]
+    fn failure_timing_has_only_bounded_operational_fields() {
+        let mut server = server();
+        server.profile = "private owner path and request content must stay private".into();
+        let context = InferenceContext {
+            server: &server,
+            started: Instant::now(),
+            admission_slot: Some(0),
+            queue_wait_ms: 25.0,
+            request_timeout_ms: 480_000.0,
+            attempt_index: 0,
+            timed_out: true,
+        };
+        let value = failure_timing(context, 480_001.0);
+        assert_eq!(value["phase"], "admitted");
+        assert_eq!(value["queue_wait_ms"], 25.0);
+        assert_eq!(value["deadline_ms"], 480_000.0);
+        assert_eq!(value["client_total_ms"], 480_001.0);
+        assert_eq!(value["timed_out"], true);
+        let allowed = [
+            "phase",
+            "admission_slot",
+            "queue_wait_ms",
+            "client_total_ms",
+            "deadline_ms",
+            "timed_out",
+            "attempt",
+        ];
+        assert!(
+            value
+                .as_object()
+                .unwrap()
+                .keys()
+                .all(|key| allowed.contains(&key.as_str()))
+        );
+        assert!(!value.to_string().contains("private"));
+        let queued = failure_timing(
+            InferenceContext {
+                admission_slot: None,
+                ..context
+            },
+            10.0,
+        );
+        assert_eq!(queued["phase"], "admission");
+        assert!(queued["admission_slot"].is_null());
     }
 
     #[test]
