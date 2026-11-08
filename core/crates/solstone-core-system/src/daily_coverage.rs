@@ -1883,5 +1883,26 @@ mod tests {
         // `home`'s units on the days only the workout chose it are no longer
         // read at all: a body tile makes no facet active.
         assert!(remaining < before, "{remaining} < {before}");
+        // Thought once again, every day is current, and stays so.
+        for d in all_days
+            .iter()
+            .filter(|d| !solstone_core_segment::day_holds_nothing_the_owner_did(root, d))
+        {
+            for unit in read_daily_coverage_with_roots(root, d, &talent, &apps)
+                .unwrap()
+                .units
+                .iter()
+                .filter(|unit| unit.state.is_owed())
+            {
+                accept_unit(root, unit);
+            }
+            assert!(
+                read_daily_coverage_with_roots(root, d, &talent, &apps)
+                    .unwrap()
+                    .state
+                    .is_current(),
+                "{d}"
+            );
+        }
     }
 }
