@@ -28,7 +28,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("heading", "facet"),
     (
         "ask_existing",
-        "file your workouts under your {facet} facet?",
+        "file your workouts under the facet you named {facet}?",
     ),
     ("ask_make_body", "make a body facet for your workouts?"),
     (
@@ -37,7 +37,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ),
     (
         "no_means",
-        "if you say no, new workouts get no activity, and connections limited to chosen facets won't see them.",
+        "if you say no, new workouts aren't listed with your activities, no people or things come from them, and agents you've set to only these facets won't see them. search and the body app still show them.",
     ),
     ("yes", "yes"),
     ("no", "no"),
@@ -49,7 +49,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ),
     (
         "none_hint",
-        "these workouts get no activity, and connections limited to chosen facets won't see them. search and the body app still show them.",
+        "these workouts aren't listed with your activities, no people or things come from them, and agents you've set to only these facets won't see them. search and the body app still show them.",
     ),
     (
         "unanswered",
