@@ -6793,6 +6793,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-local",
+ "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-sense",
  "solstone-core-system",

@@ -64,6 +64,7 @@ solstone-core-talent-runtime = { workspace = true, features = ["test-hooks"] }
 axum = { workspace = true, features = ["tokio"] }
 filetime = "0.2.29"
 solstone-core-transcripts-web.workspace = true
+solstone-core-retention.workspace = true
 tempfile = "3.24.0"
 tower.workspace = true
 
