@@ -8,6 +8,49 @@ use std::{
     ptr::NonNull,
 };
 
+// Sample CPU eligibility on the actual context-owning caller. This does not
+// depend on CPU identity, topology or model selection.
+#[cfg(target_os = "android")]
+#[derive(Clone, Debug)]
+struct ThreadBudget {
+    desired: usize,
+    available: Result<usize, String>,
+    selected: c_int,
+}
+
+#[cfg(target_os = "android")]
+impl ThreadBudget {
+    fn current(desired: usize) -> Self {
+        let available = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .map_err(|error| error.to_string());
+        Self::from_available(desired, available)
+    }
+
+    fn from_available(desired: usize, available: Result<usize, String>) -> Self {
+        // Query failure uses one worker; retain its reason while applying the budget.
+        let selected = desired.min(available.as_ref().copied().unwrap_or(1)) as c_int;
+        Self {
+            desired,
+            available,
+            selected,
+        }
+    }
+
+    fn detail(&self) -> String {
+        format!(
+            "desired {}, available {:?}, selected {}",
+            self.desired, self.available, self.selected
+        )
+    }
+}
+
+#[cfg(target_os = "android")]
+unsafe extern "C" {
+    fn parakeet_capi_set_threads(threads: c_int) -> c_int;
+    fn parakeet_capi_get_threads() -> c_int;
+}
+
 unsafe extern "C" {
     fn parakeet_capi_abi_version() -> c_int;
     fn parakeet_capi_load(path: *const c_char) -> *mut c_void;
@@ -39,14 +82,41 @@ impl Context {
             if parakeet_capi_abi_version() != 10 {
                 return Err("Parakeet C API ABI differs from pinned ABI 10".into());
             }
+            #[cfg(target_os = "android")]
+            let budget = ThreadBudget::current(4);
+            #[cfg(target_os = "android")]
+            let applied = parakeet_capi_set_threads(budget.selected);
+            #[cfg(target_os = "android")]
+            if applied != budget.selected {
+                return Err(format!(
+                    "Parakeet compute thread budget was not applied ({}, actual {applied}): {}",
+                    budget.detail(),
+                    CStr::from_ptr(parakeet_capi_load_error()).to_string_lossy()
+                ));
+            }
             let pointer = NonNull::new(parakeet_capi_load(path.as_ptr())).ok_or_else(|| {
                 CStr::from_ptr(parakeet_capi_load_error())
                     .to_string_lossy()
                     .into_owned()
             })?;
             let context = Self(pointer);
-            if parakeet_capi_set_concurrency(context.0.as_ptr(), 1, 4) != 1 {
+            #[cfg(target_os = "android")]
+            let context_threads = budget.selected;
+            #[cfg(not(target_os = "android"))]
+            let context_threads = 4;
+            if parakeet_capi_set_concurrency(context.0.as_ptr(), 1, context_threads) != 1 {
                 return Err(context.error());
+            }
+            #[cfg(target_os = "android")]
+            {
+                let actual = parakeet_capi_get_threads();
+                if actual != budget.selected {
+                    let detail = CStr::from_ptr(parakeet_capi_load_error()).to_string_lossy();
+                    return Err(format!(
+                        "Parakeet compute thread budget differs after load ({}, actual {actual}): {detail}",
+                        budget.detail()
+                    ));
+                }
             }
             Ok(context)
         }

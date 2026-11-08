@@ -45,6 +45,13 @@ DOTPROD; baseline dispatch checks the phone's hardware capability before using
 them. CPUs without DOTPROD keep the generic path. The receipt records the patch
 hash and resulting source-tree hash. The iOS llama recipe does not apply it.
 
+the android media GGML recipe also applies `ggml-android-q8-dotprod.patch` to
+the shared Parakeet, RF-DETR and sound-CED tree. its Q8_0 dot-product leaf checks
+the CPU's DOTPROD capability at runtime and preserves the baseline arithmetic
+order. other CPUs retain the generic path. Parakeet's shared-backend thread
+budget API is patched on both platforms; only android uses the persistent CPU
+worker pool and the audio adapter's context-creation thread cap.
+
 `inputs.json` fixes external inputs by source coordinate and archive digest.
 The nvattest patch is applied to that exact source, with forward and reverse
 checks. Parakeet and RF-DETR use the same union of their pinned GGML patch

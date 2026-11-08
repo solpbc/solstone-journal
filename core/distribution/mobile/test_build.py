@@ -58,12 +58,12 @@ class BuildControls(unittest.TestCase):
             self.assertEqual(set(binding["sources"]), {"ggml", "parakeet", "rfdetr"})
             # The duplicated common patch appears once; both distinct engine
             # requirements survive in each resulting tree and receipt.
-            self.assertEqual(len(binding["patches"]), 3)
-            self.assertEqual({p["source_component"] for p in binding["patches"]}, {"parakeet", "rfdetr"})
+            self.assertEqual(len(binding["patches"]), 4)
+            self.assertEqual({p["source_component"] for p in binding["patches"]}, {"parakeet", "rfdetr", "mobile"})
             for component in (*mobile.MEDIA_GGML_COMPONENTS, "sound-ced"):
                 self.assertEqual(build.summary["inputs"][component + "-patched-ggml"]["tree_sha256"], binding["tree_sha256"])
                 ggml = sources[component] / "third_party/ggml"
-                for file in ("common.c", "metal.metal", "cpu.c"):
+                for file in ("common.c", "metal.metal", "cpu.c", "leaf.c"):
                     self.assertEqual((ggml / file).read_text(), "fixed\n")
 
     def test_android_llama_patch_binds_only_a_successfully_patched_tree(self):
@@ -141,7 +141,7 @@ class BuildControls(unittest.TestCase):
         build.source_roots.update(sources)
         base = root / "base-ggml"
         base.mkdir()
-        for file in ("common.c", "metal.metal", "cpu.c"):
+        for file in ("common.c", "metal.metal", "cpu.c", "leaf.c"):
             (base / file).write_text("base\n")
         archive = root / "ggml.tar.gz"
         with tarfile.open(archive, "w:gz") as bundle:
@@ -149,7 +149,36 @@ class BuildControls(unittest.TestCase):
         digest = mobile.sha256(archive)
         build.pins["ggml"] = dict(url="https://invalid.example/ggml", sha256=digest, revision="fixture")
         archive.rename(build.cache / f"ggml-{digest}.tar.gz")
+        patch = root / "core/distribution/mobile/ggml-android-q8-dotprod.patch"
+        patch.parent.mkdir(parents=True)
+        patch.write_text(self.patch("leaf.c"))
+        patcher = mock.patch.object(mobile, "ROOT", root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         return build, sources
+
+    def test_android_media_leaf_failure_does_not_bind_shared_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build, sources = self.media_fixture(root)
+            patch = root / "core/distribution/mobile/ggml-android-q8-dotprod.patch"
+            patch.write_text(self.patch("missing.c"))
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    build.ggml("parakeet", sources["parakeet"])
+            self.assertNotIn("media-shared-ggml", build.summary["inputs"])
+
+    def test_ios_media_union_does_not_require_android_leaf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            build, sources = self.media_fixture(root)
+            build.args.platform = "ios"
+            (root / "core/distribution/mobile/ggml-android-q8-dotprod.patch").unlink()
+            with contextlib.redirect_stdout(io.StringIO()):
+                build.ggml("parakeet", sources["parakeet"])
+            binding = build.summary["inputs"]["media-shared-ggml"]
+            self.assertEqual(len(binding["patches"]), 3)
+            self.assertEqual((sources["parakeet"] / "third_party/ggml/leaf.c").read_text(), "base\n")
 
     def test_cargo_binary_selection_excludes_host_build_scripts_and_launchers(self):
         with tempfile.TemporaryDirectory() as directory:

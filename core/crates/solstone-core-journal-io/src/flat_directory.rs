@@ -32,6 +32,7 @@ const FILE_FLAGS: OFlag = OFlag::O_RDONLY
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FlatDirectoryTestPrimitive {
     BeforeDescendantOpen,
+    BeforeEntrySelection,
     BeforeEntryStat,
     BeforeObservedFileOpen,
     AfterObservedFileStat,
@@ -516,6 +517,16 @@ pub fn list_flat_directory(
     directory: &FlatDirectory,
     maximum: usize,
 ) -> Result<Option<Vec<FlatDirectoryEntry>>, FlatDirectoryError> {
+    list_flat_directory_matching(directory, maximum, |_| true)
+}
+
+/// Select names before inspecting their metadata. The bound still counts every
+/// listed name, and selected entries retain the strict disappearance refusal.
+pub(crate) fn list_flat_directory_matching(
+    directory: &FlatDirectory,
+    maximum: usize,
+    include: impl Fn(&OsStr) -> bool,
+) -> Result<Option<Vec<FlatDirectoryEntry>>, FlatDirectoryError> {
     directory.revalidate()?;
     let mut opened = nix::dir::Dir::openat(directory, ".", DIRECTORY_FLAGS, Mode::empty())
         .map_err(|error| {
@@ -526,6 +537,7 @@ pub fn list_flat_directory(
             )
         })?;
     let mut entries = Vec::new();
+    let mut listed_count = 0;
     for listed in opened.iter() {
         let listed = listed.map_err(|error| {
             errno_error(
@@ -538,10 +550,15 @@ pub fn list_flat_directory(
         if matches!(bytes, b"." | b"..") {
             continue;
         }
-        if entries.len() == maximum {
+        if listed_count == maximum {
             return Ok(None);
         }
+        listed_count += 1;
         let name = OsString::from_vec(bytes.to_vec());
+        flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeEntrySelection);
+        if !include(&name) {
+            continue;
+        }
         flat_directory_test_hook(FlatDirectoryTestPrimitive::BeforeEntryStat);
         let entry = stat_entry(directory, &name)?.ok_or_else(|| {
             FlatDirectoryError::EnumerationChanged {
@@ -1289,6 +1306,23 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].name, "a");
         assert_eq!(entries[1].name, "b");
+    }
+
+    #[test]
+    fn filtered_listing_keeps_the_bound_on_all_names() {
+        let (temporary, _root, flat) = root_and_flat();
+        fs::write(temporary.path().join("flat/a"), b"a").unwrap();
+        fs::write(temporary.path().join("flat/b"), b"b").unwrap();
+        assert_eq!(
+            list_flat_directory_matching(&flat, 1, |_| false).unwrap(),
+            None
+        );
+        assert!(
+            list_flat_directory_matching(&flat, 2, |_| false)
+                .unwrap()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed an intermittent failure that could leave new recordings unprocessed after your journal started.
 - someone or something you removed from a facet no longer comes back on its own. before, if the name kept turning up in your journal, it could add them back after a few days and replace the description you'd kept for them.
 - if your name was set but your journal hadn't added you to its people, the speakers page showed an error where your voice belongs until you saved your profile again. your journal now adds you when it starts.
 - home no longer says yesterday's write-up is coming, late or missing on a day when nothing you did went into your journal.
