@@ -365,7 +365,12 @@ fn load_digest_activities(
                     }
                 }
                 let mut has_unusable_id = false;
-                for record in records {
+                // Thinking's reading of a Strava workout is body data: no
+                // briefing reads it, as its day's evidence doesn't count it.
+                for record in records
+                    .into_iter()
+                    .filter(|record| !solstone_core_format::content::is_strava_reading(record))
+                {
                     let id = match record
                         .get("id")
                         .and_then(Value::as_str)
@@ -898,6 +903,42 @@ mod tests {
         assert!(!text.contains(" plan"), "{text}");
         assert!(values.get("anticipated_today").is_none());
         assert!(values.get("anticipated_forward").is_none());
+    }
+
+    /// Thinking's reading of a Strava workout is body data: the packet holds
+    /// none of it, while the shared loader the owner's readers use still has it.
+    #[test]
+    fn packet_holds_no_reading_of_a_strava_workout() {
+        let root = tempfile::TempDir::new().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        let rows = [
+            json!({"id":"meeting_090000_300","title":"Design review","stream":"default"}),
+            json!({"id":"exercise_070000_300","title":"Riverside tempo run",
+                "description":"A run along the river.","stream":"import.strava"}),
+            json!({"id":"exercise_080000_300","title":"Phone walk","stream":"phone"}),
+        ]
+        .map(|row| format!("{row}\n"))
+        .concat();
+        fs::write(facet.join("activities/20261019.jsonl"), rows).unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let values = build_packet(
+            "20261019",
+            NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(),
+            "test",
+            &context,
+        )
+        .unwrap();
+        let text = serde_json::to_string(&values).unwrap();
+        assert!(text.contains("Design review"), "{text}");
+        assert!(text.contains("Phone walk"), "{text}");
+        assert!(!text.contains("Riverside"), "{text}");
+        assert!(!text.contains("along the river"), "{text}");
+        let owner = load_activity_records(root.path(), "work", "20261019", false).unwrap();
+        assert!(owner.iter().any(|r| r["id"] == "exercise_070000_300"));
     }
 
     #[test]
