@@ -5065,6 +5065,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-body-source",
+ "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
 ]
@@ -6161,6 +6162,7 @@ dependencies = [
  "solstone-core-processing-record",
  "solstone-core-removals",
  "solstone-core-segment",
+ "solstone-core-trash",
  "tempfile",
 ]
 
@@ -7029,6 +7031,22 @@ dependencies = [
  "tokio",
  "tower",
  "zip",
+]
+
+[[package]]
+name = "solstone-core-trash"
+version = "2.0.72"
+dependencies = [
+ "chrono",
+ "getrandom 0.3.4",
+ "log",
+ "serde",
+ "serde_json",
+ "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-removals",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

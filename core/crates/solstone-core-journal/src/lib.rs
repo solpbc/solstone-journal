@@ -16,6 +16,12 @@ use std::ffi::OsString;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
+/// The trash folder at the journal root, where what an owner removes waits
+/// before it is erased. Nothing that reads or walks the journal looks inside it;
+/// a journal-relative path whose first component is this name resolves to
+/// nothing. The trash itself lives in `solstone-core-trash`.
+pub const TRASH_DIR: &str = ".trash";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Env,

@@ -61,6 +61,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("policy", include_str!("../src/policy.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
     ("record", include_str!("../src/record.rs")),
+    ("recording_trash", include_str!("../src/recording_trash.rs")),
     ("remove_marked", include_str!("../src/remove_marked.rs")),
     ("restore_intent", include_str!("../src/restore_intent.rs")),
     ("review_context", include_str!("../src/review_context.rs")),

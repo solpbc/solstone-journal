@@ -342,6 +342,9 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, PathEr
         return Err(invalid(rel, "journal path contains invalid component"));
     }
     let first = normalized.split('/').next().unwrap_or("");
+    if first == solstone_core_journal::TRASH_DIR {
+        return Err(invalid(rel, "journal path is not readable"));
+    }
     let mut resolved = if is_day_key(first) {
         journal.join(CHRONICLE_DIR)
     } else {

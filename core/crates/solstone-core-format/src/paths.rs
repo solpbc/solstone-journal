@@ -14,6 +14,8 @@ pub enum JournalPathError {
     Absolute,
     Backslash,
     InvalidComponent,
+    /// The trash folder, which nothing outside the trash reads.
+    Trash,
 }
 
 impl fmt::Display for JournalPathError {
@@ -25,6 +27,7 @@ impl fmt::Display for JournalPathError {
             JournalPathError::InvalidComponent => {
                 "rel must not contain empty, '.', or '..' components"
             }
+            JournalPathError::Trash => "rel must not name the trash",
         })
     }
 }
@@ -35,6 +38,9 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, Journa
     let rel = normalize_rel(rel);
     validate_rel(&rel)?;
     let first = rel.split('/').next().unwrap_or("");
+    if first == solstone_core_journal::TRASH_DIR {
+        return Err(JournalPathError::Trash);
+    }
     let mut resolved = if is_date_key(first) {
         journal.join(CHRONICLE_DIR)
     } else {

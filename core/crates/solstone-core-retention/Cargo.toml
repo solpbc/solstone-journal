@@ -18,6 +18,7 @@ workspace = true
 
 [dependencies]
 solstone-core-removals.workspace = true
+solstone-core-trash.workspace = true
 log.workspace = true
 solstone-core-backup.workspace = true
 getrandom.workspace = true

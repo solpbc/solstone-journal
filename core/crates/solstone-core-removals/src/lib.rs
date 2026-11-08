@@ -22,9 +22,10 @@
 //! names the owner gave to what was removed. A recording is named by its time
 //! and stream; an entity, facet or speaker is named only by its kind.
 //!
-//! The format leaves room for what later stages add: more [`Event`]s (trashed,
-//! restored, erased) and larger [`Unit`]s (a stretch of time). Readers skip an
-//! entry they do not understand rather than fail.
+//! The trash adds three [`Event`]s beside [`Event::Removed`]: a unit moved
+//! to the trash, recovered from it, or erased from it. Larger [`Unit`]s (a
+//! stretch of time) can come later. Readers skip an entry they do not
+//! understand rather than fail.
 //!
 //! # The route
 //!
@@ -70,12 +71,29 @@ pub const RECORD_DIR: &str = "config/removals";
 /// The entry format this build writes.
 pub const SCHEMA: u32 = 1;
 
-/// What happened to a unit. Stage 1 only removes; the trash adds the rest.
+/// What happened to a unit.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Event {
-    /// The unit is gone from the journal (or the backup).
+    /// The unit is gone from the journal (or the backup), with no trash.
     Removed,
+    /// The unit left the journal for the trash, where it can be recovered.
+    Trashed,
+    /// The unit came back from the trash, as it was.
+    Recovered,
+    /// The unit was erased from the trash.
+    Erased,
+}
+
+impl Event {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Removed => "removed",
+            Self::Trashed => "trashed",
+            Self::Recovered => "recovered",
+            Self::Erased => "erased",
+        }
+    }
 }
 
 /// What the owner did. One operation has one action.
@@ -110,6 +128,13 @@ pub enum Action {
     RetentionTool,
     /// Finished removals that had stopped partway (Home's "finish them").
     FinishStopped,
+    /// Recovered something from the trash.
+    Recover,
+    /// Erased something from the trash: a selection on the trash page, or
+    /// the trash's own timer (surface [`Policy::Trash`]).
+    Erase,
+    /// Emptied the trash.
+    EmptyTrash,
 }
 
 /// A page of the journal's web app.
@@ -133,6 +158,8 @@ pub enum Page {
 pub enum Policy {
     /// "Leave out other voices": original audio goes once it is transcribed.
     VoiceOnly,
+    /// The trash erases what has waited in it for the days the owner set.
+    Trash,
 }
 
 /// Where a removal came from. Never "agents": a request that arrives from the
@@ -343,6 +370,20 @@ impl Removal {
         Ok(value)
     }
 
+    /// As [`Removal::commit`], recording `event` rather than
+    /// [`Event::Removed`]: the trash erasing what it held.
+    pub fn commit_event<T, E>(
+        &self,
+        event: Event,
+        unit: Unit,
+        remove: impl FnOnce(&RemovalIo<'_>) -> Result<T, E>,
+    ) -> Result<T, E> {
+        let io = RemovalIo { removal: self };
+        let value = remove(&io)?;
+        self.record_event(event, unit);
+        Ok(value)
+    }
+
     /// As [`Removal::commit`], for a removal that may find nothing to remove:
     /// `remove` returns its value and whether it removed anything, and the
     /// unit is recorded only when it did.
@@ -371,15 +412,36 @@ impl Removal {
         }
     }
 
+    /// Record that `unit` moved to, came back from, or was erased from the
+    /// trash (or was removed), logging a failure as [`Removal::record`] does.
+    pub fn record_event(&self, event: Event, unit: Unit) {
+        if let Err(error) = self.try_record_event(event, unit) {
+            log::error!(
+                "deletion record for operation {} was not written: {error}",
+                self.id
+            );
+        }
+    }
+
     /// Record a unit and report a failure to write it.
     pub fn try_record(&self, unit: Unit) -> Result<(), RecordError> {
+        self.try_record_event(Event::Removed, unit)
+    }
+
+    /// Record one event for a unit and report a failure to write it.
+    pub fn try_record_event(&self, event: Event, unit: Unit) -> Result<(), RecordError> {
         // A durable operation can be run again after a restart, in any order,
         // so its entries are named by their unit: a unit already recorded is
         // found again whatever else the run did first. A fresh operation runs
         // once, so its entries are numbered, which also keeps two units that
         // read the same (two files a merge dropped) as two entries.
         let id = if self.durable {
-            format!("{}-u{}", self.id, unit_digest(&unit)?)
+            // Stage 1's entries keep their names; the trash's events carry
+            // theirs, so one operation can record a unit trashed and erased.
+            match event {
+                Event::Removed => format!("{}-u{}", self.id, unit_digest(&unit)?),
+                event => format!("{}-{}-u{}", self.id, event.as_str(), unit_digest(&unit)?),
+            }
         } else {
             let sequence = self.sequence.fetch_add(1, Ordering::SeqCst);
             format!("{}-{sequence:04}", self.id)
@@ -388,7 +450,7 @@ impl Removal {
             schema: SCHEMA,
             id,
             operation: self.id.to_string(),
-            event: Event::Removed,
+            event,
             at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             action: self.action,
             surface: self.surface,
@@ -457,6 +519,7 @@ fn write_entry(journal_root: &Path, entry: &Entry) -> Result<(), RecordError> {
             match existing {
                 Some(existing)
                     if existing.unit == entry.unit
+                        && existing.event == entry.event
                         && existing.action == entry.action
                         && existing.operation == entry.operation =>
                 {

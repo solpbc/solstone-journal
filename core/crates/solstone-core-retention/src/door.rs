@@ -509,6 +509,94 @@ fn remove_segments_guarded(
     outcome
 }
 
+/// What keeps the journal's other writers off one segment while the trash
+/// moves it: the same admission, location lock and segment lock the
+/// whole-segment verb takes, held until dropped.
+///
+/// ⛔ Taken before the trash's own lock, never after, so the two always nest
+/// the same way.
+pub struct SegmentHold {
+    admitted: AdmittedActivity,
+    _admission: solstone_core_journal_io::FileLock,
+    _lock: solstone_core_journal_io::FileLock,
+    target: Target,
+}
+
+impl SegmentHold {
+    /// Hold `target`, which need not exist: a recovery puts a segment back
+    /// where nothing is.
+    pub fn acquire(journal: &Path, target: &Target) -> Result<Self, String> {
+        let admitted = admit_whole_segment_activity(journal)?;
+        let guard = WholeSegmentActivity::admitted(&admitted);
+        guard.target(target)?;
+        let admission = hold_daily_location_admission(guard.journal())
+            .map_err(|_| "couldn't hold your journal for this; try again".to_owned())?;
+        // The segment lock's sidecar sits in the stream folder, which a
+        // recovery may have to bring back first.
+        let live = segment_rel(target);
+        if let Some(parent) = guard.journal().join(&live).parent() {
+            solstone_core_journal_io::paths::ensure_directory(parent)
+                .map_err(|error| owner_reason(&error))?;
+        }
+        let lock = hold_lock(guard.journal().join(&live), LockOptions::default())
+            .map_err(|_| "another process is working on this segment".to_owned())?;
+        Ok(Self {
+            admitted,
+            _admission: admission,
+            _lock: lock,
+            target: target.clone(),
+        })
+    }
+
+    /// Whether the segment may move now: the lease still stands and nothing
+    /// else is part-way through the journal.
+    pub fn check(&self) -> Result<(), String> {
+        WholeSegmentActivity::admitted(&self.admitted).before_phase(&self.target)
+    }
+}
+
+/// Leave a tombstone where a segment the trash just took was, so every reader
+/// keeps seeing a removed recording rather than a missing one (a stream's
+/// chain, backup teardown, memory reads). Nothing is written when something
+/// already sits there: a recording that arrived again stands.
+pub fn place_tombstone(
+    journal: &Path,
+    target: &Target,
+    manifest: Vec<String>,
+    deleted_at: &str,
+    cid: &str,
+) -> Result<(), String> {
+    let live = segment_rel(target);
+    let path = contained_path(journal, &live).map_err(|error| owner_reason(&error))?;
+    match path_lexists(&path) {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(error) => return Err(owner_reason(&error)),
+    }
+    solstone_core_journal_io::paths::ensure_directory(&path)
+        .map_err(|error| owner_reason(&error))?;
+    let body = TombstoneBody {
+        deleted_at: deleted_at.to_owned(),
+        cid: cid.to_owned(),
+        reason: RemovalReason::OwnerSegmentDelete,
+        manifest,
+    };
+    let bytes = tombstone_bytes(&body)
+        .map_err(|_| "the record of this removal could not be prepared".to_owned())?;
+    match write_bytes_exclusive(
+        path.join(TOMBSTONE_NAME),
+        &bytes,
+        AtomicWriteOptions::default(),
+    ) {
+        Ok(()) => {}
+        Err(solstone_core_journal_io::errors::AtomicWriteError::Io { source, .. })
+            if source.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return Err("the record of this removal could not be written".to_owned()),
+    }
+    sync_dir(journal, &live).map_err(|error| owner_reason(&error))?;
+    sync_dir(journal, &parent_rel(target)).map_err(|error| owner_reason(&error))
+}
+
 /// Tell the index about everything a run removed — **after** the run.
 ///
 /// Separate from the verbs on purpose. A verb's job is to remove and report; this
