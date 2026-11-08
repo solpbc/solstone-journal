@@ -26,6 +26,41 @@ namespace {
 volatile std::sig_atomic_t pipe_signals = 0;
 void app_sigpipe(int) { pipe_signals = 1; }
 const char * token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+void test_progress_cadence_and_lifetime() {
+    std::vector<server_embedded_progress> rows;
+    {
+        server_embedded_progress_reporter reporter;
+        reporter.callback = [&](const server_embedded_progress & value) { rows.push_back(value); };
+        server_embedded_progress value{};
+        value.phase = server_embedded_phase::admitted;
+        value.task = 1;
+        value.prompt_total = 1000;
+        reporter.report(value, 0);
+        value.phase = server_embedded_phase::prefill;
+        value.prompt_processed = 512;
+        reporter.report(value, 1000000);
+        assert(rows.size() == 1);
+        reporter.report(value, 3000000);
+        assert(rows.size() == 2 && rows.back().prompt_processed == 512);
+        assert(!rows.back().prefill_ms && !rows.back().decode_ms);
+        value.phase = server_embedded_phase::cancelled;
+        value.terminal = true;
+        reporter.report(value, 3000001);
+        reporter.report(value, 3000002);
+        assert(rows.size() == 3 && rows.back().terminal);
+        value.task = 2;
+        value.phase = server_embedded_phase::admitted;
+        value.terminal = false;
+        reporter.report(value, 3000003);
+        assert(rows.size() == 4 && rows.back().task == 2);
+        reporter.callback = [](const server_embedded_progress &) { throw 1; };
+        value.terminal = true;
+        reporter.report(value, 3000004); // sink failures cannot unwind inference
+        assert(reporter.terminal_seen);
+    }
+    assert(rows.size() == 4); // no callback retained by a process-global observer
+}
+
 void test_control_lifetime() {
     server_embedded_control control;
     int calls = 0;
@@ -158,6 +193,7 @@ void test_abi(const std::filesystem::path & model) {
 }
 }
 int main() {
+    test_progress_cadence_and_lifetime();
     test_control_lifetime();
     test_http_contract();
     const auto path = std::filesystem::temp_directory_path() / ("journal-qwen-test-" + std::to_string(reinterpret_cast<uintptr_t>(&token)));

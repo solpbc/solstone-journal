@@ -1,10 +1,300 @@
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -11,6 +11,10 @@
+ #include <Metal/Metal.h>
+ 
+ #include <stdatomic.h>
++#if TARGET_OS_IOS
++#include <mach/mach.h>
++#include <os/proc.h>
++#endif
+ 
+ #ifndef TARGET_OS_VISION
+ #define TARGET_OS_VISION 0
+@@ -2168,7 +2172,17 @@
+ 
+     if (size_aligned > 0 && (res->all_data == NULL || res->buffers[0].metal == nil)) {
+         GGML_LOG_ERROR("%s: error: failed to allocate buffer, size = %8.2f MiB\n", __func__, size_aligned / 1024.0 / 1024.0);
+-        free(res);
++#if TARGET_OS_IOS
++        struct task_vm_info info = {0};
++        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
++        kern_return_t footprint_status = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t) &info, &count);
++        GGML_LOG_ERROR("%s: allocation diagnostic: requested_bytes=%zu host_allocation_ok=%d metal_buffer_ok=%d metal_allocated_bytes=%llu max_buffer_bytes=%zu process_available_bytes=%zu physical_footprint_bytes=%llu footprint_status=%d\n",
++            __func__, size_aligned, res->all_data != NULL, res->buffers[0].metal != nil,
++            (unsigned long long) dev->mtl_device.currentAllocatedSize,
++            props_dev->max_buffer_size, os_proc_available_memory(),
++            (unsigned long long) info.phys_footprint, footprint_status);
++#endif
++        ggml_metal_buffer_free(res);
+         return NULL;
+     }
+ 
+@@ -2176,7 +2190,7 @@
+ 
+     if (!ggml_metal_buffer_rset_init(res)) {
+         GGML_LOG_ERROR("%s: error: failed to initialize residency set\n", __func__);
+-        free(res);
++        ggml_metal_buffer_free(res);
+         return NULL;
+     }
+ 
+diff --git a/tools/mtmd/clip.cpp b/tools/mtmd/clip.cpp
+--- a/tools/mtmd/clip.cpp
++++ b/tools/mtmd/clip.cpp
+@@ -4211,6 +4211,10 @@
+             // alloc memory and offload data
+             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(ctx_clip.backend);
+             ctx_clip.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_clip.ctx_data.get(), buft));
++            if (!ctx_clip.buf) {
++                throw std::runtime_error(string_format("%s: failed to allocate projector weights (%zu bytes) on %s\n",
++                    __func__, total_data_size, ggml_backend_buft_name(buft)));
++            }
+             ggml_backend_buffer_set_usage(ctx_clip.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+             // read the weight from file
+             if (!ctx_clip.no_alloc) {
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -1,3 +1,4 @@
++#include "server-embedded.h"
+ #include "server-context.h"
+ #include <atomic>
+ #include <thread>
+@@ -413,7 +414,7 @@
+     std::vector<uint64_t> n_accepted_per_pos;
+ 
+     std::function<void(int /* id_slot */)>   callback_on_release;
+-    std::function<void(const server_slot &)> callback_on_reset; // called before reset()
++    std::function<void(server_slot &)> callback_on_reset; // called before reset()
+ 
+     // this is for printing timings with slot progress, not part of metrics
+     int64_t t_print_last = 0;
+@@ -711,6 +712,34 @@
+         }
+ 
+         return stop_pos;
++    }
++
++    server_embedded_progress_reporter progress;
++    void report_progress(server_embedded_phase phase, bool terminal = false) noexcept {
++        if (!task || task->type != SERVER_TASK_TYPE_COMPLETION) return;
++        server_embedded_progress value{};
++        value.phase = phase;
++        value.task = task->id;
++        value.slot = id;
++        value.prompt_total = task->n_tokens();
++        value.generated = stats.n_gen;
++        value.output_limit = n_predict_max;
++        value.prefill_complete = stats.n_gen > 0 || phase == server_embedded_phase::completed;
++        value.terminal = terminal;
++        if (stats.is_set()) {
++            value.prompt_cached = stats.n_prompt_cached;
++            // Upstream native count can include submitted asynchronous work.
++            // It is not a final timing or completed-GPU-work claim mid-prefill.
++            value.prompt_processed = stats.n_prompt_processed;
++            value.elapsed_ms = stats.t_elapsed_us() / 1000.0;
++        }
++        // No synchronization is added just for diagnostics. The first sampled
++        // token proves prompt logits are available; unfinished phases stay null.
++        if (stats.is_set() && value.prefill_complete && stats.t_prompt_last >= stats.t_start) {
++            value.prefill_ms = stats.t_prompt_ms();
++            if (stats.t_gen_last > 0) value.decode_ms = stats.t_gen_ms();
++        }
++        progress.report(value, ggml_time_us());
+     }
+ 
+     void print_timings_tg() {
+@@ -1015,6 +1044,7 @@
+ 
+ struct server_context_impl {
+     friend struct server_context;
++    std::function<void(const server_embedded_progress &)> progress_callback;
+ 
+ public:
+     // only use these pointers outside of this class:
+@@ -1165,6 +1195,9 @@
+         }
+         sleeping = new_state;
+     }
++
++    llama_progress_callback caller_load_progress_callback = nullptr;
++    void * caller_load_progress_user_data = nullptr;
+ 
+     struct load_progress_data {
+         server_context_impl * ctx;
+@@ -1176,6 +1209,12 @@
+     static bool load_progress_callback(float progress, void * user_data) {
+         auto * d = static_cast<load_progress_data *>(user_data);
+         GGML_ASSERT(d);
++        // The embedding owner's cancellation must run even when progress events
++        // are throttled, and applies to both text and projector model loads.
++        if (d->ctx->caller_load_progress_callback &&
++            !d->ctx->caller_load_progress_callback(progress, d->ctx->caller_load_progress_user_data)) {
++            return false;
++        }
+         // always emit the first and final sample; throttle the rest to one per 200ms
+         {
+             auto & t_last = d->t_last_load_progress_ms;
+@@ -1207,6 +1246,12 @@
+ 
+         const bool is_resume = sleeping;
+ 
++        // On a sleep resume params_base holds our temporary callback. Preserve
++        // the original caller, not its former stack-owned progress data.
++        if (params.load_progress_callback != load_progress_callback) {
++            caller_load_progress_callback = params.load_progress_callback;
++            caller_load_progress_user_data = params.load_progress_callback_user_data;
++        }
+         params_base = params;
+         const auto output_limits = server_output_limits(params_base);
+         params_base.n_outputs_max = output_limits.total;
+@@ -1539,7 +1584,9 @@
+                 queue_tasks.pop_deferred_task(id_slot);
+             };
+ 
+-            slot.callback_on_reset = [this](const server_slot & slot) {
++            slot.progress.callback = progress_callback;
++            slot.callback_on_reset = [this](server_slot & slot) {
++                slot.report_progress(server_embedded_phase::released, true);
+                 // flush the generated token stats before reset()
+                 if (slot.stats.n_gen > 0) {
+                     metrics_on_prediction(slot);
+@@ -2130,6 +2177,7 @@
+         // reset server kill-switch counter
+         n_empty_consecutive = 0;
+ 
++        slot.report_progress(server_embedded_phase::admitted);
+         SLT_INF(slot, "processing task, is_child = %d\n", slot.task->is_child());
+         return true;
+     }
+@@ -2401,6 +2449,7 @@
+     }
+ 
+     void send_final_response(server_slot & slot) {
++        slot.report_progress(server_embedded_phase::completed, true);
+         auto res = std::make_unique<server_task_result_cmpl_final>();
+ 
+         res->id      = slot.task->id;
+@@ -3091,6 +3140,7 @@
+                     // release slot linked with the task id
+                     for (auto & slot : slots) {
+                         if (slot.task && slot.task->id == task.id_target) {
++                            slot.report_progress(server_embedded_phase::cancelled, true);
+                             slot.release();
+                             break;
+                         }
+@@ -3538,6 +3588,15 @@
+     }
+ 
+     void update_slots() {
++        struct progress_tick {
++            server_context_impl & context;
++            ~progress_tick() {
++                for (auto & slot : context.slots) {
++                    if (slot.is_processing()) slot.report_progress(slot.stats.n_gen > 0
++                        ? server_embedded_phase::decode : server_embedded_phase::prefill);
++                }
++            }
++        } progress_tick_guard{*this};
+ #ifdef DEBUG_TIMINGS
+         static int64_t t_prev = 0;
+         int64_t t_start = ggml_time_us();
+@@ -5201,7 +5260,21 @@
+ 
+ void server_context::start_loop() {
+     auto & params = impl->params_base;
++    struct final_progress {
++        server_context_impl & context;
++        ~final_progress() {
++            // This is the engine/server-loop thread, never Stop's foreign
++            // caller. Also runs on exceptions before model destruction.
++            for (auto & slot : context.slots) {
++                if (slot.is_processing()) slot.report_progress(server_embedded_phase::loop_exit, true);
++            }
++        }
++    } final_progress_guard{*impl};
+     impl->queue_tasks.start_loop(params.sleep_idle_seconds * 1000);
++}
++
++void server_context::set_progress_callback(std::function<void(const server_embedded_progress &)> callback) {
++    impl->progress_callback = std::move(callback);
+ }
+ 
+ void server_context::terminate() {
+diff --git a/tools/server/server-context.h b/tools/server/server-context.h
+--- a/tools/server/server-context.h
++++ b/tools/server/server-context.h
+@@ -12,6 +12,7 @@
+ #include <set>
+ 
+ struct server_context_impl; // private implementation
++struct server_embedded_progress;
+ 
+ struct server_context_meta {
+     std::string build_info;
+@@ -89,6 +90,8 @@
+ 
+     // note: must be set before load_model() is called
+     void set_state_callback(server_state_callback_t callback);
++    // Private embedding callback: set before load_model; invoked only by loop.
++    void set_progress_callback(std::function<void(const server_embedded_progress &)> callback);
+ };
+ 
+ 
+diff --git a/tools/server/server-embedded.h b/tools/server/server-embedded.h
+new file mode 100644
 --- /dev/null
 +++ b/tools/server/server-embedded.h
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,83 @@
 +#pragma once
 +#include <atomic>
 +#include <functional>
 +#include <mutex>
++#include <cstdint>
++#include <optional>
++
++// Private embedding diagnostics. No request text, token IDs, credentials or
++// paths can enter this carrier. Durations are native wall intervals, not CPU.
++enum class server_embedded_phase { admitted, prefill, decode, completed, cancelled, released, loop_exit };
++struct server_embedded_progress {
++    server_embedded_phase phase;
++    int64_t task = -1;
++    int32_t slot = -1;
++    uint64_t prompt_total = 0;
++    std::optional<uint64_t> prompt_cached;
++    std::optional<uint64_t> prompt_processed;
++    uint64_t generated = 0;
++    int32_t output_limit = -1;
++    bool prefill_complete = false;
++    bool terminal = false;
++    std::optional<double> elapsed_ms;
++    std::optional<double> prefill_ms;
++    std::optional<double> decode_ms;
++};
++
++// Owned by one server slot and touched only by its server-loop thread. Progress
++// is rate-limited; every task gets one terminal observation even inside3s.
++struct server_embedded_progress_reporter {
++    std::function<void(const server_embedded_progress &)> callback;
++    int64_t last_task = -1;
++    int64_t last_us = -1;
++    bool terminal_seen = false;
++    void report(const server_embedded_progress & value, int64_t now_us) noexcept {
++        if (!callback) return;
++        if (last_task != value.task) {
++            last_task = value.task;
++            last_us = -1;
++            terminal_seen = false;
++        }
++        if (terminal_seen || (!value.terminal && last_us >= 0 && now_us - last_us < 3000000)) return;
++        last_us = now_us;
++        terminal_seen = value.terminal;
++        // Diagnostics must not fail or unwind inference, including a sink OOM.
++        try { callback(value); } catch (...) {}
++    }
++};
 +
 +struct common_params;
 +
@@ -12,6 +302,7 @@
 +struct server_embedded_control {
 +    std::atomic<bool> cancelled{false};
 +    std::function<void(int)> on_ready;
++    std::function<void(const server_embedded_progress &)> on_progress;
 +
 +    void request_stop() {
 +        cancelled.store(true);
@@ -40,147 +331,7 @@
 +};
 +
 +int llama_server_embedded(common_params & params, server_embedded_control & control);
---- a/tools/server/server.cpp
-+++ b/tools/server/server.cpp
-@@ -1,5 +1,6 @@
- #include "server-connect.h"
- #include "server-context.h"
-+#include "server-embedded.h"
- #include "server-http.h"
- #include "server-models.h"
- #include "server-cors-proxy.h"
-@@ -811,3 +812,70 @@
-     server_role role;
-     return server_run(params, argc, argv, role, opts);
- }
-+
-+// App embedding owns backend/session/HTTP lifetimes. Reuse the maintained
-+// instance routes and model setup; never install signals, resolve/download a
-+// model, or bind the CLI process-global shutdown_handler.
-+int llama_server_embedded(common_params & params, server_embedded_control & control) {
-+    if (control.cancelled.load()) { return 0; }
-+    common_init();
-+    llama_backend_init();
-+    struct backend_lifetime {
-+        ~backend_lifetime() { llama_backend_free(); }
-+    } backend;
-+    if (!server_prepare_params(params, SERVER_ROLE_INSTANCE)) { return 1; }
-+
-+    server_stream_session_manager_start();
-+    struct session_lifetime {
-+        ~session_lifetime() { server_stream_session_manager_stop(); }
-+    } sessions;
-+    server_mcp mcp_mgr;
-+    server_context ctx_server;
-+    server_routes routes(params, ctx_server);
-+    server_tools tools;
-+    server_http_context ctx_http;
-+    // Declared last: revoke/join every callback and HTTP worker before model,
-+    // route and backend destruction, including exceptions and partial startup.
-+    struct instance_lifetime {
-+        server_embedded_control & control;
-+        server_http_context & http;
-+        server_context & ctx;
-+        server_mcp & mcp;
-+        ~instance_lifetime() {
-+            control.clear_stop();
-+            http.is_ready.store(false);
-+            http.stop();
-+            ctx.terminate();
-+            server_stream_session_manager_stop();
-+            mcp.shutdown();
-+            http.join();
-+        }
-+    } lifetime{control, ctx_http, ctx_server, mcp_mgr};
-+
-+    if (!ctx_http.init(params, true)) { return 1; }
-+    server_register_routes(ctx_http, routes);
-+    server_register_stream_routes(ctx_http, server_stream_make_get_handler(),
-+        server_stream_make_lookup_handler(), server_stream_make_delete_handler());
-+    if (!server_setup_features(ctx_http, params, mcp_mgr, tools, SERVER_ROLE_INSTANCE)) { return 1; }
-+    control.bind_stop([&] {
-+        ctx_http.is_ready.store(false);
-+        ctx_http.stop();
-+        ctx_server.terminate();
-+    });
-+    if (control.cancelled.load()) { return 0; }
-+    if (!ctx_http.start()) { return control.cancelled.load() ? 0 : 1; }
-+    if (control.cancelled.load()) { return 0; }
-+    params.load_progress_callback = [](float, void * data) {
-+        return !static_cast<server_embedded_control *>(data)->cancelled.load();
-+    };
-+    params.load_progress_callback_user_data = &control;
-+    if (!ctx_server.load_model(params)) { return control.cancelled.load() ? 0 : 1; }
-+    if (control.cancelled.load()) { return 0; }
-+    llama_set_abort_callback(ctx_server.get_llama_context(), [](void * data) {
-+        return static_cast<server_embedded_control *>(data)->cancelled.load();
-+    }, &control);
-+    routes.update_meta(ctx_server);
-+    if (!control.publish_ready(ctx_http.port, ctx_http.is_ready)) { return 0; }
-+    if (!control.cancelled.load()) { ctx_server.start_loop(); }
-+    return 0;
-+}
---- a/tools/server/server-context.cpp
-+++ b/tools/server/server-context.cpp
-@@ -1166,6 +1166,9 @@
-         sleeping = new_state;
-     }
- 
-+    llama_progress_callback caller_load_progress_callback = nullptr;
-+    void * caller_load_progress_user_data = nullptr;
-+
-     struct load_progress_data {
-         server_context_impl * ctx;
-         std::string stage;
-@@ -1176,6 +1179,12 @@
-     static bool load_progress_callback(float progress, void * user_data) {
-         auto * d = static_cast<load_progress_data *>(user_data);
-         GGML_ASSERT(d);
-+        // The embedding owner's cancellation must run even when progress events
-+        // are throttled, and applies to both text and projector model loads.
-+        if (d->ctx->caller_load_progress_callback &&
-+            !d->ctx->caller_load_progress_callback(progress, d->ctx->caller_load_progress_user_data)) {
-+            return false;
-+        }
-         // always emit the first and final sample; throttle the rest to one per 200ms
-         {
-             auto & t_last = d->t_last_load_progress_ms;
-@@ -1207,6 +1216,12 @@
- 
-         const bool is_resume = sleeping;
- 
-+        // On a sleep resume params_base holds our temporary callback. Preserve
-+        // the original caller, not its former stack-owned progress data.
-+        if (params.load_progress_callback != load_progress_callback) {
-+            caller_load_progress_callback = params.load_progress_callback;
-+            caller_load_progress_user_data = params.load_progress_callback_user_data;
-+        }
-         params_base = params;
-         const auto output_limits = server_output_limits(params_base);
-         params_base.n_outputs_max = output_limits.total;
---- a/tools/server/server-http.h
-+++ b/tools/server/server-http.h
-@@ -91,11 +91,12 @@
-     std::string path_prefix;
-     int port    = 9931;
-     bool is_ssl = false;
-+    bool allow_gcp_compat = true;
- 
-     server_http_context();
-     ~server_http_context();
- 
--    bool init(const common_params & params);
-+    bool init(const common_params & params, bool local_auth_only = false);
-     bool start();
-     void stop() const;
-     void join();
-@@ -113,5 +114,5 @@
-     std::vector<std::string> listening_addresses;
- 
- private:
--    bool init_listener(const common_params & params);
-+    bool init_listener(const common_params & params, bool local_auth_only);
- };
+diff --git a/tools/server/server-http.cpp b/tools/server/server-http.cpp
 --- a/tools/server/server-http.cpp
 +++ b/tools/server/server-http.cpp
 @@ -89,11 +89,11 @@
@@ -295,16 +446,31 @@
      const gcp_params gcp;
  
      if (!gcp.enabled) {
---- a/tools/server/server-queue.h
-+++ b/tools/server/server-queue.h
-@@ -16,6 +16,7 @@
+diff --git a/tools/server/server-http.h b/tools/server/server-http.h
+--- a/tools/server/server-http.h
++++ b/tools/server/server-http.h
+@@ -91,11 +91,12 @@
+     std::string path_prefix;
+     int port    = 9931;
+     bool is_ssl = false;
++    bool allow_gcp_compat = true;
+ 
+     server_http_context();
+     ~server_http_context();
+ 
+-    bool init(const common_params & params);
++    bool init(const common_params & params, bool local_auth_only = false);
+     bool start();
+     void stop() const;
+     void join();
+@@ -113,5 +114,5 @@
+     std::vector<std::string> listening_addresses;
+ 
  private:
-     int id = 0;
-     bool running  = false;
-+    bool terminated = false; // terminal cancellation is latched before start_loop
-     bool sleeping = false;
-     bool req_stop_sleeping = false;
-     int64_t time_last_task = 0;
+-    bool init_listener(const common_params & params);
++    bool init_listener(const common_params & params, bool local_auth_only);
+ };
+diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
 --- a/tools/server/server-queue.cpp
 +++ b/tools/server/server-queue.cpp
 @@ -132,6 +132,7 @@
@@ -328,6 +494,100 @@
      time_last_task = ggml_time_ms();
  
      // spawn the worker thread used by yield_to_queue()
+diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
+--- a/tools/server/server-queue.h
++++ b/tools/server/server-queue.h
+@@ -16,6 +16,7 @@
+ private:
+     int id = 0;
+     bool running  = false;
++    bool terminated = false; // terminal cancellation is latched before start_loop
+     bool sleeping = false;
+     bool req_stop_sleeping = false;
+     int64_t time_last_task = 0;
+diff --git a/tools/server/server.cpp b/tools/server/server.cpp
+--- a/tools/server/server.cpp
++++ b/tools/server/server.cpp
+@@ -1,5 +1,6 @@
+ #include "server-connect.h"
+ #include "server-context.h"
++#include "server-embedded.h"
+ #include "server-http.h"
+ #include "server-models.h"
+ #include "server-cors-proxy.h"
+@@ -811,3 +812,71 @@
+     server_role role;
+     return server_run(params, argc, argv, role, opts);
+ }
++
++// App embedding owns backend/session/HTTP lifetimes. Reuse the maintained
++// instance routes and model setup; never install signals, resolve/download a
++// model, or bind the CLI process-global shutdown_handler.
++int llama_server_embedded(common_params & params, server_embedded_control & control) {
++    if (control.cancelled.load()) { return 0; }
++    common_init();
++    llama_backend_init();
++    struct backend_lifetime {
++        ~backend_lifetime() { llama_backend_free(); }
++    } backend;
++    if (!server_prepare_params(params, SERVER_ROLE_INSTANCE)) { return 1; }
++
++    server_stream_session_manager_start();
++    struct session_lifetime {
++        ~session_lifetime() { server_stream_session_manager_stop(); }
++    } sessions;
++    server_mcp mcp_mgr;
++    server_context ctx_server;
++    ctx_server.set_progress_callback(control.on_progress);
++    server_routes routes(params, ctx_server);
++    server_tools tools;
++    server_http_context ctx_http;
++    // Declared last: revoke/join every callback and HTTP worker before model,
++    // route and backend destruction, including exceptions and partial startup.
++    struct instance_lifetime {
++        server_embedded_control & control;
++        server_http_context & http;
++        server_context & ctx;
++        server_mcp & mcp;
++        ~instance_lifetime() {
++            control.clear_stop();
++            http.is_ready.store(false);
++            http.stop();
++            ctx.terminate();
++            server_stream_session_manager_stop();
++            mcp.shutdown();
++            http.join();
++        }
++    } lifetime{control, ctx_http, ctx_server, mcp_mgr};
++
++    if (!ctx_http.init(params, true)) { return 1; }
++    server_register_routes(ctx_http, routes);
++    server_register_stream_routes(ctx_http, server_stream_make_get_handler(),
++        server_stream_make_lookup_handler(), server_stream_make_delete_handler());
++    if (!server_setup_features(ctx_http, params, mcp_mgr, tools, SERVER_ROLE_INSTANCE)) { return 1; }
++    control.bind_stop([&] {
++        ctx_http.is_ready.store(false);
++        ctx_http.stop();
++        ctx_server.terminate();
++    });
++    if (control.cancelled.load()) { return 0; }
++    if (!ctx_http.start()) { return control.cancelled.load() ? 0 : 1; }
++    if (control.cancelled.load()) { return 0; }
++    params.load_progress_callback = [](float, void * data) {
++        return !static_cast<server_embedded_control *>(data)->cancelled.load();
++    };
++    params.load_progress_callback_user_data = &control;
++    if (!ctx_server.load_model(params)) { return control.cancelled.load() ? 0 : 1; }
++    if (control.cancelled.load()) { return 0; }
++    llama_set_abort_callback(ctx_server.get_llama_context(), [](void * data) {
++        return static_cast<server_embedded_control *>(data)->cancelled.load();
++    }, &control);
++    routes.update_meta(ctx_server);
++    if (!control.publish_ready(ctx_http.port, ctx_http.is_ready)) { return 0; }
++    if (!control.cancelled.load()) { ctx_server.start_loop(); }
++    return 0;
++}
+diff --git a/vendor/cpp-httplib/httplib.cpp b/vendor/cpp-httplib/httplib.cpp
 --- a/vendor/cpp-httplib/httplib.cpp
 +++ b/vendor/cpp-httplib/httplib.cpp
 @@ -1842,6 +1842,9 @@
@@ -389,51 +649,3 @@
        detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO,
                                    read_timeout_sec_, read_timeout_usec_);
        detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
---- a/tools/mtmd/clip.cpp
-+++ b/tools/mtmd/clip.cpp
-@@ -4211,6 +4211,10 @@
-             // alloc memory and offload data
-             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(ctx_clip.backend);
-             ctx_clip.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_clip.ctx_data.get(), buft));
-+            if (!ctx_clip.buf) {
-+                throw std::runtime_error(string_format("%s: failed to allocate projector weights (%zu bytes) on %s\n",
-+                    __func__, total_data_size, ggml_backend_buft_name(buft)));
-+            }
-             ggml_backend_buffer_set_usage(ctx_clip.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-             // read the weight from file
-             if (!ctx_clip.no_alloc) {
---- a/ggml/src/ggml-metal/ggml-metal-device.m
-+++ b/ggml/src/ggml-metal/ggml-metal-device.m
-@@ -12,4 +12,8 @@
- 
- #include <stdatomic.h>
-+#if TARGET_OS_IOS
-+#include <mach/mach.h>
-+#include <os/proc.h>
-+#endif
- 
- #ifndef TARGET_OS_VISION
-@@ -2169,5 +2173,15 @@
-     if (size_aligned > 0 && (res->all_data == NULL || res->buffers[0].metal == nil)) {
-         GGML_LOG_ERROR("%s: error: failed to allocate buffer, size = %8.2f MiB\n", __func__, size_aligned / 1024.0 / 1024.0);
--        free(res);
-+#if TARGET_OS_IOS
-+        struct task_vm_info info = {0};
-+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
-+        kern_return_t footprint_status = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t) &info, &count);
-+        GGML_LOG_ERROR("%s: allocation diagnostic: requested_bytes=%zu host_allocation_ok=%d metal_buffer_ok=%d metal_allocated_bytes=%llu max_buffer_bytes=%zu process_available_bytes=%zu physical_footprint_bytes=%llu footprint_status=%d\n",
-+            __func__, size_aligned, res->all_data != NULL, res->buffers[0].metal != nil,
-+            (unsigned long long) dev->mtl_device.currentAllocatedSize,
-+            props_dev->max_buffer_size, os_proc_available_memory(),
-+            (unsigned long long) info.phys_footprint, footprint_status);
-+#endif
-+        ggml_metal_buffer_free(res);
-         return NULL;
-     }
-@@ -2177,5 +2191,5 @@
-     if (!ggml_metal_buffer_rset_init(res)) {
-         GGML_LOG_ERROR("%s: error: failed to initialize residency set\n", __func__);
--        free(res);
-+        ggml_metal_buffer_free(res);
-         return NULL;
-     }

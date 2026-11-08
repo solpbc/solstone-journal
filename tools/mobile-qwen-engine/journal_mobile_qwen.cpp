@@ -2,10 +2,15 @@
 // Copyright (c) 2026 sol pbc
 #include "journal_mobile_qwen.h"
 #include "common.h"
+#include "json.h"
 #include "server-embedded.h"
 
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -37,6 +42,34 @@ struct journal_mobile_qwen_handle {
 namespace {
 std::mutex singleton_mutex;
 journal_mobile_qwen_handle * singleton = nullptr;
+
+// Keep the platform sink closed over a fixed numeric-only schema. Incomplete
+// native phase durations remain null; no prompt/token IDs or private strings.
+void report_progress(uint64_t generation, const server_embedded_progress & value) {
+    const char * phase = "unknown";
+    switch (value.phase) {
+        case server_embedded_phase::admitted: phase = "admitted"; break;
+        case server_embedded_phase::prefill: phase = "prefill"; break;
+        case server_embedded_phase::decode: phase = "decode"; break;
+        case server_embedded_phase::completed: phase = "completed"; break;
+        case server_embedded_phase::cancelled: phase = "cancelled"; break;
+        case server_embedded_phase::released: phase = "released"; break;
+        case server_embedded_phase::loop_exit: phase = "loop_exit"; break;
+    }
+    auto number = [](const auto & v) { return v ? common_json(*v) : common_json(nullptr); };
+    const common_json record{{"generation", generation}, {"task", value.task}, {"slot", value.slot},
+        {"phase", phase}, {"terminal", value.terminal}, {"prompt_total", value.prompt_total},
+        {"prompt_cached", number(value.prompt_cached)}, {"prompt_processed", number(value.prompt_processed)},
+        {"generated", value.generated}, {"output_limit", value.output_limit},
+        {"prefill_complete", value.prefill_complete}, {"elapsed_ms", number(value.elapsed_ms)},
+        {"prefill_ms", number(value.prefill_ms)}, {"decode_ms", number(value.decode_ms)}};
+    const auto line = record.dump();
+#if defined(__ANDROID__)
+    __android_log_write(ANDROID_LOG_INFO, "JournalQwenMetrics", line.c_str());
+#else
+    std::fprintf(stderr, "JournalQwenMetrics %s\n", line.c_str());
+#endif
+}
 
 void copy_error(char * destination, size_t capacity, const char * text) {
     if (!destination || capacity == 0) { return; }
@@ -91,6 +124,9 @@ extern "C" int32_t journal_mobile_qwen_create_v1(const journal_mobile_qwen_confi
         handle->model_generation = config->model_generation;
         handle->token = config->bearer_token;
         handle->generation = config->generation;
+        handle->control.on_progress = [generation = handle->generation](const server_embedded_progress & value) {
+            report_progress(generation, value);
+        };
         auto * ptr = handle.get();
         handle->control.on_ready = [ptr](int port) {
             std::lock_guard<std::mutex> ready_lock(ptr->mutex);
