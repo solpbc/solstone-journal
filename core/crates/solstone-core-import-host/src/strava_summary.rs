@@ -229,7 +229,7 @@ impl StravaRunSummary {
         if names.elsewhere > 0 {
             let _ = writeln!(
                 text,
-                "{} read, because another import is reading workouts' words right now. a later import reads them.\n",
+                "{} read, because another import is reading workouts' words right now. they're read when you import again.\n",
                 plural(
                     names.elsewhere,
                     "workout's words weren't",
