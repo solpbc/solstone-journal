@@ -20,6 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import package_mobile_pdfium
 import package_mobile_media
+import package_mobile_qwen
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -239,6 +240,50 @@ def build_receipt(
     }
 
 
+QWEN_INSTALL_ID = "@rpath/JournalMobileQwen.framework/JournalMobileQwen"
+QWEN_STAGED_IMAGE = "JournalMobileQwen.framework/JournalMobileQwen"
+QWEN_APP_IMAGE = "Frameworks/" + QWEN_STAGED_IMAGE
+QWEN_MANIFEST = "QwenRuntime/manifest.json"
+QWEN_LICENSES = package_mobile_qwen.LICENSES
+
+
+def validate_qwen_package(package: pathlib.Path) -> dict[str, object]:
+    return package_mobile_qwen.load_package(package, "ios")[0]
+
+
+def stage_qwen_resources(package: pathlib.Path, destination: pathlib.Path) -> dict[str, object]:
+    record = validate_qwen_package(package)
+    if destination.is_symlink():
+        raise ValueError("Qwen resource destination is a symlink")
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True)
+    for name in QWEN_LICENSES:
+        shutil.copyfile(package / name, destination / name)
+    record["unsigned_image_sha256"] = record["image_sha256"]
+    record["image"] = QWEN_APP_IMAGE
+    (destination / "manifest.json").write_text(json.dumps(record, indent=2) + "\n")
+    return record
+
+
+def embed_qwen_framework(package: pathlib.Path, app: pathlib.Path) -> tuple[dict[str, object], pathlib.Path]:
+    record = stage_qwen_resources(package, app / "QwenRuntime")
+    source = package / "JournalMobileQwen.framework"
+    for member in source.rglob("*"):
+        if member.is_symlink() or not (member.is_file() or member.is_dir()):
+            raise ValueError("Qwen framework contains a non-regular member")
+    target = app / "Frameworks/JournalMobileQwen.framework"
+    if target.is_symlink():
+        raise ValueError("Qwen framework destination is a symlink")
+    if target.exists():
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, target)
+    if sha256(target / "JournalMobileQwen") != record["unsigned_image_sha256"]:
+        raise ValueError("Qwen embedding changed the unsigned native image")
+    return record, target
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("build_root", type=pathlib.Path)
@@ -250,6 +295,7 @@ def main() -> int:
     parser.add_argument("--backup-lib", type=pathlib.Path, required=True)
     parser.add_argument("--backup-work", type=pathlib.Path, required=True)
     parser.add_argument("--pdfium-dir", type=pathlib.Path, required=True)
+    parser.add_argument("--qwen-package-dir", type=pathlib.Path)
     parser.add_argument(
         "--keychain",
         default=str(
@@ -260,6 +306,8 @@ def main() -> int:
         "--identity", default="Apple Development: Created via API (SNP7CMKMZ5)"
     )
     args = parser.parse_args()
+    if args.bundle_identifier == "app.solstone.journal.owner.dev" and args.qwen_package_dir is None:
+        raise ValueError("owner builds require the verified native Qwen package")
 
     build_record = json.loads(args.appraisal_build_record.read_text())
     if sha256(args.nvattest_lib) != build_record.get("aggregate", {}).get("sha256"):
@@ -406,6 +454,26 @@ def main() -> int:
         ["codesign", "--verify", "--strict", str(pdfium_framework)], check=True,
     )
     signed_pdfium_sha256 = sha256(pdfium_framework / "PDFium")
+    signed_qwen_sha256 = None
+    if args.qwen_package_dir is not None:
+        qwen_record, qwen_framework = embed_qwen_framework(args.qwen_package_dir, app)
+        for image in (app / "JournalRuntimeDev", app / "Extensions/JournalWorker.appex/JournalWorker"):
+            if QWEN_INSTALL_ID not in needed_libraries(image):
+                raise ValueError("iOS host/helper does not link the packaged Qwen image")
+        subprocess.run(["codesign", "--force", "--sign", args.identity, "--keychain", args.keychain,
+                        "--timestamp=none", str(qwen_framework)], check=True)
+        subprocess.run(["codesign", "--verify", "--strict", str(qwen_framework)], check=True)
+        signed_qwen_sha256 = sha256(qwen_framework / "JournalMobileQwen")
+        qwen_record.update(image_sha256=signed_qwen_sha256, signed=True,
+                           image_size_bytes=(qwen_framework / "JournalMobileQwen").stat().st_size)
+        (app / QWEN_MANIFEST).write_text(json.dumps(qwen_record, indent=2) + "\n")
+        (args.build_root / "qwen-package-receipt.json").write_text(json.dumps({
+            "schema": "solstone.mobile-qwen-ios-embedding.v1", "runtime_identity": qwen_record["runtime_identity"],
+            "unsigned_image_sha256": qwen_record["unsigned_image_sha256"],
+            "signed_image_sha256": signed_qwen_sha256, "image": QWEN_APP_IMAGE,
+            "manifest": QWEN_MANIFEST,
+        }, indent=2) + "\n")
+
     expected_members = receipt["package_members"]
     for name, bundle in [
         ("JournalWorker", app / "Extensions/JournalWorker.appex"),
@@ -438,6 +506,8 @@ def main() -> int:
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     if sha256(pdfium_framework / "PDFium") != signed_pdfium_sha256:
         raise ValueError("containing app signing changed the PDFium framework")
+    if signed_qwen_sha256 is not None and sha256(app / QWEN_APP_IMAGE) != signed_qwen_sha256:
+        raise ValueError("containing app signing changed the Qwen framework")
     if sound_tag:
         package_mobile_media.verify_sound_tag_resources(ROOT, app / "AudioModels")
         (args.build_root / "sound-tag-model-package-receipt.json").write_text(json.dumps({

@@ -8,6 +8,9 @@ settings:
 targets:
   JournalRuntimeDev:
     sources:
+      - path: Resources/QwenRuntime
+        type: folder
+        buildPhase: resources
       - folder-copy
       - path: Resources/JournalWebHost.json
         buildPhase: resources
@@ -16,3 +19,12 @@ targets:
     settings:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: your journal
+        FRAMEWORK_SEARCH_PATHS: $(inherited) $(QWEN_PACKAGE_DIR)
+        OTHER_LDFLAGS: $(inherited) -framework JournalMobileQwen
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks
+  JournalWorker:
+    settings:
+      base:
+        FRAMEWORK_SEARCH_PATHS: $(inherited) $(QWEN_PACKAGE_DIR)
+        OTHER_LDFLAGS: $(inherited) -framework JournalMobileQwen
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/../../Frameworks

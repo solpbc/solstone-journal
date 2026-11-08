@@ -8,11 +8,13 @@ publish = false
 [workspace]
 [features]
 audio = ["journal-mobile-serving/audio-native"]
+qwen-native = ["journal-mobile-serving/qwen-native", "dep:journal-mobile-qwen-engine"]
 full-tests = []
 owner-app = ["solstone-core-spp-attest/ios-owner-app"]
 [lib]
 crate-type = ["staticlib", "rlib"]
 [dependencies]
+journal-mobile-qwen-engine = { path = "../../mobile-qwen-engine", optional = true }
 serde_json = "1"
 sha2 = "0.10"
 chrono = "0.4"
