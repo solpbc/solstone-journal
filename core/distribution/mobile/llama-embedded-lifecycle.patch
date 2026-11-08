@@ -1,0 +1,327 @@
+--- /dev/null
++++ b/tools/server/server-embedded.h
+@@ -0,0 +1,39 @@
++#pragma once
++#include <atomic>
++#include <functional>
++#include <mutex>
++
++struct common_params;
++
++// One app-owned generation. Never share this control with the CLI entry points.
++struct server_embedded_control {
++    std::atomic<bool> cancelled{false};
++    std::function<void(int)> on_ready;
++
++    void request_stop() {
++        cancelled.store(true);
++        std::lock_guard<std::mutex> lock(mutex);
++        if (stop) { stop(); }
++    }
++    void bind_stop(std::function<void()> fn) {
++        std::lock_guard<std::mutex> lock(mutex);
++        stop = std::move(fn);
++        if (cancelled.load()) { stop(); }
++    }
++    bool publish_ready(int port, std::atomic<bool> & http_ready) {
++        std::lock_guard<std::mutex> lock(mutex);
++        if (cancelled.load()) { return false; }
++        http_ready.store(true);
++        if (on_ready) { on_ready(port); }
++        return true;
++    }
++    void clear_stop() {
++        std::lock_guard<std::mutex> lock(mutex);
++        stop = nullptr;
++    }
++private:
++    std::mutex mutex;
++    std::function<void()> stop;
++};
++
++int llama_server_embedded(common_params & params, server_embedded_control & control);
+--- a/tools/server/server.cpp
++++ b/tools/server/server.cpp
+@@ -1,5 +1,6 @@
+ #include "server-connect.h"
+ #include "server-context.h"
++#include "server-embedded.h"
+ #include "server-http.h"
+ #include "server-models.h"
+ #include "server-cors-proxy.h"
+@@ -811,3 +812,67 @@
+     server_role role;
+     return server_run(params, argc, argv, role, opts);
+ }
++
++// App embedding owns backend/session/HTTP lifetimes. Reuse the maintained
++// instance routes and model setup; never install signals, resolve/download a
++// model, or bind the CLI process-global shutdown_handler.
++int llama_server_embedded(common_params & params, server_embedded_control & control) {
++    if (control.cancelled.load()) { return 0; }
++    common_init();
++    llama_backend_init();
++    struct backend_lifetime {
++        ~backend_lifetime() { llama_backend_free(); }
++    } backend;
++    if (!server_prepare_params(params, SERVER_ROLE_INSTANCE)) { return 1; }
++
++    server_stream_session_manager_start();
++    struct session_lifetime {
++        ~session_lifetime() { server_stream_session_manager_stop(); }
++    } sessions;
++    server_mcp mcp_mgr;
++    server_context ctx_server;
++    server_routes routes(params, ctx_server);
++    server_tools tools;
++    server_http_context ctx_http;
++    // Declared last: revoke/join every callback and HTTP worker before model,
++    // route and backend destruction, including exceptions and partial startup.
++    struct instance_lifetime {
++        server_embedded_control & control;
++        server_http_context & http;
++        server_context & ctx;
++        server_mcp & mcp;
++        ~instance_lifetime() {
++            control.clear_stop();
++            http.is_ready.store(false);
++            http.stop();
++            ctx.terminate();
++            server_stream_session_manager_stop();
++            mcp.shutdown();
++            http.join();
++        }
++    } lifetime{control, ctx_http, ctx_server, mcp_mgr};
++
++    if (!ctx_http.init(params, true)) { return 1; }
++    server_register_routes(ctx_http, routes);
++    server_register_stream_routes(ctx_http, server_stream_make_get_handler(),
++        server_stream_make_lookup_handler(), server_stream_make_delete_handler());
++    if (!server_setup_features(ctx_http, params, mcp_mgr, tools, SERVER_ROLE_INSTANCE)) { return 1; }
++    control.bind_stop([&] {
++        ctx_http.is_ready.store(false);
++        ctx_http.stop();
++        ctx_server.terminate();
++    });
++    if (control.cancelled.load()) { return 0; }
++    if (!ctx_http.start()) { return control.cancelled.load() ? 0 : 1; }
++    if (control.cancelled.load()) { return 0; }
++    params.load_progress_callback = [](float, void * data) {
++        return !static_cast<server_embedded_control *>(data)->cancelled.load();
++    };
++    params.load_progress_callback_user_data = &control;
++    if (!ctx_server.load_model(params)) { return control.cancelled.load() ? 0 : 1; }
++    if (control.cancelled.load()) { return 0; }
++    routes.update_meta(ctx_server);
++    if (!control.publish_ready(ctx_http.port, ctx_http.is_ready)) { return 0; }
++    if (!control.cancelled.load()) { ctx_server.start_loop(); }
++    return 0;
++}
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -1166,6 +1166,9 @@
+         sleeping = new_state;
+     }
+ 
++    llama_progress_callback caller_load_progress_callback = nullptr;
++    void * caller_load_progress_user_data = nullptr;
++
+     struct load_progress_data {
+         server_context_impl * ctx;
+         std::string stage;
+@@ -1176,6 +1179,12 @@
+     static bool load_progress_callback(float progress, void * user_data) {
+         auto * d = static_cast<load_progress_data *>(user_data);
+         GGML_ASSERT(d);
++        // The embedding owner's cancellation must run even when progress events
++        // are throttled, and applies to both text and projector model loads.
++        if (d->ctx->caller_load_progress_callback &&
++            !d->ctx->caller_load_progress_callback(progress, d->ctx->caller_load_progress_user_data)) {
++            return false;
++        }
+         // always emit the first and final sample; throttle the rest to one per 200ms
+         {
+             auto & t_last = d->t_last_load_progress_ms;
+@@ -1207,6 +1216,12 @@
+ 
+         const bool is_resume = sleeping;
+ 
++        // On a sleep resume params_base holds our temporary callback. Preserve
++        // the original caller, not its former stack-owned progress data.
++        if (params.load_progress_callback != load_progress_callback) {
++            caller_load_progress_callback = params.load_progress_callback;
++            caller_load_progress_user_data = params.load_progress_callback_user_data;
++        }
+         params_base = params;
+         const auto output_limits = server_output_limits(params_base);
+         params_base.n_outputs_max = output_limits.total;
+--- a/tools/server/server-http.h
++++ b/tools/server/server-http.h
+@@ -91,11 +91,12 @@
+     std::string path_prefix;
+     int port    = 9931;
+     bool is_ssl = false;
++    bool allow_gcp_compat = true;
+ 
+     server_http_context();
+     ~server_http_context();
+ 
+-    bool init(const common_params & params);
++    bool init(const common_params & params, bool local_auth_only = false);
+     bool start();
+     void stop() const;
+     void join();
+@@ -113,5 +114,5 @@
+     std::vector<std::string> listening_addresses;
+ 
+ private:
+-    bool init_listener(const common_params & params);
++    bool init_listener(const common_params & params, bool local_auth_only);
+ };
+--- a/tools/server/server-http.cpp
++++ b/tools/server/server-http.cpp
+@@ -89,11 +89,11 @@
+     int port;
+ 
+     // Ref: https://docs.cloud.google.com/vertex-ai/docs/predictions/custom-container-requirements#aip-variables
+-    gcp_params() {
+-        enabled = getenv("AIP_MODE", "") == "PREDICTION";
+-        path_health = getenv("AIP_HEALTH_ROUTE", "", true); // default: using the route defined in server.cpp
+-        path_predict = getenv("AIP_PREDICT_ROUTE", "/predict", true);
+-        port = std::stoi(getenv("AIP_HTTP_PORT", "8080"));
++    gcp_params(bool read_environment = true) {
++        enabled = read_environment && getenv("AIP_MODE", "") == "PREDICTION";
++        path_health = read_environment ? getenv("AIP_HEALTH_ROUTE", "", true) : ""; // default: using the route defined in server.cpp
++        path_predict = read_environment ? getenv("AIP_PREDICT_ROUTE", "/predict", true) : "";
++        port = read_environment ? std::stoi(getenv("AIP_HTTP_PORT", "8080")) : 0;
+     }
+ 
+     static std::string getenv(const char * name, const std::string & default_value, bool ensure_leading_slash = false) {
+@@ -109,9 +109,10 @@
+     }
+ };
+ 
+-bool server_http_context::init(const common_params & params) {
+-    const gcp_params gcp;
+-
++bool server_http_context::init(const common_params & params, bool local_auth_only) {
++    const gcp_params gcp(!local_auth_only);
++
++    allow_gcp_compat = !local_auth_only;
+     path_prefix = params.api_prefix;
+     port = params.port;
+ 
+@@ -138,7 +139,7 @@
+     }
+     for (size_t i = 0; i < pimpl->hosts.size(); ++i) {
+         pimpl->servers.emplace_back();
+-        if (!init_listener(params)) {
++        if (!init_listener(params, local_auth_only)) {
+             return false;
+         }
+         // with multiple TCP addresses, [::] must not also claim 0.0.0.0
+@@ -156,7 +157,7 @@
+     return true;
+ }
+ 
+-bool server_http_context::init_listener(const common_params & params) {
++bool server_http_context::init_listener(const common_params & params, bool local_auth_only) {
+     auto & srv = pimpl->servers.back();
+ 
+ #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
+@@ -227,11 +228,11 @@
+         }
+     });
+ 
+-    if (params.api_keys.size() == 1) {
++    if (!local_auth_only && params.api_keys.size() == 1) {
+         const auto key = params.api_keys[0];
+         const std::string substr = key.substr(std::max(static_cast<int>(key.length() - 4), 0));
+         SRV_TRC("api_keys: ****%s\n", substr.c_str());
+-    } else if (params.api_keys.size() > 1) {
++    } else if (!local_auth_only && params.api_keys.size() > 1) {
+         SRV_TRC("api_keys: %zu keys loaded\n", params.api_keys.size());
+     }
+ 
+@@ -258,14 +259,14 @@
+         return endpoints;
+     }();
+ 
+-    auto middleware_validate_api_key = [api_keys = params.api_keys](const httplib::Request & req, httplib::Response & res) {
++    auto middleware_validate_api_key = [api_keys = params.api_keys, local_auth_only](const httplib::Request & req, httplib::Response & res) {
+         // If API key is not set, skip validation
+         if (api_keys.empty()) {
+             return true;
+         }
+ 
+         // If path is public or a UI asset, skip validation
+-        if (get_public_endpoints.count(req.path)) {
++        if (!local_auth_only && get_public_endpoints.count(req.path)) {
+             return true;
+         }
+ 
+@@ -329,7 +330,7 @@
+     };
+ 
+     // register server middlewares
+-    srv->set_pre_routing_handler([&params, middleware_validate_api_key, middleware_server_state](const httplib::Request & req, httplib::Response & res) {
++    srv->set_pre_routing_handler([&params, middleware_validate_api_key, middleware_server_state, local_auth_only](const httplib::Request & req, httplib::Response & res) {
+         if (params.cors_credentials && params.cors_origins == "*") {
+             // special case: echo back the Origin header to allow any origin to access the server with credentials
+             res.set_header("Access-Control-Allow-Origin", req.get_header_value("Origin"));
+@@ -352,10 +353,13 @@
+             res.set_content("", "text/html"); // blank response, no data
+             return httplib::Server::HandlerResponse::Handled; // skip further processing
+         }
++        if (local_auth_only && !middleware_validate_api_key(req, res)) {
++            return httplib::Server::HandlerResponse::Handled;
++        }
+         if (!middleware_server_state(req, res)) {
+             return httplib::Server::HandlerResponse::Handled;
+         }
+-        if (!middleware_validate_api_key(req, res)) {
++        if (!local_auth_only && !middleware_validate_api_key(req, res)) {
+             return httplib::Server::HandlerResponse::Handled;
+         }
+         return httplib::Server::HandlerResponse::Unhandled;
+@@ -863,6 +867,7 @@
+ }
+ 
+ void server_http_context::register_gcp_compat() const {
++    if (!allow_gcp_compat) { return; }
+     const gcp_params gcp;
+ 
+     if (!gcp.enabled) {
+--- a/tools/server/server-queue.h
++++ b/tools/server/server-queue.h
+@@ -16,6 +16,7 @@
+ private:
+     int id = 0;
+     bool running  = false;
++    bool terminated = false; // terminal cancellation is latched before start_loop
+     bool sleeping = false;
+     bool req_stop_sleeping = false;
+     int64_t time_last_task = 0;
+--- a/tools/server/server-queue.cpp
++++ b/tools/server/server-queue.cpp
+@@ -132,6 +132,7 @@
+ void server_queue::terminate() {
+     std::unique_lock<std::mutex> lock(mutex_tasks);
+     running = false;
++    terminated = true;
+     condition_tasks.notify_all();
+ }
+ 
+@@ -276,7 +277,11 @@
+ }
+ 
+ void server_queue::start_loop(int64_t idle_sleep_ms) {
+-    running = true;
++    {
++        std::unique_lock<std::mutex> lock(mutex_tasks);
++        if (terminated) { return; }
++        running = true;
++    }
+     time_last_task = ggml_time_ms();
+ 
+     // spawn the worker thread used by yield_to_queue()

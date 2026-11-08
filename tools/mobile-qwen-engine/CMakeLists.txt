@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+cmake_minimum_required(VERSION 3.22)
+project(journal_mobile_qwen LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR "" CACHE PATH "Verified and patched pinned llama.cpp source")
+set(JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY "" CACHE STRING "Producer-bound native package input identity")
+option(JOURNAL_MOBILE_QWEN_TESTS "Build native host qualification tests" OFF)
+if(NOT EXISTS "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/tools/server/server-embedded.h")
+    message(FATAL_ERROR "The pinned embedded lifecycle patch is required")
+endif()
+if(NOT JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY MATCHES "^sha256:[0-9a-f]+$")
+    message(FATAL_ERROR "The producer must supply a native runtime identity")
+endif()
+string(LENGTH "${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}" identity_length)
+if(NOT identity_length EQUAL 71)
+    message(FATAL_ERROR "Native runtime identity must be sha256 plus 64 hex digits")
+endif()
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_UI OFF CACHE BOOL "" FORCE)
+set(LLAMA_USE_PREBUILT_UI OFF CACHE BOOL "" FORCE)
+add_subdirectory("${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}" llama EXCLUDE_FROM_ALL)
+add_library(journal_mobile_qwen SHARED journal_mobile_qwen.cpp)
+set_target_properties(journal_mobile_qwen PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES)
+if(APPLE)
+    set_target_properties(journal_mobile_qwen PROPERTIES
+        FRAMEWORK TRUE FRAMEWORK_VERSION A
+        MACOSX_FRAMEWORK_IDENTIFIER app.solstone.JournalMobileQwen
+        OUTPUT_NAME JournalMobileQwen
+        PUBLIC_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/journal_mobile_qwen.h"
+        MACOSX_RPATH TRUE INSTALL_NAME_DIR "@rpath" BUILD_WITH_INSTALL_RPATH TRUE
+        MACOSX_FRAMEWORK_SHORT_VERSION_STRING "1.0" MACOSX_FRAMEWORK_BUNDLE_VERSION "1")
+    target_link_options(journal_mobile_qwen PRIVATE "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports.apple")
+else()
+    target_link_options(journal_mobile_qwen PRIVATE
+        "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map"
+        "-Wl,--exclude-libs,ALL" "-Wl,-Bsymbolic" "-Wl,--no-undefined")
+endif()
+target_include_directories(journal_mobile_qwen PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(journal_mobile_qwen PRIVATE "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/tools/server")
+target_compile_definitions(journal_mobile_qwen PRIVATE
+    JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
+    JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_compile_definitions(journal_mobile_qwen PRIVATE JOURNAL_MOBILE_QWEN_METAL=1)
+endif()
+target_link_libraries(journal_mobile_qwen PRIVATE llama-server-impl)
+if(ANDROID)
+    target_link_options(journal_mobile_qwen PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
+if(JOURNAL_MOBILE_QWEN_TESTS)
+    enable_testing()
+    find_package(Threads REQUIRED)
+    add_executable(journal_mobile_qwen_tests tests/engine_test.cpp journal_mobile_qwen.cpp)
+    target_include_directories(journal_mobile_qwen_tests PRIVATE "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/tools/server" "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/vendor/cpp-httplib")
+    target_link_libraries(journal_mobile_qwen_tests PRIVATE llama-server-impl Threads::Threads)
+    target_include_directories(journal_mobile_qwen_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(journal_mobile_qwen_tests PRIVATE
+        JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
+        JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
+    target_compile_options(journal_mobile_qwen_tests PRIVATE -UNDEBUG)
+    add_executable(journal_mobile_qwen_dynamic_tests tests/dynamic_test.cpp)
+    target_link_libraries(journal_mobile_qwen_dynamic_tests PRIVATE journal_mobile_qwen ${CMAKE_DL_LIBS})
+    target_compile_options(journal_mobile_qwen_dynamic_tests PRIVATE -UNDEBUG)
+    set_target_properties(journal_mobile_qwen_dynamic_tests PROPERTIES ENABLE_EXPORTS TRUE)
+    add_test(NAME journal_mobile_qwen_dynamic COMMAND journal_mobile_qwen_dynamic_tests)
+    set_tests_properties(journal_mobile_qwen_dynamic PROPERTIES TIMEOUT 30)
+    add_test(NAME journal_mobile_qwen_native COMMAND journal_mobile_qwen_tests)
+    set_tests_properties(journal_mobile_qwen_native PROPERTIES TIMEOUT 30)
+endif()

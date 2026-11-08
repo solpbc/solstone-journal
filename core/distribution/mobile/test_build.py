@@ -20,6 +20,36 @@ import mobile_native_build as mobile
 
 
 class BuildControls(unittest.TestCase):
+    def test_qwen_dynamic_exports_are_exact_on_both_platforms(self):
+        for apple in (False, True):
+            symbols = ["_" + name if apple else name for name in mobile.QWEN_EXPORTS]
+            text = "\n".join("000000001 T " + name for name in symbols)
+            self.assertEqual(set(mobile.require_qwen_exports(text, apple)), mobile.QWEN_EXPORTS)
+            with self.assertRaisesRegex(ValueError, "unexpected"):
+                mobile.require_qwen_exports(text + "\n000000002 T ggml_init", apple)
+            with self.assertRaisesRegex(ValueError, "missing"):
+                mobile.require_qwen_exports("\n".join(text.splitlines()[1:]), apple)
+
+    def test_qwen_identity_binds_platform_patch_and_adapter_without_model_duplication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory)
+            revision = "1" * 40
+            for name in mobile.QWEN_SOURCE_FILES:
+                (wrapper / name).write_text("adapter " + name)
+            (wrapper / "CMakeLists.txt").write_text('JOURNAL_MOBILE_QWEN_SOURCE_REVISION="' + revision + '"')
+            pin = {"revision": revision, "sha256": "2" * 64}
+            patches = [{"path": "lifecycle.patch", "sha256": "3" * 64}]
+            binding, first = mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})
+            self.assertEqual(binding["policy"]["context_tokens"], 32768)
+            self.assertEqual(binding["policy"]["parallel_slots"], 1)
+            self.assertEqual(mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
+            self.assertNotEqual(mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
+            (wrapper / "journal_mobile_qwen.cpp").write_text("changed adapter")
+            self.assertNotEqual(mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
+            pin["revision"] = "5" * 40
+            with self.assertRaisesRegex(ValueError, "source revision"):
+                mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})
+
     def test_default_sources_can_supply_patches_before_their_engine_build(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
