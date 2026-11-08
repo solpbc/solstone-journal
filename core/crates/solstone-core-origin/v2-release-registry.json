@@ -317,6 +317,11 @@
       "record_sha256": "807123e4220c1d2f0c44292c9479a6ad3ba3ba330352c7fe985d72f0163c81cb"
     },
     {
+      "version": "2.0.72",
+      "logical_target": "software/journal/2.0.72/release-record.json",
+      "record_sha256": "79f8fe0ccea557f89df0d3c53df7086632ff4e2f9298e7839fae3489bbfce157"
+    },
+    {
       "version": "2.0.8",
       "logical_target": "software/journal/2.0.8/release-record.json",
       "record_sha256": "679292038a5ea65843eae2bd478f94b0da1444702c3d544366b26eb69d2cd918"
