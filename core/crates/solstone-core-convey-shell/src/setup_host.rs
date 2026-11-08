@@ -82,11 +82,7 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError> {
-        if self.packaged_speech.is_some()
-            || solstone_core_local::embedded::supports_key(
-                &solstone_core_local::install::pins::platform_key(),
-            )
-        {
+        if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
             return packaged_speech_retry(
                 self.packaged_speech(journal_root)
                     .and_then(|speech| speech.retry()),
@@ -111,11 +107,7 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError> {
-        if self.packaged_speech.is_some()
-            || solstone_core_local::embedded::supports_key(
-                &solstone_core_local::install::pins::platform_key(),
-            )
-        {
+        if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
             read_setup_downloads_with_packaged_speech(
                 journal_root,
                 self.packaged_speech(journal_root)
