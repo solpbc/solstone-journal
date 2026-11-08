@@ -576,6 +576,9 @@ mod tests {
 
     #[test]
     fn the_scheduled_look_tries_again_after_finding_no_voice() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let root = journal();
         let first = refresh_owner_voice(root.path()).unwrap();
         assert_eq!(first["owner_voice"], "no_cluster", "{first}");
@@ -595,6 +598,9 @@ mod tests {
 
     #[test]
     fn a_rejected_voice_waits_out_the_cooldown_and_is_not_offered_again() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let root = journal();
         heard_voice(root.path(), 0);
         refresh_owner_voice(root.path()).unwrap();
@@ -633,6 +639,9 @@ mod tests {
 
     #[test]
     fn saving_a_voice_updates_past_speaker_labels() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let root = journal();
         let segments = heard_voice(root.path(), 0);
         let past = &segments[0];
@@ -665,6 +674,9 @@ mod tests {
 
     #[test]
     fn with_no_saved_voice_the_past_label_update_keeps_only_labels_set_by_hand() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let root = journal();
         let past = segment(root.path(), "20260101", "093000_300", &voice(0), 12);
         fs::create_dir_all(past.join("talents")).unwrap();
@@ -695,6 +707,9 @@ mod tests {
 
     #[test]
     fn undoing_a_voice_returns_to_no_voice_and_does_not_offer_it_again() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let root = journal();
         heard_voice(root.path(), 0);
         save_voice(root.path(), 0);
@@ -733,6 +748,9 @@ mod tests {
 
     #[test]
     fn a_saved_voice_that_cannot_be_read_can_still_be_removed() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let root = journal();
         save_voice(root.path(), 0);
         let path = owner_centroid_file(root.path(), "owner").unwrap();

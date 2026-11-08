@@ -942,6 +942,9 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn report_only_mode_only_changes_backfill_operations_ledger() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let seg1 = temp.path().join("chronicle/20260808/mic/120000_300");
         fs::create_dir_all(seg1.join("talents")).unwrap();
@@ -993,6 +996,9 @@ mod tests {
 
     #[test]
     fn accumulation_false_leaves_voiceprint_bytes_and_counts_unchanged() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let vp_dir = temp.path().join("speakers/voiceprints");
         fs::create_dir_all(&vp_dir).unwrap();
@@ -1125,6 +1131,9 @@ mod tests {
 
     #[test]
     fn a_committed_backfill_that_changes_labels_asks_and_a_dry_run_does_not() {
+        let _backfill = crate::backfill_coordinator::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         use crate::activity_reresolution::relabel_fixture::{
             RECENT, TOO_OLD, activities, asked, now, recent_only,
         };

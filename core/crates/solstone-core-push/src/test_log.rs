@@ -38,6 +38,16 @@ impl Log for TestLogger {
 
 static LOGGER: TestLogger = TestLogger;
 
+static PROCESS_CAPTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Held for the whole of a test that clears or reads the process-wide
+/// capture, or changes its level, so another such test cannot clear it
+/// partway through. Tests that read only their own thread's records need not
+/// hold it.
+pub(crate) async fn process_capture() -> tokio::sync::MutexGuard<'static, ()> {
+    PROCESS_CAPTURE.lock().await
+}
+
 pub(crate) fn init() {
     INIT.call_once(|| {
         let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));

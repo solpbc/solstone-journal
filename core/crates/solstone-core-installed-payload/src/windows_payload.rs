@@ -357,6 +357,13 @@ pub fn render_windows_payload_manifest_for_architecture(
 type VerificationCache = BTreeMap<(PathBuf, &'static str), VerifiedWindowsPayload>;
 static SHARED_VERIFICATION: Mutex<Option<VerificationCache>> = Mutex::new(None);
 
+/// Held by a test that opens a [`SharedVerification`] scope and by a test that
+/// verifies a tree, changes it and verifies it again: the scope is
+/// process-wide, so one test's open scope would hand the other a result from
+/// before its change.
+#[cfg(test)]
+pub(crate) static SHARED_SCOPE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Scope in which one bounded operation, such as a single diagnostics run,
 /// verifies each package tree once instead of once per check.
 ///
@@ -998,6 +1005,9 @@ mod shared_verification_tests {
     // One test, because the scope is process-wide and tests run in parallel.
     #[test]
     fn a_scope_verifies_each_tree_once_and_ends_with_its_guard() {
+        let _shared = super::SHARED_SCOPE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = Path::new("/package/a");
         let other = Path::new("/package/b");
         let runs = Cell::new(0);

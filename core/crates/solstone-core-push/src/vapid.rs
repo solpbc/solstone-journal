@@ -20,17 +20,32 @@ const VAPID_FILE: &str = "push-vapid.json";
 const OWNER_ONLY_MODE: u32 = 0o600;
 
 #[cfg(test)]
-static TEST_ABSENT_HOOK: std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>> =
-    std::sync::Mutex::new(None);
+type TestAbsentHook = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+// Keyed by journal root, so tests running at the same time each reach only
+// the hook they set for their own journal.
+#[cfg(test)]
+static TEST_ABSENT_HOOKS: std::sync::Mutex<Vec<(std::path::PathBuf, TestAbsentHook)>> =
+    std::sync::Mutex::new(Vec::new());
 
 #[cfg(test)]
-pub(crate) fn set_test_absent_hook(hook: Option<Box<dyn Fn() + Send + Sync>>) {
-    *TEST_ABSENT_HOOK.lock().unwrap() = hook;
+pub(crate) fn set_test_absent_hook(root: &Path, hook: Option<Box<dyn Fn() + Send + Sync>>) {
+    let mut hooks = TEST_ABSENT_HOOKS.lock().unwrap();
+    hooks.retain(|(hook_root, _)| hook_root != root);
+    if let Some(hook) = hook {
+        hooks.push((root.to_path_buf(), std::sync::Arc::from(hook)));
+    }
 }
 
 #[cfg(test)]
-pub(crate) fn trigger_test_absent_hook() {
-    if let Some(hook) = TEST_ABSENT_HOOK.lock().unwrap().as_ref() {
+pub(crate) fn trigger_test_absent_hook(root: &Path) {
+    let hook = TEST_ABSENT_HOOKS
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(hook_root, _)| hook_root == root)
+        .map(|(_, hook)| std::sync::Arc::clone(hook));
+    if let Some(hook) = hook {
         hook();
     }
 }
@@ -337,14 +352,17 @@ mod tests {
 
         let write_and_release_tx = std::sync::Mutex::new(Some(write_and_release_tx));
         let done_rx = std::sync::Mutex::new(Some(done_rx));
-        set_test_absent_hook(Some(Box::new(move || {
-            if let Some(tx) = write_and_release_tx.lock().unwrap().take() {
-                let _ = tx.send(());
-            }
-            if let Some(rx) = done_rx.lock().unwrap().take() {
-                let _ = rx.recv();
-            }
-        })));
+        set_test_absent_hook(
+            race_root.path(),
+            Some(Box::new(move || {
+                if let Some(tx) = write_and_release_tx.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+                if let Some(rx) = done_rx.lock().unwrap().take() {
+                    let _ = rx.recv();
+                }
+            })),
+        );
 
         let request = axum::http::Request::builder()
             .method("GET")
@@ -361,7 +379,7 @@ mod tests {
         let get_pubkey = body_json["public_key"].as_str().unwrap();
 
         lock_thread.join().unwrap();
-        set_test_absent_hook(None);
+        set_test_absent_hook(race_root.path(), None);
 
         let expected_pubkey = written_pubkey_rx.recv().unwrap();
         assert_eq!(get_pubkey, expected_pubkey);

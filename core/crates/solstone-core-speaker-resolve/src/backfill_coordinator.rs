@@ -59,6 +59,12 @@ pub struct BackfillTestHooks {
 pub static TEST_HOOKS: LazyLock<Mutex<BackfillTestHooks>> =
     LazyLock::new(|| Mutex::new(BackfillTestHooks::default()));
 
+/// Held by every test that runs a backfill, in this module or another: a
+/// coordinator test injects failures through [`TEST_HOOKS`], so a backfill
+/// running at the same time would meet a fault meant for someone else.
+#[cfg(test)]
+pub(crate) static COORDINATOR_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartBackfillRequest {
     pub operation_id: Option<String>,
@@ -774,7 +780,6 @@ mod tests {
     use solstone_core_journal_io::{LockOptions, SegmentLayout, hold_lock};
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    static COORD_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct Temp(PathBuf);
 
@@ -817,7 +822,9 @@ mod tests {
             }
         }
 
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         for minute in 0..12 {
             let segment = temp
@@ -904,7 +911,9 @@ mod tests {
 
     #[test]
     fn start_and_status_synthesizes_active_then_completed() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let segment_dir = temp.path().join("chronicle/20260808/named/mic/120000_300");
         fs::create_dir_all(segment_dir.join("talents")).unwrap();
@@ -950,7 +959,9 @@ mod tests {
 
     #[test]
     fn immutable_flags_mismatch_fails_loudly() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let req1 = StartBackfillRequest {
             operation_id: Some("bfop_flags".to_owned()),
@@ -976,7 +987,9 @@ mod tests {
 
     #[test]
     fn invalid_flags_accumulation_without_commit_rejected() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let req = StartBackfillRequest {
             operation_id: Some("bfop_invalid_flags".to_owned()),
@@ -1005,7 +1018,9 @@ mod tests {
 
     #[test]
     fn barrier_overlapping_same_id_same_flags_single_owner() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         use std::sync::{Arc, Barrier};
 
         let temp = Arc::new(Temp::new());
@@ -1064,7 +1079,9 @@ mod tests {
 
     #[test]
     fn immutable_flags_each_changed_individually_and_completed_id_reuse() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let op_id = "bfop-immutable-test";
         let req = StartBackfillRequest {
@@ -1139,7 +1156,9 @@ mod tests {
 
     #[test]
     fn distinct_canonical_journal_roots_same_id_flags_independent() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp1 = Temp::new();
         let temp2 = Temp::new();
         let op_id = "bfop-multi-root";
@@ -1184,7 +1203,9 @@ mod tests {
 
     #[test]
     fn different_id_loses_execution_lock_inactive_accepted_and_resume() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let op_id = "bfop-lock-loss";
 
@@ -1237,7 +1258,9 @@ mod tests {
 
     #[test]
     fn process_death_after_accepted_before_generation_resumes_cleanly() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let op_id = "bfop-death-sim";
         let admitted = JournalRoot::open(temp.path()).unwrap();
@@ -1292,7 +1315,9 @@ mod tests {
 
     #[test]
     fn attempt_failed_then_progress_then_token_drop_reports_inactive_interrupted() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
         let op_id = "bfop-progress-test";
         let ledger = backfill_operations_path(temp.path());
@@ -1415,7 +1440,9 @@ mod tests {
 
     #[test]
     fn injected_failures_scan_executor_panic_produce_distinct_details_and_stages() {
-        let _test_lock = COORD_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _test_lock = super::COORDINATOR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let temp = Temp::new();
 
         // 1. Scan failure

@@ -64,6 +64,9 @@ mod tests {
 
     #[test]
     fn adapter_matches_declared_path_and_refusal_kind() {
+        let _shared = crate::windows_payload::SHARED_SCOPE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = signed_fixture();
         let verified = verify_windows_payload(root.path()).expect("admit");
         for path in ["bin/ced.dll", "bin/tool.exe"] {

@@ -38,7 +38,7 @@ solstone-core-indexer-store.workspace = true
 solstone-core-system.workspace = true
 solstone-core-transcripts-web.workspace = true
 tempfile = "3.24.0"
-tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "sync"] }
 tower = { workspace = true }
 
 [lints]

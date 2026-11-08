@@ -1638,6 +1638,10 @@ mod tests {
         activity.get(cid).cloned().expect("activity for client")
     }
 
+    /// Held for the whole of a test that clears and reads the process-wide
+    /// activity capture, so another such test cannot clear it partway through.
+    static ACTIVITY_LOG_CAPTURE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     fn clear_activity_logs() {
         ACTIVITY_LOGGER_INIT.call_once(|| {
             log::set_logger(&ACTIVITY_LOGGER).expect("install test logger");
@@ -2347,6 +2351,7 @@ mod tests {
 
     #[test]
     fn activity_write_failure_keeps_the_accepted_ingest_outcome() {
+        let _capture = ACTIVITY_LOG_CAPTURE.blocking_lock();
         let directory = root();
         let journal = directory.path().to_path_buf();
         seed_authorized_client(&journal, CID_A);
@@ -5013,6 +5018,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_upload_cut_off_mid_body_records_no_rejection() {
+        let _capture = ACTIVITY_LOG_CAPTURE.lock().await;
         // A phone whose connection drops partway through an upload keeps the
         // segment and sends it again. Recording that as a rejection marked the
         // device as failing to reach the journal until its next upload landed,

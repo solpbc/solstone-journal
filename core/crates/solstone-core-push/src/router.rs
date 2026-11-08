@@ -181,7 +181,7 @@ async fn push_vapid_key(State(state): State<PushState>) -> Response {
         .into_response(),
         Err(crate::vapid::VapidLoadError::NotFound) => {
             #[cfg(test)]
-            crate::vapid::trigger_test_absent_hook();
+            crate::vapid::trigger_test_absent_hook(&state.journal_root);
 
             let created_at_res = match now_rfc3339_utc() {
                 Ok(t) => t,
@@ -2790,6 +2790,7 @@ mod tests {
 
     #[tokio::test]
     async fn push_test_delivers_to_authorized_devices() {
+        let _capture = test_log::process_capture().await;
         test_log::clear();
         let root = root();
         setup_authorized_client(root.path(), CID_A);
@@ -3355,6 +3356,7 @@ mod tests {
 
     #[tokio::test]
     async fn push_test_secret_leak_prevention() {
+        let _capture = test_log::process_capture().await;
         test_log::clear();
         let root = root();
         setup_authorized_client(root.path(), CID_A);
@@ -3950,13 +3952,18 @@ mod tests {
         let root_race = root();
         let app_race = api_router(root_race.path(), PORTAL_URL);
         let root_race_path = root_race.path().to_path_buf();
-        crate::vapid::set_test_absent_hook(Some(Box::new(move || {
-            let _ =
-                crate::vapid::create_vapid_key(&root_race_path, "2026-09-24T00:00:00Z".to_owned());
-        })));
+        crate::vapid::set_test_absent_hook(
+            root_race.path(),
+            Some(Box::new(move || {
+                let _ = crate::vapid::create_vapid_key(
+                    &root_race_path,
+                    "2026-09-24T00:00:00Z".to_owned(),
+                );
+            })),
+        );
         let (status_race, body_race) =
             call(&app_race, "GET", "/api/push/vapid-key", Body::empty(), None).await;
-        crate::vapid::set_test_absent_hook(None);
+        crate::vapid::set_test_absent_hook(root_race.path(), None);
         assert_eq!(status_race, StatusCode::OK);
         assert_eq!(body_race["public_key"].as_str().unwrap().len(), 87);
         set_test_clock(None);
@@ -4356,6 +4363,7 @@ mod tests {
 
     #[tokio::test]
     async fn trace_level_logs_omit_all_secrets() {
+        let _capture = test_log::process_capture().await;
         test_log::clear();
         test_log::set_capture_level(log::LevelFilter::Trace);
         log::trace!(target: "solstone_core_push", "test trace marker");
@@ -5034,6 +5042,7 @@ mod tests {
 
     #[tokio::test]
     async fn capability_faults_still_deliver_english() {
+        let _capture = test_log::process_capture().await;
         let root = root();
         setup_authorized_client(root.path(), CID_A);
         let transport = Arc::new(MockTransport::default());
