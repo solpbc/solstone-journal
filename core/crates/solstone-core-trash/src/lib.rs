@@ -80,11 +80,7 @@ pub const SETTINGS_SECTION: &str = "trash";
 /// The setting's key in [`SETTINGS_SECTION`].
 pub const ERASE_AFTER_DAYS_KEY: &str = "erase_after_days";
 
-/// Whether a name at the journal root is the trash folder, so a walk of the
-/// root can skip it. Every walk that lists the journal root uses this.
-pub fn is_trash_root_name(name: &std::ffi::OsStr) -> bool {
-    name == TRASH_DIR
-}
+pub use solstone_core_journal::is_trash_root_name;
 
 /// Where an item stands.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

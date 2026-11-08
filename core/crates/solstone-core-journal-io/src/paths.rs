@@ -1460,3 +1460,19 @@ mod native_relative_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod trash_resolution_tests {
+    use super::resolve_journal_path;
+    use std::path::Path;
+
+    #[test]
+    fn a_path_into_the_trash_resolves_to_nothing() {
+        let journal = Path::new("/journal");
+        for rel in [".trash", ".trash/x/files/chronicle", "./.trash/x", ".trash/"] {
+            assert!(resolve_journal_path(journal, rel).is_err(), "{rel}");
+        }
+        assert!(resolve_journal_path(journal, "chronicle/.trash").is_ok());
+        assert!(resolve_journal_path(journal, "config/journal.json").is_ok());
+    }
+}

@@ -52,7 +52,9 @@ pub(crate) fn deny_top_level(name: &str) -> DenyAction {
     let name = name.as_str();
     if PRUNED_ROOTS.contains(&name) {
         DenyAction::TreePrune
-    } else if portable_copy_excluded(original_name) {
+    } else if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(original_name))
+        || portable_copy_excluded(original_name)
+    {
         DenyAction::Skip
     } else {
         DenyAction::Include
@@ -61,6 +63,12 @@ pub(crate) fn deny_top_level(name: &str) -> DenyAction {
 
 pub(crate) fn deny_member(member: &str, regular_file: bool) -> bool {
     let original_member = member;
+    // The trash is never part of a copy of the journal. Omitted silently: a
+    // pruned root would be named to the owner.
+    let first = member.split('/').next().unwrap_or(member);
+    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
+        return true;
+    }
     if portable_copy_excluded(member) || (regular_file && copy_file_excluded(member)) {
         return true;
     }
@@ -192,6 +200,14 @@ mod tests {
     const LOG_LEAF: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.log";
     const JSONL_LEAF: &str = "oplog--cortex~1ee11af4ed5d63caf142a30a96ba124b--20260901T164233.381904Z--8f03cabead7e441d83f6c92b2d89a021--daily-think~7df259e6285645a5f9ea769caa484e07.jsonl";
     const MALFORMED_LEAF: &str = "oplog--not-a-name.log";
+
+    #[test]
+    fn the_trash_is_never_exported_and_never_named() {
+        assert_eq!(deny_top_level(".trash"), DenyAction::Skip);
+        assert!(deny_member(".trash", false));
+        assert!(deny_member(".trash/20261108T000000000Z-00000000/item.json", true));
+        assert!(!deny_member("chronicle/20261108/.trash", false));
+    }
 
     #[test]
     fn portable_tree_prunes_are_root_relative() {

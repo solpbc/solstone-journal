@@ -203,3 +203,19 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod trash_resolution_tests {
+    use super::{JournalPathError, resolve_journal_path};
+    use std::path::Path;
+
+    #[test]
+    fn a_path_into_the_trash_resolves_to_nothing() {
+        let journal = Path::new("/journal");
+        assert_eq!(
+            resolve_journal_path(journal, ".trash/x/files").unwrap_err(),
+            JournalPathError::Trash
+        );
+        assert!(resolve_journal_path(journal, "20260731/x").is_ok());
+    }
+}

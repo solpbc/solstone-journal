@@ -22,6 +22,12 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 /// nothing. The trash itself lives in `solstone-core-trash`.
 pub const TRASH_DIR: &str = ".trash";
 
+/// Whether a name at the journal root is the trash folder. Every walk that
+/// lists the journal root skips a name for which this is true.
+pub fn is_trash_root_name(name: &std::ffi::OsStr) -> bool {
+    name == TRASH_DIR
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Env,

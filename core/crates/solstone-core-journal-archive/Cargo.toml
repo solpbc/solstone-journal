@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+solstone-core-journal = { workspace = true }
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dependencies]

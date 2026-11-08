@@ -69,6 +69,9 @@ mod entity_facet_file_names;
 #[cfg(test)]
 #[path = "contracts/facet_link_layout.rs"]
 mod facet_link_layout;
+#[cfg(test)]
+#[path = "contracts/journal_trash_hidden.rs"]
+mod journal_trash_hidden;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/facet_read_purity.rs"]
 mod facet_read_purity;
