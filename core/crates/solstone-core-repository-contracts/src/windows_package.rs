@@ -306,14 +306,15 @@ fn run_admitted<J: Sync>(
     results.into_iter().map(Option::unwrap).collect()
 }
 
-/// A quarter of the host's logical processors, at most four. Library binaries
-/// run one test at a time, but they share the disk: on a 16-way host, eight
-/// side by side ran each member about 2.5 times slower than alone and pushed
-/// the longest suites toward their timeouts.
+/// An eighth of the host's logical processors, at most two. Library binaries
+/// run one test at a time, but they share the disk. On a 16-way host, four
+/// side by side ran disk-bound members 1.5 to 1.9 times slower than alone,
+/// and eight up to 2.4 times, which took a suite that needs half its timeout
+/// alone to the edge of it. The width keeps every suite's timeout headroom.
 fn member_width() -> usize {
     std::thread::available_parallelism()
-        .map_or(1, |n| n.get() / 4)
-        .clamp(1, 4)
+        .map_or(1, |n| n.get() / 8)
+        .clamp(1, 2)
 }
 
 fn library_result(stdout: &str, exit_code: i32) -> Result<PackageTestResult, String> {
@@ -615,7 +616,14 @@ pub fn execute_windows_packages(
             &members,
             width,
             |(item, _)| item.serial_group.as_deref(),
-            |(item, executable)| run_member(&directory, executable, item.timeout_seconds),
+            |(item, executable)| {
+                println!(
+                    "WINDOWS_PACKAGE_MEMBER_START {} offset={:.1}",
+                    item.id,
+                    run_started.elapsed().as_secs_f64()
+                );
+                run_member(&directory, executable, item.timeout_seconds)
+            },
         );
         println!(
             "WINDOWS_PACKAGE_BATCH index={index} members={} width={width} build_seconds={build_seconds:.1} run_seconds={:.1}",
