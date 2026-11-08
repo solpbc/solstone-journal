@@ -45,7 +45,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("none_option", "no facet"),
     (
         "files_earlier",
-        "this also files workouts in this download that aren't listed with your activities yet under {facet}.",
+        "this files under {facet} the workouts in this download that aren't listed with your activities yet.",
     ),
     (
         "none_hint",

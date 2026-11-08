@@ -48,26 +48,24 @@ impl StravaRunSummary {
     #[must_use]
     pub(crate) fn text(&self) -> String {
         let mut text = String::from("# Strava import\n\n");
+        let added = match self.new_workouts {
+            0 => "no new workouts".to_owned(),
+            count => format!("{} added", plural(count, "workout", "workouts")),
+        };
         if self.updated_workouts > 0 {
             let _ = writeln!(
                 text,
-                "{} added, {} changed since the last import and brought up to date.\n",
-                plural(self.new_workouts, "workout", "workouts"),
+                "{added}, {} changed since the last import and brought up to date.\n",
                 plural(self.updated_workouts, "workout", "workouts"),
             );
         } else {
-            let _ = writeln!(
-                text,
-                "{} added.\n",
-                plural(self.new_workouts, "workout", "workouts")
-            );
+            let _ = writeln!(text, "{added}.\n");
         }
         if self.replaced_workouts > 0 {
             let _ = writeln!(
                 text,
-                "{} placed again at {} right time, where an earlier version had put {} hours off.\n",
+                "{} placed again at the right time, where an earlier version of your journal had put {} at the wrong time.\n",
                 plural(self.replaced_workouts, "workout was", "workouts were"),
-                either(self.replaced_workouts, "its", "their"),
                 either(self.replaced_workouts, "it", "them"),
             );
         }
@@ -129,7 +127,7 @@ impl StravaRunSummary {
         if filing.kept_sensed > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because {} already listed with your activities, and stay listed there.\n",
+                "{} left where {}, because {} already listed with your activities.\n",
                 plural(filing.kept_sensed, "workout was", "workouts were"),
                 either(filing.kept_sensed, "it was", "they were"),
                 either(filing.kept_sensed, "it's", "they're"),
@@ -184,24 +182,27 @@ impl StravaRunSummary {
             return;
         }
         let read = names.calls - names.failed;
-        if read > 0 || names.cached > 0 || names.failed > 0 {
-            let _ = writeln!(
-                text,
-                "{} read for the people and gear they name, and {} read on an earlier import.{}\n",
-                plural(
-                    names.calls - names.failed,
-                    "workout's own words were",
-                    "workouts' own words were"
-                ),
-                plural(names.cached, "was", "were"),
-                match names.failed {
-                    0 => String::new(),
-                    failed => format!(
-                        " {} couldn't be read, and importing again tries once more.",
-                        plural(failed, "workout", "workouts")
-                    ),
-                },
-            );
+        let mut parts = Vec::new();
+        if read > 0 {
+            parts.push(format!(
+                "{} read for the people and gear they name.",
+                plural(read, "workout's own words were", "workouts' own words were")
+            ));
+        }
+        if names.cached > 0 {
+            parts.push(format!(
+                "{} read on an earlier import.",
+                plural(names.cached, "workout's were", "workouts' were")
+            ));
+        }
+        if names.failed > 0 {
+            parts.push(format!(
+                "{} couldn't be read, and importing again tries once more.",
+                plural(names.failed, "workout", "workouts")
+            ));
+        }
+        if !parts.is_empty() {
+            let _ = writeln!(text, "{}\n", parts.join(" "));
         }
         if names.waiting > 0 {
             let waiting = plural(
