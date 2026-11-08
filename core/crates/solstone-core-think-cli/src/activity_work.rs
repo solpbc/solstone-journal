@@ -589,7 +589,9 @@ fn is_body_data_work(journal: &Path, record: &Record) -> Result<bool, String> {
 /// otherwise stay held. `Ok(true)` when the work no longer counts, including
 /// when another run holds it, which finds the same activity and settles it.
 fn settled_at_discovery(journal: &Path, record: &Record, now_ms: i64) -> Result<bool, String> {
-    if !is_body_data_work(journal, record)? {
+    // A record that can't be read here stays ordinary work, as it was; its
+    // own run reports what it can't read.
+    if !is_body_data_work(journal, record).unwrap_or(false) {
         return Ok(false);
     }
     let identity = &record.identity;
@@ -634,7 +636,7 @@ pub fn discover_held_activities(
                 return Err("activity work filename mismatch".into());
             }
             // Settled by the same pass's snapshot, never held.
-            if is_body_data_work(journal, &record)? {
+            if is_body_data_work(journal, &record).unwrap_or(false) {
                 return Ok(());
             }
             for talent in record.parked.intersection(&record.remaining) {

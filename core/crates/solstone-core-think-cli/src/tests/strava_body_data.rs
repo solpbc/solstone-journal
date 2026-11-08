@@ -476,9 +476,12 @@ fn activity_work_on_a_strava_reading_is_settled_at_discovery() {
     assert!(held(&context.journal, DAY, STRAVA_IDS[1]));
     assert_eq!(work_files(&context.journal), 6);
 
-    // What one planner pass reads first.
-    let snapshot = crate::activity_work::snapshot_activity_work(&context.journal, NOW);
+    // What one planner pass reads first, in either order.
     let (held_units, errors) = crate::discover_held_activities(&context.journal);
+    assert_eq!(held_units, vec![unit(DAY2, "meeting_090000_300")]);
+    let snapshot = crate::activity_work::snapshot_activity_work(&context.journal, NOW);
+    let (held_units, more) = crate::discover_held_activities(&context.journal);
+    let errors = [errors, more].concat();
     assert!(
         snapshot.errors.is_empty() && errors.is_empty(),
         "{errors:?}"
@@ -545,6 +548,54 @@ fn reactivating_a_strava_reading_settles_its_work_and_succeeds() {
     assert!(receipt(&context, DAY, STRAVA_IDS[0]));
     assert!(recorder.requests.lock().unwrap().is_empty());
     assert_eq!(fs::read_to_string(&file).unwrap(), row);
+    // Nothing records new work on it either.
+    assert!(
+        crate::activity::enqueue(&context, STRAVA_IDS[0], "work", true)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(work_files(&context.journal), 0);
+}
+
+/// A connection failure is never adopted as work on a Strava reading; the same
+/// failure on a capture activity is.
+#[test]
+fn a_failed_send_on_a_strava_reading_seeds_no_work() {
+    let (_journal, _roots, context, _recorder) = journal(&[("participation", PARTICIPATION)]);
+    strava_tile(&context.journal, TILE, Some(&active("work", "exercise")));
+    let capture = segment_path(&context.journal, "default", "090000_300");
+    fs::create_dir_all(capture.join("talents")).unwrap();
+    fs::write(capture.join("audio.jsonl"), "{}\n").unwrap();
+    let file = context
+        .journal
+        .join("facets/work/activities")
+        .join(format!("{DAY}.jsonl"));
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        sensed_record(STRAVA_IDS[0], STRAVA, TILE, "exercise")
+            + &sensed_record("meeting_090000_300", "default", "090000_300", "meeting"),
+    )
+    .unwrap();
+    for activity in [STRAVA_IDS[0], "meeting_090000_300"] {
+        write_health_event(
+            &context.journal,
+            DAY,
+            &serde_json::json!({"event":"talent.fail","ts":NOW,"day":DAY,"mode":"activity",
+                "facet":"work","activity":activity,"name":"participation","use_id":"old-use",
+                "reason_code":"local_endpoint_unreachable"})
+            .to_string(),
+        );
+    }
+    crate::activity_work::seed_activity_retries(&context.journal, DAY, NOW).unwrap();
+    let due = crate::activity_work::due_activity_retries(&context.journal, NOW).unwrap();
+    assert_eq!(
+        due.iter()
+            .map(|work| work.activity.as_str())
+            .collect::<Vec<_>>(),
+        vec!["meeting_090000_300"]
+    );
+    assert_eq!(work_files(&context.journal), 1);
 }
 
 /// The owner deletes a workout Sense read, through the retention door as the
@@ -630,4 +681,47 @@ fn a_deleted_strava_workouts_day_still_rebuilds() {
     );
     assert!(recorder.requests.lock().unwrap().is_empty());
     assert_eq!(fs::read_to_string(&file).unwrap(), row);
+}
+
+/// A capture activity whose type and first segment make the same identity as
+/// a Strava reading's still gets its own record.
+#[test]
+fn a_capture_activity_colliding_with_a_strava_reading_still_gets_its_record() {
+    let (_journal, _roots, context, _recorder) = journal(&[("participation", PARTICIPATION)]);
+    strava_tile(&context.journal, TILE, Some(&active("work", "exercise")));
+    let file = context
+        .journal
+        .join("facets/work/activities")
+        .join(format!("{DAY}.jsonl"));
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    // Sense named an activity by what the segment was, here `work`.
+    let held = sensed_record("work_070000_300", STRAVA, TILE, "work");
+    fs::write(&file, &held).unwrap();
+    let capture = segment_path(&context.journal, "default", TILE);
+    fs::create_dir_all(&capture).unwrap();
+    fs::write(capture.join("audio.jsonl"), "{}\n").unwrap();
+    write_sense(
+        &context.journal,
+        "default",
+        TILE,
+        &active("work", "exercise"),
+    );
+    live(&context, "default", TILE);
+    let flushed = command(
+        &context,
+        &[
+            "--flush",
+            "--segment",
+            TILE,
+            "--stream",
+            "default",
+            "--day",
+            DAY,
+        ],
+    );
+    assert_eq!(flushed.exit_code, 0, "{}", flushed.stderr);
+    let rows = records(&context);
+    assert!(fs::read_to_string(&file).unwrap().starts_with(&held));
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!(rows[1]["id"], "work_default_070000_300", "{rows:?}");
 }
