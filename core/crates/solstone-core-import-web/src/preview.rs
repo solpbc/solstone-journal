@@ -153,6 +153,11 @@ fn input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
         "setting": metadata.get("setting"),
         "zone": solstone_core_journal_config::owner_zone(root).name(),
     });
+    // A Strava import's own facet is bound by its preview, so a change after
+    // it asks for a new one.
+    if let Some(facet) = metadata.get(solstone_core_import::BODY_FACET_METADATA) {
+        options[solstone_core_import::BODY_FACET_METADATA] = facet.clone();
+    }
     crate::audio_archive::configure_options(root, data, &mut metadata, &mut options)?;
     Ok(Input {
         id,

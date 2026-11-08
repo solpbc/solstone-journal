@@ -304,6 +304,8 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
 }
 
+.import-facet { margin: 0.75rem 0; }
+.import-facet p { margin: 0.25rem 0; }
 .import-inline-fields {
   display: flex;
   gap: 1rem;
@@ -740,6 +742,8 @@ let currentFile = null;
 let currentGuideSource = null;
 let currentGuidedFile = null;
 let currentGuidedSaved = null;
+// The Strava card's facet question and choices, as /app/import/api/body-facet answers.
+let stravaFacet = null;
 window._quickClientItemId = null;
 window._quickSaved = null;
 window._guidedClientItemId = null;
@@ -1747,6 +1751,7 @@ async function loadGuidedFlow(sourceName) {
               <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
             </div>
           </div>
+          ${source.name === 'strava' ? '<div id="guidedFacet" class="import-facet"></div>' : ''}
           <div class="import-action-row">
             <button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button>
           </div>
@@ -1755,6 +1760,11 @@ async function loadGuidedFlow(sourceName) {
     </ol></form>
   `;
 
+  stravaFacet = null;
+  if (source.name === 'strava') {
+    await loadStravaFacet();
+    if (currentGuideSource !== source.name) return;
+  }
   const folderButton = document.getElementById('guidedFolderBtn');
   if (folderButton) {
     folderControls(guidedFolderBusy);
@@ -1789,6 +1799,109 @@ async function loadGuidedFlow(sourceName) {
       guidedStartBtn.click();
     });
   }
+}
+
+function stravaFacetText(key, facet) {
+  const copy = (stravaFacet && stravaFacet.copy) || {};
+  return String(copy[key] || '').replace('{facet}', facet || '');
+}
+
+function stravaFacetTitle(name) {
+  const found = ((stravaFacet && stravaFacet.facets) || []).find((facet) => facet.name === name);
+  return found ? found.title : name;
+}
+
+async function loadStravaFacet() {
+  const slot = document.getElementById('guidedFacet');
+  if (!slot) return;
+  let data = null;
+  try {
+    const response = await fetch('/app/import/api/body-facet');
+    data = response.ok ? await response.json() : null;
+  } catch (_) {
+    data = null;
+  }
+  // With no answer to show, the import goes with nothing chosen: the remembered facet
+  // while it's still on, otherwise none.
+  stravaFacet = data && data.offer ? data : null;
+  renderStravaFacet();
+}
+
+function renderStravaFacet() {
+  const slot = document.getElementById('guidedFacet');
+  if (!slot) return;
+  if (!stravaFacet) {
+    slot.innerHTML = '';
+    return;
+  }
+  const { state, facet } = stravaFacet.offer;
+  const heading = `<h4>${escapeHtml(stravaFacetText('heading'))}</h4>`;
+  if (String(state).startsWith('ask_')) {
+    const question = stravaFacetText(state, stravaFacetTitle(facet));
+    slot.innerHTML = `${heading}<p id="guidedFacetQuestion">${escapeHtml(question)}</p>`
+      + `<p class="import-field-hint">${escapeHtml(stravaFacetText('no_means'))}</p>`
+      + '<div class="import-action-row" role="group" aria-labelledby="guidedFacetQuestion">'
+      + `<button type="button" class="import-secondary-btn" data-body-facet-answer="yes">${escapeHtml(stravaFacetText('yes'))}</button>`
+      + `<button type="button" class="import-secondary-btn" data-body-facet-answer="no">${escapeHtml(stravaFacetText('no'))}</button>`
+      + '</div>';
+    slot.querySelectorAll('[data-body-facet-answer]').forEach((button) => {
+      button.addEventListener('click', () => answerStravaFacet(button.getAttribute('data-body-facet-answer')));
+    });
+    return;
+  }
+  const selected = state === 'chosen' ? facet : '';
+  const options = (stravaFacet.facets || []).map((item) => (
+    `<option value="${escapeHtml(item.name)}"${item.name === selected ? ' selected' : ''}>${escapeHtml(item.title)}</option>`
+  ));
+  options.push(`<option value=""${selected ? '' : ' selected'}>${escapeHtml(stravaFacetText('none_option'))}</option>`);
+  slot.innerHTML = `${heading}<div class="confirm-field">`
+    + `<label for="guidedFacetSelect">${escapeHtml(stravaFacetText('this_import'))}</label>`
+    + `<select id="guidedFacetSelect">${options.join('')}</select>`
+    + '<div id="guidedFacetHint" class="import-field-hint" aria-live="polite"></div></div>';
+  const select = slot.querySelector('#guidedFacetSelect');
+  const hint = () => {
+    const chosen = select.value;
+    slot.querySelector('#guidedFacetHint').textContent = chosen
+      ? stravaFacetText('files_earlier', stravaFacetTitle(chosen))
+      : stravaFacetText('none_hint');
+  };
+  select.addEventListener('change', () => {
+    hint();
+    invalidateImportPreview('guided');
+  });
+  hint();
+}
+
+async function answerStravaFacet(answer) {
+  const buttons = document.querySelectorAll('[data-body-facet-answer]');
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    const response = await fetch('/app/import/api/body-facet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || !data.offer) throw new Error(stravaFacetText('answer_failed'));
+    stravaFacet = data;
+    invalidateImportPreview('guided');
+    renderStravaFacet();
+    const select = document.getElementById('guidedFacetSelect');
+    if (select) select.focus();
+  } catch (err) {
+    buttons.forEach((button) => { button.disabled = false; });
+    if (window.showError) showError(err instanceof Error && err.message ? err.message : stravaFacetText('answer_failed'));
+  }
+}
+
+// What this one import is filed under: a facet, none, or nothing chosen (undefined) when
+// the question couldn't be shown. It never changes the remembered facet.
+function stravaFacetChoice() {
+  if (!stravaFacet) return undefined;
+  if (String(stravaFacet.offer.state).startsWith('ask_')) throw new Error(stravaFacetText('unanswered'));
+  const select = document.getElementById('guidedFacetSelect');
+  const value = select ? select.value : '';
+  return value ? { choice: 'facet', facet: value } : { choice: 'none' };
 }
 
 function renderQuickImportFlow() {
@@ -2303,11 +2416,16 @@ async function startGuidedImport(source) {
     const path = saved.path;
     const ts = saved.source_timestamp || saved.timestamp;
     const setting = guidedSettingInput ? guidedSettingInput.value.trim() : '';
+    const metaBody = { path, setting, import_id: saved.timestamp };
+    if (source.name === 'strava') {
+      const bodyFacet = stravaFacetChoice();
+      if (bodyFacet) metaBody.body_facet = bodyFacet;
+    }
 
     const metaResponse = await fetch('/app/import/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, setting, import_id: saved.timestamp }),
+      body: JSON.stringify(metaBody),
     });
 
     if (!metaResponse.ok) {
