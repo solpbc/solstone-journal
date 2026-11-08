@@ -1288,6 +1288,13 @@ pub fn run_clean_uninstall(context: &mut CleanUninstallContext<'_>) -> CleanUnin
 
 #[cfg(test)]
 mod tests {
+    /// Tests in one process run in parallel, and several share a fixture name,
+    /// so each root also carries a sequence number.
+    fn next_root_sequence() -> u64 {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
     use super::*;
     use crate::args::parse_args_at;
     #[cfg(unix)]
@@ -1371,8 +1378,11 @@ mod tests {
 
     impl TestRoot {
         fn new(name: &str) -> Self {
-            let root =
-                std::env::temp_dir().join(format!("solstone-clean-{name}-{}", std::process::id()));
+            let root = std::env::temp_dir().join(format!(
+                "solstone-clean-{name}-{}-{}",
+                std::process::id(),
+                next_root_sequence()
+            ));
             let _ = fs::remove_dir_all(&root);
             fs::create_dir_all(&root).unwrap();
             Self(root)
