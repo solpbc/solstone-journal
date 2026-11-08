@@ -786,8 +786,8 @@ fn native_routine_and_staged_full_routes_execute_the_exact_command_graph() {
         (
             "check-rust-unit",
             vec![
-                "test --manifest-path core/Cargo.toml --workspace --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze --lib --bins --locked --offline --no-fail-fast -- --test-threads=1",
-                "test --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --no-default-features --lib --locked --offline --no-fail-fast -- --test-threads=1",
+                "test --manifest-path core/Cargo.toml --workspace --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze --lib --bins --locked --offline --no-fail-fast",
+                "test --manifest-path core/Cargo.toml -p solstone-core-speakers-analyze -p solstone-core-speakers-onnx -p solstone-core-vad-analyze --no-default-features --lib --locked --offline --no-fail-fast",
             ],
         ),
         (

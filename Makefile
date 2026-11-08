@@ -684,8 +684,8 @@ check-rust-classified-full-clippy-onnx:
 # own registered evidence.
 check-rust-unit:
 	@$(REQUIRE_CARGO)
-	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline --no-fail-fast -- --test-threads=1
-	cargo test --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --no-default-features --lib --locked --offline --no-fail-fast -- --test-threads=1
+	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_ROUTINE_EXCLUDES) --lib --bins --locked --offline --no-fail-fast
+	cargo test --manifest-path $(RUST_MANIFEST) $(RUST_NATIVE_ROUTINE_PACKAGES) --no-default-features --lib --locked --offline --no-fail-fast
 
 .PHONY: report-rust-code-evidence
 RUST_CODE_EVIDENCE_CONTEXT ?=
