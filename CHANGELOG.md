@@ -17,14 +17,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - your journal no longer guesses your mood. it no longer labels each part of your day with a mood like "tense" or "celebratory". labels an older version added, to a summary or to a line of a transcript, are no longer shown to you or to agents you've connected. they stay in your journal, unchanged.
 - your journal's thinking no longer reads your Strava workouts to describe them or your day. each new workout is now listed with your activities on its day, as Strava recorded it, under the facet you choose for the import. workouts already listed stay as they are.
-- the first time you import from Strava, your journal offers a facet for your workouts: a facet you named body or health, if you have one, or a new body facet. before you answer it says what a no means: new workouts aren't listed with your activities, no people or things come from them, and agents you've set to only these facets won't see them, though search and the body app still show them. your answer is remembered, and you can choose another facet, or none, for any import.
+- the next time you import from Strava, your journal offers a facet for your workouts: a facet you named body or health, if you have one, or a new body facet. before you answer it says what a no means: new workouts aren't listed with your activities, no people or things come from them, and agents you've set to only these facets won't see them, though search and the body app still show them. your answer is remembered, and you can choose another facet, or none, for any import.
 - people and gear you named in your Strava workouts, such as a training partner or your bike, can now become people and things in your journal once they turn up in enough workouts. your journal reads only what you wrote, the name you gave a workout, its description and private note, and its gear, and only for workouts filed under a facet. it uses the thinking you chose for your journal, as importing a document already does.
 - once after this update, your journal thinks again about days that hold both a Strava workout and something else you did, now leaving the workout out. a daily briefing already written doesn't change.
 
 ### Fixed
 
 - fixed an intermittent failure that could leave new recordings unprocessed after your journal started.
-- importing a Strava download again now picks up a description, private note, gear or other detail you changed on Strava, and search finds the new words.
+- importing a Strava download again now picks up a description, private note or gear you changed on Strava, and search finds the new words.
 - someone or something you removed from a facet no longer comes back on its own. before, if the name kept turning up in your journal, it could add them back after a few days and replace the description you'd kept for them.
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.

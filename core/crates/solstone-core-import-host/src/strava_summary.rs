@@ -19,6 +19,8 @@ pub(crate) struct StravaRunSummary {
     pub new_workouts: u64,
     pub updated_workouts: u64,
     pub facet: RunFacet,
+    /// The facet's title as the owner sees it, when the facet has one.
+    pub facet_title: Option<String>,
     pub filing: Filing,
     pub records: RecordCounts,
     pub names: StravaNamesOutcome,
@@ -43,7 +45,7 @@ impl StravaRunSummary {
     /// The summary's text, in the owner's words.
     #[must_use]
     pub(crate) fn text(&self) -> String {
-        let mut text = String::from("# strava import\n\n");
+        let mut text = String::from("# Strava import\n\n");
         let _ = writeln!(
             text,
             "{} added, {} changed since the last import and brought up to date.\n",
@@ -56,9 +58,17 @@ impl StravaRunSummary {
         text
     }
 
+    /// The facet as the owner names it: its title, or its folder's name.
+    fn shown_facet(&self) -> Option<&str> {
+        self.facet_title
+            .as_deref()
+            .filter(|title| !title.trim().is_empty())
+            .or(self.facet.facet.as_deref())
+    }
+
     fn facet_section(&self, text: &mut String) {
         let _ = writeln!(text, "## facet\n");
-        match (&self.facet.facet, self.facet.basis) {
+        match (self.shown_facet(), self.facet.basis) {
             (Some(facet), FacetBasis::Chosen) => {
                 let _ = writeln!(text, "you chose the {facet} facet for this import.\n");
             }
@@ -81,14 +91,14 @@ impl StravaRunSummary {
                 );
             }
         }
-        let Some(facet) = &self.facet.facet else {
+        let Some(facet) = self.shown_facet() else {
             return;
         };
         let filing = &self.filing;
         if filing.filed > 0 {
             let _ = writeln!(
                 text,
-                "{} now filed under {facet}, including workouts from earlier imports of this download.{}\n",
+                "{} now filed under {facet}.{}\n",
                 plural(filing.filed, "workout is", "workouts are"),
                 match filing.moved {
                     0 => String::new(),
@@ -119,12 +129,14 @@ impl StravaRunSummary {
     fn records_section(&self, text: &mut String) {
         let _ = writeln!(text, "## activities\n");
         let records = &self.records;
-        let _ = writeln!(
-            text,
-            "{} now listed with your activities on {}.\n",
-            plural(records.written, "workout is", "workouts are"),
-            either(records.written, "its day", "their days"),
-        );
+        if records.written > 0 {
+            let _ = writeln!(
+                text,
+                "{} newly listed with your activities on {}.\n",
+                plural(records.written, "workout is", "workouts are"),
+                either(records.written, "its day", "their days"),
+            );
+        }
         if records.sensed > 0 {
             let _ = writeln!(
                 text,
@@ -138,7 +150,7 @@ impl StravaRunSummary {
         if records.no_facet > 0 {
             let _ = writeln!(
                 text,
-                "{} no facet, so {} listed with your activities. {NO_FACET_MEANS}\n",
+                "{} no facet, so {} listed with your activities.\n",
                 plural(records.no_facet, "workout has", "workouts have"),
                 either(records.no_facet, "it isn't", "they aren't"),
             );
@@ -248,6 +260,7 @@ mod tests {
         StravaRunSummary {
             new_workouts: 2,
             updated_workouts: 1,
+            facet_title: None,
             facet: RunFacet {
                 facet: facet.map(str::to_owned),
                 basis,

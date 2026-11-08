@@ -195,6 +195,16 @@ pub(crate) fn other_sources(
 }
 
 /// A Strava tile a transcript list leaves out: a live workout, body data alone.
+/// The id of the workout a Strava tile belongs to, or its path when its file
+/// can't say, so a tile that can't be read still counts as one.
+pub(crate) fn workout_id(segment: &Segment) -> String {
+    std::fs::read(segment.path().join(STRAVA_TILE_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|tile| tile.get("activity_id").map(Value::to_string))
+        .unwrap_or_else(|| segment.path().display().to_string())
+}
+
 pub(crate) fn is_left_out_workout(segment: &Segment) -> bool {
     segment.path().join(STRAVA_TILE_FILE).is_file()
         && solstone_core_segment::is_body_only_segment(segment)

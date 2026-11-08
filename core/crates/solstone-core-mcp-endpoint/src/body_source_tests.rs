@@ -502,6 +502,9 @@ fn an_unfiltered_list_leaves_strava_workouts_out_and_counts_them() {
     let root = journal.path();
     grant(root, ReadScope::WholeJournal);
     let tile = strava_tile(root, "070000_300", &[]);
+    // A workout's next five minutes is a second tile of the same workout: it
+    // counts once.
+    let next = strava_tile(root, "070500_300", &[]);
     let list = call(root, "list_transcripts", json!({"day": DAY}));
     assert!(list["transcripts"].as_array().unwrap().is_empty(), "{list}");
     assert!(list.get("other_sources").is_none(), "{list}");
@@ -523,6 +526,7 @@ fn an_unfiltered_list_leaves_strava_workouts_out_and_counts_them() {
 
     // With no Strava tile left, nothing is added.
     fs::remove_dir_all(&tile).unwrap();
+    fs::remove_dir_all(&next).unwrap();
     let list = call(root, "list_transcripts", json!({"day": DAY}));
     assert!(list.get("omitted_workouts").is_none(), "{list}");
     assert!(list.get("workouts_note").is_none(), "{list}");

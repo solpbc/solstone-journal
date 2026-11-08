@@ -45,11 +45,11 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("none_option", "no facet"),
     (
         "files_earlier",
-        "this also files the workouts this download brought in before under {facet}.",
+        "this also files workouts from earlier imports of this download under {facet}, apart from ones already listed with your activities.",
     ),
     (
         "none_hint",
-        "these workouts aren't listed with your activities, no people or things come from them, and agents you've set to only these facets won't see them. search and the body app still show them.",
+        "new workouts in this import aren't listed with your activities, no people or things come from them, and agents you've set to only these facets won't see them. search and the body app still show them.",
     ),
     (
         "unanswered",
