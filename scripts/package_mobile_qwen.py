@@ -16,7 +16,9 @@ import mobile_native_build
 import package_mobile_pdfium
 
 ROOT = Path(__file__).resolve().parents[1]
-LICENSES = ("llama-LICENSE.txt", "openssl-LICENSE.txt")
+PACKAGE_LICENSES = ("llama-LICENSE.txt", "openssl-LICENSE.txt")
+THIRD_PARTY_NOTICES = "qwen-THIRD_PARTY_NOTICES.txt"
+LICENSES = (*PACKAGE_LICENSES, THIRD_PARTY_NOTICES)
 IMAGES = {
     "android": "libjournal_mobile_qwen.so",
     "ios": "JournalMobileQwen.framework/JournalMobileQwen",
@@ -51,6 +53,28 @@ def read_regular(path, limit):
         if len(data) > limit:
             raise ValueError("Qwen package member exceeds its size bound")
         return data
+
+
+def license_bytes(package, name):
+    if name == THIRD_PARTY_NOTICES:
+        return read_regular(ROOT / "core/distribution/mobile" / name, 1024 * 1024)
+    if name not in PACKAGE_LICENSES:
+        raise ValueError("unknown Qwen license resource")
+    return read_regular(Path(package) / name, 1024 * 1024)
+
+
+def copy_licenses(package, destination):
+    for name in LICENSES:
+        path = Path(destination) / name
+        if path.is_symlink():
+            raise ValueError("Qwen license destination is a symbolic link")
+        path.write_bytes(license_bytes(package, name))
+
+
+def verify_licenses(package, destination):
+    for name in LICENSES:
+        if read_regular(Path(destination) / name, 1024 * 1024) != license_bytes(package, name):
+            raise ValueError("Qwen license differs from its admitted source")
 
 
 def validate_record(record, platform):
@@ -107,7 +131,7 @@ def load_package(directory, platform):
         # geometry, including the required 16 KiB page alignment.
         inspect_android(image_bytes)
     for name in LICENSES:
-        read_regular(directory / name, 1024 * 1024)
+        license_bytes(directory, name)
     return record, image
 
 
@@ -119,8 +143,8 @@ def stage_android(directory, runtime_root):
     native.mkdir(parents=True, exist_ok=True)
     assets.mkdir(parents=True, exist_ok=True)
     shutil.copy2(image, native / image.name)
-    for name in LICENSES:
-        shutil.copyfile(Path(directory) / name, assets / name)
+    copy_licenses(directory, assets)
+    verify_licenses(directory, assets)
     (assets / "manifest.json").write_text(json.dumps(record, indent=2) + "\n")
     return record
 
@@ -138,6 +162,7 @@ def verify_android_archive(archive, runtime_root):
         raise ValueError("APK Qwen image differs from the admitted package")
     inspect_android(image)
     for name in LICENSES:
-        if archive.read("assets/qwen-runtime/" + name) != read_regular(assets / name, 1024 * 1024):
+        if archive.read("assets/qwen-runtime/" + name) != license_bytes(assets, name):
             raise ValueError("APK Qwen license differs from the admitted package")
+    verify_licenses(assets, assets)
     return record
