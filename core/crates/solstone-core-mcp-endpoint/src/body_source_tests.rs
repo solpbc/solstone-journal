@@ -466,6 +466,85 @@ fn an_unfiltered_list_leaves_body_windows_out_and_names_them() {
     assert!(list.get("other_sources").is_none(), "{list}");
 }
 
+fn strava_tile(root: &Path, key: &str, extra: &[&str]) -> std::path::PathBuf {
+    let dir = root
+        .join("chronicle")
+        .join(DAY)
+        .join("import.strava")
+        .join(key);
+    fs::create_dir_all(dir.join("talents")).unwrap();
+    fs::write(
+        dir.join("workout.json"),
+        json!({
+            "schema": "solstone.import.strava.tile.v1",
+            "activity_id": 9,
+            "tile": {"index": 0, "count": 1},
+            "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(dir.join("stream.json"), "{}").unwrap();
+    // What thinking once wrote under a sensed tile.
+    fs::write(dir.join("talents/sense.json"), "{}").unwrap();
+    for name in extra {
+        fs::write(dir.join(name), "other").unwrap();
+    }
+    dir
+}
+
+/// A Strava workout is body data a list leaves out, and the list names Strava
+/// for it as it names a body source. A day with no Strava tile names nothing.
+#[test]
+fn an_unfiltered_list_leaves_strava_workouts_out_and_names_strava() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    let tile = strava_tile(root, "070000_300", &[]);
+    let list = call(root, "list_transcripts", json!({"day": DAY}));
+    assert!(list["transcripts"].as_array().unwrap().is_empty(), "{list}");
+    assert_eq!(list["other_sources"], json!(["Strava · imported"]));
+    let note = empty_note(root, json!({}));
+    assert!(note.contains("List a day"), "{note}");
+    // Beside a body window, both are named.
+    window(root, DAY, "063000_300", &many_readings("a", 6, 31, 3), None);
+    let list = call(root, "list_transcripts", json!({"day": DAY}));
+    assert_eq!(list["other_sources"], json!([LABEL, "Strava · imported"]));
+
+    // With no Strava tile left, Strava isn't named.
+    fs::remove_dir_all(&tile).unwrap();
+    let list = call(root, "list_transcripts", json!({"day": DAY}));
+    assert_eq!(list["other_sources"], json!([LABEL]));
+    let other = journal_without_body();
+    grant(other.path(), ReadScope::WholeJournal);
+    let list = call(other.path(), "list_transcripts", json!({"day": DAY}));
+    assert!(list.get("other_sources").is_none(), "{list}");
+    let note = empty_note(other.path(), json!({}));
+    assert!(!note.contains("List a day"), "{note}");
+
+    // A tile the body-only test rejects is listed as it always was.
+    strava_tile(root, "080000_300", &["notes.md"]);
+    let list = call(root, "list_transcripts", json!({"day": DAY}));
+    assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["other_sources"], json!([LABEL]));
+}
+
+fn journal_without_body() -> tempfile::TempDir {
+    let journal = journal();
+    let capture = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join("default/090000_300");
+    fs::create_dir_all(&capture).unwrap();
+    fs::write(
+        capture.join("audio.jsonl"),
+        r#"{"start":"00:00:01","text":"garden planning"}"#,
+    )
+    .unwrap();
+    journal
+}
+
 #[test]
 fn a_walk_crosses_what_it_cant_read_and_shows_nothing_hidden() {
     let journal = journal();

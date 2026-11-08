@@ -2710,12 +2710,13 @@ fn list_transcripts(
             // Body windows are reached by naming their source: hundreds a day would
             // push what the owner said off the page.
             if solstone_core_segment::is_body_only_segment(&segment) {
+                let holds_rows = segment
+                    .path()
+                    .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
+                    .is_file()
+                    && !crate::body_source::holds_only_moved(segment.path());
                 omitted_body = omitted_body
-                    || segment
-                        .path()
-                        .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
-                        .is_file()
-                        && !crate::body_source::holds_only_moved(segment.path())
+                    || (holds_rows || crate::body_source::is_left_out_workout(&segment))
                         && live_allows(
                             journal_root,
                             &boundary,
