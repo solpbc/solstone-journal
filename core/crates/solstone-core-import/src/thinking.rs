@@ -121,7 +121,7 @@ fn inspect(journal: &Path, id: &str) -> Result<Option<ImportThinking>, String> {
         if !matches!(segment.outcome, SegmentBindingOutcome::Bound { .. }) || segment.body_only {
             continue;
         }
-        let path = solstone_core_journal_io::segment_path(
+        solstone_core_journal_io::segment_path(
             journal,
             &segment.day,
             &segment.segment,
@@ -129,11 +129,10 @@ fn inspect(journal: &Path, id: &str) -> Result<Option<ImportThinking>, String> {
             false,
         )
         .map_err(|error| error.to_string())?;
-        // A Strava import published before its tiles counted as body data saved
-        // them as owing thinking. What the tile holds now decides it.
-        if segment.stream == STRAVA_STREAM
-            && solstone_core_segment::is_body_only_dir(&segment.stream, &path)
-        {
+        // A Strava tile never asks for thinking, whatever its directory holds,
+        // as publication decides. One published before that rule was saved as
+        // owing thinking; it owes none.
+        if segment.stream == STRAVA_STREAM {
             continue;
         }
         if segment.day.len() != 8
@@ -439,7 +438,8 @@ mod tests {
         assert!(inventory.unreadable.is_empty());
         assert!(inventory.imports.is_empty(), "neither held nor left to do");
 
-        // A tile the body-only test rejects, and any other stream, still count.
+        // A tile the body-only test rejects owes none either, as publication
+        // asks none for it; any other stream still counts.
         record
             .segments
             .push(tile("20261002", &["workout.json", "notes.md"]));
@@ -455,11 +455,8 @@ mod tests {
                 .iter()
                 .map(|c| (c.day.as_str(), c.stream.as_str()))
                 .collect::<Vec<_>>(),
-            vec![("20261002", "import.strava"), ("20261003", "import.notes")]
+            vec![("20261003", "import.notes")]
         );
-        assert_eq!(
-            import.days,
-            BTreeSet::from(["20261002".into(), "20261003".into()])
-        );
+        assert_eq!(import.days, BTreeSet::from(["20261003".into()]));
     }
 }

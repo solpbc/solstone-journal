@@ -4032,6 +4032,68 @@ mod tests {
     /// Segments thought before their publication was recorded must not hold
     /// their day's close behind one repair each: the daily work that closes
     /// the day is queued in the first pass, and publishes them itself.
+    /// A Strava tile holding a stray file the body-only test rejects, on a day
+    /// with capture, published by an import as owing thinking: the day's
+    /// daily work is queued as it is without the tile, nothing is sent for the
+    /// tile, and the import's request is retired rather than left owed.
+    #[test]
+    fn a_strava_tile_the_body_only_test_rejects_neither_runs_nor_holds_its_day() {
+        use solstone_core_import::publish::*;
+        for stray in ["workout (1).json", "notes.md"] {
+            let root = fixture("local");
+            let day = "19990101";
+            thought_without_receipt(root.path(), day, &["120000_60"]);
+            let tile = root
+                .path()
+                .join("chronicle")
+                .join(day)
+                .join("import.strava/070000_300");
+            std::fs::create_dir_all(&tile).unwrap();
+            for file in ["workout.json", "stream.json", stray] {
+                std::fs::write(tile.join(file), "{}\n").unwrap();
+            }
+            let directory = root.path().join("imports/strava");
+            std::fs::create_dir_all(&directory).unwrap();
+            let record = PublicationRecord {
+                schema: PUBLICATION_SCHEMA.into(),
+                status: PublicationStatus::Success,
+                segments: vec![SegmentPublicationOutcome {
+                    day: day.into(),
+                    stream: "import.strava".into(),
+                    segment: "070000_300".into(),
+                    outcome: SegmentBindingOutcome::Bound {
+                        prev_day: None,
+                        prev_segment: None,
+                        seq: 1,
+                    },
+                    body_only: false,
+                }],
+                indexing: IndexPublicationOutcomes::default(),
+                day_markers: Vec::new(),
+            };
+            write_publication_record(Some(&directory), &record).unwrap();
+
+            let queue = queue(root.path());
+            reconcile(root.path(), &queue, &AtomicBool::new(false)).unwrap();
+
+            assert!(
+                queue.contains_reference("supervisor-work-19990101-daily"),
+                "{stray}"
+            );
+            assert!(
+                !queue.any_reference(|reference: &str| reference.contains("import.strava")),
+                "{stray}"
+            );
+            assert!(
+                solstone_core_import::thinking::read(root.path())
+                    .unwrap()
+                    .imports
+                    .is_empty(),
+                "{stray}"
+            );
+        }
+    }
+
     #[test]
     fn a_thought_day_without_publication_receipts_is_closed_in_the_first_pass() {
         let root = fixture("local");
