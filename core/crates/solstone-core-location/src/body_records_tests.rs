@@ -132,6 +132,56 @@ fn a_live_account_composes_from_its_window() {
 }
 
 #[test]
+fn a_deleted_later_piece_marks_a_live_account_part_removed_as_a_deleted_start_does() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    let later = window(root, DAY, "230000_3600", &[tile(1)]);
+    window(root, NEXT, "000000_3600", &[tile(2)]);
+    record(root, json!({}));
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+    // The owner's delete of a later piece: the account says part of it is
+    // gone, and keeps the times its own row states.
+    delete(&later);
+    assert_eq!(
+        composed(root)[0].account,
+        Account::PartRemoved(Box::new(night()))
+    );
+}
+
+#[test]
+fn retention_reaching_a_later_piece_marks_it_and_a_release_does_not() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    let released = window(root, NEXT, "000000_3600", &[tile(1)]);
+    record(root, json!({}));
+    // A run's release puts its pieces back beside it on a later import, so
+    // it removes nothing from the account.
+    delete_for(&released, "import_run_release");
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+    let swept = window(root, NEXT, "010000_3600", &[tile(2)]);
+    delete_for(&swept, "retention");
+    assert_eq!(
+        composed(root)[0].account,
+        Account::PartRemoved(Box::new(night()))
+    );
+}
+
+#[test]
+fn a_deleted_window_on_another_grid_inside_the_span_leaves_the_account_live() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    window(root, DAY, "230000_3600", &[tile(1)]);
+    // A five-minute session's window inside the night is another grid's.
+    let session = window(root, DAY, "231500_300", &[]);
+    record(root, json!({}));
+    delete(&session);
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+}
+
+#[test]
 fn removed_by_you_only_when_no_tile_of_the_span_survives() {
     let journal = journal();
     let root = journal.path();
