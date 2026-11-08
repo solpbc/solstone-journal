@@ -67,6 +67,7 @@ fn padding_changes_no_speech_evidence_or_rendering_and_keeps_bulk_cap() {
         talents: TalentSource::Disabled,
         voices: None,
         heard_owner: None,
+        strava_tiles: false,
     };
     let mut results = Vec::new();
     for padding in [0, ENTRY_SOURCE_MAX_BYTES + 1] {

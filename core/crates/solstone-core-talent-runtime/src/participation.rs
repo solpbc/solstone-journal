@@ -2360,6 +2360,7 @@ mod tests {
             talents: solstone_core_transcripts::TalentSource::Disabled,
             voices: crate::transcript::voice_names(root.path()),
             heard_owner: None,
+            strava_tiles: false,
         };
         let (screen_transcript, _counts, _memory) =
             solstone_core_transcripts::cluster_span_with_memory(

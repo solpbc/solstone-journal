@@ -10,6 +10,7 @@ use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use solstone_core_format::agent_memory::{Coordinate, Origin, SourceKey};
+use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_format::content::{
     Family, RawPerceptFamily, iter_talent_text_projections, parse_raw_percept_records,
     produce_browser_attended_chunks, produce_chunks, produce_raw_percept_chunks_by_shape,
@@ -66,6 +67,9 @@ pub struct Sources {
     /// read `You`; every other line keeps its diarization number. Used only
     /// where `voices` names no one.
     pub heard_owner: Option<BTreeSet<i64>>,
+    /// Whether Strava's tiles are read. A tile holding a workout alone is
+    /// body data: the owner's own page shows it, and no talent reads it.
+    pub strava_tiles: bool,
 }
 
 /// The speaker heard on a transcript line when the journal owner's voice is recognized.
@@ -656,6 +660,7 @@ pub fn speech_evidence_for_span(
         talents: TalentSource::Disabled,
         voices,
         heard_owner: None,
+        strava_tiles: false,
     };
     let (entries, _) = span_entries(
         root,
@@ -790,6 +795,9 @@ fn process_segment(
     let Some((start, end)) = segment_times(day, &segment.key) else {
         return Vec::new();
     };
+    if !sources.strava_tiles && segment.is_strava_body_tile() {
+        return Vec::new();
+    }
     let stream = segment
         .record_stream()
         .map(str::to_owned)
@@ -1783,6 +1791,12 @@ impl Segment {
             .is_some_and(|stream| solstone_core_segment::is_body_only_dir(stream, &self.path))
     }
 
+    /// A Strava tile holding a workout and nothing else of note.
+    fn is_strava_body_tile(&self) -> bool {
+        self.stream.directory().and_then(std::ffi::OsStr::to_str) == Some(STRAVA_STREAM)
+            && self.is_body_window()
+    }
+
     fn record_stream(&self) -> Option<&str> {
         match &self.stream {
             StreamLocation::Direct => Some(solstone_core_journal_io::DEFAULT_STREAM),
@@ -1908,6 +1922,7 @@ mod tests {
             talents,
             voices: None,
             heard_owner: None,
+            strava_tiles: false,
         }
     }
 
@@ -2073,14 +2088,79 @@ mod tests {
             )
             .unwrap();
         }
-        let (markdown, counts) =
-            cluster(root.path(), DAY, &sources(true, false, TalentSource::All));
+        let mut owner = sources(true, false, TalentSource::All);
+        owner.strava_tiles = true;
+        let (markdown, counts) = cluster(root.path(), DAY, &owner);
         assert_eq!(
             markdown.matches("## Strava workout: Morning Run").count(),
             1
         );
         assert!(markdown.contains("10.2 km"));
         assert_eq!(counts.transcripts, 1);
+    }
+
+    /// A workout is body data: a talent's load of its day, its segment or its
+    /// span holds none of it, while a capture beside it still reads.
+    #[test]
+    fn a_talent_load_holds_no_strava_workout_and_still_reads_a_capture_beside_it() {
+        let root = TempDir::new().unwrap();
+        let tile = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("import.strava/070000_300");
+        fs::create_dir_all(tile.join("talents")).unwrap();
+        fs::write(
+            tile.join("workout.json"),
+            json!({
+                "schema": "solstone.import.strava.tile.v1",
+                "activity_id": 9,
+                "tile": {"index": 0, "count": 1},
+                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0},
+                "strava_fields": {"Activity Private Note": "left knee felt tight"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(tile.join("talents/activity.md"), "Ran along the river.").unwrap();
+        let capture = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("default/090000_300");
+        fs::create_dir_all(&capture).unwrap();
+        fs::write(
+            capture.join("audio.jsonl"),
+            r#"{"start":"00:00:01","text":"garden planning"}"#,
+        )
+        .unwrap();
+        let talent = sources(true, true, TalentSource::All);
+        let (day, _) = cluster(root.path(), DAY, &talent);
+        assert!(day.contains("garden planning"), "{day}");
+        assert!(!day.contains("Morning Run"), "{day}");
+        assert!(!day.contains("knee"), "{day}");
+        assert!(!day.contains("river"), "{day}");
+        let (segment, _) = cluster_period(
+            root.path(),
+            DAY,
+            "070000_300",
+            &talent,
+            Some("import.strava"),
+        );
+        assert!(!segment.contains("Morning Run"), "{segment}");
+        let (span, _) = cluster_span(
+            root.path(),
+            DAY,
+            &["070000_300"],
+            &talent,
+            Some("import.strava"),
+        )
+        .unwrap();
+        assert!(!span.contains("Morning Run"), "{span}");
+        // A tile the body-only test rejects is read as it always was.
+        fs::write(tile.join("notes.md"), "something else").unwrap();
+        let (day, _) = cluster(root.path(), DAY, &talent);
+        assert!(day.contains("Morning Run"), "{day}");
     }
 
     #[test]

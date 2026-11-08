@@ -376,6 +376,7 @@ mod tests {
             talents: TalentSource::Disabled,
             voices: Some(voices()),
             heard_owner: None,
+            strava_tiles: false,
         };
         cluster_span(root, DAY, &[KEY], &sources, Some(STREAM))
             .unwrap()

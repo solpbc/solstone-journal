@@ -55,6 +55,8 @@ pub(crate) async fn api_read(
                 },
                 voices: None,
                 heard_owner: None,
+                // The owner's own page keeps showing their workouts.
+                strava_tiles: true,
             };
             let markdown =
                 if let (Some(start), Some(end)) = (query.start.as_deref(), query.end.as_deref()) {
@@ -122,4 +124,70 @@ fn error_response(error: impl std::fmt::Display) -> Response {
         error.to_string(),
         StatusCode::INTERNAL_SERVER_ERROR,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::Duration;
+
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode};
+    use chrono::{TimeZone, Utc};
+    use serde_json::{Value, json};
+    use tempfile::TempDir;
+    use tower::ServiceExt;
+
+    use crate::{Clock, router_with_delete_window};
+
+    /// A workout is body data that no talent reads, and still the owner's own:
+    /// their day page shows it.
+    #[tokio::test]
+    async fn the_day_page_still_shows_a_strava_workout() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .unwrap();
+        let tile = root
+            .path()
+            .join("chronicle/20260810/import.strava/070000_300");
+        fs::create_dir_all(&tile).unwrap();
+        fs::write(
+            tile.join("workout.json"),
+            json!({
+                "schema": "solstone.import.strava.tile.v1",
+                "activity_id": 9,
+                "tile": {"index": 0, "count": 1},
+                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap()),
+            || axum::response::Response::new(Body::from("shell")),
+            Duration::from_secs(600),
+        );
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/app/transcripts/api/read/20260810?transcripts=1")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let markdown = body["markdown"].as_str().unwrap();
+        assert!(
+            markdown.contains("## Strava workout: Morning Run"),
+            "{markdown}"
+        );
+    }
 }
