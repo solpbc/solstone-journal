@@ -11,10 +11,15 @@
 //! tile listed, and the next Strava import publishes it again. Publishing a
 //! tile twice is harmless. Every read and write here is made under
 //! `imports/.strava`, the lock Strava's import holds.
+//!
+//! A list that can't be parsed never stops an import: a change to the list
+//! sets it aside beside itself, logs it, and starts a new one. Tiles it held
+//! are not published again on its account.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use solstone_core_journal_io::durability::set_aside;
 use solstone_core_journal_io::{AtomicWriteOptions, FileLock, atomic_replace};
 
 /// The list, relative to the journal.
@@ -25,15 +30,43 @@ const FILE_MODE: u32 = 0o600;
 /// A tile, by its day and segment key.
 pub type RefiledTile = (String, String);
 
-/// The tiles listed. A missing list has none.
+/// The tiles listed. A missing list has none; one that can't be parsed is an
+/// error, which a change to the list sets aside.
 pub fn read_strava_refiles(
     journal: &Path,
     _held: &FileLock,
 ) -> Result<BTreeSet<RefiledTile>, String> {
+    match listed_bytes(journal)? {
+        Some(bytes) => serde_json::from_slice(&bytes).map_err(|error| error.to_string()),
+        None => Ok(BTreeSet::new()),
+    }
+}
+
+fn listed_bytes(journal: &Path) -> Result<Option<Vec<u8>>, String> {
     match std::fs::read(journal.join(STRAVA_REFILE_FILE)) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| error.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeSet::new()),
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.to_string()),
+    }
+}
+
+/// The tiles listed, for a change to the list. A list that can't be parsed
+/// is set aside beside itself and logged, and counts as none.
+fn listed_for_change(journal: &Path) -> Result<BTreeSet<RefiledTile>, String> {
+    let Some(bytes) = listed_bytes(journal)? else {
+        return Ok(BTreeSet::new());
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(listed) => Ok(listed),
+        Err(error) => {
+            let aside = set_aside(&journal.join(STRAVA_REFILE_FILE))
+                .map_err(|aside| format!("{STRAVA_REFILE_FILE} unreadable: {aside}"))?;
+            log::warn!(
+                "{STRAVA_REFILE_FILE} unreadable, set aside as {}: {error}",
+                aside.display()
+            );
+            Ok(BTreeSet::new())
+        }
     }
 }
 
@@ -41,9 +74,9 @@ pub fn read_strava_refiles(
 pub fn add_strava_refiles(
     journal: &Path,
     tiles: &[RefiledTile],
-    held: &FileLock,
+    _held: &FileLock,
 ) -> Result<(), String> {
-    let mut listed = read_strava_refiles(journal, held)?;
+    let mut listed = listed_for_change(journal)?;
     let before = listed.len();
     listed.extend(tiles.iter().cloned());
     if listed.len() == before {
@@ -56,9 +89,9 @@ pub fn add_strava_refiles(
 pub fn remove_strava_refiles(
     journal: &Path,
     tiles: &BTreeSet<RefiledTile>,
-    held: &FileLock,
+    _held: &FileLock,
 ) -> Result<(), String> {
-    let mut listed = read_strava_refiles(journal, held)?;
+    let mut listed = listed_for_change(journal)?;
     let before = listed.len();
     listed.retain(|tile| !tiles.contains(tile));
     if listed.len() == before {
@@ -131,5 +164,34 @@ mod tests {
         let all = read_strava_refiles(journal.path(), &held).unwrap();
         remove_strava_refiles(journal.path(), &all, &held).unwrap();
         assert!(!journal.path().join(STRAVA_REFILE_FILE).exists());
+    }
+
+    #[test]
+    fn a_list_that_cant_be_parsed_is_set_aside_and_a_new_one_started() {
+        let journal = tempfile::tempdir().unwrap();
+        let imports = journal.path().join("imports");
+        std::fs::create_dir_all(&imports).unwrap();
+        let held = hold_strava_lock(journal.path()).unwrap();
+        std::fs::write(journal.path().join(STRAVA_REFILE_FILE), b"{not a list").unwrap();
+        assert!(read_strava_refiles(journal.path(), &held).is_err());
+
+        add_strava_refiles(journal.path(), &[tile("20261004", "070000_300")], &held).unwrap();
+
+        assert_eq!(
+            read_strava_refiles(journal.path(), &held).unwrap(),
+            BTreeSet::from([tile("20261004", "070000_300")])
+        );
+        let aside = std::fs::read_dir(&imports)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(".strava-refile.wedged-"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(aside.len(), 1, "{aside:?}");
+        assert_eq!(std::fs::read(&aside[0]).unwrap(), b"{not a list");
     }
 }

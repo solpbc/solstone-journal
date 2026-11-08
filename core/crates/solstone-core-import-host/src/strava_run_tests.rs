@@ -583,3 +583,81 @@ fn a_workout_an_earlier_reading_filed_but_never_listed_is_listed_in_that_facet_w
     // Its words are read under that facet.
     assert_eq!((count(&run, "names_calls"), model.calls.get()), (1, 1));
 }
+
+#[test]
+fn a_listed_tile_deleted_since_is_not_published_again() {
+    let journal = journal(&["body"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "");
+    let (run, _) = import(root, &csv, "20261010_100000", ImportFacet::None, &model);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    // An earlier run listed two tiles and stopped; one was deleted since.
+    let list = root.join(solstone_core_import::strava_refile::STRAVA_REFILE_FILE);
+    fs::write(
+        &list,
+        json!([["20261004", "070500_300"], ["20261005", "090000_300"]]).to_string(),
+    )
+    .unwrap();
+    let deleted = tile(root, "20261005", "090000_300");
+    fs::remove_file(deleted.join("workout.json")).unwrap();
+    fs::write(deleted.join(crate::body_activity::TOMBSTONE), "{}").unwrap();
+
+    let (run, id) = import(root, &csv, "20261010_110000", ImportFacet::None, &model);
+
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(published(root, &id), ["20261004/070500_300"]);
+    assert!(!list.exists());
+}
+
+#[test]
+fn a_refile_list_that_cant_be_parsed_stops_no_import_and_reaches_no_owner_words() {
+    let journal = journal(&["body"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "");
+    fs::create_dir_all(root.join("imports")).unwrap();
+    let garbage = b"{not a list";
+    fs::write(
+        root.join(solstone_core_import::strava_refile::STRAVA_REFILE_FILE),
+        garbage,
+    )
+    .unwrap();
+    let parse_error = serde_json::from_slice::<Value>(garbage)
+        .unwrap_err()
+        .to_string();
+
+    let (run, id) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("body".into()),
+        &model,
+    );
+
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(count(&run, "filed"), 3);
+    let summary = fs::read_to_string(root.join("imports").join(&id).join("summary.md")).unwrap();
+    for shown in [&run.stdout, &run.stderr, &summary] {
+        assert!(!shown.contains(&parse_error), "{shown}");
+        assert!(!shown.contains("line 1 column"), "{shown}");
+    }
+    let aside = fs::read_dir(root.join("imports"))
+        .unwrap()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".strava-refile.wedged-")
+        })
+        .map(|entry| fs::read(entry.path()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(aside, [garbage.to_vec()]);
+}
