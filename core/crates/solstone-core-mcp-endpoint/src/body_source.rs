@@ -14,9 +14,9 @@ use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
 use serde_json::{Value, json};
 use solstone_core_format::content::body_records::{
     BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, only_moved_rows, parse_source_time,
-    render_row, source_label,
+    render_row,
 };
-use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_STREAM, STRAVA_TILE_FILE};
+use solstone_core_format::content::strava_body::STRAVA_TILE_FILE;
 use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
@@ -177,58 +177,21 @@ pub(crate) fn name_windows(targets: &mut Vec<String>, windows: Vec<String>) {
 }
 
 /// The labels of body sources this connection can read on `day`, for a list that
-/// leaves their windows out. Strava's workouts are body data a list leaves out too,
-/// so Strava is named when the day holds one this connection can read.
+/// leaves their windows out.
 pub(crate) fn other_sources(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
     day: &str,
 ) -> Vec<String> {
     let labels = source_labels(journal_root);
-    let mut sources = BODY_RECORD_STREAMS
+    BODY_RECORD_STREAMS
         .iter()
         .filter_map(|stream| {
             let label = labels.get(*stream)?;
             let readable = readable_windows(journal_root, snapshot, day, stream).ok()?;
             (!readable.is_empty()).then(|| label.clone())
         })
-        .collect::<Vec<_>>();
-    if holds_readable_workout(journal_root, snapshot, day) {
-        sources.push(
-            labels
-                .get(STRAVA_STREAM)
-                .cloned()
-                .unwrap_or_else(|| source_label(STRAVA_SOURCE)),
-        );
-    }
-    sources
-}
-
-/// Whether a live, in-scope, unreleased Strava tile on `day` holds a workout
-/// and nothing else of note: one a list leaves out.
-fn holds_readable_workout(
-    journal_root: &Path,
-    snapshot: &ConnectionReadSnapshot,
-    day: &str,
-) -> bool {
-    let transcript_boundary = boundary(snapshot, Some(AdmittedCategory::Transcripts), None);
-    let Ok(segments) = iter_segments_skipping_unreadable_streams(journal_root, PathOrDay::Day(day))
-    else {
-        return false;
-    };
-    segments.iter().any(|segment| {
-        segment.record_identity().is_ok_and(|identity| {
-            identity.stream == STRAVA_STREAM
-                && is_left_out_workout(segment)
-                && live_allows(
-                    journal_root,
-                    &transcript_boundary,
-                    &segment_assignment_probe_path(day, STRAVA_STREAM, identity.name),
-                    Some(STRAVA_STREAM),
-                )
-                && released(journal_root, day, STRAVA_STREAM, identity.name)
-        })
-    })
+        .collect()
 }
 
 /// A Strava tile a transcript list leaves out: a live workout, body data alone.

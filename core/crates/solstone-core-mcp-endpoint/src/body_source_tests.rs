@@ -493,32 +493,44 @@ fn strava_tile(root: &Path, key: &str, extra: &[&str]) -> std::path::PathBuf {
     dir
 }
 
-/// A Strava workout is body data a list leaves out, and the list names Strava
-/// for it as it names a body source. A day with no Strava tile names nothing.
+/// A Strava workout is body data a list leaves out. No source label lists it, so
+/// the list never names Strava in other_sources: it counts the workouts it left
+/// out and says where they are found. A list with no Strava tile adds nothing.
 #[test]
-fn an_unfiltered_list_leaves_strava_workouts_out_and_names_strava() {
+fn an_unfiltered_list_leaves_strava_workouts_out_and_counts_them() {
     let journal = journal();
     let root = journal.path();
     grant(root, ReadScope::WholeJournal);
     let tile = strava_tile(root, "070000_300", &[]);
     let list = call(root, "list_transcripts", json!({"day": DAY}));
     assert!(list["transcripts"].as_array().unwrap().is_empty(), "{list}");
-    assert_eq!(list["other_sources"], json!(["Strava · imported"]));
-    let note = empty_note(root, json!({}));
-    assert!(note.contains("List a day"), "{note}");
-    // Beside a body window, both are named.
+    assert!(list.get("other_sources").is_none(), "{list}");
+    assert_eq!(list["omitted_workouts"], json!(1), "{list}");
+    let note = list["workouts_note"].as_str().unwrap();
+    assert!(
+        note.contains("search") && note.contains("list_activities"),
+        "{note}"
+    );
+    let empty = empty_note(root, json!({"day": DAY}));
+    assert!(empty.contains("omitted_workouts"), "{empty}");
+    let any_day = call(root, "list_transcripts", json!({}));
+    assert_eq!(any_day["omitted_workouts"], json!(1), "{any_day}");
+    // Beside a body window, only the window's source is named.
     window(root, DAY, "063000_300", &many_readings("a", 6, 31, 3), None);
     let list = call(root, "list_transcripts", json!({"day": DAY}));
-    assert_eq!(list["other_sources"], json!([LABEL, "Strava · imported"]));
+    assert_eq!(list["other_sources"], json!([LABEL]));
+    assert_eq!(list["omitted_workouts"], json!(1), "{list}");
 
-    // With no Strava tile left, Strava isn't named.
+    // With no Strava tile left, nothing is added.
     fs::remove_dir_all(&tile).unwrap();
     let list = call(root, "list_transcripts", json!({"day": DAY}));
-    assert_eq!(list["other_sources"], json!([LABEL]));
+    assert!(list.get("omitted_workouts").is_none(), "{list}");
+    assert!(list.get("workouts_note").is_none(), "{list}");
     let other = journal_without_body();
     grant(other.path(), ReadScope::WholeJournal);
     let list = call(other.path(), "list_transcripts", json!({"day": DAY}));
     assert!(list.get("other_sources").is_none(), "{list}");
+    assert!(list.get("omitted_workouts").is_none(), "{list}");
     let note = empty_note(other.path(), json!({}));
     assert!(!note.contains("List a day"), "{note}");
 
@@ -526,7 +538,7 @@ fn an_unfiltered_list_leaves_strava_workouts_out_and_names_strava() {
     strava_tile(root, "080000_300", &["notes.md"]);
     let list = call(root, "list_transcripts", json!({"day": DAY}));
     assert_eq!(list["transcripts"].as_array().unwrap().len(), 1, "{list}");
-    assert_eq!(list["other_sources"], json!([LABEL]));
+    assert!(list.get("omitted_workouts").is_none(), "{list}");
 }
 
 fn journal_without_body() -> tempfile::TempDir {

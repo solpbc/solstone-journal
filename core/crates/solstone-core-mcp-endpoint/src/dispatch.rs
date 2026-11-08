@@ -81,6 +81,7 @@ const LIST_TRANSCRIPTS_EMPTY: &str = "No transcript segments. This connection ca
 match. This is a complete answer, not an error.";
 const LIST_TRANSCRIPTS_BODY_ELSEWHERE: &str = "No transcript segments, but this journal holds body data. List a day to see which body sources it holds in other_sources.";
 const LIST_TRANSCRIPTS_OTHER_SOURCES: &str = "No transcript segments, but this day holds body data. Pass a label from other_sources as source to list it.";
+const LIST_TRANSCRIPTS_WORKOUTS: &str = "This list leaves out Strava workouts, counted in omitted_workouts. No source label lists them: search finds a workout by its words, and list_activities lists the activity recorded for it.";
 const GET_TRANSCRIPT_EMPTY: &str = "This segment has no transcript text.";
 
 /// A prepared response together with the owner coordinates it was built from.
@@ -2689,6 +2690,7 @@ fn list_transcripts(
     let mut last_examined: Option<(String, String, String)> = None;
     let mut has_more = false;
     let mut omitted_body = false;
+    let mut omitted_workouts = 0_u64;
 
     'outer: for day in &days {
         let day_segments =
@@ -2710,13 +2712,31 @@ fn list_transcripts(
             // Body windows are reached by naming their source: hundreds a day would
             // push what the owner said off the page.
             if solstone_core_segment::is_body_only_segment(&segment) {
-                let holds_rows = segment
-                    .path()
-                    .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
-                    .is_file()
-                    && !crate::body_source::holds_only_moved(segment.path());
+                // A Strava workout is body data too, but no source lists it:
+                // the list counts it and says where it is found.
+                if crate::body_source::is_left_out_workout(&segment)
+                    && live_allows(
+                        journal_root,
+                        &boundary,
+                        &segment_assignment_probe_path(day, &stream, &name),
+                        Some(&stream),
+                    )
+                    && crate::source_release::check_segment_transcript_release(
+                        journal_root,
+                        day,
+                        &stream,
+                        &name,
+                    )
+                {
+                    omitted_workouts += 1;
+                    continue;
+                }
                 omitted_body = omitted_body
-                    || (holds_rows || crate::body_source::is_left_out_workout(&segment))
+                    || segment
+                        .path()
+                        .join(solstone_core_format::content::body_records::BODY_RECORDS_FILE)
+                        .is_file()
+                        && !crate::body_source::holds_only_moved(segment.path())
                         && live_allows(
                             journal_root,
                             &boundary,
@@ -2893,9 +2913,15 @@ fn list_transcripts(
     let other_sources = request.day.as_deref().map_or_else(Vec::new, |day| {
         crate::body_source::other_sources(journal_root, snapshot, day)
     });
+    if omitted_workouts > 0 {
+        response_val["omitted_workouts"] = json!(omitted_workouts);
+        response_val["workouts_note"] = json!(LIST_TRANSCRIPTS_WORKOUTS);
+    }
     let empty_note = if other_sources.is_empty() {
         if omitted_body && request.day.is_none() {
             LIST_TRANSCRIPTS_BODY_ELSEWHERE
+        } else if omitted_workouts > 0 {
+            LIST_TRANSCRIPTS_WORKOUTS
         } else {
             LIST_TRANSCRIPTS_EMPTY
         }
