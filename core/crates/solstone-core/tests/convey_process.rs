@@ -232,6 +232,29 @@ fn wait_until_status(port: u16, child: &mut ChildGuard, path: &str, expected: u1
     }
 }
 
+/// The bytes with every `/<16 hex digits>` path segment removed: a hashed
+/// asset address such as `/static/0123456789abcdef/app.js` reads as
+/// `/static/app.js`, its stable path.
+fn without_tree_hashes(bytes: &[u8]) -> Vec<u8> {
+    const HASH_LEN: usize = 16;
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let hashed_segment = bytes[index] == b'/'
+            && bytes.get(index + 1 + HASH_LEN) == Some(&b'/')
+            && bytes[index + 1..index + 1 + HASH_LEN]
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte));
+        if hashed_segment {
+            index += 1 + HASH_LEN;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    out
+}
+
 #[test]
 fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
     let journal = TempJournal::established("process");
@@ -242,8 +265,10 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
     let speakers = request(SocketAddr::from(([127, 0, 0, 1], port)), "/app/speakers/")
         .expect("speakers shell responds");
     assert_eq!(speakers.status, 200);
+    // The served shell names each asset by its build's hashed path; apart from
+    // those segments it is the shell page, byte for byte.
     assert_eq!(
-        speakers.body,
+        without_tree_hashes(&speakers.body),
         include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html")
     );
 
