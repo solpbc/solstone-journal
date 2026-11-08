@@ -135,7 +135,16 @@ pub fn update_strava_names(
     journal: &Path,
     change: impl FnOnce(&mut StravaNames),
 ) -> Result<StravaNames, StravaNamesError> {
-    update_strava_names_inner(journal, change, || {})
+    update_strava_names_within(journal, DEFAULT_LOCK_TIMEOUT, change)
+}
+
+/// [`update_strava_names`], waiting at most `wait` for the Strava lock.
+pub fn update_strava_names_within(
+    journal: &Path,
+    wait: Duration,
+    change: impl FnOnce(&mut StravaNames),
+) -> Result<StravaNames, StravaNamesError> {
+    update_strava_names_inner(journal, wait, change, || {})
 }
 
 #[cfg(test)]
@@ -144,15 +153,16 @@ pub(crate) fn update_strava_names_with_hook(
     change: impl FnOnce(&mut StravaNames),
     before_write: impl FnOnce(),
 ) -> Result<StravaNames, StravaNamesError> {
-    update_strava_names_inner(journal, change, before_write)
+    update_strava_names_inner(journal, DEFAULT_LOCK_TIMEOUT, change, before_write)
 }
 
 fn update_strava_names_inner(
     journal: &Path,
+    wait: Duration,
     change: impl FnOnce(&mut StravaNames),
     before_write: impl FnOnce(),
 ) -> Result<StravaNames, StravaNamesError> {
-    let lock = hold_strava_lock(journal)?;
+    let lock = hold_strava_lock_within(journal, wait)?;
     let mut lines = read_strava_names(journal)?;
     let before = lines.clone();
     change(&mut lines);
@@ -183,10 +193,14 @@ pub fn remove_strava_names(
 
 /// Take the Strava lock, as Strava's import and its delete do.
 pub fn hold_strava_lock(journal: &Path) -> Result<FileLock, StravaNamesError> {
+    hold_strava_lock_within(journal, DEFAULT_LOCK_TIMEOUT)
+}
+
+fn hold_strava_lock_within(journal: &Path, wait: Duration) -> Result<FileLock, StravaNamesError> {
     hold_lock(
         journal.join(STRAVA_LOCK),
         LockOptions {
-            timeout: DEFAULT_LOCK_TIMEOUT,
+            timeout: wait,
             mode: Some(FILE_MODE),
             ..LockOptions::default()
         },
@@ -290,6 +304,21 @@ mod tests {
         assert_eq!(held, Some(true));
         assert!(!solstone_core_journal_io::lock_is_held(&lock).unwrap());
         assert_eq!(read_strava_names(journal.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_write_waits_no_longer_than_it_is_given_for_the_lock() {
+        let journal = journal_with(&[]);
+        let held = hold_strava_lock(journal.path()).unwrap();
+        let refused = update_strava_names_within(journal.path(), Duration::ZERO, |store| {
+            store.insert("11".to_owned(), line("11", "20261001"));
+        });
+        assert!(
+            matches!(refused, Err(StravaNamesError::Lock(_))),
+            "{refused:?}"
+        );
+        drop(held);
+        assert!(read_strava_names(journal.path()).unwrap().is_empty());
     }
 
     #[test]
