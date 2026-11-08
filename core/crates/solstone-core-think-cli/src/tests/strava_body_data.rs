@@ -139,6 +139,16 @@ fn a_queued_sense_run_on_a_strava_tile_writes_nothing_and_ends_its_pending_routi
     let unsensed = strava_tile(&context.journal, "080000_300", None);
     hold_routing(&context, STRAVA, TILE);
     assert_eq!(pending_routing(&context), vec![format!("{STRAVA}/{TILE}")]);
+    // Its earlier reading covers its input, so only the pending routing kept it
+    // from reading as thought, and from its outputs being published.
+    write_health_event(
+        &context.journal,
+        &context.day,
+        &serde_json::json!({"event":"sense.complete","mode":"segment","day":context.day,
+            "stream":STRAVA,"segment":TILE,"density":"idle",
+            "ts":chrono::Utc::now().timestamp_millis() + 3_600_000})
+        .to_string(),
+    );
     let before = (tree(&sensed), tree(&unsensed));
     for (key, live) in [(TILE, false), (TILE, true), ("080000_300", false)] {
         let mut log = test_log(&context, "segment");
@@ -588,6 +598,11 @@ fn a_failed_send_on_a_strava_reading_seeds_no_work() {
         );
     }
     crate::activity_work::seed_activity_retries(&context.journal, DAY, NOW).unwrap();
+    assert_eq!(
+        work_files(&context.journal),
+        1,
+        "no work is recorded for it"
+    );
     let due = crate::activity_work::due_activity_retries(&context.journal, NOW).unwrap();
     assert_eq!(
         due.iter()
