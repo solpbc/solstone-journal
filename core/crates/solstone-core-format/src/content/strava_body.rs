@@ -260,17 +260,18 @@ mod tests {
     /// A first piece with `name` and `type`, and the owner's other columns
     /// under one language's headers.
     fn named(name: &str, record_type: &str, german: bool, extra: &[(usize, &str)]) -> BodyRow {
+        // The export's own headers, as Strava writes them in each language.
         let headers = if german {
             [
-                DESCRIPTION_HEADERS[1],
-                PRIVATE_NOTE_HEADERS[1],
-                GEAR_HEADERS[1],
+                "Aktivitätsbeschreibung",
+                "Hinweis zur Privatsphäre für Aktivitäten",
+                "Aktivitätsausrüstung",
             ]
         } else {
             [
-                DESCRIPTION_HEADERS[0],
-                PRIVATE_NOTE_HEADERS[0],
-                GEAR_HEADERS[0],
+                "Activity Description",
+                "Activity Private Note",
+                "Activity Gear",
             ]
         };
         let fields = extra
