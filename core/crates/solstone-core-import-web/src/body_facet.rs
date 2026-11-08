@@ -58,7 +58,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("answer_failed", "your answer couldn't be saved. try again."),
     (
         "offer_changed",
-        "this question changed since it was shown, so your answer wasn't saved. here it is as it is now.",
+        "the facet question changed after you saw it, so your answer wasn't saved. the card now shows where it stands.",
     ),
 ];
 

@@ -104,7 +104,7 @@ impl StravaRunSummary {
             (None, _) => {
                 let _ = writeln!(
                     text,
-                    "filed under no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted: {NO_FACET_MEANS}\n"
+                    "filed under no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted or gone: {NO_FACET_MEANS}\n"
                 );
             }
         }
@@ -177,7 +177,7 @@ impl StravaRunSummary {
         if names.store_unavailable {
             let _ = writeln!(
                 text,
-                "your journal couldn't open what it keeps from reading your workouts, so the people and gear in them weren't all read this time. importing again tries once more.\n"
+                "your journal couldn't open or save what it noted from your workouts, so not every person or piece of gear in them was read or added this time. importing again tries once more.\n"
             );
         }
         let read = names.calls - names.failed;
@@ -229,7 +229,7 @@ impl StravaRunSummary {
         if names.elsewhere > 0 {
             let _ = writeln!(
                 text,
-                "{} being read by another import that's running now.\n",
+                "{} being read by another import that's running now. importing again reads any it doesn't get to.\n",
                 plural(
                     names.elsewhere,
                     "workout's words are",
@@ -240,7 +240,7 @@ impl StravaRunSummary {
         if names.set_aside > 0 {
             let _ = writeln!(
                 text,
-                "{} read, because the facet {} filed under is muted or gone. they're read once that facet is back and you import again.\n",
+                "{} read, because {} filed under a facet that's muted or gone. they're read once that facet is on again, or an import files them under another.\n",
                 plural(
                     names.set_aside,
                     "workout's words weren't",
