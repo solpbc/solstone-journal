@@ -276,7 +276,7 @@ pub(crate) fn file_strava_workouts(
                 facet_file_text(facet).as_bytes(),
                 PRIVATE,
             )
-                .map_err(|error| error.to_string())?;
+            .map_err(|error| error.to_string())?;
             sync_folder(&dir)?;
             filing.refiled_tiles.push((day, segment));
         }
