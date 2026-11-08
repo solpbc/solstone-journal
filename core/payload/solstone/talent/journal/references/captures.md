@@ -198,7 +198,7 @@ Example transcript file:
 - `source` – audio source: "mic" or "sys" (optional)
 - `speaker` – speaker identifier, numeric or string (optional, from native speaker analysis)
 - `corrected` – legacy LLM-corrected version of text, still present in some existing journals
-- `description` – legacy tone or delivery description, e.g., "enthusiastic", "questioning", still present in some existing journals
+- `emotion` – legacy tone label, e.g., "excited", still present in some existing journals; never shown or returned
 
 ### Screen frame extracts
 

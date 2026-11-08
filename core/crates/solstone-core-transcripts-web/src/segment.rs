@@ -1112,21 +1112,7 @@ fn possible_name_marks(
     let Some((_, words)) = solstone_core_transcripts::statement_text(row) else {
         return Vec::new();
     };
-    // The audio renderer follows a statement's words with its emotion.
-    let emotion = match row.get("emotion") {
-        None | Some(Value::Null) | Some(Value::Bool(false)) => String::new(),
-        Some(Value::String(emotion))
-            if emotion.is_empty() || emotion.eq_ignore_ascii_case("neutral") =>
-        {
-            String::new()
-        }
-        Some(Value::String(emotion)) => format!(" *({emotion})*"),
-        Some(_) => return Vec::new(),
-    };
-    let Some(start) = markdown
-        .strip_suffix(&format!("{words}{emotion}"))
-        .map(str::len)
-    else {
+    let Some(start) = markdown.strip_suffix(words).map(str::len) else {
         return Vec::new();
     };
     labels.sort_by_key(|entry| entry.end_byte);
@@ -1306,8 +1292,9 @@ mod tests {
         };
         let chunks = audio();
         // The words are what was said; the name sits after "Fryer", counted in
-        // UTF-16 units of the shown text.
-        assert_eq!(chunks[0]["markdown"], "(mic) café with Fryer *(happy)*");
+        // UTF-16 units of the shown text. An older version's mood label on the
+        // line is never shown.
+        assert_eq!(chunks[0]["markdown"], "(mic) café with Fryer");
         let at = "(mic) café with Fryer".encode_utf16().count();
         assert_eq!(
             chunks[0]["possible_names"],

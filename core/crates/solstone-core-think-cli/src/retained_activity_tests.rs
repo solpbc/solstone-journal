@@ -131,7 +131,7 @@ impl CortexBoundary for HistoryCortex {
                     "entities":[],"facets":[{"facet":"home","activity":"A synthetic garden note.","level":"high"}],
                     "speculative_facet":null,"meeting_detected":false,"speakers":[],
                     "recommend":{"screen_record":false,"speaker_attribution":false},
-                    "emotional_register":"neutral","topics":["garden"],"quotes":[]}),
+                    "topics":["garden"],"quotes":[]}),
                 "participation" => {
                     serde_json::json!({"participation":[],"participation_confidence":null})
                 }

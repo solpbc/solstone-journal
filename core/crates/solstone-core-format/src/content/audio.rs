@@ -137,7 +137,7 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
             .or_else(|| truthy_display(record, "text"))
             .unwrap_or_default();
         let prefix = parts.join(" ").trim().to_string();
-        let mut markdown = if !prefix.is_empty() {
+        let markdown = if !prefix.is_empty() {
             if text.is_empty() {
                 prefix
             } else {
@@ -148,10 +148,6 @@ pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
         } else {
             continue;
         };
-        let emotion = truthy_display(record, "emotion").unwrap_or_default();
-        if !emotion.is_empty() && !emotion.eq_ignore_ascii_case("neutral") {
-            markdown.push_str(&format!(" *({emotion})*"));
-        }
         chunks.push(recorded_chunk(markdown, timestamp, record));
     }
 

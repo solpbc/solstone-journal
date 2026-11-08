@@ -2904,10 +2904,6 @@ pub(crate) fn empty_input_sense_output() -> Map<String, Value> {
             "recommend".to_owned(),
             serde_json::json!({"screen_record":false,"speaker_attribution":false}),
         ),
-        (
-            "emotional_register".to_owned(),
-            Value::String("neutral".to_owned()),
-        ),
     ])
 }
 

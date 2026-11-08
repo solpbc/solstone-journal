@@ -15,17 +15,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- moving between pages of your journal's dashboard is faster, most of all on a slow connection, because your browser now keeps the dashboard's code and styles instead of downloading them again for every page. nothing from your journal itself is kept this way.
+- your journal no longer guesses your mood. it no longer labels each part of your day with a mood like "tense" or "celebratory". labels an older version added, to a summary or to a line of a transcript, are no longer shown to you or to agents you've connected. they stay in your journal, unchanged.
 
 ### Fixed
 
 - fixed an intermittent failure that could leave new recordings unprocessed after your journal started.
 - someone or something you removed from a facet no longer comes back on its own. before, if the name kept turning up in your journal, it could add them back after a few days and replace the description you'd kept for them.
-- if your name was set but your journal hadn't added you to its people, the speakers page showed an error where your voice belongs until you saved your profile again. your journal now adds you when it starts.
-- home no longer says yesterday's write-up is coming, late or missing on a day when nothing you did went into your journal.
-- the people and things a moment is about no longer include someone or something from earlier in your journal that the moment itself never names, such as a film you looked up weeks ago beside today's terminal work. the day's note about someone or something is also less likely to repeat what it did on an earlier day. thanks @dvanduzer for the report (#404).
-- `solstone journal mcp token create --help`, `mcp permission set --help` and the other `solstone journal mcp` subcommands now show their own usage and options, instead of the `solstone journal mcp` usage. thanks @dvanduzer for the report (#413).
-- `solstone call journal facet create --help`, `rename` and `delete` now say what `--consent` does: it notes in the facet's log that you approved the change, and on delete it's accepted but changes nothing, since `--yes` is what confirms a delete (#413).
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
@@ -52,8 +47,23 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a first restore on a phone or tablet now waits for work in your journal to finish before copying. if restore is interrupted, you can retry the same backup.
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
-- if your journal was stopped just as it was starting a task, for example by a restart or a shutdown, it could refuse to start again every time after that, saying "this start could not continue." your journal now sets aside what that stop left behind and starts, and your memories are untouched.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.72] - 2026-11-08
+
+### Changed
+
+- moving between pages of your journal's dashboard is faster, most of all on a slow connection, because your browser now keeps the dashboard's code and styles instead of downloading them again for every page. nothing from your journal itself is kept this way.
+
+### Fixed
+
+- a damaged line in a day's activities no longer stops that day from opening, and hiding or editing an activity on that day no longer deletes the damaged line.
+- if your name was set but your journal hadn't added you to its people, the speakers page showed an error where your voice belongs until you saved your profile again. your journal now adds you when it starts.
+- if you haven't added your name yet, the speakers page now asks you to add it in settings, with a link, instead of showing errors that a reload couldn't fix.
+- home no longer says yesterday's write-up is coming, late or missing on a day when nothing you did went into your journal.
+- the people and things a moment is about no longer include someone or something from earlier in your journal that the moment itself never names, such as a film you looked up weeks ago beside today's terminal work. the day's note about someone or something is also less likely to repeat what it did on an earlier day. thanks @dvanduzer for the report (#404).
+- `solstone journal mcp token create --help`, `mcp permission set --help` and the other `solstone journal mcp` subcommands now show their own usage and options, instead of the `solstone journal mcp` usage. thanks @dvanduzer for the report (#413).
+- `solstone call journal facet create --help`, `rename` and `delete` now say what `--consent` does: it notes in the facet's log that you approved the change, and on delete it's accepted but changes nothing, since `--yes` is what confirms a delete (#413).
 
 ## [2.0.71] - 2026-11-07
 

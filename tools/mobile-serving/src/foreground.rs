@@ -3096,8 +3096,7 @@ mod tests {
                         "screen_record": false,
                         "speaker_attribution": false
                     },
-                    "emotional_register": "neutral",
-                    "topics": [],
+                                        "topics": [],
                     "quotes": []
                 })
                 .to_string()
@@ -4368,8 +4367,7 @@ mod tests {
                         "meeting_detected": false,
                         "speakers": [],
                         "recommend": {"screen_record": false, "speaker_attribution": false},
-                        "emotional_register": "neutral",
-                        "topics": [],
+                                                "topics": [],
                         "quotes": []
                     })
                     .to_string(),

@@ -786,7 +786,7 @@ async fn typed_owner_think_and_recurrence_reach_the_real_queue_and_preserve_choi
             id: None,
             text: json!({"density":"active","content_type":"writing","activity_summary":"typed owner fixture result",
                 "entities":[],"facets":[],"speculative_facet":null,"meeting_detected":false,"speakers":[],
-                "recommend":{"screen_record":false,"speaker_attribution":false},"emotional_register":"neutral","topics":[],"quotes":[]}).to_string(),
+                "recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}).to_string(),
             model: "fixture".into(),
             usage: json!({}),
             finish_reason: "stop".into(),

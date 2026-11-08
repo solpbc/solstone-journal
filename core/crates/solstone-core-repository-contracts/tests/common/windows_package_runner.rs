@@ -149,6 +149,8 @@ impl Fixture {
         fs::create_dir_all(&bin).unwrap();
         // A disposable Cargo proxy changes evidence after the actual Cargo
         // invocation, independently of its runner-array configuration rules.
+        // What a member's runner leaves behind when Cargo exits is its launch
+        // record; the result is written later, from that record.
         fs::write(bin.join("capture-control.rs"), r#"
 use std::{fs, process::Command};
 fn main() {
@@ -161,7 +163,7 @@ fn main() {
             if !entry.file_name().to_string_lossy().starts_with("journal-win-package-captures-") { continue; }
             for child in fs::read_dir(entry.path()).unwrap() {
                 let path = child.unwrap().path();
-                if path.to_string_lossy().ends_with(".result.json") && fs::read_to_string(&path).unwrap().contains("batch_pass_a-") {
+                if path.to_string_lossy().ends_with(".launch.json") && fs::read_to_string(&path).unwrap().contains("batch_pass_a-") {
                     if mode == "missing" { fs::remove_file(&path).unwrap(); }
                     if mode == "truncated" { fs::write(&path, b"{").unwrap(); }
                 }

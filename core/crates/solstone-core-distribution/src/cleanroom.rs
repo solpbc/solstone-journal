@@ -302,11 +302,11 @@ fn generation_completion(
 ) -> Result<(&'static str, &'static str), &'static str> {
     if prompt.contains("# Segment Sense")
         && prompt.contains("meeting_detected")
-        && prompt.contains("emotional_register")
+        && prompt.contains("speculative_facet")
     {
         return Ok((
             "sense",
-            r#"{"density":"idle","content_type":"idle","activity_summary":"Held a quiet synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Quiet interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"emotional_register":"neutral","topics":[],"quotes":[]}"#,
+            r#"{"density":"idle","content_type":"idle","activity_summary":"Held a quiet synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Quiet interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"topics":[],"quotes":[]}"#,
         ));
     }
     if prompt.contains("Maintenance Window Analysis")
@@ -576,11 +576,9 @@ mod tests {
             generation_completion("unknown", anchor),
             Err("unexpected-talent")
         );
-        let (sense_name, sense_text) = generation_completion(
-            "# Segment Sense meeting_detected emotional_register",
-            anchor,
-        )
-        .expect("sense response");
+        let (sense_name, sense_text) =
+            generation_completion("# Segment Sense meeting_detected speculative_facet", anchor)
+                .expect("sense response");
         assert_eq!(sense_name, "sense");
         assert!(sense_text.contains(r#""topics":[]"#));
         assert!(sense_text.contains(r#""quotes":[]"#));

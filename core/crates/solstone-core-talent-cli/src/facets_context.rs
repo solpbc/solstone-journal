@@ -618,7 +618,6 @@ mod tests {
             "meeting_detected": false,
             "speakers": [],
             "recommend": {"screen_record": false, "speaker_attribution": false},
-            "emotional_register": "neutral",
             "topics": ["quiet time"],
             "quotes": [{"speaker": "User", "text": "silence"}]
         });
