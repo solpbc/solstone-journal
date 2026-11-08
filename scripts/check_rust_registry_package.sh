@@ -10,6 +10,14 @@ manifest=${1:?manifest path is required}
 package=${CI_PACKAGE:?CI_PACKAGE is required}
 features=${CI_FEATURES:-}
 
+# Library tests spawn this fixture, but --lib --bins only builds its test
+# harness. Integration targets build the executable automatically; this
+# package-only selection must prepare it explicitly before running tests.
+if [ "$package" = solstone-core-system ]; then
+    cargo build --manifest-path "$manifest" --locked --offline -p "$package" \
+        --bin solstone-system-test-child --features "$features"
+fi
+
 run_cargo() {
     if [ -n "$features" ]; then
         cargo test --manifest-path "$manifest" --locked --offline "$@" --features "$features" -- --test-threads=1
