@@ -6866,6 +6866,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-sense",
  "solstone-core-spp-ratls",
+ "solstone-core-system",
  "solstone-core-talent-config",
  "tempfile",
 ]

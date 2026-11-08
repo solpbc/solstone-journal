@@ -2417,7 +2417,18 @@ button:focus:not(:focus-visible) {
 
       <form class="settings-form" onsubmit="return false;">
 
-      <div class="settings-field">
+      <div class="settings-field" id="transcribeProcessingField" hidden>
+        <label for="field-transcribe-processing">speech processing</label>
+        <select id="field-transcribe-processing" disabled aria-describedby="transcribeProcessingHelp">
+          <option value="default" disabled>journal default</option>
+          <option value="local">local model</option>
+          <option value="confidential">confidential processing</option>
+        </select>
+        <small id="transcribeProcessingHelp" aria-live="polite">local speech uses Parakeet.</small>
+        <p class="form-help">confidential processing needs <a href="/app/thinking/#confidential-setup">confidential setup</a>.</p>
+      </div>
+
+      <div class="settings-field" id="transcribeBackendField">
         <label for="field-transcribe-backend">backend</label>
         <select id="field-transcribe-backend">
           <!-- Options populated dynamically from /api/transcribe -->
@@ -3532,6 +3543,8 @@ async function loadConfig() {
     renderOwnerVoice();
     loadOwnerVoiceStatus();
   } catch (err) {
+    transcribeProcessing.known = false;
+    renderTranscribeProcessing();
     console.error('Error loading config:', err);
     notifyError( 'Load Failed', 'Error loading configuration');
   }
@@ -3565,6 +3578,8 @@ function populateFields(config) {
 
   // Transcribe - now with nested backend configs
   const transcribe = config.transcribe || {};
+  readTranscribeProcessing(config);
+  renderTranscribeProcessing();
   const backend = transcribe.backend || 'parakeet';
   setValue('field-transcribe-backend', backend);
   switchTranscribeBackend(backend, config);
@@ -4554,7 +4569,81 @@ let parakeetUsesCpp = false;
 let parakeetCppUnavailable = false;
 let parakeetCppBundled = false;
 let parakeetEmbedded = false;
+const transcribeProcessing = { known: false, busy: false, choice: 'default', localBackend: 'parakeet' };
 let storageLoadedOnce = false;
+
+function readTranscribeProcessing(config) {
+  const transcribe = config.transcribe || {};
+  const backend = transcribe.backend;
+  const audioEnabled = transcribe.confidential_audio === undefined || transcribe.confidential_audio === true;
+  if (['parakeet', 'parakeet-cpp'].includes(backend)) {
+    transcribeProcessing.localBackend = backend;
+    transcribeProcessing.choice = 'local';
+  } else if (backend !== undefined && backend !== 'confidential') {
+    transcribeProcessing.choice = '';
+  } else if (!audioEnabled) {
+    transcribeProcessing.choice = 'local';
+  } else {
+    transcribeProcessing.choice = backend === 'confidential' ? 'confidential' : 'default';
+  }
+  transcribeProcessing.known = true;
+}
+
+function renderTranscribeProcessing() {
+  document.getElementById('transcribeProcessingField').hidden = !parakeetEmbedded;
+  document.getElementById('transcribeBackendField').hidden = parakeetEmbedded;
+  const select = document.getElementById('field-transcribe-processing');
+  select.disabled = !parakeetEmbedded || !transcribeProcessing.known || transcribeProcessing.busy;
+  select.value = transcribeProcessing.known && !transcribeProcessing.busy ? transcribeProcessing.choice : '';
+  select.setAttribute('aria-busy', String(transcribeProcessing.busy));
+}
+
+async function saveTranscribeProcessing(value) {
+  if (!parakeetEmbedded || !transcribeProcessing.known || transcribeProcessing.busy
+      || !['local', 'confidential'].includes(value)) {
+    renderTranscribeProcessing();
+    return;
+  }
+  const select = document.getElementById('field-transcribe-processing');
+  const backend = value === 'confidential' ? 'confidential' : transcribeProcessing.localBackend;
+  transcribeProcessing.busy = true;
+  renderTranscribeProcessing();
+  try {
+    const response = await fetch('api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ section: 'transcribe', data: { backend, confidential_audio: value === 'confidential' } }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success || !result.config || typeof result.config !== 'object'
+        || result.config.transcribe?.backend !== backend
+        || result.config.transcribe?.confidential_audio !== (value === 'confidential')) {
+      throw new Error('speech processing was not confirmed');
+    }
+    configData = result.config;
+    readTranscribeProcessing(result.config);
+    showFieldStatus(select, 'saved');
+  } catch (err) {
+    // An interrupted response can follow a successful write. Read the stored choice.
+    try {
+      const stored = await window.apiJson('api/config');
+      configData = stored;
+      readTranscribeProcessing(stored);
+    } catch (readError) {
+      transcribeProcessing.known = false;
+    }
+    showFieldStatus(select, 'error', transcribeProcessing.known
+      ? "couldn't confirm the change. the stored choice is shown."
+      : "couldn't load the stored choice. reload settings to try again.");
+  } finally {
+    transcribeProcessing.busy = false;
+    renderTranscribeProcessing();
+  }
+}
+
+document.getElementById('field-transcribe-processing').addEventListener('change', (event) => {
+  void saveTranscribeProcessing(event.target.value);
+});
 
 function setLoadState(slotId, html = '') {
   const slot = document.getElementById(slotId);
@@ -4635,6 +4724,7 @@ async function loadTranscribeBackends() {
     parakeetCppUnavailable = Boolean(data.parakeet_cpp_unavailable);
     parakeetCppBundled = Boolean(data.parakeet_cpp_bundled);
     parakeetEmbedded = Boolean(data.parakeet_embedded);
+    renderTranscribeProcessing();
     transcribeResource = data.resource || null;
     setLoadState('transcriptionLoadState');
     const select = document.getElementById('field-transcribe-backend');

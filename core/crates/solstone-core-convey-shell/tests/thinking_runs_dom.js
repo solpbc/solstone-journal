@@ -285,6 +285,8 @@ async function main() {
     buildNotice,
     openConsentTab,
     enableConfidential,
+    setConfidentialAudio,
+    refreshProviders,
     stopConfidentialPoll,
     openLane,
     renderLaneSwitch,
@@ -3448,8 +3450,8 @@ async function main() {
       attestation_states: {off: '', inactive: 'SENTINEL_AVAILABLE', failed: 'SENTINEL_FAILED', not_on_platform: notOnPlatformLine},
       actions: {off: 'SENTINEL_TURN_ON', enabled: 'SENTINEL_TURN_OFF', recheck: 'SENTINEL_RECHECK'},
       lane_detail: {early_access: sentinelEarlyAccess},
-      setup: {trust_beats: {}},
-      audio: {},
+      setup: {trust_beats: {egress_audio_on: 'AUDIO_EGRESS_ON', egress_audio_off: 'AUDIO_EGRESS_OFF'}},
+      audio: {on: 'AUDIO_ON', off: 'AUDIO_OFF'},
       operation_states: {
         subscribing: sentinelSubscribing,
         journal_limit: sentinelJournalLimit,
@@ -3470,6 +3472,9 @@ async function main() {
     'confidentialDisable',
     'confidentialRecheck',
     'confidentialAudioRow',
+    'confidentialAudioToggle',
+    'confidentialAudioDescription',
+    'confidentialTrustEgress',
     'confidentialTrustEarlyAccess',
     'confidentialLaneOperation',
     'confidentialLaneOperationLink',
@@ -3488,6 +3493,129 @@ async function main() {
     provider_status: {local: {generate_ready: false, issues: []}},
   });
   const notOnPlatform = {state: 'not_on_platform', reason: 'nvattest_platform_unsupported', observed_at: null, expires_at: null};
+  {
+    const previousProviders = thinking.state.providers;
+    const audioProviders = (backend, enabled, mobile = true) => {
+      const providers = confidentialProviders(true, {state: 'active'});
+      providers.active_lane.confidential_audio = enabled;
+      if (mobile) providers.active_lane.speech_backend = backend;
+      return providers;
+    };
+    for (const backend of ['parakeet', 'parakeet-cpp', 'confidential', null]) {
+      for (const enabled of [true, false]) {
+        thinking.state.providers = audioProviders(backend, false);
+        const nextBackend = enabled ? 'confidential'
+          : (['parakeet', 'parakeet-cpp'].includes(backend) ? backend : 'parakeet');
+        settingsResponses.push((url, options) => {
+          assert.strictEqual(url, '/app/settings/api/config');
+          assert.deepStrictEqual(JSON.parse(options.body), {
+            section: 'transcribe', data: {confidential_audio: enabled, backend: nextBackend},
+          });
+          return Promise.resolve({success: true});
+        });
+        providerResponses.push(() => Promise.resolve(audioProviders(nextBackend, enabled)));
+        await thinking.setConfidentialAudio(enabled);
+        assert.strictEqual(nodes.get('confidentialAudioToggle').checked, enabled);
+        assert.strictEqual(nodes.get('confidentialAudioDescription').textContent, enabled ? 'AUDIO_ON' : 'AUDIO_OFF');
+        assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, enabled ? 'AUDIO_EGRESS_ON' : 'AUDIO_EGRESS_OFF');
+      }
+    }
+    for (const enabled of [true, false]) {
+      thinking.state.providers = audioProviders(null, !enabled, false);
+      settingsResponses.push((_url, options) => {
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          section: 'transcribe', data: {confidential_audio: enabled},
+        });
+        return Promise.resolve({success: true});
+      });
+      providerResponses.push(() => Promise.resolve(audioProviders(null, enabled, false)));
+      await thinking.setConfidentialAudio(enabled);
+      assert.strictEqual(nodes.get('confidentialAudioToggle').checked, enabled);
+    }
+    // The server can store the choice before an interrupted answer reaches us.
+    thinking.state.providers = audioProviders('parakeet', false);
+    settingsResponses.push(() => Promise.reject(new Error('interrupted answer')));
+    providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+    await thinking.setConfidentialAudio(true);
+    assert.strictEqual(thinking.state.providers.active_lane.speech_backend, 'confidential');
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, 'AUDIO_EGRESS_ON');
+    for (const writeFailed of [true, false]) {
+      thinking.state.providers = audioProviders('parakeet', false);
+      settingsResponses.push(() => writeFailed
+        ? Promise.reject(new Error('interrupted answer')) : Promise.resolve({success: true}));
+      providerResponses.push(() => Promise.reject(new Error('read unavailable')));
+      await thinking.setConfidentialAudio(true);
+      assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true, 'an unreadable stored choice is hidden');
+      assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, true);
+      assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '', 'unknown audio cannot make an egress claim');
+      providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+      await thinking.refreshProviders();
+      assert.strictEqual(nodes.get('confidentialAudioRow').hidden, false);
+      assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, false);
+      assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+      assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, 'AUDIO_EGRESS_ON');
+    }
+    thinking.state.providers = audioProviders('parakeet-cpp', false);
+    const pendingAudioWrite = deferred();
+    const audioWritesBefore = apiCalls.filter((call) => call.url === '/app/settings/api/config').length;
+    settingsResponses.push(() => pendingAudioWrite.promise);
+    providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+    const savingAudio = thinking.setConfidentialAudio(true);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, true);
+    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '');
+    await thinking.setConfidentialAudio(false);
+    assert.strictEqual(apiCalls.filter((call) => call.url === '/app/settings/api/config').length, audioWritesBefore + 1);
+    pendingAudioWrite.resolve({success: true});
+    await savingAudio;
+    assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    // A read begun before a mutation cannot restore its old egress claim.
+    thinking.state.providers = audioProviders('parakeet', false);
+    const beforeAudioRead = deferred();
+    providerResponses.push(() => beforeAudioRead.promise);
+    const readingBeforeAudio = thinking.refreshProviders();
+    settingsResponses.push(() => Promise.reject(new Error('interrupted answer')));
+    providerResponses.push(() => Promise.reject(new Error('read unavailable')));
+    await thinking.setConfidentialAudio(true);
+    beforeAudioRead.resolve(audioProviders('parakeet', false));
+    assert.strictEqual(await readingBeforeAudio, false);
+    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '');
+    providerResponses.push(() => Promise.resolve(audioProviders('parakeet', false)));
+    await thinking.refreshProviders();
+
+    // An unrelated read begun during the write cannot overwrite confirmation.
+    const delayedAudioWrite = deferred();
+    settingsResponses.push(() => delayedAudioWrite.promise);
+    const confirmingAudio = thinking.setConfidentialAudio(true);
+    const duringAudioRead = deferred();
+    providerResponses.push(() => duringAudioRead.promise);
+    const readingDuringAudio = thinking.refreshProviders();
+    providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+    delayedAudioWrite.resolve({success: true});
+    await confirmingAudio;
+    duringAudioRead.resolve(audioProviders('parakeet', false));
+    assert.strictEqual(await readingDuringAudio, false);
+    assert.strictEqual(thinking.state.providers.active_lane.speech_backend, 'confidential');
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, 'AUDIO_EGRESS_ON');
+
+    // Among eligible reads, the latest start owns the resulting projection.
+    const olderAudioRead = deferred();
+    const newerAudioRead = deferred();
+    providerResponses.push(() => olderAudioRead.promise);
+    const readingOlderAudio = thinking.refreshProviders();
+    providerResponses.push(() => newerAudioRead.promise);
+    const readingNewerAudio = thinking.refreshProviders();
+    newerAudioRead.resolve(audioProviders('confidential', true));
+    assert.strictEqual(await readingNewerAudio, true);
+    olderAudioRead.resolve(audioProviders('parakeet', false));
+    assert.strictEqual(await readingOlderAudio, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    thinking.state.providers = previousProviders;
+  }
   for (const configured of [false, true]) {
     const who = configured ? 'a lane turned on before' : 'a journal that never turned it on';
     thinking.state.providers = confidentialProviders(configured, notOnPlatform);
