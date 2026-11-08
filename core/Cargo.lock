@@ -5007,6 +5007,7 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-indexer-todo",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "tempfile",

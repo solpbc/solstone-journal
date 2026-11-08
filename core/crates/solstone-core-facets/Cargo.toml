@@ -32,6 +32,7 @@ solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-entity = { workspace = true, features = ["test-hooks"] }
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-indexer-todo = { workspace = true }
+solstone-core-journal-config-write.workspace = true
 tempfile = "3"
 
 [lints]

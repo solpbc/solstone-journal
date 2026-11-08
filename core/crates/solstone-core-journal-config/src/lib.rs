@@ -7,6 +7,7 @@
 /// accounting. Conventional ambient provider keys are never selectors.
 pub const GENERATE_API_KEY_OVERRIDE_ENV: &str = "SOLSTONE_GENERATE_API_KEY_OVERRIDE";
 
+mod body_facet;
 mod capture_zone;
 mod defaults;
 mod direct_port;
@@ -23,6 +24,10 @@ mod zone;
 #[cfg(test)]
 mod test_support;
 
+pub use body_facet::{
+    BODY_FACET_KEY, BodyFacetChoice, BodyFacetOffer, FALLBACK_BODY_FACET, IMPORTS_SECTION,
+    PREFERRED_BODY_FACET, StoredBodyFacet, body_facet_value, is_body_facet_name, parse_body_facet,
+};
 pub use capture_zone::{CaptureZone, capture_zone_view};
 pub use defaults::{materialized_defaults, plain_defaults};
 pub use direct_port::{

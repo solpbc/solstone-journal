@@ -8,6 +8,7 @@
 mod action_log;
 mod activity_calendar;
 mod activity_placement;
+mod body_facet;
 pub mod entity_doctor;
 mod speculative_facets;
 mod store;
@@ -20,6 +21,9 @@ pub use action_log::{
 pub use activity_calendar::{InvitedPerson, ScheduledEvent, calendar_beside, calendar_on_day};
 pub use activity_placement::{
     ActivityCourse, PlacedRecord, ResolvedSegment, activity_span, place_activity_records,
+};
+pub use body_facet::{
+    BodyFacetOfferRead, BodyFacetReadError, body_facet_offer, default_for_unattended,
 };
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};
@@ -112,6 +116,8 @@ pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
 };
 
+#[cfg(test)]
+mod body_facet_tests;
 #[cfg(test)]
 mod bulk_hide_tests;
 #[cfg(all(test, feature = "full-tests"))]
