@@ -383,7 +383,7 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
                     )
                 })
                 // Nor is thinking's reading of a Strava workout, which is body data.
-                .filter(|row| row.get("stream").and_then(Value::as_str) != Some(STRAVA_STREAM))
+                .filter(|row| !row.as_object().is_some_and(content::is_strava_reading))
                 .map(|row| row.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");

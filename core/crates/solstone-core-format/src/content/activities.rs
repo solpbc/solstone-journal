@@ -25,6 +25,13 @@ pub fn is_body_record(record: &JsonObject) -> bool {
     record.get("source").and_then(Value::as_str) == Some(BODY_RECORD_SOURCE)
 }
 
+/// Thinking's reading of a Strava workout: an activity record naming Strava's
+/// stream. A workout is body data, so no daily unit counts the record and no
+/// talent reads it. The owner's own readers and search still show it.
+pub fn is_strava_reading(record: &JsonObject) -> bool {
+    record.get("stream").and_then(Value::as_str) == Some(super::strava_body::STRAVA_STREAM)
+}
+
 pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunks {
     let mut chunks = Vec::new();
     for record in records
