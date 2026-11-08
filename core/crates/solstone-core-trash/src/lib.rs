@@ -173,10 +173,21 @@ pub trait Kind {
     /// Hold the thing's places in the journal for the length of a move.
     fn hold<'a>(&'a self, journal: &Path, item: &Item) -> Result<Box<dyn Hold + 'a>, String>;
 
+    /// Whether `path` holds the thing itself, rather than nothing or only the
+    /// marker its detach left there. Asked under the hold.
+    fn present(&self, journal: &Path, path: &str) -> bool;
+
     /// After the files moved, point the journal's references at what is now
     /// true. `files` names every journal-relative file that moved. Runs again
-    /// when a step is resumed, so it must be safe to repeat.
-    fn references(&self, journal: &Path, item: &Item, change: Change, files: &[String]);
+    /// when a step is resumed, so it must be safe to repeat; an item moves on
+    /// only once this has succeeded, so a failure is retried by the sweep.
+    fn references(
+        &self,
+        journal: &Path,
+        item: &Item,
+        change: Change,
+        files: &[String],
+    ) -> Result<(), String>;
 }
 
 /// Why a trash step did not happen.
@@ -194,6 +205,10 @@ pub enum TrashError {
     /// No kind handles this item.
     #[error("this build can't recover that")]
     UnknownKind,
+    /// It left the journal for the trash, and a step after the move failed;
+    /// the trash finishes it on its next sweep.
+    #[error("it's in the trash, which will finish putting it away")]
+    Unfinished(String),
     /// The kind's hold refused, in words the owner can read.
     #[error("{0}")]
     Held(String),
@@ -241,7 +256,7 @@ pub fn detach(
     hold.check().map_err(TrashError::Held)?;
     let _lock = lock(journal)?;
     for path in &item.paths {
-        if !path_lexists(&journal_entry(journal, path)?)? {
+        if !kind.present(journal, path) {
             return Err(TrashError::Missing(describe(&item.unit).to_owned()));
         }
     }
@@ -253,9 +268,48 @@ pub fn detach(
     ensure_trash(journal)?;
     let dir = trash_root(journal).join(&item.id);
     std::fs::create_dir(&dir).map_err(|error| TrashError::Io(error.to_string()))?;
-    publish_new(journal, &item)?;
-    finish_detach(journal, kind, &mut item, hold.as_ref())?;
-    Ok(item)
+    if let Err(error) = publish_new(journal, &item) {
+        abandon(journal, &item);
+        return Err(error);
+    }
+    match finish_detach(journal, kind, &mut item, hold.as_ref()) {
+        Ok(()) => Ok(item),
+        // Nothing has moved: the recording is where it was, so leave no item
+        // behind for a sweep to finish later.
+        Err(error) if !any_moved(journal, &item) => {
+            abandon(journal, &item);
+            Err(error)
+        }
+        // It has left the journal; the sweep finishes what remains.
+        Err(error) => {
+            log::warn!("trash item {}: moved, finishing later: {error}", item.id);
+            Err(TrashError::Unfinished(item.id.clone()))
+        }
+    }
+}
+
+/// Whether any of an item's paths is already in the trash.
+fn any_moved(journal: &Path, item: &Item) -> bool {
+    item.paths.iter().any(|path| {
+        trash_entry(journal, &files_rel(&item.id, path))
+            .and_then(|held| Ok(path_lexists(&held)?))
+            .unwrap_or(true)
+    })
+}
+
+/// Remove an item whose detach moved nothing.
+fn abandon(journal: &Path, item: &Item) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "system internal: the trash removing an item folder that never held anything"
+    )]
+    let removed = solstone_core_journal_io::removal::remove_contained_tree(
+        journal,
+        &trash_root(journal).join(&item.id),
+    );
+    if let Err(error) = removed {
+        log::warn!("trash item {}: an empty item was left: {error}", item.id);
+    }
 }
 
 /// Move the files of one item back where they were, and heal its references.
@@ -294,7 +348,7 @@ pub fn attach(
 
 /// Erase one item now. Records [`Event::Erased`].
 pub fn erase(journal: &Path, id: &str, action: Action, surface: Surface) -> Result<(), TrashError> {
-    let _lock = lock(journal)?;
+    let lock = lock(journal)?;
     let mut item = read_item(journal, id)?.ok_or(TrashError::NotInTrash)?;
     match item.state {
         State::Trashed => {
@@ -309,6 +363,9 @@ pub fn erase(journal: &Path, id: &str, action: Action, surface: Surface) -> Resu
         State::Erasing => {}
         State::Detaching | State::Attaching => return Err(TrashError::InFlight),
     }
+    // Once it is marked erasing nothing else takes it, so the unlink, which
+    // can take a while for a long recording, runs without the trash's lock.
+    drop(lock);
     finish_erase(journal, &item)
 }
 
@@ -328,6 +385,15 @@ pub fn list(journal: &Path) -> Result<Vec<Item>, TrashError> {
     Ok(items)
 }
 
+/// Items part-way through a step: on their way in, back or out, or stopped
+/// there until the next sweep finishes them.
+pub fn unfinished(journal: &Path) -> Result<usize, TrashError> {
+    Ok(all_items(journal)?
+        .iter()
+        .filter(|item| item.state != State::Trashed)
+        .count())
+}
+
 /// One item by id, whatever its state.
 pub fn item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
     read_item(journal, id)
@@ -336,8 +402,12 @@ pub fn item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
 /// The days the owner set before the trash erases an item, or the default.
 /// An unreadable or out-of-range setting reads as the default.
 pub fn erase_after_days(journal: &Path) -> u32 {
-    solstone_core_journal_config::read_journal_config(journal)
-        .ok()
+    let Ok(read) = solstone_core_journal_config::read_journal_config(journal) else {
+        // Settings that can't be read must never erase sooner than the owner
+        // asked: wait the longest the setting allows.
+        return MAX_ERASE_AFTER_DAYS;
+    };
+    Some(read)
         .and_then(|read| {
             read.config?
                 .get(SETTINGS_SECTION)
@@ -461,8 +531,9 @@ fn finish_detach(
         let held = trash_entry(journal, &trashed)?;
         if !path_lexists(&held)? {
             let live = journal_entry(journal, path)?;
-            if !path_lexists(&live)? {
-                // In neither place: nothing of it is left to move.
+            if !kind.present(journal, path) {
+                // Not in the trash and not in place (or only a marker is
+                // there): nothing of it is left to move.
                 continue;
             }
             hold.check().map_err(TrashError::Held)?;
@@ -473,7 +544,13 @@ fn finish_detach(
         }
         files.extend(tree_files(&held, path));
     }
-    kind.references(journal, item, Change::Detached, &files);
+    if files.is_empty() && !any_moved(journal, item) {
+        // Nothing of it was ever moved: there is nothing to keep or record.
+        abandon(journal, item);
+        return Ok(());
+    }
+    kind.references(journal, item, Change::Detached, &files)
+        .map_err(TrashError::Io)?;
     let at = item.trashed_at().unwrap_or_else(Utc::now);
     Removal::with_id(
         journal,
@@ -504,8 +581,9 @@ fn finish_attach(
             let live = journal_entry(journal, path)?;
             if path_lexists(&live)? {
                 // Something is where it was: the tombstone it left, or the
-                // same recording arriving again. Recovery overwrites: set it
-                // aside inside the item, where the item's removal takes it.
+                // same thing arriving again. Recovery overwrites: set it
+                // aside inside the item, where the item's removal takes it,
+                // and the record says so when it was more than a marker.
                 let displaced = displaced_rel(&item.id, path);
                 ensure_trash_parent(journal, &displaced)?;
                 let aside = trash_entry(journal, &displaced)?;
@@ -515,14 +593,25 @@ fn finish_attach(
                         item.id
                     )));
                 }
+                let overwrote = kind.present(journal, path);
                 move_entry(&live, &aside)?;
+                if overwrote {
+                    record_pending(journal, item, Event::Erased);
+                }
             }
             move_entry(&held, &live)?;
             sync_parent(journal, path);
         }
         files.extend(tree_files(&journal_entry(journal, path)?, path));
     }
-    kind.references(journal, item, Change::Attached, &files);
+    kind.references(journal, item, Change::Attached, &files)
+        .map_err(TrashError::Io)?;
+    record_pending(journal, item, Event::Recovered);
+    remove_item_dir(journal, item)
+}
+
+/// Record `event` for an item under the owner act it is attaching or erasing for.
+fn record_pending(journal: &Path, item: &Item, event: Event) {
     if let Some(pending) = &item.pending {
         let at = DateTime::parse_from_rfc3339(&pending.at)
             .map(|at| at.with_timezone(&Utc))
@@ -533,9 +622,8 @@ fn finish_attach(
             pending.action,
             pending.surface,
         )
-        .record_event(Event::Recovered, item.unit.clone());
+        .record_event(event, item.unit.clone());
     }
-    remove_item_dir(journal, item)
 }
 
 /// Unlink the item's files, record, and remove the item. Safe to run again.
@@ -869,16 +957,26 @@ mod tests {
     use std::cell::RefCell;
     use std::fs;
 
-    struct Free;
-    impl Hold for Free {
+    struct Free<'a>(&'a std::cell::Cell<u32>);
+    impl Hold for Free<'_> {
         fn check(&self) -> Result<(), String> {
-            Ok(())
+            // Counts down to a refusal when a test arms it.
+            match self.0.get() {
+                0 => Ok(()),
+                1 => Err("held".into()),
+                n => {
+                    self.0.set(n - 1);
+                    Ok(())
+                }
+            }
         }
     }
 
     #[derive(Default)]
     struct Fake {
         seen: RefCell<Vec<(Change, Vec<String>)>>,
+        fail_references: std::cell::Cell<bool>,
+        refuse_check_at: std::cell::Cell<u32>,
     }
 
     impl Kind for Fake {
@@ -886,10 +984,29 @@ mod tests {
             matches!(unit, Unit::Segment { .. })
         }
         fn hold<'a>(&'a self, _: &Path, _: &Item) -> Result<Box<dyn Hold + 'a>, String> {
-            Ok(Box::new(Free))
+            Ok(Box::new(Free(&self.refuse_check_at)))
         }
-        fn references(&self, _: &Path, _: &Item, change: Change, files: &[String]) {
+        fn present(&self, journal: &Path, path: &str) -> bool {
+            let place = journal.join(path);
+            place.is_dir() && !place.join("tombstone.json").exists()
+        }
+        fn references(
+            &self,
+            journal: &Path,
+            _: &Item,
+            change: Change,
+            files: &[String],
+        ) -> Result<(), String> {
+            if self.fail_references.get() {
+                return Err("synthetic failure".into());
+            }
+            if change == Change::Detached {
+                let place = journal.join(SEGMENT);
+                fs::create_dir_all(&place).unwrap();
+                let _ = fs::write(place.join("tombstone.json"), b"{}");
+            }
             self.seen.borrow_mut().push((change, files.to_vec()));
+            Ok(())
         }
     }
 
@@ -946,7 +1063,7 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Fake::default();
         let item = trash(&root, &kind);
-        assert!(!root.join(SEGMENT).exists());
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
         let held = root.join(TRASH_DIR).join(&item.id).join("files").join(SEGMENT);
         assert!(root.join(TRASH_DIR).join(&item.id).join("item.json").is_file());
         assert_eq!(fs::read(held.join("audio.flac")).unwrap(), b"sound");
@@ -1007,13 +1124,140 @@ mod tests {
         let (_dir, root) = journal();
         let kind = Fake::default();
         let item = trash(&root, &kind);
-        fs::create_dir_all(root.join(SEGMENT)).unwrap();
+        // The same recording arrives again: its tombstone gives way to it.
+        fs::remove_file(root.join(SEGMENT).join("tombstone.json")).unwrap();
         fs::write(root.join(SEGMENT).join("audio.flac"), b"again").unwrap();
         fs::write(root.join(SEGMENT).join("extra.json"), b"{}").unwrap();
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
         assert_eq!(fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(), b"sound");
         assert!(!root.join(SEGMENT).join("extra.json").exists());
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
+        // The copy it replaced is recorded as erased by the recover.
+        assert!(events(&root).contains(&(Event::Erased, Action::Recover)));
+    }
+
+    #[test]
+    fn recovering_over_its_own_tombstone_records_no_erase() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        assert!(!events(&root).iter().any(|(event, _)| *event == Event::Erased));
+    }
+
+    /// A refusal before anything moved leaves the recording in place and no
+    /// item for a sweep to finish later.
+    #[test]
+    fn a_detach_refused_before_the_move_leaves_nothing_behind() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        kind.refuse_check_at.set(2);
+        let error = detach(
+            &root,
+            &kind,
+            unit(),
+            Action::SegmentDelete,
+            web(),
+            vec![SEGMENT.into()],
+        )
+        .unwrap_err();
+        assert!(matches!(error, TrashError::Held(_)), "{error:?}");
+        assert!(root.join(SEGMENT).join("audio.flac").is_file());
+        assert_eq!(unfinished(&root).unwrap(), 0);
+        assert!(events(&root).is_empty());
+        kind.refuse_check_at.set(0);
+        sweep(&root, &[&kind], Utc::now());
+        assert!(root.join(SEGMENT).join("audio.flac").is_file(), "no later sweep moves it");
+    }
+
+    /// A failure after the move says so, never "nothing was deleted", and the
+    /// sweep finishes the step once its references can be healed.
+    #[test]
+    fn a_detach_that_fails_after_the_move_is_finished_by_the_sweep() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        kind.fail_references.set(true);
+        let error = detach(
+            &root,
+            &kind,
+            unit(),
+            Action::SegmentDelete,
+            web(),
+            vec![SEGMENT.into()],
+        )
+        .unwrap_err();
+        let TrashError::Unfinished(id) = error else {
+            panic!("expected unfinished, got {error:?}");
+        };
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
+        assert!(list(&root).unwrap().is_empty());
+        assert_eq!(unfinished(&root).unwrap(), 1);
+        assert!(events(&root).is_empty(), "nothing recorded before it is settled");
+        kind.fail_references.set(false);
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 1, "{swept:?}");
+        assert_eq!(list(&root).unwrap()[0].id, id);
+        assert!(root.join(SEGMENT).join("tombstone.json").is_file());
+        assert_eq!(events(&root), vec![(Event::Trashed, Action::SegmentDelete)]);
+    }
+
+    /// Only the marker a removal left is where it was: there is nothing to
+    /// trash, from any surface.
+    #[test]
+    fn a_removed_recording_is_not_trashed_again() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        trash(&root, &kind);
+        let again = detach(
+            &root,
+            &kind,
+            unit(),
+            Action::RetentionTool,
+            Surface::Cli,
+            vec![SEGMENT.into()],
+        );
+        assert!(matches!(again, Err(TrashError::Missing(_))));
+        assert_eq!(list(&root).unwrap().len(), 1);
+        assert_eq!(events(&root).len(), 1);
+    }
+
+    /// An item that never moved anything, whose place another removal has
+    /// since emptied to its tombstone, is dropped by the sweep, not filled
+    /// with that tombstone.
+    #[test]
+    fn a_stale_detach_never_takes_another_removals_tombstone() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let other = trash(&root, &kind);
+        let stale = Item {
+            schema: SCHEMA,
+            id: item_id(Utc::now() + Duration::seconds(1)),
+            state: State::Detaching,
+            unit: unit(),
+            action: Action::SegmentDelete,
+            surface: web(),
+            trashed_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            erase_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            paths: vec![SEGMENT.into()],
+            bytes: 8,
+            pending: None,
+        };
+        fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
+        publish_new(&root, &stale).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(root.join(SEGMENT).join("tombstone.json").is_file());
+        assert!(!root.join(TRASH_DIR).join(&stale.id).exists());
+        assert_eq!(list(&root).unwrap().len(), 1);
+        assert_eq!(list(&root).unwrap()[0].id, other.id);
+        assert_eq!(events(&root).len(), 1);
+    }
+
+    #[test]
+    fn unreadable_settings_never_erase_sooner_than_asked() {
+        let (_dir, root) = journal();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(root.join("config/journal.json"), b"{not json").unwrap();
+        assert_eq!(erase_after_days(&root), MAX_ERASE_AFTER_DAYS);
     }
 
     #[test]
@@ -1023,7 +1267,7 @@ mod tests {
         let item = trash(&root, &kind);
         erase(&root, &item.id, Action::Erase, web()).unwrap();
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
-        assert!(!root.join(SEGMENT).exists());
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert!(matches!(
             attach(&root, &[&kind], &item.id, Action::Recover, web()),
             Err(TrashError::NotInTrash)
@@ -1076,7 +1320,7 @@ mod tests {
         let swept = sweep(&root, &[&kind], Utc::now());
         assert_eq!(swept.resumed, 1);
         assert_eq!(list(&root).unwrap().len(), 1);
-        assert!(!root.join(SEGMENT).exists());
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
         // Recorded once, whatever the number of runs.
         assert_eq!(events(&root).len(), 1);
     }
@@ -1104,7 +1348,7 @@ mod tests {
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();
         publish_new(&root, &item).unwrap();
         sweep(&root, &[&kind], Utc::now());
-        assert!(!root.join(SEGMENT).exists());
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert_eq!(list(&root).unwrap().len(), 1);
     }
 

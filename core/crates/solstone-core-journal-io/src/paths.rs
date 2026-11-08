@@ -342,7 +342,7 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, PathEr
         return Err(invalid(rel, "journal path contains invalid component"));
     }
     let first = normalized.split('/').next().unwrap_or("");
-    if first == solstone_core_journal::TRASH_DIR {
+    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
         return Err(invalid(rel, "journal path is not readable"));
     }
     let mut resolved = if is_day_key(first) {
@@ -1469,7 +1469,16 @@ mod trash_resolution_tests {
     #[test]
     fn a_path_into_the_trash_resolves_to_nothing() {
         let journal = Path::new("/journal");
-        for rel in [".trash", ".trash/x/files/chronicle", "./.trash/x", ".trash/"] {
+        for rel in [
+            ".trash",
+            ".trash/x/files/chronicle",
+            "./.trash/x",
+            ".trash/",
+            ".TRASH/x",
+            ".Trash/x",
+            ".trash./x",
+            ".trash /x",
+        ] {
             assert!(resolve_journal_path(journal, rel).is_err(), "{rel}");
         }
         assert!(resolve_journal_path(journal, "chronicle/.trash").is_ok());

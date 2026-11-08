@@ -21,8 +21,11 @@ use crate::http::{invalid_config_value, json_response};
 pub async fn list(journal_root: PathBuf) -> Response {
     match tokio::task::spawn_blocking(move || {
         let items = solstone_core_trash::list(&journal_root).map_err(|error| error.to_string())?;
+        let unfinished =
+            solstone_core_trash::unfinished(&journal_root).map_err(|error| error.to_string())?;
         Ok::<_, String>(json!({
             "erase_after_days": solstone_core_trash::erase_after_days(&journal_root),
+            "unfinished": unfinished,
             "items": items.iter().map(|item| view(&journal_root, item)).collect::<Vec<_>>(),
         }))
     })

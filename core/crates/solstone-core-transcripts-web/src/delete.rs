@@ -161,7 +161,23 @@ fn trash_recording(
         stream,
         dir: key.clone(),
     };
-    let item = recordings.trash(root, &target, unit, action, surface)?;
+    let item = match recordings.trash(root, &target, unit, action, surface) {
+        Ok(item) => item,
+        // It left the journal and is in the trash; a step after the move
+        // failed, and the trash's sweep finishes it. Not erased now.
+        Err(TrashError::Unfinished(id)) => {
+            let erase_at = solstone_core_trash::item(root, &id)?
+                .map(|item| item.erase_at)
+                .unwrap_or_default();
+            return Ok(Trashed {
+                key,
+                id,
+                erase_at,
+                erased: false,
+            });
+        }
+        Err(error) => return Err(error),
+    };
     let erased = erase
         && match solstone_core_trash::erase(root, &item.id, action, surface) {
             Ok(()) => true,
@@ -229,11 +245,22 @@ fn is_tombstone_only(path: &Path) -> bool {
 /// Runs when the journal's web app starts; the maintenance schedule runs it
 /// hourly.
 pub(crate) fn sweep_trash(journal_root: &Path) {
-    let index = RetentionIndex::new(journal_root);
-    let recordings = Recordings::new(&index);
-    let swept = solstone_core_trash::sweep(journal_root, &[&recordings], chrono::Utc::now());
-    for failure in &swept.failed {
-        log::warn!("trash: {failure}");
+    // Off the request path: after a long time away, erasing what fell due can
+    // take a while, and the pages need not wait for it.
+    let journal_root = journal_root.to_path_buf();
+    let spawned = std::thread::Builder::new()
+        .name("trash-sweep".to_owned())
+        .spawn(move || {
+            let index = RetentionIndex::new(&journal_root);
+            let recordings = Recordings::new(&index);
+            let swept =
+                solstone_core_trash::sweep(&journal_root, &[&recordings], chrono::Utc::now());
+            for failure in &swept.failed {
+                log::warn!("trash: {failure}");
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("trash: the start-up sweep did not start: {error}");
     }
 }
 

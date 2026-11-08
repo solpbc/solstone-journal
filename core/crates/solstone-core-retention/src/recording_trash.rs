@@ -75,37 +75,53 @@ impl Kind for Recordings<'_> {
         Ok(Box::new(SegmentHold::acquire(journal, &target)?))
     }
 
-    fn references(&self, journal: &Path, item: &Item, change: Change, files: &[String]) {
-        if change == Change::Detached
-            && let Some(target) = target_of(item)
-            && let Err(error) = crate::door::place_tombstone(
+    fn present(&self, journal: &Path, path: &str) -> bool {
+        // A live segment: there, and not only the tombstone a removal left or
+        // a removal of it part-way through. Unreadable counts as there, so it
+        // is never taken for gone.
+        if crate::layout::parse_segment_rel(path).is_none() {
+            return false;
+        }
+        let place = journal.join(path);
+        if !place.is_dir() {
+            return false;
+        }
+        !matches!(
+            solstone_core_segment::owner_deletion_state(&place),
+            Ok(state) if state != solstone_core_segment::OwnerDeletionState::Live
+        )
+    }
+
+    fn references(
+        &self,
+        journal: &Path,
+        item: &Item,
+        change: Change,
+        files: &[String],
+    ) -> Result<(), String> {
+        let target = target_of(item)
+            .ok_or_else(|| "this isn't a recording your journal can place".to_owned())?;
+        if change == Change::Detached {
+            crate::door::place_tombstone(
                 journal,
                 &target,
                 files.to_vec(),
                 &item.trashed_at,
                 &item.id,
             )
-        {
-            log::warn!("trash item {}: no tombstone was left: {error}", item.id);
+            .map_err(|error| format!("no tombstone was left: {error}"))?;
         }
-        let notified = match change {
+        match change {
             Change::Detached => {
                 let removed: Vec<RemovedPath> =
                     files.iter().cloned().map(RemovedPath::confirmed).collect();
                 self.index.paths_removed(&removed).map(|_| ())
             }
             Change::Attached => self.index.paths_returned(files),
-        };
-        if let Err(error) = notified {
-            log::warn!("trash item {}: search was not updated: {}", item.id, error.reason);
         }
-        if let Some(target) = target_of(item)
-            && let Err(error) = solstone_core_journal_io::bump_stream_marker(journal, &target.day)
-        {
-            log::warn!(
-                "trash item {}: the day was not queued for follow-up: {error}",
-                item.id
-            );
-        }
+        .map_err(|error| format!("search was not updated: {}", error.reason))?;
+        solstone_core_journal_io::bump_stream_marker(journal, &target.day)
+            .map(|_| ())
+            .map_err(|error| format!("the day was not queued for follow-up: {error}"))
     }
 }

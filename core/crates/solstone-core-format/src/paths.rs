@@ -38,7 +38,7 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, Journa
     let rel = normalize_rel(rel);
     validate_rel(&rel)?;
     let first = rel.split('/').next().unwrap_or("");
-    if first == solstone_core_journal::TRASH_DIR {
+    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
         return Err(JournalPathError::Trash);
     }
     let mut resolved = if is_date_key(first) {

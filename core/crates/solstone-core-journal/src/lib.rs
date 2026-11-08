@@ -24,8 +24,14 @@ pub const TRASH_DIR: &str = ".trash";
 
 /// Whether a name at the journal root is the trash folder. Every walk that
 /// lists the journal root skips a name for which this is true.
+///
+/// Case and trailing dots or spaces are ignored: macOS and Windows file
+/// systems give `.TRASH` and `.trash.` the same folder.
 pub fn is_trash_root_name(name: &std::ffi::OsStr) -> bool {
-    name == TRASH_DIR
+    name.to_str().is_some_and(|name| {
+        name.trim_end_matches(['.', ' '])
+            .eq_ignore_ascii_case(TRASH_DIR)
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
