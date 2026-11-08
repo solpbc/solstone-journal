@@ -415,6 +415,27 @@ async fn init_state(
 }
 
 pub async fn compute_local_capability(journal_root: &Path) -> LocalCapabilityResponse {
+    let key = solstone_core_local::install::pins::platform_key();
+    if solstone_core_local::embedded::supports_key(&key) {
+        return if solstone_core_local::embedded::identity_for_key(&key).is_some() {
+            LocalCapabilityResponse {
+                overall: "ok",
+                local_admitted: true,
+                checks: Vec::new(),
+            }
+        } else {
+            LocalCapabilityResponse {
+                overall: "blocked",
+                local_admitted: false,
+                checks: vec![LocalCapabilityCheck {
+                    name: "runtime",
+                    severity: "blocked",
+                    reason_code: "embedded_runtime_unavailable",
+                    detail: "the journal app does not provide this local runtime".into(),
+                }],
+            }
+        };
+    }
     let journal_root = journal_root.to_path_buf();
     #[cfg(all(test, feature = "full-tests"))]
     let checkpoint_root = journal_root.clone();

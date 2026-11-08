@@ -65,6 +65,9 @@ fn inspect_local_with(
         .map(ToOwned::to_owned)
         .unwrap_or_else(pins::platform_key);
     let key = owned_key.as_str();
+    if crate::embedded::supports_key(key) {
+        return super::mobile::inspect(&journal, model_id, key, check_manifest);
+    }
     let nvidia_probe = input
         .get("nvidia_probe")
         .cloned()
@@ -259,6 +262,14 @@ fn inspect_local_with(
 pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
     let root = pins::cache_root(journal);
     let key = pins::platform_key();
+    if crate::embedded::supports_key(&key) {
+        return super::mobile::inspect(
+            journal,
+            model_id,
+            &key,
+            manifest::inspect_manifest_required,
+        );
+    }
     let (platform_supported, binary_installed) =
         if WindowsArchitecture::from_runtime_key(&key).is_some() {
             (
