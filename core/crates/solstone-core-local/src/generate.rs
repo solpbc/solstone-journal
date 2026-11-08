@@ -382,7 +382,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
 ) -> GenerateResult {
     let contract = local_generate();
     let timeout = request_timeout(&input);
-    if input.platform == Platform::Windows
+    if input.platform.requires_runtime_authority()
         && authority
             .as_ref()
             .is_none_or(|a| a.token.is_empty() || a.port != server.port)
@@ -396,7 +396,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
     let mut preflight = PreflightTransport {
         inner: transport,
         deadline: started.checked_add(timeout).unwrap_or(started),
-        strict: input.platform == Platform::Windows,
+        strict: input.platform.requires_runtime_authority(),
         failed: false,
     };
 
@@ -537,7 +537,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
         Ok(response) => response,
         Err(error) => return fail_post(error),
     };
-    if input.platform != Platform::Windows
+    if !input.platform.requires_runtime_authority()
         && response.status == 401
         && let Some(auth) = authority.as_mut()
         && auth.refresh_if_needed().unwrap_or(false)
@@ -560,7 +560,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
         CompletionInterpretation::Failed(CompletionError {
             reason_code: Some(reason),
             ..
-        }) if reason == "empty_completion" && input.platform != Platform::Windows => {
+        }) if reason == "empty_completion" && !input.platform.requires_runtime_authority() => {
             match post_completion(
                 transport,
                 &base_url,
@@ -3849,38 +3849,44 @@ mod tests {
     }
 
     #[test]
-    fn windows_preflight_auth_refusal_never_posts_inference_and_empty_success_never_replays() {
-        for reject in [
-            Some(("/props", 401)),
-            Some(("/props", 403)),
-            Some(("/tokenize", 401)),
-            Some(("/tokenize", 403)),
-            None,
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            let mut request = input(json!("private journal context"));
-            request.platform = Platform::Windows;
-            request.journal_path = root.path().display().to_string();
-            let server = server();
-            let mut authority =
-                crate::connect::LocalInferenceAuthority::new(1, server.port, "token".into(), None);
-            let mut transport = WindowsPreflight {
-                reject,
-                completions: 0,
-                calls: 0,
-            };
-            let result = generate_with_connected_server(
-                request,
-                &mut transport,
-                server,
-                Some(&mut authority),
-            );
-            assert!(matches!(result, GenerateResult::Failure(_)));
-            assert_eq!(
-                transport.completions,
-                usize::from(reject.is_none()),
-                "{reject:?}"
-            );
+    fn authority_preflight_auth_refusal_never_posts_inference_and_empty_success_never_replays() {
+        for platform in [Platform::Windows, Platform::Android, Platform::Ios] {
+            for reject in [
+                Some(("/props", 401)),
+                Some(("/props", 403)),
+                Some(("/tokenize", 401)),
+                Some(("/tokenize", 403)),
+                None,
+            ] {
+                let root = tempfile::tempdir().unwrap();
+                let mut request = input(json!("private journal context"));
+                request.platform = platform;
+                request.journal_path = root.path().display().to_string();
+                let server = server();
+                let mut authority = crate::connect::LocalInferenceAuthority::new(
+                    1,
+                    server.port,
+                    "token".into(),
+                    None,
+                );
+                let mut transport = WindowsPreflight {
+                    reject,
+                    completions: 0,
+                    calls: 0,
+                };
+                let result = generate_with_connected_server(
+                    request,
+                    &mut transport,
+                    server,
+                    Some(&mut authority),
+                );
+                assert!(matches!(result, GenerateResult::Failure(_)));
+                assert_eq!(
+                    transport.completions,
+                    usize::from(reject.is_none()),
+                    "{platform:?} {reject:?}"
+                );
+            }
         }
     }
 

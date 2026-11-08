@@ -235,7 +235,7 @@ pub(crate) fn connect_with_transport_and_authority(
             reason: "unsupported connect input schema".into(),
         };
     }
-    if input.platform == Platform::Windows
+    if input.platform.requires_runtime_authority()
         && authority
             .as_ref()
             .is_none_or(|auth| auth.port == 0 || auth.token.is_empty())
@@ -261,7 +261,19 @@ pub(crate) fn connect_with_transport_and_authority(
     };
     let mut base_url = format!("http://{}:{port}", input.bind_address);
 
-    let health = transport.get(&base_url, "/health", None);
+    let mut health = transport.get(
+        &base_url,
+        "/health",
+        authority.as_ref().map(|auth| auth.token.as_str()),
+    );
+    if let Ok((401 | 403, _)) = health
+        && let Some(auth) = authority.as_mut()
+        && auth.refresh_if_needed().unwrap_or(false)
+    {
+        port = auth.port;
+        base_url = format!("http://{}:{port}", input.bind_address);
+        health = transport.get(&base_url, "/health", Some(auth.token.as_str()));
+    }
     let served_model_id = match health {
         Ok((200, text)) => match serde_json::from_str::<Value>(&text).ok() {
             Some(Value::Object(body)) => match body.get("loaded_model") {
@@ -288,7 +300,7 @@ pub(crate) fn connect_with_transport_and_authority(
         Err(reason) => return ConnectOutcome::Failed { reason },
     };
 
-    let capacity = if input.platform == Platform::Windows {
+    let capacity = if input.platform.requires_runtime_authority() {
         let mut auth_token = authority.as_ref().map(|a| a.token.clone());
         let mut props_res = transport.get(&base_url, "/props", auth_token.as_deref());
         if let Ok((401 | 403, _)) = props_res
@@ -602,9 +614,49 @@ mod tests {
         assert_eq!(auth.token, "secret-token-2");
         assert!(auth.refreshed);
         let tokens = transport.tokens.borrow();
-        assert_eq!(tokens[0], None);
+        assert_eq!(tokens[0], Some("secret-token-1".into()));
         assert_eq!(tokens[1], Some("secret-token-1".into()));
         assert_eq!(tokens[2], Some("secret-token-2".into()));
+    }
+
+    #[test]
+    fn mobile_health_and_capacity_use_the_same_live_generation_credential() {
+        for platform in [Platform::Android, Platform::Ios] {
+            let transport = scripted(vec![
+                Ok((401, "unauthorized".into())),
+                Ok((200, "{}".into())),
+                Ok((200, r#"{"total_slots":1}"#.into())),
+            ]);
+            let mut request = input(Path::new("unused"));
+            request.platform = platform;
+            let mut authority = LocalInferenceAuthority::new(
+                1,
+                8080,
+                "old-credential".into(),
+                Some(Box::new(|_| Ok((2, 9090, "new-credential".into())))),
+            );
+            let server = ready(connect_with_transport_and_authority(
+                request.clone(),
+                &transport,
+                Some(&mut authority),
+            ));
+            assert_eq!(server.port, 9090);
+            assert_eq!(server.parallel_slots, 1);
+            assert_eq!(
+                *transport.tokens.borrow(),
+                vec![
+                    Some("old-credential".into()),
+                    Some("new-credential".into()),
+                    Some("new-credential".into())
+                ]
+            );
+            let no_credentials = scripted(vec![]);
+            assert!(matches!(
+                connect_with_transport_and_authority(request, &no_credentials, None),
+                ConnectOutcome::NotReady { .. }
+            ));
+            assert!(no_credentials.calls.borrow().is_empty());
+        }
     }
 
     #[test]

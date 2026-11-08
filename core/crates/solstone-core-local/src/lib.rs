@@ -6,6 +6,7 @@
 pub mod admission;
 pub mod bind;
 pub mod connect;
+pub mod embedded;
 pub mod endpoint;
 mod fixture;
 pub mod generate;
