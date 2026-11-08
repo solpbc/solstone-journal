@@ -417,6 +417,15 @@ mod tests {
             sources.as_object().unwrap(),
         );
         assert!(!segment.contains("Morning Run"), "{segment}");
+        // The same tile read the way the owner's own page reads it shows its
+        // gear, so the absence above is the talent's load leaving it out.
+        let owner = Sources {
+            strava_tiles: true,
+            ..sources_from_config(sources.as_object().unwrap())
+        };
+        let (page, _) = solstone_core_transcripts::cluster(journal.path(), "20260903", &owner);
+        assert!(page.contains("Trek"), "{page}");
+        assert!(page.contains("Morning Run"), "{page}");
     }
 
     #[test]
