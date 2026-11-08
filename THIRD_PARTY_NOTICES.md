@@ -877,6 +877,9 @@ The runtime includes llama.cpp and ggml under the MIT license, and OpenSSL
 the app in `assets/qwen-runtime/llama-LICENSE.txt` and
 `assets/qwen-runtime/openssl-LICENSE.txt` on Android, and
 `QwenRuntime/llama-LICENSE.txt` and `QwenRuntime/openssl-LICENSE.txt` on iOS.
+Additional dependency notices accompany those files as
+`qwen-THIRD_PARTY_NOTICES.txt`, including cpp-httplib 0.62.0 and nlohmann/json
+3.12.0 from the same pinned source.
 The package's `manifest.json` records the pinned source and native image.
 
 ## runtime-downloaded provider artifacts (llama.cpp CUDA)
