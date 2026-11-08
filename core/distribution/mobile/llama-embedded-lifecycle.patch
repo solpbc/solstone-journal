@@ -49,7 +49,7 @@
  #include "server-http.h"
  #include "server-models.h"
  #include "server-cors-proxy.h"
-@@ -811,3 +812,67 @@
+@@ -811,3 +812,70 @@
      server_role role;
      return server_run(params, argc, argv, role, opts);
  }
@@ -112,6 +112,9 @@
 +    params.load_progress_callback_user_data = &control;
 +    if (!ctx_server.load_model(params)) { return control.cancelled.load() ? 0 : 1; }
 +    if (control.cancelled.load()) { return 0; }
++    llama_set_abort_callback(ctx_server.get_llama_context(), [](void * data) {
++        return static_cast<server_embedded_control *>(data)->cancelled.load();
++    }, &control);
 +    routes.update_meta(ctx_server);
 +    if (!control.publish_ready(ctx_http.port, ctx_http.is_ready)) { return 0; }
 +    if (!control.cancelled.load()) { ctx_server.start_loop(); }
@@ -386,3 +389,51 @@
        detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO,
                                    read_timeout_sec_, read_timeout_usec_);
        detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,
+--- a/tools/mtmd/clip.cpp
++++ b/tools/mtmd/clip.cpp
+@@ -4211,6 +4211,10 @@
+             // alloc memory and offload data
+             ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(ctx_clip.backend);
+             ctx_clip.buf.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_clip.ctx_data.get(), buft));
++            if (!ctx_clip.buf) {
++                throw std::runtime_error(string_format("%s: failed to allocate projector weights (%zu bytes) on %s\n",
++                    __func__, total_data_size, ggml_backend_buft_name(buft)));
++            }
+             ggml_backend_buffer_set_usage(ctx_clip.buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+             // read the weight from file
+             if (!ctx_clip.no_alloc) {
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -12,4 +12,8 @@
+ 
+ #include <stdatomic.h>
++#if TARGET_OS_IOS
++#include <mach/mach.h>
++#include <os/proc.h>
++#endif
+ 
+ #ifndef TARGET_OS_VISION
+@@ -2169,5 +2173,15 @@
+     if (size_aligned > 0 && (res->all_data == NULL || res->buffers[0].metal == nil)) {
+         GGML_LOG_ERROR("%s: error: failed to allocate buffer, size = %8.2f MiB\n", __func__, size_aligned / 1024.0 / 1024.0);
+-        free(res);
++#if TARGET_OS_IOS
++        struct task_vm_info info = {0};
++        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
++        kern_return_t footprint_status = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t) &info, &count);
++        GGML_LOG_ERROR("%s: allocation diagnostic: requested_bytes=%zu host_allocation_ok=%d metal_buffer_ok=%d metal_allocated_bytes=%llu max_buffer_bytes=%zu process_available_bytes=%zu physical_footprint_bytes=%llu footprint_status=%d\n",
++            __func__, size_aligned, res->all_data != NULL, res->buffers[0].metal != nil,
++            (unsigned long long) dev->mtl_device.currentAllocatedSize,
++            props_dev->max_buffer_size, os_proc_available_memory(),
++            (unsigned long long) info.phys_footprint, footprint_status);
++#endif
++        ggml_metal_buffer_free(res);
+         return NULL;
+     }
+@@ -2177,5 +2191,5 @@
+     if (!ggml_metal_buffer_rset_init(res)) {
+         GGML_LOG_ERROR("%s: error: failed to initialize residency set\n", __func__);
+-        free(res);
++        ggml_metal_buffer_free(res);
+         return NULL;
+     }
