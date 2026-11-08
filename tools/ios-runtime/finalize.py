@@ -258,8 +258,8 @@ def stage_qwen_resources(package: pathlib.Path, destination: pathlib.Path) -> di
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True)
-    for name in QWEN_LICENSES:
-        shutil.copyfile(package / name, destination / name)
+    package_mobile_qwen.copy_licenses(package, destination)
+    package_mobile_qwen.verify_licenses(package, destination)
     record["unsigned_image_sha256"] = record["image_sha256"]
     record["image"] = QWEN_APP_IMAGE
     (destination / "manifest.json").write_text(json.dumps(record, indent=2) + "\n")
@@ -467,12 +467,6 @@ def main() -> int:
         qwen_record.update(image_sha256=signed_qwen_sha256, signed=True,
                            image_size_bytes=(qwen_framework / "JournalMobileQwen").stat().st_size)
         (app / QWEN_MANIFEST).write_text(json.dumps(qwen_record, indent=2) + "\n")
-        (args.build_root / "qwen-package-receipt.json").write_text(json.dumps({
-            "schema": "solstone.mobile-qwen-ios-embedding.v1", "runtime_identity": qwen_record["runtime_identity"],
-            "unsigned_image_sha256": qwen_record["unsigned_image_sha256"],
-            "signed_image_sha256": signed_qwen_sha256, "image": QWEN_APP_IMAGE,
-            "manifest": QWEN_MANIFEST,
-        }, indent=2) + "\n")
 
     expected_members = receipt["package_members"]
     for name, bundle in [
@@ -506,8 +500,16 @@ def main() -> int:
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     if sha256(pdfium_framework / "PDFium") != signed_pdfium_sha256:
         raise ValueError("containing app signing changed the PDFium framework")
-    if signed_qwen_sha256 is not None and sha256(app / QWEN_APP_IMAGE) != signed_qwen_sha256:
-        raise ValueError("containing app signing changed the Qwen framework")
+    if signed_qwen_sha256 is not None:
+        if sha256(app / QWEN_APP_IMAGE) != signed_qwen_sha256:
+            raise ValueError("containing app signing changed the Qwen framework")
+        package_mobile_qwen.verify_licenses(args.qwen_package_dir, app / "QwenRuntime")
+        (args.build_root / "qwen-package-receipt.json").write_text(json.dumps({
+            "schema": "solstone.mobile-qwen-ios-embedding.v1", "runtime_identity": qwen_record["runtime_identity"],
+            "unsigned_image_sha256": qwen_record["unsigned_image_sha256"],
+            "signed_image_sha256": signed_qwen_sha256, "image": QWEN_APP_IMAGE,
+            "manifest": QWEN_MANIFEST,
+        }, indent=2) + "\n")
     if sound_tag:
         package_mobile_media.verify_sound_tag_resources(ROOT, app / "AudioModels")
         (args.build_root / "sound-tag-model-package-receipt.json").write_text(json.dumps({
