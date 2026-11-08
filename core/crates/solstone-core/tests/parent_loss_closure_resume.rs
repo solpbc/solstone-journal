@@ -165,6 +165,24 @@ fn prove_closer_gone(closer: &ProcessInstance) {
     }
 }
 
+// A killed supervisor leaves its startup heartbeat fresh for the 60s sync
+// window, and the next start waits that window out before it continues (the
+// admission wait, covered by the startup tests). Where a test is about closure
+// recovery and not that wait, age the killed run's sync files past the window,
+// as a minute of wall time would, instead of sleeping through it.
+fn age_killed_run_heartbeats(journal: &TempJournal) {
+    let Ok(entries) = fs::read_dir(journal.root.join("health/sync")) else {
+        return;
+    };
+    let past = SystemTime::now() - Duration::from_secs(120);
+    for entry in entries {
+        let path = entry.expect("sync entry").path();
+        fs::File::open(&path)
+            .and_then(|file| file.set_modified(past))
+            .unwrap_or_else(|error| panic!("age {}: {error}", path.display()));
+    }
+}
+
 fn supervisor_command(journal: &TempJournal) -> Command {
     let core_bin = env!("CARGO_BIN_EXE_solstone-core");
     let test_child = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
@@ -483,6 +501,7 @@ fn kill_at_after_batch_seam_and_resume_with_new_closer() {
         "supervisor.ready absent while audit incomplete"
     );
 
+    age_killed_run_heartbeats(&journal);
     let mut cmd2 = supervisor_command(&journal);
     let _sup2 = SupervisorGuard::new(cmd2.spawn().expect("start second"));
 
@@ -620,6 +639,7 @@ fn kill_at_during_inventory_and_after_ledger_seams() {
         );
 
         // Resume without the seam and require supervisor.ready
+        age_killed_run_heartbeats(&journal);
         let mut cmd_resume = supervisor_command(&journal);
         let _sup_resume = SupervisorGuard::new(cmd_resume.spawn().expect("resume"));
         let wait_resume = Instant::now() + RESTART_READY_WAIT;
@@ -721,6 +741,7 @@ fn kill_at_during_inventory_and_after_ledger_seams() {
         let ledger_bytes_before = fs::read(&ledger_path).expect("read before");
 
         // Next supervisor start finishes closure and reuses existing ledger
+        age_killed_run_heartbeats(&journal);
         let mut cmd_finish = supervisor_command(&journal);
         let _sup_finish = SupervisorGuard::new(cmd_finish.spawn().expect("start finish"));
 
@@ -1110,6 +1131,7 @@ fn killed_closers_resume_audited_chunks_prepared_bytes_and_published_record() {
         first.kill().unwrap();
         first.wait().unwrap();
         prove_closer_gone(&closer);
+        age_killed_run_heartbeats(&journal);
         let mut next = SupervisorGuard::new(supervisor_command(&journal).spawn().unwrap());
         wait_for_condition_within(
             RESTART_READY_WAIT,
