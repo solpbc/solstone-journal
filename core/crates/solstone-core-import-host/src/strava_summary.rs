@@ -1,0 +1,326 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 sol pbc
+
+//! What a Strava import says it did, in `imports/<id>/summary.md`.
+//!
+//! Every sentence the summary can hold is written here, so the words can be
+//! read and changed in one place. It holds counts and the facet's name, never
+//! a workout's words or a name read from them.
+
+use std::fmt::Write as _;
+
+use crate::body_activity::RecordCounts;
+use crate::strava_filing::{FacetBasis, Filing, RunFacet};
+use crate::strava_names::{NamesWait, StravaNamesOutcome};
+
+/// Everything the summary counts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StravaRunSummary {
+    pub new_workouts: u64,
+    pub updated_workouts: u64,
+    pub facet: RunFacet,
+    pub filing: Filing,
+    pub records: RecordCounts,
+    pub names: StravaNamesOutcome,
+}
+
+fn plural(count: u64, one: &str, many: &str) -> String {
+    if count == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{count} {many}")
+    }
+}
+
+const NO_FACET_MEANS: &str = "A workout with no facet gets no activity, and connections limited to chosen facets don't see it. Search and the body app still show it.";
+
+impl StravaRunSummary {
+    /// The summary's text, in the owner's words.
+    #[must_use]
+    pub(crate) fn text(&self) -> String {
+        let mut text = String::from("# Strava import\n\n");
+        let _ = writeln!(
+            text,
+            "{} added, {} changed since the last import and brought up to date.\n",
+            plural(self.new_workouts, "workout", "workouts"),
+            plural(self.updated_workouts, "workout", "workouts"),
+        );
+        self.facet_section(&mut text);
+        self.records_section(&mut text);
+        self.names_section(&mut text);
+        text
+    }
+
+    fn facet_section(&self, text: &mut String) {
+        let _ = writeln!(text, "## Facet\n");
+        match (&self.facet.facet, self.facet.basis) {
+            (Some(facet), FacetBasis::Chosen) => {
+                let _ = writeln!(text, "You chose the {facet} facet for this import.\n");
+            }
+            (Some(facet), _) => {
+                let _ = writeln!(
+                    text,
+                    "Filed under the {facet} facet, the one you chose for Strava imports.\n"
+                );
+            }
+            (None, FacetBasis::ChosenNone) => {
+                let _ = writeln!(
+                    text,
+                    "You chose no facet for this import. {NO_FACET_MEANS}\n"
+                );
+            }
+            (None, _) => {
+                let _ = writeln!(
+                    text,
+                    "Filed under no facet: no facet was chosen for this import and none is set for Strava imports. {NO_FACET_MEANS}\n"
+                );
+            }
+        }
+        let Some(facet) = &self.facet.facet else {
+            return;
+        };
+        if self.filing.filed > 0 {
+            let _ = writeln!(
+                text,
+                "{} now filed under {facet}, including workouts from earlier imports of this download.{}\n",
+                plural(self.filing.filed, "workout is", "workouts are"),
+                match self.filing.moved {
+                    0 => String::new(),
+                    moved => format!(" {moved} of them moved from another facet."),
+                }
+            );
+        }
+        if self.filing.kept_sensed > 0 {
+            let _ = writeln!(
+                text,
+                "{} left where {}, because {} an activity there from before.\n",
+                plural(self.filing.kept_sensed, "workout was", "workouts were"),
+                if self.filing.kept_sensed == 1 {
+                    "it was"
+                } else {
+                    "they were"
+                },
+                if self.filing.kept_sensed == 1 {
+                    "it already has"
+                } else {
+                    "they already have"
+                },
+            );
+        }
+        if self.filing.kept_unreadable > 0 {
+            let _ = writeln!(
+                text,
+                "{} left where {}, because the activities on {} day couldn't be read. Importing again tries once more.\n",
+                plural(self.filing.kept_unreadable, "workout was", "workouts were"),
+                if self.filing.kept_unreadable == 1 {
+                    "it was"
+                } else {
+                    "they were"
+                },
+                if self.filing.kept_unreadable == 1 {
+                    "its"
+                } else {
+                    "their"
+                },
+            );
+        }
+    }
+
+    fn records_section(&self, text: &mut String) {
+        let _ = writeln!(text, "## Activities\n");
+        let records = &self.records;
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if records.written == 1 {
+                "1 workout now shows as an activity on its day.".to_owned()
+            } else {
+                format!(
+                    "{} workouts now show as activities on their days.",
+                    records.written
+                )
+            },
+        );
+        if records.sensed > 0 {
+            let _ = writeln!(
+                text,
+                "{} already had an activity from before, and {} it.\n",
+                plural(records.sensed, "workout", "workouts"),
+                if records.sensed == 1 {
+                    "keeps"
+                } else {
+                    "each keeps"
+                },
+            );
+        }
+        if records.no_facet > 0 {
+            let _ = writeln!(
+                text,
+                "{} no facet, so {} no activity. {NO_FACET_MEANS}\n",
+                plural(records.no_facet, "workout has", "workouts have"),
+                if records.no_facet == 1 {
+                    "it has"
+                } else {
+                    "they have"
+                },
+            );
+        }
+        if !records.refused.is_empty() {
+            let _ = writeln!(
+                text,
+                "Not every activity could be added this time. Importing again tries once more.\n"
+            );
+        }
+    }
+
+    fn names_section(&self, text: &mut String) {
+        let _ = writeln!(text, "## People and gear\n");
+        let names = &self.names;
+        if let Some(error) = &names.store_error {
+            let _ = writeln!(
+                text,
+                "The people and gear in your workouts weren't read this time, because what was read before couldn't be opened ({error}). Importing again tries once more.\n"
+            );
+            return;
+        }
+        let _ = writeln!(
+            text,
+            "{} read for the people and gear they name, and {} read before.{}\n",
+            plural(
+                names.calls - names.failed,
+                "workout's own words were",
+                "workouts' own words were"
+            ),
+            plural(names.cached, "workout's were", "workouts' were"),
+            match names.failed {
+                0 => String::new(),
+                failed => format!(
+                    " {} couldn't be read, and importing again tries once more.",
+                    plural(failed, "workout", "workouts")
+                ),
+            },
+        );
+        if names.waiting > 0 {
+            let waiting = plural(
+                names.waiting,
+                "workout's words weren't",
+                "workouts' words weren't",
+            );
+            let when = match names.wait {
+                Some(NamesWait::WaitingForWindow) => {
+                    "they're read when you import during your processing window"
+                }
+                Some(NamesWait::NoCondition) => {
+                    "your journal waits for a processing window, and none is set up, so they're read once one is and you import again"
+                }
+                Some(NamesWait::LaneUnavailable) => {
+                    "no thinking is set up that may read them, so they're read once it is and you import again"
+                }
+                Some(NamesWait::SettingsUnreadable) => {
+                    "your journal's settings couldn't be read, so they're read when you import again"
+                }
+                Some(NamesWait::Stopped) | None => "they're read when you import again",
+            };
+            let _ = writeln!(text, "{waiting} read this time: {when}.\n");
+        }
+        if names.created > 0 {
+            let _ = writeln!(
+                text,
+                "{} added from your workouts.\n",
+                plural(
+                    names.created,
+                    "person or thing was",
+                    "people and things were"
+                ),
+            );
+        } else {
+            let _ = writeln!(text, "No people or things were added this time.\n");
+        }
+    }
+
+    /// The counts as `key=value` pairs, for the command's own line.
+    #[must_use]
+    pub(crate) fn count_keys(&self) -> String {
+        format!(
+            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_created={}",
+            self.facet.facet.as_deref().unwrap_or("none"),
+            self.records.written,
+            self.records.sensed,
+            self.records.no_facet,
+            self.records.refused.len(),
+            self.filing.filed,
+            self.filing.moved,
+            self.filing.kept_sensed,
+            self.filing.kept_unreadable,
+            self.names.calls,
+            self.names.failed,
+            self.names.cached,
+            self.names.waiting,
+            self.names.created,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(facet: Option<&str>, basis: FacetBasis) -> StravaRunSummary {
+        StravaRunSummary {
+            new_workouts: 2,
+            updated_workouts: 1,
+            facet: RunFacet {
+                facet: facet.map(str::to_owned),
+                basis,
+            },
+            filing: Filing {
+                filed: 2,
+                moved: 1,
+                kept_sensed: 1,
+                kept_unreadable: 1,
+                refiled_tiles: Vec::new(),
+            },
+            records: RecordCounts {
+                written: 2,
+                sensed: 1,
+                no_facet: 0,
+                ..RecordCounts::default()
+            },
+            names: StravaNamesOutcome {
+                calls: 3,
+                failed: 1,
+                cached: 4,
+                waiting: 2,
+                wait: Some(NamesWait::WaitingForWindow),
+                created: 1,
+                ..StravaNamesOutcome::default()
+            },
+        }
+    }
+
+    #[test]
+    fn the_summary_has_a_section_per_step_and_every_count() {
+        let facet_paragraphs = |text: &str| {
+            let start = text.find("## Facet").unwrap();
+            let end = text.find("## Activities").unwrap();
+            text[start..end]
+                .lines()
+                .skip(1)
+                .filter(|line| !line.trim().is_empty())
+                .count()
+        };
+        let chosen = summary(Some("body"), FacetBasis::Chosen);
+        let text = chosen.text();
+        assert_eq!(text.matches("\n## ").count(), 3, "{text}");
+        // Which facet, how many were filed, and both kinds left where they were.
+        assert_eq!(facet_paragraphs(&text), 4, "{text}");
+        assert_eq!(
+            chosen.count_keys(),
+            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_created=1"
+        );
+        // With no facet, nothing was filed, whatever the counts say.
+        let none = summary(None, FacetBasis::NoDefault).text();
+        assert_eq!(none.matches("\n## ").count(), 3, "{none}");
+        assert_eq!(facet_paragraphs(&none), 1, "{none}");
+    }
+}

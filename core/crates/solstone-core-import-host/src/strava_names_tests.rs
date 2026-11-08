@@ -582,6 +582,22 @@ fn a_workout_with_no_facet_gives_no_entity() {
 }
 
 #[test]
+fn a_name_in_a_muted_facet_becomes_no_entity() {
+    let journal = journal();
+    let root = journal.path();
+    for (id, day) in [(1, "20261001"), (2, "20261002")] {
+        Workout::new(id, day, "Hill repeats with Sam").write(root);
+    }
+    solstone_core_facets::set_facet_muted(root, "body", true).unwrap();
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+
+    let outcome = run(root, &model);
+
+    assert_eq!((outcome.muted, outcome.created), (1, 0));
+    assert!(!root.join("entities").exists());
+}
+
+#[test]
 fn no_days_evidence_moves() {
     let journal = journal();
     let root = journal.path();

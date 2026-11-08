@@ -1017,6 +1017,19 @@ fn release_misplaced_strava_pieces(
     Ok(())
 }
 
+/// A Strava tile as an import publishes it.
+fn strava_tile_created(day: &str, segment: &str) -> solstone_core_import::text::TextCreated {
+    solstone_core_import::text::TextCreated {
+        day: day.to_owned(),
+        segment: segment.to_owned(),
+        stream: "import.strava".to_owned(),
+        hints: save::stream_hints(RegistrySource::Strava),
+        path: PathBuf::from(format!(
+            "chronicle/{day}/import.strava/{segment}/workout.json"
+        )),
+    }
+}
+
 pub(crate) fn run_strava(
     dispatch: RegistryDispatch,
     journal: &Path,
@@ -1055,12 +1068,15 @@ fn discard_uploaded_download(journal: &Path, media: &Path) {
 }
 
 #[cfg(test)]
+#[derive(Default)]
 pub struct StravaRunHook<'a> {
     pub fault: Option<&'a strava::ReadFault>,
     pub after_lock: Option<&'a (dyn Fn(&Path) + 'a)>,
     pub before_apply: Option<&'a (dyn Fn(&Path) + 'a)>,
     pub lock_timeout: Option<std::time::Duration>,
     pub stop_before_finish: bool,
+    /// The model that reads workouts' words, in place of the journal's own.
+    pub(crate) names_model: Option<&'a dyn crate::strava_names::NamesModel>,
 }
 
 #[cfg(test)]
@@ -1146,6 +1162,13 @@ fn run_strava_internal(
         Err(e) => return failure(format!("{name} import failed: {e}\n")),
     };
 
+    // 7b. The facet: a muted or missing one the owner chose refuses the run
+    // before anything is written.
+    let run_facet = match crate::strava_filing::run_facet(journal, &dispatch.facet) {
+        Ok(facet) => facet,
+        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+    };
+
     // 8. claim_dispatch_id, refuse_if_live_running, admit_running_attempt
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
         return failure(format!("{name} import failed: {error}\n"));
@@ -1216,16 +1239,7 @@ fn run_strava_internal(
         {
             publish_slice.push(c.clone());
         } else {
-            publish_slice.push(solstone_core_import::text::TextCreated {
-                day: p.day.clone(),
-                segment: p.segment.clone(),
-                stream: "import.strava".to_owned(),
-                hints: save::stream_hints(RegistrySource::Strava),
-                path: PathBuf::from(format!(
-                    "chronicle/{}/import.strava/{}/workout.json",
-                    p.day, p.segment
-                )),
-            });
+            publish_slice.push(strava_tile_created(&p.day, &p.segment));
         }
     }
 
@@ -1235,6 +1249,35 @@ fn run_strava_internal(
         return failure(format!(
             "{name} import failed: {save_error}\n{count_line}\n"
         ));
+    }
+
+    // 12b. The facet, before any record: every live tile of the download's
+    // workouts takes the chosen one, and each tile that changed is published
+    // again so search files it there.
+    let is_written = |day: &str, segment: &str| {
+        let key = (day.to_owned(), segment.to_owned());
+        written_keys.contains(&key) && !skipped_keys.contains(&key)
+    };
+    let live = crate::strava_filing::live_tiles(journal, &placement, &is_written);
+    let filing = match run_facet.facet.as_deref() {
+        Some(facet) => match crate::strava_filing::file_strava_workouts(journal, &live, facet) {
+            Ok(filing) => filing,
+            Err(error) => {
+                let _ = finish(ImportTerminalInput::Failed(&publish_slice));
+                return failure(format!(
+                    "{name} import failed: the workouts couldn't be filed under {facet}: {error}\n"
+                ));
+            }
+        },
+        None => crate::strava_filing::Filing::default(),
+    };
+    for (day, segment) in &filing.refiled_tiles {
+        if !publish_slice
+            .iter()
+            .any(|created| created.day == *day && created.segment == *segment)
+        {
+            publish_slice.push(strava_tile_created(day, segment));
+        }
     }
 
     // 13. stop_before_finish
@@ -1307,7 +1350,78 @@ fn run_strava_internal(
         ));
     }
 
+    // 16. Each new workout's activity record, on every day the download's
+    // workouts are on, still under the Strava lock. A failure is counted and
+    // leaves the import as it is.
+    let now = chrono::Utc::now();
+    let mut days: Vec<&str> = live
+        .values()
+        .flat_map(|(_, tiles)| tiles.iter().map(|tile| tile.day.as_str()))
+        .collect();
+    days.sort_unstable();
+    days.dedup();
+    let mut records = crate::body_activity::RecordCounts::default();
+    for day in days {
+        let counts = crate::body_activity::write_strava_records_at(journal, day, now);
+        records.written += counts.written;
+        records.refreshed += counts.refreshed;
+        records.no_facet += counts.no_facet;
+        records.sensed += counts.sensed;
+        records.refused.extend(counts.refused);
+    }
+    for (facet, error) in &records.refused {
+        log::warn!("{name} import {import_id}: an activity in {facet} wasn't added: {error}");
+    }
+
+    // 17. The people and gear in the workouts' own words, once the Strava lock
+    // is released: model calls hold no lock, and each store write takes it.
+    drop(_source_lock);
+    #[cfg(test)]
+    let names = crate::strava_names::record_strava_names(
+        journal,
+        hook.and_then(|h| h.names_model)
+            .unwrap_or(&crate::strava_names::SiblingNamesModel),
+        now,
+    );
+    #[cfg(not(test))]
+    let names = crate::strava_names::record_strava_names(
+        journal,
+        &crate::strava_names::SiblingNamesModel,
+        now,
+    );
+
+    let run_summary = crate::strava_summary::StravaRunSummary {
+        new_workouts: corrected_counts.new_workouts as u64,
+        updated_workouts: corrected_counts.present_updated as u64,
+        facet: run_facet,
+        filing,
+        records,
+        names,
+    };
+    let summary_path = journal.join("imports").join(import_id).join("summary.md");
+    match solstone_core_journal_io::atomic_replace(
+        &summary_path,
+        run_summary.text().as_bytes(),
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    ) {
+        Ok(_) => {
+            if let Err(error) = solstone_core_indexer_store::todo::enqueue_path(
+                journal,
+                Path::new(&format!("imports/{import_id}/summary.md")),
+            ) {
+                log::warn!(
+                    "{name} import {import_id}: its summary wasn't queued for search: {error}"
+                );
+            }
+        }
+        Err(error) => {
+            log::warn!("{name} import {import_id}: its summary wasn't written: {error}");
+        }
+    }
+
     let mut summary = strava::format_count_summary(&corrected_counts);
+    summary.push(' ');
+    summary.push_str(&run_summary.count_keys());
     let owner_z = solstone_core_journal_config::owner_zone(journal);
     if placement.zone.name() != owner_z.name() {
         summary.push_str(&format!(" zone={}", placement.zone.name()));
@@ -1502,6 +1616,10 @@ pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<
 }
 
 #[cfg(test)]
+#[path = "strava_run_tests.rs"]
+mod strava_run_tests;
+
+#[cfg(test)]
 mod tests {
     use std::fs;
 
@@ -1527,6 +1645,7 @@ mod tests {
             force: false,
             owner_timestamp: Some(timestamp.to_owned()),
             fallback_timestamp: None,
+            facet: Default::default(),
         }
     }
 
@@ -1871,6 +1990,7 @@ mod tests {
             force: false,
             owner_timestamp: None,
             fallback_timestamp: None,
+            facet: Default::default(),
         }
     }
 
@@ -2640,6 +2760,7 @@ mod tests {
             force: false,
             owner_timestamp: None,
             fallback_timestamp: None,
+            facet: Default::default(),
         };
         let req = cli_producer_request(root, &dispatch, 1);
         assert_eq!(req.heartbeat_interval, None);
@@ -3019,6 +3140,7 @@ mod tests {
             force: false,
             owner_timestamp: None,
             fallback_timestamp: None,
+            facet: Default::default(),
         };
 
         // Run 1
@@ -3164,6 +3286,7 @@ mod tests {
             force: false,
             owner_timestamp: None,
             fallback_timestamp: None,
+            facet: Default::default(),
         }
     }
 
@@ -3176,11 +3299,11 @@ mod tests {
         .unwrap();
     }
 
-    const HEADER_ENGLISH_103: &str = "Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Max Heart Rate,Relative Effort,Commute,Activity Private Note,Activity Gear,Filename,Athlete Weight,Bike Weight,Elapsed Time,Moving Time,Distance,Max Speed,Average Speed,Elevation Gain,Elevation Loss,Elevation Low,Elevation High,Max Grade,Average Grade,Average Positive Grade,Average Negative Grade,Max Cadence,Average Cadence,Max Heart Rate,Average Heart Rate,Max Watts,Average Watts,Calories,Max Temperature,Average Temperature,Relative Effort,Total Work,Number of Runs,Uphill Time,Downhill Time,Other Time,Perceived Exertion,Type,Start Time,Weighted Average Power,Power Count,Prefer Perceived Exertion,Perceived Relative Effort,Commute,Total Weight Lifted,From Upload,Grade Adjusted Distance,Weather Observation Time,Weather Condition,Weather Temperature,Apparent Temperature,Dewpoint,Humidity,Weather Pressure,Wind Speed,Wind Gust,Wind Bearing,Precipitation Intensity,Sunrise Time,Sunset Time,Moon Phase,Bike,Gear,Precipitation Probability,Precipitation Type,Cloud Cover,Weather Visibility,UV Index,Weather Ozone,Jump Count,Total Grit,Average Flow,Flagged,Average Elapsed Speed,Dirt Distance,Newly Explored Distance,Newly Explored Dirt Distance,Activity Count,Total Steps,Carbon Saved,Pool Length,Training Load,Intensity,Average Grade Adjusted Pace,Timer Time,Total Cycles,Recovery,With Pet,Competition,Long Run,For a Cause,With Kid,Downhill Distance,Total Sets,Total Reps,Media\n";
+    pub(super) const HEADER_ENGLISH_103: &str = "Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Max Heart Rate,Relative Effort,Commute,Activity Private Note,Activity Gear,Filename,Athlete Weight,Bike Weight,Elapsed Time,Moving Time,Distance,Max Speed,Average Speed,Elevation Gain,Elevation Loss,Elevation Low,Elevation High,Max Grade,Average Grade,Average Positive Grade,Average Negative Grade,Max Cadence,Average Cadence,Max Heart Rate,Average Heart Rate,Max Watts,Average Watts,Calories,Max Temperature,Average Temperature,Relative Effort,Total Work,Number of Runs,Uphill Time,Downhill Time,Other Time,Perceived Exertion,Type,Start Time,Weighted Average Power,Power Count,Prefer Perceived Exertion,Perceived Relative Effort,Commute,Total Weight Lifted,From Upload,Grade Adjusted Distance,Weather Observation Time,Weather Condition,Weather Temperature,Apparent Temperature,Dewpoint,Humidity,Weather Pressure,Wind Speed,Wind Gust,Wind Bearing,Precipitation Intensity,Sunrise Time,Sunset Time,Moon Phase,Bike,Gear,Precipitation Probability,Precipitation Type,Cloud Cover,Weather Visibility,UV Index,Weather Ozone,Jump Count,Total Grit,Average Flow,Flagged,Average Elapsed Speed,Dirt Distance,Newly Explored Distance,Newly Explored Dirt Distance,Activity Count,Total Steps,Carbon Saved,Pool Length,Training Load,Intensity,Average Grade Adjusted Pace,Timer Time,Total Cycles,Recovery,With Pet,Competition,Long Run,For a Cause,With Kid,Downhill Distance,Total Sets,Total Reps,Media\n";
     const HEADER_GERMAN_92: &str = "Aktivitäts-ID,Aktivitätsdatum,Name der Aktivität,Aktivitätsart,Aktivitätsbeschreibung,Verstrichene Zeit,Distanz,Max. Herzfrequenz,Relative Leistung,Pendeln,Hinweis zur Privatsphäre für Aktivitäten,Aktivitätsausrüstung,Dateiname,Sportlergewicht,Fahrradgewicht,Verstrichene Zeit,Bewegungszeit,Distanz,Höchstgeschw.,Durchschnittliche Geschwindigkeit,Höhenzunahme,Höhenunterschied,Min. Höhe,Max. Höhe,Max. Steigung,Durchschnittliche Steigung,Durchschnittliche positive Steigung,Durchschnittliche negative Steigung,Max. Tritt-/Schrittfrequenz,Durchschnittliche Trittfrequenz,Max. Herzfrequenz,Durchschnittliche Herzfrequenz,Max. Watt,Durchschnittliche Watt,Kalorien,Max. Temperatur,Durchschnittliche Temperatur,Relative Leistung,Gesamtarbeit,Anzahl Läufe,Bergaufzeit,Bergabzeit,Andere Zeit,Gefühlte Anstrengung,Art,Startzeit,Gewichtete durchschnittliche Leistung,Leistungszahl,Gefühlte Anstrengung verwenden,Gefühlte relative Leistung,Pendeln,Insgesamt gestemmtes Gewicht,Von Upload,Auf Steigung angepasste Distanz,Wetterbeobachtungszeit,Wetterlage,Wetter: Temperatur,Scheinbare Temperatur,Taupunkt,Luftfeuchtigkeit,Wetter: Druck,Windgeschwindigkeit,Windböe,Windrichtung,Niederschlagsintensität,Sonnenaufgangszeit,Sonnenuntergangszeit,Mondphase,Fahrrad,Ausrüstung,Niederschlagswahrscheinlichkeit,Niederschlagsart,Wolkendecke,Wetter: Sichtbarkeit,UV-Index,Wetter: Ozon,Sprunganzahl,Schwierigkeit insgesamt,Durchschnittlicher Flow,Markiert,Durchschnittsgeschwindigkeit im Aufzeichnungszeitraum,Auf Schotter zurückgelegte Distanz,Neu getestete Distanz,Neu getestete Schotterdistanz,Aktivitätsanzahl,Schritte insgesamt,Eingesparte CO₂-Emissionen,Pool-Länge,Trainingsbelastung,Intensität,Durchschnittliches auf Steigung angepasstes Tempo,Medien\n";
     const HEADER_ENGLISH_86: &str = "Activity ID,Activity Date,Activity Name,Activity Type,Activity Description,Elapsed Time,Distance,Max Heart Rate,Relative Effort,Commute,Activity Private Note,Activity Gear,Filename,Athlete Weight,Bike Weight,Elapsed Time,Moving Time,Distance,Max Speed,Average Speed,Elevation Gain,Elevation Loss,Elevation Low,Elevation High,Max Grade,Average Grade,Average Positive Grade,Average Negative Grade,Max Cadence,Average Cadence,Max Heart Rate,Average Heart Rate,Max Watts,Average Watts,Calories,Max Temperature,Average Temperature,Relative Effort,Total Work,Number of Runs,Uphill Time,Downhill Time,Other Time,Perceived Exertion,Type,Start Time,Weighted Average Power,Power Count,Prefer Perceived Exertion,Perceived Relative Effort,Commute,Total Weight Lifted,From Upload,Grade Adjusted Distance,Weather Observation Time,Weather Condition,Weather Temperature,Apparent Temperature,Dewpoint,Humidity,Weather Pressure,Wind Speed,Wind Gust,Wind Bearing,Precipitation Intensity,Sunrise Time,Sunset Time,Moon Phase,Bike,Gear,Precipitation Probability,Precipitation Type,Cloud Cover,Weather Visibility,UV Index,Weather Ozone,Jump Count,Total Grit,Average Flow,Flagged,Average Elapsed Speed,Dirt Distance,Newly Explored Distance,Newly Explored Dirt Distance,Activity Count,Media\n";
 
-    fn build_csv(header: &str, rows: &[&[(&str, usize, &str)]]) -> String {
+    pub(super) fn build_csv(header: &str, rows: &[&[(&str, usize, &str)]]) -> String {
         let cols: Vec<&str> = header.trim_end_matches('\n').split(',').collect();
         let mut out = header.to_owned();
 
@@ -4019,7 +4142,9 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert!(pub_rec2.segments.is_empty());
+        // The renamed workout's tile is rewritten and published again, so search
+        // reads its new name.
+        assert_eq!(pub_rec2.segments.len(), 1);
 
         // Run 3: timing changed -> present_timing_changed=1
         let content3 = make_en_csv_103(&[(
@@ -4662,6 +4787,7 @@ mod tests {
             before_apply: Some(&blocker_fn),
             lock_timeout: None,
             stop_before_finish: false,
+            names_model: None,
         };
         let mut selected = None;
         let dispatch1 = strava_dispatch(&csv_file, "20260810_100000");
@@ -4708,6 +4834,7 @@ mod tests {
             before_apply: None,
             lock_timeout: None,
             stop_before_finish: true,
+            names_model: None,
         };
         let mut selected = None;
         let dispatch1 = strava_dispatch(&csv_file, "20260810_100000");
@@ -4807,6 +4934,7 @@ mod tests {
                 before_apply: None,
                 lock_timeout: None,
                 stop_before_finish: false,
+                names_model: None,
             };
             let mut selected = None;
             let ts = format!("20260810_10000{}", idx);
@@ -4839,6 +4967,7 @@ mod tests {
             before_apply: None,
             lock_timeout: None,
             stop_before_finish: false,
+            names_model: None,
         };
         let mut selected = None;
         let run_marker = run_strava_hooked(
@@ -4866,6 +4995,7 @@ mod tests {
             before_apply: None,
             lock_timeout: Some(std::time::Duration::from_millis(0)),
             stop_before_finish: false,
+            names_model: None,
         };
         let _held_lock = solstone_core_journal_io::locking::hold_lock(
             journal_lock.path().join("imports/.strava"),
@@ -4912,6 +5042,7 @@ mod tests {
             before_apply: Some(&blocker),
             lock_timeout: None,
             stop_before_finish: false,
+            names_model: None,
         };
         let mut selected = None;
         let run1 = run_strava_hooked(

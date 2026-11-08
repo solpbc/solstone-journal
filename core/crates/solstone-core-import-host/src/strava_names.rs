@@ -135,6 +135,9 @@ pub struct StravaNamesOutcome {
     pub below_threshold: u64,
     /// Workouts with names but no facet, which give no entity.
     pub no_facet: u64,
+    /// Names over their threshold in a facet that is muted, which become no
+    /// entity there while it is.
+    pub muted: u64,
     /// Creates that failed, with the facet and why.
     pub refused: Vec<(String, String)>,
 }
@@ -482,9 +485,22 @@ fn promote_strava_names(
     let as_of = now
         .with_timezone(&solstone_core_journal_config::owner_zone(journal))
         .date_naive();
+    // A muted facet is one the owner set aside: nothing new is made in it.
+    let enabled = match solstone_core_facets::observe_declared_facet_inventory(journal) {
+        Ok(inventory) => inventory.enabled,
+        Err(error) => {
+            log::warn!("Strava names: facets unreadable, nothing promoted: {error}");
+            outcome.store_error = Some(error.to_string());
+            return;
+        }
+    };
     for ((facet, entity_type, _), tally) in tallies {
         if tally.days.len() < threshold(&entity_type) {
             outcome.below_threshold += 1;
+            continue;
+        }
+        if !enabled.contains(&facet) {
+            outcome.muted += 1;
             continue;
         }
         let day = |day: Option<&String>| {
