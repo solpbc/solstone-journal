@@ -199,17 +199,6 @@ pub(crate) fn physical_segment_dir(
         .join(segment_rel(day, stream, key))
 }
 
-pub(crate) fn physical_staged_dir(
-    journal_root: &Path,
-    day: &str,
-    stream: &str,
-    key: &str,
-) -> PathBuf {
-    let mut path = physical_segment_dir(journal_root, day, stream, key);
-    path.pop();
-    path.push(solstone_core_retention::staged_name(key));
-    path
-}
 pub(crate) fn modality(path: &Path, unclaimed_images: &BTreeSet<String>) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?;
     match media_kind(extension)? {

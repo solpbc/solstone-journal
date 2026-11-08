@@ -73,9 +73,12 @@ pub const MIN_ERASE_AFTER_DAYS: u32 = 1;
 /// The most days the owner can set.
 pub const MAX_ERASE_AFTER_DAYS: u32 = 30;
 
-/// Where the owner's setting lives in `config/journal.json`: `retention` then
-/// this key.
-pub const ERASE_AFTER_DAYS_KEY: &str = "trash_erase_after_days";
+/// Where the owner's setting lives in `config/journal.json`: this section,
+/// then [`ERASE_AFTER_DAYS_KEY`].
+pub const SETTINGS_SECTION: &str = "trash";
+
+/// The setting's key in [`SETTINGS_SECTION`].
+pub const ERASE_AFTER_DAYS_KEY: &str = "erase_after_days";
 
 /// Whether a name at the journal root is the trash folder, so a walk of the
 /// root can skip it. Every walk that lists the journal root uses this.
@@ -120,8 +123,11 @@ pub struct Item {
     pub action: Action,
     #[serde(flatten)]
     pub surface: Surface,
-    /// When it moved to the trash. Its erase date counts from here.
+    /// When it moved to the trash.
     pub trashed_at: String,
+    /// When the trash erases it: fixed when it was trashed, so a later change
+    /// to the setting never moves an item already waiting.
+    pub erase_at: String,
     /// Its journal-relative paths, where attach puts them back.
     pub paths: Vec<String>,
     /// The size of its files.
@@ -138,10 +144,11 @@ impl Item {
             .map(|at| at.with_timezone(&Utc))
     }
 
-    /// When the trash erases it, waiting `days`.
-    pub fn erase_at(&self, days: u32) -> Option<DateTime<Utc>> {
-        self.trashed_at()
-            .map(|at| at + Duration::days(i64::from(days)))
+    /// When the trash erases it.
+    pub fn erase_at(&self) -> Option<DateTime<Utc>> {
+        DateTime::parse_from_rfc3339(&self.erase_at)
+            .ok()
+            .map(|at| at.with_timezone(&Utc))
     }
 }
 
@@ -209,7 +216,8 @@ impl From<PathError> for TrashError {
 ///
 /// `paths` are journal-relative and must exist. The thing is moved whole or
 /// not at all: a stop part-way leaves an item in [`State::Detaching`], which
-/// [`sweep`] finishes. Records [`Event::Trashed`].
+/// [`sweep`] finishes. It is erased after the days the owner set now
+/// ([`erase_after_days`]). Records [`Event::Trashed`].
 pub fn detach(
     journal: &Path,
     kind: &dyn Kind,
@@ -219,6 +227,7 @@ pub fn detach(
     paths: Vec<String>,
 ) -> Result<Item, TrashError> {
     let now = Utc::now();
+    let erase_at = now + Duration::days(i64::from(erase_after_days(journal)));
     let mut item = Item {
         schema: SCHEMA,
         id: item_id(now),
@@ -227,6 +236,7 @@ pub fn detach(
         action,
         surface,
         trashed_at: now.to_rfc3339_opts(SecondsFormat::Millis, true),
+        erase_at: erase_at.to_rfc3339_opts(SecondsFormat::Millis, true),
         paths,
         bytes: 0,
         pending: None,
@@ -334,8 +344,8 @@ pub fn erase_after_days(journal: &Path) -> u32 {
         .ok()
         .and_then(|read| {
             read.config?
-                .get("retention")
-                .and_then(|retention| retention.get(ERASE_AFTER_DAYS_KEY))
+                .get(SETTINGS_SECTION)
+                .and_then(|section| section.get(ERASE_AFTER_DAYS_KEY))
                 .and_then(serde_json::Value::as_u64)
         })
         .and_then(|days| u32::try_from(days).ok())
@@ -356,9 +366,9 @@ pub struct Swept {
     pub failed: Vec<String>,
 }
 
-/// Finish every step a stop interrupted, then erase what has waited `days`.
+/// Finish every step a stop interrupted, then erase what is due by `now`.
 /// Runs at start and on the maintenance schedule.
-pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>, days: u32) -> Swept {
+pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
     let items = match all_items(journal) {
         Ok(items) => items,
@@ -393,7 +403,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>, days: u32)
                     swept.resumed += 1;
                 })
             }
-            State::Trashed => match item.erase_at(days) {
+            State::Trashed => match item.erase_at() {
                 Some(at) if at <= now => {
                     erase(journal, &item.id, Action::Erase, timer_surface()).map(|()| {
                         swept.erased += 1;
@@ -406,7 +416,7 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>, days: u32)
                 None => {
                     swept.waiting += 1;
                     Err(TrashError::Io(format!(
-                        "item {} has an unreadable trash time",
+                        "item {} has an unreadable erase date",
                         item.id
                     )))
                 }
@@ -1037,9 +1047,10 @@ mod tests {
         let kind = Fake::default();
         let item = trash(&root, &kind);
         let trashed = item.trashed_at().unwrap();
-        let early = sweep(&root, &[&kind], trashed + Duration::days(6), 7);
+        assert_eq!(item.erase_at().unwrap(), trashed + Duration::days(7));
+        let early = sweep(&root, &[&kind], trashed + Duration::days(6));
         assert_eq!((early.erased, early.waiting), (0, 1));
-        let due = sweep(&root, &[&kind], trashed + Duration::days(7), 7);
+        let due = sweep(&root, &[&kind], trashed + Duration::days(7));
         assert_eq!((due.erased, due.waiting), (1, 0));
         assert!(list(&root).unwrap().is_empty());
         let history = solstone_core_removals::history(&root, 10).unwrap();
@@ -1066,7 +1077,7 @@ mod tests {
         item.state = State::Detaching;
         publish(&root, &item).unwrap();
         assert!(list(&root).unwrap().is_empty());
-        let swept = sweep(&root, &[&kind], Utc::now(), 7);
+        let swept = sweep(&root, &[&kind], Utc::now());
         assert_eq!(swept.resumed, 1);
         assert_eq!(list(&root).unwrap().len(), 1);
         assert!(!root.join(SEGMENT).exists());
@@ -1088,6 +1099,7 @@ mod tests {
             action: Action::SegmentDelete,
             surface: web(),
             trashed_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            erase_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
@@ -1095,7 +1107,7 @@ mod tests {
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();
         publish_new(&root, &item).unwrap();
-        sweep(&root, &[&kind], Utc::now(), 7);
+        sweep(&root, &[&kind], Utc::now());
         assert!(!root.join(SEGMENT).exists());
         assert_eq!(list(&root).unwrap().len(), 1);
     }
@@ -1124,7 +1136,7 @@ mod tests {
             &trash_entry(&root, &displaced).unwrap(),
         )
         .unwrap();
-        let swept = sweep(&root, &[&kind], Utc::now(), 7);
+        let swept = sweep(&root, &[&kind], Utc::now());
         assert_eq!(swept.resumed, 1, "{swept:?}");
         assert_eq!(fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(), b"sound");
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
@@ -1156,7 +1168,7 @@ mod tests {
                 .join("audio.flac"),
         )
         .unwrap();
-        let swept = sweep(&root, &[&kind], Utc::now(), 7);
+        let swept = sweep(&root, &[&kind], Utc::now());
         assert_eq!(swept.resumed, 1);
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(events(&root).contains(&(Event::Erased, Action::EmptyTrash)));
@@ -1183,11 +1195,27 @@ mod tests {
         for (value, expected) in [("12", 12), ("0", 7), ("31", 7), ("\"x\"", 7), ("30", 30)] {
             fs::write(
                 root.join("config/journal.json"),
-                format!("{{\"retention\":{{\"{ERASE_AFTER_DAYS_KEY}\":{value}}}}}"),
+                format!("{{\"{SETTINGS_SECTION}\":{{\"{ERASE_AFTER_DAYS_KEY}\":{value}}}}}"),
             )
             .unwrap();
             assert_eq!(erase_after_days(&root), expected, "{value}");
         }
+    }
+
+    /// A shorter setting never brings an item's erase date forward.
+    #[test]
+    fn a_new_setting_applies_only_to_what_is_trashed_after_it() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            format!("{{\"{SETTINGS_SECTION}\":{{\"{ERASE_AFTER_DAYS_KEY}\":1}}}}"),
+        )
+        .unwrap();
+        let swept = sweep(&root, &[&kind], item.trashed_at().unwrap() + Duration::days(2));
+        assert_eq!((swept.erased, swept.waiting), (0, 1));
     }
 
     #[test]
