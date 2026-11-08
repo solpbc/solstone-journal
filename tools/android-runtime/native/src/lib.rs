@@ -1132,8 +1132,12 @@ pub unsafe extern "C" fn journal_admit_qwen_runtime(
         if native.is_null() || manifest.is_null() {
             return Err("app metadata and a signed local runtime record are required".into());
         }
-        let native = unsafe { CStr::from_ptr(native) }.to_str().map_err(|e| e.to_string())?;
-        let manifest = unsafe { CStr::from_ptr(manifest) }.to_str().map_err(|e| e.to_string())?;
+        let native = unsafe { CStr::from_ptr(native) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
+        let manifest = unsafe { CStr::from_ptr(manifest) }
+            .to_str()
+            .map_err(|e| e.to_string())?;
         journal_mobile_qwen_engine::register_bundled_runtime(
             Path::new(manifest),
             &Path::new(native).join("libjournal_mobile_qwen.so"),
