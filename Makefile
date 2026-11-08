@@ -1560,6 +1560,7 @@ STANDALONE_LOCK_MANIFESTS := \
 	tools/i18n/Cargo.toml \
 	tools/local_thinking_install/helper/Cargo.toml \
 	tools/mobile-audio/Cargo.toml \
+	tools/mobile-qwen-engine/Cargo.toml \
 	tools/mobile-serving/Cargo.toml \
 	tools/mobile-serving/client/Cargo.toml
 .PHONY: check-standalone-lockfiles

@@ -97,6 +97,7 @@ name = "android-journal-runtime"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "journal-mobile-qwen-engine",
  "journal-mobile-serving",
  "libc",
  "ort",
@@ -2697,6 +2698,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "journal-mobile-qwen-engine"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sha2 0.11.0",
+ "solstone-core-local",
+]
+
+[[package]]
 name = "journal-mobile-serving"
 version = "0.1.0"
 dependencies = [
@@ -2706,6 +2716,7 @@ dependencies = [
  "http-body-util",
  "image",
  "journal-mobile-audio",
+ "journal-mobile-qwen-engine",
  "log",
  "oar-ocr",
  "ort",

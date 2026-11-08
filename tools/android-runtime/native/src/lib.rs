@@ -1117,6 +1117,36 @@ pub unsafe extern "C" fn journal_admit_service_tools(
     CString::new(value.to_string()).unwrap().into_raw()
 }
 
+/// Register the signed app's local engine before any journal is opened. This
+/// only verifies code; the ordinary installer still downloads and verifies models.
+///
+/// # Safety
+/// Both pointers must be live NUL-terminated strings for this call. Release the
+/// returned owned string exactly once with `journal_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn journal_admit_qwen_runtime(
+    native: *const c_char,
+    manifest: *const c_char,
+) -> *mut c_char {
+    let output = std::panic::catch_unwind(|| -> Result<(), String> {
+        if native.is_null() || manifest.is_null() {
+            return Err("app metadata and a signed local runtime record are required".into());
+        }
+        let native = unsafe { CStr::from_ptr(native) }.to_str().map_err(|e| e.to_string())?;
+        let manifest = unsafe { CStr::from_ptr(manifest) }.to_str().map_err(|e| e.to_string())?;
+        journal_mobile_qwen_engine::register_bundled_runtime(
+            Path::new(manifest),
+            &Path::new(native).join("libjournal_mobile_qwen.so"),
+        )
+    });
+    let value = match output {
+        Ok(Ok(())) => json!({"ok":true}),
+        Ok(Err(error)) => json!({"ok":false,"error":error}),
+        Err(_) => json!({"ok":false,"error":"local runtime admission failed"}),
+    };
+    CString::new(value.to_string()).unwrap().into_raw()
+}
+
 /// # Safety
 /// `root` and `op` must point to live NUL-terminated strings for this call.
 /// Release the returned owned string exactly once with `journal_free`.
