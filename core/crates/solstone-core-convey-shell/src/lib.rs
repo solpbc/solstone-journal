@@ -203,6 +203,10 @@ mod thinking;
 #[cfg(all(test, feature = "full-tests"))]
 mod thinking_chatgpt_route_tests;
 mod thinking_install;
+pub use thinking_install::{
+    prepare_mobile_local_installer, request_stop_mobile_local_installer,
+    stop_mobile_local_installer,
+};
 #[cfg(feature = "host")]
 mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]

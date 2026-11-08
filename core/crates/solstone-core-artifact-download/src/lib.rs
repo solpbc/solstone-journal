@@ -169,8 +169,31 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError
 pub fn download_runtime_fetch(
     handle: &RuntimeFetchHandle,
     destination: &Path,
-    mut progress: impl FnMut(u64, Option<u64>),
+    progress: impl FnMut(u64, Option<u64>),
 ) -> Result<bool, ArchiveError> {
+    download_runtime_fetch_with_cancel(handle, destination, progress, None)
+}
+
+/// Cooperatively stop an app-owned fetch, retaining its bound resumable prefix.
+/// Cancellation is `ArchiveError::Io` with `ErrorKind::Interrupted`. Network
+/// reads have a two-second idle bound; connect/header work and hashing can take
+/// longer, so callers must retain their worker until it has actually joined.
+pub fn download_runtime_fetch_cancellable(
+    handle: &RuntimeFetchHandle,
+    destination: &Path,
+    progress: impl FnMut(u64, Option<u64>),
+    cancelled: &dyn Fn() -> bool,
+) -> Result<bool, ArchiveError> {
+    download_runtime_fetch_with_cancel(handle, destination, progress, Some(cancelled))
+}
+
+fn download_runtime_fetch_with_cancel(
+    handle: &RuntimeFetchHandle,
+    destination: &Path,
+    mut progress: impl FnMut(u64, Option<u64>),
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<bool, ArchiveError> {
+    resume::checkpoint(cancelled)?;
     #[cfg(feature = "runtime-fetch-test")]
     {
         let fake_opt = FAKE_RUNTIME_FETCH.with(|cell| cell.borrow().clone());
@@ -185,6 +208,7 @@ pub fn download_runtime_fetch(
             }
             let url = format!("https://{OWNER_ORIGIN_HOST}/{}", handle.origin_key());
             let bytes = fake.fetch(&url, handle.sha256(), handle.size_bytes())?;
+            resume::checkpoint(cancelled)?;
             write_and_verify_bytes(&bytes, handle.sha256(), handle.size_bytes(), destination)?;
             return Ok(true);
         }
@@ -230,6 +254,7 @@ pub fn download_runtime_fetch(
         destination,
         &policy,
         &mut progress,
+        cancelled,
     )
 }
 
@@ -317,6 +342,7 @@ pub fn ensure_verified_url(
         destination,
         &policy,
         &mut progress,
+        None,
     )
 }
 
