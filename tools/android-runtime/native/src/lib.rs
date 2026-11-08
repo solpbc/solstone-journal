@@ -567,6 +567,7 @@ fn serving(root: &Path, command: &str) -> Result<Value, String> {
                 files.join("audio-models/tdt-0.6b-v3-q8_0.gguf"),
                 files.join("audio-scratch"),
             )?;
+            current.handle()?.bind_packaged_speech(host)?;
             current.status()
         }
         "audio-cancel" => {
