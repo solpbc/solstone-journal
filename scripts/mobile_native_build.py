@@ -490,6 +490,12 @@ class Build:
             image = package / "libjournal_mobile_qwen.so"
             shutil.copyfile(build / image.name, image)
             tools = self.ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin"
+            debug_image = build / image.name
+            self.summary["inputs"]["mobile-qwen-debug-image"] = {
+                "path": str(debug_image), "sha256": sha256(debug_image),
+                "size_bytes": debug_image.stat().st_size,
+            }
+            self.run("llama-image-strip", [tools / "llvm-strip", "--strip-unneeded", image])
             text = self.run("llama-image-exports", [tools / "llvm-nm", "-D", "--defined-only", image]).read_text()
             dependencies = self.run("llama-image-dependencies", [tools / "llvm-readelf", "-d", image]).read_text()
         if self.args.platform == "android":
