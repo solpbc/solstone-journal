@@ -1715,4 +1715,173 @@ mod tests {
             assert!(!daily_failure_capped("confidential_access_ended", count));
         }
     }
+
+    /// What the change that made Strava's tiles body data costs, measured. The
+    /// journal: two facets, `work` and `home`, owner zone UTC. Ten shared days,
+    /// at 2, 3, 4 and 8 to 14 days before today (three of them inside the last
+    /// seven): each holds a capture segment classified `work`, and a Strava
+    /// workout Sense read, whose `talents/facets.json` and Sense row chose `home`
+    /// on the first five and `work` on the rest. Two Strava-only days, 20 and 21
+    /// days back, and two capture-only days, 6 and 15 days back (6 is within
+    /// D+1..D+7 of the shared day 8 days back). Before the change every unit of
+    /// every day was accepted against evidence that counted the workout and the
+    /// Sense row, and a tile with `home` made `home` active, as they did then;
+    /// the journal is then put in its stored form and read again.
+    #[test]
+    fn the_strava_switch_reowes_two_units_per_shared_day_and_nothing_else() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        let (talent, apps) = package_roots().unwrap();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+        for facet in ["work", "home"] {
+            let dir = root.join("facets").join(facet);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("facet.json"), format!(r#"{{"title":"{facet}"}}"#)).unwrap();
+        }
+        let today =
+            chrono::NaiveDate::parse_from_str(&local_day(root, Utc::now()), "%Y%m%d").unwrap();
+        let day = |back: i64| {
+            (today - chrono::Duration::days(back))
+                .format("%Y%m%d")
+                .to_string()
+        };
+        let write = |rel: String, text: &str| {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        };
+        let capture = |d: &str| {
+            write(
+                format!("chronicle/{d}/default/090000_300/audio.jsonl"),
+                r#"{"start":"00:00:01","text":"garden planning with the team"}"#,
+            );
+            write(
+                format!("chronicle/{d}/default/090000_300/talents/facets.json"),
+                r#"[{"facet":"work"}]"#,
+            );
+        };
+        // `then` gives the tile and row as they were counted before the change:
+        // a tile holding one more file, and a row naming a capture stream.
+        let strava = |d: &str, facet: &str, then: bool| {
+            let tile = format!("chronicle/{d}/import.strava/070000_300");
+            write(
+                format!("{tile}/workout.json"),
+                r#"{"schema":"solstone.import.strava.tile.v1","activity_id":9,"tile":{"index":0,"count":1},"workout":{"name":"Riverside tempo","type":"Run","distance_m":10200.0}}"#,
+            );
+            write(format!("{tile}/talents/sense.json"), "{}");
+            write(
+                format!("{tile}/talents/facets.json"),
+                &format!(r#"[{{"facet":"{facet}"}}]"#),
+            );
+            let marker = root.join(format!("{tile}/then.md"));
+            if then {
+                fs::write(&marker, "counted").unwrap();
+            } else {
+                let _ = fs::remove_file(&marker);
+            }
+            let stream = if then { "phone" } else { "import.strava" };
+            write(
+                format!("facets/{facet}/activities/{d}.jsonl"),
+                &format!(
+                    "{}\n",
+                    serde_json::json!({"id":"exercise_070000_300","facet":facet,"activity":"exercise",
+                        "segments":["070000_300"],"description":"A run along the river.","stream":stream})
+                ),
+            );
+        };
+        let shared = [2, 3, 4, 8, 9, 10, 11, 12, 13, 14];
+        let facet_of = |index: usize| if index < 5 { "home" } else { "work" };
+        let build = |then: bool| {
+            for (index, back) in shared.iter().enumerate() {
+                capture(&day(*back));
+                strava(&day(*back), facet_of(index), then);
+            }
+            for back in [20, 21] {
+                strava(&day(back), "home", then);
+            }
+            for back in [6, 15] {
+                capture(&day(back));
+            }
+        };
+        let all_days = shared
+            .iter()
+            .chain(&[20, 21, 6, 15])
+            .map(|back| day(*back))
+            .collect::<Vec<_>>();
+        build(true);
+        let mut before = 0;
+        for d in &all_days {
+            for unit in read_daily_coverage_with_roots(root, d, &talent, &apps)
+                .unwrap()
+                .units
+            {
+                accept_unit(root, &unit);
+                before += 1;
+            }
+        }
+        for d in &all_days {
+            assert!(
+                read_daily_coverage_with_roots(root, d, &talent, &apps)
+                    .unwrap()
+                    .state
+                    .is_current(),
+                "{d}"
+            );
+        }
+        build(false);
+        // Strava-only days leave daily work altogether.
+        for back in [20, 21] {
+            assert!(solstone_core_segment::day_holds_nothing_the_owner_did(
+                root,
+                &day(back)
+            ));
+        }
+        let mut owed = std::collections::BTreeSet::new();
+        let mut remaining = 0;
+        for d in all_days
+            .iter()
+            .filter(|d| !solstone_core_segment::day_holds_nothing_the_owner_did(root, d))
+        {
+            for unit in read_daily_coverage_with_roots(root, d, &talent, &apps)
+                .unwrap()
+                .units
+            {
+                remaining += 1;
+                if unit.state.is_owed() {
+                    owed.insert((
+                        unit.identity.day.clone(),
+                        unit.identity.name.clone(),
+                        unit.identity.facet.clone().unwrap_or_default(),
+                    ));
+                }
+            }
+        }
+        let expected = shared
+            .iter()
+            .flat_map(|back| {
+                ["entities:entity_observer", "entities:entity_suggest"]
+                    .map(|name| (day(*back), name.to_owned(), "work".to_owned()))
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(owed, expected);
+        // Each owed unit is one generate talent run: one model call.
+        let configs = daily_configs(root, &talent, &apps).unwrap();
+        for (_, name, _) in &owed {
+            let config = configs.iter().find(|config| &config.key == name).unwrap();
+            assert_eq!(
+                config.metadata.get("type").and_then(Value::as_str),
+                Some("generate"),
+                "{name}"
+            );
+        }
+        assert_eq!(owed.len(), 20);
+        // `home`'s units on the days only the workout chose it are no longer
+        // read at all: a body tile makes no facet active.
+        assert!(remaining < before, "{remaining} < {before}");
+    }
 }
