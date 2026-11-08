@@ -174,12 +174,11 @@ impl StravaRunSummary {
     fn names_section(&self, text: &mut String) {
         let _ = writeln!(text, "## people and gear\n");
         let names = &self.names;
-        if let Some(error) = &names.store_error {
+        if names.store_unavailable {
             let _ = writeln!(
                 text,
-                "the people and gear in your workouts weren't read this time, because your journal couldn't open what it kept from earlier reads ({error}). importing again tries once more.\n"
+                "your journal couldn't open what it keeps from reading your workouts, so the people and gear in them weren't all read this time. importing again tries once more.\n"
             );
-            return;
         }
         let read = names.calls - names.failed;
         let mut parts = Vec::new();
@@ -227,7 +226,35 @@ impl StravaRunSummary {
             };
             let _ = writeln!(text, "{waiting} read this time: {when}.\n");
         }
-        if names.created > 0 {
+        if names.elsewhere > 0 {
+            let _ = writeln!(
+                text,
+                "{} being read by another import that's running now.\n",
+                plural(
+                    names.elsewhere,
+                    "workout's words are",
+                    "workouts' words are"
+                ),
+            );
+        }
+        if names.set_aside > 0 {
+            let _ = writeln!(
+                text,
+                "{} read, because the facet {} filed under is muted or gone. they're read once that facet is back and you import again.\n",
+                plural(
+                    names.set_aside,
+                    "workout's words weren't",
+                    "workouts' words weren't"
+                ),
+                either(names.set_aside, "it's", "they're"),
+            );
+        }
+        if names.promotion_unavailable {
+            let _ = writeln!(
+                text,
+                "no people or things could be added this time, because your journal couldn't read your facets. importing again tries once more.\n"
+            );
+        } else if names.created > 0 {
             let _ = writeln!(
                 text,
                 "{} added from your workouts.\n",
@@ -246,7 +273,7 @@ impl StravaRunSummary {
     #[must_use]
     pub(crate) fn count_keys(&self) -> String {
         format!(
-            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_unfiled={} names_created={}",
+            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_elsewhere={} names_unfiled={} names_set_aside={} names_created={}",
             self.facet.facet.as_deref().unwrap_or("none"),
             self.records.written,
             self.records.sensed,
@@ -260,7 +287,9 @@ impl StravaRunSummary {
             self.names.failed,
             self.names.cached,
             self.names.waiting,
+            self.names.elsewhere,
             self.names.unfiled,
+            self.names.set_aside,
             self.names.created,
         )
     }
@@ -323,11 +352,55 @@ mod tests {
         assert_eq!(facet_paragraphs(&text), 4, "{text}");
         assert_eq!(
             chosen.count_keys(),
-            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_unfiled=0 names_created=1"
+            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_elsewhere=0 names_unfiled=0 names_set_aside=0 names_created=1"
         );
         // With no facet, nothing was filed, whatever the counts say.
         let none = summary(None, FacetBasis::NoDefault).text();
         assert_eq!(none.matches("\n## ").count(), 3, "{none}");
         assert_eq!(facet_paragraphs(&none), 1, "{none}");
+    }
+
+    /// Words that couldn't be read and words read but not made into anyone
+    /// are told apart, each in its own paragraph.
+    #[test]
+    fn a_store_that_couldnt_open_and_names_not_added_say_different_things() {
+        let paragraphs = |names: StravaNamesOutcome| {
+            let mut run = summary(Some("body"), FacetBasis::Chosen);
+            run.names = names;
+            let text = run.text();
+            text[text.find("## people and gear").unwrap()..]
+                .split("\n\n")
+                .skip(1)
+                .filter(|paragraph| !paragraph.trim().is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        };
+        let read = StravaNamesOutcome {
+            calls: 2,
+            ..StravaNamesOutcome::default()
+        };
+        let plain = paragraphs(read.clone());
+        let unopened = paragraphs(StravaNamesOutcome {
+            store_unavailable: true,
+            ..read.clone()
+        });
+        let not_added = paragraphs(StravaNamesOutcome {
+            promotion_unavailable: true,
+            ..read
+        });
+        let store_line = unopened
+            .iter()
+            .find(|paragraph| !plain.contains(paragraph))
+            .unwrap();
+        let promotion_line = not_added
+            .iter()
+            .find(|paragraph| !plain.contains(paragraph))
+            .unwrap();
+        assert_ne!(store_line, promotion_line);
+        // Read, but nothing added: it never says the words weren't read, and
+        // it still says they were.
+        assert!(!not_added.contains(store_line));
+        assert_eq!(not_added[0], plain[0]);
+        assert_eq!(not_added.len(), plain.len());
     }
 }

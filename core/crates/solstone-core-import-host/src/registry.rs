@@ -1381,13 +1381,13 @@ fn run_strava_internal(
         journal,
         hook.and_then(|h| h.names_model)
             .unwrap_or(&crate::strava_names::SiblingNamesModel),
-        now,
+        &chrono::Utc::now,
     );
     #[cfg(not(test))]
     let names = crate::strava_names::record_strava_names(
         journal,
         &crate::strava_names::SiblingNamesModel,
-        now,
+        &chrono::Utc::now,
     );
 
     let run_summary = crate::strava_summary::StravaRunSummary {

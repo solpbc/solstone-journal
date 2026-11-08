@@ -8,20 +8,30 @@
 //! people and gear read from those words, and its gear. It never keeps the
 //! words themselves. Every write holds `imports/.strava`, the lock Strava's
 //! import and its delete take, so a delete's removal is never lost.
+//!
+//! Only one run reads workouts' words at a time: it holds
+//! `imports/.strava-names` while it reads, and a run that finds it held reads
+//! none. The system lets go of that lock when its process ends, however it
+//! ends, so a run that stopped part way never keeps another from reading.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DEFAULT_LOCK_TIMEOUT, FileLock, LockOptions, hold_lock, write_jsonl,
+    AtomicWriteOptions, DEFAULT_LOCK_TIMEOUT, FileLock, LockError, LockOptions, hold_lock,
+    write_jsonl,
 };
 
 /// The store, relative to the journal.
 pub const STRAVA_NAMES_FILE: &str = "imports/.strava-owner-words.jsonl";
 /// The lock Strava's import and its delete hold, relative to the journal.
 pub const STRAVA_LOCK: &str = "imports/.strava";
+/// The lock a run holds while it reads workouts' words, relative to the
+/// journal.
+pub const STRAVA_NAMES_RUN_LOCK: &str = "imports/.strava-names";
 
 const FILE_MODE: u32 = 0o600;
 
@@ -184,6 +194,23 @@ pub fn hold_strava_lock(journal: &Path) -> Result<FileLock, StravaNamesError> {
     .map_err(|error| StravaNamesError::Lock(error.to_string()))
 }
 
+/// Take the lock a run holds while it reads workouts' words, without
+/// waiting: `None` when another run holds it now.
+pub fn hold_strava_names_run(journal: &Path) -> Result<Option<FileLock>, StravaNamesError> {
+    match hold_lock(
+        journal.join(STRAVA_NAMES_RUN_LOCK),
+        LockOptions {
+            timeout: Duration::ZERO,
+            mode: Some(FILE_MODE),
+            ..LockOptions::default()
+        },
+    ) {
+        Ok(lock) => Ok(Some(lock)),
+        Err(LockError::Timeout(_)) => Ok(None),
+        Err(error) => Err(StravaNamesError::Lock(error.to_string())),
+    }
+}
+
 fn save_lines(journal: &Path, lines: &StravaNames) -> Result<(), StravaNamesError> {
     write_jsonl(
         journal.join(STRAVA_NAMES_FILE),
@@ -271,6 +298,16 @@ mod tests {
         let mut wrote = false;
         update_strava_names_with_hook(journal.path(), |_| {}, || wrote = true).unwrap();
         assert!(!wrote);
+    }
+
+    #[test]
+    fn one_run_reads_at_a_time_and_its_lock_goes_with_it() {
+        let journal = journal_with(&[]);
+        let first = hold_strava_names_run(journal.path()).unwrap();
+        assert!(first.is_some());
+        assert!(hold_strava_names_run(journal.path()).unwrap().is_none());
+        drop(first);
+        assert!(hold_strava_names_run(journal.path()).unwrap().is_some());
     }
 
     #[test]
