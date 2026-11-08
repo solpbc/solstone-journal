@@ -152,13 +152,19 @@ fn read_held(path: &Path, stream: &str) -> Held {
             .is_some_and(|tombstone| tombstone["reason"] == OWNER_DELETE);
         return Held::Deleted { by_owner };
     }
-    let (file, decode): (&str, fn(&str) -> Option<Vec<BodyRow>>) = if stream == STRAVA_STREAM {
-        (STRAVA_TILE_FILE, strava_rows)
+    let strava = stream == STRAVA_STREAM;
+    let file = if strava {
+        STRAVA_TILE_FILE
     } else {
-        (BODY_RECORDS_FILE, |text| decode_rows(text).ok())
+        BODY_RECORDS_FILE
     };
     match fs::read_to_string(path.join(file)) {
-        Ok(text) => decode(&text).map_or(Held::Unreadable, Held::Rows),
+        Ok(text) => if strava {
+            strava_rows(&text)
+        } else {
+            decode_rows(&text).ok()
+        }
+        .map_or(Held::Unreadable, Held::Rows),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Held::Rows(Vec::new()),
         Err(_) => Held::Unreadable,
     }
