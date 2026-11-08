@@ -740,3 +740,90 @@ fn a_capture_activity_colliding_with_a_strava_reading_still_gets_its_record() {
     assert_eq!(rows.len(), 2, "{rows:?}");
     assert_eq!(rows[1]["id"], "work_default_070000_300", "{rows:?}");
 }
+
+const DOCUMENTS: &str = "{\n\"type\": \"generate\", \"max_output_tokens\": 1024, \"schedule\": \"segment\", \"priority\": 2, \"output\": \"md\"\n}\n";
+
+fn segment_unit(stream: &str, key: &str, talent: &str) -> solstone_core_system::work_retry::Unit {
+    solstone_core_system::work_retry::Unit::Segment {
+        day: DAY.into(),
+        stream: stream.into(),
+        segment: key.into(),
+        talent: talent.into(),
+        direct: false,
+    }
+}
+
+/// Hold `unit` as set aside after failures, then grant it the owner's retry.
+fn held_with_owner_ask(journal: &Path, unit: &solstone_core_system::work_retry::Unit) -> String {
+    use solstone_core_system::work_retry;
+    let input = work_retry::input::current(journal, unit).unwrap();
+    work_retry::observe_held(journal, unit, "send_failed", &input).unwrap();
+    work_retry::request(journal, unit).unwrap();
+    let record = work_retry::read(journal, &unit.id().unwrap())
+        .unwrap()
+        .unwrap();
+    record
+        .permission(&input, work_retry::DECLARED_FIXES)
+        .unwrap()
+        .cause
+}
+
+/// A segment talent held on a Strava tile, retried by the owner's ask, makes
+/// no model call and ends accepted, its hold released. The same retry on a
+/// capture segment still dispatches.
+#[test]
+fn a_held_segment_talent_on_a_strava_tile_ends_without_a_call() {
+    let (_journal, _roots, context, recorder) =
+        journal(&[("sense", SENSE), ("documents", DOCUMENTS)]);
+    strava_tile(&context.journal, TILE, Some(&active("work", "exercise")));
+    let capture = segment_path(&context.journal, "default", "090000_300");
+    fs::create_dir_all(&capture).unwrap();
+    fs::write(capture.join("audio.jsonl"), "{}\n").unwrap();
+    write_sense(
+        &context.journal,
+        "default",
+        "090000_300",
+        &active("work", "meeting"),
+    );
+    let strava = segment_unit(STRAVA, TILE, "documents");
+    let other = segment_unit("default", "090000_300", "documents");
+    let strava_cause = held_with_owner_ask(&context.journal, &strava);
+    let other_cause = held_with_owner_ask(&context.journal, &other);
+    let before = tree(&segment_path(&context.journal, STRAVA, TILE));
+
+    let mut log = test_log(&context, "retry");
+    let ended = crate::retry::run(
+        &context,
+        &mut log,
+        &strava.id().unwrap(),
+        &strava_cause,
+        &solstone_core_system::process::ChildLaunchContext::default(),
+    )
+    .unwrap();
+    assert_eq!(ended.failed, 0, "{ended:?}");
+    assert!(recorder.requests.lock().unwrap().is_empty());
+    assert!(
+        !solstone_core_system::work_retry::read(&context.journal, &strava.id().unwrap())
+            .unwrap()
+            .unwrap()
+            .held
+    );
+    assert_eq!(tree(&segment_path(&context.journal, STRAVA, TILE)), before);
+
+    let _ = crate::retry::run(
+        &context,
+        &mut log,
+        &other.id().unwrap(),
+        &other_cause,
+        &solstone_core_system::process::ChildLaunchContext::default(),
+    );
+    log.finish().unwrap();
+    let asked = recorder
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|request| request.name.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(asked, vec!["documents"]);
+}

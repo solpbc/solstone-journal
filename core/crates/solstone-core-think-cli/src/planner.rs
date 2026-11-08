@@ -662,6 +662,36 @@ fn held(
     });
 }
 
+/// Segment work held on a Strava tile: body data, which no talent reads.
+fn is_body_data_hold(unit: &Unit) -> bool {
+    matches!(unit, Unit::Segment { stream, .. }
+        if stream == solstone_core_format::content::strava_body::STRAVA_STREAM)
+}
+
+/// End segment work held on a Strava tile as its retry would, accepted and
+/// released, under the unit's execution claim, so it is neither dispatched nor
+/// shown as held. A run holding the claim ends it itself.
+fn settle_body_data_holds(
+    journal: &Path,
+    records: Vec<work_retry::Record>,
+    errors: &mut Vec<String>,
+) -> Vec<work_retry::Record> {
+    records
+        .into_iter()
+        .filter(|record| {
+            if !is_body_data_hold(&record.unit) {
+                return true;
+            }
+            if let Ok(_claim) = work_retry::execution_claim(journal, &record.unit)
+                && let Err(error) = work_retry::reconcile_accepted(journal, &record.unit)
+            {
+                errors.push(format!("{}: {error}", record.unit.day()));
+            }
+            false
+        })
+        .collect()
+}
+
 fn retry_imported(unit: &Unit, imports: &[ImportThinking]) -> bool {
     imports.iter().any(|import| match unit {
         Unit::Raw {
@@ -936,7 +966,9 @@ fn talent_retries(
         .date_naive();
     let mut candidates = Vec::new();
     for record in records.into_iter().filter(|r| {
-        r.unit.day() == day && matches!(r.unit, Unit::Segment { .. } | Unit::Activity { .. })
+        r.unit.day() == day
+            && matches!(r.unit, Unit::Segment { .. } | Unit::Activity { .. })
+            && !is_body_data_hold(&r.unit)
     }) {
         let id = record.unit.id()?;
         let current = match &record.unit {
@@ -2007,7 +2039,8 @@ fn reconcile_pass_with_roots(
     );
     asks.hold(journal, &unfinished_activities);
     let (held_activities, held_errors) = crate::discover_held_activities(journal);
-    let (held_records, retry_errors) = work_retry::list(journal);
+    let (held_records, mut retry_errors) = work_retry::list(journal);
+    let held_records = settle_body_data_holds(journal, held_records, &mut retry_errors);
     let now = chrono::Utc::now();
     let today = daily_coverage::local_day(journal, now);
     let pass_day = today.clone();
@@ -2675,6 +2708,73 @@ mod tests {
         }).to_string()).unwrap();
         root
     }
+    /// Segment work held on a Strava tile is ended by the discovery pass, never
+    /// shown as held or offered to run; held work on a capture segment stays.
+    #[test]
+    fn discovery_ends_segment_work_held_on_a_strava_tile() {
+        let root = fixture("local");
+        let journal = root.path();
+        let day = "20260102";
+        let mut units = Vec::new();
+        for (stream, key, file) in [
+            ("import.strava", "120000_300", "workout.json"),
+            ("notes", "120000_300", "audio.jsonl"),
+            ("import.strava", "130000_300", "workout.json"),
+        ] {
+            let dir = journal.join("chronicle").join(day).join(stream).join(key);
+            std::fs::create_dir_all(dir.join("talents")).unwrap();
+            std::fs::write(dir.join(file), "{}\n").unwrap();
+            std::fs::write(dir.join("talents/sense.json"), "{}").unwrap();
+            let unit = Unit::Segment {
+                day: day.into(),
+                stream: stream.into(),
+                segment: key.into(),
+                talent: "entities:detection".into(),
+                direct: false,
+            };
+            let input = work_retry::input::current(journal, &unit).unwrap();
+            work_retry::observe_held(journal, &unit, "send_failed", &input).unwrap();
+            work_retry::request(journal, &unit).unwrap();
+            units.push(unit);
+        }
+        // A run already holds the last one: it ends that work itself, and this
+        // pass still neither shows it as held nor offers it.
+        let running = work_retry::execution_claim(journal, &units[2]).unwrap();
+        let queue = queue(journal);
+        let stopped = AtomicBool::new(false);
+        let backlog = reconcile_pass(journal, &queue, &stopped, false).unwrap();
+        drop(running);
+        let held = |unit: &Unit| {
+            work_retry::read(journal, &unit.id().unwrap())
+                .unwrap()
+                .unwrap()
+                .held
+        };
+        assert!(!held(&units[0]), "the Strava tile's work is no longer held");
+        assert!(held(&units[1]), "capture work stays held");
+        assert!(held(&units[2]), "the running claim's work is left to it");
+        let holds = backlog
+            .published
+            .unwrap()
+            .holds
+            .into_iter()
+            .filter_map(|hold| hold.retry_unit)
+            .collect::<Vec<_>>();
+        assert_eq!(holds, vec![units[1].id().unwrap()]);
+        let offered = backlog
+            .admitted
+            .iter()
+            .chain(&backlog.ranked)
+            .map(|task| task.request.reference.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            offered
+                .iter()
+                .all(|reference| !reference.contains("import.strava")),
+            "{offered:?}"
+        );
+    }
+
     #[test]
     fn a_batch_observed_segment_waits_for_the_daily_catch_up() {
         let root = fixture("local");

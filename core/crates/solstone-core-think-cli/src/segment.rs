@@ -712,6 +712,20 @@ pub(crate) fn retry_talent(
     stream: &str,
     talent: &str,
 ) -> Result<ModeResult, String> {
+    // A Strava tile is body data that no talent reads. Work held on one from
+    // before ends as the retry of finished work does: accepted, its hold
+    // released, with no model call.
+    if stream == STRAVA_STREAM {
+        if let Some((unit, _)) = &context.retry {
+            solstone_core_system::work_retry::reconcile_accepted_checked(
+                &context.journal,
+                unit,
+                &|| context.checkpoint(),
+            )?;
+        }
+        log_skip(log, context, talent, segment, "body_data", Some(stream));
+        return Ok(ModeResult::default());
+    }
     if !SEGMENT_FLOOR_TALENTS.contains(&talent) {
         // Finished elsewhere, or no longer selected: nothing is left to
         // retry, so the hold is released rather than retried every pass.
