@@ -18,6 +18,7 @@ use solstone_core_facets::{
     ActivityRecordStoreError, AppendOutcome, DeclaredFacetInventory,
     append_activity_record_checked, get_activity_record, observe_declared_facet_inventory,
 };
+use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_journal_io::{
     AtomicWriteOptions, DEFAULT_STREAM, FileLock, LockOptions, PathOrDay, atomic_replace,
     hold_lock, iter_segments,
@@ -142,7 +143,10 @@ pub(crate) fn publish_if_thought(
             return Ok(());
         };
         let stream = stream.or_else(|| named_stream(&segment_dir, &context.day));
-        if !thinking_is_current(context, segment, stream, &segment_dir) {
+        // A Strava tile's earlier thinking is never published again.
+        if stream == Some(STRAVA_STREAM)
+            || !thinking_is_current(context, segment, stream, &segment_dir)
+        {
             return Ok(());
         }
         publish_saved_outputs(context, &segment_dir)
@@ -237,6 +241,9 @@ fn think(
     // Held to the end of the run, so a second run on this segment starts from
     // this one's finished work rather than beside it.
     let _turn = segment_turn(context, &segment_dir);
+    if stream == Some(STRAVA_STREAM) {
+        return end_body_data_sense(context, log, segment, stream);
+    }
     let state =
         read_segment_data_state(&context.journal, &context.day, segment, stream, Utc::now());
     if !segment_fully_sensed(&state) {
@@ -2358,8 +2365,10 @@ fn publish_ended_activities(
             record.insert("stream".to_owned(), Value::String(stream.to_owned()));
         }
         let written = match append_own_activity(context, facet, routing_day, &mut record) {
-            Ok(AppendOutcome::Written(_)) => true,
-            Ok(AppendOutcome::AlreadyExists) => false,
+            Ok(OwnAppend::Written) => true,
+            Ok(OwnAppend::AlreadyExists) => false,
+            // Nothing was written, so there is nothing to publish or run.
+            Ok(OwnAppend::Skipped) => continue,
             Err(error) => {
                 log.log(
                     "activity.persist_failed",
@@ -2518,8 +2527,22 @@ pub(crate) fn rethink_if_input_changed(
     Ok(())
 }
 
+/// What appending an ended activity did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OwnAppend {
+    Written,
+    AlreadyExists,
+    /// Not appended, and not an error: the activity is in a stream whose
+    /// records thinking no longer writes.
+    Skipped,
+}
+
 /// Append an ended activity, giving it its own ID when another stream's
 /// activity already holds the one its type and first segment make.
+///
+/// An activity in Strava's stream is never appended. A Strava tile is body
+/// data, so its record comes from the import and never from thinking; an
+/// activity left open there from before is closed with no record.
 ///
 /// Two streams starting the same type in the same facet on segments with the
 /// same key (capture clients that align segments to the clock do this) would
@@ -2534,14 +2557,22 @@ pub(crate) fn append_own_activity(
     facet: &str,
     day: &str,
     record: &mut Map<String, Value>,
-) -> Result<AppendOutcome, ActivityRecordStoreError> {
+) -> Result<OwnAppend, ActivityRecordStoreError> {
+    if record.get("stream").and_then(Value::as_str) == Some(STRAVA_STREAM) {
+        return Ok(OwnAppend::Skipped);
+    }
     let journal = &context.journal;
     let outcome = append_activity_record_checked(journal, facet, day, record.clone(), || {
         context.checkpoint()
     })?;
+    let own = |outcome: AppendOutcome| match outcome {
+        AppendOutcome::Written(_) => OwnAppend::Written,
+        AppendOutcome::AlreadyExists => OwnAppend::AlreadyExists,
+    };
     if !matches!(outcome, AppendOutcome::AlreadyExists) {
-        return Ok(outcome);
+        return Ok(own(outcome));
     }
+    let outcome = own(outcome);
     let (Some(id), Some(activity)) = (
         record.get("id").and_then(Value::as_str),
         record.get("activity").and_then(Value::as_str),
@@ -2573,9 +2604,10 @@ pub(crate) fn append_own_activity(
     if !held_by_another_stream {
         return Ok(outcome);
     }
-    let own = format!("{activity}_{stream}_{since}");
-    record.insert("id".to_owned(), Value::String(own));
+    let own_id = format!("{activity}_{stream}_{since}");
+    record.insert("id".to_owned(), Value::String(own_id));
     append_activity_record_checked(journal, facet, day, record.clone(), || context.checkpoint())
+        .map(own)
 }
 
 /// Run the talents of activities [`publish_ended_activities`] recorded. A run
@@ -3486,6 +3518,34 @@ fn log_request_lost(
         context.event_now_ms(),
         std::mem::take(&mut fields),
     );
+}
+
+/// A Strava tile is body data, so Sense never reads it: nothing is written under
+/// its talents and no model is called. Such a run can still arrive, queued
+/// before tiles counted as body data. A routing retry left pending for the tile
+/// ends here as resolved, the way a routing retry ends one, so its day can read
+/// complete, and the run ends as an idle one does, with no outputs.
+fn end_body_data_sense(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    stream: Option<&str>,
+) -> Result<ModeResult, String> {
+    let pending = solstone_core_system_health::read_pending_facet_routing(
+        &FilesystemHealthLogSource::new(&context.journal),
+        &context.day,
+    )
+    .map_err(|error| error.to_string())?;
+    let key = solstone_core_system_health::SegmentIdentity {
+        stream: stream.map(str::to_owned),
+        segment: segment.to_owned(),
+    };
+    if pending.value.contains_key(&key) {
+        log_routing_state(context, log, segment, stream, false)?;
+    }
+    log_skip(log, context, "sense", segment, "body_data", stream);
+    complete(log, context, segment, stream, ModeResult::default());
+    Ok(ModeResult::default())
 }
 
 fn complete(

@@ -35,7 +35,7 @@ use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use solstone_core_facets::{
-    AppendOutcome, get_activity_record, load_activity_records, observe_declared_facet_inventory,
+    get_activity_record, load_activity_records, observe_declared_facet_inventory,
     update_activity_record_checked,
 };
 use solstone_core_journal_io::{
@@ -49,9 +49,9 @@ use crate::context::ThinkContext;
 use crate::dispatch::ModeResult;
 use crate::run_log::RunLogWriter;
 use crate::segment::{
-    EndedActivity, LIVE_ORDER_HOLD_MS, activity_context, activity_event, append_own_activity,
-    filter_declared_facets, modified_ms, record_publication, rethink_if_input_changed,
-    run_activity_talents, stream_coordinate, valid_activity_sense,
+    EndedActivity, LIVE_ORDER_HOLD_MS, OwnAppend, activity_context, activity_event,
+    append_own_activity, filter_declared_facets, modified_ms, record_publication,
+    rethink_if_input_changed, run_activity_talents, stream_coordinate, valid_activity_sense,
 };
 
 /// How long an ended activity's segments must stay unchanged, and how long
@@ -794,8 +794,9 @@ fn publish(
     let outcome = append_own_activity(context, &facet, day, &mut record)
         .map_err(|error| format!("{facet}/{id}: {error}"))?;
     let published = match outcome {
-        AppendOutcome::Written(_) => Published::Written,
-        AppendOutcome::AlreadyExists => grow(context, &facet, &record)?,
+        OwnAppend::Written => Published::Written,
+        OwnAppend::AlreadyExists => grow(context, &facet, &record)?,
+        OwnAppend::Skipped => Published::Refused,
     };
     if matches!(published, Published::Refused) {
         return Ok(published);
