@@ -229,8 +229,15 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
         (0, 3)
     );
     assert_eq!(tile_facet(root, "20261004", "070000_300"), None);
-    // The step ran after the lock was released, and read the one workout with words.
-    assert_eq!((count(&run, "names_calls"), model.calls.get()), (1, 1));
+    // The one workout with words has no facet, so its words aren't read yet.
+    assert_eq!(
+        (
+            count(&run, "names_calls"),
+            count(&run, "names_unfiled"),
+            model.calls.get()
+        ),
+        (0, 1, 0)
+    );
 
     // An earlier reading filed the second workout's tile under work, with its
     // record; the third workout's day can't be read.
@@ -294,10 +301,15 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
         records(root, "work", "20261005"),
         std::slice::from_ref(&sense_record)
     );
-    // The same words aren't read again.
+    // Filed under body, its words are read now, after the lock was released;
+    // the two with none aren't read again.
     assert_eq!(
-        (count(&run, "names_calls"), count(&run, "names_cached")),
-        (0, 3)
+        (
+            count(&run, "names_calls"),
+            count(&run, "names_cached"),
+            model.calls.get()
+        ),
+        (1, 2, 1)
     );
     assert!(root.join(format!("imports/{id}/summary.md")).is_file());
 

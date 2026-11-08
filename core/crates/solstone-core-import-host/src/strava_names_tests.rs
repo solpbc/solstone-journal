@@ -438,7 +438,8 @@ fn a_workout_no_longer_live_loses_its_line_and_counts_for_nothing() {
     let model = Model::answering(json!([person("Sam", "with Sam")]));
     Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
     let deleted = Workout::new(2, "20261002", "Hill repeats with Sam").write(root);
-    // An earlier run read both; the second workout has been deleted since.
+    // An earlier run kept a line for both, reading the first; the second, with
+    // no facet there, wasn't read. It has been deleted since.
     let earlier = journal_with(Value::Null);
     Workout::new(1, "20261001", "Hill repeats with Sam").write(earlier.path());
     Workout::new(2, "20261002", "Hill repeats with Sam")
@@ -457,7 +458,7 @@ fn a_workout_no_longer_live_loses_its_line_and_counts_for_nothing() {
 
     let outcome = run(root, &model);
 
-    assert_eq!(model.count(), 2);
+    assert_eq!(model.count(), 1);
     assert_eq!(outcome.pruned, 1);
     assert_eq!(store(root).keys().collect::<Vec<_>>(), ["1"]);
     assert_eq!((outcome.created, outcome.below_threshold), (0, 1));
@@ -577,8 +578,26 @@ fn a_workout_with_no_facet_gives_no_entity() {
 
     let outcome = run(root, &model);
 
-    assert_eq!((outcome.no_facet, outcome.created), (2, 0));
+    assert_eq!((outcome.unfiled, outcome.created), (2, 0));
     assert!(!root.join("entities").exists());
+}
+
+#[test]
+fn a_workout_with_no_facet_is_read_only_once_it_has_one() {
+    let journal = journal();
+    let root = journal.path();
+    Workout::new(1, "20261001", "Hill repeats with Sam")
+        .facet(None)
+        .write(root);
+    let model = Model::answering(json!([person("Sam", "with Sam")]));
+
+    let outcome = run(root, &model);
+    assert_eq!((model.count(), outcome.calls, outcome.unfiled), (0, 0, 1));
+
+    // The same download, imported with body.
+    Workout::new(1, "20261001", "Hill repeats with Sam").write(root);
+    let outcome = run(root, &model);
+    assert_eq!((model.count(), outcome.calls, outcome.unfiled), (1, 1, 0));
 }
 
 #[test]

@@ -133,6 +133,9 @@ pub struct StravaNamesOutcome {
     pub present: u64,
     /// Names under their threshold.
     pub below_threshold: u64,
+    /// Workouts with words but no facet, not read: an import that files
+    /// them under a facet reads them.
+    pub unfiled: u64,
     /// Workouts with names but no facet, which give no entity.
     pub no_facet: u64,
     /// Names over their threshold in a facet that is muted, which become no
@@ -202,6 +205,12 @@ pub fn record_strava_names(
         if workout.words.is_empty() {
             outcome.no_words += 1;
             read.insert(activity_id.clone(), (hash, Vec::new()));
+            continue;
+        }
+        // A workout with no facet gives no entity, so its words aren't read
+        // until it has one; an import that files it reads them then.
+        if workout.facet.is_none() {
+            outcome.unfiled += 1;
             continue;
         }
         let open = *gate.get_or_insert_with(|| names_gate(journal, now));
