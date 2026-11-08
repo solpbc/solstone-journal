@@ -26,13 +26,8 @@ pub(super) fn render(records: &[JsonObject]) -> ProducedChunks {
 fn render_sense(sense_obj: &JsonObject) -> String {
     let mut lines = Vec::new();
     let content_type = clean_value(sense_obj.get("content_type"));
-    let emotional_register = clean_value(sense_obj.get("emotional_register"));
-    let heading_parts = [content_type.as_str(), emotional_register.as_str()]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>();
-    if !heading_parts.is_empty() {
-        lines.push(format!("## Sense: {}", heading_parts.join(" · ")));
+    if !content_type.is_empty() {
+        lines.push(format!("## Sense: {content_type}"));
     }
 
     let activity_summary = clean_value(sense_obj.get("activity_summary"));
@@ -172,7 +167,10 @@ mod tests {
         assert_eq!(produced.agent_override.as_deref(), Some("sense"));
         assert_eq!(produced.chunks.len(), 1);
         let rendered = &produced.chunks[0].content;
-        assert!(rendered.contains("## Sense: meeting · collaborative"));
+        // A record written by an older version still carries a mood label;
+        // the journal never shows one.
+        assert!(rendered.starts_with("## Sense: meeting\n"));
+        assert!(!rendered.contains("collaborative"));
         assert!(rendered.contains("Reviewed the launch timeline with product leads."));
         assert!(rendered.contains("### Entities"));
         assert!(rendered.contains("- Person: Alice Smith — Owned the launch checklist. (high)"));

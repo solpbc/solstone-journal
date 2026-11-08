@@ -13,6 +13,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
+### Changed
+
+- your journal no longer guesses your mood. it no longer labels each part of your day with a mood like "tense" or "celebratory". labels an older version added, to a summary or to a line of a transcript, are no longer shown to you or to agents you've connected. they stay in your journal, unchanged.
+
 ### Fixed
 
 - fixed an intermittent failure that could leave new recordings unprocessed after your journal started.

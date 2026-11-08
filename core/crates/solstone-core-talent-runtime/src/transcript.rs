@@ -464,8 +464,7 @@ mod tests {
             "speculative_facet": null,
             "meeting_detected": false,
             "speakers": [],
-            "recommend": {"screen_record": false, "speaker_attribution": false},
-            "emotional_register": "neutral"
+            "recommend": {"screen_record": false, "speaker_attribution": false}
         });
         fs::write(
             talents_dir.join("sense.json"),

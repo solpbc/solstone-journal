@@ -823,7 +823,7 @@
       }
     },
     {
-      "name": "an_emotion_note_keeps_the_model_body",
+      "name": "an_older_emotion_tag_is_not_part_of_the_line",
       "talent": "conversation",
       "activity_kind": "meeting",
       "stream": "phone",
@@ -847,7 +847,7 @@
         "relations": []
       },
       "expect": {
-        "ordinary": true
+        "body": "An unidentified speaker said: \"The Birch build shipped.\""
       }
     },
     {

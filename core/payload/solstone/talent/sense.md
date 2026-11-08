@@ -27,7 +27,7 @@ Read the transcript and screen data. Produce a JSON object with ALL of the follo
 
 ## Output Schema
 
-Authoritative schema: `sense.schema.json`. The output is a single JSON object with these top-level fields: `density`, `content_type`, `activity_summary`, `entities`, `facets`, `speculative_facet`, `meeting_detected`, `speakers`, `recommend`, `emotional_register`, `topics`, `quotes`. See Field-by-Field Instructions below for semantics and enum values.
+Authoritative schema: `sense.schema.json`. The output is a single JSON object with these top-level fields: `density`, `content_type`, `activity_summary`, `entities`, `facets`, `speculative_facet`, `meeting_detected`, `speakers`, `recommend`, `topics`, `quotes`. See Field-by-Field Instructions below for semantics and enum values.
 
 ## Field-by-Field Instructions
 
@@ -109,7 +109,7 @@ Centrality is independent of `role`: an entity can be `role: mentioned` yet `lev
 What this segment was about, as short phrases someone would type to find it again later: the plans, problems, decisions under discussion, documents, events, places, purchases and numbers that came up, each with enough words to be specific ("Q3 pricing page", "flight to Barcelona in November", "index rebuild taking six hours"). Use the words the content itself uses. Name subjects, not outcomes: never write that something was decided, agreed, promised or done. Up to 12, most central first. A topic may include a name when the pairing matters ("Priya's launch deck"), but do not list names on their own: they belong in `entities`. Empty array when the segment is idle or has nothing to name.
 
 ### quotes
-Up to 8 short passages of spoken words from the transcript that someone would most want to find again: plans, agreements, requests, offers, dates, amounts and opinions. Copy each `text` exactly from the transcript, 3 to 30 words, without fixing, shortening, summarizing or completing it. Copy only the spoken words: leave out emotion labels, annotations in parentheses or asterisks, timestamps and speaker prefixes. Never quote screen text; what was on screen belongs in `topics`. `speaker` is the label the transcript gives that line ("Speaker 2", a name the transcript itself shows, or the role an AI conversation gives the line); write "unknown" when the line has no label. Never guess a name, and never write that the owner said it unless the transcript labels the line that way. Do not judge whether anything was done. Empty array when nothing was said, and always empty when the segment has no transcript.
+Up to 8 short passages of spoken words from the transcript that someone would most want to find again: plans, agreements, requests, offers, dates, amounts and opinions. Copy each `text` exactly from the transcript, 3 to 30 words, without fixing, shortening, summarizing or completing it. Copy only the spoken words: leave out annotations in parentheses or asterisks, timestamps and speaker prefixes. Never quote screen text; what was on screen belongs in `topics`. `speaker` is the label the transcript gives that line ("Speaker 2", a name the transcript itself shows, or the role an AI conversation gives the line); write "unknown" when the line has no label. Never guess a name, and never write that the owner said it unless the transcript labels the line that way. Do not judge whether anything was done. Empty array when nothing was said, and always empty when the segment has no transcript.
 
 ### facets
 Classify into the owner's configured facets. Always include at least one facet — pick the closest configured facet. If multiple facets fit, include the dominant one as `level: high` and others at `level: medium` or `level: low`. For each:
@@ -150,19 +150,6 @@ Prefer complete canonical forms (full names when identifiable). Do NOT include t
 Processing recommendations for downstream agents:
 - **screen_record**: `true` if density is "active" AND there is meaningful screen content worth documenting (not just a static/repetitive screen)
 - **speaker_attribution**: `true` if `meeting_detected` is true AND there are multiple speakers to attribute
-
-### emotional_register
-The observable emotional tone of the segment based on conversation tone, speech patterns, and behavioral signals — not inferred feelings. Choose the single best match:
-- **high_energy**: Fast-paced, enthusiastic, productive momentum
-- **tense**: Conflict, disagreement, pressure, frustration evident in tone or content
-- **focused**: Quiet concentration, deep work, minimal interruption
-- **collaborative**: Engaged multi-person work, building on each other's ideas
-- **flat**: Low energy, going through motions, no strong signal either way
-- **celebratory**: Wins acknowledged, positive outcomes, shared excitement
-- **strained**: Fatigue, overload, pushing through difficulty
-- **neutral**: No clear emotional register observable — use this as the default when the segment doesn't carry detectable emotional tone
-
-A segment that holds only body data, such as a workout or a set of readings, is **neutral**: its numbers are not an emotional signal.
 
 ## Rules
 
