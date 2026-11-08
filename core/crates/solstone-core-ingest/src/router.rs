@@ -898,13 +898,10 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             );
         }
     };
-    // A segment the owner removed holds only its tombstone, and one being removed
-    // has been moved aside under its staged name. A device still
-    // holding its own copy is told so, distinctly, before anything touches the
-    // segment directory. The answer keeps the shape this case always had (a 500
-    // `failed` outcome), so devices already in the field handle it exactly as
-    // before; only the reason code is new, and a device that knows it can stop
-    // re-sending.
+    // A segment the owner removed and a device sends again is new data and comes
+    // back: its tombstone gives way and the segment is written as it arrives.
+    // Only a removal still part-way through refuses, with the answer this case
+    // always had (a 500 `failed` outcome), so devices in the field retry later.
     match segment_removed(
         &state.journal_root,
         &envelope.day,
@@ -919,7 +916,7 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
                     "failed",
                     ReasonCode::SegmentRemoved,
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    "the owner removed this segment",
+                    "this segment is being removed",
                 ),
             );
         }
@@ -1428,8 +1425,11 @@ fn segment_removed(
     segment: &str,
 ) -> Result<bool, ()> {
     let segment = SegmentDir::resolve(journal_root, day, segment, stream).map_err(|_| ())?;
-    // A tombstone and a removal still in progress both mean the owner deleted it.
-    solstone_core_segment::owner_deleted(segment.path()).map_err(|_| ())
+    // Only a removal still in progress refuses; a removed segment's tombstone
+    // gives way to the segment arriving again.
+    solstone_core_segment::reclaim_for_arrival(segment.path())
+        .map(|arrival| arrival == solstone_core_segment::Arrival::Removing)
+        .map_err(|_| ())
 }
 
 fn resolve_and_apply(
@@ -2764,14 +2764,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_resend_into_a_removed_segment_is_refused_as_removed() {
+    async fn a_resend_into_a_removed_segment_comes_back() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let app = router(&root);
         let removed =
             json!({"day":"20260804","segment":"120000_1","files":[{"submitted":"audio.flac"}]});
-        let kept =
-            json!({"day":"20260804","segment":"130000_1","files":[{"submitted":"audio.flac"}]});
         assert_eq!(
             call_upload(&app, removed.clone(), "audio.flac", b"sound")
                 .await
@@ -2790,26 +2788,12 @@ mod tests {
         }
         fs::write(segment.join("tombstone.json"), b"{}").unwrap();
 
+        // The device sends it again: new data, and it comes back.
         let (status, body) = call_upload(&app, removed, "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(
-            body["status"], "failed",
-            "the shape devices in the field already handle"
-        );
-        assert_eq!(body["reason_code"], "segment_removed");
-        let names = fs::read_dir(&segment)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            vec!["tombstone.json"],
-            "a refused re-send leaves nothing behind"
-        );
-
-        let (status, body) = call_upload(&app, kept, "audio.flac", b"other").await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["status"], "ok");
+        assert_eq!(fs::read(segment.join("audio.flac")).unwrap(), b"sound");
+        assert!(!segment.join("tombstone.json").exists());
     }
 
     #[tokio::test]
