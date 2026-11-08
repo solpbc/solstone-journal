@@ -4260,7 +4260,7 @@
     return true;
   }
 
-  function startInstallPoll(initialStatus = null) {
+  function startInstallPoll(initialStatus = null, {afterCancel = false} = {}) {
     const model = selectedLocalModelId();
     if (!model) return null;
     stopInstallPoll();
@@ -4277,6 +4277,10 @@
         if (generation !== state.installPollGeneration) return;
         if (installIsTerminal(status)) {
           stopInstallPoll();
+          if (afterCancel) {
+            clearLocalSetupError();
+            renderLocal();
+          }
           if (status?.install_state === 'installed') {
             Promise.all([
               refreshProviders(),
@@ -4678,27 +4682,41 @@
   }
 
   let cancelPending = false;
+  async function localInstallAfterCancel({cancelFn, fetchStatus, previousStatus}) {
+    try {
+      return {status: await cancelFn(), error: null};
+    } catch (err) {
+      // A response deadline is not a failed cancellation. The retained worker
+      // may still be retiring, or its actual terminal status may now be durable.
+      let latest = await fetchStatus().catch(() => null);
+      if (!latest || (Number.isInteger(latest.revision) && Number.isInteger(previousStatus?.revision)
+        && latest.revision < previousStatus.revision)) latest = previousStatus;
+      return {status: latest, error: installIsTerminal(latest) ? null : localSetupRefusal(err, 'cancel')};
+    }
+  }
+
   async function cancelLocalBootstrap() {
     if (cancelPending) return;
     const attemptId = state.install?.attempt_id || '';
     if (!attemptId) return;
+    const model = selectedLocalModelId();
     cancelPending = true;
     clearLocalSetupError();
     stopInstallPoll();
     renderLocal();
     try {
       const url = `api/local/bootstrap/cancel?attempt_id=${encodeURIComponent(attemptId)}`;
-      let status;
-      try {
-        status = await api(url, {method: 'POST'});
-      } catch (err) {
-        throw localSetupRefusal(err, 'cancel');
-      }
+      const {status, error} = await localInstallAfterCancel({
+        cancelFn: () => api(url, {method: 'POST'}),
+        fetchStatus: () => fetchInstallStatus(model),
+        previousStatus: state.install,
+      });
       state.install = status || null;
       renderAll();
       if (installIsInFlight(status)) {
-        startInstallPoll(status);
+        startInstallPoll(status, {afterCancel: true});
       }
+      if (error) throw error;
     } finally {
       cancelPending = false;
       renderLocal();

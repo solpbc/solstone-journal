@@ -2433,6 +2433,19 @@ fn install_model(
     )
 }
 
+fn model_verification_failure(
+    reason: &str,
+    error: solstone_core_artifact_download::ArchiveError,
+) -> DispatchError {
+    if matches!(&error, solstone_core_artifact_download::ArchiveError::Io(error)
+        if error.kind() == std::io::ErrorKind::Interrupted)
+    {
+        failure("cancelled", "install_cancelled", "install_cancelled", 74)
+    } else {
+        failure("io", reason, error, 74)
+    }
+}
+
 fn install_model_with_cancel(
     journal: &Path,
     model_id: &str,
@@ -2482,8 +2495,23 @@ fn install_model_with_cancel(
             .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
         let artifact = select_artifact("local-model", None, None, None, Some(name))?;
         let dest = fetch_root.join(name);
-        if solstone_core_artifact_download::verify_sha256(&root.join(name), artifact.sha256).is_ok()
-        {
+        let installed = match solstone_core_artifact_download::verify_sha256_with_cancel(
+            &root.join(name),
+            artifact.sha256,
+            cancelled,
+        ) {
+            Ok(_) => true,
+            Err(solstone_core_artifact_download::ArchiveError::Io(error))
+                if error.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                return Err(model_verification_failure(
+                    "model_verify_failed",
+                    error.into(),
+                ));
+            }
+            Err(_) => false,
+        };
+        if installed {
             cumulative_bytes += artifact.size_bytes;
             continue;
         }
@@ -2492,7 +2520,9 @@ fn install_model_with_cancel(
             .iter()
             .find(|m| m.file == *name)
             .expect("pinned model member");
-        if let Some(source) = pins::reusable_model_member(journal, model_id, member)
+        if let Some(source) =
+            pins::reusable_model_member_with_cancel(journal, model_id, member, cancelled)
+                .map_err(|error| model_verification_failure("model_verify_failed", error))?
             && fs::hard_link(source, root.join(name)).is_ok()
         {
             cumulative_bytes += artifact.size_bytes;
@@ -2501,11 +2531,13 @@ fn install_model_with_cancel(
         // Admission may have credited a reusable member. If hardlinks are not
         // supported, recheck the allocation needed by the download fallback.
         let remaining = artifact.size_bytes.saturating_sub(
-            solstone_core_artifact_download::retained_prefix_bytes(
+            solstone_core_artifact_download::retained_prefix_bytes_with_cancel(
                 &dest,
                 artifact.sha256,
                 artifact.size_bytes,
-            ),
+                cancelled,
+            )
+            .map_err(|error| model_verification_failure("model_verify_failed", error))?,
         );
         if fit_report::free_bytes(&fetch_root).is_ok_and(|free| free < remaining) {
             return Err(failure(
@@ -2557,6 +2589,7 @@ fn install_model_with_cancel(
                 }
             },
         )?;
+        checkpoint()?;
         solstone_core_journal_io::install_retained_file(
             &dest,
             root.join(name),
@@ -2587,8 +2620,8 @@ fn install_model_with_cancel(
 
     if root == generation.directory(&pins::cache_root(journal).join("models")) {
         generation
-            .seal(&root)
-            .map_err(|e| failure("io", "model_publish_failed", e, 74))?;
+            .seal_with_cancel(&root, cancelled)
+            .map_err(|error| model_verification_failure("model_publish_failed", error))?;
     }
     checkpoint()?;
     let built = manifest::build_manifest(
@@ -2599,17 +2632,20 @@ fn install_model_with_cancel(
             .as_deref()
             .unwrap_or(""),
         json!({"pin_identity":identity}),
-        manifest::inventory_for_members(&root, &files, "model")
-            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
+        manifest::inventory_for_members_with_cancel(&root, &files, "model", cancelled)
+            .map_err(|error| model_verification_failure("manifest_inventory_failed", error))?,
         None,
         status_value.attempt_id.as_deref(),
     )
     .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
+    checkpoint()?;
     manifest::write_manifest(&manifest::artifact_manifest_path(&root), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
     checkpoint()?;
     drop(_write);
-    pins::collect_model_generations_under_install_lease(journal);
+    pins::collect_model_generations_with_cancel(journal, cancelled)
+        .map_err(|error| model_verification_failure("model_collection_failed", error.into()))?;
+    checkpoint()?;
     Ok(())
 }
 

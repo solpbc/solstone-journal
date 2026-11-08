@@ -1079,18 +1079,31 @@ pub(crate) fn reusable_model_member(
     model_id: &str,
     member: &solstone_core_artifact_download::generation::Member,
 ) -> Option<PathBuf> {
+    reusable_model_member_with_cancel(journal, model_id, member, None)
+        .ok()
+        .flatten()
+}
+
+pub(crate) fn reusable_model_member_with_cancel(
+    journal: &Path,
+    model_id: &str,
+    member: &solstone_core_artifact_download::generation::Member,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<Option<PathBuf>, solstone_core_artifact_download::ArchiveError> {
     let root = cache_root(journal).join("models");
     let flat = root.join(model_id.replace('/', "__"));
     if solstone_core_artifact_download::generation::Generation::new(
         "local-model",
         vec![member.clone()],
     )
-    .ok()?
-    .verify(&flat)
+    .map_err(std::io::Error::other)?
+    .verify_with_cancel(&flat, cancelled)?
     {
-        return Some(flat.join(&member.file));
+        return Ok(Some(flat.join(&member.file)));
     }
-    solstone_core_artifact_download::generation::reusable_member(&root, member)
+    solstone_core_artifact_download::generation::reusable_member_with_cancel(
+        &root, member, cancelled,
+    )
 }
 
 pub(crate) fn remaining_model_member_bytes(
@@ -1129,31 +1142,62 @@ pub fn collect_model_generations(journal: &Path) {
 
 /// Called only while the successful installer owns the existing local lease.
 pub(crate) fn collect_model_generations_under_install_lease(journal: &Path) {
+    if let Err(error) = collect_model_generations_with_cancel(journal, None) {
+        log::warn!("could not clean obsolete model generations: {error}");
+    }
+}
+
+pub(crate) fn collect_model_generations_with_cancel(
+    journal: &Path,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> std::io::Result<()> {
+    let io_error = |error| match error {
+        solstone_core_artifact_download::ArchiveError::Io(error) => error,
+        error => std::io::Error::other(error),
+    };
     let Some(current) = model_generation("local/qwen3.5-4b") else {
-        return;
+        return Ok(());
     };
     let root = cache_root(journal).join("models");
     let legacy = model_directory(journal, "local/qwen3.5-4b");
     let target = current.directory(&root);
     if legacy != target
-        && !current.is_sealed(&target)
-        && current.verify(&legacy)
+        && !current.is_sealed_with_cancel(&target, cancelled)?
+        && current
+            .verify_with_cancel(&legacy, cancelled)
+            .map_err(io_error)?
         && let Ok(_hold) = solstone_core_artifact_download::generation::hold_write(&target)
-        && let Err(error) = current.back_from(&legacy, &target)
+        && let Err(error) = current.back_from_with_cancel(&legacy, &target, cancelled)
     {
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
         log::warn!("could not retain verified model generation: {error}");
     }
-    if let Err(error) = super::model_cache::collect_legacy(journal, &current) {
+    let legacy_cleanup = if cancelled.is_none() {
+        super::model_cache::collect_legacy(journal, &current)
+    } else {
+        super::model_cache::collect_legacy_with_cancel(journal, &current, cancelled)
+    };
+    if let Err(error) = legacy_cleanup {
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
         log::warn!("could not clean obsolete legacy model: {error}");
     }
-    if let Err(error) = solstone_core_artifact_download::generation::collect(
+    if let Err(error) = solstone_core_artifact_download::generation::collect_with_cancel(
         &root,
         "local-model",
         std::slice::from_ref(&current),
         true,
+        cancelled,
     ) {
+        if error.kind() == std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
         log::warn!("could not clean obsolete model generations: {error}");
     }
+    Ok(())
 }
 
 pub fn paths(journal: &Path, key: &str, model_id: Option<&str>) -> Value {

@@ -280,4 +280,108 @@ mod tests {
         assert!(!pins::model_directory(root.path(), "local/qwen3.5-4b").exists());
         assert!(!super::super::lease::is_held(root.path(), "local").unwrap());
     }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn cancelled_inventory_never_returns_partial_proof_and_success_hashes_the_tail() {
+        use std::cell::Cell;
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("first"), b"a").unwrap();
+        let mut bytes = vec![9_u8; 2 * 1024 * 1024 + 1];
+        let tail = root.path().join("second");
+        std::fs::write(&tail, &bytes).unwrap();
+        let checkpoints = Cell::new(0);
+        let error = manifest::inventory_for_members_with_cancel(
+            root.path(),
+            &["first", "second"],
+            "model",
+            Some(&|| {
+                checkpoints.set(checkpoints.get() + 1);
+                checkpoints.get() >= 7
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(
+            super::super::model_verification_failure("manifest_inventory_failed", error)
+                .envelope
+                .error
+                .unwrap()
+                .reason_code,
+            "install_cancelled"
+        );
+        assert!(!manifest::artifact_manifest_path(root.path()).exists());
+        assert_eq!(std::fs::read(&tail).unwrap(), bytes);
+        let inventory = manifest::inventory_for_members_with_cancel(
+            root.path(),
+            &["first", "second"],
+            "model",
+            Some(&|| false),
+        )
+        .unwrap();
+        assert_eq!(inventory.len(), 2);
+        assert_eq!(
+            inventory[1]["sha256"],
+            manifest::sha256_file(&tail).unwrap()
+        );
+        *bytes.last_mut().unwrap() ^= 1;
+        std::fs::write(&tail, bytes).unwrap();
+        let changed = manifest::inventory_for_members(root.path(), &["second"], "model").unwrap();
+        assert_ne!(inventory[1]["sha256"], changed[0]["sha256"]);
+    }
+
+    #[test]
+    #[cfg(feature = "full-tests")]
+    fn cancelling_cached_model_hash_keeps_bytes_and_holds_the_real_install_lease() {
+        use std::cell::Cell;
+        let root = tempfile::tempdir().unwrap();
+        let model_root = pins::model_directory(root.path(), "local/qwen3.5-4b");
+        std::fs::create_dir_all(&model_root).unwrap();
+        let model = model_root.join("Qwen3.5-4B-Q4_K_M.gguf");
+        let bytes = vec![17_u8; 2 * 1024 * 1024 + 1];
+        std::fs::write(&model, &bytes).unwrap();
+        let object = serde_json::Map::from_iter([("model_id".into(), json!("local/qwen3.5-4b"))]);
+        let lease = super::super::lease::acquire(root.path(), "local")
+            .unwrap()
+            .unwrap();
+        let checkpoints = Cell::new(0);
+        let observed_locked_hash = Cell::new(false);
+        let cancelled = || {
+            checkpoints.set(checkpoints.get() + 1);
+            if checkpoints.get() >= 6 {
+                assert!(super::super::lease::is_held(root.path(), "local").unwrap());
+                assert!(
+                    solstone_core_artifact_download::generation::hold_write(&model_root).is_err()
+                );
+                observed_locked_hash.set(true);
+                true
+            } else {
+                false
+            }
+        };
+        let error = super::super::run_with_lease(
+            &object,
+            super::super::RunKind::Mobile {
+                identity: &identity("aarch64-android", '2'),
+                cancelled: &cancelled,
+            },
+            root.path().to_owned(),
+            lease,
+            None,
+            None,
+            |_| {},
+        )
+        .unwrap_err();
+        assert!(observed_locked_hash.get());
+        assert_eq!(
+            error.envelope.error.unwrap().reason_code,
+            "install_cancelled"
+        );
+        let status = status::read_status(root.path(), "local").unwrap();
+        assert_eq!(status.install_state, "failed");
+        assert_eq!(status.error_code.as_deref(), Some("install_cancelled"));
+        assert_eq!(std::fs::read(&model).unwrap(), bytes);
+        assert!(!manifest::artifact_manifest_path(&model_root).exists());
+        assert!(!super::super::lease::is_held(root.path(), "local").unwrap());
+        assert!(solstone_core_artifact_download::generation::hold_write(&model_root).is_ok());
+    }
 }
