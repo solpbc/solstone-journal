@@ -1213,7 +1213,7 @@ fn run_strava_internal(
     }
 
     // 11. apply, then write_rendered
-    let (rendered, _) = strava::apply(&placement, import_id);
+    let rendered = strava::apply(&placement, import_id);
     let written = save::write_rendered(journal, Some(import_id), &rendered);
 
     // 12. Write error / reconciliation

@@ -2042,12 +2042,10 @@ pub fn place(
     })
 }
 
-pub fn apply(
-    placement: &Placement,
-    creating_import_id: &str,
-) -> (RenderedImport, Vec<PlannedTilePublication>) {
+/// The files a placement writes. What is published afterwards is decided by
+/// [`reconcile_written`], from what was actually written.
+pub fn apply(placement: &Placement, creating_import_id: &str) -> RenderedImport {
     let mut files = Vec::new();
-    let mut written_publish = Vec::new();
 
     for action in &placement.tiles {
         match action {
@@ -2075,10 +2073,6 @@ pub fn apply(
                     calendar: false,
                     contents: json_str,
                     units: 1,
-                });
-                written_publish.push(PlannedTilePublication {
-                    day: day.clone(),
-                    segment: segment.clone(),
                 });
             }
             TileAction::Updated {
@@ -2108,11 +2102,6 @@ pub fn apply(
                     contents: json_str,
                     units: 1,
                 });
-                // A rewritten tile is published again, so search replaces its text.
-                written_publish.push(PlannedTilePublication {
-                    day: day.clone(),
-                    segment: segment.clone(),
-                });
             }
             TileAction::Unchanged { .. }
             | TileAction::StayedDeleted { .. }
@@ -2121,18 +2110,9 @@ pub fn apply(
         }
     }
 
-    for pub_tile in &placement.publish {
-        if !written_publish
-            .iter()
-            .any(|p| p.day == pub_tile.day && p.segment == pub_tile.segment)
-        {
-            written_publish.push(pub_tile.clone());
-        }
-    }
-
     let summary = format_count_summary(&placement.counts);
 
-    let rendered = RenderedImport {
+    RenderedImport {
         calendar_counts: Default::default(),
         skipped: 0,
         source: RegistrySource::Strava,
@@ -2140,9 +2120,7 @@ pub fn apply(
         items: Vec::new(),
         entries: placement.counts.new_workouts as u64,
         summary,
-    };
-
-    (rendered, written_publish)
+    }
 }
 
 pub fn reconcile_written(
@@ -3818,7 +3796,7 @@ mod tests {
         assert_eq!(placement1.counts.new_workouts, 500);
 
         // Apply and write
-        let (rendered1, _) = apply(&placement1, "20260101_100000");
+        let rendered1 = apply(&placement1, "20260101_100000");
         let written1 = crate::save::write_rendered(journal, Some("20260101_100000"), &rendered1);
         assert_eq!(written1.created.len(), total_expected_tiles);
 
@@ -3829,7 +3807,7 @@ mod tests {
         assert_eq!(placement2.counts.present_unchanged, 500);
         assert_eq!(placement2.counts.new_workouts, 0);
 
-        let (rendered2, _) = apply(&placement2, "20260101_110000");
+        let rendered2 = apply(&placement2, "20260101_110000");
         assert_eq!(rendered2.files.len(), 0);
 
         let elapsed = start_time.elapsed();
@@ -3871,7 +3849,7 @@ mod tests {
         workout: &StravaWorkout,
     ) -> (Placement, Vec<PlannedTilePublication>) {
         let placement = place(journal, std::slice::from_ref(workout), Some(Tz::UTC), None).unwrap();
-        let (rendered, _) = apply(&placement, "20261005_090000");
+        let rendered = apply(&placement, "20261005_090000");
         let written = crate::save::write_rendered(journal, Some("20261005_090000"), &rendered);
         assert!(written.error.is_none());
         let written_keys = written
@@ -3917,7 +3895,7 @@ mod tests {
         let (same, publish) = place_and_write(journal, &edited_workout(Some("easy with Sam")));
         assert_eq!(updated_tiles(&same), 0);
         assert_eq!(same.counts.unchanged_tiles, 2);
-        let (rendered, _) = apply(&same, "20261005_090000");
+        let rendered = apply(&same, "20261005_090000");
         assert!(rendered.files.is_empty());
         assert!(publish.is_empty());
 
