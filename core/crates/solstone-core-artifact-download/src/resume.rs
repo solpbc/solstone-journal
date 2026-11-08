@@ -14,7 +14,7 @@ use solstone_core_journal_io::{
 
 use super::{
     ArchiveError, DownloadHostPolicy, MAX_REDIRECT_HOPS, resolve_location, validate_url,
-    verify_sha256,
+    verify_sha256_with_cancel,
 };
 
 pub(super) fn checkpoint(cancelled: Option<&dyn Fn() -> bool>) -> Result<(), ArchiveError> {
@@ -158,23 +158,49 @@ fn read_binding(path: &Path) -> Option<Binding> {
 /// Bytes already allocated to this exact artifact. Completed files receive
 /// credit only after digest proof; incomplete files need their exact binding.
 pub fn retained_prefix_bytes(destination: &Path, sha256: &str, size: u64) -> u64 {
+    retained_prefix_bytes_with_cancel(destination, sha256, size, None).unwrap_or(0)
+}
+
+pub fn retained_prefix_bytes_with_cancel(
+    destination: &Path,
+    sha256: &str,
+    size: u64,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<u64, ArchiveError> {
+    checkpoint(cancelled)?;
     if regular_length(destination).ok().flatten() == Some(size)
-        && verify_sha256(destination, sha256).is_ok()
+        && verified_or_mismatch(destination, sha256, cancelled)?
     {
-        return size;
+        return Ok(size);
     }
     let Ok((partial, metadata, mut binding)) = partial_paths(destination, sha256) else {
-        return 0;
+        return Ok(0);
     };
     binding.size_bytes = Some(size);
     if read_binding(&metadata).as_ref() != Some(&binding) {
-        return 0;
+        return Ok(0);
     }
-    regular_length(&partial)
+    Ok(regular_length(&partial)
         .ok()
         .flatten()
         .filter(|length| *length <= size)
-        .unwrap_or(0)
+        .unwrap_or(0))
+}
+
+// Missing or changed cached bytes are reusable only after a fresh download.
+// Cancellation is distinct: it must stop the operation without deleting them.
+pub(super) fn verified_or_mismatch(
+    path: &Path,
+    sha256: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<bool, ArchiveError> {
+    match verify_sha256_with_cancel(path, sha256, cancelled) {
+        Ok(_) => Ok(true),
+        Err(ArchiveError::Io(error)) if error.kind() == io::ErrorKind::Interrupted => {
+            Err(error.into())
+        }
+        Err(_) => Ok(false),
+    }
 }
 
 fn sync_file(file: &fs::File) -> io::Result<()> {
@@ -243,14 +269,16 @@ fn publish(
     metadata: &Path,
     destination: &Path,
     sha256: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
 ) -> Result<(), ArchiveError> {
-    if let Err(error) = verify_sha256(partial, sha256) {
+    if let Err(error) = verify_sha256_with_cancel(partial, sha256, cancelled) {
         if matches!(error, ArchiveError::DigestMismatch { .. }) {
             remove_file(partial)?;
             remove_file(metadata)?;
         }
         return Err(error);
     }
+    checkpoint(cancelled)?;
     install_retained_file(partial, destination, AtomicWriteOptions::default())
         .map_err(|error| ArchiveError::Download(error.to_string()))?;
     remove_file(metadata)?;
@@ -293,7 +321,7 @@ pub(super) fn download_verified_url_internal(
     if regular_length(destination)?
         .is_some_and(|size| expected_size.is_none_or(|expected| size == expected))
     {
-        match verify_sha256(destination, &binding.sha256) {
+        match verify_sha256_with_cancel(destination, &binding.sha256, cancelled) {
             Ok(_) => {
                 checkpoint(cancelled)?;
                 progress(regular_length(destination)?.unwrap_or(0), expected_size);
@@ -326,7 +354,7 @@ pub(super) fn download_verified_url_internal(
     if expected_size == Some(prefix)
         || (expected_size.is_none()
             && prefix > 0
-            && verify_sha256(&partial, &binding.sha256).is_ok())
+            && verified_or_mismatch(&partial, &binding.sha256, cancelled)?)
     {
         // A zero-byte artifact still needs a file to verify and publish.
         if regular_length(&partial)?.is_none() {
@@ -336,7 +364,7 @@ pub(super) fn download_verified_url_internal(
                 .open(&partial)?;
         }
         checkpoint(cancelled)?;
-        publish(&partial, &metadata, destination, &binding.sha256)?;
+        publish(&partial, &metadata, destination, &binding.sha256, cancelled)?;
         checkpoint(cancelled)?;
         progress(prefix, expected_size);
         return Ok(true);
@@ -546,7 +574,7 @@ pub(super) fn download_verified_url_internal(
         });
     }
     checkpoint(cancelled)?;
-    publish(&partial, &metadata, destination, &binding.sha256)?;
+    publish(&partial, &metadata, destination, &binding.sha256, cancelled)?;
     Ok(true)
 }
 
@@ -599,7 +627,7 @@ mod tests {
         fs::write(&meta, serde_json::to_vec(&binding).unwrap()).unwrap();
         fs::create_dir(&target).unwrap();
         fs::write(target.join("owner-file"), b"preserve").unwrap();
-        assert!(publish(&part, &meta, &target, &digest).is_err());
+        assert!(publish(&part, &meta, &target, &digest, None).is_err());
         assert_eq!(fs::read(&part).unwrap(), b"abcd");
         assert_eq!(fs::read(target.join("owner-file")).unwrap(), b"preserve");
         fs::remove_file(target.join("owner-file")).unwrap();
@@ -651,6 +679,64 @@ mod tests {
             assert!(!meta.exists());
         }
         assert_eq!(fs::read(target).unwrap(), b"abcd");
+    }
+
+    #[test]
+    fn cancellation_during_publication_keeps_complete_partial_and_binding_for_offline_retry() {
+        use std::cell::Cell;
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("model");
+        let bytes = vec![41_u8; 2 * 1024 * 1024 + 1];
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let (part, meta, mut binding) = partial_paths(&target, &digest).unwrap();
+        binding.size_bytes = Some(bytes.len() as u64);
+        fs::write(&part, &bytes).unwrap();
+        let binding_bytes = serde_json::to_vec(&binding).unwrap();
+        fs::write(&meta, &binding_bytes).unwrap();
+        let checkpoints = Cell::new(0);
+        let error = publish(
+            &part,
+            &meta,
+            &target,
+            &digest,
+            Some(&|| {
+                checkpoints.set(checkpoints.get() + 1);
+                checkpoints.get() >= 3
+            }),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ArchiveError::Io(error) if error.kind() == io::ErrorKind::Interrupted)
+        );
+        assert!(!target.exists());
+        assert_eq!(fs::read(&part).unwrap(), bytes);
+        assert_eq!(fs::read(&meta).unwrap(), binding_bytes);
+        let policy = DownloadHostPolicy {
+            allowed_hosts: &["example.com"],
+            allow_http: false,
+        };
+        assert!(
+            download_verified_url_internal(
+                "https://example.com/model",
+                &digest,
+                binding.size_bytes,
+                &target,
+                &policy,
+                &mut |_, _| {},
+                Some(&|| false)
+            )
+            .unwrap()
+        );
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        assert!(!part.exists() && !meta.exists());
+        let checkpoints = Cell::new(0);
+        assert!(
+            matches!(retained_prefix_bytes_with_cancel(&target, &digest, bytes.len() as u64, Some(&|| {
+            checkpoints.set(checkpoints.get() + 1);
+            checkpoints.get() >= 4
+        })), Err(ArchiveError::Io(error)) if error.kind() == io::ErrorKind::Interrupted)
+        );
+        assert_eq!(fs::read(&target).unwrap(), bytes);
     }
 }
 

@@ -138,27 +138,53 @@ pub fn with_builder_fetch_loopback<T>(
 }
 
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError> {
-    let mut file = File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut chunk = vec![0_u8; 1024 * 1024];
-    loop {
-        let size = file.read(&mut chunk)?;
-        if size == 0 {
-            break;
-        }
-        digest.update(&chunk[..size]);
-    }
-    let actual: String = digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    verify_sha256_with_cancel(path, expected, None)
+}
+
+/// Verify every byte unless this operation is cancelled. Interruption never
+/// means digest corruption and must not discard a retained download.
+pub fn verify_sha256_with_cancel(
+    path: &Path,
+    expected: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<String, ArchiveError> {
+    let actual = sha256_file_with_cancel(path, cancelled)?;
     if !actual.eq_ignore_ascii_case(expected) {
         return Err(ArchiveError::DigestMismatch {
             expected: expected.to_owned(),
             actual,
         });
     }
+    Ok(actual)
+}
+
+/// Hash a whole file with an operation-local cancellation checkpoint between
+/// bounded reads. A blocked filesystem read still has to return before joining.
+pub fn sha256_file_with_cancel(
+    path: &Path,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<String, ArchiveError> {
+    resume::checkpoint(cancelled)?;
+    let mut file = File::open(path)?;
+    let mut digest = Sha256::new();
+    let mut chunk = vec![0_u8; 1024 * 1024];
+    loop {
+        resume::checkpoint(cancelled)?;
+        let size = match file.read(&mut chunk) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if size == 0 {
+            break;
+        }
+        digest.update(&chunk[..size]);
+    }
+    resume::checkpoint(cancelled)?;
+    let actual: String = digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     Ok(actual)
 }
 
@@ -176,8 +202,9 @@ pub fn download_runtime_fetch(
 
 /// Cooperatively stop an app-owned fetch, retaining its bound resumable prefix.
 /// Cancellation is `ArchiveError::Io` with `ErrorKind::Interrupted`. Network
-/// reads have a two-second idle bound; connect/header work and hashing can take
-/// longer, so callers must retain their worker until it has actually joined.
+/// reads have a two-second idle bound and hashing checks between 1 MiB reads.
+/// Connect/header work and filesystem I/O can take longer, so callers must
+/// retain their worker until it has actually joined.
 pub fn download_runtime_fetch_cancellable(
     handle: &RuntimeFetchHandle,
     destination: &Path,
@@ -202,7 +229,7 @@ fn download_runtime_fetch_with_cancel(
                 && destination
                     .metadata()
                     .is_ok_and(|meta| meta.len() == handle.size_bytes())
-                && verify_sha256(destination, handle.sha256()).is_ok()
+                && resume::verified_or_mismatch(destination, handle.sha256(), cancelled)?
             {
                 return Ok(false);
             }
@@ -351,7 +378,7 @@ pub mod generation;
 mod resume;
 
 use resume::download_verified_url_internal;
-pub use resume::retained_prefix_bytes;
+pub use resume::{retained_prefix_bytes, retained_prefix_bytes_with_cancel};
 
 #[derive(Debug, Clone)]
 struct AbsoluteUrl {
@@ -593,6 +620,42 @@ pub fn clear_macos_quarantine(_path: &Path) -> Result<(), ArchiveError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn whole_file_digest_cancels_between_reads_without_accepting_an_unread_tail() {
+        use super::*;
+        use std::cell::Cell;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("weights");
+        let bytes = vec![23_u8; 2 * 1024 * 1024 + 1];
+        let expected = format!("{:x}", Sha256::digest(&bytes));
+        fs::write(&path, &bytes).unwrap();
+        let checkpoints = Cell::new(0);
+        let error = verify_sha256_with_cancel(
+            &path,
+            &expected,
+            Some(&|| {
+                checkpoints.set(checkpoints.get() + 1);
+                checkpoints.get() >= 3
+            }),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ArchiveError::Io(error) if error.kind() == std::io::ErrorKind::Interrupted)
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            verify_sha256_with_cancel(&path, &expected, Some(&|| false)).unwrap(),
+            expected
+        );
+        let mut changed = bytes;
+        *changed.last_mut().unwrap() ^= 1;
+        fs::write(&path, changed).unwrap();
+        assert!(matches!(
+            verify_sha256_with_cancel(&path, &expected, Some(&|| false)),
+            Err(ArchiveError::DigestMismatch { .. })
+        ));
+    }
+
     use super::*;
     use std::io::Write;
 

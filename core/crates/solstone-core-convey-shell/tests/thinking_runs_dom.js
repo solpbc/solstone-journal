@@ -251,6 +251,9 @@ async function main() {
     localSetupRefusals,
     localSetupRefusal,
     localInstallAfterStart,
+    localInstallAfterCancel,
+    cancelLocalBootstrap,
+    stopInstallPoll,
     startLocalBootstrap,
     pollLocalInstallUntilTerminal,
     applyLocalInstallStatus,
@@ -1639,6 +1642,64 @@ async function main() {
   for (let i = 0; i < 6; i += 1) await settle();
   assert.strictEqual(localMessage.textContent, refusals.cancel, 'a refused cancel says so in owner words');
   assert.strictEqual(localMessage.dataset.tone, 'error', 'a refused cancel reads as an error');
+  thinking.stopInstallPoll();
+  // A lost cancel reply does not determine whether the retained worker stopped.
+  const downloading = {install_state: 'downloading', attempt_id: 'cancel-observed', revision: 10};
+  const stopped = {install_state: 'failed', error_code: 'install_cancelled', attempt_id: null, revision: 12};
+  for (const terminal of [stopped, {install_state: 'installed', revision: 12}]) {
+    const result = await thinking.localInstallAfterCancel({
+      cancelFn: () => Promise.reject(new Error('response unavailable')),
+      fetchStatus: () => Promise.resolve(terminal),
+      previousStatus: downloading,
+    });
+    assert.strictEqual(result.status, terminal, 'durable terminal status wins over a lost cancel reply');
+    assert.strictEqual(result.error, null, 'actual completion is not called a cancel failure');
+  }
+  for (const fetchStatus of [
+    () => Promise.resolve({...downloading, install_state: 'verifying', revision: 11}),
+    () => Promise.reject(new Error('status unavailable')),
+    () => Promise.resolve({install_state: 'failed', revision: 9}),
+  ]) {
+    const result = await thinking.localInstallAfterCancel({
+      cancelFn: () => Promise.reject(new Error('still stopping')),
+      fetchStatus,
+      previousStatus: downloading,
+    });
+    assert.notStrictEqual(result.error, null, 'unconfirmed cancellation remains a visible refusal');
+    assert.ok(['downloading', 'verifying'].includes(result.status.install_state), 'unconfirmed or stale reads never manufacture cancellation');
+  }
+  const savedCancelModels = thinking.state.localModels;
+  thinking.state.localModels = [{name: 'local/qwen3.5-4b'}];
+  thinking.state.install = downloading;
+  const cancelGeneration = thinking.state.installPollGeneration;
+  localResponses.push(() => Promise.reject(new Error('still stopping')));
+  localResponses.push(() => Promise.resolve({...downloading, install_state: 'verifying', revision: 11}));
+  localResponses.push(() => Promise.resolve(stopped));
+  const savedSetTimeout = context.setTimeout;
+  const cancelSleeps = [];
+  context.setTimeout = (callback) => { cancelSleeps.push(callback); return 0; };
+  try {
+    await thinking.cancelLocalBootstrap().catch((error) => thinking.showLocalSetupFailure(error));
+    assert.strictEqual(thinking.state.install.install_state, 'verifying', 'cancel failure reconciles actual phase');
+    assert.notStrictEqual(thinking.state.localSetupError, '', 'pending cancellation stays visibly unconfirmed');
+    assert.ok(thinking.state.installPollGeneration > cancelGeneration + 1, 'cancel failure restarts observation');
+    assert.strictEqual(cancelSleeps.length, 1, 'the reconciled in-flight worker is polled');
+    cancelSleeps.shift()();
+    await settle();
+    await settle();
+    assert.strictEqual(thinking.state.install, stopped, 'polling observes actual retirement after the response failed');
+    assert.strictEqual(thinking.state.localSetupError, '', 'actual retirement clears the obsolete cancel refusal');
+  } finally {
+    context.setTimeout = savedSetTimeout;
+  }
+  thinking.stopInstallPoll();
+  thinking.state.install = downloading;
+  localResponses.push(() => Promise.reject(new Error('response unavailable')));
+  localResponses.push(() => Promise.resolve(stopped));
+  await thinking.cancelLocalBootstrap();
+  assert.strictEqual(thinking.state.install, stopped, 'the public cancel action accepts confirmed retirement');
+  assert.strictEqual(thinking.state.localSetupError, '', 'confirmed retirement clears a stale cancel error');
+  thinking.state.localModels = savedCancelModels;
   // A state the page couldn't read, whatever broke, is told the same way.
   for (const failure of [
     Object.assign(new Error('Request failed (HTTP 500)'), {status: 500}),
