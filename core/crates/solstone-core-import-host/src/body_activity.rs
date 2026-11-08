@@ -20,7 +20,6 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
-
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{
