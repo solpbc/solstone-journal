@@ -295,9 +295,12 @@ const OWNER_BUCKET: &str = "";
 fn build_review_inputs(journal: &Path, facet: &str, day: &str) -> Result<ReviewInputs, String> {
     let owner = crate::JournalOwner::load(journal)?;
     let mut buckets: BTreeMap<String, CandidateBucket> = BTreeMap::new();
-    let attached = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
+    // Detached and blocked entities are matched too, as suggest and the
+    // observer match them: a name the owner removed is known, not new, and
+    // promoting it would undo the owner's detach.
+    let known = solstone_core_facets::list_scoped_facet_entities(journal, facet, true, true)
         .map_err(|error| error.to_string())?;
-    let candidates = attached
+    let candidates = known
         .iter()
         .map(
             |entity| solstone_core_entity_matching::EntityNameCandidate {
@@ -1873,6 +1876,47 @@ mod tests {
             .into_iter()
             .map(|entity| entity.entity_id)
             .collect()
+    }
+
+    #[test]
+    fn review_never_brings_back_an_entity_the_owner_detached() {
+        let root = owner_journal();
+        solstone_core_facets::attach_or_reactivate_entity_for_owner(
+            root.path(),
+            "work",
+            "Person",
+            "Ada Lovelace",
+            "Owner's note.",
+        )
+        .unwrap();
+        solstone_core_facets::detach_facet_entity(root.path(), "work", "ada_lovelace").unwrap();
+        for day in ["20260106", "20260107"] {
+            detect(root.path(), day, "Ada Lovelace");
+            detect(root.path(), day, "Grace Hopper");
+        }
+        let names = build_review_inputs(root.path(), "work", "20260108")
+            .unwrap()
+            .eligible
+            .iter()
+            .map(|candidate| candidate["name"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Grace Hopper"]);
+
+        review_and_publish(
+            root.path(),
+            serde_json::json!([
+                {"name":"Ada Lovelace","description":"Model's note.","promote":true,"aliases":[]},
+                {"name":"Grace Hopper","description":"Writes compilers.","promote":true,"aliases":[]},
+            ]),
+        );
+        assert_eq!(work_entity_ids(root.path()), ["grace_hopper"]);
+        let ada = solstone_core_facets::list_scoped_facet_entities(root.path(), "work", true, true)
+            .unwrap()
+            .into_iter()
+            .find(|entity| entity.entity_id == "ada_lovelace")
+            .unwrap();
+        assert!(ada.detached);
+        assert_eq!(ada.relationship["description"], "Owner's note.");
     }
 
     #[test]

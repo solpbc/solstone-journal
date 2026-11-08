@@ -5,7 +5,7 @@ use crate::ci::CoverageEntry;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 #[derive(Debug, Deserialize)]
@@ -437,6 +437,16 @@ fn cargo_check(repo: &Path, target: &str, package: &str, sweep: Sweep) -> Result
     cargo_check_with(repo, target, package, sweep, false)
 }
 
+/// The Windows checks build in their own directory under the target directory.
+/// Sharing the main one makes every other build wait on its lock while these
+/// serial checks compile.
+fn windows_target_dir(repo: &Path) -> PathBuf {
+    let base = std::env::var_os("CARGO_TARGET_DIR")
+        .filter(|value| !value.is_empty())
+        .map_or_else(|| repo.join("core/target"), |value| repo.join(value));
+    base.join("windows-crosscheck")
+}
+
 fn cargo_check_with(
     repo: &Path,
     target: &str,
@@ -469,6 +479,7 @@ fn cargo_check_with(
     }
     command
         .current_dir(repo)
+        .env("CARGO_TARGET_DIR", windows_target_dir(repo))
         .env("CARGO_BUILD_JOBS", "1")
         .output()
         .map_err(|error| format!("start Windows cargo check for {package}: {error}"))

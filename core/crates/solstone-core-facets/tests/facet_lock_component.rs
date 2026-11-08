@@ -15,7 +15,8 @@ use solstone_core_entity::{
     EntityOperationContext, EntityOperationKind, hold_entity_trust_lock, save_entity_identity,
 };
 use solstone_core_facets::{
-    EntityDeleteGuardOutcome, EntityHistoryReference, block_journal_entity_with_hook, create_facet,
+    EntityDeleteGuardOutcome, EntityHistoryReference, FacetEntityCreateOutcome,
+    block_journal_entity_with_hook, create_facet, create_facet_entity_if_absent_with_hook,
     delete_created_entity_if_unreferenced_with_hook, delete_journal_entity_with_hook,
 };
 use solstone_core_indexer_store::db::open_index;
@@ -251,5 +252,42 @@ fn guarded_delete_holds_entity_trust_until_it_returns() {
     assert!(
         settled,
         "guarded delete must retain entity trust through its nested owner delete"
+    );
+}
+
+/// The create-only primitive holds entity trust from before its name check
+/// until its create is done, so an attach, detach or hide (each of which takes
+/// entity trust, directly or through facet trust) can't land between them.
+#[test]
+fn create_if_absent_holds_entity_trust_from_check_to_create() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    let root = temporary.path().to_path_buf();
+    let (result, settled) = contender_sees_settled_state(
+        temporary.path(),
+        move |hook| {
+            create_facet_entity_if_absent_with_hook(
+                &root,
+                "work",
+                "Person",
+                "Sam Chen",
+                "named in 3 workouts",
+                hook,
+            )
+        },
+        |root| {
+            root.join("entities/sam_chen/entity.json").exists()
+                && root
+                    .join("facets/work/entities/sam_chen/entity.json")
+                    .exists()
+        },
+    );
+    assert!(matches!(
+        result.unwrap(),
+        FacetEntityCreateOutcome::Created { .. }
+    ));
+    assert!(
+        settled,
+        "an entity write may not land between the name check and the create"
     );
 }

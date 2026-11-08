@@ -1,0 +1,95 @@
+--- a/include/parakeet_capi.h
++++ b/include/parakeet_capi.h
+@@ -593,6 +593,15 @@
+ // returning NULL (or non-zero) on failure.
+ int parakeet_capi_set_concurrency(parakeet_ctx* ctx, int backends, int threads_each);
+ 
++// Process-wide compute budget for the single shared backend. Unlike a context's
++// concurrency pool, this also controls fused encoder and transducer graphs.
++// Call only between complete native calls, while no other caller uses this
++// backend. n_threads <= 0 restores the library default. Returns the actual live
++// backend budget after applying the setting, or 0 on failure. Pooled backends
++// are unaffected. Failure details use parakeet_capi_load_error().
++int parakeet_capi_set_threads(int n_threads);
++int parakeet_capi_get_threads(void);
++
+ // ---------------------------------------------------------------------------
+ // Speaker diarization (nvidia/Nemotron-3-Diarization and compatible Sortformer
+ // models), ABI v7.
+--- a/src/parakeet_capi.cpp
++++ b/src/parakeet_capi.cpp
+@@ -17,6 +17,8 @@
+ #include "speaker_registry.hpp"   // pk::SpeakerRegistry
+ #include "audio_io.hpp"   // pk::resample_linear
+ #include "common.hpp"     // pk::write_file_atomic
++#include "ggml_graph.hpp"
++#include "backend.hpp"
+ 
+ #include "transcription.hpp"  // pk::Transcription, pk::Word
+ #include "transcription_json.hpp"
+@@ -1460,6 +1462,35 @@
+     }
+ }
+ 
++extern "C" int parakeet_capi_set_threads(int n_threads) {
++    g_load_error.clear();
++    try {
++        pk::set_num_threads(n_threads);
++        pk::global_backend();
++        return pk::backend_thread_count();
++    } catch (const std::exception& e) {
++        g_load_error = e.what();
++        return 0;
++    } catch (...) {
++        g_load_error = "unknown thread-budget error";
++        return 0;
++    }
++}
++
++extern "C" int parakeet_capi_get_threads(void) {
++    g_load_error.clear();
++    try {
++        pk::global_backend();
++        return pk::backend_thread_count();
++    } catch (const std::exception& e) {
++        g_load_error = e.what();
++        return 0;
++    } catch (...) {
++        g_load_error = "unknown thread-budget error";
++        return 0;
++    }
++}
++
+ // ---------------------------------------------------------------------------
+ // Speaker diarization + speaker-attributed ASR (ABI v7)
+ // ---------------------------------------------------------------------------
+--- a/src/ggml_graph.cpp
++++ b/src/ggml_graph.cpp
+@@ -14,7 +14,6 @@
+ // path; the benchmark CLI sets it once before any inference.
+ static std::atomic<int> g_num_threads{0};
+ 
+-void set_num_threads(int n) { g_num_threads.store(n < 0 ? 0 : n, std::memory_order_relaxed); }
+ int  num_threads()          { return g_num_threads.load(std::memory_order_relaxed); }
+ 
+ namespace {
+@@ -51,6 +50,19 @@
+ int effective_threads() {
+     const int g = g_num_threads.load(std::memory_order_relaxed);
+     return g > 0 ? g : kDefaultThreads;
++}
++
++// Apply changes between complete calls. Synchronizing here also restores the
++// default on clear without disturbing a run_graph per-call scoped setting when
++// it recursively asks global_backend() to realize weights.
++void set_num_threads(int n) {
++    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
++    g_num_threads.store(n < 0 ? 0 : n, std::memory_order_relaxed);
++    if (g_backend) {
++        const int threads = effective_threads();
++        g_backend->set_n_threads(threads);
++        g_backend_threads = threads;
++    }
+ }
+ 
+ // Caller holds g_backend_mutex.

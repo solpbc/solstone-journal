@@ -1,0 +1,145 @@
+--- a/src/ggml-cpu/ggml-cpu.c
++++ b/src/ggml-cpu/ggml-cpu.c
+@@ -7,6 +7,10 @@
+ #include "ggml-cpu-impl.h"
+ #include "ggml-impl.h"
+ #include "quants.h"
++#if defined(GGML_ARM_Q8_RUNTIME_DOTPROD)
++#include <asm/hwcap.h>
++#include <sys/auxv.h>
++#endif
+ #include "ggml-threading.h"
+ #include "unary-ops.h"
+ #include "binary-ops.h"
+@@ -406,6 +410,17 @@
+ };
+ 
+ const struct ggml_type_traits_cpu * ggml_get_type_traits_cpu(enum ggml_type type) {
++#if defined(GGML_ARM_Q8_RUNTIME_DOTPROD)
++    static const struct ggml_type_traits_cpu q8_dotprod = {
++        .from_float   = quantize_row_q8_0,
++        .vec_dot      = ggml_vec_dot_q8_0_q8_0_dotprod,
++        .vec_dot_type = GGML_TYPE_Q8_0,
++        .nrows        = 1,
++    };
++    if (type == GGML_TYPE_Q8_0 && (getauxval(AT_HWCAP) & HWCAP_ASIMDDP) != 0) {
++        return &q8_dotprod;
++    }
++#endif
+     return &type_traits_cpu[type];
+ }
+ 
+@@ -1169,7 +1184,7 @@
+ 
+     const bool src1_cont = ggml_is_contiguous(src1);
+ 
+-    ggml_vec_dot_t const vec_dot      = type_traits_cpu[type].vec_dot;
++    ggml_vec_dot_t const vec_dot      = ggml_get_type_traits_cpu(type)->vec_dot;
+     enum ggml_type const vec_dot_type = type_traits_cpu[type].vec_dot_type;
+ 
+     // broadcast factors
+@@ -1589,7 +1604,7 @@
+ 
+     const enum ggml_type type = src0->type;
+ 
+-    ggml_vec_dot_t    const vec_dot      = type_traits_cpu[type].vec_dot;
++    ggml_vec_dot_t    const vec_dot      = ggml_get_type_traits_cpu(type)->vec_dot;
+     enum ggml_type    const vec_dot_type = type_traits_cpu[type].vec_dot_type;
+ 
+     const int64_t blck_0 = 16;
+--- a/src/ggml-cpu/quants.h
++++ b/src/ggml-cpu/quants.h
+@@ -6,6 +6,11 @@
+ #include "ggml.h"
+ 
+ // GGML CPU internal header
++
++#if defined(__ANDROID__) && defined(__aarch64__) && defined(__clang__) && \
++    !defined(__ARM_FEATURE_DOTPROD) && !defined(__ARM_FEATURE_MATMUL_INT8)
++#define GGML_ARM_Q8_RUNTIME_DOTPROD
++#endif
+ 
+ #ifdef __cplusplus
+ extern "C" {
+@@ -43,6 +48,9 @@
+ void ggml_vec_dot_q5_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
+ void ggml_vec_dot_q5_1_q8_1(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
+ void ggml_vec_dot_q8_0_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
++#if defined(GGML_ARM_Q8_RUNTIME_DOTPROD)
++void ggml_vec_dot_q8_0_q8_0_dotprod(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
++#endif
+ 
+ void ggml_vec_dot_mxfp4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
+ void ggml_vec_dot_nvfp4_q8_0(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc);
+--- a/src/ggml-cpu/arch/arm/quants.c
++++ b/src/ggml-cpu/arch/arm/quants.c
+@@ -1319,6 +1319,69 @@
+ 
+     *s = sumf;
+ }
++
++#if defined(GGML_ARM_Q8_RUNTIME_DOTPROD)
++__attribute__((target("dotprod,neon"), noinline))
++void ggml_vec_dot_q8_0_q8_0_dotprod(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
++    const int qk = QK8_0;
++    const int nb = n / qk;
++    assert(n % qk == 0);
++    assert(nrc == 1);
++    UNUSED(nrc);
++    UNUSED(bs);
++    UNUSED(bx);
++    UNUSED(by);
++    const block_q8_0 * GGML_RESTRICT x = vx;
++    const block_q8_0 * GGML_RESTRICT y = vy;
++    int ib = 0;
++    float sumf = 0.0f;
++    // Preserve the baseline emulated dot product's lane grouping before scaling.
++    const uint8x16_t lane_order = {0, 1, 8, 9, 2, 3, 10, 11, 4, 5, 12, 13, 6, 7, 14, 15};
++
++    float32x4_t sumv0 = vdupq_n_f32(0.0f);
++    float32x4_t sumv1 = vdupq_n_f32(0.0f);
++
++    for (; ib + 1 < nb; ib += 2) {
++        const block_q8_0 * GGML_RESTRICT x0 = &x[ib + 0];
++        const block_q8_0 * GGML_RESTRICT x1 = &x[ib + 1];
++        const block_q8_0 * GGML_RESTRICT y0 = &y[ib + 0];
++        const block_q8_0 * GGML_RESTRICT y1 = &y[ib + 1];
++
++        const int8x16_t x0_0 = vld1q_s8(x0->qs);
++        const int8x16_t x0_1 = vld1q_s8(x0->qs + 16);
++        const int8x16_t x1_0 = vld1q_s8(x1->qs);
++        const int8x16_t x1_1 = vld1q_s8(x1->qs + 16);
++
++        // load y
++        const int8x16_t y0_0 = vld1q_s8(y0->qs);
++        const int8x16_t y0_1 = vld1q_s8(y0->qs + 16);
++        const int8x16_t y1_0 = vld1q_s8(y1->qs);
++        const int8x16_t y1_1 = vld1q_s8(y1->qs + 16);
++
++        sumv0 = vmlaq_n_f32(sumv0, vcvtq_f32_s32(vaddq_s32(
++                        vdotq_s32(vdupq_n_s32(0), vqtbl1q_s8(x0_0, lane_order), vqtbl1q_s8(y0_0, lane_order)),
++                        vdotq_s32(vdupq_n_s32(0), vqtbl1q_s8(x0_1, lane_order), vqtbl1q_s8(y0_1, lane_order)))), GGML_CPU_FP16_TO_FP32(x0->d)*GGML_CPU_FP16_TO_FP32(y0->d));
++
++        sumv1 = vmlaq_n_f32(sumv1, vcvtq_f32_s32(vaddq_s32(
++                        vdotq_s32(vdupq_n_s32(0), vqtbl1q_s8(x1_0, lane_order), vqtbl1q_s8(y1_0, lane_order)),
++                        vdotq_s32(vdupq_n_s32(0), vqtbl1q_s8(x1_1, lane_order), vqtbl1q_s8(y1_1, lane_order)))), GGML_CPU_FP16_TO_FP32(x1->d)*GGML_CPU_FP16_TO_FP32(y1->d));
++    }
++
++    sumf = vaddvq_f32(sumv0) + vaddvq_f32(sumv1);
++    for (; ib < nb; ++ib) {
++        int sumi = 0;
++
++        for (int j = 0; j < qk; j++) {
++            sumi += x[ib].qs[j]*y[ib].qs[j];
++        }
++
++        sumf += sumi*(GGML_CPU_FP16_TO_FP32(x[ib].d)*GGML_CPU_FP16_TO_FP32(y[ib].d));
++    }
++
++    *s = sumf;
++}
++#endif
++
+ 
+ void ggml_vec_dot_tq1_0_q8_K(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
+     assert(nrc == 1);

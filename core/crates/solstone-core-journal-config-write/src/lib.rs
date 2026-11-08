@@ -14,6 +14,7 @@
 //! }
 //! ```
 
+mod body_facet;
 mod bound_commit;
 mod commit;
 mod config;
@@ -26,6 +27,7 @@ mod thinking_migration;
 #[cfg(test)]
 mod test_support;
 
+pub use body_facet::{RecordBodyFacetError, record_body_facet};
 pub use bound_commit::conditional_update_journal_config_in_directory;
 pub use bound_commit::{
     BoundConfigConfirmationRefusal, BoundConfigOutcome, BoundConfigPublication, BoundConfigRefusal,

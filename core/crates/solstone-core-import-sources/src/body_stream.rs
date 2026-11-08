@@ -5,7 +5,8 @@
 //!
 //! One writer merges every body source's rows into windows. What differs between
 //! sources is where their files go, what their rows and errors are called, and how
-//! a later import's span meets a stored one. That is all this holds.
+//! a later import's span meets a stored one. That is all this holds, with the
+//! streams the activity record writer reads, Strava's among them.
 
 use solstone_core_import::RegistrySource;
 
@@ -78,4 +79,45 @@ pub const OURA: BodySource = BodySource {
     tiles: TileIds::Window,
     lock_unavailable: "oura_lock_unavailable",
     zone_unrecognised: "oura_zone_unrecognised",
+};
+
+/// The file a stream's windows hold, as the activity record writer reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowFile {
+    /// `body.jsonl`, the rows the shared writer merged.
+    BodyRecords,
+    /// A Strava tile's `workout.json`, read as body rows through the Strava
+    /// adapter.
+    StravaTile,
+}
+
+/// A stream the activity record writer runs over: its windows, the lock its
+/// import holds and the file its windows hold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordSource {
+    pub stream: &'static str,
+    /// Held by the import that writes this stream's windows; the record writer
+    /// runs under it.
+    pub lock_rel: &'static str,
+    pub file: WindowFile,
+}
+
+impl BodySource {
+    /// This source's windows as the activity record writer reads them.
+    #[must_use]
+    pub const fn records(&self) -> RecordSource {
+        RecordSource {
+            stream: self.stream,
+            lock_rel: self.lock_rel,
+            file: WindowFile::BodyRecords,
+        }
+    }
+}
+
+/// Strava's tiles. Strava keeps its own writer and its own tiles, so it has no
+/// [`BodySource`]; its records are written over its tiles as they are.
+pub const STRAVA: RecordSource = RecordSource {
+    stream: solstone_core_format::content::strava_body::STRAVA_STREAM,
+    lock_rel: "imports/.strava",
+    file: WindowFile::StravaTile,
 };

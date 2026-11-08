@@ -76,10 +76,13 @@ pub use error::{
     FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetStoreError, FacetWriteError,
 };
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
+#[cfg(any(test, feature = "test-hooks"))]
+pub use facet_entities::create_facet_entity_if_absent_with_hook;
 pub use facet_entities::{
-    FacetEntityAttachResult, PreparedReviewAttachment, PreparedReviewPromotion, ScopedFacetEntity,
-    add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
-    detach_facet_entity, list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
+    FacetEntityAttachResult, FacetEntityCreateOutcome, PreparedReviewAttachment,
+    PreparedReviewPromotion, ScopedFacetEntity, add_entity_aka, attach_or_reactivate_entity,
+    attach_or_reactivate_entity_for_owner, create_facet_entity_if_absent, detach_facet_entity,
+    list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
     list_scoped_facet_entities_tolerant_with_resolved_ids,
     list_scoped_facet_entities_with_resolved_ids, prepare_review_promotion, publish_review_aliases,
     publish_review_attachment, review_promotion_snapshot, update_facet_entity_description,

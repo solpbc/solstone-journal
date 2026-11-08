@@ -889,30 +889,28 @@ pub(crate) fn retirement_claim_name(attempt: u64) -> String {
 fn retirement_claims(
     health: &FlatDirectory,
 ) -> Result<Vec<crate::name_admission::ClaimName>, WholeJournalRestoreWriteError> {
-    let entries = crate::flat_directory::list_flat_directory(health, 4096)
-        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
-        .ok_or(WholeJournalRestoreWriteError::Invalid(
-            "health listing is incomplete",
-        ))?;
+    // Ordinary health writers atomically replace their own files. Only claim
+    // entries are restore evidence; inspect no unrelated entry metadata.
+    let entries = crate::flat_directory::list_flat_directory_matching(health, 4096, |name| {
+        name.as_encoded_bytes()
+            .starts_with(b"!solstone-claim-00000000-")
+    })
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+    .ok_or(WholeJournalRestoreWriteError::Invalid(
+        "health listing is incomplete",
+    ))?;
     entries
         .into_iter()
-        .filter_map(|entry| {
-            entry
+        .map(|entry| {
+            let name = entry
                 .name
-                .as_encoded_bytes()
-                .starts_with(b"!solstone-claim-00000000-")
-                .then(|| {
-                    let name =
-                        entry
-                            .name
-                            .to_str()
-                            .ok_or(WholeJournalRestoreWriteError::Invalid(
-                                "retirement claim name is malformed",
-                            ))?;
-                    crate::name_admission::ClaimName::parse(name).map_err(|_| {
-                        WholeJournalRestoreWriteError::Invalid("retirement claim name is malformed")
-                    })
-                })
+                .to_str()
+                .ok_or(WholeJournalRestoreWriteError::Invalid(
+                    "retirement claim name is malformed",
+                ))?;
+            crate::name_admission::ClaimName::parse(name).map_err(|_| {
+                WholeJournalRestoreWriteError::Invalid("retirement claim name is malformed")
+            })
         })
         .collect()
 }
@@ -1364,6 +1362,50 @@ fn root_error(error: JournalRootError) -> WholeJournalRestoreWriteError {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unrelated_health_churn_does_not_refuse_target_use() {
+        use crate::flat_directory::{FlatDirectoryTestPrimitive, run_with_flat_directory_hook};
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir(journal.path().join("health")).unwrap();
+        let transient = journal.path().join("health/ordinary-status.tmp");
+        std::fs::write(&transient, b"ordinary health writer temporary file").unwrap();
+        assert!(begin_target_use(journal.path()).is_ok());
+        let (during_churn, hook_fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeEntrySelection,
+            move || std::fs::remove_file(transient).unwrap(),
+            || begin_target_use(journal.path()),
+        );
+        assert!(hook_fired);
+        assert!(
+            during_churn.is_ok(),
+            "unrelated health churn must not refuse target use"
+        );
+        assert!(
+            begin_target_use(journal.path()).is_ok(),
+            "the next read is open"
+        );
+        assert!(!journal.path().join(WHOLE_JOURNAL_RESTORE_FILE).exists());
+    }
+
+    #[test]
+    fn disappearing_retirement_claim_still_refuses_target_use() {
+        use crate::flat_directory::{FlatDirectoryTestPrimitive, run_with_flat_directory_hook};
+        let journal = tempfile::tempdir().unwrap();
+        std::fs::create_dir(journal.path().join("health")).unwrap();
+        let claim = journal.path().join("health").join(retirement_claim_name(1));
+        std::fs::write(&claim, b"claim").unwrap();
+        let (during_churn, hook_fired) = run_with_flat_directory_hook(
+            FlatDirectoryTestPrimitive::BeforeEntryStat,
+            move || std::fs::remove_file(claim).unwrap(),
+            || begin_target_use(journal.path()),
+        );
+        assert!(hook_fired);
+        assert!(
+            during_churn.is_err(),
+            "restore evidence disappearance must refuse"
+        );
+    }
 
     const SNAPSHOT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

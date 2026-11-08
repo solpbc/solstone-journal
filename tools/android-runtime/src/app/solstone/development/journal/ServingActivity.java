@@ -75,7 +75,7 @@ public class ServingActivity extends Activity {
     void bindWorker() {
         if (destroyed || connection != null || ownerStopped && !bindWhileStopped()) return;
         connection = new WorkerConnection();
-        bound = bindService(new Intent(this, JournalService.class), connection, Context.BIND_AUTO_CREATE);
+        bound = bindService(new Intent(this, JournalService.class), connection, Context.BIND_AUTO_CREATE | Context.BIND_IMPORTANT);
         if (!bound) {
             connection = null;
             show(MainActivity.obj("error", "worker binding refused"));

@@ -318,6 +318,13 @@ class Build:
                 record = {"source_component": component, "path": str(patch.relative_to(sources[component])), "sha256": digest}
                 records.append(record)
                 self.summary["patches"].append({"component": name, **record})
+            if self.args.platform == "android":
+                patch = ROOT / "core/distribution/mobile/ggml-android-q8-dotprod.patch"
+                self.run(f"{name}-q8-dotprod-apply", ["git", "apply", "--no-index", patch], ggml)
+                self.run(f"{name}-q8-dotprod-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], ggml)
+                record = {"source_component": "mobile", "path": str(patch.relative_to(ROOT)), "sha256": sha256(patch)}
+                records.append(record)
+                self.summary["patches"].append({"component": name, **record})
             tree = tree_digest(ggml)
             binding = {"schema": MEDIA_GGML_SCHEMA,
                        "sources": {component: self.pins[component]["sha256"]
@@ -360,6 +367,21 @@ class Build:
         self.summary["inputs"]["llama-patched-source"] = {"tree_sha256": tree_digest(source)}
         self.save()
 
+    def patch_parakeet(self, source):
+        patch = ROOT / "core/distribution/mobile/parakeet-thread-budget.patch"
+        self.run("parakeet-thread-budget-patch", ["git", "apply", "--no-index", patch], source)
+        self.run("parakeet-thread-budget-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
+        self.summary["patches"].append({"component": "parakeet", "path": str(patch.relative_to(ROOT)),
+                                        "sha256": sha256(patch)})
+        if self.args.platform == "android":
+            pool = ROOT / "core/distribution/mobile/parakeet-persistent-pool.patch"
+            self.run("parakeet-persistent-pool-patch", ["git", "apply", "--no-index", pool], source)
+            self.run("parakeet-persistent-pool-proof", ["git", "apply", "--no-index", "--check", "--reverse", pool], source)
+            self.summary["patches"].append({"component": "parakeet", "path": str(pool.relative_to(ROOT)),
+                                            "sha256": sha256(pool)})
+        self.summary["inputs"]["parakeet-patched-source"] = {"tree_sha256": tree_digest(source)}
+        self.save()
+
     def cpp(self, name):
         source = self.source(name)
         flags = []
@@ -373,6 +395,7 @@ class Build:
             code = '#include "llama.h"\nint main(void){llama_backend_init(); const char *s=llama_print_system_info(); llama_backend_free(); return s == 0;}\n'
         else:
             if name == "parakeet":
+                self.patch_parakeet(source)
                 self.source("parakeet-ced", source / "third_party/ced.cpp")
                 self.source("parakeet-voice-detect", source / "third_party/voice-detect.cpp")
             self.ggml(name, source)
@@ -385,6 +408,8 @@ class Build:
                 code = '#include "rfdetr_capi.h"\nint main(void){rfdetr_handle_t h; int rc=rfdetr_capi_load("/missing.gguf",1,&h); if(!rc)rfdetr_capi_unload(h); return rc;}\n'
             else:
                 code = f'#include "{header}"\nint main(void){{ {name}_ctx *c={name}_capi_load("/missing.gguf"); if(c){name}_capi_free(c); return {name}_capi_abi_version(); }}\n'
+                if name == "parakeet":
+                    code = (ROOT / "core/distribution/mobile/probes/parakeet_threads.c").read_text()
                 if name == "ced":
                     code = (ROOT / "core/distribution/mobile/probes/ced.c").read_text()
         build = self.cmake(name, source, flags)

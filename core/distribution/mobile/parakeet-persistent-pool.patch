@@ -1,0 +1,120 @@
+--- a/src/backend.cpp
++++ b/src/backend.cpp
+@@ -55,6 +55,8 @@
+     ggml_backend_t       cpu_backend = nullptr;  // fallback backend (GPU path only)
+     ggml_gallocr_t       galloc      = nullptr;  // CPU / single-backend path (unchanged)
+     ggml_backend_sched_t sched       = nullptr;  // GPU path: schedules over {backend, cpu_backend}
++    ggml_threadpool_t     threadpool = nullptr; // Android CPU primary only
++    int                  threadpool_threads = 0;
+     bool                 use_sched   = false;    // true only when `backend` is a GPU device
+     // Inputs registered by the build lambda for the IN-FLIGHT compute. Copied
+     // into the gallocr-allocated tensors after ggml_gallocr_alloc_graph, then
+@@ -153,6 +155,7 @@
+ 
+ Backend::~Backend() {
+     if (impl_) {
++        release_threadpool();
+         // Free allocators/scheduler BEFORE the backends they reference.
+         if (impl_->sched)       ggml_backend_sched_free(impl_->sched);
+         if (impl_->galloc)      ggml_gallocr_free(impl_->galloc);
+@@ -164,13 +167,26 @@
+ }
+ 
+ void Backend::set_n_threads(int n_threads) {
+-    n_threads_ = n_threads > 0 ? n_threads : 1;
++    const int threads = n_threads > 0 ? n_threads : 1;
++    if (impl_ && impl_->threadpool && impl_->threadpool_threads != threads)
++        release_threadpool();
++    n_threads_ = threads;
+     if (impl_ && impl_->backend && ggml_backend_is_cpu(impl_->backend)) {
+         ggml_backend_cpu_set_n_threads(impl_->backend, n_threads_);
+     }
+     if (impl_ && impl_->cpu_backend) {
+         ggml_backend_cpu_set_n_threads(impl_->cpu_backend, n_threads_);
+     }
++}
++
++void Backend::release_threadpool() {
++    if (!impl_ || !impl_->threadpool) return;
++    // Callers serialize a whole compute. Detach first; free wakes and joins
++    // every worker before its state is released.
++    ggml_backend_cpu_set_threadpool(impl_->backend, nullptr);
++    ggml_threadpool_free(impl_->threadpool);
++    impl_->threadpool = nullptr;
++    impl_->threadpool_threads = 0;
+ }
+ 
+ bool Backend::is_cpu() const {
+@@ -203,6 +219,22 @@
+         PK_LOG("Backend::compute called on an uninitialised backend");
+         return false;
+     }
++
++#if defined(__ANDROID__)
++    // Reuse workers for the Android CPU primary backend only. GPU/Metal and
++    // their fallback backends keep their existing behavior. Budget changes
++    // detach the old team; allocate the replacement only when compute resumes.
++    if (ggml_backend_is_cpu(impl_->backend) && !impl_->threadpool) {
++        auto params = ggml_threadpool_params_default(n_threads_);
++        impl_->threadpool = ggml_threadpool_new(&params);
++        if (!impl_->threadpool) {
++            PK_LOG("Backend::compute: ggml_threadpool_new failed");
++            return false;
++        }
++        impl_->threadpool_threads = n_threads_;
++        ggml_backend_cpu_set_threadpool(impl_->backend, impl_->threadpool);
++    }
++#endif
+ 
+     // Metadata-only context: holds graph + tensor structs, no tensor data
+     // (no_alloc=true). Tensor data lives in the gallocr's persistent buffer.
+--- a/src/backend.hpp
++++ b/src/backend.hpp
+@@ -54,6 +54,7 @@
+     // ggml_backend_cpu_set_n_threads). <=0 is clamped to 1.
+     void set_n_threads(int n_threads);
+     int  n_threads() const { return n_threads_; }
++    void release_threadpool();
+ 
+     // True when graphs run on the plain ggml CPU backend (no GPU device).
+     bool is_cpu() const;
+--- a/src/ggml_graph.hpp
++++ b/src/ggml_graph.hpp
+@@ -58,5 +58,7 @@
+ // is still alive — otherwise static destruction frees it after the CUDA atexit
+ // handler and aborts. A later global_backend() call recreates it.
+ void shutdown_backend();
++// Release idle CPU workers without discarding the persistent graph backend.
++void release_backend_threads();
+ 
+ } // namespace pk
+--- a/src/ggml_graph.cpp
++++ b/src/ggml_graph.cpp
+@@ -98,6 +98,11 @@
+     return g_backend_threads;
+ }
+ 
++void release_backend_threads() {
++    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
++    if (g_backend) g_backend->release_threadpool();
++}
++
+ void shutdown_backend() {
+     // Free the process-global backend explicitly. Required for GPU backends: the
+     // backend (and its gallocr's device buffer) must be released while the CUDA/
+--- a/src/parakeet_capi.cpp
++++ b/src/parakeet_capi.cpp
+@@ -439,7 +439,13 @@
+ }
+ 
+ extern "C" void parakeet_capi_free(parakeet_ctx* ctx) {
++#if defined(__ANDROID__)
++    const bool asr = ctx && ctx->model;
++#endif
+     delete ctx;  // safe on nullptr; ~unique_ptr releases the model.
++#if defined(__ANDROID__)
++    if (asr) pk::release_backend_threads();
++#endif
+ }
+ 
+ extern "C" char* parakeet_capi_transcribe_path_lang(parakeet_ctx* ctx,
