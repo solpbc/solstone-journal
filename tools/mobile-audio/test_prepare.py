@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from prepare import main, verify_audio_pins, sound_ced_input, digest, stage_copy
+from prepare import main, verify_audio_pins, sound_ced_input, retained_onnx_input, digest, stage_copy
 
 
 def legacy_receipt():
@@ -44,6 +44,60 @@ def shared_receipt():
 
 
 class AudioPins(unittest.TestCase):
+    def test_pinned_onnx_reuse_binds_original_producer_and_retained_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'receipts').mkdir()
+            library = root / 'libonnxruntime.a'
+            library.write_bytes(b'ONNX retention contract fixture; not target binary proof')
+            checksum = digest(library)
+            artifact = dict(component='onnx-runtime', path='/original/work/libonnxruntime.a',
+                            sha256=checksum, size_bytes=library.stat().st_size)
+            receipt = dict(status='passed', exit=0, platform='ios', source_commit='original-source',
+                           artifacts=[artifact])
+            kept = dict(artifact, retained_path=str(library))
+            receipt_path = root / 'receipts/mobile-native-build.json'
+            retention_path = root / 'retention.json'
+            def save(producer, retained):
+                receipt_path.write_text(json.dumps(producer))
+                retention_path.write_text(json.dumps({'artifacts': retained}))
+            save(receipt, [kept])
+            source, binding = retained_onnx_input(root, checksum)
+            self.assertEqual(source, library)
+            self.assertEqual(binding['source_commit'], 'original-source')
+            self.assertEqual(binding['reused_from'], str(root))
+            self.assertEqual(binding['producer_receipt_sha256'], digest(receipt_path))
+            mutations = [
+                lambda r, k: r.update(status='failed'),
+                lambda r, k: r.update(exit=2),
+                lambda r, k: r.update(platform='android'),
+                lambda r, k: r.update(artifacts=[]),
+                lambda r, k: r['artifacts'].append(copy.deepcopy(r['artifacts'][0])),
+                lambda r, k: k[0].update(path='/different/work/libonnxruntime.a'),
+                lambda r, k: k[0].update(sha256='0' * 64),
+                lambda r, k: k[0].update(size_bytes=1),
+            ]
+            for mutate in mutations:
+                producer, retained = copy.deepcopy(receipt), [copy.deepcopy(kept)]
+                mutate(producer, retained)
+                save(producer, retained)
+                with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+            save(receipt, [kept])
+            with self.assertRaises(ValueError): retained_onnx_input(root, '0' * 64)
+            alias = root / 'renamed.a'
+            alias.write_bytes(library.read_bytes())
+            save(receipt, [dict(kept, retained_path=str(alias))])
+            with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+            link_directory = root / 'linked'
+            link_directory.mkdir()
+            linked = link_directory / library.name
+            linked.symlink_to(library)
+            save(receipt, [dict(kept, retained_path=str(linked))])
+            with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+            save(receipt, [kept])
+            library.write_bytes(b'tampered retained binary')
+            with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+
     def test_staging_refuses_links_before_overwriting_their_target(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
