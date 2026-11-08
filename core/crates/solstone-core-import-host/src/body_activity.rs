@@ -33,7 +33,7 @@ use solstone_core_format::content::body_records::{
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_TILE_FILE, strava_rows};
 use solstone_core_import_sources::body_stream::{BodySource, RecordSource, STRAVA, WindowFile};
 
-const TOMBSTONE: &str = "tombstone.json";
+pub(crate) const TOMBSTONE: &str = "tombstone.json";
 /// Separates the stream from the row id in an account key: neither holds it.
 const KEY_SEPARATOR: char = '\u{1f}';
 const KINDS: [&str; 3] = ["workout", "sleep", "mindfulness"];
@@ -188,7 +188,7 @@ fn sensed_keys(journal: &Path, day: &str) -> Result<BTreeSet<String>, (String, S
 
 /// The rows a live window of `file` holds, or `None` when it's deleted or
 /// can't be read.
-fn window_rows(window: &Path, file: WindowFile) -> Option<Vec<BodyRow>> {
+pub(crate) fn window_rows(window: &Path, file: WindowFile) -> Option<Vec<BodyRow>> {
     if window.join(TOMBSTONE).exists() {
         return None;
     }
@@ -220,7 +220,11 @@ fn window_experiences(window: &Path, file: WindowFile) -> Option<(Option<String>
 }
 
 /// The window folders of `stream` on `day`, in name order.
-fn day_windows(journal: &Path, day: &str, stream: &str) -> Option<Vec<std::path::PathBuf>> {
+pub(crate) fn day_windows(
+    journal: &Path,
+    day: &str,
+    stream: &str,
+) -> Option<Vec<std::path::PathBuf>> {
     let entries = fs::read_dir(journal.join("chronicle").join(day).join(stream)).ok()?;
     let mut windows = entries
         .flatten()

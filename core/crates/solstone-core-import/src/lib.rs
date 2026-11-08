@@ -29,6 +29,7 @@ pub mod saved_start;
 pub mod size;
 pub mod snapshot;
 pub mod staging;
+pub mod strava_names;
 pub mod stream_name;
 pub mod sync_audio;
 pub mod sync_obsidian;
