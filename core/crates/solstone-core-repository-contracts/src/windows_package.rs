@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Cargo-owned package execution with independent binary captures.
+//! Cargo-owned package launches with independent binary captures.
+//!
+//! Cargo builds each batch and hands every library test binary to our runner,
+//! which records the exact launch (executable, arguments, directory and the
+//! environment Cargo gave it) instead of running it. The recorded launches then
+//! run side by side, never two of one serial group at once, as the sharded
+//! Linux gate runs package suites. Inside a binary, tests stay on one thread.
 
 use crate::windows_suite::{
     PackageTestResult, PlanStatus, ProcessTree, SourceBinding, WindowsDisposition, WindowsPlan,
-    WindowsSuiteEvidenceRow, cargo_package_names, is_package_suite, package_test_artifacts,
-    spawn_process_tree, wait_bounded, windows_package_batches,
+    WindowsPlanItem, WindowsSuiteEvidenceRow, cargo_package_names, is_package_suite,
+    package_test_artifacts, spawn_process_tree, wait_bounded, windows_package_batches,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -46,6 +52,18 @@ struct ChildCapture {
     exit_code: i32,
     timed_out: bool,
     supervision_error: Option<String>,
+    elapsed_seconds: f64,
+}
+
+/// What Cargo would have run for one library binary.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Launch {
+    config_sha256: String,
+    executable: PathBuf,
+    argv: Vec<String>,
+    directory: PathBuf,
+    env: BTreeMap<String, String>,
 }
 
 struct CommandCapture {
@@ -78,6 +96,7 @@ fn run_command(
     argv: &[String],
     prefix: &Path,
     timeout_seconds: u64,
+    env: Option<&BTreeMap<String, String>>,
     emit: bool,
 ) -> Result<CommandCapture, String> {
     let stdout_path = prefix.with_extension("stdout.log");
@@ -101,6 +120,9 @@ fn run_command(
         .stdin(Stdio::null())
         .stdout(log_file(&stdout_path)?)
         .stderr(log_file(&stderr_path)?);
+    if let Some(env) = env {
+        command.env_clear().envs(env);
+    }
     let mut tree =
         spawn_process_tree(&mut command).map_err(|e| format!("spawn {}: {e}", argv[0]))?;
     let result = wait_bounded(
@@ -149,6 +171,7 @@ fn executable_key(executable: &Path) -> Result<String, String> {
 }
 
 /// Private entry used only by Cargo's invocation-local runner configuration.
+/// It records the launch and runs nothing; `run_member` runs it later.
 pub fn capture_child(args: Vec<String>) -> Result<i32, String> {
     if args.len() < 2 {
         return Err("capture requires config and executable".to_owned());
@@ -158,12 +181,12 @@ pub fn capture_child(args: Vec<String>) -> Result<i32, String> {
     let config: CaptureConfig = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     let directory = fs::canonicalize(env::current_dir().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
-    let matches: Vec<_> = config
+    let matches = config
         .packages
         .values()
         .filter(|p| p.directory == directory)
-        .collect();
-    if matches.len() != 1 {
+        .count();
+    if matches != 1 {
         return Err("Cargo supplied unknown or ambiguous package directory".to_owned());
     }
     let executable = PathBuf::from(&args[1]);
@@ -179,34 +202,116 @@ pub fn capture_child(args: Vec<String>) -> Result<i32, String> {
         let _ = write_new(&prefix.with_extension("duplicate"), b"duplicate invocation");
         return Err(error);
     }
-    let argv = args[1..].to_vec();
+    let env = env::vars_os()
+        .map(|(k, v)| match (k.into_string(), v.into_string()) {
+            (Ok(k), Ok(v)) => Ok((k, v)),
+            _ => Err("non-UTF-8 environment from Cargo".to_owned()),
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let launch = Launch {
+        config_sha256: format!("{:x}", Sha256::digest(&bytes)),
+        executable,
+        argv: args[1..].to_vec(),
+        directory,
+        env,
+    };
+    write_new(
+        &prefix.with_extension("launch.json"),
+        &serde_json::to_vec(&launch).map_err(|e| e.to_string())?,
+    )?;
+    Ok(0)
+}
+
+/// Run one recorded launch and publish its capture as `result.json`.
+fn run_member(directory: &Path, executable: &Path, timeout_seconds: u64) -> Result<(), String> {
+    let prefix = directory.join(executable_key(executable)?);
+    let launch: Launch = serde_json::from_slice(
+        &fs::read(prefix.with_extension("launch.json")).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("incomplete library launch: {e}"))?;
+    if launch.executable != executable || launch.argv.is_empty() {
+        return Err("library launch names another binary".to_owned());
+    }
+    let started = Instant::now();
     let capture = run_command(
-        &directory,
-        &argv,
+        &launch.directory,
+        &launch.argv,
         &prefix,
-        matches[0].timeout_seconds,
+        timeout_seconds,
+        Some(&launch.env),
         false,
     )?;
     let report = ChildCapture {
-        config_sha256: format!("{:x}", Sha256::digest(&bytes)),
-        executable,
-        argv,
-        directory,
+        config_sha256: launch.config_sha256,
+        executable: launch.executable,
+        argv: launch.argv,
+        directory: launch.directory,
         exit_code: capture.exit_code,
         timed_out: capture.timed_out,
         supervision_error: capture.supervision_error,
+        elapsed_seconds: started.elapsed().as_secs_f64(),
     };
     let temporary = prefix.with_extension("result.tmp");
     write_new(
         &temporary,
         &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
     )?;
-    fs::rename(&temporary, prefix.with_extension("result.json")).map_err(|e| e.to_string())?;
-    Ok(if report.timed_out || report.supervision_error.is_some() {
-        1
-    } else {
-        report.exit_code
-    })
+    fs::rename(&temporary, prefix.with_extension("result.json")).map_err(|e| e.to_string())
+}
+
+/// Run `jobs` at most `width` at a time, never two of one serial group together.
+/// Results come back in job order; a panicking job is an error, not a hang.
+fn run_admitted<J: Sync>(
+    jobs: &[J],
+    width: usize,
+    group: impl Fn(&J) -> Option<&str>,
+    run: impl Fn(&J) -> Result<(), String> + Sync,
+) -> Vec<Result<(), String>> {
+    let width = width.max(1);
+    let mut results: Vec<Option<Result<(), String>>> = jobs.iter().map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut pending: VecDeque<usize> = (0..jobs.len()).collect();
+        let mut running: Vec<usize> = Vec::new();
+        loop {
+            let mut position = 0;
+            while running.len() < width && position < pending.len() {
+                let index = pending[position];
+                let busy = group(&jobs[index])
+                    .is_some_and(|g| running.iter().any(|&r| group(&jobs[r]) == Some(g)));
+                if busy {
+                    position += 1;
+                    continue;
+                }
+                pending.remove(position);
+                running.push(index);
+                let (sender, job, run) = (sender.clone(), &jobs[index], &run);
+                scope.spawn(move || {
+                    let result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(job)))
+                            .unwrap_or_else(|_| {
+                                Err("package member supervisor panicked".to_owned())
+                            });
+                    let _ = sender.send((index, result));
+                });
+            }
+            if running.is_empty() {
+                break;
+            }
+            let (index, result) = receiver.recv().expect("a running member reports");
+            running.retain(|&r| r != index);
+            results[index] = Some(result);
+        }
+    });
+    results.into_iter().map(Option::unwrap).collect()
+}
+
+/// Half the host's logical processors, at most eight: library binaries run
+/// one test at a time but spawn runtimes and children of their own.
+fn member_width() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, |n| n.get() / 2)
+        .clamp(1, 8)
 }
 
 fn library_result(stdout: &str, exit_code: i32) -> Result<PackageTestResult, String> {
@@ -294,15 +399,21 @@ fn verify_inventory(
     artifacts: &BTreeMap<String, PathBuf>,
     filenames: &[String],
 ) -> Result<(), String> {
-    let expected: std::collections::BTreeSet<_> = artifacts
+    let keys: BTreeSet<_> = artifacts
         .values()
-        .map(|p| executable_key(p).map(|key| format!("{key}.result.json")))
+        .map(|p| executable_key(p))
         .collect::<Result<_, _>>()?;
-    if expected.len() != artifacts.len() {
+    if keys.len() != artifacts.len() {
         return Err("multiple packages claimed the same executable".to_owned());
     }
+    let foreign = |name: &str, extension: &str| {
+        name.strip_suffix(extension)
+            .is_some_and(|key| !keys.contains(key))
+    };
     if filenames.iter().any(|name| {
-        name.ends_with(".duplicate") || (name.ends_with(".result.json") && !expected.contains(name))
+        name.ends_with(".duplicate")
+            || foreign(name, ".result.json")
+            || foreign(name, ".launch.json")
     }) {
         return Err("duplicate or foreign library capture".to_owned());
     }
@@ -356,6 +467,7 @@ pub fn execute_windows_packages(
         &metadata_argv,
         &target_dir.join(format!("journal-win-package-metadata-{invocation_id}")),
         batches.iter().map(|b| b.timeout_seconds).max().unwrap(),
+        None,
         true,
     )?;
     if metadata.exit_code != 0 || metadata.supervision_error.is_some() {
@@ -456,13 +568,16 @@ pub fn execute_windows_packages(
             );
         }
         argv.extend(["--".to_owned(), "--test-threads=1".to_owned()]);
+        let build_started = Instant::now();
         let capture = run_command(
             repo,
             &argv,
             &target_dir.join(format!("journal-win-package-batch-{index}-{invocation_id}")),
             batch.timeout_seconds,
+            None,
             true,
         );
+        let build_seconds = build_started.elapsed().as_secs_f64();
         run.aggregate_failed |= capture
             .as_ref()
             .map_or(true, |c| c.exit_code != 0 || c.supervision_error.is_some());
@@ -470,6 +585,43 @@ pub fn execute_windows_packages(
             .as_ref()
             .map_err(Clone::clone)
             .and_then(|c| package_test_artifacts(&c.stdout, &names, batch));
+        // Every member Cargo launched runs now, side by side. A member whose
+        // launch or run fails has no result and is judged failed below.
+        let members: Vec<(&WindowsPlanItem, &PathBuf)> = artifacts
+            .as_ref()
+            .map(|artifacts| {
+                batch
+                    .packages
+                    .iter()
+                    .filter_map(|package| {
+                        let item = plan.items.iter().find(|i| {
+                            is_package_suite(i)
+                                && &i.package == package
+                                && i.status == PlanStatus::Ready
+                        })?;
+                        Some((item, artifacts.get(package)?))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let width = member_width();
+        let run_started = Instant::now();
+        let outcomes = run_admitted(
+            &members,
+            width,
+            |(item, _)| item.serial_group.as_deref(),
+            |(item, executable)| run_member(&directory, executable, item.timeout_seconds),
+        );
+        println!(
+            "WINDOWS_PACKAGE_BATCH index={index} members={} width={width} build_seconds={build_seconds:.1} run_seconds={:.1}",
+            members.len(),
+            run_started.elapsed().as_secs_f64()
+        );
+        for ((item, _), outcome) in members.iter().zip(&outcomes) {
+            if let Err(error) = outcome {
+                eprintln!("suite {}: {error}", item.id);
+            }
+        }
         let inventory = artifacts
             .as_ref()
             .map_err(Clone::clone)
@@ -515,6 +667,7 @@ pub fn execute_windows_packages(
             let member_artifact = artifacts.as_ref().ok().and_then(|a| a.get(package));
             if let Some(executable) = member_artifact {
                 let prefix = directory.join(executable_key(executable)?);
+                // The launch carries Cargo's whole environment; it stays on the host.
                 for extension in ["stdout.log", "stderr.log", "command.json", "result.json"] {
                     let path = prefix.with_extension(extension);
                     if path.is_file() {
@@ -529,6 +682,10 @@ pub fn execute_windows_packages(
             });
             match result {
                 Ok(report) => {
+                    println!(
+                        "WINDOWS_PACKAGE_MEMBER {} seconds={:.1}",
+                        item.id, report.elapsed_seconds
+                    );
                     row.commands.push(report.argv.join(" "));
                     row.exit_codes.push(report.exit_code);
                     if report.timed_out {
@@ -600,6 +757,86 @@ mod tests {
         assert!(verify_inventory(&same_binary, &[]).is_err());
     }
 
+    #[test]
+    fn inventory_refuses_a_launch_cargo_did_not_make_for_this_batch() {
+        let artifacts = BTreeMap::from([("first".into(), PathBuf::from("first-binary"))]);
+        let key = executable_key(&artifacts["first"]).unwrap();
+        verify_inventory(&artifacts, &[format!("{key}.launch.json")]).unwrap();
+        assert!(verify_inventory(&artifacts, &["unknown.launch.json".into()]).is_err());
+    }
+
+    #[test]
+    fn members_run_side_by_side_within_the_width_and_never_two_of_one_serial_group() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Condvar, Mutex};
+        let jobs: Vec<(usize, Option<&str>)> = vec![
+            (0, Some("local-services")),
+            (1, Some("local-services")),
+            (2, None),
+            (3, None),
+            (4, Some("host-contention")),
+            (5, None),
+            (6, Some("local-services")),
+        ];
+        let live = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let groups = Mutex::new(Vec::<&str>::new());
+        // Jobs 2 and 3 are admitted in the first wave; each waits for the other.
+        let met = (Mutex::new(0usize), Condvar::new());
+        let results = run_admitted(
+            &jobs,
+            3,
+            |(_, group)| *group,
+            |(index, group)| {
+                peak.fetch_max(live.fetch_add(1, Ordering::SeqCst) + 1, Ordering::SeqCst);
+                if let Some(group) = group {
+                    let mut held = groups.lock().unwrap();
+                    if held.contains(group) {
+                        return Err(format!("{group} ran twice at once"));
+                    }
+                    held.push(group);
+                }
+                let outcome = match index {
+                    2 | 3 => {
+                        let mut arrived = met.0.lock().unwrap();
+                        *arrived += 1;
+                        met.1.notify_all();
+                        let (arrived, _) = met
+                            .1
+                            .wait_timeout_while(arrived, Duration::from_secs(30), |n| *n < 2)
+                            .unwrap();
+                        if *arrived < 2 {
+                            Err("ungrouped members did not run together".into())
+                        } else if *index == 3 {
+                            Err("red".into())
+                        } else {
+                            Ok(())
+                        }
+                    }
+                    _ => Ok(()),
+                };
+                if let Some(group) = group {
+                    groups.lock().unwrap().retain(|g| g != group);
+                }
+                live.fetch_sub(1, Ordering::SeqCst);
+                if *index == 5 {
+                    panic!("member supervisor fault");
+                }
+                outcome
+            },
+        );
+        assert!(peak.load(Ordering::SeqCst) <= 3);
+        assert_eq!(results.len(), jobs.len());
+        assert_eq!(results[3], Err("red".to_owned()));
+        assert!(results[5].is_err());
+        assert_eq!(
+            results.iter().filter(|r| r.is_ok()).count(),
+            5,
+            "{results:?}"
+        );
+        assert!(run_admitted(&Vec::<()>::new(), 0, |_| None, |_| Ok(())).is_empty());
+    }
+
     fn captured_blocks() -> Vec<String> {
         // Real Cargo capture: empty, failed and successful binaries, in Cargo's order.
         include_str!("fixtures/windows-package/batch.stdout")
@@ -669,6 +906,7 @@ mod tests {
             exit_code: 0,
             timed_out: false,
             supervision_error: None,
+            elapsed_seconds: 0.0,
         };
         verify_capture(&config, &report, "package", executable).unwrap();
         let mut bad = report.clone();
