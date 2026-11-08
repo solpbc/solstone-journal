@@ -306,12 +306,14 @@ fn run_admitted<J: Sync>(
     results.into_iter().map(Option::unwrap).collect()
 }
 
-/// Half the host's logical processors, at most eight: library binaries run
-/// one test at a time but spawn runtimes and children of their own.
+/// A quarter of the host's logical processors, at most four. Library binaries
+/// run one test at a time, but they share the disk: on a 16-way host, eight
+/// side by side ran each member about 2.5 times slower than alone and pushed
+/// the longest suites toward their timeouts.
 fn member_width() -> usize {
     std::thread::available_parallelism()
-        .map_or(1, |n| n.get() / 2)
-        .clamp(1, 8)
+        .map_or(1, |n| n.get() / 4)
+        .clamp(1, 4)
 }
 
 fn library_result(stdout: &str, exit_code: i32) -> Result<PackageTestResult, String> {
@@ -587,7 +589,7 @@ pub fn execute_windows_packages(
             .and_then(|c| package_test_artifacts(&c.stdout, &names, batch));
         // Every member Cargo launched runs now, side by side. A member whose
         // launch or run fails has no result and is judged failed below.
-        let members: Vec<(&WindowsPlanItem, &PathBuf)> = artifacts
+        let mut members: Vec<(&WindowsPlanItem, &PathBuf)> = artifacts
             .as_ref()
             .map(|artifacts| {
                 batch
@@ -604,6 +606,9 @@ pub fn execute_windows_packages(
                     .collect()
             })
             .unwrap_or_default();
+        // The suites declared longest start first, so the batch is not left
+        // waiting on one of them admitted late. The sort is stable.
+        members.sort_by_key(|(item, _)| std::cmp::Reverse(item.timeout_seconds));
         let width = member_width();
         let run_started = Instant::now();
         let outcomes = run_admitted(
