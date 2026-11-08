@@ -68,6 +68,10 @@ pub fn routes(root: PathBuf, clock: Clock) -> Router {
             "/app/activities/api/day/{day}/record/{span_id}/unmute",
             post(unmute),
         )
+        .route(
+            "/app/activities/api/day/{day}/record/{span_id}/separate",
+            post(separate),
+        )
         .with_state((root, clock))
 }
 
@@ -619,6 +623,75 @@ async fn mutate_update(
         }
         Err(error) => store_error(error),
     }
+}
+
+/// The owner takes one body account out of the group it was put in: it never
+/// groups with the others again. Nothing reverses it, nothing is deleted or
+/// moved, and nothing is asked of thinking.
+async fn separate(
+    State((root, clock)): State<(PathBuf, Clock)>,
+    RoutePath((day, span_id)): RoutePath<(String, String)>,
+    RawQuery(query): RawQuery,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if headers.get(ACTOR_HEADER).and_then(|v| v.to_str().ok()) != Some(ACTOR_OWNER) {
+        return http::error(
+            "activity_owner_only",
+            "only you can separate a group.",
+            "separating a group needs the owner".to_owned(),
+            StatusCode::FORBIDDEN,
+        );
+    }
+    let facet = query_value(query.as_deref(), "facet").unwrap_or_default();
+    if facet.is_empty() {
+        return not_found(span_id);
+    }
+    let members =
+        match solstone_core_location::body_records::owner_group(&root, &facet, &day, &span_id) {
+            Ok(members) => members,
+            Err(error) => return internal(error.to_string()),
+        };
+    let Some(record) = members
+        .iter()
+        .find(|member| member.id == span_id && member.facet == facet && member.day == day)
+        .cloned()
+    else {
+        return not_found(span_id);
+    };
+    let others = members
+        .into_iter()
+        .filter(|member| !(member.id == span_id && member.facet == facet && member.day == day))
+        .collect::<Vec<_>>();
+    if others.is_empty() {
+        return http::error(
+            "activity_not_grouped",
+            "this isn't grouped with anything.",
+            "only a record in a group of two or more can be separated".to_owned(),
+            StatusCode::CONFLICT,
+        );
+    }
+    let timestamp = clock
+        .now()
+        .with_timezone(&Utc)
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
+    if let Err(error) =
+        solstone_core_location::body_records::separate_account(&root, &record, &others, &timestamp)
+    {
+        return internal(error.to_string());
+    }
+    if let Err(error) = solstone_core_facets::append_action_log_for_day(
+        &root,
+        Some(&facet),
+        "app",
+        "activities",
+        "activity_separate",
+        json!({"id": span_id, "from": others.iter().map(|other| &other.id).collect::<Vec<_>>()}),
+        &day,
+    ) {
+        return internal(error.to_string());
+    }
+    Json(json!({"id": span_id, "separated": true})).into_response()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3080,6 +3153,68 @@ mod tests {
         let (_, view) = body_call(root.path(), "view", None, None).await;
         assert_eq!(view["items"].as_array().unwrap().len(), 1);
         assert_eq!(view["items"][0]["title"], "Hill repeats");
+    }
+
+    #[tokio::test]
+    async fn the_owner_separates_a_body_group_for_good_and_no_one_else_can() {
+        let root = body_journal();
+        // Anyone but the owner is refused, and nothing is written.
+        let before = solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
+            .unwrap();
+        let (status, body) = body_call(
+            root.path(),
+            "record/body_x/separate?facet=body",
+            None,
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "activity_owner_only");
+        assert_eq!(
+            solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
+                .unwrap(),
+            before
+        );
+
+        // The owner takes one account out: two items now, each on its own.
+        let (status, body) = body_call(
+            root.path(),
+            "record/body_x/separate?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["separated"], true);
+        let (_, view) = body_call(root.path(), "view", None, None).await;
+        let items = view["items"].as_array().unwrap();
+        assert_eq!(items.len(), 2, "{view}");
+        assert!(
+            items
+                .iter()
+                .all(|item| item["accounts"].as_array().unwrap().len() == 1)
+        );
+
+        // Alone now, it has nothing to be separated from.
+        let (status, body) = body_call(
+            root.path(),
+            "record/body_x/separate?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["reason_code"], "activity_not_grouped");
+
+        // A capture record or an unknown id isn't a body group member.
+        let (status, _) = body_call(
+            root.path(),
+            "record/nope/separate?facet=body",
+            Some(ACTOR_OWNER),
+            Some(json!({})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
