@@ -24,6 +24,7 @@ mod raw_screen;
 mod screen;
 mod sense;
 mod shape;
+pub mod strava_body;
 mod talent_projections;
 mod workout;
 

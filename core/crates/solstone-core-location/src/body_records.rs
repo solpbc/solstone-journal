@@ -21,6 +21,7 @@ use solstone_core_facets::{activity_field_held, is_body_record, update_activity_
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time, user_entered,
 };
+use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
 
 const TOMBSTONE: &str = "tombstone.json";
 /// Separates the stream from the row id in an account key.
@@ -140,8 +141,9 @@ fn window_span(name: &str) -> Option<(u32, u32)> {
     Some((start, start + length.max(1)))
 }
 
-/// What one window holds now.
-fn read_held(path: &Path) -> Held {
+/// What one window of `stream` holds now. A Strava tile keeps its own file,
+/// read as body rows; every other stream's window holds `body.jsonl`.
+fn read_held(path: &Path, stream: &str) -> Held {
     if path.join(TOMBSTONE).exists() {
         // A tombstone that can't be read says nobody's delete in particular.
         let by_owner = fs::read(path.join(TOMBSTONE))
@@ -150,8 +152,19 @@ fn read_held(path: &Path) -> Held {
             .is_some_and(|tombstone| tombstone["reason"] == OWNER_DELETE);
         return Held::Deleted { by_owner };
     }
-    match fs::read_to_string(path.join(BODY_RECORDS_FILE)) {
-        Ok(text) => decode_rows(&text).map_or(Held::Unreadable, Held::Rows),
+    let strava = stream == STRAVA_STREAM;
+    let file = if strava {
+        STRAVA_TILE_FILE
+    } else {
+        BODY_RECORDS_FILE
+    };
+    match fs::read_to_string(path.join(file)) {
+        Ok(text) => if strava {
+            strava_rows(&text)
+        } else {
+            decode_rows(&text).ok()
+        }
+        .map_or(Held::Unreadable, Held::Rows),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Held::Rows(Vec::new()),
         Err(_) => Held::Unreadable,
     }
@@ -181,7 +194,7 @@ fn read_windows(journal: &Path, day: &str, stream: &str) -> Vec<Window> {
         let Some((start, end)) = window_span(&name) else {
             continue;
         };
-        let held = read_held(&entry.path());
+        let held = read_held(&entry.path(), stream);
         windows.push(Window {
             name,
             start,
@@ -500,7 +513,7 @@ impl Windows {
         let holding = covering.iter().find(|name| {
             experience_row(
                 held.entry(dir.join(name.as_str()))
-                    .or_insert_with_key(|window| read_held(window)),
+                    .or_insert_with_key(|window| read_held(window, &stored.stream)),
                 &stored.row_id,
             )
             .is_some()

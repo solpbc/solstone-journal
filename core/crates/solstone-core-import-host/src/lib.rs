@@ -17,6 +17,8 @@ mod oura_fetch;
 #[cfg(feature = "in-process-pdf")]
 pub mod pdf_in_process;
 pub mod registry;
+#[expect(dead_code, reason = "Strava's import doesn't read names yet")]
+mod strava_names;
 
 #[cfg(all(test, feature = "full-tests"))]
 mod embedded_admission;

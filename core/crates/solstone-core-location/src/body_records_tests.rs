@@ -1795,3 +1795,220 @@ fn a_night_that_grows_into_another_recorders_keeps_its_hide_and_apart_in_every_r
         }
     }
 }
+
+const STRAVA: &str = "import.strava";
+
+fn journal_with_strava() -> tempfile::TempDir {
+    let journal = journal();
+    fs::write(
+        journal.path().join("imports/.strava-zone.json"),
+        "{\"zone\":\"America/Denver\"}\n",
+    )
+    .unwrap();
+    journal
+}
+
+/// One piece of a Strava workout, as the Strava import writes it, and the row
+/// the body readers see it as.
+fn strava_tile(
+    root: &Path,
+    day: &str,
+    key: &str,
+    (activity_id, index, count): (u64, u64, u64),
+    (record_type, start, elapsed): (&str, &str, u64),
+) -> (PathBuf, BodyRow) {
+    let text = json!({
+        "schema": "solstone.import.strava.tile.v1",
+        "import_id": "20261010_120000",
+        "activity_id": activity_id,
+        "zone": "America/Denver",
+        "tile": {"index": index, "count": count, "start": start, "end": start, "seconds": 300},
+        "workout": {"name": "Lunch Run", "type": record_type, "start": start,
+            "elapsed_seconds": elapsed, "distance_m": 8100.0, "commute": false,
+            "entered_by_hand": false,
+            "strava_fields": {"Activity Private Note": "synthetic note"}},
+    })
+    .to_string();
+    let dir = root.join("chronicle").join(day).join(STRAVA).join(key);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("workout.json"), &text).unwrap();
+    let row = solstone_core_format::content::strava_body::strava_rows(&text)
+        .unwrap()
+        .remove(0);
+    (dir, row)
+}
+
+#[test]
+fn the_strava_zone_is_the_one_its_first_import_fixed() {
+    let journal = journal_with_strava();
+    assert_eq!(
+        solstone_core_journal_config::placed_zone(journal.path(), "strava"),
+        Some(chrono_tz::America::Denver)
+    );
+}
+
+#[test]
+fn a_strava_record_composes_from_its_tile_live_removed_by_you_or_unreadable() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    let (first, run) = strava_tile(
+        root,
+        DAY,
+        "070000_300",
+        (7001, 0, 2),
+        ("Run", "2026-10-10T07:00:00-06:00", 540),
+    );
+    let (later, piece) = strava_tile(
+        root,
+        DAY,
+        "070500_240",
+        (7001, 1, 2),
+        ("Run", "2026-10-10T07:00:00-06:00", 540),
+    );
+    record_in(root, STRAVA, DAY, &run);
+    let found = composed(root);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].stream, STRAVA);
+    assert_eq!(found[0].window.as_deref(), Some("070000_300"));
+    assert_eq!(found[0].account, Account::Live(Box::new(run.clone())));
+    let account =
+        &face_json(&body_faces(root, "body", DAY, &everyone, true).unwrap()[0])["accounts"][0];
+    assert_eq!(account["state"], "live");
+    assert_eq!(account["source"], "strava");
+    assert_eq!(account["by"], "Strava");
+    assert_eq!(account["values"]["distance"], "8100.0 m");
+    // The owner deletes the first piece: the later one still says the span.
+    fs::remove_file(first.join("workout.json")).unwrap();
+    fs::write(
+        first.join(TOMBSTONE),
+        json!({"reason": "owner_segment_delete", "manifest": ["workout.json"]}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(
+        composed(root)[0].account,
+        Account::PartRemoved(Box::new(piece))
+    );
+    // And the rest of it: removed by the owner.
+    fs::remove_file(later.join("workout.json")).unwrap();
+    fs::write(
+        later.join(TOMBSTONE),
+        json!({"reason": "owner_segment_delete", "manifest": ["workout.json"]}).to_string(),
+    )
+    .unwrap();
+    assert_eq!(composed(root)[0].account, Account::RemovedByYou);
+    // A first piece that isn't a tile any more can't be read.
+    fs::remove_file(first.join(TOMBSTONE)).unwrap();
+    fs::write(first.join("workout.json"), "{not a tile").unwrap();
+    assert_eq!(composed(root)[0].account, Account::Unreadable);
+}
+
+/// A body.jsonl in a Strava tile's folder isn't what the tile holds.
+#[test]
+fn a_strava_window_is_read_by_its_own_file_only() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    let (dir, run) = strava_tile(
+        root,
+        DAY,
+        "070000_300",
+        (7001, 0, 1),
+        ("Run", "2026-10-10T07:00:00-06:00", 300),
+    );
+    record_in(root, STRAVA, DAY, &run);
+    fs::remove_file(dir.join("workout.json")).unwrap();
+    fs::write(dir.join(BODY_RECORDS_FILE), encode_rows(&[run])).unwrap();
+    assert_eq!(composed(root)[0].account, Account::NotFound);
+}
+
+/// Faces on `DAY` as their account ids, in any order.
+fn day_groups(root: &Path) -> Vec<Vec<String>> {
+    let mut groups = body_faces(root, "body", DAY, &everyone, true)
+        .unwrap()
+        .iter()
+        .map(|face| {
+            let mut ids = face
+                .members
+                .iter()
+                .map(|member| member.id.clone())
+                .collect::<Vec<_>>();
+            ids.sort();
+            ids
+        })
+        .collect::<Vec<_>>();
+    groups.sort();
+    groups
+}
+
+#[test]
+fn a_watch_run_its_strava_upload_and_stravas_write_back_to_apple_group_pairwise() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    let watch = watch_run();
+    // Strava's copy of it, written back into Apple Health as Strava's own.
+    let back = workout_row(
+        "wb",
+        "Strava",
+        "2026-10-10 07:00:00 -0600",
+        "2026-10-10 08:00:00 -0600",
+    );
+    window(root, DAY, "070000_3600", &[watch.clone(), back.clone()]);
+    record_in(root, STREAM, DAY, &watch);
+    record_in(root, STREAM, DAY, &back);
+    let (_, strava) = strava_tile(
+        root,
+        DAY,
+        "070000_300",
+        (7002, 0, 12),
+        ("Run", "2026-10-10T07:00:00-06:00", 3590),
+    );
+    record_in(root, STRAVA, DAY, &strava);
+    let stored = stored_body_records(root, "body", DAY).unwrap();
+    assert_eq!(stored.len(), 3);
+    for (left, right) in [(0, 1), (0, 2), (1, 2)] {
+        assert!(pair(&stored[left], &stored[right]), "{left} {right}");
+    }
+    assert_eq!(day_groups(root), [vec!["body_7002", "body_wb", "body_wr"]]);
+    assert_eq!(lines_on(root, DAY).len(), 1);
+}
+
+#[test]
+fn a_strava_phone_walk_beside_a_watch_run_stands_alone() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    window(root, DAY, "070000_3600", &[watch_run()]);
+    record_in(root, STREAM, DAY, &watch_run());
+    // 07:10 to 07:50: only the type keeps them apart.
+    let (_, walk) = strava_tile(
+        root,
+        DAY,
+        "071000_300",
+        (7003, 0, 8),
+        ("Walk", "2026-10-10T07:10:00-06:00", 2400),
+    );
+    record_in(root, STRAVA, DAY, &walk);
+    assert_eq!(day_groups(root), [vec!["body_7003"], vec!["body_wr"]]);
+}
+
+#[test]
+fn a_strava_phone_run_twice_the_watchs_stands_alone() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    let watch = workout_row(
+        "wr",
+        "Synthetic Watch",
+        "2026-10-10 12:20:00 -0600",
+        "2026-10-10 12:50:00 -0600",
+    );
+    window(root, DAY, "120000_3600", std::slice::from_ref(&watch));
+    record_in(root, STREAM, DAY, &watch);
+    // 12:00 to 13:00: all of the watch's run, half of the phone's.
+    let (_, phone) = strava_tile(
+        root,
+        DAY,
+        "120000_300",
+        (7004, 0, 12),
+        ("Run", "2026-10-10T12:00:00-06:00", 3600),
+    );
+    record_in(root, STRAVA, DAY, &phone);
+    assert_eq!(day_groups(root), [vec!["body_7004"], vec!["body_wr"]]);
+}
