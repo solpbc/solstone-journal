@@ -732,12 +732,13 @@ pub fn anchor(records: &[StoredBody], group: &[usize]) -> usize {
         .expect("a group has a member")
 }
 
-/// Whether the journal holds body data at all: a body source placed windows.
-/// A journal without it opens no body file in any reader.
+/// Whether the journal holds body data at all: a body source placed windows,
+/// or Strava placed tiles. A journal without it opens no body file in any reader.
 #[must_use]
 pub fn has_body_data(journal: &Path) -> bool {
     solstone_core_format::content::body_records::BODY_RECORD_STREAMS
         .iter()
+        .chain(std::iter::once(&STRAVA_STREAM))
         .any(|stream| {
             journal
                 .join(format!("imports/.{}-zone.json", source_of(stream)))
