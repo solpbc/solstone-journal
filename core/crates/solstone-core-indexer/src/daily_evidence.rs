@@ -7,6 +7,7 @@ use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_format::content::strava_body::STRAVA_STREAM;
 use solstone_core_format::content::{self, ContentResolution, Family};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 use std::{
@@ -286,11 +287,28 @@ pub fn capture_day_projection(journal: &Path, day: &str) -> Result<SourceProject
     project_sources(files)
 }
 
+/// Whether `rel` sits in a Strava tile that holds body data alone. A tile is
+/// another system's account of a workout, so no daily unit reads it, even
+/// where thinking once read it.
+fn in_body_only_strava_tile(rel: &str, path: &Path, tiles: &mut BTreeMap<PathBuf, bool>) -> bool {
+    let parts = rel.split('/').collect::<Vec<_>>();
+    if parts.len() < 4 || parts[1] != STRAVA_STREAM {
+        return false;
+    }
+    let Some(tile) = path.ancestors().nth(parts.len() - 3) else {
+        return false;
+    };
+    *tiles
+        .entry(tile.to_path_buf())
+        .or_insert_with(|| solstone_core_segment::is_body_only_dir(STRAVA_STREAM, tile))
+}
+
 fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection, String> {
     let mut chunks = Vec::new();
     let mut sources = Vec::new();
+    let mut strava_tiles = BTreeMap::new();
     for (rel, path) in files {
-        if output_path(&rel) {
+        if output_path(&rel) || in_body_only_strava_tile(&rel, &path, &mut strava_tiles) {
             continue;
         }
         let normalized = normalized_rel(&rel);
@@ -364,6 +382,8 @@ fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection,
                         Some("anticipated" | solstone_core_format::content::BODY_RECORD_SOURCE)
                     )
                 })
+                // Nor is thinking's reading of a Strava workout, which is body data.
+                .filter(|row| row.get("stream").and_then(Value::as_str) != Some(STRAVA_STREAM))
                 .map(|row| row.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -1284,29 +1304,137 @@ mod tests {
         assert_ne!(previous, revision(&root, "morning_briefing", None));
         fs::remove_dir_all(root).unwrap();
     }
-    #[test]
-    fn a_strava_workout_is_daily_evidence_for_its_day_once() {
-        let root = root("daily-sources-strava");
-        for (key, index) in [("070200_300", 0), ("070700_300", 1)] {
-            write(
-                &root,
-                &format!("chronicle/20260910/import.strava/{key}/workout.json"),
-                &serde_json::json!({
-                    "activity_id": 9,
-                    "tile": {"index": index, "count": 2},
-                    "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
-                })
-                .to_string(),
-            );
-        }
-        let sources = capture_day_sources(&root, "20260910").unwrap();
-        let workouts = sources
+    fn strava_tile(root: &Path, key: &str, index: u64) {
+        write(
+            root,
+            &format!("chronicle/20260910/import.strava/{key}/workout.json"),
+            &serde_json::json!({
+                "activity_id": 9,
+                "tile": {"index": index, "count": 2},
+                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0}
+            })
+            .to_string(),
+        );
+    }
+
+    fn workout_chunks(root: &Path) -> usize {
+        capture_day_sources(root, "20260910")
+            .unwrap()
             .iter()
             .filter(|chunk| chunk.text.contains("## Strava workout: Morning Run"))
-            .collect::<Vec<_>>();
-        assert_eq!(workouts.len(), 1);
-        assert_eq!(workouts[0].agent, "import.strava");
+            .count()
+    }
+
+    /// A Strava tile is body data, sensed or not, so no daily unit reads it.
+    #[test]
+    fn a_strava_workout_is_not_daily_evidence_unless_its_tile_holds_something_else() {
+        let root = root("daily-sources-strava");
+        write(
+            &root,
+            "chronicle/20260910/talents/flow.md",
+            "# Flow\nMeeting.",
+        );
+        let names = ["morning_briefing", "entities:entity_observer"];
+        let before = names.map(|name| revision(&root, name, Some("work")));
+        strava_tile(&root, "070200_300", 0);
+        strava_tile(&root, "070700_300", 1);
+        // A tile thinking once read, with its outputs beside it.
+        write(
+            &root,
+            "chronicle/20260910/import.strava/070200_300/talents/activity.md",
+            "A run along the river.",
+        );
+        assert_eq!(workout_chunks(&root), 0);
+        assert_eq!(
+            names.map(|name| revision(&root, name, Some("work"))),
+            before
+        );
+        // A tile the body-only test rejects keeps counting. Only the first
+        // piece of a workout renders.
+        write(
+            &root,
+            "chronicle/20260910/import.strava/070200_300/notes.md",
+            "Something else.",
+        );
+        assert_eq!(workout_chunks(&root), 1);
+        assert_ne!(
+            names.map(|name| revision(&root, name, Some("work"))),
+            before
+        );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Thinking's reading of a Strava workout leaves evidence with the tile. A
+    /// capture row beside it in the same file still moves it, and a file with no
+    /// such row hashes as it did before.
+    #[test]
+    fn a_strava_sense_row_never_moves_daily_evidence_and_a_capture_row_beside_it_does() {
+        let root = root("daily-strava-sense-row");
+        write(&root, "facets/work/facet.json", "{\"title\":\"Work\"}");
+        let capture = "{\"id\":\"meeting_090000_300\",\"title\":\"Actual\",\"source\":\"cogitate\",\"stream\":\"default\"}\n";
+        let sensed = |description: &str| {
+            format!(
+                "{{\"id\":\"exercise_070000_300\",\"facet\":\"work\",\"activity\":\"exercise\",\"segments\":[\"070000_300\"],\"description\":\"{description}\",\"stream\":\"import.strava\"}}\n"
+            )
+        };
+        let rel = "facets/work/activities/20260910.jsonl";
+        write(&root, rel, capture);
+        let before = revision(&root, "entities:entity_observer", Some("work"));
+        let projected = |root: &Path| {
+            capture_day_projection(root, "20260910")
+                .unwrap()
+                .sources
+                .into_iter()
+                .find(|source| source.path == rel)
+                .map(|source| source.content_digest)
+        };
+        // The digest a file with no Strava row had before the filter existed.
+        let path = root.join(rel);
+        assert_eq!(
+            projected(&root),
+            Some(source_content_digest(&path, capture.trim()).unwrap())
+        );
+        for description in ["A run along the river.", "Hill repeats."] {
+            write(&root, rel, &format!("{}{capture}", sensed(description)));
+            assert_eq!(
+                before,
+                revision(&root, "entities:entity_observer", Some("work"))
+            );
+        }
+        write(
+            &root,
+            rel,
+            &format!(
+                "{}{}",
+                sensed("Hill repeats."),
+                capture.replace("Actual", "Changed")
+            ),
+        );
+        assert_ne!(
+            before,
+            revision(&root, "entities:entity_observer", Some("work"))
+        );
+        // A row from another stream with the same shape still counts.
+        write(
+            &root,
+            rel,
+            &format!("{}{capture}", sensed("x").replace("import.strava", "phone")),
+        );
+        assert_ne!(
+            before,
+            revision(&root, "entities:entity_observer", Some("work"))
+        );
+        fs::remove_dir_all(root).unwrap();
+        // A file holding only Strava rows is no evidence at all.
+        let only = super::tests::root("daily-strava-sense-only");
+        write(&only, "facets/work/facet.json", "{\"title\":\"Work\"}");
+        let before = revision(&only, "entities:entity_observer", Some("work"));
+        write(&only, rel, &sensed("A run along the river."));
+        assert_eq!(
+            before,
+            revision(&only, "entities:entity_observer", Some("work"))
+        );
+        fs::remove_dir_all(only).unwrap();
     }
     #[test]
     fn daily_evidence_projection_preserves_agent_and_original_chunk_identity() {
