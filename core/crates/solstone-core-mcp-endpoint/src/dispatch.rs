@@ -2729,7 +2729,6 @@ fn list_transcripts(
                     )
                 {
                     omitted_workouts += 1;
-                    continue;
                 }
                 omitted_body = omitted_body
                     || segment
