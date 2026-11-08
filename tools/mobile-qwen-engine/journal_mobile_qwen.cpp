@@ -131,13 +131,22 @@ extern "C" int32_t journal_mobile_qwen_run_v1(journal_mobile_qwen_handle * handl
         params.fit_params = false;
         params.n_ctx = 32768;
         params.n_parallel = 1;
+#if defined(JOURNAL_MOBILE_QWEN_METAL)
         params.n_batch = 128;
         params.n_ubatch = 128;
+#else
+        params.n_batch = 2048;
+        params.n_ubatch = 512;
+#endif
         params.cpuparams.n_threads = 4;
         params.cpuparams_batch.n_threads = 4;
         params.n_threads_http = 4;
         params.cache_ram_mib = 0;
         params.cache_ram_explicit = true;
+        params.kv_unified = true;
+        params.enable_reasoning = 0;
+        params.ctx_shift = false;
+        params.ui = false;
         params.default_template_kwargs["enable_thinking"] = "false";
         params.sampling.temp = 0.6f;
         params.sampling.top_k = 20;

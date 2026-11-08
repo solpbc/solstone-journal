@@ -8,6 +8,9 @@
 #include "httplib.h"
 
 #include <atomic>
+#include <csignal>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <cassert>
 #include <cstring>
 #include <filesystem>
@@ -15,7 +18,13 @@
 #include <thread>
 #include <vector>
 
+namespace httplib::detail {
+ssize_t send_socket(socket_t sock, const void * ptr, size_t size, int flags);
+}
+
 namespace {
+volatile std::sig_atomic_t pipe_signals = 0;
+void app_sigpipe(int) { pipe_signals = 1; }
 const char * token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 void test_control_lifetime() {
     server_embedded_control control;
@@ -60,6 +69,7 @@ void test_control_lifetime() {
     queue.start_loop();
 }
 void test_http_contract() {
+    const auto prior_sigpipe = std::signal(SIGPIPE, app_sigpipe);
     common_params params;
     params.hostnames = {"127.0.0.1"};
     params.port = 0;
@@ -67,6 +77,7 @@ void test_http_contract() {
     params.n_threads_http = 2;
     server_http_context http;
     assert(http.init(params, true));
+    assert(std::signal(SIGPIPE, app_sigpipe) == app_sigpipe);
     http.get("/health", [](const server_http_req &) { return std::make_unique<server_http_res>(); });
     http.post("/v1/chat/completions", [](const server_http_req &) { return std::make_unique<server_http_res>(); });
     assert(http.start());
@@ -92,6 +103,15 @@ void test_http_contract() {
     httplib::Client retired("127.0.0.1", http.port);
     retired.set_connection_timeout(1);
     assert(!retired.Get("/health", auth));
+#ifdef MSG_NOSIGNAL
+    int sockets[2];
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+    close(sockets[1]);
+    assert(httplib::detail::send_socket(sockets[0], "closed peer", 11, 0) < 0);
+    close(sockets[0]);
+    assert(pipe_signals == 0);
+#endif
+    assert(std::signal(SIGPIPE, prior_sigpipe) == app_sigpipe);
 }
 void test_abi(const std::filesystem::path & model) {
     assert(journal_mobile_qwen_abi_version() == 1);

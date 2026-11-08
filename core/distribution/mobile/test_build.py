@@ -38,6 +38,16 @@ class BuildControls(unittest.TestCase):
             self.assertFalse(any(command[0] in ("rustup", "rustc") for command in commands))
             self.assertTrue(any(command[0] == "cmake" for command in commands))
 
+    def test_qwen_rejects_a_4k_relro_end_even_with_16k_load_segments(self):
+        # Captured from the first NDK r30 Qwen link: max-page-size alone leaves
+        # GNU_RELRO at 0x100d000, which is unsafe on a 16 KiB Android runtime.
+        loads = "LOAD 0xf60710 0xf68710 0xf68710 0xa4770 0xa48f0 RW 0x4000\n"
+        bad = loads + "GNU_RELRO 0xf60710 0xf68710 0xf68710 0xa4770 0xa48f0 R 0x1\n"
+        with self.assertRaisesRegex(ValueError, "GNU_RELRO"):
+            mobile.require_android_qwen_geometry(bad)
+        with self.assertRaises(ValueError):
+            mobile.require_android_qwen_geometry(loads)
+
     def test_qwen_dynamic_exports_are_exact_on_both_platforms(self):
         for apple in (False, True):
             symbols = ["_" + name if apple else name for name in mobile.QWEN_EXPORTS]
@@ -60,6 +70,9 @@ class BuildControls(unittest.TestCase):
             binding, first = mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})
             self.assertEqual(binding["policy"]["context_tokens"], 32768)
             self.assertEqual(binding["policy"]["parallel_slots"], 1)
+            self.assertEqual((binding["policy"]["batch_tokens"], binding["policy"]["ubatch_tokens"]), (128, 128))
+            android = mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[0]
+            self.assertEqual((android["policy"]["batch_tokens"], android["policy"]["ubatch_tokens"]), (2048, 512))
             self.assertEqual(mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
             self.assertNotEqual(mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
             (wrapper / "journal_mobile_qwen.cpp").write_text("changed adapter")
