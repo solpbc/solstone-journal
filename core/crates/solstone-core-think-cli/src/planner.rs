@@ -4029,9 +4029,6 @@ mod tests {
         );
     }
 
-    /// Segments thought before their publication was recorded must not hold
-    /// their day's close behind one repair each: the daily work that closes
-    /// the day is queued in the first pass, and publishes them itself.
     /// A Strava tile holding a stray file the body-only test rejects, on a day
     /// with capture, published by an import as owing thinking: the day's
     /// daily work is queued as it is without the tile, nothing is sent for the
@@ -4094,6 +4091,9 @@ mod tests {
         }
     }
 
+    /// Segments thought before their publication was recorded must not hold
+    /// their day's close behind one repair each: the daily work that closes
+    /// the day is queued in the first pass, and publishes them itself.
     #[test]
     fn a_thought_day_without_publication_receipts_is_closed_in_the_first_pass() {
         let root = fixture("local");
