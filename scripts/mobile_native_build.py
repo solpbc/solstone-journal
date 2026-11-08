@@ -24,6 +24,47 @@ INPUTS = ROOT / "core/distribution/mobile/inputs.json"
 COMPONENTS = ("rust", "llama", "parakeet", "ced", "rfdetr", "sound-ced", "restic", "rclone", "nvattest", "pdfium", "swift")
 MEDIA_GGML_COMPONENTS = ("parakeet", "rfdetr")
 MEDIA_GGML_SCHEMA = "solstone.mobile-media-ggml.v1"
+QWEN_EXPORTS = frozenset({
+    "journal_mobile_qwen_abi_version", "journal_mobile_qwen_source_revision",
+    "journal_mobile_qwen_runtime_identity", "journal_mobile_qwen_create_v1",
+    "journal_mobile_qwen_run_v1", "journal_mobile_qwen_request_stop_v1",
+    "journal_mobile_qwen_get_snapshot_v1", "journal_mobile_qwen_destroy_v1",
+})
+QWEN_SOURCE_FILES = ("CMakeLists.txt", "journal_mobile_qwen.h", "journal_mobile_qwen.cpp",
+                     "exports.apple", "exports.map")
+
+
+def require_qwen_exports(text, apple=False):
+    symbols = set()
+    for line in text.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        symbol = fields[-1]
+        if apple and symbol.startswith("_"):
+            symbol = symbol[1:]
+        symbols.add(symbol)
+    if symbols != QWEN_EXPORTS:
+        raise ValueError(f"Qwen dynamic exports differ: missing={QWEN_EXPORTS - symbols}, unexpected={symbols - QWEN_EXPORTS}")
+    return sorted(symbols)
+
+
+def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, build_inputs):
+    cmake = (wrapper / "CMakeLists.txt").read_text()
+    revision = re.findall(r'JOURNAL_MOBILE_QWEN_SOURCE_REVISION="([0-9a-f]{40})"', cmake)
+    if not revision or set(revision) != {pin["revision"]}:
+        raise ValueError("Qwen adapter source revision differs from the maintained llama pin")
+    binding = {"schema": "solstone.mobile-qwen-runtime-inputs.v1", "abi": 1,
+               "platform": "aarch64-" + platform_name, "source_revision": pin["revision"],
+               "source_archive_sha256": pin["sha256"], "patched_source_sha256": patched_tree,
+               "patches": [{"path": row["path"], "sha256": row["sha256"]} for row in patches],
+               "adapter_sources": {name: sha256(wrapper / name) for name in QWEN_SOURCE_FILES},
+               "build_inputs": build_inputs,
+               "policy": {"context_tokens": 32768, "parallel_slots": 1, "cpu_workers": 4,
+                          "bind_address": "127.0.0.1", "requested_port": 0,
+                          "backend": "metal" if platform_name == "ios" else "cpu"}}
+    digest = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return binding, "sha256:" + digest
 
 
 def media_ggml_patches(sources):
@@ -171,7 +212,7 @@ class Build:
                         "source_tree_sha256": source_digest(ROOT),
                         "driver_sha256": sha256(Path(__file__)), "inputs_sha256": sha256(INPUTS),
                         "inputs": {}, "steps": [], "artifacts": [], "patches": [], "configurations": {},
-                        "boundary": "compile and caller linkage; no device runtime, model inference, packaging or signing"}
+                        "boundary": "compile, caller linkage and unsigned native-library packaging; no device runtime, model inference or signing"}
         self.save()
 
     def output(self, argv, cwd=None):
@@ -382,17 +423,75 @@ class Build:
         self.summary["inputs"]["parakeet-patched-source"] = {"tree_sha256": tree_digest(source)}
         self.save()
 
+    def mobile_qwen(self):
+        source = self.source("llama")
+        patch = ROOT / "core/distribution/mobile/llama-embedded-lifecycle.patch"
+        self.run("llama-embedded-patch", ["git", "apply", "--no-index", patch], source)
+        self.run("llama-embedded-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
+        self.summary["patches"].append({"component": "llama", "path": str(patch.relative_to(ROOT)), "sha256": sha256(patch)})
+        self.patch_llama(source)
+        patched_tree = tree_digest(source)
+        self.summary["inputs"]["llama-patched-source"] = {"tree_sha256": patched_tree}
+        wrapper = ROOT / "tools/mobile-qwen-engine"
+        binding, identity = qwen_runtime_binding(self.args.platform, self.pins["llama"], patched_tree,
+            [row for row in self.summary["patches"] if row["component"] == "llama"], wrapper,
+            {"driver_sha256": self.summary["driver_sha256"], "inputs_sha256": self.summary["inputs_sha256"],
+             "openssl": self.pins["openssl"], "common_cmake_flags": self.common,
+             "compiler_version": self.output([self.cxx, "--version"]).splitlines()[0],
+             "support_driver_sha256": sha256(ROOT / "scripts/android_cross_build.py")})
+        self.summary["inputs"]["mobile-qwen-runtime"] = {"identity": identity, **binding}
+        openssl = self.openssl()
+        flags = [f"-DJOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR={source}",
+                 f"-DJOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY={identity}",
+                 "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11960", "-DLLAMA_BUILD_COMMIT=8642541",
+                 f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include",
+                 f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a",
+                 f"-DOPENSSL_SSL_LIBRARY={openssl}/lib/libssl.a", "-DOPENSSL_USE_STATIC_LIBS=TRUE"]
+        if self.args.platform == "android":
+            flags += ["-DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=TRUE"]
+        build = self.cmake("llama", wrapper, flags, targets=["journal_mobile_qwen"])
+        # Retain archive provenance, but app callers link ONLY the isolated image.
+        for index, library in enumerate(sorted(build.rglob("*.a"))):
+            self.inspect(f"llama-archive-{index}", library)
+        package = self.work / "artifacts/mobile-qwen"
+        package.mkdir(parents=True)
+        if self.args.platform == "ios":
+            framework = build / "JournalMobileQwen.framework"
+            shutil.copytree(framework, package / framework.name, symlinks=True)
+            image = package / framework.name / "JournalMobileQwen"
+            text = self.run("llama-image-exports", ["nm", "-gU", image]).read_text()
+            dependencies = self.run("llama-image-dependencies", ["otool", "-L", image]).read_text()
+        else:
+            image = package / "libjournal_mobile_qwen.so"
+            shutil.copyfile(build / image.name, image)
+            tools = self.ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin"
+            text = self.run("llama-image-exports", [tools / "llvm-nm", "-D", "--defined-only", image]).read_text()
+            dependencies = self.run("llama-image-dependencies", [tools / "llvm-readelf", "-d", image]).read_text()
+        exports = require_qwen_exports(text, apple=self.args.platform == "ios")
+        if re.search(r"(?:lib)?(?:ggml|llama|parakeet|ced|rfdetr)[^\s/]*\.(?:so|dylib)", dependencies, re.IGNORECASE):
+            raise ValueError("Qwen image leaked a dependency on a separate engine symbol family")
+        self.inspect("llama-mobile-engine", image)
+        shutil.copyfile(wrapper / "journal_mobile_qwen.h", package / "journal_mobile_qwen.h")
+        for label, license_file in (("llama", source / "LICENSE"), ("openssl", self.source_roots["openssl"] / "LICENSE.txt")):
+            shutil.copyfile(license_file, package / (label + "-LICENSE.txt"))
+        # One dynamic-image caller proves that the eight functions are linkable
+        # without adding a second GGML/server/common closure to the app.
+        code = '#include "journal_mobile_qwen.h"\nint main(void){journal_mobile_qwen_handle *h=0; char e[8]; journal_mobile_qwen_snapshot_v1 s={1,sizeof(s)}; journal_mobile_qwen_create_v1(0,&h,e,sizeof(e)); journal_mobile_qwen_request_stop_v1(h); journal_mobile_qwen_get_snapshot_v1(h,&s); journal_mobile_qwen_run_v1(h); journal_mobile_qwen_destroy_v1(h); return journal_mobile_qwen_abi_version()!=1 || !journal_mobile_qwen_source_revision() || !journal_mobile_qwen_runtime_identity();}\n'
+        self.link("llama-mobile-engine", code, [wrapper], [image])
+        manifest = {"schema": "solstone.mobile-qwen-package.v1", "runtime_identity": identity,
+                    "binding": binding, "image": str(image.relative_to(package)),
+                    "image_sha256": sha256(image), "image_size_bytes": image.stat().st_size,
+                    "exports": exports, "signed": False,
+                    "boundary": "unsigned native engine; model bytes and app signing are admitted by their owners"}
+        (package / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        self.summary["inputs"]["mobile-qwen-package"] = {"path": str(package), "manifest_sha256": sha256(package / "manifest.json")}
+        self.save()
+
     def cpp(self, name):
         source = self.source(name)
         flags = []
         if name == "llama":
-            self.patch_llama(source)
-            openssl = self.openssl()
-            flags = ["-DLLAMA_BUILD_TESTS=OFF", "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_BUILD_SERVER=ON", "-DLLAMA_BUILD_TOOLS=ON", "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11960", "-DLLAMA_BUILD_COMMIT=8642541", f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include", f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a", f"-DOPENSSL_SSL_LIBRARY={openssl}/lib/libssl.a", "-DOPENSSL_USE_STATIC_LIBS=TRUE"]
-            if self.args.platform == "android":
-                flags += ["-DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=TRUE"]
-            header = "llama.h"
-            code = '#include "llama.h"\nint main(void){llama_backend_init(); const char *s=llama_print_system_info(); llama_backend_free(); return s == 0;}\n'
+            return self.mobile_qwen()
         else:
             if name == "parakeet":
                 self.patch_parakeet(source)
