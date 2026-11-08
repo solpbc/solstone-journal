@@ -1335,8 +1335,11 @@ fn run_item(
     coverage_path: &Path,
 ) -> Result<RunOutcome, String> {
     let argv = item_command(item);
-    let log = File::create(log_path)
+    let entry_tmp = EntryTempDir::create();
+    let mut log = File::create(log_path)
         .map_err(|error| format!("create log {}: {error}", log_path.display()))?;
+    writeln!(log, "ci entry TMPDIR={}", entry_tmp.path().display())
+        .map_err(|error| format!("write log {}: {error}", log_path.display()))?;
     let stderr_log = log
         .try_clone()
         .map_err(|error| format!("clone log {}: {error}", log_path.display()))?;
@@ -1347,7 +1350,8 @@ fn run_item(
         .args(&argv[1..])
         .current_dir(repo)
         .env("CARGO_NET_OFFLINE", "true")
-        .env("TMPDIR", "/var/tmp")
+        .env("TMPDIR", entry_tmp.path())
+        .env_remove("SOLSTONE_CI_ENTRY_TMPDIR")
         .env(COVERAGE_REPORT_PATH_ENV, coverage_path)
         .env_remove("MAKEFLAGS")
         .env_remove("MFLAGS")
@@ -1357,6 +1361,9 @@ fn run_item(
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(stderr_log));
+    if entry_tmp.owned {
+        command.env("SOLSTONE_CI_ENTRY_TMPDIR", entry_tmp.path());
+    }
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command
@@ -1384,6 +1391,84 @@ fn run_item(
                 });
             }
             Err(error) => return Err(format!("wait for {}: {error}", item.id)),
+        }
+    }
+}
+
+/// The temporary directory one entry's commands get as `TMPDIR`.
+///
+/// On Linux each entry gets its own directory on the `/dev/shm` tmpfs when it
+/// has room, removed when the entry ends: suites that sync their fixtures to
+/// disk run several times faster there, and `make ci` already gives its tests
+/// a tmpfs. Everywhere else, and when `/dev/shm` is missing or short of space,
+/// entries keep the shared `/var/tmp`. A test that names `/var/tmp` itself is
+/// unaffected either way.
+struct EntryTempDir {
+    path: PathBuf,
+    owned: bool,
+}
+
+impl EntryTempDir {
+    #[cfg(target_os = "linux")]
+    fn create() -> Self {
+        use std::os::unix::fs::DirBuilderExt;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        const SHM: &str = "/dev/shm";
+        const MIN_FREE_BYTES: u64 = 4 << 30;
+
+        let free = nix::sys::statvfs::statvfs(SHM)
+            .map(|stat| stat.blocks_available().saturating_mul(stat.fragment_size()));
+        if matches!(free, Ok(bytes) if bytes >= MIN_FREE_BYTES) {
+            // Keep the name to two characters: `/dev/shm/xy` is only three
+            // longer than `/var/tmp`, so a socket a test binds under its temp
+            // root stays inside the Unix socket path limit.
+            const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+            let seed = std::process::id() as usize;
+            for attempt in 0..ALPHABET.len() * ALPHABET.len() {
+                let index = (seed + NEXT.fetch_add(1, Ordering::Relaxed) as usize + attempt)
+                    % (ALPHABET.len() * ALPHABET.len());
+                let name = [
+                    ALPHABET[index / ALPHABET.len()],
+                    ALPHABET[index % ALPHABET.len()],
+                ];
+                let path = PathBuf::from(SHM).join(std::str::from_utf8(&name).expect("ascii"));
+                match fs::DirBuilder::new().mode(0o700).create(&path) {
+                    Ok(()) => return Self { path, owned: true },
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(_) => break,
+                }
+            }
+        }
+        Self::shared()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn create() -> Self {
+        Self::shared()
+    }
+
+    fn shared() -> Self {
+        Self {
+            path: PathBuf::from("/var/tmp"),
+            owned: false,
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for EntryTempDir {
+    fn drop(&mut self) {
+        if self.owned
+            && let Err(error) = fs::remove_dir_all(&self.path)
+        {
+            eprintln!(
+                "solstone-ci: could not remove entry TMPDIR {}: {error}",
+                self.path.display()
+            );
         }
     }
 }
