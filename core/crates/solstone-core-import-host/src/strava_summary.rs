@@ -32,13 +32,18 @@ fn plural(count: u64, one: &str, many: &str) -> String {
     }
 }
 
-const NO_FACET_MEANS: &str = "A workout with no facet gets no activity, and connections limited to chosen facets don't see it. Search and the body app still show it.";
+const NO_FACET_MEANS: &str = "a workout with no facet isn't listed with your activities, no people or things come from it, and agents you've set to only these facets won't see it. search and the body app still show it.";
+
+/// `one` when `count` is 1, otherwise `many`.
+fn either<'a>(count: u64, one: &'a str, many: &'a str) -> &'a str {
+    if count == 1 { one } else { many }
+}
 
 impl StravaRunSummary {
     /// The summary's text, in the owner's words.
     #[must_use]
     pub(crate) fn text(&self) -> String {
-        let mut text = String::from("# Strava import\n\n");
+        let mut text = String::from("# strava import\n\n");
         let _ = writeln!(
             text,
             "{} added, {} changed since the last import and brought up to date.\n",
@@ -52,146 +57,119 @@ impl StravaRunSummary {
     }
 
     fn facet_section(&self, text: &mut String) {
-        let _ = writeln!(text, "## Facet\n");
+        let _ = writeln!(text, "## facet\n");
         match (&self.facet.facet, self.facet.basis) {
             (Some(facet), FacetBasis::Chosen) => {
-                let _ = writeln!(text, "You chose the {facet} facet for this import.\n");
+                let _ = writeln!(text, "you chose the {facet} facet for this import.\n");
             }
             (Some(facet), _) => {
                 let _ = writeln!(
                     text,
-                    "Filed under the {facet} facet, the one you chose for Strava imports.\n"
+                    "filed under the {facet} facet, the one you chose for Strava imports.\n"
                 );
             }
             (None, FacetBasis::ChosenNone) => {
                 let _ = writeln!(
                     text,
-                    "You chose no facet for this import. {NO_FACET_MEANS}\n"
+                    "you chose no facet for this import: {NO_FACET_MEANS}\n"
                 );
             }
             (None, _) => {
                 let _ = writeln!(
                     text,
-                    "Filed under no facet: no facet was chosen for this import and none is set for Strava imports. {NO_FACET_MEANS}\n"
+                    "filed under no facet, because none was chosen for this import and none is set for Strava imports: {NO_FACET_MEANS}\n"
                 );
             }
         }
         let Some(facet) = &self.facet.facet else {
             return;
         };
-        if self.filing.filed > 0 {
+        let filing = &self.filing;
+        if filing.filed > 0 {
             let _ = writeln!(
                 text,
                 "{} now filed under {facet}, including workouts from earlier imports of this download.{}\n",
-                plural(self.filing.filed, "workout is", "workouts are"),
-                match self.filing.moved {
+                plural(filing.filed, "workout is", "workouts are"),
+                match filing.moved {
                     0 => String::new(),
                     moved => format!(" {moved} of them moved from another facet."),
                 }
             );
         }
-        if self.filing.kept_sensed > 0 {
+        if filing.kept_sensed > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because {} an activity there from before.\n",
-                plural(self.filing.kept_sensed, "workout was", "workouts were"),
-                if self.filing.kept_sensed == 1 {
-                    "it was"
-                } else {
-                    "they were"
-                },
-                if self.filing.kept_sensed == 1 {
-                    "it already has"
-                } else {
-                    "they already have"
-                },
+                "{} left where {}, because {} already listed with your activities from an earlier reading.\n",
+                plural(filing.kept_sensed, "workout was", "workouts were"),
+                either(filing.kept_sensed, "it was", "they were"),
+                either(filing.kept_sensed, "it's", "they're"),
             );
         }
-        if self.filing.kept_unreadable > 0 {
+        if filing.kept_unreadable > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because the activities on {} day couldn't be read. Importing again tries once more.\n",
-                plural(self.filing.kept_unreadable, "workout was", "workouts were"),
-                if self.filing.kept_unreadable == 1 {
-                    "it was"
-                } else {
-                    "they were"
-                },
-                if self.filing.kept_unreadable == 1 {
-                    "its"
-                } else {
-                    "their"
-                },
+                "{} left where {}, because your journal couldn't read what's listed with your activities on {} day. importing again tries once more.\n",
+                plural(filing.kept_unreadable, "workout was", "workouts were"),
+                either(filing.kept_unreadable, "it was", "they were"),
+                either(filing.kept_unreadable, "its", "their"),
             );
         }
     }
 
     fn records_section(&self, text: &mut String) {
-        let _ = writeln!(text, "## Activities\n");
+        let _ = writeln!(text, "## activities\n");
         let records = &self.records;
         let _ = writeln!(
             text,
-            "{}\n",
-            if records.written == 1 {
-                "1 workout now shows as an activity on its day.".to_owned()
-            } else {
-                format!(
-                    "{} workouts now show as activities on their days.",
-                    records.written
-                )
-            },
+            "{} now listed with your activities on {}.\n",
+            plural(records.written, "workout is", "workouts are"),
+            either(records.written, "its day", "their days"),
         );
         if records.sensed > 0 {
             let _ = writeln!(
                 text,
-                "{} already had an activity from before, and {} it.\n",
-                plural(records.sensed, "workout", "workouts"),
-                if records.sensed == 1 {
-                    "keeps"
-                } else {
-                    "each keeps"
-                },
+                "{} already listed with your activities from an earlier reading, and {} as {} {}.\n",
+                plural(records.sensed, "workout was", "workouts were"),
+                either(records.sensed, "stays", "stay"),
+                either(records.sensed, "it", "they"),
+                either(records.sensed, "is", "are"),
             );
         }
         if records.no_facet > 0 {
             let _ = writeln!(
                 text,
-                "{} no facet, so {} no activity. {NO_FACET_MEANS}\n",
+                "{} no facet, so {} listed with your activities. {NO_FACET_MEANS}\n",
                 plural(records.no_facet, "workout has", "workouts have"),
-                if records.no_facet == 1 {
-                    "it has"
-                } else {
-                    "they have"
-                },
+                either(records.no_facet, "it isn't", "they aren't"),
             );
         }
         if !records.refused.is_empty() {
             let _ = writeln!(
                 text,
-                "Not every activity could be added this time. Importing again tries once more.\n"
+                "not every workout could be listed with your activities this time. importing again tries once more.\n"
             );
         }
     }
 
     fn names_section(&self, text: &mut String) {
-        let _ = writeln!(text, "## People and gear\n");
+        let _ = writeln!(text, "## people and gear\n");
         let names = &self.names;
         if let Some(error) = &names.store_error {
             let _ = writeln!(
                 text,
-                "The people and gear in your workouts weren't read this time, because what was read before couldn't be opened ({error}). Importing again tries once more.\n"
+                "the people and gear in your workouts weren't read this time, because your journal couldn't open what it kept from earlier reads ({error}). importing again tries once more.\n"
             );
             return;
         }
         let _ = writeln!(
             text,
-            "{} read for the people and gear they name, and {} read before.{}\n",
+            "{} read for the people and gear they name, and {} read on an earlier import.{}\n",
             plural(
                 names.calls - names.failed,
                 "workout's own words were",
                 "workouts' own words were"
             ),
-            plural(names.cached, "workout's were", "workouts' were"),
+            plural(names.cached, "was", "were"),
             match names.failed {
                 0 => String::new(),
                 failed => format!(
@@ -234,7 +212,7 @@ impl StravaRunSummary {
                 ),
             );
         } else {
-            let _ = writeln!(text, "No people or things were added this time.\n");
+            let _ = writeln!(text, "no people or things were added this time.\n");
         }
     }
 
@@ -242,7 +220,7 @@ impl StravaRunSummary {
     #[must_use]
     pub(crate) fn count_keys(&self) -> String {
         format!(
-            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_created={}",
+            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_unfiled={} names_created={}",
             self.facet.facet.as_deref().unwrap_or("none"),
             self.records.written,
             self.records.sensed,
@@ -256,6 +234,7 @@ impl StravaRunSummary {
             self.names.failed,
             self.names.cached,
             self.names.waiting,
+            self.names.unfiled,
             self.names.created,
         )
     }
@@ -301,8 +280,8 @@ mod tests {
     #[test]
     fn the_summary_has_a_section_per_step_and_every_count() {
         let facet_paragraphs = |text: &str| {
-            let start = text.find("## Facet").unwrap();
-            let end = text.find("## Activities").unwrap();
+            let start = text.find("## facet").unwrap();
+            let end = text.find("## activities").unwrap();
             text[start..end]
                 .lines()
                 .skip(1)
@@ -316,7 +295,7 @@ mod tests {
         assert_eq!(facet_paragraphs(&text), 4, "{text}");
         assert_eq!(
             chosen.count_keys(),
-            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_created=1"
+            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_unfiled=0 names_created=1"
         );
         // With no facet, nothing was filed, whatever the counts say.
         let none = summary(None, FacetBasis::NoDefault).text();
