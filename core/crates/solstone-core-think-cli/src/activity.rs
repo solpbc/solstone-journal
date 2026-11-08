@@ -335,7 +335,7 @@ fn settle_body_data(
     if let Some(work) = ActivityWork::open_existing(context, facet, activity_id)? {
         work.settle(context)?;
     }
-    let message = "this activity is a reading of a Strava workout, which is body data; its talents do not run.";
+    let message = "this activity comes from a Strava workout, which is body data; nothing further runs on it.";
     log_disposition(
         context,
         log,
