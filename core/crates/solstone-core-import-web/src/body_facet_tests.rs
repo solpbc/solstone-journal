@@ -50,12 +50,19 @@ async fn offer_of(root: &Path) -> (String, Value) {
     )
 }
 
+/// Answer the question the card shows now.
 async fn answer_with(root: &Path, answer: &str) -> (StatusCode, Value) {
+    let (_, shown) = call(root, "GET", "/app/import/api/body-facet", None).await;
+    answer_shown(root, answer, &shown["offer"]).await
+}
+
+/// Answer `shown`, the question as the card showed it.
+async fn answer_shown(root: &Path, answer: &str, shown: &Value) -> (StatusCode, Value) {
     call(
         root,
         "POST",
         "/app/import/api/body-facet",
-        Some(json!({ "answer": answer })),
+        Some(json!({ "answer": answer, "offer": shown })),
     )
     .await
 }
@@ -187,12 +194,69 @@ async fn a_no_is_remembered_and_not_asked_again() {
         StoredBodyFacet::Answered(BodyFacetChoice::None)
     );
     assert_eq!(enabled(root.path()), ["work"]);
-    // Answering again changes nothing.
+    // Answering again changes nothing, whichever question the page still shows.
     answer_with(root.path(), "yes").await;
+    answer_shown(
+        root.path(),
+        "yes",
+        &json!({"state": "ask_make_body", "facet": "body"}),
+    )
+    .await;
     assert_eq!(offer_of(root.path()).await.0, "declined");
     assert_eq!(enabled(root.path()), ["work"]);
     let (status, _) = answer_with(root.path(), "maybe").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// An answer to a question that has changed since the card showed it is
+/// refused with nothing written, and the page is told to show it again; an
+/// answer to the question asked now is taken.
+#[tokio::test]
+async fn an_answer_to_a_question_no_longer_asked_is_refused_and_writes_nothing() {
+    let root = journal(&["work", "health"]);
+    let (_, shown) = call(root.path(), "GET", "/app/import/api/body-facet", None).await;
+    assert_eq!(
+        shown["offer"],
+        json!({"state": "ask_existing", "facet": "health"})
+    );
+    // health is muted before the owner clicks yes.
+    solstone_core_facets::set_facet_muted(root.path(), "health", true).unwrap();
+    let before = (
+        stored(root.path()),
+        solstone_core_facets::observe_declared_facet_inventory(root.path()).unwrap(),
+    );
+
+    let (status, body) = answer_shown(root.path(), "yes", &shown["offer"]).await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "body_facet_offer_changed");
+    assert_eq!(body["error"], text("offer_changed"));
+    assert_eq!(
+        (
+            stored(root.path()),
+            solstone_core_facets::observe_declared_facet_inventory(root.path()).unwrap()
+        ),
+        before
+    );
+    assert!(!root.path().join("facets/body").exists());
+    // A page that sends no question is refused the same way.
+    let (status, _) = call(
+        root.path(),
+        "POST",
+        "/app/import/api/body-facet",
+        Some(json!({"answer": "no"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(stored(root.path()), before.0);
+
+    // The question the card shows now is answered.
+    let (status, body) = answer_with(root.path(), "yes").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        stored(root.path()),
+        StoredBodyFacet::Answered(BodyFacetChoice::Facet("body".into()))
+    );
 }
 
 /// A Strava download staged on its card, as the upload leaves it.

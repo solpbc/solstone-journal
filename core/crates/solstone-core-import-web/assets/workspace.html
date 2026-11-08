@@ -1876,12 +1876,18 @@ async function answerStravaFacet(answer) {
   const buttons = document.querySelectorAll('[data-body-facet-answer]');
   buttons.forEach((button) => { button.disabled = true; });
   try {
+    // The answer names the question it answers, so one that has changed since is refused.
     const response = await fetch('/app/import/api/body-facet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answer }),
+      body: JSON.stringify({ answer, offer: stravaFacet && stravaFacet.offer }),
     });
     const data = await response.json().catch(() => null);
+    if (data && data.reason_code === 'body_facet_offer_changed') {
+      if (window.showError) showError(data.error || stravaFacetText('offer_changed'));
+      await loadStravaFacet();
+      return;
+    }
     if (!response.ok || !data || !data.offer) throw new Error(stravaFacetText('answer_failed'));
     stravaFacet = data;
     invalidateImportPreview('guided');

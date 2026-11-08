@@ -56,6 +56,10 @@ pub(crate) const COPY: &[(&str, &str)] = &[
         "answer the facet question first, then preview again.",
     ),
     ("answer_failed", "your answer couldn't be saved. try again."),
+    (
+        "offer_changed",
+        "this question changed since it was shown, so your answer wasn't saved. here it is as it is now.",
+    ),
 ];
 
 fn copy() -> Value {
@@ -117,17 +121,22 @@ fn card_offer(root: &Path) -> Result<(CardOffer, Vec<(String, String)>), String>
     Ok((offer, facets))
 }
 
-fn body(root: &Path) -> Result<Value, String> {
-    let (offer, facets) = card_offer(root)?;
-    let (state, facet) = match &offer {
+/// The offer as the card shows it, and as an answer sends it back.
+fn offer_value(offer: &CardOffer) -> Value {
+    let (state, facet) = match offer {
         CardOffer::Chosen(facet) => ("chosen", Some(facet.as_str())),
         CardOffer::Declined => ("declined", None),
         CardOffer::AskExisting(facet) => ("ask_existing", Some(facet.as_str())),
         CardOffer::AskMakeBody => ("ask_make_body", Some(PREFERRED_BODY_FACET)),
         CardOffer::AskUnmute => ("ask_unmute", Some(PREFERRED_BODY_FACET)),
     };
+    json!({"state": state, "facet": facet})
+}
+
+fn body(root: &Path) -> Result<Value, String> {
+    let (offer, facets) = card_offer(root)?;
     Ok(json!({
-        "offer": {"state": state, "facet": facet},
+        "offer": offer_value(&offer),
         "facets": facets
             .into_iter()
             .map(|(name, title)| json!({"name": name, "title": title}))
@@ -159,8 +168,24 @@ pub(crate) async fn offer(State(state): State<AppState>) -> Response {
     }
 }
 
-/// `POST /app/import/api/body-facet` with `{"answer": "yes" | "no"}`: record
-/// the owner's answer to the card's question.
+/// Why an answer wasn't recorded.
+#[derive(Debug)]
+enum AnswerRefused {
+    /// The card's question is no longer the one asked now: the owner
+    /// answered something they weren't shown.
+    OfferChanged,
+    Failed(String),
+}
+
+impl From<String> for AnswerRefused {
+    fn from(detail: String) -> Self {
+        Self::Failed(detail)
+    }
+}
+
+/// `POST /app/import/api/body-facet` with `{"answer": "yes" | "no", "offer":
+/// <the offer the card showed>}`: record the owner's answer to the card's
+/// question, if it is still the question asked now.
 pub(crate) async fn answer(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
     let yes = match data.get("answer").and_then(Value::as_str) {
         Some("yes") => true,
@@ -172,18 +197,31 @@ pub(crate) async fn answer(State(state): State<AppState>, Json(data): Json<Value
             );
         }
     };
+    let shown = data.get("offer").cloned().unwrap_or(Value::Null);
     let root = state.root.clone();
-    match tokio::task::spawn_blocking(move || record_answer(&root, yes).and_then(|()| body(&root)))
-        .await
+    match tokio::task::spawn_blocking(move || {
+        record_answer(&root, yes, &shown).and_then(|()| Ok(body(&root)?))
+    })
+    .await
     {
         Ok(Ok(body)) => json_response(StatusCode::OK, body),
-        Ok(Err(error)) => failed(StatusCode::CONFLICT, error),
+        Ok(Err(AnswerRefused::OfferChanged)) => json_response(
+            StatusCode::CONFLICT,
+            json!({"error": text("offer_changed"), "reason_code": "body_facet_offer_changed",
+                "detail": "the facet question changed since it was shown"}),
+        ),
+        Ok(Err(AnswerRefused::Failed(error))) => failed(StatusCode::CONFLICT, error),
         Err(error) => failed(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
     }
 }
 
-fn record_answer(root: &Path, yes: bool) -> Result<(), String> {
+/// Record `yes` or no to the offer the card showed, `shown`. An offer that
+/// has changed since, or none sent, is refused with nothing written.
+fn record_answer(root: &Path, yes: bool, shown: &Value) -> Result<(), AnswerRefused> {
     let (offer, _) = card_offer(root)?;
+    if *shown != offer_value(&offer) {
+        return Err(AnswerRefused::OfferChanged);
+    }
     let choice = match (offer, yes) {
         // Already answered: the card shows the remembered facet, and a repeat
         // answer changes nothing.
@@ -205,7 +243,7 @@ fn record_answer(root: &Path, yes: bool) -> Result<(), String> {
     };
     solstone_core_journal_config_write::record_body_facet(root, &choice)
         .map(|_| ())
-        .map_err(|error| error.to_string())
+        .map_err(|error| AnswerRefused::Failed(error.to_string()))
 }
 
 const BODY_TITLE: &str = "Body";
