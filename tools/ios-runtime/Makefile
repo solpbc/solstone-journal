@@ -9,8 +9,11 @@ DESTINATION ?= generic/platform=iOS
 PROJECT_SPEC ?= project.yml
 FINALIZE_ARGS ?=
 BUILD_NUMBER ?=
-RUST_LIB := $(BUILD_ROOT)/rust/aarch64-apple-ios/debug/libsolstone_ios_runtime.a
-APPRAISAL_LIB := $(BUILD_ROOT)/appraisal-rust/aarch64-apple-ios/debug/libsolstone_ios_appraisal_helper.a
+# Optimize ordinary owner work independently of Xcode's development signing.
+RUST_PROFILE ?= $(if $(filter project-owner.yml,$(PROJECT_SPEC)),release,dev)
+RUST_PROFILE_DIR = $(if $(filter dev,$(RUST_PROFILE)),debug,$(RUST_PROFILE))
+RUST_LIB := $(BUILD_ROOT)/rust/aarch64-apple-ios/$(RUST_PROFILE_DIR)/libsolstone_ios_runtime.a
+APPRAISAL_LIB := $(BUILD_ROOT)/appraisal-rust/aarch64-apple-ios/$(RUST_PROFILE_DIR)/libsolstone_ios_appraisal_helper.a
 APPRAISAL_NATIVE_WORK := $(BUILD_ROOT)/appraisal-native-work
 APPRAISAL_NATIVE_DIR := $(BUILD_ROOT)/appraisal-native
 APPRAISAL_RESOURCES := $(BUILD_ROOT)/appraisal-resources
@@ -26,9 +29,9 @@ APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
 NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app qwen-native)
 .PHONY: build rust appraisal-rust appraisal-native backup-native qwen-native pdfium payload project finalize install run check check-owner-fixture check-owner-recovery
 rust:
-	IPHONEOS_DEPLOYMENT_TARGET=26.0 $(if $(RFDETR_LIB_DIR),RFDETR_LIB_DIR='$(RFDETR_LIB_DIR)') $(if $(filter project-owner.yml,$(PROJECT_SPEC)),QWEN_ENGINE_LIB_DIR='$(QWEN_PACKAGE_DIR)') $(if $(PARAKEET_LIB_DIR),PARAKEET_LIB_DIR='$(PARAKEET_LIB_DIR)') $(if $(SOUND_CED_LIB_DIR),SOUND_CED_LIB_DIR='$(SOUND_CED_LIB_DIR)') cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
+	IPHONEOS_DEPLOYMENT_TARGET=26.0 $(if $(RFDETR_LIB_DIR),RFDETR_LIB_DIR='$(RFDETR_LIB_DIR)') $(if $(filter project-owner.yml,$(PROJECT_SPEC)),QWEN_ENGINE_LIB_DIR='$(QWEN_PACKAGE_DIR)') $(if $(PARAKEET_LIB_DIR),PARAKEET_LIB_DIR='$(PARAKEET_LIB_DIR)') $(if $(SOUND_CED_LIB_DIR),SOUND_CED_LIB_DIR='$(SOUND_CED_LIB_DIR)') cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --profile $(RUST_PROFILE) --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
-	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path appraisal-helper/Cargo.toml --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/appraisal-rust
+	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path appraisal-helper/Cargo.toml --profile $(RUST_PROFILE) --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/appraisal-rust
 appraisal-native:
 	python3 build_gpu_appraisal.py --work-dir $(APPRAISAL_NATIVE_WORK) --cache-dir $(CACHE_DIR) --output-lib $(NVAT_LIB) --resource-dir $(APPRAISAL_RESOURCES) --build-record $(APPRAISAL_BUILD_RECORD) --jobs $(JOBS)
 backup-native:

@@ -37,3 +37,7 @@ solstone-core-journal-config = { path = "../../../core/crates/solstone-core-jour
 
 [patch.crates-io]
 ffmpeg-sys-next = { path = "../../../core/vendor/ffmpeg-sys-next" }
+
+# Keep host build dependencies loadable with the pinned Rust on macOS 27.
+[profile.release.build-override]
+strip = "none"
