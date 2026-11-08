@@ -38,6 +38,12 @@ def stage_copy(source, destination):
 
 
 def verify_audio_pins(receipt, current):
+    repo = Path(__file__).resolve().parents[2]
+    runtime_patch = 'core/distribution/mobile/parakeet-mapped-weights.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == runtime_patch
+               and row.get('sha256') == digest(repo / runtime_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs the current mapped Parakeet loader; rebuild mobile media native inputs')
     inputs = receipt.get('inputs', {})
     if not isinstance(inputs, dict):
         raise ValueError('retained audio source pins are missing')
@@ -74,7 +80,7 @@ def verify_audio_pins(receipt, current):
         if not isinstance(patch, dict) or set(patch) != {'source_component', 'path', 'sha256'}:
             raise ValueError('shared media GGML patch record is invalid')
         family, path, checksum = patch['source_component'], patch['path'], patch['sha256']
-        if family not in ('parakeet', 'rfdetr'):
+        if family not in ('parakeet', 'rfdetr', 'mobile'):
             raise ValueError('shared media GGML patch source is invalid')
         if not isinstance(path, str) or not path or '\\' in path or '\0' in path:
             raise ValueError('shared media GGML patch path is invalid')
@@ -88,8 +94,13 @@ def verify_audio_pins(receipt, current):
             raise ValueError('shared media GGML patch record is duplicated')
         identities.add(identity)
         families.add(family)
-    if families != {'parakeet', 'rfdetr'}:
+    if families != {'parakeet', 'rfdetr', 'mobile'}:
         raise ValueError('shared media GGML needs both Parakeet and RF-DETR patch families')
+    guard = 'core/distribution/mobile/ggml-metal-mapped-buffer-null.patch'
+    if ('mobile', guard) not in identities or not any(
+            row['source_component'] == 'mobile' and row['path'] == guard
+            and row['sha256'] == digest(repo / guard) for row in patches):
+        raise ValueError('shared media GGML needs the current mapped-buffer failure guard')
     return shared
 
 
