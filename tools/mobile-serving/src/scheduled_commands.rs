@@ -363,6 +363,16 @@ fn maintenance(
         "backup:prune" => backup(hosted, EmbeddedBackupRoutine::Prune, checkpoint),
         "backup:offload" => offload(hosted, checkpoint, reference),
         "health:mark-raw" | "health:prune-logs" => health(hosted, id, checkpoint),
+        "trash:erase" => {
+            let outcome = solstone_core_maintenance::bodies::trash::erase(&[], &hosted.journal);
+            if !outcome.stdout.is_empty() {
+                log::info!("{}", outcome.stdout.trim_end());
+            }
+            if !outcome.stderr.is_empty() {
+                log::warn!("{}", outcome.stderr.trim_end());
+            }
+            outcome.exit_code
+        }
         "retention:owner-voice-originals" => {
             let services = solstone_core_maintenance::HealthServices {
                 now: Utc::now(),

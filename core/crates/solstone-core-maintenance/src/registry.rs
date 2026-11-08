@@ -29,7 +29,7 @@ pub struct RoutineDescriptor {
     pub max_runtime: Option<&'static str>,
 }
 
-const ROUTINES: [RoutineDescriptor; 13] = [
+const ROUTINES: [RoutineDescriptor; 14] = [
     RoutineDescriptor {
         id: "speakers:discover-voices",
         description: "Refresh recurring voice discovery cache.",
@@ -103,6 +103,12 @@ const ROUTINES: [RoutineDescriptor; 13] = [
         max_runtime: Some("30m"),
     },
     RoutineDescriptor {
+        id: "trash:erase",
+        description: "finish trash steps a stop interrupted and erase what has waited its days.",
+        cadence: Cadence::Hourly,
+        max_runtime: Some("30m"),
+    },
+    RoutineDescriptor {
         id: "retention:owner-voice-originals",
         description: "finish deleting the original audio of recent recordings processed with \"leave out other voices\" on.",
         cadence: Cadence::Daily,
@@ -122,7 +128,7 @@ pub fn routine(id: &str) -> Option<&'static RoutineDescriptor> {
 
 #[cfg(test)]
 fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
-    const EXPECTED: [(&str, Cadence, Option<&str>); 13] = [
+    const EXPECTED: [(&str, Cadence, Option<&str>); 14] = [
         ("speakers:discover-voices", Cadence::Daily, Some("10m")),
         (
             "speakers:candidate-pair-suggestions",
@@ -139,6 +145,7 @@ fn validate_census(routines: &[RoutineDescriptor]) -> Result<(), String> {
         ("backup:offload", Cadence::Daily, Some("7h")),
         ("health:mark-raw", Cadence::Daily, Some("60m")),
         ("health:prune-logs", Cadence::Daily, Some("30m")),
+        ("trash:erase", Cadence::Hourly, Some("30m")),
         (
             "retention:owner-voice-originals",
             Cadence::Daily,
@@ -177,9 +184,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn census_has_thirteen_unique_well_formed_ids() {
+    fn census_has_fourteen_unique_well_formed_ids() {
         let all = routines();
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 14);
         let ids = all
             .iter()
             .map(|descriptor| descriptor.id)
