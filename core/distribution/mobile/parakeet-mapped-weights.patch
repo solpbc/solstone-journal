@@ -1,0 +1,230 @@
+diff --git a/src/model.cpp b/src/model.cpp
+--- a/src/model.cpp
++++ b/src/model.cpp
+@@ -92,6 +92,7 @@
+     // directly as leaves (zero per-call copy). Done at load (vs. lazily on first
+     // clone_weight) so the cost is paid up front, not per utterance.
+     ensure_weights_realized(m->loader_);
++    if (!m->loader_.weights_realized()) return nullptr;
+     return m;
+ }
+ 
+@@ -115,6 +116,7 @@
+         return nullptr;
+     }
+     ensure_weights_realized(m->loader_);
++    if (!m->loader_.weights_realized()) return nullptr;
+     return m;
+ }
+ 
+diff --git a/src/model_loader.cpp b/src/model_loader.cpp
+--- a/src/model_loader.cpp
++++ b/src/model_loader.cpp
+@@ -11,6 +11,12 @@
+ #include <vector>
+ #include <utility>
+ #include <stdexcept>
++#include <algorithm>
++#include <cerrno>
++#include <memory>
++#include <sys/mman.h>
++#include <sys/stat.h>
++#include <unistd.h>
+ 
+ // fseeko/ftello are POSIX; MSVC spells the 64-bit versions _fseeki64/_ftelli64.
+ #ifdef _WIN32
+@@ -79,29 +85,22 @@
+     int64_t id = v.find(k); return id<0 ? std::string(d) : std::string(gguf_get_val_str(g,id));
+ }
+ ModelLoader::~ModelLoader(){
+-    // Free the weight buffer BEFORE the contexts. For the CPU path it is a
+-    // from_ptr buffer (free_buffer == NULL) that does NOT own its memory
+-    // (ctx_ does); for the device path it OWNS the device buffer. The device
+-    // upload path releases ctx_ as soon as the upload completes.
++    // Backend wrappers can borrow mapped_data_ or ctx_. Retire them before
++    // either storage owner; no in-flight graph outlives its ModelLoader.
+     if(ggml_backend_buffer_t wb = weights_buf_.load()) ggml_backend_buffer_free(wb);
+     if(device_ctx_) ggml_free(device_ctx_);
+     if(gguf_) gguf_free(gguf_); if(ctx_) ggml_free(ctx_);
++    if(mapped_data_) munmap(mapped_data_, mapped_size_);
+ }
+ bool ModelLoader::realize_weights(ggml_backend_t backend){
+     if(weights_buf_.load(std::memory_order_acquire)) return true;   // idempotent
+     if(!backend || !ctx_){ PK_LOG("realize_weights: null backend/ctx"); return false; }
+ 
+     if (ggml_backend_is_cpu(backend)) {
+-        // Fast path: borrow the host ctx memory directly (no copy).
+-        // The GGUF is loaded with no_alloc=false, so every tensor's data lives
+-        // in one contiguous ctx mem_buffer. Wrap that exact memory as a CPU
+-        // backend buffer (zero-copy: ggml_backend_cpu_buffer_from_ptr borrows
+-        // the ptr) and point every tensor's ->buffer at it, so graphs can
+-        // reference the loader tensors DIRECTLY as leaves (the gallocr treats
+-        // data!=NULL tensors as already-allocated and never copies them;
+-        // reshapes/views resolve at build time). Eliminates per-call recopy.
+-        void*  base = ggml_get_mem_buffer(ctx_);
+-        size_t size = ggml_get_mem_size(ctx_);
++        // Plain models borrow file-backed data; bundle components retain
++        // their existing private context storage. Neither path recopies weights.
++        void* base = mapped_data_ ? mapped_data_ : ggml_get_mem_buffer(ctx_);
++        size_t size = mapped_data_ ? mapped_size_ : ggml_get_mem_size(ctx_);
+         ggml_backend_buffer_t wb = ggml_backend_cpu_buffer_from_ptr(base, size);
+         if(!wb){ PK_LOG("realize_weights: buffer_from_ptr failed"); return false; }
+         for(auto& kv : tensors_) kv.second->buffer = wb;
+@@ -110,13 +109,34 @@
+         return true;
+     }
+ 
+-    // Device path (CUDA/Metal/Vulkan/...): weights must live in a backend buffer.
+-    // ctx_ was created no_alloc=false (host-resident data), which
+-    // ggml_backend_alloc_ctx_tensors rejects (it asserts the ctx is no_alloc).
+-    // So mirror every weight into a no_alloc=true ctx, allocate THAT on the
+-    // backend, upload each tensor's bytes from the host source, and repoint the
+-    // name->tensor map at the device tensors. The host context is only a staging
+-    // allocation and can be released after all uploads complete.
++    // Metal's existing no-copy capability can borrow the same file mapping.
++    // Ask the selected device, rather than changing the backend policy.
++    if (mapped_data_) {
++        ggml_backend_dev_t device = ggml_backend_get_device(backend);
++        ggml_backend_dev_props props{};
++        if (device) ggml_backend_dev_get_props(device, &props);
++        if (device && props.caps.buffer_from_host_ptr) {
++            size_t largest = 0;
++            for (const auto& kv : tensors_) largest = std::max(largest, ggml_nbytes(kv.second));
++            ggml_backend_buffer_t wb = ggml_backend_dev_buffer_from_host_ptr(
++                device, mapped_data_, mapped_size_, largest);
++            if (!wb) { PK_LOG("realize_weights: mapped device buffer failed"); return false; }
++            for (auto& kv : tensors_) {
++                kv.second->buffer = wb;
++                if (ggml_backend_buffer_init_tensor(wb, kv.second) != GGML_STATUS_SUCCESS) {
++                    for (auto& reset : tensors_) reset.second->buffer = nullptr;
++                    ggml_backend_buffer_free(wb);
++                    PK_LOG("realize_weights: mapped tensor initialization failed");
++                    return false;
++                }
++            }
++            weights_buf_.store(wb, std::memory_order_release);
++            return true;
++        }
++    }
++
++    // Devices without host-mapping support receive uploads into their selected
++    // backend buffer. Keep metadata separate from file-backed source bytes.
+     const size_t n = tensors_.size();
+     struct ggml_init_params dp = {
+         /*.mem_size  =*/ ggml_tensor_overhead() * (n + 8),
+@@ -133,18 +153,28 @@
+         ggml_tensor* d = ggml_new_tensor(device_ctx_, s->type, GGML_MAX_DIMS, s->ne);
+         ggml_set_name(d, kv.first.c_str());
+         devmap.emplace(kv.first, d);
+-        ups.emplace_back(d, s->data);   // host source (valid in ctx_ mem buffer)
++        ups.emplace_back(d, s->data);   // source remains owned until upload finishes
+     }
+     ggml_backend_buffer_t wb = ggml_backend_alloc_ctx_tensors(device_ctx_, backend);
+     if(!wb){ PK_LOG("realize_weights: alloc_ctx_tensors failed"); return false; }
+-    for (auto& pr : ups)
+-        ggml_backend_tensor_set(pr.first, pr.second, 0, ggml_nbytes(pr.first));
++    constexpr size_t chunk = 4u << 20;
++    for (auto& pr : ups) {
++        const size_t bytes = ggml_nbytes(pr.first);
++        for (size_t offset = 0; offset < bytes;) {
++            const size_t count = std::min(chunk, bytes - offset);
++            ggml_backend_tensor_set(pr.first, (const char*)pr.second + offset, offset, count);
++            offset += count;
++        }
++    }
++    ggml_backend_synchronize(backend);
+     tensors_.swap(devmap);   // graphs now reference the device-resident tensors
+ 
+-    // The device tensors and their backend buffer own everything needed for
+-    // inference. Keeping the no_alloc=false loader context alive retained a
+-    // second full copy of every model weight (notably ~708 MiB for the 0.6B Q5_K
+-    // model) for the lifetime of the process.
++    // Uploaded weights no longer borrow either host storage owner.
++    if (mapped_data_) {
++        munmap(mapped_data_, mapped_size_);
++        mapped_data_ = nullptr;
++        mapped_size_ = 0;
++    }
+     ggml_free(ctx_);
+     ctx_ = nullptr;
+     weights_buf_.store(wb, std::memory_order_release);
+@@ -158,9 +188,41 @@
+                "(load_component, parakeet_capi_load_component, or --component)", path.c_str());
+         return false;
+     }
+-    struct gguf_init_params p{ /*no_alloc*/false, /*ctx*/&ctx_ };
+-    gguf_ = gguf_init_from_file(path.c_str(), p);
++    // Parse and map the SAME open regular file. Full-model integrity admission
++    // remains the caller's responsibility; this avoids an anonymous whole-model allocation.
++    std::unique_ptr<FILE, decltype(&fclose)> file(fopen(path.c_str(), "rb"), &fclose);
++    struct stat st{};
++    if (!file || fstat(fileno(file.get()), &st) != 0 || !S_ISREG(st.st_mode) ||
++        st.st_size <= 0 || (uintmax_t)st.st_size > SIZE_MAX) {
++        PK_LOG("GGUF mapping requires a readable regular file: %s", path.c_str());
++        return false;
++    }
++    struct gguf_init_params p{ /*no_alloc*/true, /*ctx*/&ctx_ };
++    gguf_ = gguf_init_from_file_ptr(file.get(), p);
+     if(!gguf_){ PK_LOG("gguf open failed: %s", path.c_str()); return false; }
++    const size_t size = (size_t)st.st_size;
++    const size_t data_offset = gguf_get_data_offset(gguf_);
++    if (data_offset > size) { PK_LOG("GGUF data offset exceeds file size"); return false; }
++    // Check each range with subtraction before pointer arithmetic. Metadata-only
++    // parsing does not itself prove tensor payload bytes exist in the file.
++    const int64_t count = gguf_get_n_tensors(gguf_);
++    for (int64_t i = 0; i < count; ++i) {
++        const size_t offset = gguf_get_tensor_offset(gguf_, i);
++        const size_t bytes = gguf_get_tensor_size(gguf_, i);
++        if (offset > size - data_offset || bytes > size - data_offset - offset) {
++            PK_LOG("GGUF tensor range exceeds file size: %s", gguf_get_tensor_name(gguf_, i));
++            return false;
++        }
++    }
++    void* mapping = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fileno(file.get()), 0);
++    if (mapping == MAP_FAILED) { PK_LOG("GGUF mmap failed: %s", strerror(errno)); return false; }
++    mapped_data_ = mapping;
++    mapped_size_ = size;
++    for (int64_t i = 0; i < count; ++i) {
++        ggml_tensor* tensor = ggml_get_tensor(ctx_, gguf_get_tensor_name(gguf_, i));
++        if (!tensor) { PK_LOG("GGUF tensor metadata missing"); return false; }
++        tensor->data = (char*)mapping + data_offset + gguf_get_tensor_offset(gguf_, i);
++    }
+     return parse_config(KvView{gguf_, ""});
+ }
+ // Bundle path: open the file with no_alloc (header and descriptors only), then
+diff --git a/src/model_loader.hpp b/src/model_loader.hpp
+--- a/src/model_loader.hpp
++++ b/src/model_loader.hpp
+@@ -147,15 +147,11 @@
+         return false;
+     }
+ 
+-    // Give every weight tensor a CPU backend buffer (ONCE), so graphs can
+-    // reference the loader's tensors DIRECTLY as leaves with zero per-call
+-    // copying. The GGUF is loaded with no_alloc=false, so all weight data
+-    // already lives in one contiguous ctx mem_buffer; this wraps that exact
+-    // memory via ggml_backend_cpu_buffer_from_ptr (no data movement) and points
+-    // every tensor's ->buffer at it. After this the weights are valid graph
+-    // leaves on the CPU backend and reshapes/views of them resolve their data
+-    // at build time. Idempotent; safe to call once at load. The backend must be
+-    // the same CPU backend the compute path uses. Returns false on failure.
++    // Give every weight tensor a backend buffer (ONCE), so graphs can
++    // reference immutable weights directly. Plain GGUF weights are file-backed;
++    // CPU and capable device backends borrow that mapping, while
++    // other device backends receive bounded uploads. The loader owns the
++    // mapping until every borrowing backend buffer has been released.
+     bool realize_weights(ggml_backend_t backend);
+     bool weights_realized() const { return weights_buf_.load(std::memory_order_acquire) != nullptr; }
+     // Opaque per-loader slot for the ternary weight cache (see ternary.cpp).
+@@ -168,8 +164,9 @@
+     ParakeetConfig cfg_;
+     gguf_context* gguf_ = nullptr;
+     ggml_context* ctx_ = nullptr;
+-    // CPU backend: wraps ctx_ mem_buffer (zero-copy). Device backend: owns the
+-    // device buffer holding the uploaded weights (mirrored into device_ctx_).
++    void* mapped_data_ = nullptr;
++    size_t mapped_size_ = 0;
++    // Borrowed mapped/CPU weights or owned uploaded device weights.
+     std::atomic<ggml_backend_buffer_t> weights_buf_{nullptr};
+     ggml_context* device_ctx_ = nullptr;  // no_alloc mirror ctx for device weights
+     std::unordered_map<std::string, ggml_tensor*> tensors_;

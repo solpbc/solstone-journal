@@ -119,12 +119,12 @@ class BuildControls(unittest.TestCase):
             self.assertEqual(set(binding["sources"]), {"ggml", "parakeet", "rfdetr"})
             # The duplicated common patch appears once; both distinct engine
             # requirements survive in each resulting tree and receipt.
-            self.assertEqual(len(binding["patches"]), 4)
+            self.assertEqual(len(binding["patches"]), 5)
             self.assertEqual({p["source_component"] for p in binding["patches"]}, {"parakeet", "rfdetr", "mobile"})
             for component in (*mobile.MEDIA_GGML_COMPONENTS, "sound-ced"):
                 self.assertEqual(build.summary["inputs"][component + "-patched-ggml"]["tree_sha256"], binding["tree_sha256"])
                 ggml = sources[component] / "third_party/ggml"
-                for file in ("common.c", "metal.metal", "cpu.c", "leaf.c"):
+                for file in ("common.c", "metal.metal", "cpu.c", "leaf.c", "guard.c"):
                     self.assertEqual((ggml / file).read_text(), "fixed\n")
 
     def test_android_llama_patch_binds_only_a_successfully_patched_tree(self):
@@ -202,7 +202,7 @@ class BuildControls(unittest.TestCase):
         build.source_roots.update(sources)
         base = root / "base-ggml"
         base.mkdir()
-        for file in ("common.c", "metal.metal", "cpu.c", "leaf.c"):
+        for file in ("common.c", "metal.metal", "cpu.c", "leaf.c", "guard.c"):
             (base / file).write_text("base\n")
         archive = root / "ggml.tar.gz"
         with tarfile.open(archive, "w:gz") as bundle:
@@ -213,6 +213,7 @@ class BuildControls(unittest.TestCase):
         patch = root / "core/distribution/mobile/ggml-android-q8-dotprod.patch"
         patch.parent.mkdir(parents=True)
         patch.write_text(self.patch("leaf.c"))
+        (patch.parent / "ggml-metal-mapped-buffer-null.patch").write_text(self.patch("guard.c"))
         patcher = mock.patch.object(mobile, "ROOT", root)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -238,8 +239,20 @@ class BuildControls(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 build.ggml("parakeet", sources["parakeet"])
             binding = build.summary["inputs"]["media-shared-ggml"]
-            self.assertEqual(len(binding["patches"]), 3)
+            self.assertEqual(len(binding["patches"]), 4)
             self.assertEqual((sources["parakeet"] / "third_party/ggml/leaf.c").read_text(), "base\n")
+
+    def test_mapped_buffer_guard_is_identical_when_detector_builds_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build, sources = self.media_fixture(Path(directory))
+            build.args.platform = "ios"
+            with contextlib.redirect_stdout(io.StringIO()):
+                for component in ("rfdetr", "parakeet"):
+                    build.ggml(component, sources[component])
+            first = build.summary["inputs"]["rfdetr-patched-ggml"]
+            self.assertEqual(first, build.summary["inputs"]["parakeet-patched-ggml"])
+            for source in sources.values():
+                self.assertEqual((source / "third_party/ggml/guard.c").read_text(), "fixed\n")
 
     def test_cargo_binary_selection_excludes_host_build_scripts_and_launchers(self):
         with tempfile.TemporaryDirectory() as directory:

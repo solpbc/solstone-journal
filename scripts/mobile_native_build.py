@@ -384,6 +384,13 @@ class Build:
                 record = {"source_component": component, "path": str(patch.relative_to(sources[component])), "sha256": digest}
                 records.append(record)
                 self.summary["patches"].append({"component": name, **record})
+            # Shared by every media consumer, regardless of engine build order.
+            patch = ROOT / "core/distribution/mobile/ggml-metal-mapped-buffer-null.patch"
+            self.run(f"{name}-mapped-buffer-apply", ["git", "apply", "--no-index", patch], ggml)
+            self.run(f"{name}-mapped-buffer-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], ggml)
+            record = {"source_component": "mobile", "path": str(patch.relative_to(ROOT)), "sha256": sha256(patch)}
+            records.append(record)
+            self.summary["patches"].append({"component": name, **record})
             if self.args.platform == "android":
                 patch = ROOT / "core/distribution/mobile/ggml-android-q8-dotprod.patch"
                 self.run(f"{name}-q8-dotprod-apply", ["git", "apply", "--no-index", patch], ggml)
@@ -434,6 +441,11 @@ class Build:
         self.save()
 
     def patch_parakeet(self, source):
+        mapped = ROOT / "core/distribution/mobile/parakeet-mapped-weights.patch"
+        self.run("parakeet-mapped-weights-patch", ["git", "apply", "--no-index", mapped], source)
+        self.run("parakeet-mapped-weights-proof", ["git", "apply", "--no-index", "--check", "--reverse", mapped], source)
+        self.summary["patches"].append({"component": "parakeet", "path": str(mapped.relative_to(ROOT)),
+                                        "sha256": sha256(mapped)})
         patch = ROOT / "core/distribution/mobile/parakeet-thread-budget.patch"
         self.run("parakeet-thread-budget-patch", ["git", "apply", "--no-index", patch], source)
         self.run("parakeet-thread-budget-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)

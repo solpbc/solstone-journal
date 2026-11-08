@@ -16,6 +16,10 @@ def legacy_receipt():
 
 def shared_receipt():
     captured = legacy_receipt()
+    repo = Path(__file__).resolve().parents[2]
+    loader = 'core/distribution/mobile/parakeet-mapped-weights.patch'
+    guard = 'core/distribution/mobile/ggml-metal-mapped-buffer-null.patch'
+    captured['patches'] = [dict(component='parakeet', path=loader, sha256=digest(repo / loader))]
     current = copy.deepcopy(captured['inputs'])
     pins = json.loads((Path(__file__).resolve().parents[2] /
                        'core/distribution/mobile/inputs.json').read_text())['inputs']
@@ -31,6 +35,7 @@ def shared_receipt():
              'sha256': 'b' * 64},
             {'source_component': 'rfdetr', 'path': 'third_party/ggml-patches/detector.patch',
              'sha256': 'c' * 64},
+            {'source_component': 'mobile', 'path': guard, 'sha256': digest(repo / guard)},
         ],
     }
     captured['inputs']['media-shared-ggml'] = binding
@@ -152,13 +157,25 @@ class AudioPins(unittest.TestCase):
                     verify_audio_pins(captured, current)
 
     def test_both_patch_families_are_required(self):
-        for family in ('parakeet', 'rfdetr'):
+        for family in ('parakeet', 'rfdetr', 'mobile'):
             with self.subTest(family=family):
                 captured, current = shared_receipt()
                 binding = captured['inputs']['media-shared-ggml']
                 binding['patches'] = [p for p in binding['patches'] if p['source_component'] != family]
                 with self.assertRaises(ValueError):
                     verify_audio_pins(captured, current)
+
+    def test_old_loader_or_guard_cannot_satisfy_current_audio_admission(self):
+        for missing, stale in ((True, False), (False, True)):
+            captured, current = shared_receipt()
+            if missing:
+                captured['patches'] = []
+            if stale:
+                captured['patches'][0]['sha256'] = 'd' * 64
+            with self.assertRaises(ValueError): verify_audio_pins(captured, current)
+        captured, current = shared_receipt()
+        captured['inputs']['media-shared-ggml']['patches'][-1]['sha256'] = 'd' * 64
+        with self.assertRaises(ValueError): verify_audio_pins(captured, current)
 
     def test_malformed_or_ambiguous_patch_records_are_refused(self):
         mutations = [
