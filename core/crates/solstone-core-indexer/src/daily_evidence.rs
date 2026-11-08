@@ -290,25 +290,18 @@ pub fn capture_day_projection(journal: &Path, day: &str) -> Result<SourceProject
 /// Whether `rel` sits in a Strava tile that holds body data alone. A tile is
 /// another system's account of a workout, so no daily unit reads it, even
 /// where thinking once read it.
-fn in_body_only_strava_tile(rel: &str, path: &Path, tiles: &mut BTreeMap<PathBuf, bool>) -> bool {
+/// Every file in a Strava tile, whatever else its folder holds: no daily unit
+/// reads a Strava segment, so none of it is evidence.
+fn in_strava_tile(rel: &str) -> bool {
     let parts = rel.split('/').collect::<Vec<_>>();
-    if parts.len() < 4 || parts[1] != STRAVA_STREAM {
-        return false;
-    }
-    let Some(tile) = path.ancestors().nth(parts.len() - 3) else {
-        return false;
-    };
-    *tiles
-        .entry(tile.to_path_buf())
-        .or_insert_with(|| solstone_core_segment::is_body_only_dir(STRAVA_STREAM, tile))
+    parts.len() >= 4 && parts[1] == STRAVA_STREAM
 }
 
 fn project_sources(files: BTreeMap<String, PathBuf>) -> Result<SourceProjection, String> {
     let mut chunks = Vec::new();
     let mut sources = Vec::new();
-    let mut strava_tiles = BTreeMap::new();
     for (rel, path) in files {
-        if output_path(&rel) || in_body_only_strava_tile(&rel, &path, &mut strava_tiles) {
+        if output_path(&rel) || in_strava_tile(&rel) {
             continue;
         }
         let normalized = normalized_rel(&rel);
@@ -1327,7 +1320,7 @@ mod tests {
 
     /// A Strava tile is body data, sensed or not, so no daily unit reads it.
     #[test]
-    fn a_strava_workout_is_not_daily_evidence_unless_its_tile_holds_something_else() {
+    fn a_strava_workout_is_never_daily_evidence_whatever_its_tile_holds() {
         let root = root("daily-sources-strava");
         write(
             &root,
@@ -1349,15 +1342,15 @@ mod tests {
             names.map(|name| revision(&root, name, Some("work"))),
             before
         );
-        // A tile the body-only test rejects keeps counting. Only the first
-        // piece of a workout renders.
+        // A tile the body-only test rejects doesn't count either: no daily
+        // unit reads any Strava segment.
         write(
             &root,
             "chronicle/20260910/import.strava/070200_300/notes.md",
             "Something else.",
         );
-        assert_eq!(workout_chunks(&root), 1);
-        assert_ne!(
+        assert_eq!(workout_chunks(&root), 0);
+        assert_eq!(
             names.map(|name| revision(&root, name, Some("work"))),
             before
         );
