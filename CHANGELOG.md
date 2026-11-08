@@ -19,6 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- someone or something you removed from a facet no longer comes back on its own. before, if the name kept turning up in your journal, it could add them back after a few days and replace the description you'd kept for them.
 - if your name was set but your journal hadn't added you to its people, the speakers page showed an error where your voice belongs until you saved your profile again. your journal now adds you when it starts.
 - home no longer says yesterday's write-up is coming, late or missing on a day when nothing you did went into your journal.
 - the people and things a moment is about no longer include someone or something from earlier in your journal that the moment itself never names, such as a film you looked up weeks ago beside today's terminal work. the day's note about someone or something is also less likely to repeat what it did on an earlier day. thanks @dvanduzer for the report (#404).
