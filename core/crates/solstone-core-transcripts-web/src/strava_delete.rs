@@ -363,6 +363,22 @@ fn run(
         targets: Vec::new(),
         halted: None,
     };
+    // The workouts this delete reaches, read before their pieces go, so the
+    // names read from their words go with them.
+    let activity_ids = match target.kind {
+        Kind::Workout => std::collections::BTreeSet::from([target.id.clone()]),
+        Kind::Import => target
+            .pieces
+            .iter()
+            .filter_map(|piece| {
+                std::fs::read(stream_dir(&piece.day).join(&piece.key).join("workout.json"))
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                    .and_then(|v| v.get("activity_id").and_then(Value::as_u64))
+                    .map(|id| id.to_string())
+            })
+            .collect(),
+    };
     let mut live = Vec::new();
     for piece in &target.pieces {
         let door_target = Target {
@@ -391,6 +407,11 @@ fn run(
         }
     }
     let notify = door::notify_index(&RetentionIndex::new(journal), &outcome);
+    // Under the lock an import's names step writes under, so a removal here is
+    // never lost to a write there.
+    let names_kept =
+        solstone_core_import::strava_names::remove_strava_names(journal, &activity_ids, &_lock)
+            .err();
 
     let gone = target
         .pieces
@@ -407,6 +428,9 @@ fn run(
     });
     if notify.is_err() {
         detail["search_not_updated"] = json!(true);
+    }
+    if let Some(error) = names_kept {
+        detail["names_kept"] = json!(error.to_string());
     }
     if left > 0 {
         let state = if gone > 0 {
@@ -717,7 +741,28 @@ mod tests {
             )
             .unwrap();
         }
+        // What an import read from each workout's own words.
+        solstone_core_import::strava_names::update_strava_names(root.path(), |lines| {
+            for (id, day) in [
+                ("101", "20260810"),
+                ("102", "20260810"),
+                ("201", "20260810"),
+            ] {
+                lines.insert(
+                    id.to_owned(),
+                    solstone_core_import::strava_names::StravaNamesLine::unread(id, day),
+                );
+            }
+        })
+        .unwrap();
         root
+    }
+
+    fn names(root: &Path) -> Vec<String> {
+        solstone_core_import::strava_names::read_strava_names(root)
+            .unwrap()
+            .into_keys()
+            .collect()
     }
 
     async fn delete(root: &Path, uri: &str) -> (StatusCode, Value) {
@@ -778,6 +823,7 @@ mod tests {
             root.path().join("imports/imp_a").is_dir(),
             "a workout delete keeps the import"
         );
+        assert_eq!(names(root.path()), ["102", "201"]);
     }
 
     #[tokio::test]
@@ -802,6 +848,7 @@ mod tests {
         assert!(root.path().join("imports/imp_b").is_dir());
         let record = STORE.read::<StravaTarget>(root.path(), &id).unwrap();
         assert_eq!(record.state, DeleteState::Deleted);
+        assert_eq!(names(root.path()), ["201"]);
     }
 
     #[tokio::test]
