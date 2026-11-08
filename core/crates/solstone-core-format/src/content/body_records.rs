@@ -146,6 +146,7 @@ pub fn source_words(source: &str) -> &str {
     match source {
         "apple_health" => "Apple Health",
         "oura" => "Oura",
+        "strava" => "Strava",
         other => other,
     }
 }
@@ -169,6 +170,9 @@ pub fn parse_source_time(text: &str) -> Option<DateTime<FixedOffset>> {
 /// a name the source made up. Apple's export carries none, so it gives
 /// nothing. Elsewhere, a generated default ("Morning Run", "Lunch Ride", a bare
 /// type name) is the source's, and any other name or description is the owner's.
+/// Strava's words are a workout's name, description and private note, and its
+/// defaults follow the account's language, so German ones ("Lauf am Morgen")
+/// are its own too.
 #[must_use]
 pub fn owner_words(source: &str, row: &BodyRow) -> Vec<String> {
     if source == "apple_health" {
@@ -177,9 +181,42 @@ pub fn owner_words(source: &str, row: &BodyRow) -> Vec<String> {
     row.words
         .iter()
         .map(|words| words.trim())
-        .filter(|words| !words.is_empty() && !generated_name(words, &row.record_type))
+        .filter(|words| {
+            !words.is_empty()
+                && !generated_name(words, &row.record_type)
+                && !(source == "strava" && german_generated_name(words))
+        })
         .map(str::to_owned)
         .collect()
+}
+
+/// The owner's gear on an account, as the source names it: for Strava, a
+/// workout's `Activity Gear` (`Aktivitätsausrüstung` in German), a catalogue
+/// brand and model with the owner's own nickname. Other sources name none.
+#[must_use]
+pub fn owner_gear(source: &str, row: &BodyRow) -> Vec<String> {
+    use super::strava_body::{GEAR_HEADERS, strava_field};
+    if source != "strava" {
+        return Vec::new();
+    }
+    strava_field(row.fields.get("strava_fields"), &GEAR_HEADERS)
+        .map(str::to_owned)
+        .into_iter()
+        .collect()
+}
+
+/// A name Strava writes itself in German: one word and a part of the day,
+/// `<word> am Morgen` (or `Vormittag`, `Mittag`, `Nachmittag`, `Abend`), or
+/// `<word> in der Nacht`, case aside.
+fn german_generated_name(words: &str) -> bool {
+    const PARTS: [&str; 5] = ["morgen", "vormittag", "mittag", "nachmittag", "abend"];
+    let lower = words.to_lowercase();
+    let tokens = lower.split_whitespace().collect::<Vec<_>>();
+    match tokens.as_slice() {
+        [_, "am", part] => PARTS.contains(part),
+        [_, "in", "der", "nacht"] => true,
+        _ => false,
+    }
 }
 
 /// Whether the owner entered a row themselves, by the source's own mark. Apple
