@@ -325,3 +325,64 @@
      time_last_task = ggml_time_ms();
  
      // spawn the worker thread used by yield_to_queue()
+--- a/vendor/cpp-httplib/httplib.cpp
++++ b/vendor/cpp-httplib/httplib.cpp
+@@ -1842,6 +1842,9 @@
+ 
+ ssize_t send_socket(socket_t sock, const void *ptr, size_t size,
+                            int flags) {
++#ifdef MSG_NOSIGNAL
++  flags |= MSG_NOSIGNAL;
++#endif
+   return handle_EINTR([&]() {
+     return send(sock,
+ #ifdef _WIN32
+@@ -2542,6 +2545,12 @@
+ #endif
+ 
+     if (sock != INVALID_SOCKET) {
++#ifdef SO_NOSIGPIPE
++      if (!set_socket_opt(sock, SOL_SOCKET, SO_NOSIGPIPE, 1)) {
++        close_socket(sock);
++        return INVALID_SOCKET;
++      }
++#endif
+       sockaddr_un addr{};
+       addr.sun_family = AF_UNIX;
+ 
+@@ -2621,6 +2630,12 @@
+ 
+ #endif
+     if (sock == INVALID_SOCKET) { continue; }
++#ifdef SO_NOSIGPIPE
++    if (!set_socket_opt(sock, SOL_SOCKET, SO_NOSIGPIPE, 1)) {
++      close_socket(sock);
++      continue;
++    }
++#endif
+ 
+ #if !defined _WIN32 && !defined SOCK_CLOEXEC
+     if (fcntl(sock, F_SETFD, FD_CLOEXEC) == -1) {
+@@ -8664,9 +8679,6 @@
+         return new ThreadPool(CPPHTTPLIB_THREAD_POOL_COUNT,
+                               CPPHTTPLIB_THREAD_POOL_MAX_COUNT);
+       }) {
+-#ifndef _WIN32
+-  signal(SIGPIPE, SIG_IGN);
+-#endif
+ }
+ 
+ Server::~Server() = default;
+@@ -9772,6 +9784,12 @@
+         break;
+       }
+ 
++#ifdef SO_NOSIGPIPE
++      if (!set_socket_opt(sock, SOL_SOCKET, SO_NOSIGPIPE, 1)) {
++        detail::close_socket(sock);
++        continue;
++      }
++#endif
+       detail::set_socket_opt_time(sock, SOL_SOCKET, SO_RCVTIMEO,
+                                   read_timeout_sec_, read_timeout_usec_);
+       detail::set_socket_opt_time(sock, SOL_SOCKET, SO_SNDTIMEO,

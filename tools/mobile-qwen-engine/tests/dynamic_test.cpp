@@ -3,6 +3,7 @@
 #include "journal_mobile_qwen.h"
 #include <cassert>
 #include <cstdlib>
+#include <csignal>
 #include <dlfcn.h>
 #include <filesystem>
 #include <fstream>
@@ -14,7 +15,10 @@ extern "C" void llama_backend_init() { std::abort(); }
 extern "C" void llama_backend_free() { std::abort(); }
 extern "C" size_t ggml_backend_dev_count() { std::abort(); }
 
+void app_sigpipe(int) {}
+
 int main() {
+    const auto prior_sigpipe = std::signal(SIGPIPE, app_sigpipe);
     assert(dlsym(RTLD_DEFAULT, "llama_backend_init") == reinterpret_cast<void *>(&llama_backend_init));
     assert(journal_mobile_qwen_abi_version() == 1);
     int marker = 0;
@@ -35,4 +39,5 @@ int main() {
         assert(journal_mobile_qwen_destroy_v1(handle) == JOURNAL_MOBILE_QWEN_OK);
     }
     std::filesystem::remove(path);
+    assert(std::signal(SIGPIPE, prior_sigpipe) == app_sigpipe);
 }

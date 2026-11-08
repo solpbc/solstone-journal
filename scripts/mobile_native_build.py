@@ -49,6 +49,26 @@ def require_qwen_exports(text, apple=False):
     return sorted(symbols)
 
 
+def require_android_qwen_geometry(text):
+    loads, relro = [], []
+    try:
+        for line in text.splitlines():
+            fields = line.split()
+            if fields and fields[0] == "LOAD":
+                loads.append((int(fields[1], 0), int(fields[2], 0), int(fields[-1], 0)))
+            elif fields and fields[0] == "GNU_RELRO":
+                relro.append((int(fields[2], 0), int(fields[5], 0)))
+    except (ValueError, IndexError) as error:
+        raise ValueError("Qwen ELF load geometry is malformed") from error
+    page = 16384
+    if (not loads or any(align < page or offset % page != address % page
+                         for offset, address, align in loads)
+            or len(relro) != 1 or relro[0][1] <= 0
+            or (relro[0][0] + relro[0][1]) % page != 0):
+        raise ValueError("Qwen ELF LOAD and GNU_RELRO geometry must support 16 KiB pages")
+    return {"page_bytes": page, "relro_end": relro[0][0] + relro[0][1]}
+
+
 def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, build_inputs):
     cmake = (wrapper / "CMakeLists.txt").read_text()
     revision = re.findall(r'JOURNAL_MOBILE_QWEN_SOURCE_REVISION="([0-9a-f]{40})"', cmake)
@@ -61,6 +81,10 @@ def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, bui
                "adapter_sources": {name: sha256(wrapper / name) for name in QWEN_SOURCE_FILES},
                "build_inputs": build_inputs,
                "policy": {"context_tokens": 32768, "parallel_slots": 1, "cpu_workers": 4,
+                          "batch_tokens": 128 if platform_name == "ios" else 2048,
+                          "ubatch_tokens": 128 if platform_name == "ios" else 512,
+                          "cache_ram_mib": 0, "kv_unified": True, "enable_reasoning": 0,
+                          "context_shift": False, "web_ui": False,
                           "bind_address": "127.0.0.1", "requested_port": 0,
                           "backend": "metal" if platform_name == "ios" else "cpu"}}
     digest = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -468,6 +492,9 @@ class Build:
             tools = self.ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin"
             text = self.run("llama-image-exports", [tools / "llvm-nm", "-D", "--defined-only", image]).read_text()
             dependencies = self.run("llama-image-dependencies", [tools / "llvm-readelf", "-d", image]).read_text()
+        if self.args.platform == "android":
+            geometry = self.run("llama-image-load-geometry", [tools / "llvm-readelf", "-lW", image]).read_text()
+            self.summary["inputs"]["mobile-qwen-elf-geometry"] = require_android_qwen_geometry(geometry)
         exports = require_qwen_exports(text, apple=self.args.platform == "ios")
         if re.search(r"(?:lib)?(?:ggml|llama|parakeet|ced|rfdetr)[^\s/]*\.(?:so|dylib)", dependencies, re.IGNORECASE):
             raise ValueError("Qwen image leaked a dependency on a separate engine symbol family")
