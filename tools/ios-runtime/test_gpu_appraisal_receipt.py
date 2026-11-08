@@ -6,11 +6,13 @@ import json
 import pathlib
 import struct
 import tempfile
+import tomllib
 import unittest
 from types import SimpleNamespace
 
 from build_gpu_appraisal import (
     _configure_argv,
+    _prepare_host_build_profile,
     _record_digest,
     _static_dependencies,
 )
@@ -26,6 +28,23 @@ from finalize import (
 
 
 class AppraisalBuildTests(unittest.TestCase):
+    def test_generated_host_profile_records_scope_and_preserves_sdk_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            work = pathlib.Path(temp)
+            sdk_manifest = work / "sources/regorus/Cargo.toml"
+            sdk_manifest.parent.mkdir(parents=True)
+            original = b'[profile.release]\nstrip = true\n'
+            sdk_manifest.write_bytes(original)
+            build = SimpleNamespace(work=work, summary={"inputs": {}}, save=lambda: None)
+            _prepare_host_build_profile(build)
+            configuration = work / ".cargo/config.toml"
+            self.assertEqual(tomllib.loads(configuration.read_text()), {
+                "profile": {"release": {"build-override": {"strip": "none"}}}})
+            recorded = build.summary["inputs"]["appraisal-host-build-profile"]
+            self.assertEqual(recorded["sha256"], sha256(configuration))
+            self.assertEqual(work / recorded["path"], configuration)
+            self.assertEqual(sdk_manifest.read_bytes(), original)
+
     def test_rim_directory_reuse_preserves_existing_members(self):
         with tempfile.TemporaryDirectory() as temp:
             rims = pathlib.Path(temp) / "RIMs"
