@@ -2,20 +2,29 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 
 use solstone_core_sol_link::http::{
     SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, packaged_speech_retry,
-    read_setup_downloads,
+    read_setup_downloads, read_setup_downloads_with_packaged_speech,
 };
 use solstone_core_thinking_copy::{
     DownloadMember, SetupCatalogFacts, current_setup_facts, sum_download_bytes,
 };
 
+/// App-owned setup evidence. Implementations bind the actual packaged model
+/// source, verify pinned bytes, and invalidate changed or retired sources.
+pub trait PackagedSpeechSetup: Send + Sync {
+    fn status(&self) -> Result<(), String>;
+    fn retry(&self) -> Result<(), String>;
+}
+
 pub(crate) struct ConveySetupHost {
     backup: solstone_core_backup_web::BackupWebDeps,
     executor: Option<tokio::runtime::Handle>,
+    packaged_speech: Option<Arc<dyn PackagedSpeechSetup>>,
 }
 
 impl ConveySetupHost {
@@ -23,7 +32,25 @@ impl ConveySetupHost {
         Self {
             backup,
             executor: tokio::runtime::Handle::try_current().ok(),
+            packaged_speech: None,
         }
+    }
+
+    pub(crate) fn with_packaged_speech(
+        mut self,
+        speech: Option<Arc<dyn PackagedSpeechSetup>>,
+    ) -> Self {
+        self.packaged_speech = speech;
+        self
+    }
+
+    fn packaged_speech(&self, journal: &Path) -> Result<&Arc<dyn PackagedSpeechSetup>, String> {
+        if journal != self.backup.journal_root {
+            return Err("journal binding changed".into());
+        }
+        self.packaged_speech
+            .as_ref()
+            .ok_or_else(|| "packaged speech proof unavailable".into())
     }
 
     fn start_local_for_key(&self, journal: &Path, key: &str) -> Result<(), String> {
@@ -55,6 +82,16 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError> {
+        if self.packaged_speech.is_some()
+            || solstone_core_local::embedded::supports_key(
+                &solstone_core_local::install::pins::platform_key(),
+            )
+        {
+            return packaged_speech_retry(
+                self.packaged_speech(journal_root)
+                    .and_then(|speech| speech.retry()),
+            );
+        }
         #[cfg(target_os = "windows")]
         let work = SpeechWork::WindowsPackage(
             solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package()
@@ -74,7 +111,19 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError> {
-        read_setup_downloads(journal_root)
+        if self.packaged_speech.is_some()
+            || solstone_core_local::embedded::supports_key(
+                &solstone_core_local::install::pins::platform_key(),
+            )
+        {
+            read_setup_downloads_with_packaged_speech(
+                journal_root,
+                self.packaged_speech(journal_root)
+                    .and_then(|speech| speech.status()),
+            )
+        } else {
+            read_setup_downloads(journal_root)
+        }
     }
 
     fn thinking_download_bytes(&self, journal: &Path) -> Option<u64> {
@@ -409,6 +458,97 @@ fn persist_speech_refusal(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn embedded_speech_init_status_and_retry_use_the_app_proof_not_desktop_manifests() {
+        use axum::{
+            Extension,
+            body::{Body, to_bytes},
+            http::Request,
+        };
+        use solstone_core_convey_http::identity::AccessBasis;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tower::ServiceExt;
+
+        struct FixtureSpeech {
+            model: std::path::PathBuf,
+            retries: AtomicUsize,
+        }
+        impl PackagedSpeechSetup for FixtureSpeech {
+            fn status(&self) -> Result<(), String> {
+                if std::fs::read(&self.model).unwrap() == b"verified fixture" {
+                    Ok(())
+                } else {
+                    Err("fixture model corrupt".into())
+                }
+            }
+            fn retry(&self) -> Result<(), String> {
+                self.retries.fetch_add(1, Ordering::Relaxed);
+                self.status()
+            }
+        }
+        let directory = TempDir::new().unwrap();
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap());
+        let path = root.canonical_path().to_owned();
+        let model = path.join("fixture-model");
+        std::fs::write(&model, b"verified fixture").unwrap();
+        let proof = Arc::new(FixtureSpeech {
+            model: model.clone(),
+            retries: AtomicUsize::new(0),
+        });
+        let legacy = path.join("health/providers/parakeet.json");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, b"invalid desktop install history").unwrap();
+        let host = Arc::new(
+            ConveySetupHost::new(solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap())
+                .with_packaged_speech(Some(proof.clone())),
+        );
+        let app = solstone_core_sol_link::http::init_router_with_host(&path, host)
+            .layer(Extension(AccessBasis::Localhost));
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/init/api/state")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let value: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(value["downloads"]["speech"]["state"], "complete");
+        for (bytes, expected) in [
+            (
+                b"corrupt fixture".as_slice(),
+                axum::http::StatusCode::CONFLICT,
+            ),
+            (b"verified fixture".as_slice(), axum::http::StatusCode::OK),
+        ] {
+            std::fs::write(&model, bytes).unwrap();
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/init/api/action")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"action":"retry_speech_download"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+        }
+        assert_eq!(proof.retries.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            std::fs::read(legacy).unwrap(),
+            b"invalid desktop install history"
+        );
+        // The fixture proves the host's route composition, not a signed model/native package.
+    }
 
     #[test]
     fn mobile_first_run_uses_the_retained_installer_instead_of_a_sibling_executable() {

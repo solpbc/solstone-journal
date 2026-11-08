@@ -49,6 +49,8 @@ pub mod foreground;
 pub mod import_route;
 #[cfg(feature = "processing")]
 mod local_provider;
+#[cfg(all(feature = "audio", feature = "processing"))]
+mod packaged_speech;
 #[cfg(feature = "processing")]
 mod rfdetr;
 #[cfg(feature = "processing")]
@@ -64,6 +66,8 @@ pub struct OwnerResponse {
 /// Retain this value in the app's ordinary worker, alongside its private root.
 /// Owner requests must be admitted by private in-process or app-owned IPC.
 pub struct MobileServing {
+    #[cfg(all(feature = "audio", feature = "processing"))]
+    packaged_speech: Arc<packaged_speech::Slot>,
     #[cfg(feature = "audio")]
     audio: Option<audio::AudioWorker>,
     bus: solstone_core_callosum::CallosumSocketServer,
@@ -381,8 +385,14 @@ impl MobileServing {
         let early_imports = Arc::downgrade(&import_route);
         let early_brain_startup = Arc::clone(&brain_startup);
         let early_installer_root = Arc::downgrade(&root);
+        #[cfg(all(feature = "audio", feature = "processing"))]
+        let packaged_speech = Arc::new(packaged_speech::Slot::default());
         let handle = runtime.block_on(async {
             let startup = solstone_core_convey_shell::EmbeddedStartup {
+                #[cfg(all(feature = "audio", feature = "processing"))]
+                packaged_speech: Some(packaged_speech.clone()),
+                #[cfg(not(all(feature = "audio", feature = "processing")))]
+                packaged_speech: None,
                 brain_startup: Some(Arc::clone(&brain_startup)),
                 #[cfg(feature = "processing")]
                 backup_offload_dispatch: Some(verification::offload_dispatch_probe(
@@ -508,6 +518,8 @@ impl MobileServing {
             stop: stop_handle,
             #[cfg(feature = "audio")]
             audio: None,
+            #[cfg(all(feature = "audio", feature = "processing"))]
+            packaged_speech,
             bus,
             brain_observation,
             handle: Arc::new(handle),
@@ -597,6 +609,20 @@ impl MobileServing {
                 .map_or(json!({"state":"disabled"}), |a| a.status());
         }
         value
+    }
+
+    /// Bind setup to the foreground worker's actual immutable app model source.
+    /// Readiness still requires pinned-byte verification; this is no Ready flag.
+    #[cfg(all(feature = "audio", feature = "processing"))]
+    pub fn bind_packaged_speech(
+        &self,
+        host: &foreground::ForegroundProcessingHost,
+    ) -> Result<(), String> {
+        if self.stop.is_stopping() {
+            return Err("server stop pending".into());
+        }
+        self.packaged_speech
+            .bind(host.packaged_speech_setup(&self.root)?)
     }
 
     /// Enable the dedicated foreground app's local processing pass. Successful
