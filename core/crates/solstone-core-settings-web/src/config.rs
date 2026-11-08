@@ -133,6 +133,8 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         "processing" => &[],
         // The "your own model" thinking budget: one value for the lane.
         "providers" => &["byo_thinking_budget"],
+        // Days before the trash erases what is put in it from now on.
+        "trash" => &[solstone_core_trash::ERASE_AFTER_DAYS_KEY],
         _ => return invalid_config_value(format!("Unknown section: {section}")),
     };
     if section == "transcribe" {
@@ -203,6 +205,20 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         ))
     {
         return invalid_config_value(error);
+    }
+    if section == solstone_core_trash::SETTINGS_SECTION
+        && let Some(days) = data.get(solstone_core_trash::ERASE_AFTER_DAYS_KEY)
+        && !days.as_u64().is_some_and(|days| {
+            (u64::from(solstone_core_trash::MIN_ERASE_AFTER_DAYS)
+                ..=u64::from(solstone_core_trash::MAX_ERASE_AFTER_DAYS))
+                .contains(&days)
+        })
+    {
+        return invalid_config_value(format!(
+            "days before the trash erases must be a whole number from {} to {}",
+            solstone_core_trash::MIN_ERASE_AFTER_DAYS,
+            solstone_core_trash::MAX_ERASE_AFTER_DAYS
+        ));
     }
     let data_for_write = data.clone();
     let section_for_write = section.clone();
