@@ -77,7 +77,7 @@ pub fn remove_strava_refiles(
 fn save(journal: &Path, listed: &BTreeSet<RefiledTile>) -> Result<(), String> {
     let bytes = serde_json::to_vec(listed).map_err(|error| error.to_string())?;
     atomic_replace(
-        &journal.join(STRAVA_REFILE_FILE),
+        journal.join(STRAVA_REFILE_FILE),
         &bytes,
         AtomicWriteOptions {
             mode: Some(FILE_MODE),

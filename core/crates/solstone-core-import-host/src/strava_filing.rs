@@ -183,6 +183,10 @@ pub(crate) struct Filing {
     pub refiled_tiles: Vec<(String, String)>,
 }
 
+/// Told the tiles a filing is about to change, `(day, segment)`, before any
+/// is written; an error stops the filing.
+pub(crate) type BeforeRefile<'a> = &'a mut dyn FnMut(&[(String, String)]) -> Result<(), String>;
+
 /// File every live tile of the download's workouts under `facet` wherever it
 /// has another, except a workout already listed with the owner's activities
 /// and one whose day can't be read. `before_write` is given every tile that
@@ -193,7 +197,7 @@ pub(crate) fn file_strava_workouts(
     journal: &Path,
     workouts: &LiveWorkouts,
     facet: &str,
-    before_write: &mut dyn FnMut(&[(String, String)]) -> Result<(), String>,
+    before_write: BeforeRefile<'_>,
 ) -> Result<Filing, String> {
     let mut filing = Filing::default();
     let mut sensed = Sensed::default();
@@ -267,8 +271,11 @@ pub(crate) fn file_strava_workouts(
         for (day, segment) in changing {
             let dir = tile_dir(journal, &day, &segment);
             fs::create_dir_all(dir.join("talents")).map_err(|error| error.to_string())?;
-            let path = dir.join("talents/facets.json");
-            atomic_replace(&path, facet_file_text(facet).as_bytes(), PRIVATE)
+            atomic_replace(
+                dir.join("talents/facets.json"),
+                facet_file_text(facet).as_bytes(),
+                PRIVATE,
+            )
                 .map_err(|error| error.to_string())?;
             sync_folder(&dir)?;
             filing.refiled_tiles.push((day, segment));
