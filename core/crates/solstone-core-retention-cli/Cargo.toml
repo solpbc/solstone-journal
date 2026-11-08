@@ -23,6 +23,7 @@ solstone-core-retention = { workspace = true }
 
 [dev-dependencies]
 rusqlite.workspace = true
+solstone-core-trash.workspace = true
 solstone-core-indexer-store = { workspace = true, features = ["test-fixtures"] }
 solstone-core-journal-io.workspace = true
 

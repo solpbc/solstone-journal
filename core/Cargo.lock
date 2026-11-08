@@ -6179,6 +6179,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-removals",
  "solstone-core-retention",
+ "solstone-core-trash",
 ]
 
 [[package]]
