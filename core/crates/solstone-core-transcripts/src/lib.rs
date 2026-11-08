@@ -2116,8 +2116,8 @@ mod tests {
                 "schema": "solstone.import.strava.tile.v1",
                 "activity_id": 9,
                 "tile": {"index": 0, "count": 1},
-                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0},
-                "strava_fields": {"Activity Private Note": "left knee felt tight"}
+                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0,
+                    "strava_fields": {"Activity Private Note": "left knee felt tight"}}
             })
             .to_string(),
         )
@@ -2137,8 +2137,8 @@ mod tests {
         let talent = sources(true, true, TalentSource::All);
         let (day, _) = cluster(root.path(), DAY, &talent);
         assert!(day.contains("garden planning"), "{day}");
-        assert!(!day.contains("Morning Run"), "{day}");
         assert!(!day.contains("knee"), "{day}");
+        assert!(!day.contains("Morning Run"), "{day}");
         assert!(!day.contains("river"), "{day}");
         let (segment, _) = cluster_period(
             root.path(),
@@ -2157,10 +2157,12 @@ mod tests {
         )
         .unwrap();
         assert!(!span.contains("Morning Run"), "{span}");
-        // A tile the body-only test rejects is read as it always was.
+        // A tile the body-only test rejects is read as it always was, private
+        // note and all.
         fs::write(tile.join("notes.md"), "something else").unwrap();
         let (day, _) = cluster(root.path(), DAY, &talent);
         assert!(day.contains("Morning Run"), "{day}");
+        assert!(day.contains("knee"), "{day}");
     }
 
     #[test]

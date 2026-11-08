@@ -385,8 +385,8 @@ mod tests {
                 "schema": "solstone.import.strava.tile.v1",
                 "activity_id": 9,
                 "tile": {"index": 0, "count": 1},
-                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0},
-                "strava_fields": {"Activity Gear": "Trek Domane SL6 (Blue Thunder)"}
+                "workout": {"name": "Morning Run", "type": "Run", "distance_m": 10200.0,
+                    "strava_fields": {"Activity Gear": "Trek Domane SL6 (Blue Thunder)"}}
             })
             .to_string(),
         )
@@ -407,8 +407,8 @@ mod tests {
         )
         .unwrap();
         assert!(loaded.text.contains("garden planning"), "{}", loaded.text);
-        assert!(!loaded.text.contains("Morning Run"), "{}", loaded.text);
         assert!(!loaded.text.contains("Trek"), "{}", loaded.text);
+        assert!(!loaded.text.contains("Morning Run"), "{}", loaded.text);
         let (segment, _, _) = load_segment_transcript(
             journal.path(),
             "20260903",
