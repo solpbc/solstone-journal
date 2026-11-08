@@ -6,12 +6,17 @@
 //! A body window holds records of the owner's body, written by code, and owes no
 //! thinking. That is decided by what the segment holds and never by its stream
 //! name alone: older content in the same stream keeps its behaviour.
+//!
+//! A Strava tile is body data too: its `workout.json` is another system's
+//! account of a workout. What thinking once wrote under its `talents/` is a
+//! reading of that body data, so a tile is body-only whatever `talents/` holds.
 
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
 use solstone_core_format::content::body_records::{BODY_RECORD_STREAMS, BODY_RECORDS_FILE};
+use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE};
 use solstone_core_journal_io::{PathOrDay, Segment, is_incidental_file_name, iter_segments};
 
 use crate::calendar::is_calendar_segment;
@@ -25,7 +30,8 @@ const FACETS: &str = "facets.json";
 /// names. The tombstone is the only thing that survives a delete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TombstoneRecord {
-    /// `body.jsonl`, and only what a body window holds beside it.
+    /// The stream's records file (`body.jsonl`, or a Strava tile's
+    /// `workout.json`), and only what may sit beside it.
     BodyWindow,
     /// Real content and no body records: something older than this contract.
     OlderContent,
@@ -37,10 +43,22 @@ fn tombstone_record(path: &Path) -> TombstoneRecord {
     let Ok(bytes) = fs::read(path) else {
         return TombstoneRecord::CantSay;
     };
-    tombstone_record_of(&bytes)
+    tombstone_record_of(&bytes, BODY_RECORDS_FILE)
 }
 
-fn tombstone_record_of(bytes: &[u8]) -> TombstoneRecord {
+/// The file that holds a stream's body records: a Strava tile's `workout.json`,
+/// or a body window's `body.jsonl`. `None` for a stream that holds none.
+fn records_file(stream: &str) -> Option<&'static str> {
+    if stream == STRAVA_STREAM {
+        Some(STRAVA_TILE_FILE)
+    } else if BODY_RECORD_STREAMS.contains(&stream) {
+        Some(BODY_RECORDS_FILE)
+    } else {
+        None
+    }
+}
+
+fn tombstone_record_of(bytes: &[u8], records_file: &str) -> TombstoneRecord {
     let Ok(body) = serde_json::from_slice::<serde_json::Value>(bytes) else {
         return TombstoneRecord::CantSay;
     };
@@ -56,7 +74,7 @@ fn tombstone_record_of(bytes: &[u8]) -> TombstoneRecord {
         else {
             return TombstoneRecord::CantSay;
         };
-        if name == OsStr::new(BODY_RECORDS_FILE) {
+        if name == OsStr::new(records_file) {
             records = true;
         } else if name != OsStr::new(STREAM_MARKER)
             && name != OsStr::new(TALENTS)
@@ -80,7 +98,7 @@ fn tombstone_record_of(bytes: &[u8]) -> TombstoneRecord {
 #[must_use]
 pub fn is_body_only_dir(stream: &str, dir: &Path) -> bool {
     // Every other stream answers before its directory is listed.
-    if !BODY_RECORD_STREAMS.contains(&stream) {
+    if records_file(stream).is_none() {
         return false;
     }
     let Ok(entries) = fs::read_dir(dir) else {
@@ -109,7 +127,8 @@ pub fn is_body_only_dir(stream: &str, dir: &Path) -> bool {
 /// The same decision from a directory's listing, for a reader that lists and
 /// reads through its own bound handles. `tombstone` gives `tombstone.json`'s
 /// bytes and `talents` lists `talents/`; either gives `None` when it can't be
-/// read, which counts as not body-only.
+/// read, which counts as not body-only. A Strava tile's `talents/` is never
+/// listed: whatever it holds, the tile is body data.
 #[must_use]
 pub fn is_body_only_listing(
     stream: &str,
@@ -117,9 +136,9 @@ pub fn is_body_only_listing(
     tombstone: impl FnOnce() -> Option<Vec<u8>>,
     talents: impl FnOnce() -> Option<Vec<std::ffi::OsString>>,
 ) -> bool {
-    if !BODY_RECORD_STREAMS.contains(&stream) {
+    let Some(records_file) = records_file(stream) else {
         return false;
-    }
+    };
     let mut tombstone = Some(tombstone);
     let mut talents = Some(talents);
     let mut holds_records = false;
@@ -129,21 +148,23 @@ pub fn is_body_only_listing(
                 .take()
                 .and_then(|read| read())
                 .map_or(TombstoneRecord::CantSay, |bytes| {
-                    tombstone_record_of(&bytes)
+                    tombstone_record_of(&bytes, records_file)
                 });
             if record != TombstoneRecord::BodyWindow {
                 return false;
             }
             holds_records = true;
-        } else if name == OsStr::new(BODY_RECORDS_FILE) {
+        } else if name == OsStr::new(records_file) {
             holds_records = true;
         } else if name == OsStr::new(TALENTS) {
-            let only_facets = talents.take().and_then(|list| list()).is_some_and(|names| {
-                names
-                    .iter()
-                    .all(|name| name == OsStr::new(FACETS) || is_incidental_file_name(name))
-            });
-            if !only_facets {
+            // A body window's may hold only the facet choice code wrote.
+            let allowed = stream == STRAVA_STREAM
+                || talents.take().and_then(|list| list()).is_some_and(|names| {
+                    names
+                        .iter()
+                        .all(|name| name == OsStr::new(FACETS) || is_incidental_file_name(name))
+                });
+            if !allowed {
                 return false;
             }
         } else if name != OsStr::new(STREAM_MARKER) && !is_incidental_file_name(name) {
@@ -347,15 +368,129 @@ mod tests {
             let dir = window(root, "20261010", STREAM, &format!("{index:06}_300"), &files);
             assert_eq!(is_body_only_dir(STREAM, &dir), expected, "{files:?}");
         }
+        // A Strava tile is body-only by its workout, never by a body window's file.
         let strava = window(
             root,
             "20261010",
             "import.strava",
             "120000_300",
+            &["workout.json"],
+        );
+        assert!(is_body_only_dir("import.strava", &strava));
+        let strava = window(
+            root,
+            "20261010",
+            "import.strava",
+            "120500_300",
             &["body.jsonl"],
         );
         assert!(!is_body_only_dir("import.strava", &strava));
+        // A workout in a body window's stream, or any other, isn't one.
+        let apple = window(root, "20261010", STREAM, "121000_300", &["workout.json"]);
+        assert!(!is_body_only_dir(STREAM, &apple));
+        let phone = window(root, "20261010", "phone", "121500_300", &["workout.json"]);
+        assert!(!is_body_only_dir("phone", &phone));
         assert!(!is_body_only_dir(STREAM, &root.join("absent")));
+    }
+
+    const STRAVA: &str = "import.strava";
+
+    #[test]
+    fn a_strava_tile_is_body_only_whatever_its_talents_hold() {
+        let journal = TempDir::new();
+        let root = journal.path();
+        for (index, (files, expected)) in [
+            (vec!["workout.json"], true),
+            (
+                vec!["workout.json", "stream.json", "workout.json.lock"],
+                true,
+            ),
+            (
+                vec!["workout.json", ".DS_Store", "._workout.json", "Thumbs.db"],
+                true,
+            ),
+            // An interrupted write's candidate beside the published tile.
+            (vec!["workout.json", ".tmp_workout.json.0a1b.tmp"], true),
+            (vec!["workout.json", "talents/facets.json"], true),
+            (
+                vec![
+                    "workout.json",
+                    "stream.json",
+                    "talents/sense.json",
+                    "talents/facets.json",
+                    "talents/activity.md",
+                    "talents/density.json",
+                    "talents/entities/detection.json",
+                ],
+                true,
+            ),
+            (vec!["stream.json"], false),
+            (vec!["stream.json", "talents/sense.json"], false),
+            (vec!["workout.json", "notes.md"], false),
+            (vec!["workout.json", "audio.jsonl"], false),
+            (vec!["workout.json", "body.jsonl"], false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let dir = window(root, "20261012", STRAVA, &format!("{index:06}_300"), &files);
+            assert_eq!(is_body_only_dir(STRAVA, &dir), expected, "{files:?}");
+        }
+        // The same files in a body window's stream keep that stream's rule.
+        let dir = window(
+            root,
+            "20261012",
+            STREAM,
+            "200000_300",
+            &["body.jsonl", "talents/sense.json"],
+        );
+        assert!(!is_body_only_dir(STREAM, &dir));
+    }
+
+    #[test]
+    fn a_strava_tombstone_counts_when_its_manifest_names_only_a_tile() {
+        let journal = TempDir::new();
+        let root = journal.path();
+        for (index, (tombstone, expected)) in [
+            (
+                r#"{"manifest":[
+                    "chronicle/20261013/import.strava/070000_300/workout.json",
+                    "chronicle/20261013/import.strava/070000_300/stream.json",
+                    "chronicle/20261013/import.strava/070000_300/talents"
+                ]}"#,
+                true,
+            ),
+            (r#"{"manifest":["a/workout.json","a/.DS_Store"]}"#, true),
+            (r#"{"manifest":["a/workout.json","a/notes.md"]}"#, false),
+            (r#"{"manifest":["a/body.jsonl","a/stream.json"]}"#, false),
+            (r#"{"manifest":["a/stream.json","a/talents"]}"#, false),
+            (r#"{"manifest":[]}"#, false),
+            ("not json", false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let dir = window(root, "20261013", STRAVA, &format!("{index:06}_300"), &[]);
+            fs::write(dir.join("tombstone.json"), tombstone).unwrap();
+            assert_eq!(is_body_only_dir(STRAVA, &dir), expected, "{tombstone}");
+        }
+    }
+
+    #[test]
+    fn a_day_of_strava_tiles_alone_holds_nothing_the_owner_did() {
+        let journal = TempDir::new();
+        let root = journal.path();
+        window(
+            root,
+            "20261014",
+            STRAVA,
+            "070000_300",
+            &["workout.json", "talents/sense.json"],
+        );
+        window(root, "20261014", STRAVA, "070500_300", &["workout.json"]);
+        assert!(day_holds_nothing_the_owner_did(root, "20261014"));
+        window(root, "20261014", "phone", "090000_300", &["audio.jsonl"]);
+        assert!(!day_holds_nothing_the_owner_did(root, "20261014"));
     }
 
     #[test]
