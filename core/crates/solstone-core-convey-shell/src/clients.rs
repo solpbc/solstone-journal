@@ -1831,7 +1831,10 @@ mod tests {
     struct TestLogger;
     static LOGGER: TestLogger = TestLogger;
     static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
-    static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+    // Each record keeps the thread that logged it, so a test reads only its
+    // own: other tests in the process log errors at the same time.
+    static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<(std::thread::ThreadId, String)>>> =
+        std::sync::OnceLock::new();
 
     impl log::Log for TestLogger {
         fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
@@ -1843,7 +1846,7 @@ mod tests {
                 LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
                     .lock()
                     .expect("logs lock")
-                    .push(record.args().to_string());
+                    .push((std::thread::current().id(), record.args().to_string()));
             }
         }
 
@@ -1855,16 +1858,21 @@ mod tests {
             let _ = log::set_logger(&LOGGER);
             log::set_max_level(log::LevelFilter::Error);
         });
+        let thread = std::thread::current().id();
         if let Some(logs) = LOGS.get() {
-            logs.lock().expect("lock").clear();
+            logs.lock().expect("lock").retain(|(id, _)| *id != thread);
         }
     }
 
     fn error_logs() -> Vec<String> {
+        let thread = std::thread::current().id();
         LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
             .lock()
             .expect("lock")
-            .clone()
+            .iter()
+            .filter(|(id, _)| *id == thread)
+            .map(|(_, message)| message.clone())
+            .collect()
     }
 
     #[tokio::test]
