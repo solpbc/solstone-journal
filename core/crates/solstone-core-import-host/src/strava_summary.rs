@@ -229,11 +229,11 @@ impl StravaRunSummary {
         if names.elsewhere > 0 {
             let _ = writeln!(
                 text,
-                "{} being read by another import that's running now. importing again reads any it doesn't get to.\n",
+                "{} read, because another import is reading workouts' words right now. a later import reads them.\n",
                 plural(
                     names.elsewhere,
-                    "workout's words are",
-                    "workouts' words are"
+                    "workout's words weren't",
+                    "workouts' words weren't"
                 ),
             );
         }
@@ -360,21 +360,71 @@ mod tests {
         assert_eq!(facet_paragraphs(&none), 1, "{none}");
     }
 
+    /// The people and gear section's paragraphs for `names`.
+    fn paragraphs(names: StravaNamesOutcome) -> Vec<String> {
+        let mut run = summary(Some("body"), FacetBasis::Chosen);
+        run.names = names;
+        let text = run.text();
+        text[text.find("## people and gear").unwrap()..]
+            .split("\n\n")
+            .skip(1)
+            .filter(|paragraph| !paragraph.trim().is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    }
+
+    /// Words another import kept from being read, and words under a muted
+    /// facet, each add one paragraph of their own, saying how many.
+    #[test]
+    fn words_left_to_another_import_and_words_set_aside_each_say_how_many() {
+        let read = StravaNamesOutcome {
+            calls: 2,
+            ..StravaNamesOutcome::default()
+        };
+        let plain = paragraphs(read.clone());
+        let added = |names: StravaNamesOutcome| {
+            let added = paragraphs(names)
+                .into_iter()
+                .filter(|paragraph| !plain.contains(paragraph))
+                .collect::<Vec<_>>();
+            assert_eq!(added.len(), 1, "{added:?}");
+            added.into_iter().next().unwrap()
+        };
+        let mut lines = Vec::new();
+        for count in [1, 3] {
+            let elsewhere = StravaNamesOutcome {
+                elsewhere: count,
+                ..read.clone()
+            };
+            let set_aside = StravaNamesOutcome {
+                set_aside: count,
+                ..read.clone()
+            };
+            for (names, key) in [
+                (elsewhere, "names_elsewhere"),
+                (set_aside, "names_set_aside"),
+            ] {
+                let mut run = summary(Some("body"), FacetBasis::Chosen);
+                run.names = names.clone();
+                assert!(
+                    run.count_keys().contains(&format!("{key}={count}")),
+                    "{}",
+                    run.count_keys()
+                );
+                let line = added(names);
+                assert!(line.starts_with(&format!("{count} ")), "{line}");
+                lines.push(line);
+            }
+        }
+        // Each says something of its own, in one and in many.
+        let distinct = lines.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(distinct.len(), lines.len(), "{lines:?}");
+    }
+
     /// Words that couldn't be read and words read but not made into anyone
     /// are told apart, each in its own paragraph.
     #[test]
     fn a_store_that_couldnt_open_and_names_not_added_say_different_things() {
-        let paragraphs = |names: StravaNamesOutcome| {
-            let mut run = summary(Some("body"), FacetBasis::Chosen);
-            run.names = names;
-            let text = run.text();
-            text[text.find("## people and gear").unwrap()..]
-                .split("\n\n")
-                .skip(1)
-                .filter(|paragraph| !paragraph.trim().is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        };
         let read = StravaNamesOutcome {
             calls: 2,
             ..StravaNamesOutcome::default()
