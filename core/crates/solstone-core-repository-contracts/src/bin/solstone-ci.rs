@@ -845,6 +845,7 @@ enum ItemKind {
         target: String,
         required_features: Vec<String>,
         runtime: String,
+        test_threads: Option<u8>,
     },
     Package {
         package: String,
@@ -887,6 +888,7 @@ impl From<&Suite> for PlanItem {
                 target: suite.target.clone(),
                 required_features: suite.required_features.clone(),
                 runtime: suite.runtime.clone(),
+                test_threads: suite.test_threads,
             },
         }
     }
@@ -1297,15 +1299,22 @@ fn item_command(item: &PlanItem) -> Vec<String> {
             target,
             required_features,
             runtime,
-        } => vec![
-            "make".to_owned(),
-            "--no-print-directory".to_owned(),
-            "check-rust-registry-suite".to_owned(),
-            format!("CI_PACKAGE={package}"),
-            format!("CI_TARGET={target}"),
-            format!("CI_FEATURES={}", required_features.join(",")),
-            format!("CI_RUNTIME={runtime}"),
-        ],
+            test_threads,
+        } => {
+            let mut command = vec![
+                "make".to_owned(),
+                "--no-print-directory".to_owned(),
+                "check-rust-registry-suite".to_owned(),
+                format!("CI_PACKAGE={package}"),
+                format!("CI_TARGET={target}"),
+                format!("CI_FEATURES={}", required_features.join(",")),
+                format!("CI_RUNTIME={runtime}"),
+            ];
+            if let Some(threads) = test_threads {
+                command.push(format!("CI_TEST_THREADS={threads}"));
+            }
+            command
+        }
         ItemKind::Package {
             package,
             features,
@@ -1353,6 +1362,7 @@ fn run_item(
         .env("TMPDIR", entry_tmp.path())
         .env_remove("SOLSTONE_CI_ENTRY_TMPDIR")
         .env(COVERAGE_REPORT_PATH_ENV, coverage_path)
+        .env_remove("CI_TEST_THREADS")
         .env_remove("MAKEFLAGS")
         .env_remove("MFLAGS")
         .env_remove("GNUMAKEFLAGS")
@@ -1803,6 +1813,7 @@ mod tests {
                     default_full: true,
                     required_features: vec![],
                     runtime: "none".to_owned(),
+                    test_threads: None,
                     windows: None,
                 },
                 Suite {
@@ -1818,6 +1829,7 @@ mod tests {
                     default_full: false,
                     required_features: vec![],
                     runtime: "none".to_owned(),
+                    test_threads: None,
                     windows: None,
                 },
             ],
@@ -1983,6 +1995,23 @@ mod tests {
     }
 
     #[test]
+    fn a_suite_runs_more_test_threads_only_when_it_declares_them() {
+        let mut registry = registry();
+        let plain = PlanItem::from(&registry.suites[0]);
+        assert!(
+            !item_command(&plain)
+                .iter()
+                .any(|arg| arg.starts_with("CI_TEST_THREADS="))
+        );
+        registry.suites[0].test_threads = Some(4);
+        let threaded = PlanItem::from(&registry.suites[0]);
+        assert_eq!(
+            item_command(&threaded).last().map(String::as_str),
+            Some("CI_TEST_THREADS=4")
+        );
+    }
+
+    #[test]
     fn selectors_accept_comma_or_whitespace_separators() {
         let mut values = BTreeSet::new();
         extend_csv(&mut values, "component,native policy", "--sets").expect("selector values");
@@ -2028,6 +2057,7 @@ mod tests {
             default_full: true,
             required_features: vec!["test-hooks".to_owned()],
             runtime: "none".to_owned(),
+            test_threads: None,
             windows: None,
         });
         let plan = plan_windows(&reg, &BTreeMap::new(), &BTreeMap::new()).unwrap();

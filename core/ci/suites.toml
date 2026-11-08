@@ -1928,6 +1928,7 @@ serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"
+test_threads = 4
 
 [[suites]]
 id = "solstone-core::core_convey_contracts"
@@ -1970,6 +1971,7 @@ serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"
+test_threads = 4
 
 [[suites]]
 id = "solstone-core::parent_loss_closure_resume"
@@ -2095,6 +2097,7 @@ serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"
+test_threads = 4
 
 [[suites]]
 id = "solstone-core::supervisor_shutdown"
@@ -2109,6 +2112,7 @@ serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"
+test_threads = 4
 
 [[suites]]
 id = "solstone-core::supervisor_tick"

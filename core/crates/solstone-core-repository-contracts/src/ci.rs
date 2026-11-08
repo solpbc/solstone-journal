@@ -67,6 +67,12 @@ pub struct Suite {
     #[serde(default)]
     pub required_features: Vec<String>,
     pub runtime: String,
+    /// Test threads for this suite's own binary. Absent means one, the
+    /// default for every suite; a suite opts in only after repeated green
+    /// runs at the declared count. It never lets two entries overlap: a
+    /// serial group still runs its entries one at a time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_threads: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub windows: Option<crate::windows_suite::WindowsPolicy>,
 }
@@ -278,6 +284,14 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
         {
             errors.push(format!(
                 "suite {} uses unknown serial group {group}",
+                suite.id
+            ));
+        }
+        if let Some(threads) = suite.test_threads
+            && !(2..=8).contains(&threads)
+        {
+            errors.push(format!(
+                "suite {} test_threads must be between 2 and 8, or absent for one",
                 suite.id
             ));
         }
@@ -1622,6 +1636,7 @@ features = ["full-tests"]
                 default_full: true,
                 required_features: Vec::new(),
                 runtime: "none".to_owned(),
+                test_threads: None,
                 windows: None,
             }],
             package_suites: vec![PackageSuite {
@@ -1704,6 +1719,24 @@ features = ["full-tests"]
                 .join("\n")
                 .contains("unregistered Cargo integration target")
         );
+    }
+
+    #[test]
+    fn registry_accepts_test_threads_only_from_two_to_eight() {
+        let (temp, mut registry) = fixture();
+        for threads in [2, 8] {
+            registry.suites[0].test_threads = Some(threads);
+            validate_registry(temp.path(), &registry).expect("declared thread count");
+        }
+        for threads in [0, 1, 9] {
+            registry.suites[0].test_threads = Some(threads);
+            let errors = validate_registry(temp.path(), &registry).expect_err("out of range");
+            assert!(
+                errors
+                    .join("\n")
+                    .contains("test_threads must be between 2 and 8")
+            );
+        }
     }
 
     #[test]

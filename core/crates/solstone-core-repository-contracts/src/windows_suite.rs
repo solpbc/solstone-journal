@@ -1433,6 +1433,7 @@ mod tests {
                     default_full: true,
                     required_features: vec!["test-hooks".to_owned()],
                     runtime: "none".to_owned(),
+                    test_threads: None,
                     windows: None,
                 },
                 Suite {
@@ -1448,6 +1449,7 @@ mod tests {
                     default_full: true,
                     required_features: vec![],
                     runtime: "none".to_owned(),
+                    test_threads: None,
                     windows: None,
                 },
             ],
@@ -1720,6 +1722,7 @@ mod tests {
                 default_full: true,
                 required_features: vec![],
                 runtime: "none".to_owned(),
+                test_threads: None,
                 windows: Some(WindowsPolicy {
                     satisfaction: "cargo".to_owned(),
                     opt_in: Some(WindowsOptIn {
@@ -1748,6 +1751,7 @@ mod tests {
                 default_full: true,
                 required_features: vec![],
                 runtime: "none".to_owned(),
+                test_threads: None,
                 windows: Some(WindowsPolicy {
                     satisfaction: "cargo".to_owned(),
                     opt_in: Some(WindowsOptIn {
@@ -1776,6 +1780,7 @@ mod tests {
                 default_full: true,
                 required_features: vec![],
                 runtime: "none".to_owned(),
+                test_threads: None,
                 windows: Some(WindowsPolicy {
                     satisfaction: "cargo".to_owned(),
                     opt_in: Some(WindowsOptIn {

@@ -836,14 +836,17 @@ ci-full-plan:
 
 # Per-registry-entry wrappers preserve the native runtime contract while the
 # runner keeps ownership of selection, timeout, logging, and aggregation.
+# A registry suite's tests run one at a time unless core/ci/suites.toml
+# declares test_threads for it; the runner then passes CI_TEST_THREADS.
+CI_TEST_THREADS ?= 1
 define run-registry-cargo
 	@set -eu; \
 	test -n "$(CI_PACKAGE)" || { echo "CI_PACKAGE is required" >&2; exit 2; }; \
 	run_cargo() { \
 		if [ -n "$(CI_FEATURES)" ]; then \
-			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline "$$@" --features "$(CI_FEATURES)" -- --test-threads=1; \
+			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline "$$@" --features "$(CI_FEATURES)" -- --test-threads=$(CI_TEST_THREADS); \
 		else \
-			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline "$$@" -- --test-threads=1; \
+			cargo test --manifest-path $(RUST_MANIFEST) --locked --offline "$$@" -- --test-threads=$(CI_TEST_THREADS); \
 		fi; \
 	}; \
 	run_action() { $(1); }; \
