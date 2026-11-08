@@ -337,16 +337,10 @@ mod tests {
         LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn clear_for_test() {
-        let mut registry = lock_registry();
-        registry.slots.clear();
-    }
-
     #[cfg(all(windows, feature = "full-tests"))]
     #[test]
     fn owned_windows_spelling_runs_only_the_captured_generation() {
         let _tests = lock_tests();
-        clear_for_test();
         let journal = tempfile::tempdir().unwrap();
         let canonical = journal.path().canonicalize().unwrap();
         let ordinary = PathBuf::from(canonical.to_str().unwrap().strip_prefix(r"\\?\").unwrap());
@@ -397,14 +391,12 @@ mod tests {
             .unwrap();
         assert_eq!(successor_calls.load(Ordering::SeqCst), 1);
         drop(successor);
-        clear_for_test();
     }
 
     #[cfg(windows)]
     #[test]
     fn canonical_windows_spelling_runs_the_retained_owner_hooks() {
         let _tests = lock_tests();
-        clear_for_test();
         let journal = tempfile::tempdir().unwrap();
         let canonical = journal.path().canonicalize().unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -427,13 +419,11 @@ mod tests {
         resume_after_whole_journal_restore(&canonical);
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         drop(hooks);
-        clear_for_test();
     }
 
     #[test]
     fn empty_drain_fails_and_a_registered_owner_runs_before_wait() {
         let _tests = lock_tests();
-        clear_for_test();
         let journal = tempfile::tempdir().expect("journal");
         let error = relinquish_admitted_work(journal.path()).unwrap_err();
         assert!(error.contains("no drain"));
@@ -470,13 +460,11 @@ mod tests {
             )
         );
         drop(hooks);
-        clear_for_test();
     }
 
     #[test]
     fn an_older_registration_cannot_remove_its_successor() {
         let _tests = lock_tests();
-        clear_for_test();
         let journal = tempfile::tempdir().expect("journal");
         let first_pauses = Arc::new(AtomicUsize::new(0));
         let second_pauses = Arc::new(AtomicUsize::new(0));
@@ -508,13 +496,11 @@ mod tests {
         let error = relinquish_admitted_work(journal.path()).unwrap_err();
         assert!(error.contains("no drain"));
         release_target_for_restore(journal.path());
-        clear_for_test();
     }
 
     #[test]
     fn the_same_owner_name_on_another_root_cannot_replace_or_satisfy_this_drain() {
         let _tests = lock_tests();
-        clear_for_test();
         let first = tempfile::tempdir().expect("first journal");
         let second = tempfile::tempdir().expect("second journal");
         let unknown = tempfile::tempdir().expect("unregistered journal");
@@ -551,14 +537,12 @@ mod tests {
         assert_eq!(second_calls.load(Ordering::SeqCst), 1);
         release_target_for_restore(second.path());
         drop(second_hook);
-        clear_for_test();
     }
 
     #[cfg(unix)]
     #[test]
     fn a_replaced_root_cannot_borrow_the_previous_owner_drain() {
         let _tests = lock_tests();
-        clear_for_test();
         let directory = tempfile::tempdir().expect("fixture");
         let journal = directory.path().join("journal");
         std::fs::create_dir(&journal).expect("journal");
@@ -579,7 +563,6 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         release_target_for_restore(&journal);
         drop(hooks);
-        clear_for_test();
     }
 
     #[cfg(all(test, feature = "full-tests"))]
