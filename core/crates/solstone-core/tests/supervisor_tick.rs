@@ -141,7 +141,8 @@ impl TempJournal {
         fs::write(
             &path,
             format!(
-                "#!/bin/sh\nexec {} ready-sleep {} 30000\n",
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\nexec {} ready-sleep {} 30000\n",
+                self.journal_stub_argv_path().display(),
                 env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
                 marker.display(),
             ),
@@ -153,6 +154,17 @@ impl TempJournal {
         permissions.set_mode(0o755);
         fs::set_permissions(&path, permissions).expect("journal stub executable");
         marker
+    }
+
+    fn journal_stub_argv_path(&self) -> PathBuf {
+        self.0.join("journal-stub-argv")
+    }
+
+    /// Each run of the journal stub, as its arguments joined by spaces.
+    fn journal_stub_runs(&self) -> Vec<String> {
+        fs::read_to_string(self.journal_stub_argv_path())
+            .map(|text| text.lines().map(str::to_owned).collect())
+            .unwrap_or_default()
     }
 
     fn segment_dir(&self, day: &str, stream: Option<&str>, segment: &str) -> PathBuf {
@@ -935,7 +947,7 @@ async fn observed_message_submits_live_segment_think_over_socket() {
 async fn batch_observed_message_does_not_run_the_journal_stub() {
     let journal = TempJournal::new();
     journal.enable_thinking();
-    let stub_marker = journal.install_journal_stub();
+    let _stub_marker = journal.install_journal_stub();
     // The segment exists so the supervisor logs the message to its events.jsonl. It logs
     // after planning the same message, so the logged line proves the batch decision ran.
     let segment = journal.segment_dir("20260102", None, "120000_60");
@@ -954,7 +966,15 @@ async fn batch_observed_message_does_not_run_the_journal_stub() {
     send_message(&mut write, message.clone()).await;
     wait_for_logged_message(&segment.join("events.jsonl"), &message).await;
 
-    assert!(!stub_marker.exists(), "batch observation submitted a task");
+    // A batch segment is held for the day's catch-up, so the only work it may
+    // lead to is that day's daily-only pass, which the journal's own work
+    // discovery submits once it sees the segment. It never runs the segment.
+    let runs = journal.journal_stub_runs();
+    assert!(
+        runs.iter()
+            .all(|run| run == "journal think --day 20260102 --daily-only"),
+        "batch observation submitted segment work: {runs:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

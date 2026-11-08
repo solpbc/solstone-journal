@@ -2675,6 +2675,39 @@ mod tests {
         }).to_string()).unwrap();
         root
     }
+    #[test]
+    fn a_batch_observed_segment_waits_for_the_daily_catch_up() {
+        let root = fixture("local");
+        let queue = queue(root.path());
+        let mut flush = FlushState::default();
+        let planned = plan_observed_segment(
+            root.path(),
+            &queue,
+            &mut flush,
+            "20260102",
+            "120000_60",
+            None,
+            true,
+        );
+        assert!(!planned, "a batch segment is not planned on its own");
+        assert!(
+            flush.pending.is_empty(),
+            "a batch segment owes no idle flush"
+        );
+        // Observed live, the same segment is planned at once, so the hold above
+        // comes from the batch flag and not from this journal's configuration.
+        plan_observed_segment(
+            root.path(),
+            &queue,
+            &mut flush,
+            "20260102",
+            "120000_60",
+            None,
+            false,
+        );
+        assert!(flush.pending.contains_key(&None));
+    }
+
     fn segment(root: &Path, day: &str, key: &str) {
         let path = root.join("chronicle").join(day).join("notes").join(key);
         std::fs::create_dir_all(&path).unwrap();
