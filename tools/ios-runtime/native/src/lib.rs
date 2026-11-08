@@ -628,6 +628,7 @@ fn run(v: Value) -> Result<Value, String> {
             let current = serving.as_mut().ok_or("serving is stopped")?;
             let host = current.processing.as_ref().ok_or("processing is stopped")?;
             host.enable_audio(models.clone(), model, scratch)?;
+            current.serving.bind_packaged_speech(host)?;
             Ok(current.status())
         }
         #[cfg(feature = "audio")]
