@@ -2473,6 +2473,9 @@ button:focus:not(:focus-visible) {
           transcribe on this mac.
         </p>
       </fieldset>
+      <p class="settings-field-note" id="parakeetEmbeddedNote" style="display:none">
+        Parakeet TDT runs on this device. its speech model comes with the app.
+      </p>
       <div class="form-help" id="transcribeResourceInfo"></div>
 
       <div class="settings-field" id="ownerVoiceField">
@@ -4520,6 +4523,7 @@ let transcribeRuntimeLabel = 'unsupported';
 let parakeetUsesCpp = false;
 let parakeetCppUnavailable = false;
 let parakeetCppBundled = false;
+let parakeetEmbedded = false;
 let storageLoadedOnce = false;
 
 function setLoadState(slotId, html = '') {
@@ -4600,6 +4604,7 @@ async function loadTranscribeBackends() {
     parakeetUsesCpp = Boolean(data.parakeet_uses_cpp);
     parakeetCppUnavailable = Boolean(data.parakeet_cpp_unavailable);
     parakeetCppBundled = Boolean(data.parakeet_cpp_bundled);
+    parakeetEmbedded = Boolean(data.parakeet_embedded);
     transcribeResource = data.resource || null;
     setLoadState('transcriptionLoadState');
     const select = document.getElementById('field-transcribe-backend');
@@ -4648,9 +4653,10 @@ async function loadTranscribeBackends() {
 
 function switchTranscribeBackend(backend, config) {
   // Show/hide backend-specific fieldsets
-  const showParakeetCppSettings = backend === 'parakeet-cpp' || (backend === 'parakeet' && parakeetUsesCpp);
-  document.getElementById('parakeet-settings').style.display = (backend === 'parakeet' && !parakeetUsesCpp) ? 'block' : 'none';
+  const showParakeetCppSettings = !parakeetEmbedded && (backend === 'parakeet-cpp' || (backend === 'parakeet' && parakeetUsesCpp));
+  document.getElementById('parakeet-settings').style.display = (backend === 'parakeet' && !parakeetUsesCpp && !parakeetEmbedded) ? 'block' : 'none';
   document.getElementById('parakeet-cpp-settings').style.display = showParakeetCppSettings ? 'block' : 'none';
+  document.getElementById('parakeetEmbeddedNote').style.display = parakeetEmbedded && ['parakeet', 'parakeet-cpp'].includes(backend) ? '' : 'none';
   document.getElementById('parakeetCppDeviceField').style.display = parakeetCppBundled ? 'none' : '';
   document.getElementById('parakeetCppInstallNote').style.display = (parakeetCppUnavailable || parakeetCppBundled) ? 'none' : '';
   document.getElementById('parakeetCppBundledNote').style.display = parakeetCppBundled ? '' : 'none';

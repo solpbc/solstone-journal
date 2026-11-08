@@ -21,13 +21,16 @@ pub async fn get(journal_root: PathBuf) -> Response {
     );
     let available = SystemMemoryProbe.available_bytes();
     let mut response = json!({
-        "backends": backend_metadata(),
+        "backends": backend_metadata(std::env::consts::OS, std::env::consts::ARCH),
         "api_keys": {"parakeet": true, "parakeet-cpp": true},
         "config": transcribe,
         "runtime_label": runtime_label(std::env::consts::OS, std::env::consts::ARCH),
         "parakeet_uses_cpp": parakeet_uses_cpp(std::env::consts::OS, std::env::consts::ARCH),
         "resource": transcribe_resource(std::env::consts::OS, std::env::consts::ARCH, available),
     });
+    if parakeet_embedded(std::env::consts::OS, std::env::consts::ARCH) {
+        response["parakeet_embedded"] = json!(true);
+    }
     // A mac cannot host the parakeet.cpp server, so the page stops offering that
     // backend there. On Windows the server and model come with the journal and
     // run on the CPU, so there is nothing to install and no device to pick.
@@ -74,7 +77,19 @@ fn transcribe_resource(os: &str, arch: &str, available: Option<u64>) -> serde_js
     })
 }
 
-fn backend_metadata() -> serde_json::Value {
+fn parakeet_embedded(os: &str, arch: &str) -> bool {
+    stt_host_policy(os, arch).runtime_kind == Some(SttRuntimeKind::MobileEmbeddedCpp)
+}
+
+fn backend_metadata(os: &str, arch: &str) -> serde_json::Value {
+    if parakeet_embedded(os, arch) {
+        // Keep the legacy explicit C++ choice visible only when already saved;
+        // both names reach the same embedded recognizer on mobile.
+        return json!([
+            {"name": "parakeet", "label": "Parakeet - local processing", "description": "Parakeet TDT runs on this device with the speech model included in the app.", "env_key": null, "settings": []},
+            {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing", "description": "Parakeet TDT runs on this device with the speech model included in the app.", "env_key": null, "settings": []},
+        ]);
+    }
     json!([
         {"name": "parakeet", "label": "Parakeet - local processing", "description": "On-device speech recognition via Parakeet TDT: a Core ML helper on a mac, the parakeet.cpp server on linux and windows.", "env_key": null, "settings": ["model_version", "device", "timeout_sec"]},
         {"name": "parakeet-cpp", "label": "parakeet.cpp - local processing (linux and windows)", "description": "On-device speech recognition via the parakeet.cpp server (mudler/parakeet.cpp), on linux and windows. `solstone journal install-provider parakeet` downloads it and its speech model on linux; on windows they come with the journal.", "env_key": null, "settings": ["device"]},
@@ -86,6 +101,7 @@ pub fn runtime_label(os: &str, arch: &str) -> &'static str {
         Some(SttRuntimeKind::MacosCoreml) => "macOS CoreML helper",
         Some(SttRuntimeKind::LinuxCpp) => "Linux parakeet.cpp",
         Some(SttRuntimeKind::WindowsCpp) => "Windows parakeet.cpp",
+        Some(SttRuntimeKind::MobileEmbeddedCpp) => "on-device Parakeet TDT",
         None => "unsupported",
     }
 }
@@ -98,7 +114,31 @@ pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parakeet_cpp_bundled_on, parakeet_uses_cpp, runtime_label, transcribe_resource};
+    use super::{
+        backend_metadata, parakeet_cpp_bundled_on, parakeet_embedded, parakeet_uses_cpp,
+        runtime_label, transcribe_resource,
+    };
+
+    #[test]
+    fn mobile_projects_the_bundled_recognizer_without_desktop_controls() {
+        for os in ["android", "ios"] {
+            assert!(parakeet_embedded(os, "aarch64"));
+            assert_eq!(runtime_label(os, "aarch64"), "on-device Parakeet TDT");
+            assert!(!parakeet_uses_cpp(os, "aarch64"));
+            assert_eq!(
+                transcribe_resource(os, "aarch64", None)["needs_setup"],
+                false
+            );
+            for entry in backend_metadata(os, "aarch64").as_array().unwrap() {
+                assert_eq!(entry["settings"], serde_json::json!([]));
+                assert!(matches!(
+                    entry["name"].as_str(),
+                    Some("parakeet" | "parakeet-cpp")
+                ));
+            }
+        }
+        assert!(!parakeet_embedded("android", "x86_64"));
+    }
 
     #[test]
     fn parakeet_cpp_comes_with_the_journal_only_on_windows() {
