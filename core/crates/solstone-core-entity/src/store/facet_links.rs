@@ -339,6 +339,10 @@ impl LinkDirs {
     }
 
     /// Remove a folder and everything in it; an absent folder is removed.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "not an owner removal by itself: link folders go as part of an entity delete (recorded when the held delete settles), a facet-entity move or a doctor fold that keeps the content elsewhere"
+    )]
     pub fn remove_folder(&self, dir: &str) -> Result<(), PathError> {
         let rel = self.folder_rel(dir);
         remove_dir_all(&self.root, &rel)?;

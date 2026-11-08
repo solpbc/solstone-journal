@@ -1132,6 +1132,28 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     mod cooperation;
 
+    /// The deletion record is write-once files under `config/removals`. A
+    /// restore can only add to it while restic neither deletes files the
+    /// snapshot lacks nor skips the record, so a removal made after the backup
+    /// keeps its entry.
+    #[test]
+    fn a_restore_only_adds_to_the_deletion_record() {
+        let args = restore_args("abc123", "/journal", "/journal");
+        assert!(!args.iter().any(|arg| arg.starts_with("--delete")));
+        let excluded: Vec<&String> = args
+            .windows(2)
+            .filter(|pair| pair[0] == "--exclude")
+            .map(|pair| &pair[1])
+            .collect();
+        assert!(
+            excluded
+                .iter()
+                .all(|pattern| !pattern.contains("removals")
+                    && !pattern.trim_matches('/').eq("config")),
+            "{excluded:?}"
+        );
+    }
+
     use super::*;
     use crate::engine::{JournalMaintenance, JournalMaintenanceError, NativeRestoreRecorder};
     use crate::hosted_runtime::{HttpError, HttpRequest, HttpResponse, HttpTransport};

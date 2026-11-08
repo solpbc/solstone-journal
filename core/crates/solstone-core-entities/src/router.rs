@@ -39,6 +39,7 @@ use crate::model::{
     ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, compose_connections_horizon_note,
     refusal, refusal_with_status,
 };
+use solstone_core_removals::{Action, Page, Removal, Surface, Unit};
 use solstone_core_serving::held_delete::{
     DeleteState, Record, Registry, Settled, valid_pending_id,
 };
@@ -2668,7 +2669,7 @@ enum Held {
 
 /// Write the delete down before answering: a delete the page reports as under
 /// way must survive the journal stopping inside its window.
-fn hold_delete(state: &RouterState, entity_id: &str) -> Held {
+fn hold_delete(state: &RouterState, entity_id: &str, surface: Surface) -> Held {
     let root = &state.journal_root;
     // An entity merge that stopped partway is settled first, as the delete
     // itself does: it may restore this entity or its principal mark.
@@ -2739,7 +2740,7 @@ fn hold_delete(state: &RouterState, entity_id: &str) -> Held {
     let Some(pending_id) = random_pending_id() else {
         return Held::NotSaved("unable to create a pending delete id".to_owned());
     };
-    let record = Record::pending(pending_id, target, state.delete_window);
+    let record = Record::pending(pending_id, target, state.delete_window).with_surface(surface);
     if let Err(error) = DELETES.write(root, &record) {
         return Held::NotSaved(error);
     }
@@ -2757,14 +2758,22 @@ async fn deferred_delete_journal_entity_route(
     Extension(b): Extension<AccessBasis>,
     State(state): State<Arc<RouterState>>,
     RoutePath(entity_id): RoutePath<String>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
     if let Some(response) = admitted(&b) {
         return response;
     }
+    let surface = Surface::of_request(
+        Page::Entities,
+        headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    );
     let held_state = Arc::clone(&state);
-    let held =
-        solstone_core_serving::seam::run_blocking(move || hold_delete(&held_state, &entity_id))
-            .await;
+    let held = solstone_core_serving::seam::run_blocking(move || {
+        hold_delete(&held_state, &entity_id, surface)
+    })
+    .await;
     match held {
         Ok(Held::Accepted(record, joined)) => {
             // A joined request is shown what is left of the first one's window.
@@ -4764,6 +4773,13 @@ async fn delete_detected_route(
     if let Some(r) = admitted(&b) {
         return r;
     }
+    let surface = Surface::of_request(
+        Page::Entities,
+        request
+            .headers()
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    );
     let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
         Ok(bytes) if !bytes.is_empty() => bytes,
         _ => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
@@ -4794,6 +4810,7 @@ async fn delete_detected_route(
         }
     };
     let name = name.to_owned();
+    let journal_root = root.as_path().to_path_buf();
     match run_facet_entity_write(move || {
         let mut days_modified = Vec::new();
         for day in days {
@@ -4811,6 +4828,10 @@ async fn delete_detected_route(
     .await
     {
         Ok(Ok(days_modified)) => {
+            if !days_modified.is_empty() {
+                Removal::begin(&journal_root, Action::DetectedEntitiesDelete, surface)
+                    .record(Unit::DetectedEntities);
+            }
             Json(json!({"success":true,"days_modified":days_modified})).into_response()
         }
         Ok(Err(solstone_core_facets::FacetEntityWriteError::TrustLock(

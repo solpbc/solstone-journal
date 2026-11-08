@@ -105,8 +105,8 @@ pub use publish::{
     write_publication_record,
 };
 pub use staging::{
-    SourceLocation, StageOutcome, StageRequest, classify_source_location, relocate_import,
-    remove_import_records, stage_source,
+    SourceLocation, StageOutcome, StageRequest, classify_source_location,
+    discard_abandoned_import_records, relocate_import, remove_import_records, stage_source,
 };
 pub use sync_state::{
     AccessState, BackendName, FolderIdentityError, PublicConnection, RefreshPermit, RefreshRefusal,

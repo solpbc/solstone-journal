@@ -69,9 +69,27 @@ async fn bootstrap_call(root: Arc<JournalRoot>, request: Request, imports: bool)
 }
 
 pub async fn wipe(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    // No page calls this route; the command line does.
+    let surface = solstone_core_removals::Surface::of_request(
+        solstone_core_removals::Page::Speakers,
+        request
+            .headers()
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    );
     let body = json_body(request).await.unwrap_or_else(|_| json!({}));
-    let dry_run = !body.get("commit").and_then(Value::as_bool).unwrap_or(false);
-    match solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(&root.0, dry_run) {
+    let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let removal = commit.then(|| {
+        solstone_core_removals::Removal::begin(
+            &root.0,
+            solstone_core_removals::Action::SpeakersWipe,
+            surface,
+        )
+    });
+    match solstone_core_speaker_resolve::artifact_wipe::wipe_speaker_artifacts(
+        &root.0,
+        removal.as_ref(),
+    ) {
         Ok(report) => {
             Json(serde_json::to_value(report).expect("wipe report serializes")).into_response()
         }

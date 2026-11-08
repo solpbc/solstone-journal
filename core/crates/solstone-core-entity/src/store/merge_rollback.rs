@@ -234,6 +234,10 @@ pub fn recover_interrupted_entity_merge(journal: &Path) -> Result<(), String> {
 /// entity-trust is held.
 /// Returns a committed operation so a retry can return its existing result.
 /// No source restoration occurs after the durable source-commit record.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: merge recovery removes its own before-images and partial copies"
+)]
 pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
     let root = recovery_root(journal)?;
     if !path_lexists(&root).map_err(SnapshotError::Path)? {
@@ -477,6 +481,10 @@ fn write_record(journal: &Path, name: &str, value: &Value) -> Result<(), Snapsho
     Ok(())
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: merge recovery removes its own before-images and partial copies"
+)]
 fn finish(journal: &Path) -> Result<(), SnapshotError> {
     // Keep the terminal marker until all before-images have been removed. An
     // interrupted cleanup must never turn a committed operation into rollback.

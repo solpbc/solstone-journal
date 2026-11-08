@@ -115,7 +115,17 @@ fn a_remembered_facet_that_is_muted_asks_again() {
 fn a_remembered_facet_that_is_deleted_asks_again() {
     let journal = journal_with(&["health", "running", "work"]);
     remember(journal.path(), facet("running"));
-    assert!(delete_facet(journal.path(), "running").unwrap());
+    assert!(
+        delete_facet(
+            &solstone_core_removals::Removal::begin(
+                journal.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "running"
+        )
+        .unwrap()
+    );
     assert_eq!(
         offer(journal.path()),
         BodyFacetOffer::AskExisting("health".to_owned())
@@ -124,7 +134,17 @@ fn a_remembered_facet_that_is_deleted_asks_again() {
 
     let journal = journal_with(&["running", "work"]);
     remember(journal.path(), facet("running"));
-    assert!(delete_facet(journal.path(), "running").unwrap());
+    assert!(
+        delete_facet(
+            &solstone_core_removals::Removal::begin(
+                journal.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli
+            ),
+            "running"
+        )
+        .unwrap()
+    );
     assert_eq!(offer(journal.path()), BodyFacetOffer::AskMakeBody);
 }
 

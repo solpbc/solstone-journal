@@ -17,6 +17,7 @@ test-hooks = []
 workspace = true
 
 [dependencies]
+solstone-core-removals.workspace = true
 chrono.workspace = true
 getrandom.workspace = true
 serde.workspace = true

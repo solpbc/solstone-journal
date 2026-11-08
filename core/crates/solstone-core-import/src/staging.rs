@@ -3,6 +3,7 @@
 
 //! Non-destructive import staging.
 
+use solstone_core_removals::RemovalIo;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io;
@@ -220,7 +221,32 @@ pub fn relocate_import(
 /// The caller has already removed what the import brought into the journal; this
 /// takes away its listing, so the import page no longer shows it and the same
 /// download can be imported again. A symlinked or dot-named directory is refused.
-pub fn remove_import_records(journal_root: &Path, import_id: &str) -> Result<bool, ImportError> {
+/// It removes through the owner's removal operation, which records it.
+pub fn remove_import_records(io: &RemovalIo<'_>, import_id: &str) -> Result<bool, ImportError> {
+    remove_records_with(io.journal_root(), import_id, |rel| io.remove_tree(rel))
+}
+
+/// Remove the records of an upload the owner never started importing, once it
+/// has been abandoned. Nothing from it was kept in the journal, so this is not
+/// an owner removal and leaves no deletion record.
+pub fn discard_abandoned_import_records(
+    journal_root: &Path,
+    import_id: &str,
+) -> Result<bool, ImportError> {
+    remove_records_with(journal_root, import_id, |rel| {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "outside the deletion route: an abandoned upload that was never imported; nothing was kept"
+        )]
+        solstone_core_journal_io::remove_dir_all(journal_root, rel)
+    })
+}
+
+fn remove_records_with(
+    journal_root: &Path,
+    import_id: &str,
+    remove: impl FnOnce(&str) -> Result<(), solstone_core_journal_io::PathError>,
+) -> Result<bool, ImportError> {
     let import_dir = import_directory(journal_root, import_id)?;
     if import_id.starts_with('.') {
         return Err(ImportError::InvalidImportId {
@@ -246,11 +272,10 @@ pub fn remove_import_records(journal_root: &Path, import_id: &str) -> Result<boo
             });
         }
     }
-    solstone_core_journal_io::remove_dir_all(journal_root, &format!("imports/{import_id}"))
-        .map_err(|error| ImportError::RemovalFailed {
-            path: import_dir,
-            message: error.to_string(),
-        })?;
+    remove(&format!("imports/{import_id}")).map_err(|error| ImportError::RemovalFailed {
+        path: import_dir,
+        message: error.to_string(),
+    })?;
     Ok(true)
 }
 

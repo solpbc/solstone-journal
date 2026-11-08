@@ -159,6 +159,10 @@ pub fn move_facet_entity(
     Ok(result(entity_dir, occupied))
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "not a removal: a facet-entity move keeps the content in the target facet"
+)]
 fn remove_folder(dirs: &LinkDirs, dir: &str) -> Result<(), FacetEntityWriteError> {
     solstone_core_journal_io::remove_dir_all(dirs.root(), &dirs.folder_rel(dir))
         .map_err(|error| FacetEntityWriteError::FacetStore(error.into()))

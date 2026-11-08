@@ -17,4 +17,7 @@ disallowed-methods = [
   { path = "libc::unlink", reason = "floor; forbid(unsafe_code) already makes this unwritable", allow-invalid = true },
   { path = "libc::rename", reason = "floor; forbid(unsafe_code) already makes this unwritable", allow-invalid = true },
   { path = "libc::rmdir", reason = "floor; forbid(unsafe_code) already makes this unwritable", allow-invalid = true },
+  { path = "solstone_core_journal_io::entry::remove_file", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+  { path = "solstone_core_journal_io::removal::remove_dir_all", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+  { path = "solstone_core_journal_io::removal::remove_contained_tree", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
 ]

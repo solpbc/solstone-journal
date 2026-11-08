@@ -51,6 +51,7 @@ solstone-core-talent-runtime.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
+solstone-core-removals.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 solstone-core-cortex.workspace = true
 solstone-core-journal-config-write.workspace = true

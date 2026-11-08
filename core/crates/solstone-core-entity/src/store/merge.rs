@@ -456,6 +456,10 @@ pub(crate) fn commit_entity_merge_with_injector(
 
 /// Remove discovery clusters derived before an entity merge. Best effort: the
 /// cache is rebuilt on its own schedule and a missing file is normal.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: a derived discovery cache, rebuilt on its own schedule"
+)]
 pub(super) fn remove_discovery_cache(journal: &Path) {
     let _ = solstone_core_journal_io::remove_file(journal, "awareness/discovery_clusters.json");
 }

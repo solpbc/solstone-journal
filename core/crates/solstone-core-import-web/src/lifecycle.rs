@@ -135,7 +135,7 @@ pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
             if solstone_core_import::project_import_result(root, &id).status
                 == solstone_core_import::ProjectionStatus::Pending
             {
-                let _ = solstone_core_import::remove_import_records(root, &id);
+                let _ = solstone_core_import::discard_abandoned_import_records(root, &id);
             } else {
                 discard_terminal_strava_download(root, &id);
             }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_removals::{Action, Page, Removal, Surface};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -341,6 +342,7 @@ pub async fn update(
 pub async fn delete(
     journal_root: PathBuf,
     Path(facet_name): Path<String>,
+    headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Response {
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
@@ -373,7 +375,16 @@ pub async fn delete(
     {
         return settings_operation_failed();
     }
-    match solstone_core_facets::delete_facet(&journal_root, &facet_name) {
+    // No page calls this route; the command line does, so the surface is read
+    // from the request rather than assumed.
+    let surface = Surface::of_request(
+        Page::Settings,
+        headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    );
+    let removal = Removal::begin(&journal_root, Action::FacetDelete, surface);
+    match solstone_core_facets::delete_facet(&removal, &facet_name) {
         Ok(true) => json_response(json!({"success":true,"facet":facet_name})),
         Ok(false) => facet_not_found(),
         Err(solstone_core_facets::FacetWriteError::LastEnabledFacet { .. }) => last_enabled_facet(),

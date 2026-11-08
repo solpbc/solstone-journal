@@ -315,7 +315,15 @@ fn execute(
                 original.version,
             ));
         }
-        report = Some(project(outcome.as_ref().expect("actual returned outcome")));
+        let returned = outcome.as_ref().expect("actual returned outcome");
+        solstone_core_offload::teardown::record_backup_off(
+            &original.journal,
+            returned,
+            solstone_core_removals::Surface::Web {
+                page: solstone_core_removals::Page::Backup,
+            },
+        );
+        report = Some(project(returned));
     }));
     let ticket = input.ticket.clone();
     if result.is_ok() && !invoked {

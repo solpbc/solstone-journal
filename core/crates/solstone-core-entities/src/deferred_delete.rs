@@ -15,6 +15,7 @@
 //! id resolved to and the identity's `created_at`, which nothing but creation
 //! writes, and a delete runs only while both still match.
 
+use solstone_core_removals::{Action, Page, Surface, Unit};
 use std::path::Path;
 use std::time::Duration;
 
@@ -209,6 +210,17 @@ pub(crate) fn commit(journal_root: &Path, pending_id: &str, resumed: bool) {
                     return None;
                 }
             };
+            if state == DeleteState::Deleted {
+                record
+                    .removal(
+                        journal_root,
+                        Action::EntityDelete,
+                        Surface::Web {
+                            page: Page::Entities,
+                        },
+                    )
+                    .record(Unit::Entity);
+            }
             let marker = if claim.resumed {
                 json!({"resumed":true})
             } else {

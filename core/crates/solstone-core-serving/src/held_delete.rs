@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
     AtomicWriteOptions, FileLock, LockError, LockOptions, atomic_replace, hold_lock,
 };
+use solstone_core_removals::{Action, OperationId, Removal, Surface};
 
 /// How long a finished record is kept for status and cancel to read.
 const FINISHED_RETENTION_DAYS: i64 = 7;
@@ -94,6 +95,9 @@ pub struct Record<T> {
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
+    /// Where the owner asked for this delete, for the deletion record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<Surface>,
 }
 
 impl<T> Record<T> {
@@ -112,7 +116,31 @@ impl<T> Record<T> {
             removal_started_at: None,
             reason: None,
             finished_at: None,
+            surface: None,
         }
+    }
+
+    /// The same record, saying where the owner asked for it.
+    pub fn with_surface(mut self, surface: Surface) -> Self {
+        self.surface = Some(surface);
+        self
+    }
+
+    /// The removal operation this delete is. Every run of the same record,
+    /// resumed ones included, is the same operation, so its unit is recorded
+    /// once. A record without a surface (written before the deletion record
+    /// existed) takes `fallback`.
+    pub fn removal(&self, journal_root: &Path, action: Action, fallback: Surface) -> Removal {
+        // An unreadable time still yields one id for every run of this record.
+        let requested = DateTime::parse_from_rfc3339(&self.requested_at)
+            .map(|at| at.with_timezone(&Utc))
+            .unwrap_or(DateTime::UNIX_EPOCH);
+        Removal::with_id(
+            journal_root,
+            OperationId::durable(requested, &self.pending_id),
+            action,
+            self.surface.unwrap_or(fallback),
+        )
     }
 
     pub fn finish(&mut self, state: DeleteState, reason: Option<String>) {

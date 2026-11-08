@@ -234,6 +234,10 @@ pub fn hold_apple_ingest_lock(journal: &Path) -> Result<FileLock, BodyIngestErro
     .map_err(|_| BodyIngestError::new(BodyIngestErrorKind::Publication, "apple_lock"))
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: stale Apple Health snapshot staging, never kept owner data"
+)]
 fn clean_stale_snapshots(journal: &Path) -> Result<(), BodyIngestError> {
     let mut scanned = 0_usize;
     let mut removed = 0_usize;
@@ -1291,6 +1295,10 @@ impl AppleSnapshot {
 }
 
 impl Drop for AppleSnapshot {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "system internal: drops this run's own Apple Health snapshot staging"
+    )]
     fn drop(&mut self) {
         let _ = remove_dir_all(&self.journal, &self.relative);
     }

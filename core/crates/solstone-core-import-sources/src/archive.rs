@@ -4528,7 +4528,17 @@ mod tests {
         fs::create_dir(&target).unwrap();
         solstone_core_facets::create_facet(&target, "kept", "Kept", "", "", "", None).unwrap();
         solstone_core_facets::create_facet(&target, "gone", "Gone", "", "", "", None).unwrap();
-        assert!(solstone_core_facets::delete_facet(&target, "gone").unwrap());
+        assert!(
+            solstone_core_facets::delete_facet(
+                &solstone_core_removals::Removal::begin(
+                    &target,
+                    solstone_core_removals::Action::FacetDelete,
+                    solstone_core_removals::Surface::Cli
+                ),
+                "gone"
+            )
+            .unwrap()
+        );
         let archive = write_zip(
             &tree.path,
             &[

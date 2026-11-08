@@ -867,6 +867,10 @@ fn publish_database(journal_root: &Path, state: &BodyDedupeState) -> Result<(), 
     })
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: the rebuild's own temporary database"
+)]
 fn publish_database_with_installer(
     journal_root: &Path,
     state: &BodyDedupeState,
@@ -1104,6 +1108,10 @@ fn next_frame(
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: the rebuild replacing its own derived sidecar"
+)]
 fn remove_if_present(journal_root: &Path, rel: &str) -> Result<(), BodyRebuildError> {
     match remove_file(journal_root, rel)
         .map_err(|_| error(BodyRebuildErrorKind::Publication, "remove_sidecar"))?

@@ -404,6 +404,10 @@ pub struct AgentLayoutMigrationReport {
 /// Preflight is total: when any non-empty direct-child segment lacks a usable
 /// marker the run reports that count and changes nothing at all, so a partially
 /// tagged journal can never be half-restructured.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "not a removal: segment relocation keeps the content at its new key; no product caller"
+)]
 pub fn restructure_segments_by_stream(
     journal: &Path,
     dry_run: bool,
@@ -706,6 +710,10 @@ fn split_agent_extension(name: &str) -> Option<(&str, &str)> {
 }
 
 /// Move one file, retiring an identical source and never overwriting.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "not a removal: a segment move drops the source only when the destination is identical"
+)]
 fn move_file(
     journal: &Path,
     source: &Path,

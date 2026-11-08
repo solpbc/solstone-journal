@@ -11,6 +11,7 @@
 //! never deleted. A deletion that cannot finish yet stays owed, and the daily cleanup
 //! routine finishes it for recordings dated within [`owner_voice_owed_days`].
 
+use solstone_core_removals::{Action, Policy, Removal, Surface};
 use std::fs;
 use std::io;
 use std::path::{Component, Path};
@@ -353,6 +354,17 @@ fn release_proven(
         std::slice::from_ref(proven),
         RawReleaseClass::OwnerVoice,
         at,
+    );
+    // The owner's voice-only setting is what removes it.
+    crate::record::record_released_originals(
+        &Removal::begin(
+            journal,
+            Action::VoiceOnlyRelease,
+            Surface::Policy {
+                policy: Policy::VoiceOnly,
+            },
+        ),
+        &outcome,
     );
     // A confirmed removal must also leave the original absent.
     // An unknown answer counts as still present: the deletion stays owed.

@@ -161,6 +161,7 @@ host = [
 ]
 
 [dependencies]
+solstone-core-removals.workspace = true
 solstone-core-about.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true

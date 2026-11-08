@@ -457,6 +457,10 @@ fn write_verified(path: &Path, contents: &str) -> Result<(), PdfExtractionMigrat
     Ok(())
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: a one-time document migration that rewrites content in place; no product caller"
+)]
 fn remove_legacy_output(journal: &Path, rel: &str) -> Result<(), PdfExtractionMigrationError> {
     remove_file(journal, rel).map(|_| ()).map_err(|error| {
         PdfExtractionMigrationError::new(format!("could not remove {rel}: {error}"))

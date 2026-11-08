@@ -2,4 +2,7 @@
 disallowed-methods = [
     { path = "std::process::Command::new", reason = "the home surface never starts a process" },
     { path = "tokio::process::Command::new", reason = "the home surface never starts a process", allow-invalid = true },
+  { path = "solstone_core_journal_io::entry::remove_file", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+  { path = "solstone_core_journal_io::removal::remove_dir_all", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+  { path = "solstone_core_journal_io::removal::remove_contained_tree", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
 ]

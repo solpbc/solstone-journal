@@ -28,6 +28,32 @@ pub async fn get(journal_root: PathBuf) -> Response {
     }
 }
 
+/// How many entries of the deletion record the history view reads.
+const REMOVAL_HISTORY_LIMIT: usize = 200;
+
+/// The newest entries of the journal's deletion record, newest first, and how
+/// many it holds. Read only: nothing here changes the record.
+pub async fn removals(journal_root: PathBuf) -> Response {
+    match tokio::task::spawn_blocking(move || {
+        solstone_core_removals::history(&journal_root, REMOVAL_HISTORY_LIMIT)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    {
+        Ok(Ok(history)) => json_response(json!(history)),
+        Ok(Err(detail)) => read_failed(
+            "removal_history_unreadable",
+            "the removal history couldn't be read.",
+            detail,
+        ),
+        Err(error) => read_failed(
+            "removal_history_unreadable",
+            "the removal history couldn't be read.",
+            error.to_string(),
+        ),
+    }
+}
+
 pub async fn get_config(journal_root: PathBuf) -> Response {
     match read_config(&journal_root) {
         Ok(config) => {

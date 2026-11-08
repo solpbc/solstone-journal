@@ -1,0 +1,16 @@
+# The journal's contained removal primitives are reachable only through the
+# deletion route, `solstone-core-removals`. Owner experience data (recordings,
+# transcripts, entities, facets, voices, imports, body data, memories,
+# activities, backup copies) is removed with `Removal::begin(..).commit(unit,
+# |io| io.remove_tree(..))`, which records the removal in the journal's deletion
+# record. System internals (the journal replacing its own output, scratch and
+# staging files, log pruning) are outside the route: mark the call with
+# `#[expect(clippy::disallowed_methods, reason = "system internal: <what>")]`.
+#
+# ⚠ Crates with their own clippy.toml do not read this file; each repeats these
+# entries.
+disallowed-methods = [
+  { path = "solstone_core_journal_io::entry::remove_file", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+  { path = "solstone_core_journal_io::removal::remove_dir_all", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+  { path = "solstone_core_journal_io::removal::remove_contained_tree", reason = "owner removals go through solstone-core-removals (Removal::commit), which records them; a system-internal removal says so with #[expect(clippy::disallowed_methods, reason = \"system internal: ...\")]" },
+]

@@ -1374,7 +1374,15 @@ fn paused_work_reclassifies_missing_destination_then_folds_late_finish() {
         "",
         None,
     );
-    solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
+    solstone_core_facets::delete_facet(
+        &solstone_core_removals::Removal::begin(
+            &context.journal,
+            solstone_core_removals::Action::FacetDelete,
+            solstone_core_removals::Surface::Cli,
+        ),
+        "work",
+    )
+    .unwrap();
     assert_eq!(
         due_activity_retries(&context.journal, next.now_ms)
             .unwrap()

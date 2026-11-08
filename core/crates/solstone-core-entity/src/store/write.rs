@@ -1453,6 +1453,10 @@ fn publish_staged_event(
     discard_staged_event(journal_root, entity_dir, version_id)
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: discards a staged history event once it is published"
+)]
 fn discard_staged_event(
     journal_root: &Path,
     entity_dir: &str,

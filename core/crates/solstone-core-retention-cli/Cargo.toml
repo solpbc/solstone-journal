@@ -14,6 +14,7 @@ name = "solstone-retention"
 path = "src/main.rs"
 
 [dependencies]
+solstone-core-removals.workspace = true
 chrono = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

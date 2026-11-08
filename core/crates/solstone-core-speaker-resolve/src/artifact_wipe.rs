@@ -8,9 +8,8 @@ use std::io;
 use std::path::Path;
 
 use serde::Serialize;
-use solstone_core_journal_io::{
-    LockError, LockOptions, Removed, hold_lock, path_lexists, remove_file,
-};
+use solstone_core_journal_io::{LockError, LockOptions, Removed, hold_lock, path_lexists};
+use solstone_core_removals::{Removal, RemovalIo, Unit};
 use thiserror::Error;
 
 /// One wipe category's deterministic receipt.
@@ -51,10 +50,30 @@ pub enum ArtifactWipeError {
 /// The owner's own answers about who spoke a line
 /// (`talents/owner_line_labels.json`) are not speaker artifacts: they are
 /// owner-authored, can't be rebuilt, and are left in place.
+///
+/// `commit` is the owner's removal operation; without one this only reports.
+/// A committed wipe that removed anything is recorded in the deletion record.
 pub fn wipe_speaker_artifacts(
     journal_root: &Path,
-    dry_run: bool,
+    commit: Option<&Removal>,
 ) -> Result<WipeReport, ArtifactWipeError> {
+    match commit {
+        None => wipe_with(journal_root, &Mode::DryRun),
+        Some(removal) => removal.commit_when(Unit::Speakers, |io| {
+            let report = wipe_with(journal_root, &Mode::Commit(io))?;
+            let removed = report.total_files > 0;
+            Ok((report, removed))
+        }),
+    }
+}
+
+enum Mode<'a> {
+    DryRun,
+    Commit(&'a RemovalIo<'a>),
+}
+
+fn wipe_with(journal_root: &Path, mode: &Mode<'_>) -> Result<WipeReport, ArtifactWipeError> {
+    let dry_run = matches!(mode, Mode::DryRun);
     let _trust = (!dry_run)
         .then(|| solstone_core_entity::hold_entity_trust_lock(journal_root))
         .transpose()
@@ -78,25 +97,20 @@ pub fn wipe_speaker_artifacts(
             {
                 continue;
             }
-            record_path(
-                journal_root,
-                &entry,
-                dry_run,
-                &mut report.segment_embeddings,
-            )?;
+            record_path(journal_root, &entry, mode, &mut report.segment_embeddings)?;
         }
         for directory in ["agents", "talents"] {
             let root = segment.join(directory);
             record_path(
                 journal_root,
                 &root.join("speaker_labels.json"),
-                dry_run,
+                mode,
                 &mut report.speaker_labels,
             )?;
             record_path(
                 journal_root,
                 &root.join("speaker_corrections.json"),
-                dry_run,
+                mode,
                 &mut report.speaker_corrections,
             )?;
         }
@@ -105,20 +119,20 @@ pub fn wipe_speaker_artifacts(
         record_entry(
             journal_root,
             &format!("entities/{entity_id}/voiceprints.npz"),
-            dry_run,
+            mode,
             &mut report.entity_voiceprints,
         )?;
         record_entry(
             journal_root,
             &format!("entities/{entity_id}/owner_centroid.npz"),
-            dry_run,
+            mode,
             &mut report.owner_centroids,
         )?;
     }
     record_entry(
         journal_root,
         "awareness/owner_candidate.npz",
-        dry_run,
+        mode,
         &mut report.owner_candidate,
     )?;
     report.total_files = report.segment_embeddings.count
@@ -208,20 +222,20 @@ fn directory_children(
 fn record_path(
     journal_root: &Path,
     path: &Path,
-    dry_run: bool,
+    mode: &Mode<'_>,
     category: &mut WipeCategory,
 ) -> Result<(), ArtifactWipeError> {
     let relative = path
         .strip_prefix(journal_root)
         .expect("wipe paths are constructed under the journal root")
         .to_string_lossy();
-    record_entry(journal_root, &relative, dry_run, category)
+    record_entry(journal_root, &relative, mode, category)
 }
 
 fn record_entry(
     journal_root: &Path,
     relative: &str,
-    dry_run: bool,
+    mode: &Mode<'_>,
     category: &mut WipeCategory,
 ) -> Result<(), ArtifactWipeError> {
     let path = journal_root.join(relative);
@@ -237,11 +251,11 @@ fn record_entry(
     category.count += 1;
     category.bytes += bytes;
     category.paths.push(relative.to_owned());
-    if dry_run {
+    let Mode::Commit(io) = mode else {
         return Ok(());
-    }
+    };
     let _lock = hold_lock(&path, LockOptions::default())?;
-    if matches!(remove_file(journal_root, relative)?, Removed::AlreadyAbsent) {
+    if matches!(io.remove_file(relative)?, Removed::AlreadyAbsent) {
         category.count -= 1;
         category.bytes -= bytes;
         category.paths.pop();
@@ -289,7 +303,8 @@ mod tests {
             write(&root, path);
         }
 
-        let dry_run = wipe_speaker_artifacts(&root, true).expect("dry-run wipe");
+        let dry_run = wipe_speaker_artifacts(&root, None).expect("dry-run wipe");
+        assert_eq!(solstone_core_removals::history(&root, 10).unwrap().total, 0);
         assert!(dry_run.dry_run);
         assert_eq!(dry_run.segment_embeddings.count, 1);
         assert_eq!(dry_run.speaker_labels.count, 2);
@@ -300,8 +315,22 @@ mod tests {
         assert_eq!(dry_run.total_files, paths.len());
         assert!(paths.iter().all(|path| root.join(path).is_file()));
 
-        let committed = wipe_speaker_artifacts(&root, false).expect("commit wipe");
+        let committed = wipe_speaker_artifacts(
+            &root,
+            Some(&solstone_core_removals::Removal::begin(
+                &root,
+                solstone_core_removals::Action::SpeakersWipe,
+                solstone_core_removals::Surface::Cli,
+            )),
+        )
+        .expect("commit wipe");
         assert!(!committed.dry_run);
+        let history = solstone_core_removals::history(&root, 10).unwrap();
+        assert_eq!(history.total, 1, "one wipe, one entry");
+        assert_eq!(
+            history.entries[0].unit,
+            solstone_core_removals::Unit::Speakers
+        );
         assert_eq!(committed.segment_embeddings.count, 1);
         assert_eq!(committed.speaker_labels.count, 2);
         assert_eq!(committed.speaker_corrections.count, 2);
@@ -324,7 +353,15 @@ mod tests {
             "chronicle/20260809/main/120000_1/talents/speaker_labels.json",
         );
 
-        let committed = wipe_speaker_artifacts(&root, false).expect("commit wipe");
+        let committed = wipe_speaker_artifacts(
+            &root,
+            Some(&solstone_core_removals::Removal::begin(
+                &root,
+                solstone_core_removals::Action::SpeakersWipe,
+                solstone_core_removals::Surface::Cli,
+            )),
+        )
+        .expect("commit wipe");
         assert_eq!(committed.total_files, 1);
         assert_eq!(fs::read(root.join(answers)).unwrap(), b"fixture");
 

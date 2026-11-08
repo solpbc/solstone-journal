@@ -1713,6 +1713,10 @@ fn refusal_text(error: &str) -> String {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "system internal: the body import run's own staging pages"
+)]
 fn run_phases(
     run: &Run<'_, '_>,
     previous: Read,

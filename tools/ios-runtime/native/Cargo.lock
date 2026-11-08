@@ -5180,6 +5180,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-offload",
+ "solstone-core-removals",
  "solstone-core-retention",
  "solstone-core-sol-link",
  "solstone-core-system",
@@ -5433,6 +5434,7 @@ dependencies = [
  "solstone-core-profile-web",
  "solstone-core-push",
  "solstone-core-records-web",
+ "solstone-core-removals",
  "solstone-core-segment",
  "solstone-core-settings-web",
  "solstone-core-sol-link",
@@ -5633,6 +5635,7 @@ dependencies = [
  "solstone-core-indexer",
  "solstone-core-indexer-query",
  "solstone-core-journal-config",
+ "solstone-core-removals",
  "solstone-core-serving",
  "tokio",
 ]
@@ -5685,6 +5688,7 @@ dependencies = [
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-removals",
  "solstone-core-segment",
 ]
 
@@ -5871,6 +5875,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-removals",
  "solstone-core-segment",
  "tempfile",
  "tokio",
@@ -6140,6 +6145,7 @@ dependencies = [
  "solstone-core-journal-archive",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-removals",
  "solstone-core-service-unit",
  "solstone-core-sol-client",
  "solstone-core-system",
@@ -6442,6 +6448,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-removals",
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-system",
@@ -6554,6 +6561,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "solstone-core-removals"
+version = "2.0.72"
+dependencies = [
+ "chrono",
+ "getrandom 0.3.4",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "solstone-core-journal-io",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "solstone-core-reprocess-cli"
 version = "2.0.72"
 dependencies = [
@@ -6585,6 +6606,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-removals",
  "solstone-core-segment",
 ]
 
@@ -6652,6 +6674,7 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-journal-io",
+ "solstone-core-removals",
  "tokio",
 ]
 
@@ -6675,6 +6698,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-removals",
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-sense",
@@ -6814,6 +6838,7 @@ dependencies = [
  "solstone-core-local",
  "solstone-core-npy",
  "solstone-core-processing-record",
+ "solstone-core-removals",
  "solstone-core-segment",
  "solstone-core-speaker-id",
  "solstone-core-system",
@@ -7221,6 +7246,7 @@ dependencies = [
  "solstone-core-npy",
  "solstone-core-possible-names",
  "solstone-core-processing-record",
+ "solstone-core-removals",
  "solstone-core-retention",
  "solstone-core-segment",
  "solstone-core-serving",
