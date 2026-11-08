@@ -2152,7 +2152,11 @@ pass('the sun arc lives outside the setup frame, survives repaints and is torn d
 // The window serves the engine and the mark at the path the engine asks for, and loads the engine first.
 {
   const engine = readFileSync(join(here, '../../solstone-core-convey-shell/assets/static/sunarc.js'), 'utf8');
-  if (!engine.includes("'/static/sol-status/mark.svg'")) throw new Error('sunarc.js no longer asks for /static/sol-status/mark.svg; move the asset() row with it');
+  // Served at /sunarc.js, not under a hashed dashboard path, the engine takes
+  // its marks from its stable base, so it asks for /static/sol-status/mark.svg.
+  if (!engine.includes("return '/static/sol-status/';") || !engine.includes("STATUS_MARKS + 'mark.svg'")) {
+    throw new Error('sunarc.js no longer asks for /static/sol-status/mark.svg outside a hashed path; move the asset() row with it');
+  }
   if (!appRsText.includes('"/static/sol-status/mark.svg"') || !appRsText.includes('assets/static/sol-status/mark.svg")')) {
     throw new Error('app.rs does not serve the sun mark at /static/sol-status/mark.svg');
   }
