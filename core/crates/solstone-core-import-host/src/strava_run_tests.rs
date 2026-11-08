@@ -124,6 +124,18 @@ fn import(
     facet: ImportFacet,
     model: &Model,
 ) -> (CliRun, String) {
+    import_stopping(root, csv, timestamp, facet, model, false)
+}
+
+/// [`import`], stopped just before the import is marked complete when `stop`.
+fn import_stopping(
+    root: &Path,
+    csv: &Path,
+    timestamp: &str,
+    facet: ImportFacet,
+    model: &Model,
+    stop: bool,
+) -> (CliRun, String) {
     let dispatch = RegistryDispatch {
         source: RegistrySource::Strava,
         media: csv.to_path_buf(),
@@ -137,6 +149,7 @@ fn import(
     };
     let hook = StravaRunHook {
         names_model: Some(model),
+        stop_before_finish: stop,
         ..StravaRunHook::default()
     };
     let mut selected = None;
@@ -473,4 +486,100 @@ fn an_import_nobody_chose_for_never_makes_a_facet_and_a_muted_one_is_refused() {
     assert_eq!(run.exit_code, 1, "{}", run.stdout);
     assert!(!fresh.path().join("chronicle").exists());
     assert!(!fresh.path().join("imports/20261010_100000").exists());
+}
+
+#[test]
+fn a_run_stopped_before_it_completes_leaves_no_workout_unlisted_and_no_tile_unpublished() {
+    let journal = journal(&["body"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "");
+    let (run, _) = import(root, &csv, "20261010_100000", ImportFacet::None, &model);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+
+    // With body, stopped after its tiles took body and before it completed:
+    // its workouts are already listed.
+    let (run, _) = import_stopping(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+        true,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+    for day in ["20261004", "20261005", "20261006"] {
+        assert_eq!(records(root, "body", day).len(), 1, "{day}");
+    }
+
+    // The next import publishes the tiles that took body, though nothing
+    // about them changes now; the one after publishes nothing.
+    let (run, id) = import(
+        root,
+        &csv,
+        "20261010_120000",
+        ImportFacet::Facet("body".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(count(&run, "filed"), 0);
+    assert_eq!(
+        published(root, &id),
+        [
+            "20261004/070000_300",
+            "20261004/070500_300",
+            "20261005/090000_300",
+            "20261006/060000_300"
+        ]
+    );
+    let (run, id) = import(
+        root,
+        &csv,
+        "20261010_130000",
+        ImportFacet::Facet("body".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert!(published(root, &id).is_empty());
+}
+
+#[test]
+fn a_workout_an_earlier_reading_filed_but_never_listed_is_listed_in_that_facet_with_no_facet_chosen()
+ {
+    let journal = journal(&["work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(root, &csv, "20261010_100000", ImportFacet::None, &model);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert!(records(root, "work", "20261004").is_empty());
+
+    // An earlier reading filed the first workout's tiles under work, and
+    // listed nothing: its activity was left open.
+    for key in ["070000_300", "070500_300"] {
+        let dir = tile(root, "20261004", key);
+        fs::create_dir_all(dir.join("talents")).unwrap();
+        fs::write(dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+    }
+
+    let (run, _) = import(root, &csv, "20261010_110000", ImportFacet::None, &model);
+
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
+    // Its words are read under that facet.
+    assert_eq!((count(&run, "names_calls"), model.calls.get()), (1, 1));
 }

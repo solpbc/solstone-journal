@@ -3,7 +3,7 @@
 
 //! Top-level dispatch for source bodies that depend on the import contract.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -1253,14 +1253,24 @@ fn run_strava_internal(
 
     // 12b. The facet, before any record: every live tile of the download's
     // workouts takes the chosen one, and each tile that changed is published
-    // again so search files it there.
+    // again so search files it there. A tile is listed as owing that before
+    // its facet is written, and taken off once this import is complete, so a
+    // run stopped in between leaves it for the next import to publish.
     let is_written = |day: &str, segment: &str| {
         let key = (day.to_owned(), segment.to_owned());
         written_keys.contains(&key) && !skipped_keys.contains(&key)
     };
     let live = crate::strava_filing::live_tiles(journal, &placement, &is_written);
+    let mut list_refiles = |tiles: &[(String, String)]| {
+        solstone_core_import::strava_refile::add_strava_refiles(journal, tiles, &_source_lock)
+    };
     let filing = match run_facet.facet.as_deref() {
-        Some(facet) => match crate::strava_filing::file_strava_workouts(journal, &live, facet) {
+        Some(facet) => match crate::strava_filing::file_strava_workouts(
+            journal,
+            &live,
+            facet,
+            &mut list_refiles,
+        ) {
             Ok(filing) => filing,
             Err(error) => {
                 let _ = finish(ImportTerminalInput::Failed(&publish_slice));
@@ -1271,13 +1281,59 @@ fn run_strava_internal(
         },
         None => crate::strava_filing::Filing::default(),
     };
-    for (day, segment) in &filing.refiled_tiles {
-        if !publish_slice
-            .iter()
-            .any(|created| created.day == *day && created.segment == *segment)
+    // Tiles an earlier run refiled but was stopped before publishing, while
+    // they're still live.
+    let earlier_refiles =
+        match solstone_core_import::strava_refile::read_strava_refiles(journal, &_source_lock) {
+            Ok(listed) => listed,
+            Err(error) => {
+                log::warn!("{name} import {import_id}: refiled tiles unreadable: {error}");
+                BTreeSet::new()
+            }
+        };
+    for (day, segment) in filing.refiled_tiles.iter().chain(&earlier_refiles) {
+        let dir = journal
+            .join("chronicle")
+            .join(day)
+            .join(solstone_core_format::content::strava_body::STRAVA_STREAM)
+            .join(segment);
+        if !dir.join(crate::body_activity::TOMBSTONE).exists()
+            && dir
+                .join(solstone_core_format::content::strava_body::STRAVA_TILE_FILE)
+                .is_file()
+            && !publish_slice
+                .iter()
+                .any(|created| created.day == *day && created.segment == *segment)
         {
             publish_slice.push(strava_tile_created(day, segment));
         }
+    }
+
+    // 12c. Each new workout's activity record, on every day the download's
+    // workouts are on, still under the Strava lock, and before the import is
+    // marked complete, so a run stopped between the two leaves the import
+    // unfinished rather than complete with workouts missing their records.
+    // The record writer only adds what's missing, so the next import of the
+    // download finishes the job. A failure is counted and leaves the import
+    // as it is.
+    let now = chrono::Utc::now();
+    let mut days: Vec<&str> = live
+        .values()
+        .flat_map(|(_, tiles)| tiles.iter().map(|tile| tile.day.as_str()))
+        .collect();
+    days.sort_unstable();
+    days.dedup();
+    let mut records = crate::body_activity::RecordCounts::default();
+    for day in days {
+        let counts = crate::body_activity::write_strava_records_at(journal, day, now);
+        records.written += counts.written;
+        records.refreshed += counts.refreshed;
+        records.no_facet += counts.no_facet;
+        records.sensed += counts.sensed;
+        records.refused.extend(counts.refused);
+    }
+    for (facet, error) in &records.refused {
+        log::warn!("{name} import {import_id}: an activity in {facet} wasn't added: {error}");
     }
 
     // 13. stop_before_finish
@@ -1349,31 +1405,22 @@ fn run_strava_internal(
             "{name} import saved to your journal, but it could not confirm the entries are ready to search; run it again\n"
         ));
     }
-
-    // 16. Each new workout's activity record, on every day the download's
-    // workouts are on, still under the Strava lock. A failure is counted and
-    // leaves the import as it is.
-    let now = chrono::Utc::now();
-    let mut days: Vec<&str> = live
-        .values()
-        .flat_map(|(_, tiles)| tiles.iter().map(|tile| tile.day.as_str()))
-        .collect();
-    days.sort_unstable();
-    days.dedup();
-    let mut records = crate::body_activity::RecordCounts::default();
-    for day in days {
-        let counts = crate::body_activity::write_strava_records_at(journal, day, now);
-        records.written += counts.written;
-        records.refreshed += counts.refreshed;
-        records.no_facet += counts.no_facet;
-        records.sensed += counts.sensed;
-        records.refused.extend(counts.refused);
-    }
-    for (facet, error) in &records.refused {
-        log::warn!("{name} import {import_id}: an activity in {facet} wasn't added: {error}");
+    // Published: the refiled tiles no longer owe it.
+    let published_refiles = filing
+        .refiled_tiles
+        .iter()
+        .cloned()
+        .chain(earlier_refiles)
+        .collect::<BTreeSet<_>>();
+    if let Err(error) = solstone_core_import::strava_refile::remove_strava_refiles(
+        journal,
+        &published_refiles,
+        &_source_lock,
+    ) {
+        log::warn!("{name} import {import_id}: refiled tiles not taken off: {error}");
     }
 
-    // 17. The people and gear in the workouts' own words, once the Strava lock
+    // 16. The people and gear in the workouts' own words, once the Strava lock
     // is released: model calls hold no lock, and each store write takes it.
     drop(_source_lock);
     #[cfg(test)]

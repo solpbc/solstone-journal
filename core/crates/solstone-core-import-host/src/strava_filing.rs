@@ -185,16 +185,22 @@ pub(crate) struct Filing {
 
 /// File every live tile of the download's workouts under `facet` wherever it
 /// has another, except a workout already listed with the owner's activities
-/// and one whose day can't be read.
+/// and one whose day can't be read. `before_write` is given every tile that
+/// is about to change before any is written, so a run stopped part way still
+/// knows which tiles to publish again.
 /// Call it before the record writer, so a new workout's record goes in `facet`.
 pub(crate) fn file_strava_workouts(
     journal: &Path,
     workouts: &LiveWorkouts,
     facet: &str,
+    before_write: &mut dyn FnMut(&[(String, String)]) -> Result<(), String>,
 ) -> Result<Filing, String> {
     let mut filing = Filing::default();
     let mut sensed = Sensed::default();
     let wanted = json!([{ "facet": facet }]);
+    // Per workout to file: whether a tile had another facet, and its tiles
+    // that change.
+    let mut planned = Vec::new();
     for (activity_id, (first, tiles)) in workouts {
         let Some(lowest) = tiles.iter().min_by_key(|tile| tile.index) else {
             continue;
@@ -232,11 +238,10 @@ pub(crate) fn file_strava_workouts(
                 continue;
             }
         }
-        let mut changed = false;
         let mut had_other = false;
+        let mut changing = Vec::new();
         for tile in tiles {
-            let dir = tile_dir(journal, &tile.day, &tile.segment);
-            let path = dir.join("talents/facets.json");
+            let path = tile_dir(journal, &tile.day, &tile.segment).join("talents/facets.json");
             let current = fs::read_to_string(&path)
                 .ok()
                 .and_then(|text| serde_json::from_str::<Value>(&text).ok());
@@ -244,20 +249,33 @@ pub(crate) fn file_strava_workouts(
                 continue;
             }
             had_other |= path.exists();
+            changing.push((tile.day.clone(), tile.segment.clone()));
+        }
+        if !changing.is_empty() {
+            planned.push((had_other, changing));
+        }
+    }
+    let tiles = planned
+        .iter()
+        .flat_map(|(_, changing)| changing.iter().cloned())
+        .collect::<Vec<_>>();
+    if tiles.is_empty() {
+        return Ok(filing);
+    }
+    before_write(&tiles)?;
+    for (had_other, changing) in planned {
+        for (day, segment) in changing {
+            let dir = tile_dir(journal, &day, &segment);
             fs::create_dir_all(dir.join("talents")).map_err(|error| error.to_string())?;
+            let path = dir.join("talents/facets.json");
             atomic_replace(&path, facet_file_text(facet).as_bytes(), PRIVATE)
                 .map_err(|error| error.to_string())?;
             sync_folder(&dir)?;
-            filing
-                .refiled_tiles
-                .push((tile.day.clone(), tile.segment.clone()));
-            changed = true;
+            filing.refiled_tiles.push((day, segment));
         }
-        if changed {
-            filing.filed += 1;
-            if had_other {
-                filing.moved += 1;
-            }
+        filing.filed += 1;
+        if had_other {
+            filing.moved += 1;
         }
     }
     Ok(filing)
