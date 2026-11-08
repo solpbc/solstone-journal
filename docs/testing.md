@@ -28,6 +28,8 @@ These packages keep `runtime` in their default feature set, so ordinary producti
 
 Keep each routine test well under a second at the dev profile's opt-level 0. Use the smallest input that proves the property: a short image strip rather than a 4K frame, a sample of prefixes rather than every prefix of a 5 KB input. Build an expensive fixture once per process with `OnceLock`, not once per test. A timeout or poll goes on an injected duration or tokio's paused clock, not a real wait.
 
+`make ci` runs each crate's unit tests in parallel, as threads of one process. A test that uses process-wide state (a global logger or log capture, a static hook or counter, an environment variable, the current directory) shares it with every test running beside it. Key that state by something the test owns, such as its thread or its fixture's journal root, or, for an environment variable or the current directory, hold a lock that every test touching it takes. A test that waits for background work waits on a signal from that work, not on the host being fast enough.
+
 ## Fixture Journal
 
 A test points the journal at the checked-in fixtures by setting `SOLSTONE_JOURNAL`:
@@ -49,7 +51,7 @@ needed input into a temporary directory such as `tempfile::TempDir`.
   source-derived omission boundary
 - `make check-journal-device-sim` runs the dependency-free simulator unit and fake-bridge tests
 - `make check-talent-fault-sim` checks the [finite talent fault runner](../tools/talent_fault_sim/README.md), whose native-worker scenarios run separately against disposable journals
-- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane: formatting, the CI-topology contract, library/binary Clippy checks, and serialized library/binary unit tests. Tests behind a crate's `full-tests` feature run through that crate's registry package suite in `make ci-full`, and the `clippy-full` entry lints each such crate with its suite's features so those modules keep `-D warnings` evidence. For `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and `solstone-core-vad-analyze`, it statically checks the default production closure and runs the runtime-free library closure. Their broader same-crate tests use `full-tests` with the normal runtime feature and remain in the staged full gate.
+- Per the [Makefile](../Makefile), `make ci` runs the routine code-focused lane: formatting, the CI-topology contract, library/binary Clippy checks, and library/binary unit tests run in parallel. Tests behind a crate's `full-tests` feature run through that crate's registry package suite in `make ci-full`, and the `clippy-full` entry lints each such crate with its suite's features so those modules keep `-D warnings` evidence. For `solstone-core-speakers-analyze`, `solstone-core-speakers-onnx`, and `solstone-core-vad-analyze`, it statically checks the default production closure and runs the runtime-free library closure. Their broader same-crate tests use `full-tests` with the normal runtime feature and remain in the staged full gate.
 - The topology validator has no baseline or allowlist. It rejects every
   process-launch, network-constructor, or native-runtime call it detects in
   scanned unit-test code. On Linux, `make ci` requires Bubblewrap and runs with
