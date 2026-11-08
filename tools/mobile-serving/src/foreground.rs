@@ -658,7 +658,7 @@ impl GenerateExecutor for ProductionGenerateExecutor {
             request,
             &runtime,
             self.root.canonical_path(),
-            |_| None,
+            crate::local_provider::authority,
             &solstone_core_generate_wire::GenerateCallContext {
                 priority: self.priority,
                 cancellation: &cancellation,
@@ -710,7 +710,7 @@ impl WireClient for HostWireClient<'_> {
             &solstone_core_generate_wire::EndpointRuntime::default()
                 .with_brain_observation(self.generator.observation.clone()),
             self.generator.root.canonical_path(),
-            |_| None,
+            crate::local_provider::authority,
             &solstone_core_generate_wire::GenerateCallContext {
                 priority: self.priority,
                 cancellation: &cancellation,
@@ -813,7 +813,7 @@ impl DescribeSession for InProcessDescribeSession<'_> {
                 &solstone_core_generate_wire::EndpointRuntime::default()
                     .with_brain_observation(self.generator.observation.clone()),
                 self.generator.root.canonical_path(),
-                |_| None,
+                crate::local_provider::authority,
                 &solstone_core_generate_wire::GenerateCallContext {
                     priority: self.priority,
                     cancellation: &cancellation,

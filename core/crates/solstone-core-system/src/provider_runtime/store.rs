@@ -15,10 +15,9 @@ use serde_json::{Map, Value, json};
 use solstone_core_brain::{RuntimeRetryRecord, RuntimeRetryTransaction, hold_runtime_operation};
 use solstone_core_journal_io::{AtomicWriteOptions, JsonWriteOptions, write_json, write_text};
 
-use crate::process::{
-    LaunchAuthority, ProcessObservation, ProcessObservationTuple, classify_process_observation,
-};
+use crate::process::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
 
+use super::embedded::LocalAuthority;
 use super::launch::LocalLaunchConfig;
 use super::model::{
     ManagedProcess, ProviderFence, ProviderLaunchOutcome, ProviderName, ProviderProbeOutcome,
@@ -98,9 +97,9 @@ pub(crate) struct ReadyChildIdentity {
 }
 
 #[derive(Debug)]
-pub(crate) struct ReadyChild {
+pub(crate) struct ReadyChild<T = crate::process::LaunchAuthority> {
     pub process_id: String,
-    pub authority: LaunchAuthority,
+    pub authority: T,
 }
 
 pub(crate) fn insert_ready_tuple<T>(
@@ -197,17 +196,30 @@ pub(crate) fn resolve_current_process(
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct LocalRuntimeShared {
     ready_processes: Mutex<BTreeMap<FenceKey, ReadyProcess>>,
     started_at: Mutex<BTreeMap<FenceKey, Instant>>,
     launch_requests: Mutex<BTreeMap<Option<String>, LocalLaunchConfig>>,
     results: Mutex<LocalRuntimeResults>,
     result_available: Condvar,
-    ready_children: Mutex<BTreeMap<FenceKey, ReadyChild>>,
-    children: Mutex<BTreeMap<String, LaunchAuthority>>,
+    ready_children: Mutex<BTreeMap<FenceKey, ReadyChild<LocalAuthority>>>,
+    children: Mutex<BTreeMap<String, LocalAuthority>>,
     launch_credentials: Mutex<LaunchCredentials>,
     ready_admission: Mutex<ReadyAdmission>,
+    worker_threads: Mutex<Vec<std::thread::JoinHandle<()>>>,
+    worker_failures: Mutex<Vec<Box<dyn std::any::Any + Send>>>,
+    // Declared after native/process authorities: an app's admitted root cannot
+    // disappear while a detached lifecycle worker still retains this shared bus.
+    bound_root: Mutex<Option<Arc<solstone_core_journal_io::JournalRoot>>>,
+}
+
+impl std::fmt::Debug for LocalRuntimeShared {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LocalRuntimeShared")
+            .finish_non_exhaustive()
+    }
 }
 
 /// A reaped child from the same coherent tuple as the accepted process.
@@ -254,6 +266,58 @@ struct LocalRuntimeResults {
 }
 
 impl LocalRuntimeShared {
+    pub fn retain_bound_root(&self, root: Arc<solstone_core_journal_io::JournalRoot>) {
+        self.bound_root
+            .lock()
+            .expect("local runtime shared lock")
+            .get_or_insert(root);
+    }
+
+    pub(crate) fn retain_worker(&self, worker: std::thread::JoinHandle<()>) {
+        // Desktop supervision keeps its existing process-parent lifetime. A
+        // mobile serving owner explicitly joins every helper before retirement.
+        if self
+            .bound_root
+            .lock()
+            .expect("local runtime shared lock")
+            .is_some()
+        {
+            self.worker_threads
+                .lock()
+                .expect("local runtime shared lock")
+                .push(worker);
+        }
+    }
+
+    /// Reap actual completed helper threads. A panic remains owned and prevents
+    /// successful retirement; a result message alone never proves a join.
+    pub fn reap_finished_workers(&self) -> bool {
+        let mut workers = self
+            .worker_threads
+            .lock()
+            .expect("local runtime shared lock");
+        let mut index = 0;
+        while index < workers.len() {
+            if workers[index].is_finished() {
+                if let Err(failure) = workers.swap_remove(index).join() {
+                    log::error!("local provider helper panicked; actual serving owner retained");
+                    self.worker_failures
+                        .lock()
+                        .expect("local runtime shared lock")
+                        .push(failure);
+                }
+            } else {
+                index += 1;
+            }
+        }
+        workers.is_empty()
+            && self
+                .worker_failures
+                .lock()
+                .expect("local runtime shared lock")
+                .is_empty()
+    }
+
     pub fn observe_exited_current_process(
         &self,
         processes: &[ManagedProcess],
@@ -456,7 +520,7 @@ impl LocalRuntimeShared {
     pub(crate) fn register_ready_process(
         &self,
         fence: &ProviderFence,
-        authority: LaunchAuthority,
+        authority: impl Into<LocalAuthority>,
         process: ReadyProcess,
         started_at: Instant,
     ) {
@@ -475,7 +539,7 @@ impl LocalRuntimeShared {
             process.clone(),
             ReadyChild {
                 process_id: process.process_id.clone(),
-                authority,
+                authority: authority.into(),
             },
             started_at,
             &mut ready_processes,
@@ -484,14 +548,14 @@ impl LocalRuntimeShared {
         );
     }
 
-    pub(crate) fn retain_child(&self, process_id: String, authority: LaunchAuthority) {
+    pub(crate) fn retain_child(&self, process_id: String, authority: impl Into<LocalAuthority>) {
         self.children
             .lock()
             .expect("local runtime shared lock")
-            .insert(process_id, authority);
+            .insert(process_id, authority.into());
     }
 
-    pub(crate) fn take_child(&self, process_id: &str) -> Option<LaunchAuthority> {
+    pub(crate) fn take_child(&self, process_id: &str) -> Option<LocalAuthority> {
         self.children
             .lock()
             .expect("local runtime shared lock")
@@ -501,7 +565,7 @@ impl LocalRuntimeShared {
     pub(crate) fn take_ready_child(
         &self,
         fence: &ProviderFence,
-    ) -> Option<(String, LaunchAuthority)> {
+    ) -> Option<(String, LocalAuthority)> {
         let mut ready_children = self
             .ready_children
             .lock()
@@ -514,7 +578,7 @@ impl LocalRuntimeShared {
         &self,
         fence: &ProviderFence,
         process_id: String,
-        authority: LaunchAuthority,
+        authority: impl Into<LocalAuthority>,
     ) {
         self.ready_children
             .lock()
@@ -523,7 +587,7 @@ impl LocalRuntimeShared {
                 FenceKey::from(fence),
                 ReadyChild {
                     process_id,
-                    authority,
+                    authority: authority.into(),
                 },
             );
     }
@@ -653,6 +717,28 @@ impl LocalRuntimeShared {
         creds.admitted = false;
     }
 
+    pub fn launch_credentials_closed(&self) -> bool {
+        self.launch_credentials
+            .lock()
+            .expect("local runtime shared lock")
+            .closed
+    }
+
+    /// Retirement is incomplete while any accepted or intermediate native/process
+    /// authority is retained, even when no public Ready credential remains.
+    pub fn has_owned_authority(&self) -> bool {
+        !self
+            .ready_children
+            .lock()
+            .expect("local runtime shared lock")
+            .is_empty()
+            || !self
+                .children
+                .lock()
+                .expect("local runtime shared lock")
+                .is_empty()
+    }
+
     pub fn invalidate_launch_credentials(&self) {
         let mut creds = self
             .launch_credentials
@@ -757,6 +843,66 @@ impl LocalRuntimeShared {
         } else {
             None
         }
+    }
+}
+
+#[cfg(all(test, feature = "full-tests"))]
+mod embedded_worker_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn finish(shared: &LocalRuntimeShared) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if shared.reap_finished_workers() {
+                return true;
+            }
+            std::thread::yield_now();
+        }
+        false
+    }
+
+    #[test]
+    fn mobile_helper_retirement_requires_actual_join_and_retains_the_bound_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap());
+        let weak = Arc::downgrade(&root);
+        let shared = LocalRuntimeShared::default();
+        shared.retain_bound_root(root);
+        let (release, wait) = std::sync::mpsc::channel();
+        shared.retain_worker(std::thread::spawn(move || wait.recv().unwrap()));
+        assert!(!shared.reap_finished_workers());
+        assert!(weak.upgrade().is_some());
+        release.send(()).unwrap();
+        assert!(finish(&shared));
+        assert!(weak.upgrade().is_some());
+        drop(shared);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn helper_panic_payload_remains_owned_and_cannot_report_retirement() {
+        struct Payload(Arc<AtomicBool>);
+        impl Drop for Payload {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let shared = LocalRuntimeShared::default();
+        shared.retain_bound_root(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap(),
+        ));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let payload = Payload(Arc::clone(&dropped));
+        let worker = std::thread::spawn(move || std::panic::panic_any(payload));
+        while !worker.is_finished() {
+            std::thread::yield_now();
+        }
+        shared.retain_worker(worker);
+        assert!(!shared.reap_finished_workers());
+        assert!(!shared.reap_finished_workers());
+        assert!(!dropped.load(Ordering::Acquire));
     }
 }
 

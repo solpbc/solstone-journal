@@ -83,6 +83,10 @@ pub struct LocalLaunchCommon {
 
 #[derive(Debug, Clone)]
 pub enum LocalLaunchConfig {
+    Embedded {
+        common: LocalLaunchCommon,
+        identity: solstone_core_local::embedded::RuntimeIdentity,
+    },
     Cuda {
         common: LocalLaunchCommon,
         binary_path: Option<String>,
@@ -116,9 +120,10 @@ pub enum LocalLaunchConfig {
 impl LocalLaunchConfig {
     fn common(&self) -> &LocalLaunchCommon {
         match self {
-            Self::Cuda { common, .. } | Self::Vulkan { common, .. } | Self::Mlx { common, .. } => {
-                common
-            }
+            Self::Embedded { common, .. }
+            | Self::Cuda { common, .. }
+            | Self::Vulkan { common, .. }
+            | Self::Mlx { common, .. } => common,
         }
     }
 
@@ -128,19 +133,30 @@ impl LocalLaunchConfig {
 
     fn platform(&self) -> Platform {
         match self {
+            Self::Embedded { identity, .. } => match identity.artifact_key.as_str() {
+                "aarch64-android" => Platform::Android,
+                "aarch64-ios" => Platform::Ios,
+                _ => unreachable!("registered embedded identity is platform-validated"),
+            },
             Self::Mlx { .. } => Platform::Darwin,
             Self::Cuda { .. } => Platform::Linux,
             Self::Vulkan { platform, .. } => *platform,
         }
     }
 
-    pub fn assemble_plan_input(&self, state: &ProviderRuntimeState, port: u16) -> PlanInput {
+    /// Native workers have an Engine authority, never an executable argv plan.
+    pub fn assemble_plan_input(
+        &self,
+        state: &ProviderRuntimeState,
+        port: u16,
+    ) -> Option<PlanInput> {
         let common = self.common();
         let desired_fingerprint_sha256 = state
             .desired_fingerprint
             .clone()
             .unwrap_or_else(|| common.desired_fingerprint_sha256.clone());
-        match self {
+        Some(match self {
+            Self::Embedded { .. } => return None,
             Self::Cuda {
                 common,
                 binary_path,
@@ -260,7 +276,7 @@ impl LocalLaunchConfig {
                 vram_before_mib: None,
                 vulkan_probe_ok: None,
             },
-        }
+        })
     }
 }
 
@@ -312,12 +328,14 @@ impl LifecycleSeam for LocalLifecycleSeam {
         let shared = Arc::clone(&self.shared);
         let clock = Arc::clone(&self.clock);
         let launch = shared.launch_request_for(&state.desired_fingerprint);
+        #[cfg(target_os = "linux")]
+        let is_process = !matches!(launch.as_ref(), Some(LocalLaunchConfig::Embedded { .. }));
         let state = state.clone();
         let fence = fence.clone();
         let journal_path = self.journal_path.clone();
         let warmup_timeout = self.warmup_timeout;
         let warmup_poll_interval = self.warmup_poll_interval;
-        thread::spawn(move || {
+        let worker = thread::spawn(move || {
             let outcome = launch
                 .map(|launch| {
                     start_local(
@@ -336,7 +354,9 @@ impl LifecycleSeam for LocalLifecycleSeam {
             // Stay alive while the child is live so exiting this worker does
             // not SIGKILL it; stop polling once terminate() (or exit) reaps it.
             #[cfg(target_os = "linux")]
-            let hold_pid = outcome.managed.as_ref().map(|managed| managed.pid);
+            let hold_pid = is_process
+                .then(|| outcome.managed.as_ref().map(|managed| managed.pid))
+                .flatten();
             #[cfg(not(target_os = "linux"))]
             let _hold_pid: Option<u32> = None;
             shared.record_launch_result(&fence, outcome);
@@ -345,6 +365,7 @@ impl LifecycleSeam for LocalLifecycleSeam {
                 crate::process::hold_while_instance_live(pid);
             }
         });
+        self.shared.retain_worker(worker);
     }
 
     fn dispatch_stop(&mut self, state: &ProviderRuntimeState, fence: &ProviderFence) {
@@ -358,7 +379,7 @@ impl LifecycleSeam for LocalLifecycleSeam {
             shared.revoke_launch_credentials(fence);
         }
         let termination_timeout = self.termination_timeout;
-        thread::spawn(move || {
+        let worker = thread::spawn(move || {
             let outcome = stop_local(
                 &shared,
                 request.as_ref(),
@@ -367,6 +388,7 @@ impl LifecycleSeam for LocalLifecycleSeam {
             );
             shared.record_stop_cleanup_result(&fence, outcome);
         });
+        self.shared.retain_worker(worker);
     }
 }
 
@@ -398,12 +420,13 @@ impl ProbeSeam for LocalProbeSeam {
         let journal_path = self.journal_path.clone();
         let fence = fence.clone();
         let launch = shared.launch_request_for(&state.desired_fingerprint);
-        thread::spawn(move || {
+        let worker = thread::spawn(move || {
             let outcome = launch
                 .map(|launch| probe_local(&journal_path, &launch, &shared))
                 .unwrap_or_else(probe_unavailable);
             shared.record_probe_result(&fence, outcome);
         });
+        self.shared.retain_worker(worker);
     }
 }
 
@@ -452,6 +475,8 @@ pub enum LocalHost {
     Linux,
     Darwin,
     Windows,
+    Android,
+    Ios,
 }
 
 #[derive(Clone)]
@@ -477,7 +502,11 @@ impl LocalTruthSeam {
             shared,
             LocalTruthConfig {
                 journal_path: journal_path.into(),
-                platform: if cfg!(windows) {
+                platform: if cfg!(target_os = "android") {
+                    LocalHost::Android
+                } else if cfg!(target_os = "ios") {
+                    LocalHost::Ios
+                } else if cfg!(windows) {
                     LocalHost::Windows
                 } else if cfg!(target_os = "macos") {
                     LocalHost::Darwin
@@ -486,7 +515,14 @@ impl LocalTruthSeam {
                 },
                 arch: std::env::consts::ARCH,
                 nvidia_probe: None,
-                vulkan: crate::vulkan_observe::observe_vulkan_devices(),
+                vulkan: if cfg!(any(target_os = "android", target_os = "ios")) {
+                    crate::vulkan_observe::VulkanObservation {
+                        devices: Vec::new(),
+                        succeeded: false,
+                    }
+                } else {
+                    crate::vulkan_observe::observe_vulkan_devices()
+                },
                 windows_package: None,
             },
         )
@@ -558,12 +594,13 @@ impl TruthObservationSeam for LocalTruthSeam {
         let config = self.config.clone();
         let follow = self.follow.clone();
         let fence = fence.clone();
-        thread::spawn(move || {
+        let worker = thread::spawn(move || {
             let outcome = observe_truth_with_mlx(&shared, &config, follow.as_deref(), || {
                 mlx_candidate::inspect_present_default(&config.journal_path)
             });
             shared.record_truth_result(&fence, outcome);
         });
+        self.shared.retain_worker(worker);
     }
 }
 
@@ -735,6 +772,22 @@ fn observe_truth_with_mlx(
         &configured_model_id,
         config.platform == LocalHost::Darwin,
     );
+    if matches!(config.platform, LocalHost::Android | LocalHost::Ios) {
+        let key = match (config.platform, config.arch) {
+            (LocalHost::Android, "aarch64") => "aarch64-android",
+            (LocalHost::Ios, "aarch64") => "aarch64-ios",
+            _ => {
+                return truth(
+                    super::model::RuntimePhase::HostBlocked,
+                    "platform-unsupported",
+                    None,
+                    false,
+                    false,
+                );
+            }
+        };
+        return super::embedded::observe_truth(shared, &config.journal_path, &model_id, key);
+    }
     if config.platform == LocalHost::Windows {
         if WindowsArchitecture::from_architecture(config.arch).is_none() {
             return truth(
@@ -1196,6 +1249,19 @@ fn start_local(
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
 ) -> ProviderLaunchOutcome {
+    if let LocalLaunchConfig::Embedded { common, identity } = launch {
+        return super::embedded::start_embedded(
+            shared,
+            clock,
+            common,
+            identity,
+            state,
+            fence,
+            journal_path,
+            warmup_timeout,
+            warmup_poll_interval,
+        );
+    }
     if launch.platform() == Platform::Windows {
         return start_local_windows(
             shared,
@@ -1243,7 +1309,9 @@ fn start_local_unix(
         Ok(reservation) => reservation,
         Err(_) => return launch_failed(),
     };
-    let input = launch.assemble_plan_input(state, reservation.port());
+    let Some(input) = launch.assemble_plan_input(state, reservation.port()) else {
+        return launch_failed();
+    };
     let plan = match plan(input) {
         PlanOutcome::Launch(plan) => plan,
         PlanOutcome::Rejected { .. } => return launch_failed(),
@@ -1606,7 +1674,9 @@ fn start_local_windows(
         Err(_) => return launch_failed(),
     };
     let port = reservation.port();
-    let input = launch.assemble_plan_input(state, port);
+    let Some(input) = launch.assemble_plan_input(state, port) else {
+        return launch_failed();
+    };
     let plan = match plan(input) {
         PlanOutcome::Launch(plan) => plan,
         PlanOutcome::Rejected { .. } => return launch_failed(),
@@ -3243,7 +3313,9 @@ mod tests {
         }
 
         let state = ProviderRuntimeState::new(ProviderName::Local);
-        let plan_input = launch.assemble_plan_input(&state, 8080);
+        let plan_input = launch
+            .assemble_plan_input(&state, 8080)
+            .expect("desktop executable plan");
         let plan = match solstone_core_local::plan(plan_input) {
             solstone_core_local::PlanOutcome::Launch(p) => p,
             solstone_core_local::PlanOutcome::Rejected { reason } => {
@@ -3714,7 +3786,9 @@ mod tests {
         }
 
         let state = ProviderRuntimeState::new(ProviderName::Local);
-        let plan_input = launch.assemble_plan_input(&state, 8080);
+        let plan_input = launch
+            .assemble_plan_input(&state, 8080)
+            .expect("desktop executable plan");
         let plan = match solstone_core_local::plan(plan_input) {
             solstone_core_local::PlanOutcome::Launch(p) => p,
             solstone_core_local::PlanOutcome::Rejected { reason } => {
@@ -3912,7 +3986,9 @@ mod tests {
         }
 
         let state = ProviderRuntimeState::new(ProviderName::Local);
-        let plan_input = launch.assemble_plan_input(&state, 8080);
+        let plan_input = launch
+            .assemble_plan_input(&state, 8080)
+            .expect("desktop executable plan");
         let plan = match solstone_core_local::plan(plan_input) {
             solstone_core_local::PlanOutcome::Launch(p) => p,
             solstone_core_local::PlanOutcome::Rejected { reason } => {
