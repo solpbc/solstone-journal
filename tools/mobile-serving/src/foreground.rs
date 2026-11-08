@@ -2742,6 +2742,25 @@ impl ForegroundProcessingHost {
         &self.queue
     }
     #[cfg(feature = "audio")]
+    pub(crate) fn packaged_speech_setup(
+        &self,
+        root: &solstone_core_journal_io::JournalRoot,
+    ) -> Result<Arc<dyn solstone_core_convey_shell::PackagedSpeechSetup>, String> {
+        if self.root.identity() != root.identity()
+            || self.root.canonical_path() != root.canonical_path()
+        {
+            return Err("speech setup journal binding changed".into());
+        }
+        root.revalidate_canonical_binding()
+            .map_err(|error| error.to_string())?;
+        self.audio_state
+            .lock()
+            .map_err(|_| "speech setup owner unavailable")?
+            .as_ref()
+            .and_then(|config| config.worker.packaged_speech_setup())
+            .ok_or_else(|| "packaged speech has not been configured".into())
+    }
+    #[cfg(feature = "audio")]
     pub fn enable_audio(
         &self,
         models: PathBuf,

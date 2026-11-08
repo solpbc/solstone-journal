@@ -179,6 +179,7 @@ struct HostAudioConfig {
     model: PathBuf,
     scratch: PathBuf,
     held: Mutex<(u64, HashSet<PathBuf>)>,
+    setup: Arc<dyn solstone_core_convey_shell::PackagedSpeechSetup>,
 }
 
 // Only the maintained transcribe dispatcher worker enables this single slot.
@@ -364,18 +365,29 @@ impl AudioWorker {
         external_cancelled: Arc<dyn Fn() -> bool + Send + Sync>,
         observation: Option<solstone_core_brain_owner::BrainObservationSink>,
     ) -> Self {
-        Self {
-            state: Arc::new(State {
-                observation,
-                stop: AtomicBool::new(false),
-                cancel: AtomicBool::new(false),
-                generation: AtomicU64::new(0),
-                external_cancelled,
-                status: Mutex::new(json!({"state":"ready"})),
-                recent_failures: Mutex::new(VecDeque::new()),
-                recent_completions: Mutex::new(VecDeque::new()),
-                wake: Condvar::new(),
+        let state = Arc::new(State {
+            observation,
+            stop: AtomicBool::new(false),
+            cancel: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
+            external_cancelled,
+            status: Mutex::new(json!({"state":"ready"})),
+            recent_failures: Mutex::new(VecDeque::new()),
+            recent_completions: Mutex::new(VecDeque::new()),
+            wake: Condvar::new(),
+        });
+        let owner = Arc::downgrade(&state);
+        let setup = Arc::new(crate::packaged_speech::Proof::new(
+            root.clone(),
+            model.clone(),
+            Arc::new(move || {
+                owner.upgrade().is_none_or(|state| {
+                    state.stop.load(Ordering::Acquire) || (state.external_cancelled)()
+                })
             }),
+        ));
+        Self {
+            state,
             thread: None,
             host_config: Some(HostAudioConfig {
                 cache_id: {
@@ -387,8 +399,18 @@ impl AudioWorker {
                 model,
                 scratch,
                 held: Mutex::new((0, HashSet::new())),
+                setup,
             }),
         }
+    }
+
+    #[cfg(feature = "processing")]
+    pub(crate) fn packaged_speech_setup(
+        &self,
+    ) -> Option<Arc<dyn solstone_core_convey_shell::PackagedSpeechSetup>> {
+        self.host_config
+            .as_ref()
+            .map(|config| Arc::clone(&config.setup))
     }
 
     #[cfg(feature = "processing")]

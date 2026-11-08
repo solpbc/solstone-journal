@@ -171,6 +171,7 @@ mod service_handoffs;
 pub mod session;
 pub mod session_gate;
 mod setup_host;
+pub use setup_host::PackagedSpeechSetup;
 pub mod source_link;
 mod speakers;
 mod speakers_attribution;
@@ -403,6 +404,7 @@ pub struct EmbeddedConveyStop {
 /// receives signals only; the constructor retains the actual serving owner.
 #[cfg(feature = "host")]
 pub struct EmbeddedStartup {
+    pub packaged_speech: Option<Arc<dyn PackagedSpeechSetup>>,
     pub brain_startup: Option<Arc<solstone_core_callosum::BrainStartupCapture>>,
     pub backup_offload_dispatch: Option<solstone_core_backup_web::OffloadDispatchProbe>,
     pub backup_verification: Option<solstone_core_backup_web::VerificationSubmitter>,
@@ -603,6 +605,7 @@ pub async fn bind_embedded_device_door_with_root(
         roots,
         Some(backup_deps.clone()),
         import_route,
+        startup.packaged_speech.clone(),
     );
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -636,6 +639,9 @@ async fn bind_embedded_with_dependencies(
         roots,
         Some(backup_deps.clone()),
         import_route,
+        startup
+            .as_ref()
+            .and_then(|startup| startup.packaged_speech.clone()),
     );
     bind_embedded_router(journal_root, address, app, backup_deps, startup).await
 }
@@ -1441,7 +1447,15 @@ fn router_with_hosted_parent(
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
     agents_routes: Option<Router>,
 ) -> Router {
-    router_with_roots(journal_root, hosted_parent, agents_routes, None, None, None)
+    router_with_roots(
+        journal_root,
+        hosted_parent,
+        agents_routes,
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 /// Compose the production routes with an explicitly packaged app payload.
@@ -1457,6 +1471,7 @@ pub fn router_with_payload_root(
         Some(roots),
         None,
         None,
+        None,
     ))
 }
 
@@ -1467,6 +1482,7 @@ fn router_with_roots(
     payload_roots: Option<thinking_sol_reads::TalentRoots>,
     backup_deps: Option<solstone_core_backup_web::BackupWebDeps>,
     import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
+    packaged_speech: Option<Arc<dyn PackagedSpeechSetup>>,
 ) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
     let include_agents = agents_routes.is_some();
@@ -1492,7 +1508,9 @@ fn router_with_roots(
     let backup_deps = backup_deps
         .unwrap_or_else(|| solstone_core_backup_web::BackupWebDeps::new(journal_root.clone()));
     let target_use = backup_deps.target_use_owner();
-    let setup_host = Arc::new(setup_host::ConveySetupHost::new(backup_deps.clone()));
+    let setup_host = Arc::new(
+        setup_host::ConveySetupHost::new(backup_deps.clone()).with_packaged_speech(packaged_speech),
+    );
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
