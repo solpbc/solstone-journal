@@ -858,9 +858,10 @@ set = "component"
 areas = ["import"]
 platforms = ["linux", "macos", "windows"]
 prerequisites = ["cargo-cache"]
-# Windows runs these tests one at a time, and the body imports' stop-and-resume
-# runs reached the 600 s budget in two of three native runs on 2026-11-06.
-timeout = "slow"
+# Windows runs these tests one at a time. The body imports' stop-and-resume runs
+# reached 600 s in two of three native runs on 2026-11-06, and with Oura's they
+# took 751 to 1,101 s by 2026-11-07, so the budget keeps room for both sources.
+timeout = "extended"
 default_full = true
 runtime = "none"
 features = ["full-tests"]

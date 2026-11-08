@@ -1659,26 +1659,17 @@ fn an_oura_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes_with
     }));
 
     // The two-day night converges on its start day and the next: either side of
-    // each, and between the passes of the days that have two.
+    // each, and between the passes of the days that have two. The fetched run's
+    // own test stops at every other phase of the same writer, so this one stops
+    // only where that one doesn't.
     let order = written_days(whole.path(), &done.import_id);
     let at = |day: &str| order.iter().position(|written| written == day).unwrap() + 1;
     for (point, nth) in [
-        ("scanned", 1),
-        ("placed", 1),
-        ("pending", 1),
-        ("pending", 3),
-        ("written", 1),
-        ("written", 2),
-        ("marking", 1),
         ("marking", 2),
-        ("published", 1),
-        ("published", 4),
         ("pending", at("20260108")),
         ("published", at("20260108")),
         ("pending", at("20260109")),
         ("published", at("20260109")),
-        ("written-all", 1),
-        ("finished", 1),
     ] {
         let journal = journal();
         let root = journal.path();
