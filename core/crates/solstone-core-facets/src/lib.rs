@@ -36,15 +36,15 @@ pub use store::{
     EDIT_BEFORE, EDIT_LINES, EDIT_REMOVED, EDIT_SET, EDIT_SPEAKER, EditRefusal, EntityBlockReport,
     EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference, EntityReferenceBreakdown,
     EntityUnblockReport, EventTopicMigrationReport, FacetDeclarationSnapshot,
-    FacetEntityAttachResult, FacetEntityLifecycleError, FacetEntityLinkSnapshot,
-    FacetEntityMoveResult, FacetEntityWriteError, FacetIdError, FacetIdResolveError,
-    FacetIdentityError, FacetRelationshipPlan, FacetRelationshipRecord, FacetReviewCandidateError,
-    FacetStoreError, FacetWriteError, FailedEntity, HistoryEntry, IncomingObservationRow,
-    OWNER_LINES_ACTOR, ObservationChange, ObservationEntityResolution, ObservationErrorSource,
-    ObservationLookup, ObservationLookupError, ObservationOperationCounts, ObservationPage,
-    ObservationPageItem, ObservationParseSource, ObservationReadOrder, ObservationReadQuery,
-    ObservationRow, ObservationStoreError, ObservationSummary, ObservationWriteError,
-    ObservationWriteOutcome, ParsedObservations, PlannedFacetRelationship,
+    FacetEntityAttachResult, FacetEntityCreateOutcome, FacetEntityLifecycleError,
+    FacetEntityLinkSnapshot, FacetEntityMoveResult, FacetEntityWriteError, FacetIdError,
+    FacetIdResolveError, FacetIdentityError, FacetRelationshipPlan, FacetRelationshipRecord,
+    FacetReviewCandidateError, FacetStoreError, FacetWriteError, FailedEntity, HistoryEntry,
+    IncomingObservationRow, OWNER_LINES_ACTOR, ObservationChange, ObservationEntityResolution,
+    ObservationErrorSource, ObservationLookup, ObservationLookupError, ObservationOperationCounts,
+    ObservationPage, ObservationPageItem, ObservationParseSource, ObservationReadOrder,
+    ObservationReadQuery, ObservationRow, ObservationStoreError, ObservationSummary,
+    ObservationWriteError, ObservationWriteOutcome, ParsedObservations, PlannedFacetRelationship,
     PreparedObservationBatch, PreparedReviewAttachment, PreparedReviewPromotion,
     RETIRED_FACETS_FILE, RestoredEntity, Retired, RetiredFacet, RetiredFacetState, RetiredFacets,
     RetiredFilesSnapshot, ScopedFacetEntity, SeedEntitiesError, SeedEntityBaseOutcome,
@@ -96,17 +96,17 @@ pub use store::{
 };
 pub use store::{
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
-    detach_facet_entity, iter_detected_entity_names_since, iter_detected_entity_names_since_strict,
-    list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
-    list_scoped_facet_entities_tolerant_with_resolved_ids,
+    create_facet_entity_if_absent, detach_facet_entity, iter_detected_entity_names_since,
+    iter_detected_entity_names_since_strict, list_scoped_facet_entities,
+    list_scoped_facet_entities_tolerant, list_scoped_facet_entities_tolerant_with_resolved_ids,
     list_scoped_facet_entities_with_resolved_ids, move_facet_entity,
     update_facet_entity_description, update_facet_entity_identity,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::{
-    block_journal_entity_with_hook, delete_created_entity_if_unreferenced_with_hook,
-    delete_journal_entity_with_hook, reset_undone_operation_for_test, test_hooks,
-    unblock_journal_entity_with_hook,
+    block_journal_entity_with_hook, create_facet_entity_if_absent_with_hook,
+    delete_created_entity_if_unreferenced_with_hook, delete_journal_entity_with_hook,
+    reset_undone_operation_for_test, test_hooks, unblock_journal_entity_with_hook,
 };
 pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
@@ -116,6 +116,8 @@ pub use trust_lock::{
 mod bulk_hide_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod connections_horizon_tests;
+#[cfg(test)]
+mod create_if_absent_tests;
 #[cfg(all(test, feature = "full-tests"))]
 mod detected_entity_exclusion_fixture_tests;
 #[cfg(all(test, feature = "full-tests"))]

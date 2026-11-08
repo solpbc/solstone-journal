@@ -12,7 +12,10 @@ use solstone_core_entity::{
     EntityOperationContext, EntityOperationKind, ReviewOwnerConflictKind, ReviewOwnerError,
     read_entity_identity, read_identity_group_map, read_identity_map, save_entity_identity,
 };
-use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
+use solstone_core_entity_matching::{
+    ConfidentMatcher, EntityNameCandidate, EntityNameMatchOutcome, entity_slug,
+    normalize_resolution_query,
+};
 
 use crate::hold_facet_trust_lock;
 
@@ -365,43 +368,213 @@ fn attach_or_reactivate(
         } else {
             slug
         };
-        // The link's folder is checked before the entity exists, so a refusal
-        // leaves no entity behind without a link.
-        LinkDirs::for_facet(journal_root, facet_dir).check_placeable(&entity_id)?;
-        let mut identity =
-            json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
-        if entity_type == "Person"
-            && solstone_core_entity::becomes_journal_principal(journal_root, name, None, &[])?
-        {
-            identity["is_principal"] = Value::Bool(true);
-        }
-        let saved = save_entity_identity(
-            journal_root,
-            &entity_id,
-            &identity,
-            Some(&operation(EntityOperationKind::Create)),
-        )?;
-        (
-            entity_id,
-            read_entity_identity(journal_root, &saved.entity_dir)?
-                .expect("saved identity exists")
-                .value()
-                .clone(),
-        )
+        create_identity(journal_root, facet_dir, entity_id, entity_type, name)?
     };
     if identity.get("blocked") == Some(&Value::Bool(true)) {
         return Err(FacetEntityWriteError::EntityBlocked { entity_id });
     }
     let _ = created;
-    // A link lives in the folder named by the entity's id; notes already
-    // written under the name's own folder come with it.
-    let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
-    let object = object_clone(&relationship)?;
-    place_link(journal_root, facet_dir, &entity_id, name, &object)?;
+    let object = link_new(journal_root, facet_dir, &entity_id, name, description)?;
     Ok(FacetEntityAttachResult {
         relationship: Value::Object(object),
         reactivated: false,
     })
+}
+
+/// Save a fresh identity under `entity_id`, returning its id and the identity
+/// as stored. The facet's link folder is checked first, so a refusal leaves no
+/// entity behind without a link. Callers hold facet and entity trust.
+fn create_identity(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_id: String,
+    entity_type: &str,
+    name: &str,
+) -> Result<(String, Value), FacetEntityWriteError> {
+    LinkDirs::for_facet(journal_root, facet_dir).check_placeable(&entity_id)?;
+    let mut identity =
+        json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
+    if entity_type == "Person"
+        && solstone_core_entity::becomes_journal_principal(journal_root, name, None, &[])?
+    {
+        identity["is_principal"] = Value::Bool(true);
+    }
+    let saved = save_entity_identity(
+        journal_root,
+        &entity_id,
+        &identity,
+        Some(&operation(EntityOperationKind::Create)),
+    )?;
+    let stored = read_entity_identity(journal_root, &saved.entity_dir)?
+        .expect("saved identity exists")
+        .value()
+        .clone();
+    Ok((entity_id, stored))
+}
+
+/// Link `entity_id` into the facet as a new relationship. A link lives in the
+/// folder named by the entity's id; notes already written under the name's
+/// own folder come with it.
+fn link_new(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_id: &str,
+    name: &str,
+    description: &str,
+) -> Result<Map<String, Value>, FacetEntityWriteError> {
+    let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
+    let object = object_clone(&relationship)?;
+    place_link(journal_root, facet_dir, entity_id, name, &object)?;
+    Ok(object)
+}
+
+/// What [`create_facet_entity_if_absent`] did.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FacetEntityCreateOutcome {
+    /// A new identity was created and linked into the facet.
+    Created {
+        entity_id: String,
+        relationship: Value,
+    },
+    /// The name already belongs to an entity, a retired id or the owner.
+    /// Nothing was written.
+    Exists,
+}
+
+/// Create a new entity and link it into `facet_dir`, only when the name is
+/// no one's yet. Unlike [`attach_or_reactivate_entity`], this never touches an
+/// existing entity: it doesn't attach, reactivate, retype or redescribe one.
+///
+/// The name is taken, and `Exists` is returned with nothing written, when:
+/// - it names any journal identity confidently, by name, alias, email or id,
+///   whatever facets link it and whether it is attached, detached or hidden;
+///   a tie between identities counts, since either may be the one meant;
+/// - its slug is a live identity's id, or a retired one, deleted or merged;
+/// - it is one of the owner's configured names and `entity_type` is `Person`.
+///   The owner's principal entity is covered by the first rule.
+///
+/// A retired record keeps only an id and a folder, so a deleted entity whose
+/// id isn't its name's slug (renamed, suffixed, or known by an alias) is not
+/// recognized by name. A record of retired ids that can't be read is an
+/// error: nothing is created while it can't be checked.
+///
+/// The check and the create happen under facet trust and entity trust, taken
+/// in the order every attach takes them, so no attach, detach or hide can land
+/// between them.
+pub fn create_facet_entity_if_absent(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_type: &str,
+    name: &str,
+    description: &str,
+) -> Result<FacetEntityCreateOutcome, FacetEntityWriteError> {
+    create_facet_entity_if_absent_inner(
+        journal_root,
+        facet_dir,
+        entity_type,
+        name,
+        description,
+        || {},
+    )
+}
+
+/// [`create_facet_entity_if_absent`] with `hook` called once both locks are
+/// held, before the name is checked.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn create_facet_entity_if_absent_with_hook(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_type: &str,
+    name: &str,
+    description: &str,
+    hook: impl FnOnce(),
+) -> Result<FacetEntityCreateOutcome, FacetEntityWriteError> {
+    create_facet_entity_if_absent_inner(
+        journal_root,
+        facet_dir,
+        entity_type,
+        name,
+        description,
+        hook,
+    )
+}
+
+fn create_facet_entity_if_absent_inner(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_type: &str,
+    name: &str,
+    description: &str,
+    hook: impl FnOnce(),
+) -> Result<FacetEntityCreateOutcome, FacetEntityWriteError> {
+    let _facet_trust = hold_facet_trust_lock(journal_root)?;
+    let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)?;
+    hook();
+    let slug = entity_slug(name);
+    if name_is_taken(journal_root, entity_type, name, &slug)? {
+        return Ok(FacetEntityCreateOutcome::Exists);
+    }
+    let (entity_id, _) = create_identity(journal_root, facet_dir, slug, entity_type, name)?;
+    let relationship = link_new(journal_root, facet_dir, &entity_id, name, description)?;
+    Ok(FacetEntityCreateOutcome::Created {
+        entity_id,
+        relationship: Value::Object(relationship),
+    })
+}
+
+/// Whether `name` already belongs to someone, for
+/// [`create_facet_entity_if_absent`].
+fn name_is_taken(
+    journal_root: &Path,
+    entity_type: &str,
+    name: &str,
+    slug: &str,
+) -> Result<bool, FacetEntityWriteError> {
+    let groups = read_identity_group_map(journal_root)?;
+    if groups.groups.contains_key(slug) {
+        return Ok(true);
+    }
+    let mut candidates = Vec::new();
+    for directories in groups.groups.values() {
+        for entity_dir in directories {
+            let Some(identity) = read_entity_identity(journal_root, entity_dir)? else {
+                continue;
+            };
+            candidates.push(EntityNameCandidate {
+                id: Some(identity.entity_id().to_owned()),
+                name: identity_display_name(identity.value()),
+                aka: identity_aliases(identity.value()),
+                emails: identity_emails(identity.value()),
+            });
+        }
+    }
+    if matches!(
+        ConfidentMatcher::new(&candidates).outcome(name),
+        Some(EntityNameMatchOutcome::Matched { .. } | EntityNameMatchOutcome::Ambiguous { .. })
+    ) {
+        return Ok(true);
+    }
+    let retired = solstone_core_entity::retired_state(journal_root, slug).map_err(|detail| {
+        FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::InvalidIdentity {
+                identity_id: slug.to_owned(),
+                detail,
+            },
+        )
+    })?;
+    if retired.is_some() {
+        return Ok(true);
+    }
+    if entity_type == "Person" {
+        let query = normalize_resolution_query(name);
+        if solstone_core_entity::journal_identity_names(journal_root)
+            .iter()
+            .any(|owner_name| normalize_resolution_query(owner_name) == query)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Attach a live entity found by id, reusing its link in this facet when one
@@ -454,9 +627,7 @@ fn attach_existing_identity(
             reactivated: true,
         });
     }
-    let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
-    let object = object_clone(&relationship)?;
-    place_link(journal_root, facet_dir, entity_id, name, &object)?;
+    let object = link_new(journal_root, facet_dir, entity_id, name, description)?;
     Ok(FacetEntityAttachResult {
         relationship: Value::Object(object),
         reactivated: false,
@@ -1148,6 +1319,16 @@ fn identity_display_name(identity: &Value) -> String {
 fn identity_aliases(identity: &Value) -> Vec<String> {
     identity
         .get("aka")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+fn identity_emails(identity: &Value) -> Vec<String> {
+    identity
+        .get("emails")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
