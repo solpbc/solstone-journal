@@ -172,8 +172,9 @@ pub(crate) struct Filing {
     pub filed: u64,
     /// Of those, workouts a tile of which had another facet before.
     pub moved: u64,
-    /// Workouts an earlier reading of their tiles filed an activity record
-    /// for, which keep their tiles' facet with that record.
+    /// Workouts already listed with the owner's activities, by an earlier
+    /// reading of their tiles or an earlier import, which keep their tiles'
+    /// facet beside that record, so a listing and its workout never split.
     pub kept_sensed: u64,
     /// Workouts whose day file couldn't be read to tell, which keep their
     /// tiles' facet.
@@ -183,7 +184,8 @@ pub(crate) struct Filing {
 }
 
 /// File every live tile of the download's workouts under `facet` wherever it
-/// has another, except a sensed workout's and one whose day can't be read.
+/// has another, except a workout already listed with the owner's activities
+/// and one whose day can't be read.
 /// Call it before the record writer, so a new workout's record goes in `facet`.
 pub(crate) fn file_strava_workouts(
     journal: &Path,
@@ -207,7 +209,19 @@ pub(crate) fn file_strava_workouts(
         let (day, window) = first
             .clone()
             .unwrap_or_else(|| (lowest.day.clone(), lowest.segment.clone()));
-        match sensed.check(journal, &day, &window, &row) {
+        let listed = sensed
+            .check(journal, &day, &window, &row)
+            .and_then(|sensed| {
+                if sensed {
+                    return Ok(true);
+                }
+                crate::body_activity::has_record(
+                    journal,
+                    &day,
+                    &crate::body_activity::account_key(STRAVA_STREAM, &activity_id.to_string()),
+                )
+            });
+        match listed {
             Ok(false) => {}
             Ok(true) => {
                 filing.kept_sensed += 1;

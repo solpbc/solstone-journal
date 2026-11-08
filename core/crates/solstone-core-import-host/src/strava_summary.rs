@@ -18,6 +18,8 @@ use crate::strava_names::{NamesWait, StravaNamesOutcome};
 pub(crate) struct StravaRunSummary {
     pub new_workouts: u64,
     pub updated_workouts: u64,
+    /// Workouts an earlier version placed at the wrong time, placed again.
+    pub replaced_workouts: u64,
     pub facet: RunFacet,
     /// The facet's title as the owner sees it, when the facet has one.
     pub facet_title: Option<String>,
@@ -34,7 +36,7 @@ fn plural(count: u64, one: &str, many: &str) -> String {
     }
 }
 
-const NO_FACET_MEANS: &str = "a workout with no facet isn't listed with your activities, no people or things come from it, and agents you've set to only these facets won't see it. search and the body app still show it.";
+const NO_FACET_MEANS: &str = "a workout with no facet isn't listed with your activities, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
 
 /// `one` when `count` is 1, otherwise `many`.
 fn either<'a>(count: u64, one: &'a str, many: &'a str) -> &'a str {
@@ -46,12 +48,29 @@ impl StravaRunSummary {
     #[must_use]
     pub(crate) fn text(&self) -> String {
         let mut text = String::from("# Strava import\n\n");
-        let _ = writeln!(
-            text,
-            "{} added, {} changed since the last import and brought up to date.\n",
-            plural(self.new_workouts, "workout", "workouts"),
-            plural(self.updated_workouts, "workout", "workouts"),
-        );
+        if self.updated_workouts > 0 {
+            let _ = writeln!(
+                text,
+                "{} added, {} changed since the last import and brought up to date.\n",
+                plural(self.new_workouts, "workout", "workouts"),
+                plural(self.updated_workouts, "workout", "workouts"),
+            );
+        } else {
+            let _ = writeln!(
+                text,
+                "{} added.\n",
+                plural(self.new_workouts, "workout", "workouts")
+            );
+        }
+        if self.replaced_workouts > 0 {
+            let _ = writeln!(
+                text,
+                "{} placed again at {} right time, where an earlier version had put {} hours off.\n",
+                plural(self.replaced_workouts, "workout was", "workouts were"),
+                either(self.replaced_workouts, "its", "their"),
+                either(self.replaced_workouts, "it", "them"),
+            );
+        }
         self.facet_section(&mut text);
         self.records_section(&mut text);
         self.names_section(&mut text);
@@ -87,7 +106,7 @@ impl StravaRunSummary {
             (None, _) => {
                 let _ = writeln!(
                     text,
-                    "filed under no facet, because none was chosen for this import and none is set for Strava imports: {NO_FACET_MEANS}\n"
+                    "filed under no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted: {NO_FACET_MEANS}\n"
                 );
             }
         }
@@ -102,6 +121,7 @@ impl StravaRunSummary {
                 plural(filing.filed, "workout is", "workouts are"),
                 match filing.moved {
                     0 => String::new(),
+                    1 if filing.filed == 1 => " it moved from another facet.".to_owned(),
                     moved => format!(" {moved} of them moved from another facet."),
                 }
             );
@@ -109,7 +129,7 @@ impl StravaRunSummary {
         if filing.kept_sensed > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because {} already listed with your activities from an earlier reading.\n",
+                "{} left where {}, because {} already listed with your activities, and stay listed there.\n",
                 plural(filing.kept_sensed, "workout was", "workouts were"),
                 either(filing.kept_sensed, "it was", "they were"),
                 either(filing.kept_sensed, "it's", "they're"),
@@ -135,16 +155,6 @@ impl StravaRunSummary {
                 "{} newly listed with your activities on {}.\n",
                 plural(records.written, "workout is", "workouts are"),
                 either(records.written, "its day", "their days"),
-            );
-        }
-        if records.sensed > 0 {
-            let _ = writeln!(
-                text,
-                "{} already listed with your activities from an earlier reading, and {} as {} {}.\n",
-                plural(records.sensed, "workout was", "workouts were"),
-                either(records.sensed, "stays", "stay"),
-                either(records.sensed, "it", "they"),
-                either(records.sensed, "is", "are"),
             );
         }
         if records.no_facet > 0 {
@@ -173,23 +183,26 @@ impl StravaRunSummary {
             );
             return;
         }
-        let _ = writeln!(
-            text,
-            "{} read for the people and gear they name, and {} read on an earlier import.{}\n",
-            plural(
-                names.calls - names.failed,
-                "workout's own words were",
-                "workouts' own words were"
-            ),
-            plural(names.cached, "was", "were"),
-            match names.failed {
-                0 => String::new(),
-                failed => format!(
-                    " {} couldn't be read, and importing again tries once more.",
-                    plural(failed, "workout", "workouts")
+        let read = names.calls - names.failed;
+        if read > 0 || names.cached > 0 || names.failed > 0 {
+            let _ = writeln!(
+                text,
+                "{} read for the people and gear they name, and {} read on an earlier import.{}\n",
+                plural(
+                    names.calls - names.failed,
+                    "workout's own words were",
+                    "workouts' own words were"
                 ),
-            },
-        );
+                plural(names.cached, "was", "were"),
+                match names.failed {
+                    0 => String::new(),
+                    failed => format!(
+                        " {} couldn't be read, and importing again tries once more.",
+                        plural(failed, "workout", "workouts")
+                    ),
+                },
+            );
+        }
         if names.waiting > 0 {
             let waiting = plural(
                 names.waiting,
@@ -260,6 +273,7 @@ mod tests {
         StravaRunSummary {
             new_workouts: 2,
             updated_workouts: 1,
+            replaced_workouts: 0,
             facet_title: None,
             facet: RunFacet {
                 facet: facet.map(str::to_owned),

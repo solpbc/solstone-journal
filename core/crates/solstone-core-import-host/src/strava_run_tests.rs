@@ -379,6 +379,25 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     assert!(!rendered.contains("easy with Sam"), "{rendered}");
     assert_eq!(count(&run, "names_calls"), 1);
     assert_eq!(records(root, "body", "20261004").len(), 1);
+
+    // Another facet for the same download: workouts already listed with the
+    // owner's activities keep their facet beside that listing, so a listing
+    // and its workout never split.
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_150000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(count(&run, "filed"), 0);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+    assert_eq!(records(root, "body", "20261004").len(), 1);
+    assert!(records(root, "work", "20261004").is_empty());
 }
 
 #[test]

@@ -125,6 +125,11 @@ fn each_day_record(
     Ok(())
 }
 
+/// Whether a body record names `key` on `day`, in any facet folder.
+pub(crate) fn has_record(journal: &Path, day: &str, key: &str) -> Result<bool, (String, String)> {
+    recorded_keys(journal, day).map(|keys| keys.contains_key(key))
+}
+
 /// Every account key a body record names on `day`, in any facet, with what
 /// code wrote on it, read line by line as bytes: a line that can't be read
 /// names none, and the rest still name theirs. A day file that exists but

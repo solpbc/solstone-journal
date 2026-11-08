@@ -1393,6 +1393,7 @@ fn run_strava_internal(
     let run_summary = crate::strava_summary::StravaRunSummary {
         new_workouts: corrected_counts.new_workouts as u64,
         updated_workouts: corrected_counts.present_updated as u64,
+        replaced_workouts: corrected_counts.replaced_workouts as u64,
         facet_title: run_facet.facet.as_deref().and_then(|facet| {
             solstone_core_facets::read_facet_declaration(journal, facet)
                 .ok()
