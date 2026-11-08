@@ -82,7 +82,7 @@ pub use folder_admit::{
 pub use force_notice::{flush_force_notice, flush_force_notice_then, force_day_notice};
 pub use heartbeat::{HeartbeatExit, ImportHeartbeat};
 pub use metadata::{
-    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, FIRST_SAVED_AT_MS,
+    AttemptFacts, AttemptHolder, AttemptRead, AttemptState, BODY_FACET_METADATA, FIRST_SAVED_AT_MS,
     IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, ImportMetadata, RUNNING_ATTEMPT_BOUND_MS,
     StagedEntityList, StagedEntityRecord, admit_running_attempt, attempt_holder, get_attempt_facts,
     hold_import_lock, import_time_ms, journal_archive_result_metadata, queued_task_ms,

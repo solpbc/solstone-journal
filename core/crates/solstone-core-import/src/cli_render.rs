@@ -97,7 +97,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
 pub const BACKENDS: &[&str] = &["plaud", "obsidian", "audio", "oura"];
 
 pub const HELP: &str = concat!(
-    "usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET]\n",
+    "usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET] [--no-facet]\n",
     "                        [--setting SETTING] [--source SOURCE] [--force]\n",
     "                        [--auto [AUTO]] [--dry-run] [--confirm-body-save]\n",
     "                        [--date-from DATE_FROM] [--date-to DATE_TO]\n",
@@ -112,8 +112,10 @@ pub const HELP: &str = concat!(
     "positional arguments:\n  media                 Path to audio or text file\n\n",
     "options:\n  -h, --help            show this help message and exit\n",
     "  --timestamp TIMESTAMP\n                        Generic .txt/.md use this, or --auto to adopt a detected timestamp (--timestamp YYYYMMDD_HHMMSS, or a date and time with its offset, such as 2025-11-02T01:30:00-07:00)\n",
-    "  --facet FACET         File this audio or text file under FACET, one of your unmuted facets,\n",
-    "                        instead of letting your journal choose\n",
+    "  --facet FACET         File this audio or text file, or these Strava workouts, under FACET,\n",
+    "                        one of your unmuted facets, instead of letting your journal choose\n",
+    "  --no-facet            File these Strava workouts under no facet, whatever the remembered\n",
+    "                        default is\n",
     "  --setting SETTING\n",
     "  --source SOURCE       Required for classified formats (ics, vault, chat export, image, PDF)\n",
     "  --force               Force re-import; body sources create a separate import\n",
