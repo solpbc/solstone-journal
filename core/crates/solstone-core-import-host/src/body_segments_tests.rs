@@ -539,12 +539,13 @@ fn stage_record(start: &str, end: &str, value: &str) -> String {
     )
 }
 
-/// Four days: readings every few minutes, a run each morning with its events
-/// when `runs`, and a night across each midnight.
+/// Four days: readings around midnight and both morning hours, a run each morning
+/// with its events when `runs`, and a night across each midnight. Keep readings
+/// inside and outside each experience without filling unrelated hours.
 fn days_records(runs: bool) -> Vec<String> {
     let mut records = Vec::new();
     for day in 10..14 {
-        for minute in (0..1440).step_by(23) {
+        for minute in [0, 23, 368, 391, 414, 437, 460, 736, 1357, 1380] {
             records.push(heart(
                 &format!(
                     "2026-10-{day} {:02}:{:02}:10 -0600",
@@ -722,6 +723,16 @@ fn stopping_at(point: &'static str, nth: usize) -> impl Fn(&str) -> bool {
     }
 }
 
+fn assert_resume_spills(root: &Path, point: &str) {
+    let folder = match point {
+        "scanned" => "scan",
+        "placed" => "placed",
+        _ => return,
+    };
+    let runs = runs_in(&root.join(RUN_DIR_REL).join(folder)).unwrap();
+    assert!(runs.len() > 1, "{point}: resume merges multiple runs");
+}
+
 #[test]
 fn a_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes() {
     let scratch = tempfile::tempdir().unwrap();
@@ -780,6 +791,7 @@ fn a_run_stopped_anywhere_resumes_to_what_an_uninterrupted_run_writes() {
             stopped.stop_at = Some(&stop);
             let error = run_apple_health_segments(root, &stopped).unwrap_err();
             assert!(error.contains(point), "{point}: {error}");
+            assert_resume_spills(root, point);
             // The owner runs it again later, under a new timestamp.
             let resumed =
                 run_apple_health_segments(root, &request_for(&source, "20261104_130000", facet))
@@ -1417,6 +1429,7 @@ fn a_run_over_an_earlier_import_stopped_anywhere_resumes_to_the_same_bytes() {
         stopped.stop_at = Some(&stop);
         let error = run_apple_health_segments(root, &stopped).unwrap_err();
         assert!(error.contains(point), "{point}: {error}");
+        assert_resume_spills(root, point);
         let resumed =
             run_apple_health_segments(root, &request(&second, "20261104_130000")).unwrap();
         assert!(resumed.finished, "{point} {nth}: {}", resumed.summary);
@@ -1537,6 +1550,17 @@ fn at_another_offset(records: &[String]) -> Vec<String> {
 
 fn every_kind(day: u32) -> Vec<String> {
     let mut records = days_records(true);
+    // Readings share the Count and Logged windows in the offset comparisons.
+    for minute in [552, 621] {
+        records.push(heart(
+            &format!(
+                "2026-10-{day} {:02}:{:02}:10 -0600",
+                minute / 60,
+                minute % 60
+            ),
+            &format!("{}", 60 + minute % 20),
+        ));
+    }
     records.push(format!(
         r#"<Record type="HKQuantityTypeIdentifierStepCount" {SOURCE} unit="count" startDate="2026-10-{day} 09:00:00 -0600" endDate="2026-10-{day} 09:05:00 -0600" value="300"/>"#
     ));
