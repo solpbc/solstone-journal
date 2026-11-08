@@ -25,11 +25,29 @@ impl ConveySetupHost {
             executor: tokio::runtime::Handle::try_current().ok(),
         }
     }
+
+    fn start_local_for_key(&self, journal: &Path, key: &str) -> Result<(), String> {
+        if solstone_core_local::embedded::supports_key(key) {
+            let root = self
+                .backup
+                .retained_root()
+                .map_err(|error| error.to_string())?;
+            if root.canonical_path() != journal {
+                return Err("journal binding changed".into());
+            }
+            crate::thinking_install::start_mobile(root, "local/qwen3.5-4b", false).map(|_| ())
+        } else {
+            crate::thinking_install::start(journal, "local/qwen3.5-4b").map(|_| ())
+        }
+    }
 }
 
 impl SetupHost for ConveySetupHost {
     fn start_local(&self, journal_root: &Path) -> Result<(), String> {
-        crate::thinking_install::start(journal_root, "local/qwen3.5-4b").map(|_| ())
+        self.start_local_for_key(
+            journal_root,
+            &solstone_core_local::install::pins::platform_key(),
+        )
     }
 
     fn cancel_local(&self, journal_root: &Path, attempt_id: &str) -> Result<(), String> {
@@ -391,6 +409,51 @@ fn persist_speech_refusal(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn mobile_first_run_uses_the_retained_installer_instead_of_a_sibling_executable() {
+        for key in ["aarch64-android", "aarch64-ios"] {
+            let directory = TempDir::new().unwrap();
+            let root = std::sync::Arc::new(
+                solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap(),
+            );
+            let path = root.canonical_path().to_owned();
+            let host = ConveySetupHost::new(
+                solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap(),
+            );
+            crate::thinking_install::prepare_mobile_local_installer(&path).unwrap();
+            crate::thinking_install::request_stop_mobile_local_installer(&path);
+            assert_eq!(
+                host.start_local_for_key(&path, key).unwrap_err(),
+                "local installer is stopped"
+            );
+            crate::thinking_install::prepare_mobile_local_installer(&path).unwrap();
+            // The ordinary host test has no registered native mobile factory.
+            // Reach the real retained worker and fail closed before any model fetch.
+            assert_eq!(
+                host.start_local_for_key(&path, key).unwrap_err(),
+                "the journal app does not provide this local runtime"
+            );
+            crate::thinking_install::stop_mobile_local_installer(&path).unwrap();
+            assert!(!path.join("cache/providers/local").exists());
+        }
+    }
+
+    #[test]
+    fn mobile_first_run_refuses_a_journal_other_than_its_retained_owner() {
+        let directory = TempDir::new().unwrap();
+        let other = TempDir::new().unwrap();
+        let root = std::sync::Arc::new(
+            solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap(),
+        );
+        let host =
+            ConveySetupHost::new(solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap());
+        assert_eq!(
+            host.start_local_for_key(other.path(), "aarch64-android")
+                .unwrap_err(),
+            "journal binding changed"
+        );
+    }
 
     #[cfg(unix)]
     #[tokio::test]
