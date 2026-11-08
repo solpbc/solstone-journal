@@ -20,28 +20,33 @@ BACKUP_NATIVE_WORK ?= $(BUILD_ROOT)/backup-native-work
 BACKUP_LIB := $(BUILD_ROOT)/backup-native/librestic_bridge.a
 BACKUP_RESOURCES := Resources/BackupRuntime
 PDFIUM_DIR := $(BUILD_ROOT)/pdfium
+QWEN_NATIVE_WORK ?= $(BUILD_ROOT)/qwen-native-work
+QWEN_PACKAGE_DIR ?= $(QWEN_NATIVE_WORK)/artifacts/mobile-qwen
 APP := $(BUILD_ROOT)/derived/Build/Products/Debug-iphoneos/JournalRuntimeDev.app
-NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app)
-.PHONY: build rust appraisal-rust appraisal-native backup-native pdfium payload project finalize install run check check-owner-fixture check-owner-recovery
+NATIVE_FEATURES := $(if $(AUDIO_MODELS_DIR),audio) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),owner-app qwen-native)
+.PHONY: build rust appraisal-rust appraisal-native backup-native qwen-native pdfium payload project finalize install run check check-owner-fixture check-owner-recovery
 rust:
-	IPHONEOS_DEPLOYMENT_TARGET=26.0 $(if $(RFDETR_LIB_DIR),RFDETR_LIB_DIR='$(RFDETR_LIB_DIR)') $(if $(PARAKEET_LIB_DIR),PARAKEET_LIB_DIR='$(PARAKEET_LIB_DIR)') $(if $(SOUND_CED_LIB_DIR),SOUND_CED_LIB_DIR='$(SOUND_CED_LIB_DIR)') cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
+	IPHONEOS_DEPLOYMENT_TARGET=26.0 $(if $(RFDETR_LIB_DIR),RFDETR_LIB_DIR='$(RFDETR_LIB_DIR)') $(if $(filter project-owner.yml,$(PROJECT_SPEC)),QWEN_ENGINE_LIB_DIR='$(QWEN_PACKAGE_DIR)') $(if $(PARAKEET_LIB_DIR),PARAKEET_LIB_DIR='$(PARAKEET_LIB_DIR)') $(if $(SOUND_CED_LIB_DIR),SOUND_CED_LIB_DIR='$(SOUND_CED_LIB_DIR)') cargo build --locked --manifest-path native/Cargo.toml --features '$(NATIVE_FEATURES)' --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/rust
 appraisal-rust:
 	IPHONEOS_DEPLOYMENT_TARGET=26.0 cargo build --locked --manifest-path appraisal-helper/Cargo.toml --target aarch64-apple-ios --target-dir $(BUILD_ROOT)/appraisal-rust
 appraisal-native:
 	python3 build_gpu_appraisal.py --work-dir $(APPRAISAL_NATIVE_WORK) --cache-dir $(CACHE_DIR) --output-lib $(NVAT_LIB) --resource-dir $(APPRAISAL_RESOURCES) --build-record $(APPRAISAL_BUILD_RECORD) --jobs $(JOBS)
 backup-native:
 	python3 build_backup.py --work-dir $(BACKUP_NATIVE_WORK) --cache-dir $(CACHE_DIR) --output-lib $(BACKUP_LIB) --resource-dir $(BACKUP_RESOURCES) --jobs $(JOBS)
+qwen-native:
+	python3 ../../scripts/mobile_native_build.py --platform ios --work-dir $(QWEN_NATIVE_WORK) --cache-dir $(CACHE_DIR) --components llama --jobs $(JOBS)
 pdfium:
 	python3 ../../scripts/package_mobile_pdfium.py --platform ios --cache-dir $(CACHE_DIR) --output $(PDFIUM_DIR)
 payload:
-	AUDIO_MODELS_DIR='$(AUDIO_MODELS_DIR)' SCREEN_OCR_MODELS_DIR='$(SCREEN_OCR_MODELS_DIR)' RFDETR_MODEL='$(RFDETR_MODEL)' REQUIRE_MEDIA_MODELS='$(if $(filter project-owner.yml,$(PROJECT_SPEC)),1,0)' python3 package_payload.py
+	QWEN_PACKAGE_DIR='$(if $(filter project-owner.yml,$(PROJECT_SPEC)),$(QWEN_PACKAGE_DIR))' REQUIRE_QWEN_RUNTIME='$(if $(filter project-owner.yml,$(PROJECT_SPEC)),1,0)' AUDIO_MODELS_DIR='$(AUDIO_MODELS_DIR)' SCREEN_OCR_MODELS_DIR='$(SCREEN_OCR_MODELS_DIR)' RFDETR_MODEL='$(RFDETR_MODEL)' REQUIRE_MEDIA_MODELS='$(if $(filter project-owner.yml,$(PROJECT_SPEC)),1,0)' python3 package_payload.py
 project: payload backup-native
 	xcodegen generate --spec $(PROJECT_SPEC)
 build: rust appraisal-rust appraisal-native pdfium project
-	xcodebuild -project JournalRuntimeDev.xcodeproj -scheme JournalRuntimeDev -configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(BUILD_ROOT)/derived -allowProvisioningUpdates RUST_LIB=$(RUST_LIB) APPRAISAL_LIB=$(APPRAISAL_LIB) NVAT_LIB=$(NVAT_LIB) BACKUP_LIB=$(BACKUP_LIB) $(if $(BUILD_NUMBER),CURRENT_PROJECT_VERSION=$(BUILD_NUMBER),) build
-	python3 finalize.py $(BUILD_ROOT) --nvattest-lib $(NVAT_LIB) --appraisal-build-record $(APPRAISAL_BUILD_RECORD) --appraisal-resources $(APPRAISAL_RESOURCES) --backup-lib $(BACKUP_LIB) --backup-work $(BACKUP_NATIVE_WORK) --pdfium-dir $(PDFIUM_DIR) $(FINALIZE_ARGS)
+	xcodebuild -project JournalRuntimeDev.xcodeproj -scheme JournalRuntimeDev -configuration Debug -destination '$(DESTINATION)' -derivedDataPath $(BUILD_ROOT)/derived -allowProvisioningUpdates RUST_LIB=$(RUST_LIB) APPRAISAL_LIB=$(APPRAISAL_LIB) NVAT_LIB=$(NVAT_LIB) BACKUP_LIB=$(BACKUP_LIB) QWEN_PACKAGE_DIR=$(QWEN_PACKAGE_DIR) $(if $(BUILD_NUMBER),CURRENT_PROJECT_VERSION=$(BUILD_NUMBER),) build
+	python3 finalize.py $(BUILD_ROOT) --nvattest-lib $(NVAT_LIB) --appraisal-build-record $(APPRAISAL_BUILD_RECORD) --appraisal-resources $(APPRAISAL_RESOURCES) --backup-lib $(BACKUP_LIB) --backup-work $(BACKUP_NATIVE_WORK) --pdfium-dir $(PDFIUM_DIR) $(if $(filter project-owner.yml,$(PROJECT_SPEC)),--qwen-package-dir $(QWEN_PACKAGE_DIR)) $(FINALIZE_ARGS)
 .PHONY: build-owner install-owner
 build-owner:
+	@test -f "$(QWEN_PACKAGE_DIR)/manifest.json" || (echo "Run make qwen-native or set QWEN_PACKAGE_DIR to its verified native package"; exit 2)
 	@test -n "$(AUDIO_MODELS_DIR)" || (echo "Set AUDIO_MODELS_DIR to the verified mobile audio resources"; exit 2)
 	$(MAKE) build PROJECT_SPEC=project-owner.yml FINALIZE_ARGS='--bundle-identifier app.solstone.journal.owner.dev'
 install-owner: build-owner
