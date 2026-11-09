@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::assets;
 
 #[derive(Debug, Clone, Copy)]
 pub struct AppDefinition {
