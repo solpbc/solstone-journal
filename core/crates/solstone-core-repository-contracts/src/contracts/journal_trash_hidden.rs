@@ -62,10 +62,16 @@ const NAMES_THE_TRASH: &[(&str, &str)] = &[
 ];
 
 /// Files that list the journal root and already skip the trash, and how.
-const ROOT_WALKS: &[(&str, &str)] = &[(
-    "core/crates/solstone-core-segment/src/chronicle_migration.rs",
-    "keeps only eight-digit day names",
-)];
+const ROOT_WALKS: &[(&str, &str)] = &[
+    (
+        "core/crates/solstone-core-segment/src/chronicle_migration.rs",
+        "keeps only eight-digit day names",
+    ),
+    (
+        "core/crates/solstone-core-trash/src/previous_journal.rs",
+        "keeps only the names a restore sets aside into",
+    ),
+];
 
 /// Calls that list a directory.
 const LISTINGS: &[&str] = &[
