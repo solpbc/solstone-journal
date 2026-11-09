@@ -632,7 +632,8 @@
   .import-table td.import-at-cell { grid-column: 1 / -1; font-size: .85em; color: var(--ink-soft); }
   .import-table td.import-at-cell::before { content: 'imported at '; }
   .import-table td.source-cell { overflow-wrap: anywhere; }
-  .import-table--picking tbody tr { position: relative; padding-left: 2.5em; }
+  .import-table--picking tbody tr { position: relative; padding-left: 2.5em; grid-template-columns: minmax(min-content, 1fr) auto; }
+  .import-table--picking td.source-cell { overflow-wrap: normal; }
   .import-table--picking td.import-pick-col { position: absolute; left: 4px; top: 12px; width: auto; }
   .import-pick-col input { width: 20px; height: 20px; }
   .import-pick-bar button { min-height: 44px; }

@@ -66,7 +66,7 @@ const sandbox = {
   saveField: (el, section, key, value) => saves.push({ section, key, value }),
 };
 vm.createContext(sandbox);
-vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected,trashWord,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
+vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,TRASH_WORDS,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected,trashWord,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
 api.setupTrash();
@@ -121,10 +121,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.ok(!impRow.textContent.includes(C.returned));
   assert.deepStrictEqual(quals(bareRow), [api.REMOVAL_IMPORTED.replace('{day}', '20261102')], 'no file name and an unknown source leave no empty qualifier');
   assert.ok(bareRow.textContent.includes(C.segmentOne.replace('{n}', 1)));
-  assert.strictEqual(api.trashWord([imp('i')], 1), 'import');
-  assert.strictEqual(api.trashWord([imp('i'), imp('j')], 2), 'imports');
-  assert.strictEqual(api.trashWord([imp('i'), seg('a')], 2), 'things', 'a mixed selection stays things');
-  assert.strictEqual(api.trashWord([{ kind: 'workout' }], 1), 'workout');
+  assert.strictEqual(api.trashWord([imp('i')], 1), api.TRASH_WORDS.import[0]);
+  assert.strictEqual(api.trashWord([imp('i'), imp('j')], 2), api.TRASH_WORDS.import[1]);
+  assert.ok(!Object.values(api.TRASH_WORDS).flat().includes(api.trashWord([imp('i'), seg('a')], 2)), 'a mixed selection takes neither kind\'s word');
+  assert.strictEqual(api.trashWord([{ kind: 'workout' }], 1), api.TRASH_WORDS.workout[0]);
   answers['api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
   await api.loadTrash();
 
