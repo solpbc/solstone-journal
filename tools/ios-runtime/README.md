@@ -24,6 +24,20 @@ The helper owns persistent files in its private `Documents/journal-<suite>` dire
 
 ## Build and install
 
+An isolated development identity must agree across `JOURNAL_BUNDLE_IDENTIFIER`,
+`JOURNAL_APP_GROUP`, `Shared/Identity.swift` and the host names in `Helper.swift`
+and `Appraisal.swift`. Pass that bundle identifier to `finalize.py`. The finalizer
+accepts owner/runtime development IDs under `app.solstone.journal` and checks the
+built host and worker identities. Owner identities retain all native Qwen and
+media admission requirements.
+
+An owner-only Extended Virtual Addressing comparison can select
+`JOURNAL_OWNER_ENTITLEMENTS=Shared/OwnerExtendedVA.entitlements`. The default
+remains `Shared/Serving.entitlements`; worker and appraisal entitlements stay
+separate. The selected profile must authorize EVA, and the final signature must
+contain it. This option requests address space, not an increased memory limit;
+it does not establish model coexistence or release qualification.
+
 On a mac with Xcode 26, XcodeGen, Rust's `aarch64-apple-ios` target and a paired device in Developer Mode:
 
 ```sh

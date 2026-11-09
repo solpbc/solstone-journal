@@ -23,6 +23,31 @@ import package_mobile_media
 import package_mobile_qwen
 
 
+def bundle_role(identifier: str) -> str:
+    match = re.fullmatch(
+        r"app\.solstone\.journal\.(owner|runtime)\.[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*",
+        identifier,
+    )
+    if len(identifier) > 255 or match is None:
+        raise ValueError("bundle identifier must name an owner or runtime development app")
+    return match.group(1)
+
+
+def development_bundle_identifier(identifier: str) -> str:
+    bundle_role(identifier)
+    return identifier
+
+
+def validate_host_identity(app: pathlib.Path, identifier: str) -> None:
+    for bundle, expected in [
+        (app, identifier),
+        (app / "Extensions/JournalWorker.appex", identifier + ".worker"),
+    ]:
+        actual = plistlib.loads((bundle / "Info.plist").read_bytes())
+        if actual.get("CFBundleIdentifier") != expected:
+            raise ValueError("built host/helper bundle identity differs from signing request")
+
+
 def sha256(path: pathlib.Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -288,7 +313,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("build_root", type=pathlib.Path)
     parser.add_argument("--bundle-identifier", default="app.solstone.journal.runtime.dev",
-                        choices=("app.solstone.journal.runtime.dev", "app.solstone.journal.owner.dev"))
+                        type=development_bundle_identifier)
     parser.add_argument("--nvattest-lib", type=pathlib.Path, required=True)
     parser.add_argument("--appraisal-build-record", type=pathlib.Path, required=True)
     parser.add_argument("--appraisal-resources", type=pathlib.Path, required=True)
@@ -306,7 +331,8 @@ def main() -> int:
         "--identity", default="Apple Development: Created via API (SNP7CMKMZ5)"
     )
     args = parser.parse_args()
-    if args.bundle_identifier == "app.solstone.journal.owner.dev" and args.qwen_package_dir is None:
+    owner = bundle_role(args.bundle_identifier) == "owner"
+    if owner and args.qwen_package_dir is None:
         raise ValueError("owner builds require the verified native Qwen package")
 
     build_record = json.loads(args.appraisal_build_record.read_text())
@@ -319,14 +345,15 @@ def main() -> int:
         / "derived/Build/Intermediates.noindex/JournalRuntimeDev.build/Debug-iphoneos"
     )
     app = products / "JournalRuntimeDev.app"
+    validate_host_identity(app, args.bundle_identifier)
     sound_tag = None
     audio_source = ROOT / "tools/ios-runtime/Resources/AudioModels"
-    if args.bundle_identifier == "app.solstone.journal.owner.dev" or any(audio_source.glob("*.gguf")):
+    if owner or any(audio_source.glob("*.gguf")):
         sound_tag = package_mobile_media.verify_sound_tag_resources(ROOT, audio_source)
         package_mobile_media.verify_sound_tag_resources(ROOT, app / "AudioModels")
     media_manifest = None
     payload_source = ROOT / "tools/ios-runtime/Resources/JournalPayload"
-    if args.bundle_identifier == "app.solstone.journal.owner.dev" or (payload_source / "media-models.json").exists():
+    if owner or (payload_source / "media-models.json").exists():
         media_manifest = package_mobile_media.verify_payload(ROOT, payload_source)
         for bundle in [app, app / "Extensions/JournalWorker.appex"]:
             package_mobile_media.verify_directory(bundle / "JournalPayload", media_manifest)

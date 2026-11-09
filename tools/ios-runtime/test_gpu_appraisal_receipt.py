@@ -4,10 +4,13 @@
 
 import json
 import pathlib
+import plistlib
 import struct
+import sys
 import tempfile
 import tomllib
 import unittest
+from unittest import mock
 from types import SimpleNamespace
 
 from build_gpu_appraisal import (
@@ -18,16 +21,57 @@ from build_gpu_appraisal import (
 )
 from finalize import (
     ROOT,
+    bundle_role,
     canonical_digest,
     macho_content_sha256,
+    main as finalize_main,
     package_members,
     prepare_rim_directory,
     sha256,
     validate_build_inputs,
+    validate_host_identity,
 )
 
 
 class AppraisalBuildTests(unittest.TestCase):
+    def test_an_isolated_owner_still_requires_the_qwen_closure_before_signing(self):
+        for identifier in ["app.solstone.journal.owner.dev", "app.solstone.journal.owner.eva261108-iz4fjkhb"]:
+            argv = ["finalize.py", "/unused/build", "--bundle-identifier", identifier]
+            for flag in ["--nvattest-lib", "--appraisal-build-record", "--appraisal-resources",
+                         "--backup-lib", "--backup-work", "--pdfium-dir"]:
+                argv.extend([flag, "/unused/input"])
+            with self.subTest(identifier=identifier), mock.patch.object(sys, "argv", argv), \
+                    mock.patch("finalize.subprocess.run") as run, \
+                    self.assertRaisesRegex(ValueError, "owner builds require the verified native Qwen package"):
+                finalize_main()
+            run.assert_not_called()
+
+    def test_isolated_owner_identity_keeps_its_owner_role(self):
+        self.assertEqual(bundle_role("app.solstone.journal.owner.dev"), "owner")
+        self.assertEqual(bundle_role("app.solstone.journal.runtime.dev"), "runtime")
+        self.assertEqual(bundle_role("app.solstone.journal.owner.eva261108-iz4fjkhb"), "owner")
+        for invalid in ["app.solstone.journal.owner", "app.solstone.journal.owner..dev",
+                        "app.solstone.journal.owner.dev/other", "app.solstone.journal.owner.-dev",
+                        "app.solstone.journal.runtime.dev-", "other.company.owner.dev",
+                        "app.solstone.journal.owner." + "a" * 256]:
+            with self.subTest(identifier=invalid), self.assertRaises(ValueError):
+                bundle_role(invalid)
+
+    def test_built_host_and_worker_must_match_the_requested_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = pathlib.Path(temp) / "Owner.app"
+            worker = app / "Extensions/JournalWorker.appex"
+            worker.mkdir(parents=True)
+            identifier = "app.solstone.journal.owner.eva261108-iz4fjkhb"
+            (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": identifier}))
+            (worker / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": identifier + ".worker"}))
+            validate_host_identity(app, identifier)
+            with self.assertRaises(ValueError):
+                validate_host_identity(app, "app.solstone.journal.runtime.dev")
+            (worker / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "app.solstone.journal.owner.dev.worker"}))
+            with self.assertRaises(ValueError):
+                validate_host_identity(app, identifier)
+
     def test_generated_host_profile_records_scope_and_preserves_sdk_source(self):
         with tempfile.TemporaryDirectory() as temp:
             work = pathlib.Path(temp)
