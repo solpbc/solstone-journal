@@ -201,7 +201,18 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  #ifdef DEBUG_TIMINGS
          static int64_t t_prev = 0;
          int64_t t_start = ggml_time_us();
-@@ -5201,11 +5260,29 @@
+@@ -4715,7 +4774,9 @@
+                     err = "Compute error.";
+                 }
+ 
+-                // TODO: handle ret == 2 (abort) when we start aborting
++                if (ret == 2) {
++                    err = "local thinking was interrupted.";
++                }
+ 
+                 if (!err.empty()) {
+                     SRV_ERR("%s off = %d, n_batch = %d, ret = %d\n", err.c_str(), off, n_batch, ret);
+@@ -5201,11 +5262,29 @@
  
  void server_context::start_loop() {
      auto & params = impl->params_base;
