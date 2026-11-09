@@ -639,6 +639,13 @@ function aboutCalls(page) {
   return page.server.calls.filter((call) => call.url === '/api/system/about');
 }
 
+// A probe asks the same question on several connections at once.
+const FANOUT = 4;
+
+function probeRounds(page) {
+  return aboutCalls(page).length / FANOUT;
+}
+
 asyncCase('stream: steady heartbeats never start a probe', async () => {
   const page = streamPage();
   openStream(page.eventSources[0]);
@@ -657,7 +664,7 @@ asyncCase('stream: silence starts a probe, and an answer opens a new stream with
   await page.clock.advance(14000);
   assert.strictEqual(aboutCalls(page).length, 0, 'not before the silence bound');
   await page.clock.advance(4000);
-  assert.strictEqual(aboutCalls(page).length, 1, 'the watchdog, not the browser, asks');
+  assert.strictEqual(probeRounds(page), 1, 'the watchdog, not the browser, asks');
   aboutCalls(page)[0].respond(200, '{}');
   await flush();
   assert.strictEqual(page.eventSources.length, 2, 'a new stream');
@@ -709,17 +716,30 @@ asyncCase('stream: "connected" is never shown after forty seconds of silence', a
   assert.ok(connectedWhileSilent < 40000, `connected shown at ${connectedWhileSilent} ms of silence`);
 });
 
+asyncCase('stream: one copy of the probe on a connection that never answers doesn\'t hold it up', async () => {
+  const page = streamPage();
+  openStream(page.eventSources[0]);
+  await page.clock.advance(18000);
+  const round = aboutCalls(page);
+  assert.strictEqual(round.length, FANOUT);
+  round[2].respond(200, '{}');
+  await flush();
+  assert.strictEqual(page.eventSources.length, 2, 'the first answer reopens the stream at once');
+  assert.ok(round.filter((call) => call !== round[2]).every((call) => call.aborted), 'the rest are stopped');
+});
+
 asyncCase('stream: a lost sign-in goes to the sign-in path, with no reconnect loop', async () => {
   const page = streamPage();
   openStream(page.eventSources[0]);
   page.eventSources[0].error(true);
   await page.clock.advance(3000);
-  assert.strictEqual(aboutCalls(page).length, 1);
+  assert.strictEqual(probeRounds(page), 1);
   aboutCalls(page)[0].respond(401, '');
   await page.clock.advance(60000);
   assert.deepStrictEqual(page.assigned, ['/']);
   assert.strictEqual(page.eventSources.length, 1, 'no new stream is opened');
-  assert.strictEqual(aboutCalls(page).length, 1, 'and no more probes');
+  assert.strictEqual(probeRounds(page), 1, 'and no more probes');
+  assert.ok(aboutCalls(page).every((call) => call.settled), 'the other copies were stopped');
 });
 
 asyncCase('stream: a stream that keeps closing after the journal answers backs off', async () => {
