@@ -12400,6 +12400,50 @@ fn a_connection_that_may_not_read_the_window_gets_no_body_search_hit() {
 }
 
 #[test]
+fn a_body_search_hit_in_a_group_with_a_hidden_member_comes_back_hidden() {
+    use solstone_core_format::content::body_records::{
+        BodyRow, RowKind, decode_rows, encode_rows, recorder_id,
+    };
+    let journal = body_record_journal(true);
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    hold_body_title(&journal, "Zebrafinch loop", json!({}));
+    // A second recorder's account of the same run, hidden by the owner: the
+    // group reads hidden, though the held record's own line doesn't say so.
+    let window = journal.path().join(WATCH_WINDOW);
+    let mut rows = decode_rows(&fs::read_to_string(window.join("body.jsonl")).unwrap()).unwrap();
+    let mut second = BodyRow::new(
+        RowKind::Experience,
+        "w2".to_owned(),
+        "apple_health",
+        "HKWorkoutActivityTypeRunning",
+        "Running".to_owned(),
+    );
+    second.experience = Some("workout".to_owned());
+    second.start = rows[0].start.clone();
+    second.end = rows[0].end.clone();
+    second.by = Some("Synthetic Phone".to_owned());
+    rows.push(second.clone());
+    fs::write(window.join("body.jsonl"), encode_rows(&rows)).unwrap();
+    let path = journal
+        .path()
+        .join("facets/alpha/activities/20260308.jsonl");
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str(&format!(
+        "{}\n",
+        json!({"id": "body_second", "source": "body", "activity": "workout", "hidden": true,
+            "account": {"key": "import.apple_health\u{1f}w2", "start": second.start, "end": second.end,
+                "type": "running", "recorder": recorder_id("import.apple_health", second.by.as_deref())}})
+    ));
+    fs::write(&path, text).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    let hits = activity_hits_for(&journal, "Zebrafinch");
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert_eq!(hits[0]["hidden"], true, "{hits:?}");
+}
+
+#[test]
 fn a_hidden_body_record_says_so_in_search_and_a_body_entry_moves_no_other_entry() {
     let journal = body_record_journal(true);
     PermissionStore::open(journal.path())
