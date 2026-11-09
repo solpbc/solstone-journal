@@ -8,7 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- settings › storage has a removal history. your journal now adds a line each time something is removed from it or from your backup: what it was, when, and where it was removed from. the history never keeps what was in it, and nothing removed before this version is listed.
+- deleting a segment or a memory an agent saved now moves it to the trash, in settings › trash, in place of the 10 seconds you had to cancel. it leaves your journal at once and waits in the trash until the date beside it, 7 days later unless you choose from 1 to 30, and you can recover it as it was or erase it sooner. summaries made from it elsewhere in your journal stay where they are.
+- settings › trash has a removal history. your journal now adds a line each time something leaves it, comes back from the trash or is erased: what it was, when, and where. the history never keeps what was in it, and nothing removed before this version is listed.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -16,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- a segment you deleted now comes back if a device sends it again or an archive you merge in holds it. before, your journal refused it.
 - your journal no longer guesses your mood. it no longer labels each part of your day with a mood like "tense" or "celebratory". labels an older version added, to a summary or to a line of a transcript, are no longer shown to you or to agents you've connected. they stay in your journal, unchanged.
 - your journal's thinking no longer reads your Strava workouts to describe them or your day. each new workout is now listed with your activities on its day, as Strava recorded it, under the facet you choose for the import. workouts already listed stay as they are.
 - the next time you import from Strava, your journal offers a facet for your workouts: a facet you named body or health, if you have one, or a new body facet. before you answer it says what a no means: new workouts aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them, though search and the body app still show them. your answer is remembered, and you can choose another facet, or none, for any import.
