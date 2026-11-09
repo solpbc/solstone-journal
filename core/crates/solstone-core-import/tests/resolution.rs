@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::Value;
 use solstone_core_import::{
-    AutoTimestamp, DetectedTimestamp, ModelDetectionError, RegistrySource,
-    ResolutionError, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
-    SkipReason, Timestamp, validate_timestamp,
+    AutoTimestamp, DetectedTimestamp, ModelDetectionError, RegistrySource, ResolutionError,
+    ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource, SkipReason, Timestamp,
+    validate_timestamp,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);

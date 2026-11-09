@@ -97,6 +97,8 @@ fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Valu
         "kind": "import",
         "source": source,
         "import_id": id,
+        "label": item.label,
+        "imported_day": id.get(..8),
         "segments": segments.len(),
         "days": [days.first(), days.last()],
         "trashed_at": item.trashed_at,
@@ -150,6 +152,7 @@ fn page_surface(page: Option<&str>) -> Surface {
     let page = match page {
         Some("transcripts") => Page::Transcripts,
         Some("agents") => Page::Agents,
+        Some("import") => Page::Import,
         _ => Page::Settings,
     };
     Surface::Web { page }
@@ -252,7 +255,9 @@ mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
     use axum::http::{Method, Request, StatusCode};
+    use solstone_core_indexer_store::RetentionIndex;
     use solstone_core_retention::Target;
+    use solstone_core_retention::recording_trash::Recordings;
     use std::fs;
     use tower::ServiceExt;
 

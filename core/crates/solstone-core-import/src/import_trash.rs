@@ -39,6 +39,62 @@ use crate::metadata::{AttemptHolder, attempt_holder};
 /// Where every import's record lives.
 const IMPORTS_DIR: &str = "imports";
 
+/// Why an import can't move while its run goes on: the words a set's refusal
+/// is keyed on.
+pub const STILL_IMPORTING: &str = "this import is still running; try again when it's done";
+
+/// Whether an import of `source` deletes as a whole here. A journal archive
+/// merge isn't one thing (each thing it brought in is its own); Strava,
+/// Apple Health and Oura imports move with the body pages' lane.
+pub fn deletes_here(source: &str) -> bool {
+    !matches!(
+        source,
+        "journal_archive" | "strava" | "apple_health" | "oura"
+    )
+}
+
+/// What kind of failure a refused delete was, for the page: a removal
+/// already in progress (`busy`), an import still running (`importing`), or
+/// anything else (`other`).
+pub fn failure_key(error: &TrashError) -> &'static str {
+    match error {
+        TrashError::InFlight | TrashError::Unfinished(_) => "busy",
+        TrashError::Held(reason) if reason == STILL_IMPORTING => "importing",
+        _ => "other",
+    }
+}
+
+/// The name the owner knew the import by: the file they gave it, if any.
+pub fn import_label(journal: &Path, id: &str) -> Option<String> {
+    let metadata = read_json(&journal.join(IMPORTS_DIR).join(id).join("import.json"))?;
+    let name = str_of(&metadata, "original_filename")?;
+    Some(name.chars().take(200).collect())
+}
+
+/// How many original files the import kept: what it was given, kept in its
+/// record, and the originals in its own segments.
+pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
+    let record = journal.join(&things.record);
+    let in_record = read_json(&record.join("import.json"))
+        .and_then(|metadata| {
+            let path = str_of(&metadata, "file_path")?.to_owned();
+            Some(Path::new(&path).starts_with(&record) && Path::new(&path).is_file())
+        })
+        .unwrap_or(false);
+    let in_segments = things
+        .segments
+        .iter()
+        .filter_map(|segment| std::fs::read_dir(journal.join(segment)).ok())
+        .flat_map(|listing| listing.flatten())
+        .filter(|entry| {
+            entry.file_name().to_str().is_some_and(|name| {
+                name.starts_with("original.") || name.starts_with("imported_audio.")
+            })
+        })
+        .count();
+    usize::from(in_record) + in_segments
+}
+
 /// What one import holds, journal-relative: what its trash item moves.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ImportThings {
@@ -328,7 +384,15 @@ impl<'a> Imports<'a> {
             source: things.source.clone(),
             id: id.to_owned(),
         };
-        solstone_core_trash::detach(journal, self, unit, action, surface, things.paths())
+        solstone_core_trash::detach_labelled(
+            journal,
+            self,
+            unit,
+            action,
+            surface,
+            things.paths(),
+            import_label(journal, id),
+        )
     }
 }
 
@@ -368,7 +432,7 @@ struct ImportHold {
 impl Hold for ImportHold {
     fn check(&self) -> Result<(), String> {
         if attempt_holder(&self.journal, &self.id) == AttemptHolder::Held {
-            return Err("this import is still running; try again when it's done".to_owned());
+            return Err(STILL_IMPORTING.to_owned());
         }
         self.segments.check()
     }

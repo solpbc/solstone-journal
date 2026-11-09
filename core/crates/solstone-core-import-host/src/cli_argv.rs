@@ -19,8 +19,8 @@ use solstone_core_import::cli_render::{self, CliRun};
 use solstone_core_import::connect::{OuraConnectRequest, connect_oura};
 use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::detect::{
-    RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
-    ResolvedSource, resolve_import,
+    RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
+    resolve_import,
 };
 use solstone_core_import::sync_audio::{
     AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioSyncRequest,

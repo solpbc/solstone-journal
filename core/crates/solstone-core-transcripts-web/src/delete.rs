@@ -199,7 +199,7 @@ pub(crate) async fn delete_segments(
             );
             if page_of(&segment.stream) != page || !dir.is_dir() || is_tombstone_only(&dir) {
                 failed.push(
-                    json!({"segment": segment, "reason": "that segment isn't in your journal."}),
+                    json!({"segment": segment, "key": "other", "reason": "that segment isn't in your journal."}),
                 );
                 continue;
             }
@@ -222,6 +222,7 @@ pub(crate) async fn delete_segments(
                     &segment.stream,
                     &segment.key,
                 )],
+                label: None,
             });
             order.push(segment);
         }
@@ -246,6 +247,7 @@ pub(crate) async fn delete_segments(
                     })),
                     solstone_core_trash::SetResult::Refused(error) => failed.push(json!({
                         "segment": segment,
+                        "key": solstone_core_import::import_trash::failure_key(&error),
                         "reason": set_reason(&error),
                     })),
                 }

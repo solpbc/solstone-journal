@@ -13,7 +13,10 @@ use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use serde_json::{Value, json};
-use solstone_core_import::import_trash::{ImportThings, Imports, import_things, is_import_id};
+use solstone_core_import::import_trash::{
+    ImportThings, Imports, deletes_here, failure_key, import_label, import_things, is_import_id,
+    kept_originals,
+};
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_removals::{Action, Page, Surface, Unit};
 use solstone_core_trash::{Chosen, SetResult, TrashError};
@@ -23,12 +26,6 @@ use crate::http::{error, import_not_found, json as json_response};
 
 /// The most imports one set may hold.
 const SET_LIMIT: usize = 200;
-
-/// Sources whose imports delete elsewhere for now: Strava's workouts are
-/// shared across its imports and move with the body pages.
-fn deletes_elsewhere(source: &str) -> bool {
-    source == "strava"
-}
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct DeleteBody {
@@ -87,10 +84,10 @@ fn preview_of(root: &Path, id: &str, things: &ImportThings) -> Value {
         "imported_at": imported_at(root, id),
         "segments": things.segments.len(),
         "days": days.map(|(first, last)| json!([first, last])),
-        "files": things.files.len(),
+        "originals": kept_originals(root, things),
         "shared": things.shared.len(),
         "bytes": bytes,
-        "deletes_here": !deletes_elsewhere(&things.source),
+        "deletes_here": deletes_here(&things.source),
     })
 }
 
@@ -145,13 +142,16 @@ fn failed(detail: &str) -> Response {
 fn trash_error(error_value: &TrashError) -> Response {
     match error_value {
         TrashError::Missing(_) | TrashError::NotInTrash => import_not_found("Import not found"),
-        TrashError::Held(reason) => error(
-            StatusCode::CONFLICT,
-            &format!("{reason}. nothing was deleted."),
-            "import_delete_held",
-            reason.clone(),
-            None,
-        ),
+        TrashError::Held(_) | TrashError::InFlight => {
+            let mut body = crate::http::error_body(
+                "that import couldn't be moved, so nothing was deleted.",
+                "import_delete_held",
+                error_value.to_string(),
+                None,
+            );
+            body["key"] = json!(failure_key(error_value));
+            json_response(StatusCode::CONFLICT, body)
+        }
         other => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "your journal couldn't move that to the trash, so nothing was deleted.",
@@ -165,9 +165,9 @@ fn trash_error(error_value: &TrashError) -> Response {
 fn elsewhere() -> Response {
     error(
         StatusCode::CONFLICT,
-        "a Strava import is deleted from its own page for now.",
+        "this import can't be deleted here.",
         "import_delete_elsewhere",
-        "strava".to_owned(),
+        "not deleted as a whole here".to_owned(),
         None,
     )
 }
@@ -198,7 +198,7 @@ pub(crate) async fn delete(
         let Some(things) = import_things(&root, &id) else {
             return Err(TrashError::Missing("import".to_owned()));
         };
-        if deletes_elsewhere(&things.source) {
+        if !deletes_here(&things.source) {
             return Ok(None);
         }
         let index = RetentionIndex::new(&root);
@@ -274,9 +274,9 @@ pub(crate) async fn delete_set(
                 .then(|| import_things(&root, &id))
                 .flatten();
             match things {
-                None => failed.push(json!({"id": id, "reason": "that import isn't in your journal."})),
-                Some(things) if deletes_elsewhere(&things.source) => failed.push(
-                    json!({"id": id, "reason": "a Strava import is deleted from its own page for now."}),
+                None => failed.push(json!({"id": id, "key": "other", "reason": "that import isn't in your journal."})),
+                Some(things) if !deletes_here(&things.source) => failed.push(
+                    json!({"id": id, "key": "other", "reason": "this import can't be deleted here."}),
                 ),
                 Some(things) => {
                     chosen.push(Chosen {
@@ -285,6 +285,7 @@ pub(crate) async fn delete_set(
                             id: id.clone(),
                         },
                         paths: things.paths(),
+                        label: import_label(&root, &id),
                     });
                     order.push(id);
                 }
@@ -309,7 +310,11 @@ pub(crate) async fn delete_set(
                         "result": moved(&item.id, &item.erase_at, request.erase, erased),
                     })),
                     SetResult::Refused(error) => {
-                        failed.push(json!({"id": id, "reason": crate_reason(&error)}));
+                        failed.push(json!({
+                            "id": id,
+                            "key": failure_key(&error),
+                            "reason": crate_reason(&error),
+                        }));
                     }
                 }
             }

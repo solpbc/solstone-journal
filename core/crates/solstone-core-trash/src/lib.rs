@@ -130,6 +130,11 @@ pub struct Item {
     pub bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending: Option<Pending>,
+    /// The owner's own name for it, where nothing else tells two items apart
+    /// (an import's file name). Kept with the item and erased with it; never
+    /// in the removal history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 impl Item {
@@ -237,6 +242,19 @@ pub fn detach(
     surface: Surface,
     paths: Vec<String>,
 ) -> Result<Item, TrashError> {
+    detach_labelled(journal, kind, unit, action, surface, paths, None)
+}
+
+/// [`detach`], keeping the owner's own name for the thing with the item.
+pub fn detach_labelled(
+    journal: &Path,
+    kind: &dyn Kind,
+    unit: Unit,
+    action: Action,
+    surface: Surface,
+    paths: Vec<String>,
+    label: Option<String>,
+) -> Result<Item, TrashError> {
     let now = Utc::now();
     let erase_at = now + Duration::days(i64::from(erase_after_days(journal)));
     let mut item = Item {
@@ -251,6 +269,7 @@ pub fn detach(
         paths,
         bytes: 0,
         pending: None,
+        label,
     };
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
@@ -450,6 +469,9 @@ pub struct Chosen {
     pub unit: Unit,
     /// Its journal-relative paths, as its kind lists them.
     pub paths: Vec<String>,
+    /// The owner's own name for it, as [`Item::label`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// A set the owner chose together and confirmed once, kept until every thing
@@ -512,13 +534,14 @@ fn run_set(journal: &Path, kinds: &[&dyn Kind], set: &Set) -> Vec<SetResult> {
                 Ok(kind) => kind,
                 Err(error) => return SetResult::Refused(error),
             };
-            match detach(
+            match detach_labelled(
                 journal,
                 kind,
                 chosen.unit.clone(),
                 set.action,
                 set.surface,
                 chosen.paths.clone(),
+                chosen.label.clone(),
             ) {
                 Ok(item) => {
                     let erased = set.erase
@@ -1452,6 +1475,7 @@ mod tests {
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
+            label: None,
         };
         fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
         publish_new(&root, &stale).unwrap();
@@ -1554,6 +1578,7 @@ mod tests {
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
+            label: None,
         };
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();

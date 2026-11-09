@@ -427,6 +427,12 @@ pub(crate) async fn list(
                 true
             })
         {
+            let status = info.values.get("status").and_then(Value::as_str);
+            let deletable = !matches!(status, Some("running" | "pending"))
+                && source_type
+                    .as_deref()
+                    .is_some_and(solstone_core_import::import_trash::deletes_here);
+            info.values.insert("deletable".into(), json!(deletable));
             rows.push(info);
         }
     }
