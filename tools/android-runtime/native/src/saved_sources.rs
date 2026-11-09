@@ -44,9 +44,7 @@ impl SavedFolderProvider for NativeProvider {
         request: SavedFolderRequest<'_>,
         destination: &Path,
     ) -> Result<(), SourceCopyError> {
-        if request.stop.is_requested()
-            || !matches!(request.backend, BackendName::Obsidian | BackendName::Audio)
-        {
+        if request.stop.is_requested() || request.backend != BackendName::Audio {
             return Err(SourceCopyError::Unavailable);
         }
         let identity =
@@ -194,7 +192,6 @@ unsafe fn source_status(request: *const u8, length: usize) -> Result<serde_json:
         serde_json::from_slice(unsafe { std::slice::from_raw_parts(request, length) })
             .map_err(|_| ())?;
     let backend = match request["source"].as_str() {
-        Some("obsidian") => BackendName::Obsidian,
         Some("audio") => BackendName::Audio,
         _ => return Err(()),
     };

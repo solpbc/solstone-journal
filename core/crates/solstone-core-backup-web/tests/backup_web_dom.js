@@ -624,33 +624,11 @@ function asyncCase(name, fn) {
   });
 }
 
-testCase('workspace has only the new restore lane contract', () => {
+testCase('the backup page offers no whole-journal restore', () => {
   const workspace = fs.readFileSync(path.join(crateDir, 'assets', 'workspace.html'), 'utf8');
-  const restoreStart = workspace.indexOf('data-backup-panel="restore"');
-  const restoreSection = workspace.slice(restoreStart, workspace.indexOf('</article>', restoreStart));
-  const operatedStart = workspace.indexOf('data-restore-lane-panel="operated"');
-  const operatedSection = workspace.slice(operatedStart, workspace.indexOf('data-restore-lane-panel="byo"', operatedStart));
-  const byoStart = workspace.indexOf('data-restore-lane-panel="byo"');
-  const byoSection = workspace.slice(byoStart, workspace.indexOf('</form>', byoStart));
-  assert.ok(workspace.includes('data-restore-lane="byo"'));
-  assert.ok(workspace.includes('data-restore-lane-panel="operated"'));
-  assert.ok(workspace.includes('data-action="restore-hosted-unbound-start"'));
-  assert.ok(!workspace.includes('data-action="restore-hosted"'));
-  assert.ok(!workspace.includes('hosted.restore_hint'));
-  assert.ok(workspace.includes('data-copy="restore.hosted.byo_desc"'));
-  assert.ok(workspace.includes('data-copy="restore.hosted.operated_desc"'));
-  assert.ok(workspace.includes('data-copy="restore.hosted.key_label"'));
-  assert.ok(workspace.includes('data-copy="restore.hosted.key_reassurance"'));
-  assert.ok(workspace.includes('data-copy="restore.hosted.primary"'));
-  assert.ok(workspace.includes('id="backup-restore-source-question"'));
-  assert.ok(workspace.includes('aria-labelledby="backup-restore-source-question"'));
-  assert.ok(workspace.includes('data-hosted-restore-key-reassurance'));
-  assert.ok(!restoreSection.includes('data-copy="destination.modes.byo.desc"'));
-  assert.ok(!restoreSection.includes('data-copy="destination.modes.hosted.desc"'));
-  assert.ok(!operatedSection.includes('data-copy="confirm.prompt"'));
-  assert.ok(!operatedSection.includes('data-copy="action_labels.restore"'));
-  assert.ok(byoSection.includes('data-copy="restore.hosted.key_label"'));
-  assert.ok(!byoSection.includes('data-copy="confirm.prompt"'));
+  assert.ok(!workspace.includes('data-backup-panel="restore"'));
+  assert.ok(!workspace.includes('data-action="show-restore"'));
+  assert.ok(!workspace.includes('data-restore-form'));
 });
 
 testCase('restore report markup has a live summary and closed native disclosure', () => {

@@ -302,7 +302,6 @@ pub(crate) mod tests {
             "chatgpt",
             "claude",
             "gemini",
-            "obsidian",
             "journal_archive",
             "audio_archive",
             "recording",

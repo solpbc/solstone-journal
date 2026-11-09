@@ -36,7 +36,7 @@ async fn native_folder_registration_is_visible_through_maintained_owner_read_rou
     let summary = crate::register_admitted_folder(
         &root,
         &folder,
-        "obsidian",
+        "gemini",
         "selected notes",
         "native-row",
         &stamp(),
@@ -67,7 +67,7 @@ async fn native_folder_registration_is_visible_through_maintained_owner_read_rou
         &format!("/app/import/api/{}", folder.import_id.as_str()),
     )
     .await;
-    assert_eq!(detail["import_json"]["source_hint"], "obsidian");
+    assert_eq!(detail["import_json"]["source_hint"], "gemini");
     assert_eq!(detail["import_json"]["folder_snapshot"], folder.snapshot);
     assert_eq!(detail["saved_start"]["state"], "eligible");
     assert_eq!(detail["import_json"]["source_hash"], folder.legacy_hash);
@@ -107,7 +107,7 @@ async fn same_legacy_hash_changed_folder_versions_keep_distinct_saved_rows_and_b
     crate::register_admitted_folder(
         &root,
         &first,
-        "obsidian",
+        "gemini",
         "notes",
         "first",
         &stamp(),
@@ -123,7 +123,7 @@ async fn same_legacy_hash_changed_folder_versions_keep_distinct_saved_rows_and_b
     crate::register_admitted_folder(
         &root,
         &second,
-        "obsidian",
+        "gemini",
         "notes",
         "second",
         &stamp(),

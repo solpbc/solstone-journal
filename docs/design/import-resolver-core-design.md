@@ -46,8 +46,8 @@ are caller-supplied closures. No new crate is required: `regex`, `chrono`, and
    `ics`/`document`/`image`; generic `.txt`/`.m4a` stay generic. It must not error.
    *(corpus `source=recording::*`, `source=nosuch::plain.txt`)*
 4. `[test]` **Ordering decides**, from the corpus's two-claimant inputs: a Takeout carrying Calendar **and**
-   Gemini → `ics`; a Claude export carrying an `.ics` → `ics`; a 3-markdown vault with a top-level PDF →
-   `obsidian`. And **with the registry order reversed the selections change.** Every single-claimant case
+   Gemini → `ics`; a Claude export carrying an `.ics` → `ics`. And **with the registry order reversed the
+   selections change.** Every single-claimant case
    passes under any ordering, so single-claimant tests cannot detect a missing ordering guarantee.
    (`routing_order.rs` already does this for the two zips — extend, don't duplicate.)
 5. `[test]` With the Apple detector answering *no*, an Apple export directory containing a top-level PDF
@@ -91,8 +91,7 @@ are caller-supplied closures. No new crate is required: `regex`, `chrono`, and
 15. `[test]` Canonicalisation: separators folded; a name that would contain `..` **refused**, not sanitised;
     an otherwise-invalid name errors.
 16. `[test]` Boundaries from the corpus: uppercase `.PDF` → `document` · PDF only in a **subdirectory** →
-    claimed by nobody · three markdown files under a dot-directory → nobody · three **nested** → `obsidian` ·
-    a `logseq/` marker → `obsidian` · a directory of only images → nobody.
+    claimed by nobody · a folder of markdown files → nobody · a directory of only images → nobody.
 17. `[check]` **Decide and record** whether a directory claimed by nobody keeps deriving `import.audio`.
 18. `[check]` The only filesystem effect of this wave is the journal-root directory creation performed by the
     journal-path helper — and that is **conditional, not universal**: on the file-importer dry-run path the
@@ -195,8 +194,7 @@ belong in it.
    directory inputs are constructed temporary trees.
 2. **Named registry source:** exact compiled-in source names select immediately;
    unknown names are ignored. Presence still suppresses step 1. Reference:
-   `cli.py:523-533`; corpus `source=ics::zip_apple`,
-   `source=obsidian::dir_apple_AND_pdf`, and `source=recording::*`.
+   `cli.py:523-533`; corpus `source=ics::zip_apple` and `source=recording::*`.
 3. **Directory sweep:** with no selection, evaluate registered claim predicates
    in `ORDERED_FILE_IMPORTER_NAMES` order and take the first true claim.
    Predicate non-answers are ordinary non-matches. Reference: `cli.py:535-542`
@@ -288,7 +286,7 @@ First vendor the supplied file verbatim from
 | 13 | `resolution.rs`; corpus `bare::audio.m4a` and `auto=absent::audio.m4a_undetectable`; panic-on-call model closure. |
 | 14 | New `solstone-core-import/tests/stream_name_oracle.rs`; vendored seven-case fixture. |
 | 15 | `stream_name_oracle.rs`; constructed separator, double-dot, and invalid-name inputs. |
-| 16 | `resolution.rs`; corpus boundary rows and constructed fixture trees using documented document/Obsidian predicate stand-ins. This certifies resolver dispatch and ordering given faithful predicates; source-body discrimination remains later work. |
+| 16 | `resolution.rs`; corpus boundary rows and constructed fixture trees using documented document predicate stand-ins. This certifies resolver dispatch and ordering given faithful predicates; source-body discrimination remains later work. |
 | 17 | `resolution.rs`; constructed unclaimed directory, assert the named refusal after generic resolution; a `.pdf` directory asserts the earlier PDF refusal. |
 | 18 | Implement-stage written finding, not a test: this resolver design libraries perform no writes. The caller-owned reference `get_journal()` auto-create is conditional; `_setup_import` is the first real write, reached at `cli.py:825` and `:865`, outside this resolver design. |
 | 19 | After implementation only, run `make ci` through `hop check --allow-capture` and report its actual result. |

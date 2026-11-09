@@ -16,7 +16,8 @@ use solstone_core_backup::{
 };
 use solstone_core_backup_runtime::restore::{
     RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
-    RESTORE_REASON_RESTORE_RECORD_FAILED, RESTORE_REASON_RESTORE_SUMMARY_MISSING,
+    RESTORE_REASON_JOURNAL_ALREADY_SET_UP, RESTORE_REASON_RESTORE_RECORD_FAILED,
+    RESTORE_REASON_RESTORE_SUMMARY_MISSING,
 };
 use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, ClosedToolError, DestinationChange,
@@ -24,7 +25,7 @@ use solstone_core_backup_runtime::{
     PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome, RestoreRecorder, RotationResult,
     SystemToolRunner, ToolRunner, UnreadableSources, UreqHttpTransport, edit_destination, prepare,
     publish_restore_outcome, resolve_operational_tools, resolve_restic_member, resolve_tools,
-    restore_journal, rotate_recovery_key, run_prune, validate_destination,
+    rotate_recovery_key, run_prune, validate_destination,
 };
 use solstone_core_offload::cli_run::{OwnedOffloadCliRun, run_cli_offload};
 use solstone_core_offload::{
@@ -1167,7 +1168,13 @@ fn restore_command(
     restore_from_payload(
         &payload,
         |destination, recovery_key| {
-            restore_journal(journal, services, recorder, destination, recovery_key)
+            solstone_core_backup_runtime::restore::restore_during_setup(
+                journal,
+                services,
+                recorder,
+                destination,
+                recovery_key,
+            )
         },
         json_output,
     )
@@ -1231,25 +1238,23 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
     let reason = result.reason_code.as_deref();
     match result.status.as_str() {
         "ok" => success(format!(
-            "Restore complete: {counters}, integrity_ok={}, resumable={}.\n",
+            "restore complete: {counters}, integrity_ok={}, resumable={}.\n",
             python_bool(result.integrity_ok),
             python_bool(result.resumable),
         )),
         "degraded" => {
             let detail = match reason {
-                Some(RESTORE_REASON_INTEGRITY_UNVERIFIED) => {
-                    "integrity verification could not run (the repository was busy or timed out)"
-                }
-                Some(RESTORE_REASON_INTEGRITY_FAILED) => {
-                    "integrity verification failed — the backup copy may be damaged"
-                }
+                Some(
+                    reason
+                    @ (RESTORE_REASON_INTEGRITY_UNVERIFIED | RESTORE_REASON_INTEGRITY_FAILED),
+                ) => restore_failure_reason(reason),
                 Some(RESTORE_REASON_RESTORE_SUMMARY_MISSING) => {
-                    "restore summary was missing or malformed"
+                    "restore summary was missing or malformed".to_owned()
                 }
-                _ => "restore completed with degraded evidence",
+                _ => "restore completed with degraded evidence".to_owned(),
             };
             runtime_error(format!(
-                "Restore completed: {counters}; {detail} (reason_code={}).",
+                "restore finished with a problem: {counters}; {detail} (reason_code={}).",
                 reason.unwrap_or("unknown"),
             ))
         }
@@ -1258,24 +1263,29 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
                 == Some(RESTORE_REASON_RESTORE_RECORD_FAILED) =>
         {
             runtime_error(format!(
-                "Restore completed, but recording the result failed: {counters} (reason_code=restore_record_failed)."
+                "restore completed, but recording the result failed: {counters} (reason_code=restore_record_failed)."
             ))
         }
+        // Nothing started, so there is nothing to count.
+        _ if reason == Some(RESTORE_REASON_JOURNAL_ALREADY_SET_UP) => runtime_error(format!(
+            "restore couldn't start: {}.",
+            restore_failure_reason("journal_already_set_up")
+        )),
         _ => match (reason, result.recording_failure.as_deref()) {
             (Some(reason), Some(recording_failure)) => runtime_error(format!(
-                "Restore failed: {}; {counters}. Recording the result also failed: {}.",
+                "restore failed: {}; {counters}. Recording the result also failed: {}.",
                 restore_failure_reason(reason),
                 restore_failure_reason(recording_failure)
             )),
             (Some(reason), None) => runtime_error(format!(
-                "Restore failed: {}; {counters}.",
+                "restore failed: {}; {counters}.",
                 restore_failure_reason(reason)
             )),
             (None, Some(recording_failure)) => runtime_error(format!(
-                "Restore failed: {counters}. Recording the result also failed: {}.",
+                "restore failed: {counters}. Recording the result also failed: {}.",
                 restore_failure_reason(recording_failure)
             )),
-            (None, None) => runtime_error(format!("Restore failed: {counters}.")),
+            (None, None) => runtime_error(format!("restore failed: {counters}.")),
         },
     }
 }
@@ -1660,13 +1670,17 @@ fn restore_failure_reason(reason: &str) -> String {
         "restore_failed" => "the restore didn't complete".into(),
         "restore_summary_missing" => "the restore finished but its summary is missing".into(),
         "integrity_check_io_failed" => "the restored files couldn't be checked".into(),
-        // Same wording as the "degraded" branch above, so the two paths that
-        // can surface these codes read identically.
+        "journal_already_set_up" => {
+            "your journal is already set up, so it can't be restored over. to use a backup, start a new journal and choose restore during setup".into()
+        }
+        "insufficient_free_space" => {
+            "there isn't enough free space for this restore, so nothing changed".into()
+        }
         "integrity_unverified" => {
-            "integrity verification could not run (the repository was busy or timed out)".into()
+            "the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup".into()
         }
         "integrity_failed" => {
-            "integrity verification failed — the backup copy may be damaged".into()
+            "the backup failed its integrity check and may be damaged, so your journal isn't set to the backup".into()
         }
         "body_rebuild_failed" => "your journal couldn't be rebuilt from the restored files".into(),
         "destination_publish_failed" => {
@@ -2323,7 +2337,7 @@ mod tests {
         payload(json!({
             "repository": "s3:bucket/prefix",
             "backend": "s3",
-            "credentials": {"access_key_id": "access", "secret_access_key": "key"},
+            "credentials": {"access_key_id": "access", "secret_access_key": "fixture-credential"},
         }))
     }
 
@@ -3268,11 +3282,11 @@ mod tests {
         );
         assert_eq!(
             trimmed.stderr,
-            "Error: Restore failed: stopped without a reason (timeout); files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
+            "Error: restore failed: stopped without a reason (timeout); files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
         );
         assert_eq!(
             restore_result(outcome("error", Some("timeout"), Some(42)), false).stderr,
-            "Error: Restore failed: stopped without a reason (timeout); files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42.\n"
+            "Error: restore failed: stopped without a reason (timeout); files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42.\n"
         );
         assert_eq!(
             restore_result(
@@ -3280,7 +3294,7 @@ mod tests {
                 false,
             )
             .stderr,
-            "Error: Restore completed: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; integrity verification could not run (the repository was busy or timed out) (reason_code=integrity_unverified).\n"
+            "Error: restore finished with a problem: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup (reason_code=integrity_unverified).\n"
         );
         assert_eq!(
             restore_result(
@@ -3288,19 +3302,19 @@ mod tests {
                 false
             )
             .stderr,
-            "Error: Restore completed: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; integrity verification failed — the backup copy may be damaged (reason_code=integrity_failed).\n"
+            "Error: restore finished with a problem: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; the backup failed its integrity check and may be damaged, so your journal isn't set to the backup (reason_code=integrity_failed).\n"
         );
         let mut ok = outcome("ok", None, Some(42));
         ok.integrity_ok = true;
         ok.resumable = true;
         assert_eq!(
             restore_result(ok, false).stdout,
-            "Restore complete: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42, integrity_ok=True, resumable=True.\n"
+            "restore complete: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42, integrity_ok=True, resumable=True.\n"
         );
         let summary_missing = outcome("degraded", Some("restore_summary_missing"), None);
         assert_eq!(
             restore_result(summary_missing, false).stderr,
-            "Error: Restore completed: files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown; restore summary was missing or malformed (reason_code=restore_summary_missing).\n"
+            "Error: restore finished with a problem: files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown; restore summary was missing or malformed (reason_code=restore_summary_missing).\n"
         );
     }
 
@@ -3340,7 +3354,7 @@ mod tests {
         let output = restore_from_payload(
             &input,
             |destination, recovery_key| {
-                restore_journal(
+                solstone_core_backup_runtime::restore_journal(
                     journal.path(),
                     &services,
                     &recorder,
@@ -3387,7 +3401,11 @@ mod tests {
         restore_argv.extend(["--exclude".into(), "backup-activity.lock".into()]);
         restore_argv.push("--json".into());
         assert_eq!(
-            runner.calls(),
+            runner
+                .calls()
+                .iter()
+                .map(|argv| solstone_core_backup_runtime::test_support::without_copy_excludes(argv))
+                .collect::<Vec<_>>(),
             vec![
                 vec!["snapshots".into(), "--json".into()],
                 restore_argv,

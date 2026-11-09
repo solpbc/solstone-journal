@@ -20,19 +20,6 @@
         "summary": "2 events, 1 unique attendees"
       }
     },
-    "obsidian": {
-      "input": "vault",
-      "detect": true,
-      "preview": {
-        "date_range": [
-          "20260811",
-          "20260811"
-        ],
-        "item_count": 3,
-        "entity_count": 1,
-        "summary": "1 daily notes, 2 knowledge notes, 1 unique wikilinks"
-      }
-    },
     "claude": {
       "input": "claude.zip",
       "detect": true,

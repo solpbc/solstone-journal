@@ -387,7 +387,7 @@ fn entry_for(slot: &Slot, renames: &[KnownRename]) -> Option<NoteEntry> {
         }
         return Some(NoteEntry {
             path: slot.start_path.clone(),
-            status: Some("Deleted".to_owned()),
+            status: Some("no longer in the vault".to_owned()),
             body: String::new(),
         });
     }
@@ -401,7 +401,7 @@ fn entry_for(slot: &Slot, renames: &[KnownRename]) -> Option<NoteEntry> {
     if let Some(from) = &slot.renamed_from {
         return Some(NoteEntry {
             path: slot.path.clone(),
-            status: Some(format!("Renamed from {from}")),
+            status: Some(format!("renamed from {from}")),
             body: render_edit(base, &slot.text).unwrap_or_default(),
         });
     }
@@ -410,7 +410,7 @@ fn entry_for(slot: &Slot, renames: &[KnownRename]) -> Option<NoteEntry> {
     }
     render_edit(base, &slot.text).map(|body| NoteEntry {
         path: slot.path.clone(),
-        status: Some("Edited".to_owned()),
+        status: Some("edited".to_owned()),
         body,
     })
 }

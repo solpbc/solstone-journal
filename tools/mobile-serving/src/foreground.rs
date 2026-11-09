@@ -228,7 +228,7 @@ fn submit_bound_owner_command(
 pub(super) fn source_sync_command(source: &str) -> Option<Vec<String>> {
     // Body sources retain the migration/approval prerequisite. This is the
     // existing source whitelist and fixed argv, shared by recurrence and run.
-    matches!(source, "plaud" | "obsidian" | "audio").then(|| {
+    matches!(source, "plaud" | "audio").then(|| {
         solstone_core_system::partition::canonical_journal_command([
             "importer", "--sync", source, "--save",
         ])

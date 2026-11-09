@@ -58,6 +58,24 @@ pub trait SetupHost: Send + Sync {
     /// home and Thinking read the new choice instead of the record from before it.
     fn refresh_brain(&self, _journal_root: &Path) {}
 
+    /// One step of restoring from a backup during setup.
+    fn init_restore<'a>(
+        &'a self,
+        _journal_root: &'a Path,
+        _op: String,
+        _body: Bytes,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send + 'a>> {
+        Box::pin(async {
+            error_envelope(
+                "restore_unavailable",
+                "restore controls are unavailable",
+                "this host doesn't restore during setup",
+                StatusCode::NOT_FOUND,
+            )
+            .into_response()
+        })
+    }
+
     /// Continue the recorded whole-journal restore. The host must use the
     /// obligation's snapshot and subtree, and must drain admitted work first.
     fn recover_whole_journal(&self, _journal_root: &Path, _body: &[u8]) -> Result<(), String> {
@@ -264,6 +282,7 @@ pub fn init_router_with_host(journal_root: impl AsRef<Path>, host: Arc<dyn Setup
         .route("/init/api/recovery", get(recovery_status))
         .route("/init/api/recovery/retry", post(recovery_retry))
         .route("/init/api/recovery/stop", post(recovery_stop))
+        .route("/init/api/restore/{*op}", post(init_restore_api))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             retain_setup_target,
@@ -277,7 +296,9 @@ async fn retain_setup_target(
     next: axum::middleware::Next,
 ) -> Response {
     let path = request.uri().path();
-    if (path == "/init/api/recovery" || path.starts_with("/init/api/recovery/"))
+    if (path == "/init/api/recovery"
+        || path.starts_with("/init/api/recovery/")
+        || path.starts_with("/init/api/restore/"))
         && state.target_use.revalidate().is_ok()
     {
         return next.run(request).await;
@@ -1694,16 +1715,19 @@ fn recovery_projection(journal: &Path, host: &dyn SetupHost) -> Option<Response>
             "waiting",
             None,
             host.recovery_in_progress(journal),
+            journal,
         )),
         WholeJournalRestoreReadiness::Pending(record) => Some(recovery_state_response(
             "pending",
             Some(&record),
             host.recovery_in_progress(journal),
+            journal,
         )),
         WholeJournalRestoreReadiness::Unavailable => Some(recovery_state_response(
             "unavailable",
             None,
             host.recovery_in_progress(journal),
+            journal,
         )),
     }
 }
@@ -1712,6 +1736,7 @@ fn recovery_state_response(
     state: &'static str,
     record: Option<&solstone_core_journal_io::whole_journal_restore::WholeJournalRestore>,
     active: Option<bool>,
+    journal: &Path,
 ) -> Response {
     Json(json!({
         "schema": "solstone.setup-state.v1",
@@ -1723,6 +1748,9 @@ fn recovery_state_response(
         "source": record.map(|record| &record.source),
         "snapshot_id": record.map(|record| &record.snapshot_id),
         "subtree": record.map(|record| &record.subtree),
+        "init_restore": journal
+            .join(solstone_core_journal_io::copy_excludes::INIT_RESTORE_FILE)
+            .exists(),
     }))
     .into_response()
 }
@@ -1790,6 +1818,7 @@ async fn recovery_status(
             "waiting",
             None,
             state.host.recovery_in_progress(&state.journal_root),
+            &state.journal_root,
         ),
     }
 }
@@ -1842,6 +1871,27 @@ async fn recovery_retry(
         )
         .into_response(),
     }
+}
+
+/// Restoring from a backup during setup. Local only, and never once setup has
+/// finished, except to read how a restore already running is going.
+async fn init_restore_api(
+    Extension(basis): Extension<AccessBasis>,
+    State(state): State<LinkHttpState>,
+    axum::extract::Path(op): axum::extract::Path<String>,
+    body: Bytes,
+) -> Response {
+    if !is_local(&basis) {
+        return init_local_only();
+    }
+    let config = match load_mutation_base(&state.journal_root) {
+        Ok(base) => base.config,
+        Err(_) => return corrupt_config(),
+    };
+    if setup_is_complete(&config) && !recovery_paused(&state.journal_root) && op != "status" {
+        return init_not_found(&basis);
+    }
+    state.host.init_restore(&state.journal_root, op, body).await
 }
 
 async fn recovery_stop(
@@ -2450,6 +2500,41 @@ mod recovery_route_tests {
             read_whole_journal_restore(journal.path()),
             WholeJournalRestoreReadiness::Pending(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn restoring_during_setup_is_local_and_ends_when_setup_does() {
+        let journal = tempfile::tempdir().expect("journal");
+        let host = Arc::new(NoopSetupHost);
+        let reach = |basis| {
+            call(
+                journal.path(),
+                host.clone(),
+                basis,
+                Method::POST,
+                "/init/api/restore/find",
+                Some(json!({})),
+            )
+        };
+        let (status, _, _) = reach(AccessBasis::Localhost).await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "reaches the host, which has no restore"
+        );
+
+        std::fs::create_dir_all(journal.path().join("config")).unwrap();
+        std::fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":5}}"#,
+        )
+        .unwrap();
+        let (status, body, _) = reach(AccessBasis::Localhost).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_ne!(
+            body["reason_code"], "restore_unavailable",
+            "a finished journal refuses first"
+        );
     }
 
     #[tokio::test]

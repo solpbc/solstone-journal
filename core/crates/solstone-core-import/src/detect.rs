@@ -15,7 +15,6 @@ use crate::timestamp::{
 
 pub const ORDERED_FILE_IMPORTER_NAMES: &[&str] = &[
     "ics",
-    "obsidian",
     "claude",
     "chatgpt",
     "gemini",
@@ -39,7 +38,6 @@ const TEXT_STREAM_EXTENSIONS: &[&str] = &["txt", "md"];
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegistrySource {
     Ics,
-    Obsidian,
     Claude,
     Chatgpt,
     Gemini,
@@ -56,7 +54,6 @@ impl RegistrySource {
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "ics" => Self::Ics,
-            "obsidian" => Self::Obsidian,
             "claude" => Self::Claude,
             "chatgpt" => Self::Chatgpt,
             "gemini" => Self::Gemini,
@@ -74,7 +71,6 @@ impl RegistrySource {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Ics => "ics",
-            Self::Obsidian => "obsidian",
             Self::Claude => "claude",
             Self::Chatgpt => "chatgpt",
             Self::Gemini => "gemini",

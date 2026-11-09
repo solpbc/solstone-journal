@@ -8,8 +8,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- deleting a segment or a memory an agent saved now moves it to the trash, in settings › trash, in place of the 10 seconds you had to cancel. it leaves your journal at once and waits in the trash until the date beside it, 7 days later unless you choose from 1 to 30, and you can recover it as it was or erase it sooner. summaries made from it elsewhere in your journal stay where they are.
-- settings › trash has a removal history. your journal now adds a line each time something leaves it, comes back from the trash or is erased: what it was, when, and where. the history never keeps what was in it, and nothing removed before this version is listed.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -17,14 +15,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- a segment you deleted now comes back if a device sends it again or an archive you merge in holds it. before, your journal refused it.
-- the activities page now says what became of a workout's or a night's record when part or all of it is gone or can't be read: removed by you, removed, part of it removed, can't be read right now, or no longer in your journal. "part of it removed" now shows when you delete a later part of a night or a workout too, not only its start.
-- search now finds a title, description or details you wrote on a workout, a night's sleep or a mindfulness session listed with your activities. agents you've connected find them only when they can read it.
-- your journal no longer guesses your mood. it no longer labels each part of your day with a mood like "tense" or "celebratory". labels an older version added, to a summary or to a line of a transcript, are no longer shown to you or to agents you've connected. they stay in your journal, unchanged.
-- your journal's thinking no longer reads your Strava workouts to describe them or your day. each new workout is now listed with your activities on its day, as Strava recorded it, under the facet you choose for the import. workouts already listed stay as they are.
-- the next time you import from Strava, your journal offers a facet for your workouts: a facet you named body or health, if you have one, or a new body facet. before you answer it says what a no means: new workouts aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them, though search and the body app still show them. your answer is remembered, and you can choose another facet, or none, for any import.
-- people and gear you named in your Strava workouts, such as a training partner or your bike, can now become people and things in your journal once they turn up in enough workouts. your journal reads only what you wrote, the name you gave a workout, its description and private note, and its gear, and only for workouts filed under a facet you haven't muted. it uses the thinking you chose for your journal, as importing a document already does.
-- once after this update, your journal thinks again about days that hold both a Strava workout and something else you did, now leaving the workout out. a daily briefing already written doesn't change.
+- the dashboard now reconnects to your journal on its own after the connection drops, and stops showing it as connected soon after it goes quiet. a page that waits more than 10 seconds says it's still working, and one that never gets an answer offers to try again instead of waiting forever.
+- your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
+- restoring a journal from a backup now happens while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
+- Strava workouts your journal read on an earlier version are now listed the same way as new ones, each one once, keeping your edits and hides. a workout that was listed in two facets now shows in one, where you hadn't hidden it, and an agent limited to the other facet no longer sees it. one listing that covered two workouts becomes two.
+- choosing a facet when you import from Strava now moves every workout in that download there, including ones already listed. the import page and the terminal question say how many before anything moves, and if more would move by the time it runs, none do and its summary says so. with `--facet` on the command line, its summary says afterward how many moved. an import you didn't choose a facet for moves nothing already listed.
+- once after this update, your journal thinks again about days that hold both a Strava workout and something else you did, now leaving the workout out, and again about days that hold notes it once wrote about a workout. a day can be thought about twice. this morning's daily briefing can change until noon, and earlier ones don't.
 
 ### Fixed
 
@@ -35,6 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed an intermittent failure that could leave new recordings unprocessed after your journal started.
 - importing a Strava download again now picks up a description, private note or gear you changed on Strava, and search finds the new words.
 - someone or something you removed from a facet no longer comes back on its own. before, if the name kept turning up in your journal, it could add them back after a few days and replace the description you'd kept for them.
+- a terminal segment from a computer with eight or more tmux sessions open is no longer turned away. one that was turned away before goes into your journal on its next try.
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
@@ -62,6 +59,34 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+## [2.0.73] - 2026-11-09
+
+### Added
+
+- deleting a segment or a memory an agent saved now moves it to the trash, in settings › trash, in place of the 10 seconds you had to cancel. it leaves your journal at once and waits in the trash until the date beside it, 7 days later unless you choose from 1 to 30, and you can recover it as it was or erase it sooner. summaries made from it elsewhere in your journal stay where they are.
+- settings › trash has a removal history. your journal now adds a line each time something leaves it, comes back from the trash or is erased: what it was, when, and where. the history never keeps what was in it, and nothing removed before this version is listed.
+
+### Changed
+
+- a segment you deleted now comes back if a device sends it again or an archive you merge in holds it. before, your journal refused it.
+- your journal's thinking no longer reads your Strava workouts to describe them or your day. each new workout is now listed with your activities on its day, as Strava recorded it, under the facet you choose for the import. workouts already listed stay as they are.
+- the next time you import from Strava, your journal offers a facet for your workouts: a facet you named body or health, if you have one, or a new body facet. before you answer it says what a no means: new workouts aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them, though search and the body app still show them. your answer is remembered, and you can choose another facet, or none, for any import.
+- people and gear you named in your Strava workouts, such as a training partner or your bike, can now become people and things in your journal once they turn up in enough workouts. your journal reads only what you wrote: the name you gave a workout, its description and private note, and its gear. it reads them only for workouts filed under a facet you haven't muted. it uses the thinking you chose for your journal, as importing a document already does.
+- once after this update, your journal thinks again about days that hold both a Strava workout and something else you did, now leaving the workout out. a daily briefing already written doesn't change.
+- the activities page now says what became of a workout's or a night's record when part or all of it is gone or can't be read: removed by you, removed, part of it removed, can't be read right now, or no longer in your journal. "part of it removed" now shows when you delete a later part of a night or a workout too, not only its start.
+- search now finds a title, description or details you wrote on a workout, a night's sleep or a mindfulness session listed with your activities. agents you've connected find them only when they can read it.
+- importing a folder of notes is gone, and so is the hourly Obsidian sync. that covers Obsidian and Logseq vaults and plain folders of markdown. notes already in your journal stay and read as before. an Obsidian vault now comes into your journal when you turn it on in the solstone app on the computer where the vault lives.
+- your journal no longer guesses your mood. it no longer labels each part of your day with a mood like "tense" or "celebratory". labels an older version added, to a summary or to a line of a transcript, no longer show when you or agents you've connected read it, though a search result can still show one. they stay in your journal, unchanged.
+- pairing a device no longer offers a terminal. the solstone app on mac and linux now takes in your terminal once you turn it on, and all of it goes into your journal. a terminal you already paired keeps sending to your journal.
+
+### Fixed
+
+- a journal archive you import now keeps the time zone of its body data, so Strava workouts still show on the days they happened. if your journal already holds a different time zone for that source, the import says how many hours may show at the wrong time.
+- on mac and linux, fixed an intermittent failure that could leave new recordings unprocessed after your journal started.
+- importing a Strava download again now picks up a description, private note or gear you changed on Strava, and search finds the new words.
+- someone or something you removed from a facet no longer comes back on its own. before, if the name kept turning up in your journal, it could add them back after a few days and replace the description you'd kept for them.
+- on windows, running setup again soon after an update no longer fails with "access is denied".
 
 ## [2.0.72] - 2026-11-08
 

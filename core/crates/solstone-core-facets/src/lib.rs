@@ -23,7 +23,8 @@ pub use activity_placement::{
     ActivityCourse, PlacedRecord, ResolvedSegment, activity_span, place_activity_records,
 };
 pub use body_facet::{
-    BodyFacetOfferRead, BodyFacetReadError, body_facet_offer, default_for_unattended,
+    BodyFacetAsk, BodyFacetOfferRead, BodyFacetReadError, apply_body_facet_answer, body_facet_ask,
+    body_facet_offer, default_for_unattended,
 };
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};
@@ -99,6 +100,12 @@ pub use store::{
     write_facet_entity_observations, write_log_file,
 };
 pub use store::{
+    BodyMoveOutcome, BodyRecordPlace, LineRemoval, OpenBodyMove, body_record_key,
+    complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
+    write_body_record_with,
+};
+pub use store::{StravaConvertedLine, append_strava_converted, read_strava_converted};
+pub use store::{
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
     create_facet_entity_if_absent, detach_facet_entity, iter_detected_entity_names_since,
     iter_detected_entity_names_since_strict, list_scoped_facet_entities,
@@ -112,6 +119,7 @@ pub use store::{
     delete_created_entity_if_unreferenced_with_hook, delete_journal_entity_with_hook,
     reset_undone_operation_for_test, test_hooks, unblock_journal_entity_with_hook,
 };
+pub use store::{strava_lines_may_be_folded, superseded_record_ids};
 pub use trust_lock::{
     FacetTrustLock, FacetTrustLockError, hold_facet_trust_lock, hold_facet_trust_lock_raw_for_test,
 };

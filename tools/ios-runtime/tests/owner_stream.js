@@ -156,10 +156,10 @@ async function main() {
   assert.equal(stallCancel.length, 1);
   assert.equal(stallCancel[0].authority, 4);
   assert.equal(messages.filter((message) => message.op === 'bind').length, 1);
-  const connected = context.JournalOwnerSources.change('obsidian', 'begin', null, 'retained-source-reference', () => true);
+  const connected = context.JournalOwnerSources.change('audio', 'begin', null, 'retained-source-reference', () => true);
   await waitFor(() => folderReplies.size === 1);
   const selected = folderReplies.get('folder-1');
-  assert.deepEqual(JSON.parse(JSON.stringify(selected.message)), {op: 'chooseSource', authority: 4, id: 'folder-1', source: 'obsidian', action: 'begin', expected_identity: null, client_item_id: 'retained-source-reference'});
+  assert.deepEqual(JSON.parse(JSON.stringify(selected.message)), {op: 'chooseSource', authority: 4, id: 'folder-1', source: 'audio', action: 'begin', expected_identity: null, client_item_id: 'retained-source-reference'});
   assert.equal(context.__journalFolderSelected(9, 'folder-1'), false, 'another page cannot acknowledge this source');
   assert.equal(context.__journalFolderSelected(4, 'folder-1'), true);
   selected.resolve({state: 'updated', connection: {folder_name: 'picked notes'}});

@@ -154,10 +154,8 @@ impl std::fmt::Display for AdmittedFolder {
 /// Which folder sources may be imported again while the previous copy is kept.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReimportSource {
-    ObsidianVault,
     GeminiDirectory,
     PdfDirectory,
-    SyncObsidian,
     AudioArchive,
     SyncPlaud,
     SyncAudio,
@@ -739,10 +737,7 @@ pub fn folder_preview_current(tree: &Path, custody_snapshot: &str) -> Result<(),
 #[must_use]
 pub fn reimport_policy(source: ReimportSource) -> ReimportPolicy {
     match source {
-        ReimportSource::ObsidianVault
-        | ReimportSource::GeminiDirectory
-        | ReimportSource::PdfDirectory
-        | ReimportSource::SyncObsidian => ReimportPolicy::Permitted,
+        ReimportSource::GeminiDirectory | ReimportSource::PdfDirectory => ReimportPolicy::Permitted,
         ReimportSource::AudioArchive | ReimportSource::SyncPlaud | ReimportSource::SyncAudio => {
             ReimportPolicy::Refused
         }
@@ -1497,19 +1492,11 @@ mod tests {
     #[test]
     fn reimport_policy_matches_the_source_table_and_admit_has_no_force_flag() {
         assert_eq!(
-            reimport_policy(ReimportSource::ObsidianVault),
-            ReimportPolicy::Permitted
-        );
-        assert_eq!(
             reimport_policy(ReimportSource::GeminiDirectory),
             ReimportPolicy::Permitted
         );
         assert_eq!(
             reimport_policy(ReimportSource::PdfDirectory),
-            ReimportPolicy::Permitted
-        );
-        assert_eq!(
-            reimport_policy(ReimportSource::SyncObsidian),
             ReimportPolicy::Permitted
         );
         assert_eq!(

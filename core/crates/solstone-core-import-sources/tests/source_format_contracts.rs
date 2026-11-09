@@ -5,5 +5,3 @@
 mod ics;
 #[path = "ics_listing.rs"]
 mod ics_listing;
-#[path = "obsidian.rs"]
-mod obsidian;

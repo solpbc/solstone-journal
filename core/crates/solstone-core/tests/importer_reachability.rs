@@ -50,7 +50,9 @@ enum Invocation {
     ListImportersJson,
     Backends,
     SyncAudio,
-    SyncObsidian,
+    RetiredObsidianSync,
+    RetiredObsidianSource,
+    UnrecognisedNotesFolder,
     SyncPlaudSave,
     ConnectUnknown,
 }
@@ -144,17 +146,6 @@ const MODE_CASES: &[ModeCase] = &[
                     exit: 0,
                     stream: Stream::Stdout,
                     identifies: "2 recordings across 2 days\n",
-                },
-            ),
-            (
-                Invocation::Structured {
-                    source: "obsidian",
-                    input: Input::Vault,
-                },
-                Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "1 recording across 1 day\n",
                 },
             ),
             (
@@ -297,11 +288,27 @@ const MODE_CASES: &[ModeCase] = &[
                 },
             ),
             (
-                Invocation::SyncObsidian,
+                Invocation::RetiredObsidianSync,
                 Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Obsidian sync preview complete: source=",
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "importing a folder of notes is gone",
+                },
+            ),
+            (
+                Invocation::RetiredObsidianSource,
+                Expected {
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "importing a folder of notes is gone",
+                },
+            ),
+            (
+                Invocation::UnrecognisedNotesFolder,
+                Expected {
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    identifies: "could not tell what kind of export this is",
                 },
             ),
             (
@@ -465,7 +472,7 @@ impl Invocation {
                     "20260311_120000".to_owned(),
                     path(inputs.path(input)),
                 ];
-                if matches!(source, "ics" | "obsidian" | "claude" | "chatgpt" | "gemini") {
+                if matches!(source, "ics" | "claude" | "chatgpt" | "gemini") {
                     args.push("--dry-run".to_owned());
                 }
                 if source == "apple_health" {
@@ -482,10 +489,20 @@ impl Invocation {
                 "--path".to_owned(),
                 path(inputs.path(Input::AudioDirectory)),
             ],
-            Self::SyncObsidian => vec![
+            Self::RetiredObsidianSync => vec![
                 "--sync".to_owned(),
                 "obsidian".to_owned(),
                 "--path".to_owned(),
+                path(inputs.path(Input::Vault)),
+            ],
+            Self::RetiredObsidianSource => vec![
+                "--source".to_owned(),
+                "obsidian".to_owned(),
+                path(inputs.path(Input::Vault)),
+            ],
+            Self::UnrecognisedNotesFolder => vec![
+                "--timestamp".to_owned(),
+                "20260311_120000".to_owned(),
                 path(inputs.path(Input::Vault)),
             ],
             Self::SyncPlaudSave => {
@@ -773,23 +790,13 @@ fn saving_source_input(source: &str, directory: &Path) -> PathBuf {
             fs::write(&path, "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Harbour walk\r\nDESCRIPTION:meet at the lighthouse\r\nDTSTART:20260315T100000Z\r\nCREATED:20260311T120000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").expect("calendar input");
             path
         }
-        "obsidian" => {
-            let vault = directory.join("vault");
-            fs::create_dir_all(vault.join(".obsidian")).expect("vault marker");
-            fs::write(
-                vault.join("Harbour.md"),
-                "# Harbour\nmeet at the lighthouse\n",
-            )
-            .expect("note input");
-            vault
-        }
         other => panic!("no saving input for {other}"),
     }
 }
 
 #[test]
 fn text_sources_save_content_the_journal_can_find() {
-    for source in ["chatgpt", "claude", "gemini", "ics", "obsidian"] {
+    for source in ["chatgpt", "claude", "gemini", "ics"] {
         let journal = TempDir::new().expect("journal");
         let input = saving_source_input(source, journal.path());
         // No --source: an export is recognised by its content.
@@ -841,26 +848,6 @@ fn search_streams(journal: &TempDir, query: &str) -> Vec<String> {
 #[test]
 fn local_syncs_save_into_the_journal_and_only_once() {
     let journal = TempDir::new().expect("journal");
-
-    let vault = journal.path().join("vault");
-    fs::create_dir_all(vault.join(".obsidian")).expect("vault marker");
-    fs::write(
-        vault.join("Harbour.md"),
-        "# Harbour\nmeet at the lighthouse\n",
-    )
-    .expect("note");
-    let output = run(
-        &["--sync", "obsidian", "--path", &path(&vault), "--save"],
-        &journal,
-    );
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Obsidian sync complete: saved=1"));
-    assert_eq!(search_streams(&journal, "lighthouse"), ["import.obsidian"]);
 
     let recordings = journal.path().join("recordings");
     fs::create_dir(&recordings).expect("recordings folder");

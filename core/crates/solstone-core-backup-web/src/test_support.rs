@@ -29,8 +29,21 @@ pub fn root(phase: &str) -> TempDir {
         python_build_journal_bytes(phase),
     )
     .expect("config");
+    if phase != "corrupt" {
+        unfinish_setup(root.path());
+    }
     root
 }
+
+/// Restore is only offered during setup, so these journals haven't finished it.
+fn unfinish_setup(journal: &Path) {
+    let path = journal.join("config/journal.json");
+    let mut document: Value =
+        serde_json::from_slice(&fs::read(&path).expect("config")).expect("config json");
+    document["setup"] = json!({});
+    fs::write(path, serde_json::to_vec_pretty(&document).expect("json")).expect("config");
+}
+
 pub fn python_build_journal_bytes(phase: &str) -> Vec<u8> {
     if phase == "corrupt" {
         return b"{\"setup\": {\"completed_at\": 17672256".to_vec();

@@ -202,7 +202,6 @@ struct Inputs {
     audio: PathBuf,
     text: PathBuf,
     ics: PathBuf,
-    vault: PathBuf,
     pdf: PathBuf,
     image: PathBuf,
     archive: PathBuf,
@@ -229,12 +228,6 @@ impl Inputs {
         fs::write(&text, "A short imported transcript.").expect("text input");
         let ics = directory.join("calendar.ics");
         fs::write(&ics, "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nDTSTART:20260311T120000Z\r\nCREATED:20260311T120000Z\r\nATTENDEE;CN=Taylor:mailto:taylor@example.com\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20260312T120000Z\r\nCREATED:20260312T120000Z\r\nATTENDEE;CN=Taylor:mailto:taylor@example.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n").expect("ICS input");
-        let vault = directory.join("vault");
-        fs::create_dir(&vault).expect("vault directory");
-        fs::create_dir(vault.join(".obsidian")).expect("vault marker");
-        fs::write(vault.join("2026-03-11.md"), "# Daily\n[[Topic]]\n").expect("daily note");
-        fs::write(vault.join("Topic.md"), "# Topic\n").expect("topic note");
-        fs::write(vault.join("Other.md"), "# Other\n").expect("other note");
         let pdf = directory.join("document.pdf");
         fs::copy(root.join("core/fixtures/pdf_corpus/text.pdf"), &pdf).expect("copy PDF fixture");
         let image = directory.join("image.png");
@@ -275,7 +268,6 @@ impl Inputs {
             audio,
             text,
             ics,
-            vault,
             pdf,
             image,
             archive,
@@ -420,13 +412,6 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     "2 recordings across 2 days\n",
                 ),
                 (
-                    "obsidian",
-                    &inputs.vault,
-                    0,
-                    Stream::Stdout,
-                    "1 recording across 1 day\n",
-                ),
-                (
                     "document",
                     &inputs.pdf,
                     1,
@@ -479,7 +464,7 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                         "20260311_120000".to_owned(),
                         path(input),
                     ];
-                    if matches!(source, "ics" | "obsidian" | "chatgpt" | "claude" | "gemini") {
+                    if matches!(source, "ics" | "chatgpt" | "claude" | "gemini") {
                         args.push("--dry-run".to_owned());
                     }
                     args
@@ -555,15 +540,10 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
                     contains: "Audio sync preview complete: source=",
                 },
                 Case {
-                    args: vec![
-                        "--sync".to_owned(),
-                        "obsidian".to_owned(),
-                        "--path".to_owned(),
-                        path(&inputs.vault),
-                    ],
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Obsidian sync preview complete: source=",
+                    args: args(&["--sync", "obsidian"]),
+                    exit: 1,
+                    stream: Stream::Stderr,
+                    contains: "importing a folder of notes is gone",
                 },
                 Case {
                     args: args(&["--sync", "plaud", "--save"]),
@@ -648,7 +628,6 @@ fn writing_sources_use_pristine_journals() {
                 "gemini import complete",
             ),
             ("ics", "event_transcript.md", "ics import complete"),
-            ("obsidian", "note_transcript.md", "obsidian import complete"),
         ] {
             scope.spawn(move || {
                 let harness = Harness::new();
@@ -660,7 +639,6 @@ fn writing_sources_use_pristine_journals() {
                     "claude" => &inputs.claude,
                     "gemini" => &inputs.gemini,
                     "ics" => &inputs.ics,
-                    "obsidian" => &inputs.vault,
                     _ => unreachable!("writing source table is exhaustive"),
                 };
                 let case = Case {

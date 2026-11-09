@@ -1361,6 +1361,33 @@ mod tests {
     /// capture row beside it in the same file still moves it, and a file with no
     /// such row hashes as it did before.
     #[test]
+    fn a_converted_workouts_outputs_leaving_re_owes_its_day_once_and_its_record_does_not() {
+        let root = root("daily-strava-converted");
+        write(&root, "facets/work/facet.json", "{\"title\":\"Work\"}");
+        let capture = "{\"id\":\"meeting_090000_300\",\"title\":\"Actual\",\"source\":\"cogitate\",\"stream\":\"phone\"}\n";
+        let sensed = "{\"id\":\"exercise_070000_300\",\"facet\":\"work\",\"activity\":\"exercise\",\"segments\":[\"070000_300\"],\"stream\":\"import.strava\"}\n";
+        let code = "{\"id\":\"body_0123456789abcdef\",\"source\":\"body\",\"activity\":\"workout\",\"title\":\"Run\",\"account\":{\"key\":\"import.strava\\u001f901\"}}\n";
+        let rel = "facets/work/activities/20260910.jsonl";
+        let output = "facets/work/activities/20260910/exercise_070000_300/story.md";
+        write(&root, rel, &format!("{sensed}{capture}"));
+        write(&root, output, "model words about a run");
+        let observer = |root: &Path| revision(root, "entities:entity_observer", Some("work"));
+        let suggest = |root: &Path| revision(root, "entities:entity_suggest", Some("work"));
+        let (observed, suggested) = (observer(&root), suggest(&root));
+
+        // The record becoming a code record is evidence-neutral on its own.
+        write(&root, rel, &format!("{code}{capture}"));
+        assert_eq!(observed, observer(&root));
+        assert_eq!(suggested, suggest(&root));
+
+        // The outputs leaving is what the day's two units re-derive for.
+        fs::remove_file(root.join(output)).unwrap();
+        assert_ne!(observed, observer(&root));
+        assert_ne!(suggested, suggest(&root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn a_strava_sense_row_never_moves_daily_evidence_and_a_capture_row_beside_it_does() {
         let root = root("daily-strava-sense-row");
         write(&root, "facets/work/facet.json", "{\"title\":\"Work\"}");

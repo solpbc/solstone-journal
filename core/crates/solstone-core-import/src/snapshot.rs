@@ -394,8 +394,8 @@ mod tests {
         (root, source)
     }
     fn save_preview(root: &Path, source: &Path, relative: &Path, digest: &str) {
-        let metadata = json!({"setting":"office", "source_hint":"obsidian", "preview": {"token":"token", "source":source, "relative":relative, "digest":digest,
-            "options":{"timestamp":ID,"force":false,"zone":solstone_core_journal_config::owner_zone(root).name(),"setting":"office","source":"obsidian"}}});
+        let metadata = json!({"setting":"office", "source_hint":"gemini", "preview": {"token":"token", "source":source, "relative":relative, "digest":digest,
+            "options":{"timestamp":ID,"force":false,"zone":solstone_core_journal_config::owner_zone(root).name(),"setting":"office","source":"gemini"}}});
         crate::write_import_metadata(root, ID, metadata.as_object().unwrap()).unwrap();
     }
     #[test]
@@ -438,7 +438,7 @@ mod tests {
                 ID,
                 force,
                 Some(setting),
-                Some("obsidian"),
+                Some("gemini"),
             )
         };
         assert!(check("token", false, "office").is_ok());
@@ -519,7 +519,7 @@ mod tests {
                 ID,
                 false,
                 Some("office"),
-                Some("obsidian")
+                Some("gemini")
             )
             .is_err()
         );

@@ -127,6 +127,36 @@ fn import(
     import_stopping(root, csv, timestamp, facet, model, false)
 }
 
+/// [`import`], saying how many listed workouts the owner was shown would move.
+fn import_shown(
+    root: &Path,
+    csv: &Path,
+    timestamp: &str,
+    facet: ImportFacet,
+    model: &Model,
+    shown: Option<usize>,
+) -> (CliRun, String) {
+    let dispatch = RegistryDispatch {
+        source: RegistrySource::Strava,
+        media: csv.to_path_buf(),
+        timestamp: timestamp.to_owned(),
+        dry_run: false,
+        json: false,
+        force: false,
+        owner_timestamp: None,
+        fallback_timestamp: None,
+        facet,
+        listed_moves_shown: shown,
+    };
+    let hook = StravaRunHook {
+        names_model: Some(model),
+        ..StravaRunHook::default()
+    };
+    let mut selected = None;
+    let run = run_strava_hooked(dispatch, root, &mut selected, Some(&hook));
+    (run, selected.unwrap_or_default())
+}
+
 /// [`import`], stopped just before the import is marked complete when `stop`.
 fn import_stopping(
     root: &Path,
@@ -146,6 +176,7 @@ fn import_stopping(
         owner_timestamp: None,
         fallback_timestamp: None,
         facet,
+        listed_moves_shown: None,
     };
     let hook = StravaRunHook {
         names_model: Some(model),
@@ -221,6 +252,165 @@ fn snapshot(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     files
 }
 
+/// A download listed under `work`, then imported again under `body`.
+fn moved_with(shown: Option<usize>) -> (tempfile::TempDir, String) {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let (run, id) = import_shown(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+        shown,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let summary = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
+    (journal, summary)
+}
+
+#[test]
+fn a_facet_named_on_the_command_line_says_how_many_moved_and_from_where() {
+    let (journal, summary) = moved_with(None);
+    assert!(
+        summary
+            .contains("3 workouts already listed on the activities page moved there, from work."),
+        "{summary}"
+    );
+    assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
+}
+
+#[test]
+fn the_summary_counts_what_moved_and_not_what_was_going_to() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    // One workout goes back to being a line an earlier reading filed, and its
+    // group is stopped before anything of it is written.
+    const DAY: &str = "20261004";
+    let segments = fs::read_dir(root.join("chronicle").join(DAY).join("import.strava"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let line = json!({"id": "exercise_070000_300", "activity": "exercise", "segments": segments,
+        "created_at": 1, "stream": "import.strava"});
+    fs::write(
+        root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        format!("{line}\n"),
+    )
+    .unwrap();
+    crate::strava_convert::WRITES_SEEN.set(0);
+    crate::strava_convert::STOP_AFTER.set(Some(1));
+    let (run, id) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+    );
+    crate::strava_convert::STOP_AFTER.set(None);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let summary = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
+    assert!(
+        summary
+            .contains("2 workouts already listed on the activities page moved there, from work."),
+        "{summary}"
+    );
+}
+
+#[test]
+fn a_run_moves_what_the_owner_was_shown() {
+    let (journal, summary) = moved_with(Some(3));
+    assert!(summary.contains("moved there, from work."), "{summary}");
+    assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
+}
+
+#[test]
+fn more_to_move_than_the_owner_saw_moves_none_and_says_so() {
+    let (journal, summary) = moved_with(Some(2));
+    assert!(
+        summary
+            .contains("nothing already listed moved: 3 workouts would have, and you were told 2."),
+        "{summary}"
+    );
+    assert!(!summary.contains("moved there"), "{summary}");
+    let root = journal.path();
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
+}
+
+#[test]
+fn an_import_nobody_answered_for_moves_nothing_already_listed() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(count(&run, "filed"), 0);
+    assert_eq!(count(&run, "kept_sensed"), 3);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
 #[test]
 fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() {
     let journal = journal(&["body", "work"]);
@@ -269,10 +459,10 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     let unreadable = root.join("facets/work/activities/20261006.jsonl");
     fs::create_dir_all(&unreadable).unwrap();
 
-    // The same download with body: the unsensed workout's tiles move to body
-    // and are published again, and it gets its record there. The sensed one
-    // keeps its tile and record under work, the unreadable one its tile, and
-    // both are counted.
+    // The same download with body, the owner's answer: the unsensed workout's
+    // tiles move to body and are published again, and it gets its record there.
+    // The sensed one's record becomes a code record and goes with its tile to
+    // body too. The unreadable one keeps its tile, and is counted.
     let (run, id) = import(
         root,
         &csv,
@@ -286,12 +476,16 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     }
     assert_eq!(
         tile_facet(root, "20261005", "090000_300").as_deref(),
-        Some("work")
+        Some("body")
     );
     assert_eq!(tile_facet(root, "20261006", "060000_300"), None);
     assert_eq!(
         published(root, &id),
-        ["20261004/070000_300", "20261004/070500_300"]
+        [
+            "20261004/070000_300",
+            "20261004/070500_300",
+            "20261005/090000_300"
+        ]
     );
     assert_eq!(
         (
@@ -299,7 +493,7 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
             count(&run, "kept_sensed"),
             count(&run, "kept_unreadable")
         ),
-        (1, 1, 1)
+        (1, 0, 1)
     );
     assert_eq!(
         (
@@ -307,13 +501,13 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
             count(&run, "records_kept"),
             count(&run, "records_refused")
         ),
-        (1, 1, 1)
+        (1, 0, 1)
     );
     assert_eq!(records(root, "body", "20261004").len(), 1);
-    assert_eq!(
-        records(root, "work", "20261005"),
-        std::slice::from_ref(&sense_record)
-    );
+    assert!(records(root, "work", "20261005").is_empty());
+    let converted = records(root, "body", "20261005");
+    assert_eq!(converted.len(), 1);
+    assert_eq!(converted[0]["source"], "body");
     // Filed under body, its words are read now, after the lock was released;
     // the two with none aren't read again.
     assert_eq!(
@@ -393,9 +587,33 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     assert_eq!(count(&run, "names_calls"), 1);
     assert_eq!(records(root, "body", "20261004").len(), 1);
 
-    // Another facet for the same download: workouts already listed with the
-    // owner's activities keep their facet beside that listing, so a listing
-    // and its workout never split.
+    // Choosing no facet on a later import removes nothing and moves nothing.
+    let (run, _) = import(root, &csv, "20261010_145000", ImportFacet::None, &model);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+    assert_eq!(records(root, "body", "20261004").len(), 1);
+
+    // An import nobody answered for moves nothing already listed.
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_145500",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+    assert_eq!(records(root, "body", "20261004").len(), 1);
+
+    // The owner answers with another facet: every workout in the download
+    // moves there, tiles and record together, so a listing and its workout
+    // never split.
     let (run, _) = import(
         root,
         &csv,
@@ -404,13 +622,13 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
         &model,
     );
     assert_eq!(run.exit_code, 0, "{}", run.stderr);
-    assert_eq!(count(&run, "filed"), 0);
+    assert_eq!(count(&run, "filed"), 3);
     assert_eq!(
         tile_facet(root, "20261004", "070000_300").as_deref(),
-        Some("body")
+        Some("work")
     );
-    assert_eq!(records(root, "body", "20261004").len(), 1);
-    assert!(records(root, "work", "20261004").is_empty());
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
 }
 
 #[test]

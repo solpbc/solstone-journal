@@ -1294,6 +1294,8 @@ fn search(
     let possible_names = ConnectionPossibleNames::new(journal_root, snapshot);
     let mut checker = LiveTranscriptPages::new(Arc::clone(&possible_names));
     while results.len() < request.limit && examined < MAX_SEARCH_EXAMINED_ROWS {
+        // One query reads each activity day file once.
+        let day_files = crate::body_source::ActivityDayFiles::default();
         let batch = (MAX_SEARCH_EXAMINED_ROWS - examined).min(100);
         let response = search_connection_with_possible_names(
             journal_root,
@@ -1317,7 +1319,7 @@ fn search(
                 .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
                 .date_naive(),
             possible_names.admission(),
-            crate::body_source::body_entry_admission(journal_root, snapshot),
+            crate::body_source::body_entry_admission(journal_root, snapshot, day_files.clone()),
         )
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
@@ -1400,6 +1402,7 @@ fn search(
                 let Some(face) = crate::body_source::body_entry_face(
                     journal_root,
                     snapshot,
+                    &day_files,
                     &hit.metadata.path,
                     hit.metadata.idx,
                 ) else {

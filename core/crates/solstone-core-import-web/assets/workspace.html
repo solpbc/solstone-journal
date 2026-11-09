@@ -1,3 +1,5 @@
+<script src="/static/vendor/marked/marked.min.js"></script>
+<script src="/static/vendor/dompurify/dompurify.min.js"></script>
 <style>
 #importSyncSources { margin-bottom: 3rem; }
 .import-sync-source { padding: 1.25rem 0; border-bottom: 1px solid var(--hairline); overflow-wrap: anywhere; }
@@ -660,6 +662,7 @@
       <div class="surface-state surface-state--loading" role="status" aria-busy="true">
         <div class="surface-state-spinner" aria-hidden="true"></div>
         <span class="surface-state-text" data-role="loading-status">loading imports…</span>
+        <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
       </div>
     </div>
   </div>
@@ -1689,7 +1692,7 @@ async function loadGuidedFlow(sourceName) {
   }
   const uploadStepNumber = guideStepNumber;
   const configureStepNumber = uploadStepNumber + 1;
-  const folderPicker = window.JournalOwnerFolders && ['obsidian', 'audio_archive', 'gemini', 'document'].includes(source.name)
+  const folderPicker = window.JournalOwnerFolders && ['audio_archive', 'gemini', 'document'].includes(source.name)
     ? '<button id="guidedFolderBtn" class="import-secondary-btn" type="button">choose folder</button><p id="guidedFolderStatus" role="status" aria-live="polite"></p>' : '';
 
   guideSteps.innerHTML = `
@@ -2291,7 +2294,7 @@ async function saveGuidedPath(source) {
   const revision = previewRevisions.guided;
   const pathInput = document.getElementById('guidedPathInput');
   if (!pathInput || !pathInput.value.trim()) {
-    throw new Error('Please enter the path to your vault folder.');
+    throw new Error('Please enter the path to your folder.');
   }
 
   const guidedSettingInput = document.getElementById('guidedSettingInput');
@@ -2375,13 +2378,16 @@ async function prepareImportPreview(kind, payload, setting, button) {
   if (!size || !Number.isInteger(size.recordings) || !Number.isInteger(size.days) || !data.preview_token) {
     throw new Error('could not read the import size');
   }
-  const ready = size.recordings > 0 || Boolean(size.other_units?.[1]);
+  const ready = size.recordings > 0 || Boolean(size.other_units?.[1]) || Boolean(size.listed_moves?.count);
   importPreviews[kind] = { key, token: data.preview_token, ready };
   const panel = document.getElementById(`${kind}SizePreview`);
   if (panel) {
     panel.textContent = `${size.recordings} ${size.recordings === 1 ? 'recording' : 'recordings'} across ${size.days} ${size.days === 1 ? 'day' : 'days'}`;
     if (size.other_units) panel.textContent += ` · ${size.other_units[1]} ${size.other_units[0]}`;
     if (size.skipped) panel.textContent += ` · ${size.skipped} skipped`;
+    if (size.listed_moves) {
+      panel.textContent += ` · ${size.listed_moves.count} ${size.listed_moves.count === 1 ? 'workout' : 'workouts'} already listed on the activities page would move to this import's facet from ${size.listed_moves.from.join(', ')}`;
+    }
     if (data.force_notice) panel.textContent += ` · ${data.force_notice}`;
     if (!ready) panel.textContent += ' · nothing to import';
   }

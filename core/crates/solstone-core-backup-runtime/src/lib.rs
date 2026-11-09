@@ -39,6 +39,7 @@ pub mod repo;
 pub mod resolve;
 pub mod restore;
 mod restore_catalog;
+pub mod restore_sweep;
 pub mod rotation;
 pub mod runner;
 pub mod s3_wipe;

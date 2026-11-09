@@ -91,10 +91,6 @@ fn grouped(value: u64) -> String {
     out
 }
 
-pub(crate) fn obsidian_summary(entry_count: u64, days: usize) -> String {
-    format!("imported {entry_count} notes across {days} days")
-}
-
 /// One file written into one segment of the import's stream.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SegmentFile {
@@ -186,9 +182,6 @@ pub fn render(
         RegistrySource::Ics => {
             crate::ics::render_with_notes(path, &zone, stamp).map_err(|error| error.to_string())
         }
-        RegistrySource::Obsidian => {
-            crate::obsidian::render(path, &zone).map_err(|error| error.to_string())
-        }
         _ => return None,
     })
 }
@@ -205,7 +198,6 @@ fn reclaims_removed_keys(source: RegistrySource) -> bool {
             | RegistrySource::Claude
             | RegistrySource::Gemini
             | RegistrySource::Ics
-            | RegistrySource::Obsidian
     )
 }
 
@@ -440,7 +432,6 @@ pub fn write_rendered(
                 conversations_summary(entries, conversations_count, days_count)
             }
             RegistrySource::Ics => ics_summary(entries, days_count, &rendered.calendar_counts),
-            RegistrySource::Obsidian => obsidian_summary(entries, days_count),
             _ => String::new(),
         };
         (entries, summary)

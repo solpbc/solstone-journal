@@ -82,7 +82,6 @@ pub(crate) fn run_with_seams(
     let mut selected = None;
     let cli = match dispatch.source {
         RegistrySource::Ics
-        | RegistrySource::Obsidian
         | RegistrySource::Claude
         | RegistrySource::Chatgpt
         | RegistrySource::Gemini => run_save(dispatch, journal, &mut selected),
@@ -171,11 +170,24 @@ fn preview_size(
                     });
                 }
             }
+            let listed_moves = match &dispatch.facet {
+                crate::cli_argv::ImportFacet::Facet(facet) => crate::strava_convert::listed_moves(
+                    journal,
+                    &workouts
+                        .workouts
+                        .iter()
+                        .map(|workout| workout.activity_id.to_string())
+                        .collect(),
+                    facet,
+                ),
+                _ => None,
+            };
             Ok(solstone_core_import::size::ImportSize {
                 recordings,
                 skipped: placement.counts.stayed_deleted_tiles
                     + placement.counts.no_free_key_tiles
                     + placement.counts.duplicate_identity_tiles,
+                listed_moves,
                 ..Default::default()
             })
         }
@@ -753,6 +765,14 @@ fn run_archive_with_seams(
         ));
     }
     let merge_result = merge_journal_archive(&dispatch.media, journal, &options, Some(reindex));
+    // A merged journal may hold old Strava records again. The merge has let go
+    // of its locks, so this waits on nothing of its own.
+    if merge_result.is_ok() {
+        if let Err(error) = crate::strava_convert::mark_conversion_needed(journal) {
+            log::warn!("journal merge: Strava records weren't marked to update: {error}");
+        }
+        crate::strava_convert::sweep_strava_conversions(journal);
+    }
     let finished_at_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
@@ -1268,6 +1288,41 @@ fn run_strava_internal(
         written_keys.contains(&key) && !skipped_keys.contains(&key)
     };
     let live = crate::strava_filing::live_tiles(journal, &placement, &is_written);
+    // Records an earlier reading filed become code records first, and every
+    // record of a workout in the download goes where its workout now is. Only
+    // the owner's answer for this import moves one to another facet.
+    let owner_chose = (run_facet.basis == crate::strava_filing::FacetBasis::Chosen)
+        .then_some(run_facet.facet.as_deref())
+        .flatten();
+    let download = live
+        .keys()
+        .map(ToString::to_string)
+        .collect::<BTreeSet<_>>();
+    // Counted again now the lock is held. A run never moves more than the
+    // owner was shown.
+    let would_move = owner_chose.map_or_else(Vec::new, |facet| {
+        crate::strava_convert::listed_moves_by_workout(journal, &download, facet)
+    });
+    let listed_over = dispatch
+        .listed_moves_shown
+        .map(|shown| (shown, would_move.len()))
+        .filter(|(shown, count)| count > shown);
+    let owner_chose = owner_chose.filter(|_| listed_over.is_none());
+    let mut conversion = crate::strava_convert::convert_held(
+        journal,
+        &_source_lock,
+        crate::strava_convert::ConversionScope {
+            chosen: owner_chose.map(|facet| (&download, facet)),
+            publishes_tiles: false,
+        },
+        chrono::Utc::now(),
+    );
+    let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
+    // Counted from where the records are now: a group that waited didn't move.
+    let listed_moved = owner_chose
+        .and_then(|facet| crate::strava_convert::listed_moved_now(journal, &would_move, facet));
+    conversion.moves_open = solstone_core_facets::open_body_moves(journal)
+        .map_or(1, |open| u64::try_from(open.len()).unwrap_or(u64::MAX));
     let mut list_refiles = |tiles: &[(String, String)]| {
         solstone_core_import::strava_refile::add_strava_refiles(journal, tiles, &_source_lock)
     };
@@ -1276,6 +1331,7 @@ fn run_strava_internal(
             journal,
             &live,
             facet,
+            owner_chose.is_some(),
             &mut list_refiles,
         ) {
             Ok(filing) => filing,
@@ -1332,7 +1388,7 @@ fn run_strava_internal(
     days.dedup();
     let mut records = crate::body_activity::RecordCounts::default();
     for day in days {
-        let counts = crate::body_activity::write_strava_records_at(journal, day, now);
+        let counts = crate::body_activity::write_strava_records_at(journal, day, now, &held_back);
         records.written += counts.written;
         records.refreshed += counts.refreshed;
         records.no_facet += counts.no_facet;
@@ -1445,6 +1501,9 @@ fn run_strava_internal(
     );
 
     let run_summary = crate::strava_summary::StravaRunSummary {
+        conversion,
+        listed_moved,
+        listed_over,
         new_workouts: corrected_counts.new_workouts as u64,
         updated_workouts: corrected_counts.present_updated as u64,
         replaced_workouts: corrected_counts.replaced_workouts as u64,
@@ -1707,6 +1766,7 @@ mod tests {
             owner_timestamp: Some(timestamp.to_owned()),
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         }
     }
 
@@ -2052,6 +2112,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         }
     }
 
@@ -2822,6 +2883,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         };
         let req = cli_producer_request(root, &dispatch, 1);
         assert_eq!(req.heartbeat_interval, None);
@@ -3202,6 +3264,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         };
 
         // Run 1
@@ -3360,6 +3423,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         }
     }
 

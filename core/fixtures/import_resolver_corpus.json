@@ -145,52 +145,12 @@
         },
         "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
       },
-      "bare::dir_vault_3md": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "obsidian",
-          "item_count": 3,
-          "source": "/tmp/resolver-corpus-5p781tqb/vault_3md"
-        },
-        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_3md\n  Date range: 20260811 \u2014 20260811\n  Items:      3\n  Entities:   0\n  Summary:    3 knowledge notes\n\n"
-      },
-      "bare::dir_vault_3md_AND_pdf": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "obsidian",
-          "item_count": 3,
-          "source": "/tmp/resolver-corpus-5p781tqb/vault_3md_and_pdf"
-        },
-        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_3md_and_pdf\n  Date range: 20260811 \u2014 20260811\n  Items:      3\n  Entities:   0\n  Summary:    3 knowledge notes\n\n"
-      },
       "bare::dir_vault_3md_hidden": {
         "result": {
           "reason": "no_deterministic_match",
           "skipped": true
         },
         "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
-      },
-      "bare::dir_vault_3md_nested": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "obsidian",
-          "item_count": 3,
-          "source": "/tmp/resolver-corpus-5p781tqb/vault_3md_nested"
-        },
-        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_3md_nested\n  Date range: 20260811 \u2014 20260811\n  Items:      3\n  Entities:   0\n  Summary:    3 knowledge notes\n\n"
-      },
-      "bare::dir_vault_logseq": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "obsidian",
-          "item_count": 1,
-          "source": "/tmp/resolver-corpus-5p781tqb/vault_logseq"
-        },
-        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/vault_logseq\n  Date range: 20260811 \u2014 20260811\n  Items:      1\n  Entities:   0\n  Summary:    1 knowledge notes\n\n"
       },
       "bare::doc.pdf": {
         "result": {
@@ -343,16 +303,6 @@
           "skipped": true
         },
         "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
-      },
-      "source=obsidian::dir_apple_AND_pdf": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "obsidian",
-          "item_count": 0,
-          "source": "/tmp/resolver-corpus-5p781tqb/apple_export_and_pdf"
-        },
-        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/apple_export_and_pdf\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    Empty vault\n\n"
       },
       "source=oura::plain.txt": {
         "raised": {
@@ -756,16 +706,6 @@
           "skipped": true
         },
         "stdout": "Import skipped: no date could be read from the file; name one with --timestamp\n"
-      },
-      "source=obsidian::dir_apple_AND_pdf": {
-        "result": {
-          "dry_run": true,
-          "entity_count": 0,
-          "importer": "obsidian",
-          "item_count": 0,
-          "source": "/tmp/resolver-corpus-5p781tqb/apple_export_and_pdf"
-        },
-        "stdout": "\n  Importer:   Obsidian / Logseq Vault\n  Source:     /tmp/resolver-corpus-5p781tqb/apple_export_and_pdf\n  Date range:  \u2014 \n  Items:      0\n  Entities:   0\n  Summary:    Empty vault\n\n"
       },
       "source=oura::plain.txt": {
         "raised": {

@@ -41,7 +41,7 @@ python3 build_apk.py --root "$PWD" --sdk "$ANDROID_HOME" --java "$JAVA_HOME" \
 
 the builder verifies the speech model against the catalog and the checked-in voice models against their runtime pins. the APK includes those files and their notices. on first open, preparation copies missing files into app-private storage before starting the journal. existing model files must match; conflicting bytes are kept and startup refuses. no USB model provisioning is needed for this variant.
 
-install the exact signed APK with the retained signer. open `journal`, choose its mark, and choose thinking. local thinking downloads its model during setup. you can also choose confidential processing, your own model, or decide later. pair devices from network. for an existing backup, finish initial setup, then use backup to restore it and restart the journal.
+install the exact signed APK with the retained signer. open `journal`, choose its mark, and choose thinking. local thinking downloads its model during setup. you can also choose confidential processing, your own model, or decide later. pair devices from network.
 
 use this internal build on a dedicated, plugged-in device with the app in the foreground. it does not promise background hosting. keep the solstone app separate. test a new journal with a separate application ID; preserve the existing package's signer and private data when updating it. this build is not a store release.
 

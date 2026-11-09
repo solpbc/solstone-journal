@@ -25,11 +25,11 @@ fn fixture() -> (tempfile::TempDir, Arc<JournalRoot>, AdmittedFolder) {
 #[test]
 fn bound_metadata_keeps_the_durable_attempt_and_task_without_changing_originals() {
     let (_container, root, folder) = fixture();
-    let first = json!({"source":"obsidian", "attempt":{"generation":7}, "task_id":"kept-task"});
+    let first = json!({"source":"gemini", "attempt":{"generation":7}, "task_id":"kept-task"});
     folder
         .write_metadata_bound(&root, first.as_object().unwrap())
         .unwrap();
-    let replacement = json!({"source":"obsidian", "attempt":{"generation":1}, "task_id":"stale-task", "client_item_id":"owner-folder"});
+    let replacement = json!({"source":"gemini", "attempt":{"generation":1}, "task_id":"stale-task", "client_item_id":"owner-folder"});
     folder
         .write_metadata_bound(&root, replacement.as_object().unwrap())
         .unwrap();
@@ -71,7 +71,7 @@ fn bound_metadata_refuses_each_replaced_namespace_and_preserves_foreign_sentinel
         fs::write(path.join("sentinel"), b"foreign replacement").unwrap();
         assert!(
             folder
-                .write_metadata_bound(&root, json!({"source":"obsidian"}).as_object().unwrap())
+                .write_metadata_bound(&root, json!({"source":"gemini"}).as_object().unwrap())
                 .is_err(),
             "{replaced}"
         );
@@ -112,7 +112,7 @@ fn bound_metadata_preserves_corrupt_and_symlink_records_on_refusal() {
     fs::write(&path, b"{broken record").unwrap();
     assert!(
         folder
-            .write_metadata_bound(&root, json!({"source":"obsidian"}).as_object().unwrap())
+            .write_metadata_bound(&root, json!({"source":"gemini"}).as_object().unwrap())
             .is_err()
     );
     assert_eq!(fs::read(&path).unwrap(), b"{broken record");
@@ -122,7 +122,7 @@ fn bound_metadata_preserves_corrupt_and_symlink_records_on_refusal() {
     symlink(&sentinel, &path).unwrap();
     assert!(
         folder
-            .write_metadata_bound(&root, json!({"source":"obsidian"}).as_object().unwrap())
+            .write_metadata_bound(&root, json!({"source":"gemini"}).as_object().unwrap())
             .is_err()
     );
     assert_eq!(fs::read(&sentinel).unwrap(), b"foreign record");
@@ -149,7 +149,7 @@ fn registration_waits_for_the_maintained_metadata_lock_before_reading_and_writin
         done_send
             .send(worker_folder.write_metadata_bound(
                 &worker_root,
-                json!({"source":"obsidian"}).as_object().unwrap(),
+                json!({"source":"gemini"}).as_object().unwrap(),
             ))
             .unwrap();
     });
@@ -179,5 +179,5 @@ fn registration_waits_for_the_maintained_metadata_lock_before_reading_and_writin
         crate::read_import_metadata(root.canonical_path(), folder.import_id.as_str()).unwrap();
     assert_eq!(read["attempt"]["generation"], 9);
     assert_eq!(read["task_id"], "durable-owner");
-    assert_eq!(read["source"], "obsidian");
+    assert_eq!(read["source"], "gemini");
 }

@@ -122,6 +122,9 @@ struct ResumeHold {
 
 impl ToolRunner for CopyRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            return Ok(report);
+        }
         match request.argv.first().and_then(|s| s.to_str()) {
             Some("snapshots") => Ok(if self.wrong_key {
                 output(12, "")
@@ -164,6 +167,9 @@ impl ToolRunner for CopyRunner {
         request: &ToolRequest<'_>,
         cancellation: &solstone_core_backup::archive_admission::ArchiveCancellation,
     ) -> io::Result<ToolOutput> {
+        if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            return Ok(report);
+        }
         if request.argv.first().is_some_and(|arg| arg == "restore")
             && let Some(hold) = self.tls_hold.lock().unwrap().take()
         {

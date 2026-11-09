@@ -24,7 +24,15 @@ use crate::{
 
 pub const HANDOFF_TTL: Duration = Duration::from_secs(30 * 60);
 
-const TERMINAL: &[&str] = &["done", "error", "degraded", "needs_subscription", "refused"];
+const TERMINAL: &[&str] = &[
+    "done",
+    "error",
+    "degraded",
+    "needs_subscription",
+    "refused",
+    // Encrypted backup found its backups during setup; the owner picks one.
+    "choose_backup",
+];
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Operation {

@@ -38,7 +38,7 @@ fn inventory_matches_the_grammar_and_sync_oracle() {
         .map(|backend| backend["name"].as_str())
         .collect::<Option<Vec<_>>>()
         .unwrap();
-    assert_eq!(&actual[..3], oracle_names);
+    assert_eq!(&actual[..2], oracle_names);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn oracle_backed_schema_fixture_round_trips_every_backend_union_member() {
     }
 }
 
-fn reference_states() -> [(BackendName, Value); 3] {
+fn reference_states() -> [(BackendName, Value); 2] {
     [
         (
             BackendName::Plaud,
@@ -83,20 +83,6 @@ fn reference_states() -> [(BackendName, Value); 3] {
                     "trash": {"filename": "trash", "status": "skipped", "skip_reason": "trashed"},
                     "available": {"filename": "available", "status": "available", "last_error": "download failed"},
                     "unknown": {"unknown_entry": {"preserve": "yes"}}
-                }
-            }),
-        ),
-        (
-            BackendName::Obsidian,
-            json!({
-                "backend": "obsidian", "source_path": "/example/vault",
-                "last_sync": "2026-08-11T12:00:00+00:00", "unknown_root": ["keep"],
-                "files": {
-                    "note.md": {"filename": "note.md", "title": "note", "mtime": 1725000000.5,
-                        "content_hash": "abc", "status": "imported", "imported_at": "2026-08-11T12:00:00+00:00",
-                        "segments": 2, "edit_count": 3},
-                    "gone.md": {"status": "removed"},
-                    "available.md": {"status": "available", "last_error": "pipeline failed"}
                 }
             }),
         ),

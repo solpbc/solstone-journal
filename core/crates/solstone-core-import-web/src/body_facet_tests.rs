@@ -11,6 +11,7 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 use super::*;
+use solstone_core_journal_config::BodyFacetChoice;
 
 fn journal(facets: &[&str]) -> TempDir {
     let root = TempDir::new().unwrap();
@@ -323,4 +324,29 @@ fn a_page_that_sends_no_facet_gives_the_importer_none() {
     // while enabled, and never makes one.
     assert!(command_arguments(None).is_empty());
     assert!(command_arguments(Some(&Value::Null)).is_empty());
+}
+
+#[test]
+fn the_run_is_told_how_many_listed_workouts_the_page_showed() {
+    let path = "/tmp/export.csv";
+    let shown = |metadata: Value| {
+        let metadata = metadata.as_object().unwrap().clone();
+        let command = crate::lifecycle::command(path, "20261010_100000", &metadata, false);
+        command
+            .iter()
+            .position(|arg| arg == "--listed-moves-shown")
+            .map(|at| command[at + 1].clone())
+    };
+    let preview = |size: Value| json!({"digest": "d", "token": "t", "size": size});
+    let facet = json!({"choice": "facet", "facet": "body"});
+    assert_eq!(
+        shown(json!({"body_facet": facet,
+            "preview": preview(json!({"listed_moves": {"count": 2, "from": ["Work"]}}))})),
+        Some("2".to_owned())
+    );
+    assert_eq!(
+        shown(json!({"body_facet": facet, "preview": preview(json!({}))})),
+        Some("0".to_owned())
+    );
+    assert_eq!(shown(json!({"preview": preview(json!({}))})), None);
 }

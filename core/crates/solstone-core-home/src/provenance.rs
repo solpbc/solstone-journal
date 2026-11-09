@@ -56,7 +56,7 @@ impl WhatWord {
             Self::Camera => "camera",
             Self::Location => "location",
             Self::Calendar => "calendar",
-            Self::Notes => "notes",
+            Self::Notes => "Obsidian notes",
         }
     }
 }
@@ -1215,6 +1215,23 @@ mod tests {
         );
         let table = load_stream_labels(root.path());
         assert_eq!(table.rows[0].part, ProvenancePart::Agent);
+    }
+
+    #[test]
+    fn a_previously_imported_note_keeps_its_notes_label() {
+        let part = ProvenancePart::Import {
+            source: "obsidian".to_owned(),
+        };
+        assert_eq!(provenance_label(&part, None), "notes · imported");
+    }
+
+    #[test]
+    fn a_note_from_the_app_names_obsidian_as_its_source() {
+        let part = bound(None, Some(WhatWord::Notes), None);
+        assert_eq!(
+            provenance_label(&part, None),
+            "your device · Obsidian notes"
+        );
     }
 
     #[test]

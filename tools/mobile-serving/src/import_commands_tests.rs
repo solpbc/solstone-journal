@@ -129,20 +129,31 @@ fn contains(root: &Path, needle: &str) -> bool {
     false
 }
 
+/// A calendar export carrying `sentinel` as its one event, so the import writes real content.
+fn write_ics(path: &Path, sentinel: &str) {
+    fs::write(
+        path,
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:{sentinel}\r\n\
+             DTSTART:20261014T090000Z\r\nCREATED:20261014T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        ),
+    )
+    .unwrap();
+}
+
 fn due_import_fixture() -> (tempfile::TempDir, tempfile::TempDir) {
     let root = fixture_directory();
     let source = tempfile::tempdir().unwrap();
-    fs::write(
-        source.path().join("startup.md"),
-        "fc3 constructor catch-up native import sentinel\n",
-    )
-    .unwrap();
+    write_ics(
+        &source.path().join("startup.ics"),
+        "fc3 constructor catch-up native import sentinel",
+    );
     fs::write(
         root.path().join("config/schedules.json"),
         serde_json::to_vec(&serde_json::json!({
             "owner:startup-import": {
-                "cmd": ["solstone", "journal", "importer", "--sync", "obsidian", "--save",
-                    "--path", source.path().to_str().unwrap()],
+                "cmd": ["solstone", "journal", "importer",
+                    source.path().join("startup.ics").to_str().unwrap()],
                 "every": "1m",
                 "enabled": true
             }
@@ -204,13 +215,10 @@ fn due_import_at_constructor_start_writes_real_notes_without_start_workers() {
             &root.path().join("chronicle"),
             "fc3 constructor catch-up native import sentinel"
         ));
-        let state: serde_json::Value =
-            serde_json::from_slice(&fs::read(root.path().join("imports/obsidian.json")).unwrap())
-                .unwrap();
-        assert_eq!(state["files"]["startup.md"]["status"], "imported");
-        assert_eq!(
-            fs::read_to_string(source.path().join("startup.md")).unwrap(),
-            "fc3 constructor catch-up native import sentinel\n"
+        assert!(
+            fs::read_to_string(source.path().join("startup.ics"))
+                .unwrap()
+                .contains("fc3 constructor catch-up native import sentinel")
         );
     }
 }
@@ -344,7 +352,6 @@ fn constructor_error_and_stop_join_due_import_then_reopen_for_real_work() {
             .to_owned())
         );
         assert!(!root.path().join("chronicle").exists());
-        assert!(!root.path().join("imports/obsidian.json").exists());
 
         // Error/Stop releases the original generation only after its native
         // frame joins. Reopening preserves the stored due job and really runs it.
@@ -364,9 +371,10 @@ fn constructor_error_and_stop_join_due_import_then_reopen_for_real_work() {
             &root.path().join("chronicle"),
             "fc3 constructor catch-up native import sentinel"
         ));
-        assert_eq!(
-            fs::read_to_string(source.path().join("startup.md")).unwrap(),
-            "fc3 constructor catch-up native import sentinel\n"
+        assert!(
+            fs::read_to_string(source.path().join("startup.ics"))
+                .unwrap()
+                .contains("fc3 constructor catch-up native import sentinel")
         );
     }
 }
@@ -458,8 +466,8 @@ fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_pa
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let (root, host) = fixture();
     let source = tempfile::tempdir().unwrap();
-    let note = "# native import\n\nfc3 explicit native source sentinel\n";
-    fs::write(source.path().join("note.md"), note).unwrap();
+    let calendar = source.path().join("native.ics");
+    write_ics(&calendar, "fc3 explicit native source sentinel");
     assert_eq!(
         host.execute_worker_command(&owned(&["importer", "--list-importers"])),
         UNCOMPLETED_HOLD_EXIT
@@ -482,46 +490,56 @@ fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_pa
             "solstone",
             "journal",
             "importer",
-            "--sync",
-            "obsidian",
-            "--save",
-            "--path",
-            source.path().to_str().unwrap(),
+            calendar.to_str().unwrap(),
         ]),
     );
     assert_eq!(finished(&host, "explicit-import"), "ok");
-    let state_path = root.path().join("imports/obsidian.json");
-    let before = fs::read(&state_path).unwrap();
-    let state: serde_json::Value = serde_json::from_slice(&before).unwrap();
-    assert_eq!(state["files"]["note.md"]["status"], "imported");
     assert!(contains(
         &root.path().join("chronicle"),
         "fc3 explicit native source sentinel"
     ));
-    assert_eq!(
-        fs::read_to_string(source.path().join("note.md")).unwrap(),
-        note
-    );
 
-    // The real explicit run established valid retained source B. A new note
-    // would be eligible there if the missing-connection request fell through.
+    // A real sync of a named folder establishes a retained source. A later
+    // sync with no path must not fall through to it.
+    let audio_folder = tempfile::tempdir().unwrap();
+    let clip = audio_folder.path().join("clip.wav");
+    fs::write(&clip, b"already imported clip").unwrap();
+    fs::create_dir_all(root.path().join("imports")).unwrap();
     fs::write(
-        source.path().join("later.md"),
-        "fc3 retained source must stay unread\n",
+        root.path().join("imports/audio.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "backend": "audio",
+            "files": {"clip.wav": {
+                "status": "imported",
+                "hash": solstone_core_import::hash_source(&clip).unwrap().into_inner(),
+            }},
+        }))
+        .unwrap(),
     )
     .unwrap();
-    for source in ["obsidian", "audio"] {
-        assert_eq!(
-            host.execute_worker_command(&owned(&["importer", "--sync", source, "--save"])),
-            UNCOMPLETED_HOLD_EXIT
-        );
-    }
-    assert!(!root.path().join("imports/audio.json").exists());
+    submit(
+        &host,
+        "explicit-audio",
+        owned(&[
+            "solstone",
+            "journal",
+            "importer",
+            "--sync",
+            "audio",
+            "--save",
+            "--path",
+            audio_folder.path().to_str().unwrap(),
+        ]),
+    );
+    assert_eq!(finished(&host, "explicit-audio"), "ok");
+    let state_path = root.path().join("imports/audio.json");
+    let before = fs::read(&state_path).unwrap();
+    fs::write(audio_folder.path().join("later.wav"), "unread\n").unwrap();
+    assert_eq!(
+        host.execute_worker_command(&owned(&["importer", "--sync", "audio", "--save"])),
+        UNCOMPLETED_HOLD_EXIT
+    );
     assert_eq!(fs::read(state_path).unwrap(), before);
-    assert!(!contains(
-        &root.path().join("chronicle"),
-        "fc3 retained source must stay unread"
-    ));
     assert!(!admit(&owned(&["--connect", "oura"])));
     assert!(!admit(&owned(&["--sync", "oura", "--save"])));
     assert!(admit(&owned(&["--sync", "oura", "--save", "--scheduled"])));
@@ -656,11 +674,8 @@ fn owner_request_holds_admitted_use_and_same_owner_previews_and_runs_after_resum
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let root = fixture_directory();
     let vault = tempfile::tempdir().unwrap();
-    fs::write(
-        vault.path().join("resumed.md"),
-        "fc3 resumed owner import sentinel\n",
-    )
-    .unwrap();
+    let calendar = vault.path().join("resumed.ics");
+    write_ics(&calendar, "fc3 resumed owner import sentinel");
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let factory_calls = Arc::clone(&calls);
     let host = open_import_fixture(
@@ -673,13 +688,7 @@ fn owner_request_holds_admitted_use_and_same_owner_previews_and_runs_after_resum
         }),
     )
     .unwrap();
-    let args = owned(&[
-        "--sync",
-        "obsidian",
-        "--save",
-        "--path",
-        vault.path().to_str().unwrap(),
-    ]);
+    let args = owned(&[calendar.to_str().unwrap()]);
     let queued = host
         .import_request(args.clone(), WorkStop::new(), Default::default())
         .unwrap();
@@ -749,11 +758,8 @@ fn opaque_keepalive_retains_outer_preview_work_after_worker_local_resources_reti
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let root = fixture_directory();
     let source = tempfile::tempdir().unwrap();
-    fs::write(
-        source.path().join("preview.md"),
-        "retained preview source\n",
-    )
-    .unwrap();
+    let calendar = source.path().join("preview.ics");
+    write_ics(&calendar, "retained preview source");
     let released = Arc::new(AtomicBool::new(false));
     let resource_state = Arc::clone(&released);
     let host = open_import_fixture(
@@ -770,13 +776,7 @@ fn opaque_keepalive_retains_outer_preview_work_after_worker_local_resources_reti
         }),
     )
     .unwrap();
-    let args = owned(&[
-        "--sync",
-        "obsidian",
-        "--save",
-        "--path",
-        source.path().to_str().unwrap(),
-    ]);
+    let args = owned(&[calendar.to_str().unwrap()]);
     let request = host
         .import_request(args.clone(), WorkStop::new(), Default::default())
         .unwrap();
@@ -952,20 +952,13 @@ fn pre_argv_snapshot_binds_once_then_shared_preview_and_execution_write_actual_n
     let preparation = host
         .import_preparation(WorkStop::new(), Default::default())
         .unwrap();
-    let source = tempfile::NamedTempFile::new().unwrap();
-    fs::write(source.path(), "fc3 pre-argv snapshot native output\n").unwrap();
     let snapshot = root.path().join("health/prepared-input");
     preparation.checkpoint().unwrap();
     fs::create_dir(&snapshot).unwrap();
-    fs::copy(source.path(), snapshot.join("prepared.md")).unwrap();
+    let copied = snapshot.join("prepared.ics");
+    write_ics(&copied, "fc3 pre-argv snapshot native output");
     let request = preparation
-        .bind(owned(&[
-            "--sync",
-            "obsidian",
-            "--save",
-            "--path",
-            snapshot.to_str().unwrap(),
-        ]))
+        .bind(owned(&[copied.to_str().unwrap()]))
         .unwrap();
     assert_eq!(
         calls.load(Ordering::Acquire),
@@ -1208,11 +1201,8 @@ fn late_stop_after_native_commit_preserves_actual_success() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let root = fixture_directory();
     let source = tempfile::tempdir().unwrap();
-    fs::write(
-        source.path().join("late.md"),
-        "fc3 success before late Stop\n",
-    )
-    .unwrap();
+    let calendar = source.path().join("late.ics");
+    write_ics(&calendar, "fc3 success before late Stop");
     let original = WorkStop::new();
     let late_stop = original.clone();
     let host = open_import_fixture(
@@ -1227,13 +1217,7 @@ fn late_stop_after_native_commit_preserves_actual_success() {
     .unwrap();
     let (outcome, _) = host
         .import_request(
-            owned(&[
-                "--sync",
-                "obsidian",
-                "--save",
-                "--path",
-                source.path().to_str().unwrap(),
-            ]),
+            owned(&[calendar.to_str().unwrap()]),
             original.clone(),
             Default::default(),
         )
@@ -1249,4 +1233,43 @@ fn late_stop_after_native_commit_preserves_actual_success() {
         "fc3 success before late Stop"
     ));
     host.shutdown().unwrap();
+}
+
+#[test]
+fn foreground_start_removes_retired_notes_folder_schedules_in_any_form_and_keeps_the_rest() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    for (enabled_sync, enabled_owner) in [
+        (serde_json::json!(true), serde_json::Value::Null),
+        (serde_json::json!(false), serde_json::json!(false)),
+    ] {
+        let root = fixture_directory();
+        let path = root.path().join("config/schedules.json");
+        let mut entries = serde_json::json!({
+            "daily_time": "00:15",
+            "weekly_time": "03:15",
+            "sync:plaud": {"cmd": ["solstone", "journal", "importer", "--sync", "plaud", "--save"], "every": "hourly", "enabled": false},
+            "owner:source:audio": {"cmd": ["journal", "importer", "--sync", "audio", "--save"], "every": "daily", "enabled": false},
+            "sync:obsidian": {"cmd": ["solstone", "journal", "importer", "--sync=obsidian", "--save"], "every": "hourly", "enabled": enabled_sync},
+            "owner:source:obsidian": {"cmd": ["journal", "importer", "--sync", "obsidian", "--save", "--path", "/retained/vault"], "every": "weekly"},
+        });
+        if !enabled_owner.is_null() {
+            entries["owner:source:obsidian"]["enabled"] = enabled_owner;
+        }
+        fs::write(&path, serde_json::to_vec(&entries).unwrap()).unwrap();
+        let payload = root.path().join("payload");
+        let host = ForegroundProcessingHost::open_at(
+            root.path(),
+            &payload,
+            ScheduleNow::in_zone(chrono::Utc::now(), chrono_tz::UTC),
+            BackupWebDeps::new(root.path().to_path_buf()),
+        )
+        .unwrap();
+        host.stop_discovery_for_test();
+        host.shutdown().unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(saved.get("sync:obsidian").is_none(), "{saved}");
+        assert!(saved.get("owner:source:obsidian").is_none(), "{saved}");
+        assert_eq!(saved["sync:plaud"], entries["sync:plaud"]);
+        assert_eq!(saved["owner:source:audio"], entries["owner:source:audio"]);
+    }
 }

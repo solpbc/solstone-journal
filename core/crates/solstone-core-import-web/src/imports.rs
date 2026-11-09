@@ -76,16 +76,6 @@ const SOURCES: &[SourceMetadata] = &[
         accept: ".zip,.json",
     },
     SourceMetadata {
-        name: "obsidian",
-        display_name: "notes",
-        icon: "file-text",
-        description: "import notes from Obsidian, Logseq, or any markdown vault",
-        input_type: "path_input",
-        upload_prompt: "paste the full path to your vault folder",
-        has_guide: true,
-        accept: "",
-    },
-    SourceMetadata {
         name: "journal_archive",
         display_name: "journal",
         icon: "book",

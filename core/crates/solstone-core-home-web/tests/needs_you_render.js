@@ -16,26 +16,19 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   '  window.selectAccountSide = selectAccountSide;\n',
-  `  window.__waiting = { renderVitalsHtml, readOriginalsTotal, readVitals,
+  `  window.__waiting = { renderVitalsHtml, readVitals,
     seedPulse: data => { lastPulse = data; pulseObservedAt = Date.now(); pulseReadFailed = false; },
-    rendered: () => renderedVitals,
-    requests: () => originalsReads };
+    rendered: () => renderedVitals };
   window.selectAccountSide = selectAccountSide;\n`,
 );
-// Count originals reads and keep the last status block the page rendered,
-// without a DOM.
-source = source.replace(
-  '  function readOriginalsTotal() {\n',
-  '  let originalsReads = 0;\n  function readOriginalsTotal() {\n    originalsReads += 1;\n',
-);
+// Keep the last status block the page rendered, without a DOM.
 source = source.replace(
   '  function renderVitals(pulse) {\n',
   '  let renderedVitals = null;\n  function renderVitals(pulse) {\n    renderedVitals = renderVitalsHtml(pulse);\n    return;\n',
 );
 
-let resolveOriginals = null;
-let rejectOriginals = null;
 let pulseResponse = null;
+const listReads = [];
 const location = { href: '', pathname: '/app/home/' };
 const document = {
   readyState: 'loading',
@@ -51,9 +44,7 @@ const window = { createViewReady: () => () => {},
   clearTimeout() {},
   setTimeout() { return 1; },
   apiJson(url) {
-    if (url.startsWith('/app/home/api/removals')) {
-      return new Promise((resolve, reject) => { resolveOriginals = resolve; rejectOriginals = reject; });
-    }
+    if (url.startsWith('/app/home/api/removals')) listReads.push(url);
     if (url === '/app/home/api/pulse') return Promise.resolve(pulseResponse);
     return new Promise(() => {});
   },
@@ -99,12 +90,12 @@ const rows = html => (html.match(/<li class="pulse-waiting-row/g) || []).length;
   assert(needs.includes('aria-labelledby="pulse-waiting-heading"'), needs);
   assert(needs.includes("everything&#39;s working"), needs);
 
+  // Pulse carries the originals list's item total; home never reads the list.
+  const pulseWith = total => ({ health_glance: calm, needs_you_items: [], narrative_content: null, originals_total: total });
+  ui.seedPulse(pulseWith(undefined));
+  pulseResponse = pulseWith(47);
+  await ui.readVitals();
   // Rows stand in order: health, needs-you, originals.
-  ui.seedPulse({ health_glance: calm, needs_you_items: [], narrative_content: null });
-  const read = ui.readOriginalsTotal();
-  // The total resolving before any paint still reaches the first paint.
-  resolveOriginals({ state: 'list.ready', total_rows: 47, offset: 0, next_offset: 20, removals: new Array(20).fill({}) });
-  await read;
   const ordered = ui.renderVitalsHtml({
     health_glance: {
       verdict: 'attention', severity: 'amber', headline: '1 thing needs your attention',
@@ -115,47 +106,27 @@ const rows = html => (html.match(/<li class="pulse-waiting-row/g) || []).length;
   const order = ['/app/health', '/app/speakers/#your-voice', '/app/home/originals/'].map(href => ordered.indexOf('href="' + href + '"'));
   assert(order.every(index => index > 0), ordered);
   assert.deepStrictEqual(order, [...order].sort((a, b) => a - b), ordered);
-  // The count is the list's whole item total, not the page's rows.
+  // The count is the list's whole item total.
   assert(ordered.includes('47'), ordered);
-  assert.strictEqual(ordered.includes('>20'), false, ordered);
 
-  // A total that arrives after the paint adds the heading and the row; a
-  // later vitals refresh keeps them without reading the list again.
-  ui.seedPulse({ health_glance: calm, needs_you_items: [], narrative_content: null });
-  const before = ui.requests();
-  const late = ui.readOriginalsTotal();
-  resolveOriginals({ state: 'list.ready', total_rows: 3, offset: 0, next_offset: null, removals: [{}, {}, {}] });
-  await late;
+  // A refresh carrying the total keeps the heading and the row.
+  pulseResponse = pulseWith(3);
+  await ui.readVitals();
   assert(ui.rendered().includes('pulse-waiting-heading'), ui.rendered());
   assert(ui.rendered().includes('href="/app/home/originals/"'), ui.rendered());
-  pulseResponse = { health_glance: calm, needs_you_items: [], narrative_content: null };
-  await ui.readVitals();
-  assert(ui.rendered().includes('href="/app/home/originals/"'), ui.rendered());
-  assert.strictEqual(ui.requests(), before + 1, 'a refresh does not re-read the list');
-
-  // An item too large to review still counts.
-  const large = ui.readOriginalsTotal();
-  resolveOriginals({ state: 'list.review_too_large', total_rows: 1, offset: 0, next_offset: null, removals: [{}], review_context: null });
-  await large;
-  assert.strictEqual(rows(ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] })), 1);
 
   // Nothing marked: no row, no list.
-  const empty = ui.readOriginalsTotal();
-  resolveOriginals({ state: 'list.empty', total_rows: 0, offset: 0, next_offset: null, removals: [] });
-  await empty;
+  pulseResponse = pulseWith(0);
+  await ui.readVitals();
   assert.strictEqual(ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] }).includes('pulse-waiting'), false);
 
   // A list that can't be read is still a row, linking to the originals page.
-  const unavailable = ui.readOriginalsTotal();
-  resolveOriginals({ state: 'list.register_unavailable' });
-  await unavailable;
+  pulseResponse = pulseWith(null);
+  await ui.readVitals();
   const failedRow = ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] });
   assert.strictEqual(rows(failedRow), 1, failedRow);
   assert(failedRow.includes('href="/app/home/originals/"'), failedRow);
-  const rejected = ui.readOriginalsTotal();
-  rejectOriginals(new Error('offline'));
-  await rejected;
-  assert.strictEqual(rows(ui.renderVitalsHtml({ health_glance: calm, needs_you_items: [] })), 1);
+  assert.deepStrictEqual(listReads, [], 'home reads the count from pulse, never the list');
 
   console.log('waiting-list render contract passed');
 })().catch(error => {

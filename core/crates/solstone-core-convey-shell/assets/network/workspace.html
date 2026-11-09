@@ -204,6 +204,7 @@
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
           <span class="surface-state-text" data-role="loading-status">loading devices…</span>
+          <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
         </div>
       </div>
     </section>
@@ -1916,8 +1917,10 @@ systemctl --user start solstone-linux</code></div>
                      : (window.LinkCopy.IDENTITY_ID_COPY_FAIL_TOAST || "couldn't copy journal id"));
       });
     }
-    setInterval(refreshStatus, 15000);
-    setInterval(refreshPrivateLinkStatus, 15000);
+    // Paused while the page is hidden, read again on return.
+    const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
+    every(refreshStatus, 15000);
+    every(refreshPrivateLinkStatus, 15000);
   }
 
   if (document.readyState === 'loading') {
@@ -2417,7 +2420,8 @@ function landOnDevices() {
 function initClients() {
   loadClients().then(landOnDevices);
 
-  setInterval(loadClients, 30000);
+  const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
+  every(loadClients, 30000);
 }
 
 if (document.readyState === 'loading') {

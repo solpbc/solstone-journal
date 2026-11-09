@@ -5,8 +5,6 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::assets;
-
 #[derive(Debug, Clone, Copy)]
 pub struct AppDefinition {
     pub name: &'static str,
@@ -465,12 +463,9 @@ pub fn shell_payload() -> ShellPayload {
 }
 
 pub fn shell_payload_with_agents(include_agents: bool) -> ShellPayload {
-    let icons: HashMap<String, String> = serde_json::from_slice(
-        assets::lookup("/static/icons/lucide.json")
-            .expect("embedded lucide icon catalogue")
-            .bytes,
-    )
-    .expect("embedded lucide icon catalogue parses");
+    let icons: HashMap<String, String> =
+        serde_json::from_str(include_str!("../assets/static/icons/lucide.json"))
+            .expect("embedded lucide icon catalogue parses");
     ShellPayload {
         apps: served_apps(include_agents)
             .map(|app| ShellApp {

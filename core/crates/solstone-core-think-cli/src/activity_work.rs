@@ -571,9 +571,24 @@ pub(crate) fn is_body_data_activity(record: &solstone_core_facets::ActivityRecor
     solstone_core_format::content::is_strava_reading(record)
 }
 
+/// Whether a record became a workout's code record. It's settled body data,
+/// whether its line is still there or already gone.
+fn is_converted(journal: &Path, day: &str, facet: &str, activity: &str) -> Result<bool, String> {
+    let listed =
+        solstone_core_facets::read_strava_converted(journal).map_err(|error| error.to_string())?;
+    Ok(listed.contains(&solstone_core_facets::StravaConvertedLine {
+        day: day.to_owned(),
+        facet: facet.to_owned(),
+        id: activity.to_owned(),
+    }))
+}
+
 /// Whether this work is on an activity that is body data.
 fn is_body_data_work(journal: &Path, record: &Record) -> Result<bool, String> {
     let identity = &record.identity;
+    if is_converted(journal, &identity.day, &identity.facet, &identity.activity)? {
+        return Ok(true);
+    }
     Ok(solstone_core_facets::get_activity_record(
         journal,
         &identity.facet,
@@ -707,6 +722,11 @@ pub(crate) fn rebuild_receipts(
     require_day_drained(&context.journal, day)?;
     let mut proof = BTreeMap::new();
     for receipt in retained_receipts(context, day)? {
+        // A record that became a workout's code record: its receipt stands.
+        if is_converted(&context.journal, day, &receipt.facet, &receipt.activity)? {
+            proof.insert(receipt.proof_path, receipt.input_hash);
+            continue;
+        }
         let record = retained_record(context, day, &receipt.facet, &receipt.activity)?;
         // Settled body data: its receipt stands whatever became of the tile.
         if is_body_data_activity(&record) {
@@ -850,6 +870,14 @@ pub(crate) fn reconcile_retained(
         .ok_or("activity receipt disappeared")?;
         if current.bytes != receipt.bytes {
             return Err("activity receipt identity changed".into());
+        }
+        if is_converted(
+            &context.journal,
+            &context.day,
+            &receipt.facet,
+            &receipt.activity,
+        )? {
+            continue;
         }
         let record = retained_record(context, &context.day, &receipt.facet, &receipt.activity)?;
         // A Strava activity's work is settled, never run again.
@@ -1280,6 +1308,27 @@ mod tests {
             assert!(rebuild_receipts(&context, day).is_ok(), "{beside:?}");
             assert!(twins.capture.is_dir());
         }
+    }
+
+    #[test]
+    fn a_record_that_became_a_code_record_settles_and_a_bad_list_line_costs_only_itself() {
+        let root = tempfile::tempdir().unwrap();
+        let (context, _, _) = retained_fixture(root.path());
+        let day = "20261016";
+        std::fs::remove_file(root.path().join("facets/home/activities/20261016.jsonl")).unwrap();
+        assert!(rebuild_receipts(&context, day).is_err());
+
+        std::fs::create_dir_all(root.path().join("imports")).unwrap();
+        std::fs::write(
+            root.path().join("imports/.strava-converted.jsonl"),
+            concat!(
+                "{\"day\":\"20261015\",\"facet\":\"home\",\"id\":\"other\"}\n",
+                "{\"torn\n",
+                "{\"day\":\"20261016\",\"facet\":\"home\",\"id\":\"writing_090000_300\"}\n",
+            ),
+        )
+        .unwrap();
+        assert_eq!(rebuild_receipts(&context, day).unwrap().len(), 1);
     }
 
     fn retained_fixture(root: &Path) -> (ThinkContext, PathBuf, PathBuf) {

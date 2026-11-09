@@ -78,6 +78,20 @@
     #setup-recovery label { display: block; margin-top: 1rem; }
     #setup-recovery input { display: block; box-sizing: border-box; width: 100%; min-height: 46px; padding: .6rem; font-size: 1rem; }
     #setup-recovery button { min-height: 46px; }
+    .setup-restore-door { text-align: center; margin-top: 0.75rem; }
+    .setup-linkish { color: var(--orange-text-aa); text-decoration: underline; background: none; border: 0; padding: 0; font: inherit; min-height: 44px; cursor: pointer; }
+    #setup-restore label.restore-field { display: block; margin-top: 1rem; }
+    #setup-restore input:not([type=radio]), #setup-restore select, #setup-restore textarea { display: block; box-sizing: border-box; width: 100%; min-height: 46px; padding: .6rem; font: inherit; }
+    .restore-lanes { display: grid; gap: 8px; margin: .6rem 0; }
+    .restore-lane { display: flex; gap: .55rem; align-items: flex-start; min-height: 44px; padding: .6rem .7rem; border: 1px solid var(--hairline-2); border-radius: 8px; cursor: pointer; }
+    .restore-lane:has(input:checked) { border-color: var(--ink); }
+    .restore-lane input { min-height: 0; min-width: 0; width: 1.05rem; height: 1.05rem; margin: .15rem 0 0; flex: none; }
+    #restore-list .restore-lane { box-sizing: border-box; align-items: center; padding-block: .25rem; }
+    #restore-heading:focus, #restore-choose-heading:focus { outline: none; }
+    #restore-choose-heading { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; margin: 1rem 0 .4rem; }
+    .restore-lane small { display: block; color: var(--ink-soft); }
+    .restore-lane .quiet { color: var(--ink-soft); }
+    .restore-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1rem; }
     #setup-recovery details { margin-top: 1rem; overflow-wrap: anywhere; }
     #setup-recovery summary { cursor: pointer; }
     .machine-card {
@@ -136,15 +150,52 @@
   </style>
   <script src="/static/error-handler.js"></script>
   <script src="/static/api.js"></script>
+  <script src="/static/journal-web-host.js"></script>
+  <script src="/static/external-navigation.js"></script>
 </head>
 <body>
   <main>
     <div class="init-container">
       <h1 id="setup-heading" tabindex="-1"></h1>
 
+      <section id="setup-restore" hidden aria-labelledby="restore-heading">
+        <h2 id="restore-heading" tabindex="-1">restore your journal</h2>
+        <div id="restore-find">
+          <p id="restore-lane-question">where is the encrypted copy you're restoring from?</p>
+          <div class="restore-lanes" role="radiogroup" aria-labelledby="restore-lane-question">
+            <label class="restore-lane"><input type="radio" name="restore-lane" value="byo" checked><span>your own<small>storage you bring yourself, reached with credentials you provide.</small></span></label>
+            <label class="restore-lane"><input type="radio" name="restore-lane" value="operated"><span>operated by sol pbc<small>storage sol pbc runs, reached through the services portal.</small></span></label>
+          </div>
+          <p>your journal starts as the backup you choose.</p>
+          <form id="restore-own">
+            <label class="restore-field">repository<input id="restore-repository" autocomplete="off" spellcheck="false"></label>
+            <label class="restore-field">backend<select id="restore-backend"><option value="s3">S3</option><option value="b2">B2</option></select></label>
+            <label class="restore-field"><span id="restore-access-label">access key id</span><input id="restore-access" autocomplete="off" spellcheck="false"></label>
+            <label class="restore-field"><span id="restore-secret-label">secret access key</span><input id="restore-secret" type="password" autocomplete="off" spellcheck="false"></label>
+            <label class="restore-field">your recovery key<textarea id="restore-key" autocomplete="off" spellcheck="false"></textarea></label>
+            <div class="restore-actions"><button type="submit" id="restore-find-button" class="cta-button">find backups</button></div>
+          </form>
+          <form id="restore-hosted" hidden>
+            <label class="restore-field">your recovery key<textarea id="restore-hosted-key" autocomplete="off" spellcheck="false"></textarea></label>
+            <p>this journal uses your key and never sends it to sol pbc.</p>
+            <div class="restore-actions"><button type="submit" id="restore-sign-in" class="cta-button">sign in to restore →</button></div>
+          </form>
+        </div>
+        <div id="restore-choose" hidden>
+          <h3 id="restore-choose-heading" tabindex="-1">choose a backup</h3>
+          <div id="restore-list" class="restore-lanes" role="radiogroup" aria-labelledby="restore-choose-heading"></div>
+          <button type="button" id="restore-older" class="setup-linkish" hidden>show older backups</button>
+          <div class="restore-actions"><button type="button" id="restore-start" class="cta-button">restore your journal</button></div>
+        </div>
+        <p id="restore-status" role="status" aria-live="polite"></p>
+        <div id="restore-error" class="error-message" role="alert" tabindex="-1" hidden></div>
+        <div class="restore-actions"><button type="button" id="restore-back" class="setup-linkish">start a new journal instead</button></div>
+      </section>
+
       <section id="setup-recovery" hidden aria-labelledby="recovery-heading">
         <h2 id="recovery-heading" tabindex="-1">restore your journal</h2>
         <p id="recovery-message" role="status" aria-live="polite">checking restore status...</p>
+        <p id="recovery-expectation" hidden>a large restore can take a while. you can leave this page open while it runs.</p>
         <p id="recovery-source"></p>
         <form id="recovery-form" hidden>
           <label for="recovery-key">recovery key</label>
@@ -166,6 +217,7 @@
         </form>
         <button id="recovery-stop" type="button" class="settings-preset-btn" hidden>stop restore</button>
         <button id="recovery-check" type="button" class="settings-preset-btn">check restore status</button>
+        <button id="recovery-back" type="button" class="setup-linkish" hidden>start a new journal instead</button>
         <div id="recovery-error" class="error-message" role="alert" tabindex="-1" hidden></div>
         <details id="recovery-details" hidden><summary>restore details</summary><p id="recovery-selection"></p></details>
       </section>
@@ -201,6 +253,7 @@
           <button type="button" id="mark-continue" class="cta-button" disabled></button>
           <p id="mark-permanence" class="mark-permanence"></p>
         </div>
+        <div class="setup-restore-door"><button type="button" id="restore-door" class="setup-linkish">restore from a backup</button></div>
       </section>
 
       <section id="setup-thinking" hidden>
@@ -343,6 +396,8 @@
       const active = state.in_progress === true;
       const ready = state.recovery === 'pending' && state.source && state.in_progress === false;
       document.getElementById('recovery-form').hidden = !ready;
+      document.getElementById('recovery-back').hidden = !(state.init_restore === true && state.in_progress === false);
+      document.getElementById('recovery-expectation').hidden = !active;
       document.getElementById('recovery-stop').hidden = !active;
       document.getElementById('recovery-continue').disabled = recoveryRequestInFlight;
       document.getElementById('recovery-message').textContent = active
@@ -406,6 +461,7 @@
             runInitialStateRead();
           }
         });
+        document.getElementById('recovery-back').addEventListener('click', abandonRestore);
         document.getElementById('recovery-stop').addEventListener('click', async () => {
           const button = document.getElementById('recovery-stop');
           button.disabled = true;
@@ -467,7 +523,12 @@
       }
     }
 
+    function updateRestoreDoor() {
+      document.getElementById('restore-door').hidden = markIsLocked;
+    }
+
     function updateMarkButtons() {
+      updateRestoreDoor();
       const tryAnother = document.getElementById('mark-try-another');
       const continueBtn = document.getElementById('mark-continue');
       if (tryAnother) {
@@ -957,6 +1018,7 @@
     function updateDownloadsUI() {
       const downloadsContainer = document.getElementById('downloads');
       if (!downloadsContainer || !setupState || !setupState.downloads) return;
+      if (!document.getElementById('setup-restore').hidden) { downloadsContainer.hidden = true; return; }
 
       const downloads = setupState.downloads;
       const thinking = downloads.thinking || { state: 'idle' };
@@ -1074,6 +1136,276 @@
 
       managePollInterval();
     }
+
+    // ========== RESTORE ==========
+    const RESTORE_REASONS = {
+        "invalid_key": "that recovery key didn't unlock the backup. re-enter the key from your saved copy.",
+        "auth_failed": "that recovery key didn't unlock the backup. check the key first, then the destination details.",
+        "repo_missing": "no backup repository was found at that destination.",
+        "locked": "the destination is busy. try again shortly.",
+        "timeout": "the destination took too long to respond. try again shortly.",
+        "missing_required_field": "fill in the required fields, then try again.",
+        "insufficient_free_space": "there isn't enough free space for this restore, so nothing changed. free up some space, then try again.",
+        "integrity_failed": "the backup failed its integrity check and may be damaged, so your journal isn't ready to use. start a new journal instead, or get help at support.solstone.app.",
+        "integrity_unverified": "the integrity check couldn't run because the backup was busy or timed out, so your journal isn't ready to use. try again.",
+        "restore_failed": "the restore stopped partway, so your journal isn't ready to use. try again or start a new journal instead.",
+        "restore_io_failed": "the restore stopped partway, so your journal isn't ready to use. try again or start a new journal instead.",
+        "journal_snapshot_not_found": "there's no backup of a journal at that destination.",
+        "no_hosted_backup": "sol pbc isn't holding an encrypted copy for the sign-in you used.",
+        "hosted_backup_expired": "sol pbc deleted that copy once 30 days had passed since encrypted backup stopped.",
+        "popup_preflight_failed": "the sign-in window didn't open. try again, and check whether your browser blocked it.",
+        "restore_prepare_expired": "the approval took too long. try again.",
+        "cancelled": "restore cancelled. you can try again.",
+        "network_error": "the services portal couldn't be reached. check your connection, then try again.",
+        "broker_unreachable": "encrypted backup couldn't be reached. check your connection, then try again.",
+        "hosted_entitlement_inactive": "turn on encrypted backup in the services portal, then try again."
+};
+    const RESTORE_GENERIC = "something went wrong. you can try again.";
+    const RESTORE_NONE = "there's no backup of a journal at that destination.";
+    const RESTORE_WAITING_APPROVAL = "waiting for you to approve the restore in the services portal…";
+    const RESTORE_PAGE = 20;
+    let restoreLane = 'byo';
+    let restoreBackups = [];
+    let restoreShown = 0;
+    let restoreCapability = null;
+    let restoreTouched = false;
+
+    function restoreEl(id) { return document.getElementById(id); }
+
+    function setRestoreMessage(status, error) {
+      restoreEl('restore-status').textContent = status || '';
+      const box = restoreEl('restore-error');
+      box.textContent = error || '';
+      box.hidden = !error;
+    }
+
+    // "stopped partway" is only true once a restore has started.
+    function restoreReason(reason, started) {
+      return RESTORE_REASONS[reason] || (started ? RESTORE_REASONS.restore_failed : RESTORE_GENERIC);
+    }
+
+    async function restorePost(op, body) {
+      const response = await fetch(`/init/api/restore/${op}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      let payload = null;
+      try { payload = await response.json(); } catch (_) { payload = null; }
+      if (!response.ok) throw payload || {};
+      return payload;
+    }
+
+    function restoreWhen(time) {
+      const at = new Date(time);
+      const part = options => new Intl.DateTimeFormat(undefined, options).format(at);
+      return `${part({ weekday: 'short' })} ${part({ month: 'short' })} ${part({ day: 'numeric' })}, ${part({ hour: 'numeric', minute: '2-digit' })}`.toLowerCase();
+    }
+
+    function showRestoreView() {
+      for (const id of ['setup-heading', 'welcome-beats', 'section-machine-card', 'setup-mark', 'setup-thinking', 'downloads', 'setup-footer']) {
+        restoreEl(id).hidden = true;
+      }
+      restoreEl('setup-restore').hidden = false;
+      restoreEl('restore-heading').focus();
+    }
+
+    function setRestoreLane(lane) {
+      restoreLane = lane;
+      restoreEl('restore-own').hidden = lane !== 'byo';
+      restoreEl('restore-hosted').hidden = lane !== 'operated';
+      setRestoreMessage('', '');
+    }
+
+    function syncRestoreBackend() {
+      const b2 = restoreEl('restore-backend').value === 'b2';
+      restoreEl('restore-access-label').textContent = b2 ? 'application key id' : 'access key id';
+      restoreEl('restore-secret-label').textContent = b2 ? 'application key' : 'secret access key';
+    }
+
+    function ownStorageBody() {
+      const backend = restoreEl('restore-backend').value;
+      const access = restoreEl('restore-access').value;
+      const secret = restoreEl('restore-secret').value;
+      return {
+        repository: restoreEl('restore-repository').value.trim(),
+        backend,
+        credentials: backend === 's3'
+          ? { access_key_id: access, secret_access_key: secret }
+          : { account_id: access, account_key: secret },
+        recovery_key: restoreEl('restore-key').value.trim(),
+      };
+    }
+
+    function renderBackupList() {
+      const list = restoreEl('restore-list');
+      list.replaceChildren();
+      restoreBackups.slice(0, restoreShown).forEach((backup, index) => {
+        const row = document.createElement('label');
+        row.className = 'restore-lane';
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'restore-backup';
+        radio.value = backup.id;
+        radio.checked = index === 0;
+        const text = document.createElement('span');
+        text.textContent = restoreWhen(backup.time);
+        if (index === 0) {
+          const latest = document.createElement('span');
+          latest.className = 'quiet';
+          latest.textContent = ' · latest';
+          text.append(latest);
+        }
+        row.append(radio, text);
+        list.append(row);
+      });
+      restoreEl('restore-older').hidden = restoreShown >= restoreBackups.length;
+    }
+
+    function showBackupChoice(backups) {
+      restoreBackups = backups;
+      restoreShown = RESTORE_PAGE;
+      restoreEl('restore-find').hidden = true;
+      restoreEl('restore-choose').hidden = false;
+      setRestoreMessage('', '');
+      renderBackupList();
+      restoreEl('restore-choose-heading').focus();
+    }
+
+    // The restore answers when it ends, so the page follows setup's own state.
+    function watchRestore(request) {
+      setRestoreMessage('starting restore...', '');
+      restoreEl('restore-choose').hidden = true;
+      restoreEl('restore-back').hidden = true;
+      const watcher = setInterval(async () => {
+        try {
+          const state = await apiCall('/init/api/state');
+          if (state && state.recovery) {
+            clearInterval(watcher);
+            restoreEl('setup-restore').hidden = true;
+            showRecovery(state);
+          }
+        } catch (_) { /* the next read decides */ }
+      }, STATE_POLL_MS);
+      request.then(() => {
+        clearInterval(watcher);
+        window.location.reload();
+      }, error => {
+        clearInterval(watcher);
+        restoreEl('setup-restore').hidden = true;
+        runInitialStateRead();
+        restoreFailed(restoreReason(error.reason_code, true));
+      });
+    }
+
+    // A failure before anything was recorded stays on the restore view.
+    function restoreFailed(message) {
+      restoreEl('setup-restore').hidden = recoveryShown;
+      if (recoveryShown) { recoveryError(message); return; }
+      restoreEl('restore-find').hidden = false;
+      restoreEl('restore-choose').hidden = true;
+      restoreEl('restore-back').hidden = false;
+      setRestoreMessage('', message);
+    }
+
+    async function findOwnStorage(event) {
+      event.preventDefault();
+      const body = ownStorageBody();
+      if (!body.repository || !body.recovery_key || !Object.values(body.credentials).every(Boolean)) {
+        setRestoreMessage('', RESTORE_REASONS.missing_required_field);
+        return;
+      }
+      const button = restoreEl('restore-find-button');
+      button.disabled = true;
+      setRestoreMessage('finding your backups...', '');
+      try {
+        const payload = await restorePost('find', body);
+        if (!payload.backups.length) setRestoreMessage('', RESTORE_NONE);
+        else showBackupChoice(payload.backups);
+      } catch (error) {
+        setRestoreMessage('', restoreReason(error.reason_code));
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function pollHostedRestore() {
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, STATE_POLL_MS));
+        const status = await restorePost('status');
+        const operation = status.operation;
+        if (!operation) throw {};
+        if (operation.phase === 'choose_backup') {
+          const payload = await restorePost('hosted/backups');
+          showBackupChoice(payload.backups);
+          return;
+        }
+        if (operation.phase === 'needs_subscription') throw { reason_code: 'hosted_entitlement_inactive' };
+        if (['error', 'refused'].includes(operation.phase)) throw { reason_code: operation.reason_code };
+      }
+    }
+
+    async function signInToRestore(event) {
+      event.preventDefault();
+      const key = restoreEl('restore-hosted-key').value.trim();
+      if (!key) { setRestoreMessage('', RESTORE_REASONS.missing_required_field); return; }
+      // Reserved here: the window has to open from this click.
+      const reservation = window.solstoneOutside.reserveBlank();
+      if (!reservation || reservation.kind === 'blocked') {
+        setRestoreMessage('', RESTORE_REASONS.popup_preflight_failed);
+        return;
+      }
+      const button = restoreEl('restore-sign-in');
+      button.disabled = true;
+      restoreTouched = true;
+      setRestoreMessage(RESTORE_WAITING_APPROVAL, '');
+      try {
+        const prepared = await restorePost('hosted/prepare');
+        restoreCapability = prepared.capability;
+        const keyed = await restorePost('hosted/key', { capability: restoreCapability, recovery_key: key });
+        const portal = new URL(keyed.portal_url);
+        if (portal.protocol !== 'https:' || !window.solstoneOutside.navigateReserved(reservation, portal.href, 'replace')) throw {};
+        await restorePost('hosted/arm', { capability: restoreCapability });
+        await restorePost('hosted/activate', { capability: restoreCapability });
+        await pollHostedRestore();
+      } catch (error) {
+        restoreFailed(restoreReason(error.reason_code));
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function startChosenRestore() {
+      const chosen = restoreBackups.find(backup => backup.id === (document.querySelector('input[name="restore-backup"]:checked') || {}).value);
+      if (!chosen) return;
+      restoreTouched = true;
+      watchRestore(restoreLane === 'operated'
+        ? restorePost('hosted/choose', { snapshot_id: chosen.id })
+        : restorePost('start', { ...ownStorageBody(), snapshot_id: chosen.id, subtree: chosen.subtree }));
+    }
+
+    async function abandonRestore() {
+      try {
+        if (restoreCapability) await restorePost('hosted/cancel', { capability: restoreCapability }).catch(() => {});
+        if (restoreTouched || recoveryShown) await restorePost('abandon');
+        window.location.reload();
+      } catch (error) {
+        if (recoveryShown) recoveryError(restoreReason(error.reason_code));
+        else setRestoreMessage('', restoreReason(error.reason_code));
+      }
+    }
+
+    restoreEl('restore-door').addEventListener('click', showRestoreView);
+    // Journal.app's first run links here to open this view directly.
+    if (window.location.hash === '#restore') showRestoreView();
+    document.querySelectorAll('input[name="restore-lane"]').forEach(radio => radio.addEventListener('change', () => setRestoreLane(radio.value)));
+    restoreEl('restore-backend').addEventListener('change', syncRestoreBackend);
+    restoreEl('restore-own').addEventListener('submit', findOwnStorage);
+    restoreEl('restore-hosted').addEventListener('submit', signInToRestore);
+    restoreEl('restore-older').addEventListener('click', () => { restoreShown += RESTORE_PAGE; renderBackupList(); });
+    restoreEl('restore-start').addEventListener('click', startChosenRestore);
+    restoreEl('restore-back').addEventListener('click', () => { if (restoreTouched) abandonRestore(); else window.location.reload(); });
+    // ========== END RESTORE ==========
 
     function shouldPoll() {
       if (recoveryShown) return true;

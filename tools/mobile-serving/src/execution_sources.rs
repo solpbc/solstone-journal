@@ -24,7 +24,7 @@ pub(super) enum SourceAction {
 
 fn names(source: &str) -> Vec<String> {
     let mut names = Vec::new();
-    if matches!(source, "plaud" | "obsidian") {
+    if source == "plaud" {
         names.push(format!("sync:{source}"));
     }
     names.push(format!("owner:source:{source}"));
@@ -227,18 +227,16 @@ pub(super) fn settings(
         }
         *raw = working;
         let mut result = serde_json::Map::new();
-        for source in ["plaud", "obsidian"] {
-            let source_status = status(raw, source);
-            result.insert(
-                source.into(),
-                json!({
-                    "available":source != "plaud" || available,
-                    "enabled":source_status["enabled"],
-                    "configured":!source_status["entries"].as_array().unwrap().is_empty(),
-                    "blocked_names":source_status["blocked_names"],
-                }),
-            );
-        }
+        let source_status = status(raw, "plaud");
+        result.insert(
+            "plaud".into(),
+            json!({
+                "available":available,
+                "enabled":source_status["enabled"],
+                "configured":!source_status["entries"].as_array().unwrap().is_empty(),
+                "blocked_names":source_status["blocked_names"],
+            }),
+        );
         (StatusCode::OK, Value::Object(result))
     });
     if result.0.is_success() && !changed_fields.is_empty() {

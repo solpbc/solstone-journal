@@ -1677,6 +1677,10 @@ fn advance_live_activity_state(
         return Ok(());
     };
     let state_stream = named_stream(&segment_dir, &context.day);
+    // A workout is body data: no activity state follows Strava's tiles.
+    if state_stream == Some(STRAVA_STREAM) {
+        return Ok(());
+    }
     let coordinate = stream_coordinate(&segment_dir, &context.day);
     let mut errors = Vec::new();
     // A new day ends the previous day's activities; first apply what of that
@@ -1856,6 +1860,9 @@ fn replay_activity_state_selected(
         // The snapshot file is named from the directory the segment sits in,
         // never from the caller's stream argument, so it stays in the journal.
         let state_stream = named_stream(&segment_dir, &context.day);
+        if state_stream == Some(STRAVA_STREAM) {
+            continue;
+        }
         let selected_coordinate =
             selected.is_none_or(|keys| keys.contains(&(segment.clone(), stream.clone())));
         let sense_path = segment_dir.join("talents/sense.json");

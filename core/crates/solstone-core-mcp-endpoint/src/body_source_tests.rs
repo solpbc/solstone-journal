@@ -2143,3 +2143,48 @@ fn moved_only_windows_spend_nothing_of_a_reads_window_budget() {
     assert_eq!(page["entries"].as_array().unwrap().len(), 2, "{page}");
     assert!(page["next_cursor"].is_null(), "{page}");
 }
+
+#[test]
+fn a_strava_line_a_code_record_holds_isnt_listed() {
+    let journal = self::journal();
+    let root = journal.path();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let line = json!({"id": "exercise_1", "activity": "exercise", "title": "Morning Run",
+        "stream": "import.strava", "segments": ["070000_300"], "created_at": 1});
+    let code = json!({"id": "body_code", "source": "body", "activity": "workout",
+        "account": {"key": "import.strava\u{1f}1"},
+        "converted": {"primary": "p", "decided_at": "t", "lines": {}}});
+    let write = |code: &Value| {
+        let path = root.join(format!("facets/health/activities/{DAY}.jsonl"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, format!("{line}\n{code}\n")).unwrap();
+    };
+    let titles = || {
+        call(root, "list_activities", json!({"day": DAY}))["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["title"] == "Morning Run")
+            .count()
+    };
+    write(&code);
+    assert_eq!(titles(), 1, "a line no record holds is listed");
+    let mut holding = code.clone();
+    holding["converted"]["lines"]
+        .as_object_mut()
+        .unwrap()
+        .insert(
+            format!("{DAY}|health|exercise_1"),
+            json!({"sha256": "x", "hidden": false, "fields": {}}),
+        );
+    write(&holding);
+    assert_eq!(titles(), 0, "a line a record holds isn't");
+}

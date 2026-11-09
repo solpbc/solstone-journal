@@ -43,6 +43,7 @@
   let selected = initialDay();
   let scopedDateNav = null;
   let usageSequence = 0;
+  let usageRead = null;
 
   function validDay(value) {
     return /^\d{8}$/.test(value || '');
@@ -306,10 +307,15 @@
   function select(day, options = {}) {
     if (!validDay(day)) return Promise.resolve();
     const sequence = ++usageSequence;
+    // A newer day's read replaces this one: the older read is stopped, and
+    // its answer, if it comes, is never drawn.
+    usageRead?.abort();
+    const read = typeof AbortController === 'function' ? new AbortController() : null;
+    usageRead = read;
     selected = day;
     if (options.syncNav !== false) scopedDateNav?.setDay(day);
     if (options.push) history.pushState({}, '', `?tokens=${day}#tokens`);
-    return fetch(`/app/stats/api/usage?day=${day}`)
+    return fetch(`/app/stats/api/usage?day=${day}`, read ? { signal: read.signal } : undefined)
       .then(response => {
         if (!response.ok) throw new Error('usage');
         return response.json();

@@ -68,6 +68,27 @@ const UNREWRITTEN_DOCUMENTS: &[(&str, &str)] = &[(
     "the setup page carries this computer's setup facts, so it is never stored; its stable paths keep being served",
 )];
 
+/// Served files no page references, each with why it stays.
+const KEPT_UNREFERENCED: &[(&str, &str)] = &[
+    (
+        "/init",
+        "the setup page, reached by navigation and the session gate",
+    ),
+    ("/static/shell.html", "served by every view route"),
+    (
+        "/static/icons/LICENSE",
+        "the icon set's license, which ships beside it",
+    ),
+    (
+        "/static/vendor/leaflet/LICENSE",
+        "the library's license, which ships beside it",
+    ),
+    (
+        "/static/sol-status/mark-error.svg",
+        "kept with the status mark family; the status table deliberately doesn't name it",
+    ),
+];
+
 fn is_resource(reference: &str) -> bool {
     let path = reference.split(['?', '#']).next().unwrap_or_default();
     reference.contains("/static/")
@@ -233,9 +254,128 @@ fn every_served_reference_resolves_to_a_hashed_path_or_is_listed() {
         .iter()
         .map(|asset| asset.path)
         .filter(|path| !referenced.contains(*path))
+        .filter(|path| !path.starts_with("/static/tests/"))
+        // Fetched by name, from the source the owner picks to import.
+        .filter(|path| !path.starts_with("/app/import/api/guide/"))
+        .filter(|path| !KEPT_UNREFERENCED.iter().any(|(kept, _)| kept == path))
         .collect();
-    println!(
-        "Unreferenced inventory assets (kept):\n{}",
+    assert!(
+        unreferenced.is_empty(),
+        "served files nothing references; remove them or list them with a reason:\n{}",
         unreferenced.join("\n")
     );
+    for (path, reason) in KEPT_UNREFERENCED {
+        assert!(!reason.is_empty());
+        assert!(assets::record(path).is_some(), "{path} is listed but gone");
+    }
+}
+
+fn source_of(path: &str) -> &'static str {
+    std::str::from_utf8(assets::record(path).unwrap().bytes).unwrap_or("")
+}
+
+/// The prefetch list holds bare names, built into paths at runtime, so the
+/// reference scan can't see them.
+#[test]
+fn the_date_view_prefetch_names_files_that_exist() {
+    let source = source_of("/static/mount-workspace.js");
+    let list = source
+        .split_once("DATE_VIEW_CODE = [")
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .expect("the prefetch list is in the mount script")
+        .0;
+    let names: Vec<&str> = list
+        .split(',')
+        .map(|name| name.trim().trim_matches('\''))
+        .collect();
+    assert_eq!(names.len(), 4, "{names:?}");
+    for name in names {
+        let path = format!("/static/{name}");
+        assert!(assets::record(&path).is_some(), "{path} is gone");
+    }
+}
+
+/// What a view's fragment and its own scripts use from the libraries the shell
+/// doesn't carry for it. A view that uses one names it in its fragment.
+#[test]
+fn every_view_declares_the_shared_code_it_uses() {
+    const NEEDS: &[(&[&str], &[&str])] = &[
+        (
+            &["renderMarkdown("],
+            &[
+                "/static/vendor/marked/marked.min.js",
+                "/static/vendor/dompurify/dompurify.min.js",
+            ],
+        ),
+        (
+            &["data-date-nav", "DateNav."],
+            &["/static/date-nav.js", "/static/date-nav.css"],
+        ),
+        (
+            &["DayGrid."],
+            &[
+                "/static/date-nav.js",
+                "/static/day-grid.js",
+                "/static/day-grid.css",
+            ],
+        ),
+    ];
+    let mut missing = Vec::new();
+    let mut declaring = 0;
+    for fragment in INVENTORY
+        .iter()
+        .filter(|asset| asset.path.starts_with("/app/") && asset.path.ends_with("/workspace"))
+    {
+        let view = fragment.path.trim_end_matches("/workspace");
+        let own = format!("{view}/static/");
+        let html = source_of(fragment.path);
+        let code: Vec<&str> = INVENTORY
+            .iter()
+            .filter(|asset| {
+                asset.path.starts_with(&own) && asset.content_type.starts_with("text/javascript")
+            })
+            .map(|asset| source_of(asset.path))
+            .chain([html])
+            .collect();
+        for (uses, declares) in NEEDS {
+            if !uses
+                .iter()
+                .any(|name| code.iter().any(|text| text.contains(name)))
+            {
+                continue;
+            }
+            declaring += 1;
+            for declared in *declares {
+                if !html.contains(declared) {
+                    missing.push(format!("{view} doesn't declare {declared}"));
+                }
+            }
+        }
+    }
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
+    assert!(declaring >= 10, "the scan found only {declaring} uses");
+}
+
+/// The shell doesn't load the markdown libraries, so nothing in it may call
+/// them. A shell script that needs markdown puts the libraries back in the
+/// shell for it.
+#[test]
+fn no_shell_script_calls_render_markdown() {
+    let shell = source_of("/static/shell.html");
+    assert!(!shell.contains("vendor/marked"), "the shell names marked");
+    let callers: Vec<_> = INVENTORY
+        .iter()
+        .filter(|asset| {
+            asset.path.starts_with("/static/")
+                && !asset.path.starts_with("/static/tests/")
+                && !asset.path.starts_with("/static/vendor/")
+                && asset.content_type.starts_with("text/javascript")
+        })
+        .filter(|asset| {
+            let calls = source_of(asset.path).matches("renderMarkdown(").count();
+            calls > usize::from(asset.path == "/static/app.js")
+        })
+        .map(|asset| asset.path)
+        .collect();
+    assert!(callers.is_empty(), "{callers:?}");
 }

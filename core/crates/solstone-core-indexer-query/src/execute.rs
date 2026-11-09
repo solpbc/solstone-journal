@@ -676,7 +676,7 @@ pub(crate) struct QueryConnection {
     path: PathBuf,
     /// What this session's queries do with a body record's entry. The SQL
     /// function reads it, so a long-lived session can change it per request.
-    body_entries: Arc<Mutex<BodyEntries>>,
+    body_entries: Arc<Mutex<BodyEntryState>>,
     #[cfg(any(test, feature = "test-hooks"))]
     aggregate_calls: usize,
     #[cfg(any(test, feature = "test-hooks"))]
@@ -703,10 +703,14 @@ impl QueryConnection {
     }
 
     fn set_body_entries(&self, entries: BodyEntries) {
-        match self.body_entries.lock() {
-            Ok(mut held) => *held = entries,
-            Err(poisoned) => *poisoned.into_inner() = entries,
-        }
+        let mut state = self
+            .body_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.entries = entries;
+        // A new query reads the journal as it is now.
+        state.files.clear();
+        state.may_fold = None;
     }
 }
 
@@ -813,6 +817,26 @@ const BODY_ENTRY_ADMISSION_FUNCTION: &str = "solstone_body_entry_admitted";
 /// and position.
 pub type BodyEntryAdmission = std::sync::Arc<dyn Fn(&str, i64) -> bool + Send + Sync>;
 
+/// What a query does with body records' entries, and the day files it has read
+/// so far: many matching rows share a file, and a query reads each one once.
+#[derive(Default)]
+pub(crate) struct BodyEntryState {
+    entries: BodyEntries,
+    files: BTreeMap<String, Option<DayFileView>>,
+    /// Whether a Strava conversion could have left a folded line, asked once.
+    may_fold: Option<bool>,
+}
+
+/// What a query needs from one activity day file.
+struct DayFileView {
+    /// What the file's other records say in the index, by position.
+    ordinary: Vec<String>,
+    /// What a record another now stands for says in the index.
+    superseded: BTreeSet<String>,
+    /// The entry positions of body records that show from another file.
+    moved: BTreeSet<usize>,
+}
+
 /// What this session's queries do with a body record's entry.
 #[derive(Clone, Default)]
 pub(crate) enum BodyEntries {
@@ -825,29 +849,48 @@ pub(crate) enum BodyEntries {
     Admitted(BodyEntryAdmission),
 }
 
-/// Whether an entry at this position is a body record's. A file that can't be
-/// read says yes, so a row nothing can vouch for still goes through the gate.
-fn is_body_entry(journal: &Path, path: &str, idx: i64) -> bool {
-    let Ok(text) = std::fs::read_to_string(journal.join(path)) else {
-        return true;
+/// `None` when the file can't be read: it can vouch for nothing.
+fn day_file_view(journal: &Path, path: &str) -> Option<DayFileView> {
+    use solstone_core_format::content::{body_record_at, is_body_record, is_retired_plan};
+    let text = std::fs::read_to_string(journal.join(path)).ok()?;
+    let records = solstone_core_format::content::parse_jsonl_objects(&text);
+    let ordinary = solstone_core_format::content::ordinary_entries(path, &records);
+    let (facet, day) = activity_day_of(path)?;
+    let gone = solstone_core_facets::superseded_record_ids(journal, facet, day, &records);
+    let is_gone = |record: &serde_json::Map<String, serde_json::Value>| {
+        record
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| gone.contains(id))
     };
-    let records = text
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
-        .filter_map(|value| match value {
-            serde_json::Value::Object(record) => Some(record),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    usize::try_from(idx)
-        .ok()
-        .is_some_and(|idx| solstone_core_format::content::body_record_at(&records, idx).is_some())
+    let superseded = records
+        .iter()
+        .filter(|record| !is_retired_plan(record) && !is_body_record(record))
+        .zip(&ordinary)
+        .filter(|(record, _)| is_gone(record))
+        .map(|(_, entry)| entry.clone())
+        .collect();
+    let moved = (0..records.len() + ordinary.len())
+        .filter(|position| body_record_at(&records, *position).is_some_and(&is_gone))
+        .collect();
+    Some(DayFileView {
+        ordinary,
+        superseded,
+        moved,
+    })
+}
+
+/// The facet and day of `facets/<facet>/activities/<day>.jsonl`.
+fn activity_day_of(path: &str) -> Option<(&str, &str)> {
+    let rest = path.strip_prefix("facets/")?;
+    let (facet, rest) = rest.split_once("/activities/")?;
+    Some((facet, rest.strip_suffix(".jsonl")?))
 }
 
 fn register_body_entry_admission(
     connection: &Connection,
     journal: Option<PathBuf>,
-    entries: Arc<Mutex<BodyEntries>>,
+    state: Arc<Mutex<BodyEntryState>>,
 ) -> rusqlite::Result<()> {
     connection.create_scalar_function(
         BODY_ENTRY_ADMISSION_FUNCTION,
@@ -856,11 +899,29 @@ fn register_body_entry_admission(
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
         move |context| {
             let content = context.get_raw(2).as_str().unwrap_or_default();
-            // Every body record's entry has this line. Any other row is done.
-            if !content.contains(solstone_core_format::content::BODY_ENTRY_LINE) {
-                return Ok(true);
-            }
             let path = context.get_raw(0).as_str().unwrap_or_default();
+            // Every body record's entry has this line. Any other row is done,
+            // unless a conversion in flight has folded its record into another.
+            if !content.contains(solstone_core_format::content::BODY_ENTRY_LINE) {
+                let Some(journal) = journal.as_deref() else {
+                    return Ok(true);
+                };
+                let mut state = state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !*state.may_fold.get_or_insert_with(|| {
+                    solstone_core_facets::strava_lines_may_be_folded(journal)
+                }) {
+                    return Ok(true);
+                }
+                let shown = state
+                    .files
+                    .entry(path.to_owned())
+                    .or_insert_with(|| day_file_view(journal, path))
+                    .as_ref()
+                    .is_none_or(|view| !view.superseded.contains(content.trim()));
+                return Ok(shown);
+            }
             let idx = match context.get_raw(1) {
                 rusqlite::types::ValueRef::Integer(idx) => idx,
                 rusqlite::types::ValueRef::Text(text) => {
@@ -871,18 +932,37 @@ fn register_body_entry_admission(
                 }
                 _ => return Ok(false),
             };
-            // An ordinary record's words can hold the line too: its position
-            // says which it is.
-            if journal
-                .as_deref()
-                .is_some_and(|journal| !is_body_entry(journal, path, idx))
-            {
-                return Ok(true);
+            let mut state = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // An ordinary record's words can hold the line too. The row is one
+            // only if the file's record at that position still says exactly
+            // this. The index can lag the file, so anything else goes through
+            // the gate, an ordinary record included until it's reindexed.
+            if let Some(journal) = journal.as_deref() {
+                let view = state
+                    .files
+                    .entry(path.to_owned())
+                    .or_insert_with(|| day_file_view(journal, path))
+                    .as_ref();
+                let position = usize::try_from(idx).ok();
+                // An open move shows from one side only.
+                if view
+                    .zip(position)
+                    .is_some_and(|(view, position)| view.moved.contains(&position))
+                {
+                    return Ok(false);
+                }
+                let vouched = view
+                    .zip(position)
+                    .and_then(|(view, position)| view.ordinary.get(position))
+                    .is_some_and(|entry| entry == content.trim());
+                if vouched {
+                    return Ok(true);
+                }
             }
-            let entries = entries.lock().map_or_else(
-                |poisoned| poisoned.into_inner().clone(),
-                |held| held.clone(),
-            );
+            let entries = state.entries.clone();
+            drop(state);
             Ok(match entries {
                 BodyEntries::None => false,
                 BodyEntries::All => true,
@@ -1411,7 +1491,7 @@ impl QueryConnection {
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
-        let body_entries = Arc::new(Mutex::new(BodyEntries::default()));
+        let body_entries = Arc::new(Mutex::new(BodyEntryState::default()));
         register_body_entry_admission(
             &connection,
             path.parent().and_then(Path::parent).map(Path::to_path_buf),

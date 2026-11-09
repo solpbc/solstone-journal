@@ -101,6 +101,19 @@ pub fn body_record_at(records: &[JsonObject], position: usize) -> Option<&JsonOb
         .nth(body)
 }
 
+/// What each of a day file's other records says in the index, by position, so
+/// a reader can tell whether a row is one of theirs. A record a position no
+/// longer holds, or holds with other words, isn't vouched for here.
+#[must_use]
+pub fn ordinary_entries(rel: &str, records: &[JsonObject]) -> Vec<String> {
+    render(Some(rel), records)
+        .chunks
+        .into_iter()
+        .take(non_body_entries(records))
+        .map(|chunk| chunk.content.trim().to_owned())
+        .collect()
+}
+
 /// Thinking's reading of a Strava workout: an activity record naming Strava's
 /// stream. A workout is body data, so no daily unit counts the record and no
 /// talent reads it. The owner's own readers and search still show it.

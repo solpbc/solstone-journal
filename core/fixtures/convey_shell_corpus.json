@@ -300,15 +300,13 @@
     ],
     "established": [
       {
-        "body_bytes": 207,
-        "body_sha256": "33341319624bc7a7f55e1c6de84cdc28419f332ba014f0a40fca9563d717aa22",
+        "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",
         "body_sha256_basis": "raw-body",
         "content_type": "text/html; charset=utf-8",
-        "location": "/app/home/",
         "method": "GET",
         "path": "/",
-        "status": 302,
-        "why": "the root gate: its redirect target is the whole first-run branch"
+        "status": 200,
+        "why": "the front door serves the SPA shell, and the unestablished case keeps the first-run branch"
       },
       {
         "body_assertion": "not-asserted: served frontend asset, see corpus_maintenance",

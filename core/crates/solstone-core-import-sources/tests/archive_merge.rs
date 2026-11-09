@@ -1127,7 +1127,68 @@ fn a_zone_this_journal_already_holds_is_kept_and_a_different_one_is_counted_in_h
         result.merge_summary.body_zones_differ[0].source,
         "Apple Health"
     );
-    assert_eq!(result.merge_summary.body_zones_differ[0].hours, 2);
+    // An hour and five minutes of the clock: no more than that is claimed.
+    assert_eq!(result.merge_summary.body_zones_differ[0].hours, 1);
+}
+
+/// The summary's line for windows arriving in New York's zone over Denver's.
+fn zone_differs_after(windows: &[(&str, &str)], held: &[u8]) -> Vec<(String, u64)> {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    for (index, (day, key)) in windows.iter().enumerate() {
+        body_window(&source, day, key, &format!("r{index}"));
+    }
+    write(&source, APPLE_ZONE, NEW_YORK);
+    write(&target, APPLE_ZONE, held);
+    let archive = archive_from(&source, &tree.path);
+    merge_journal_archive(&archive, &target, &options(&tree), None)
+        .unwrap()
+        .merge_summary
+        .body_zones_differ
+        .into_iter()
+        .map(|differs| (differs.source, differs.hours))
+        .collect()
+}
+
+#[test]
+fn hours_on_another_clock_count_each_stretch_once_and_a_day_score_none() {
+    let line = zone_differs_after(
+        &[
+            ("20260110", "090000_3600"),
+            ("20260110", "090000_3601"),
+            ("20260110", "093000_300"),
+            ("20260110", "000000_86400"),
+        ],
+        DENVER,
+    );
+    assert_eq!(line, [("Apple Health".to_owned(), 1)]);
+}
+
+#[test]
+fn hours_on_another_clock_join_across_midnight() {
+    let line = zone_differs_after(
+        &[("20260110", "230000_7200"), ("20260111", "000000_3600")],
+        DENVER,
+    );
+    assert_eq!(line, [("Apple Health".to_owned(), 2)]);
+}
+
+#[test]
+fn less_than_an_hour_on_another_clock_is_still_said() {
+    let line = zone_differs_after(&[("20260110", "090000_300")], DENVER);
+    assert_eq!(line, [("Apple Health".to_owned(), 0)]);
+}
+
+#[test]
+fn only_day_scores_on_another_clock_say_nothing() {
+    assert!(zone_differs_after(&[("20260110", "000000_86400")], DENVER).is_empty());
+}
+
+#[test]
+fn a_zone_this_journal_holds_but_cannot_read_is_not_called_different() {
+    assert!(zone_differs_after(&[("20260110", "090000_3600")], b"not json").is_empty());
 }
 
 #[test]

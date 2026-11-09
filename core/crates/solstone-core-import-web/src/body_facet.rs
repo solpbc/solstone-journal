@@ -19,7 +19,7 @@ use std::path::Path;
 
 use axum::{Json, extract::State, http::StatusCode, response::Response};
 use serde_json::{Value, json};
-use solstone_core_journal_config::{BodyFacetChoice, BodyFacetOffer, PREFERRED_BODY_FACET};
+use solstone_core_journal_config::PREFERRED_BODY_FACET;
 
 use crate::{AppState, http::json as json_response};
 
@@ -37,7 +37,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ),
     (
         "no_means",
-        "if you say no, new workouts aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
+        "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
     ),
     ("yes", "yes"),
     ("no", "no"),
@@ -45,11 +45,11 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("none_option", "no facet"),
     (
         "files_earlier",
-        "this files under {facet} the workouts in this download that aren't listed with your activities yet.",
+        "this files every workout in this download under {facet}, including any already listed on the activities page. the preview says how many of those would move.",
     ),
     (
         "none_hint",
-        "new workouts in this import aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
+        "new workouts in this import aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
     ),
     (
         "unanswered",
@@ -70,55 +70,10 @@ fn copy() -> Value {
     )
 }
 
-/// The offer as the card reads it: what to ask, or what is remembered.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CardOffer {
-    Chosen(String),
-    Declined,
-    AskExisting(String),
-    AskMakeBody,
-    /// A `body` facet exists but is muted: offer to turn it back on.
-    AskUnmute,
-}
+use solstone_core_facets::BodyFacetAsk as CardOffer;
 
 fn card_offer(root: &Path) -> Result<(CardOffer, Vec<(String, String)>), String> {
-    let read = solstone_core_facets::body_facet_offer(root).map_err(|error| error.to_string())?;
-    let inventory = solstone_core_facets::observe_declared_facet_inventory(root)
-        .map_err(|error| error.to_string())?;
-    let offer = match read.offer {
-        BodyFacetOffer::Chosen(facet) => CardOffer::Chosen(facet),
-        BodyFacetOffer::Declined => CardOffer::Declined,
-        BodyFacetOffer::AskExisting(facet) => CardOffer::AskExisting(facet),
-        BodyFacetOffer::AskMakeBody
-            if inventory
-                .muted
-                .iter()
-                .any(|facet| facet == PREFERRED_BODY_FACET) =>
-        {
-            CardOffer::AskUnmute
-        }
-        BodyFacetOffer::AskMakeBody => CardOffer::AskMakeBody,
-    };
-    let facets = inventory
-        .enabled
-        .iter()
-        .map(|facet| {
-            let title = solstone_core_facets::read_facet_declaration(root, facet)
-                .ok()
-                .flatten()
-                .and_then(|snapshot| {
-                    snapshot
-                        .value()
-                        .get("title")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                })
-                .filter(|title| !title.trim().is_empty())
-                .unwrap_or_else(|| facet.clone());
-            (facet.clone(), title)
-        })
-        .collect();
-    Ok((offer, facets))
+    solstone_core_facets::body_facet_ask(root)
 }
 
 /// The offer as the card shows it, and as an answer sends it back.
@@ -222,59 +177,14 @@ fn record_answer(root: &Path, yes: bool, shown: &Value) -> Result<(), AnswerRefu
     if *shown != offer_value(&offer) {
         return Err(AnswerRefused::OfferChanged);
     }
-    let choice = match (offer, yes) {
-        // Already answered: the card shows the remembered facet, and a repeat
-        // answer changes nothing.
-        (CardOffer::Chosen(_) | CardOffer::Declined, _) => return Ok(()),
-        (_, false) => BodyFacetChoice::None,
-        (CardOffer::AskExisting(facet), true) => BodyFacetChoice::Facet(facet),
-        (CardOffer::AskUnmute, true) => {
-            solstone_core_facets::set_facet_muted(root, PREFERRED_BODY_FACET, false)
-                .map_err(|error| error.to_string())?;
-            log_facet_action(
-                root,
-                PREFERRED_BODY_FACET,
-                "facet_unmute",
-                json!({"muted": false}),
-            )?;
-            BodyFacetChoice::Facet(PREFERRED_BODY_FACET.to_owned())
-        }
-        (CardOffer::AskMakeBody, true) => BodyFacetChoice::Facet(make_body(root)?),
+    // Already answered: the card shows the remembered facet, and a repeat
+    // answer changes nothing.
+    let Some(choice) = solstone_core_facets::apply_body_facet_answer(root, &offer, yes)? else {
+        return Ok(());
     };
     solstone_core_journal_config_write::record_body_facet(root, &choice)
         .map(|_| ())
         .map_err(|error| AnswerRefused::Failed(error.to_string()))
-}
-
-const BODY_TITLE: &str = "Body";
-const BODY_COLOR: &str = "#667eea";
-const BODY_EMOJI: &str = "📦";
-
-/// Make the `body` facet, or the next free name when `body` belonged to a
-/// facet that was deleted or merged, as the settings page does.
-fn make_body(root: &Path) -> Result<String, String> {
-    let name = match solstone_core_facets::retired_facet_entry(root, PREFERRED_BODY_FACET)
-        .map_err(|error| error.to_string())?
-    {
-        None => PREFERRED_BODY_FACET.to_owned(),
-        Some(_) => solstone_core_facets::first_free_facet_name(root, PREFERRED_BODY_FACET)
-            .map_err(|error| error.to_string())?,
-    };
-    solstone_core_facets::create_facet(root, &name, BODY_TITLE, "", BODY_COLOR, BODY_EMOJI, None)
-        .map_err(|error| error.to_string())?;
-    log_facet_action(
-        root,
-        &name,
-        "facet_create",
-        json!({"title": BODY_TITLE, "emoji": BODY_EMOJI, "color": BODY_COLOR, "description": ""}),
-    )?;
-    Ok(name)
-}
-
-fn log_facet_action(root: &Path, facet: &str, action: &str, params: Value) -> Result<(), String> {
-    solstone_core_facets::append_action_log(root, Some(facet), "import", "owner", action, params)
-        .map(|_| ())
-        .map_err(|error| error.to_string())
 }
 
 /// Validate a card's per-import facet as the staged import keeps it: none,

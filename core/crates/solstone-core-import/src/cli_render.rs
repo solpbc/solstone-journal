@@ -33,12 +33,6 @@ pub const IMPORTERS: &[ImporterRow] = &[
         description: "Import events from ICS calendar files or a Google Calendar export ZIP",
     },
     ImporterRow {
-        name: "obsidian",
-        display_name: "Obsidian / Logseq Vault",
-        file_patterns: &["*.md"],
-        description: "Import notes from an Obsidian or Logseq vault",
-    },
-    ImporterRow {
         name: "claude",
         display_name: "Claude Chat History",
         file_patterns: &["*.zip", "*.dms"],
@@ -94,7 +88,10 @@ pub const IMPORTERS: &[ImporterRow] = &[
     },
 ];
 
-pub const BACKENDS: &[&str] = &["plaud", "obsidian", "audio", "oura"];
+pub const BACKENDS: &[&str] = &["plaud", "audio", "oura"];
+
+/// What a retired notes-folder form tells the owner instead of importing.
+pub const NOTES_FOLDER_IMPORT_RETIRED: &str = "importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives";
 
 pub const HELP: &str = concat!(
     "usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET] [--no-facet]\n",
@@ -118,7 +115,7 @@ pub const HELP: &str = concat!(
     "  --no-facet            File these Strava workouts under no facet, whatever the remembered\n",
     "                        default is\n",
     "  --setting SETTING\n",
-    "  --source SOURCE       Required for classified formats (ics, vault, chat export, image, PDF)\n",
+    "  --source SOURCE       Required for classified formats (ics, chat export, image, PDF)\n",
     "  --force               Force re-import; body sources create a separate import\n",
     "  --auto [AUTO]         Adopt the detected timestamp; AUTO is guidance, not the file path\n",
     "  --dry-run             Show what would be imported without writing to the journal\n",
@@ -215,13 +212,6 @@ pub fn audio_sync_preview(source: &Path, files: usize, errors: usize) -> String 
     )
 }
 
-pub fn obsidian_sync_preview(source: Option<&Path>, files: usize, errors: usize) -> String {
-    let source = source
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "configured vault".to_owned());
-    format!("Obsidian sync preview complete: source={source} files={files} errors={errors}\n")
-}
-
 /// The outcome of a sync that saved: how many items reached the journal, and how many failed.
 pub fn sync_save_complete(backend: &str, saved: u64, errors: usize) -> String {
     format!("{backend} sync complete: saved={saved} errors={errors}\n")
@@ -281,6 +271,11 @@ pub fn source_archive_merge_complete(
 
 /// What the owner reads about body data that came in on another time zone.
 pub fn body_zones_differ(source: &str, hours: u64) -> String {
+    if hours == 0 {
+        return format!(
+            "less than an hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.\n"
+        );
+    }
     let (unit, were) = if hours == 1 {
         ("hour", "it was")
     } else {
@@ -300,4 +295,16 @@ pub fn source_archive_already_present(source: RegistrySource) -> String {
 
 pub fn source_archive_incomplete(source: RegistrySource, detail: &str) -> String {
     format!("{} import incomplete: {detail}\n", source.name())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::body_zones_differ;
+
+    #[test]
+    fn a_zone_line_claims_no_more_of_the_clock_than_it_covers() {
+        assert!(body_zones_differ("Oura", 0).starts_with("less than an hour of Oura"));
+        assert!(body_zones_differ("Oura", 1).starts_with("1 hour of Oura"));
+        assert!(body_zones_differ("Oura", 3).starts_with("3 hours of Oura"));
+    }
 }

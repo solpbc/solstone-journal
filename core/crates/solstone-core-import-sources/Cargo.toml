@@ -38,7 +38,6 @@ chrono-tz.workspace = true
 getrandom.workspace = true
 icalendar = { version = "0.17.13", features = ["chrono-tz", "recurrence"] }
 image.workspace = true
-regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

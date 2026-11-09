@@ -43,6 +43,7 @@ pub mod archive_worker;
 mod assets;
 pub mod creator_recovery;
 mod first_restore;
+pub mod init_restore;
 pub use first_restore::{EmbeddedRestoreLifecycle, PausedRestore};
 mod callosum;
 #[cfg(windows)]
@@ -114,6 +115,7 @@ pub struct BackupWebDeps {
     /// Current fixed-routine admission for this serving lifetime; no submission.
     pub offload_dispatch_probe: Option<OffloadDispatchProbe>,
     pub(crate) restore_prepare: SharedRestorePrepare,
+    pub(crate) init_hosted_choice: init_restore::SharedHostedChoice,
     pub(crate) restore_host: first_restore::RestoreHost,
 }
 
@@ -241,6 +243,7 @@ impl BackupWebDeps {
             verification_submitter: None,
             offload_dispatch_probe: None,
             restore_prepare: restore_prepare::new_shared(),
+            init_hosted_choice: Default::default(),
             restore_host: first_restore::RestoreHost::Desktop,
         }
     }
@@ -1329,6 +1332,14 @@ async fn teardown_route(deps: BackupWebDeps) -> axum::response::Response {
 }
 
 fn restore_pending_response(deps: &BackupWebDeps) -> Option<axum::response::Response> {
+    if solstone_core_backup_runtime::restore_sweep::setup_finished(&deps.journal_root) {
+        return Some(response::error(
+            axum::http::StatusCode::CONFLICT,
+            "restore couldn't start.",
+            solstone_core_backup_runtime::restore::RESTORE_REASON_JOURNAL_ALREADY_SET_UP,
+            "",
+        ));
+    }
     solstone_core_backup_runtime::restore::restore_pending_rotation_refusal(&deps.journal_root).map(
         |reason| {
             response::error(
@@ -1372,16 +1383,39 @@ pub fn recover_recorded_journal_with(
         snapshot_id: record.snapshot_id,
         subtree: record.subtree,
     };
+    run_recorded(
+        deps,
+        destination,
+        recovery_key.to_owned(),
+        identity,
+        selection,
+        drain,
+        |terminal, _| terminal,
+    )
+}
+
+/// One restore on the recorded path, in its own operation frame. `after` runs
+/// on a restore that reached the journal, before the frame closes.
+pub(crate) fn run_recorded(
+    deps: &BackupWebDeps,
+    destination: Destination,
+    recovery_key: String,
+    identity: MobileRestoreIdentity,
+    selection: MobileSelection,
+    drain: &mut dyn FnMut() -> Result<Box<dyn PausedRestore>, String>,
+    after: impl FnOnce(Terminal, Arc<solstone_core_journal_io::JournalRoot>) -> Terminal,
+) -> Result<(), String> {
     let frame = recovery_owner::RecoveryFrame::begin(&deps.operations)?;
     let tools = resolve_tools(deps).map_err(|error| error.to_string())?;
     let runner = LifetimeRunner::new(deps.runner.as_ref(), frame.cancellation());
     let mut paused = None;
+    let root = deps.retained_root().map_err(|error| error.to_string())?;
     let outcome = restore_mobile_journal(
-        deps.retained_root().map_err(|error| error.to_string())?,
+        Arc::clone(&root),
         &services(deps, &runner, &tools),
         deps.restore_recorder.as_ref(),
         destination,
-        recovery_key,
+        &recovery_key,
         identity,
         selection,
         &mut || {
@@ -1401,6 +1435,7 @@ pub fn recover_recorded_journal_with(
     };
     let mut terminal = map_restore(outcome);
     if result.is_ok() {
+        terminal = after(terminal, root);
         result = if runner
             .cancellation()
             .is_some_and(|stop| stop.is_cancelled())
@@ -2135,6 +2170,28 @@ pub(crate) fn consume_hosted(
         return Terminal::error("invalid_operation_for_state");
     };
     let runner = lifetime_runner(deps);
+    // During setup the owner chooses which backup, on both lanes.
+    if solstone_core_backup_runtime::restore_sweep::is_init_restore(&deps.journal_root) {
+        return match solstone_core_backup_runtime::restore::list_journal_backups(
+            &services(deps, &runner, &tools),
+            &destination,
+            &recovery_key,
+        ) {
+            Ok(backups) if backups.is_empty() => Terminal::error("journal_snapshot_not_found"),
+            Ok(backups) => {
+                let Ok(mut choice) = deps.init_hosted_choice.lock() else {
+                    return Terminal::error("failed");
+                };
+                *choice = Some(init_restore::HostedChoice {
+                    binding,
+                    recovery_key,
+                    backups,
+                });
+                Terminal::phase("choose_backup", None)
+            }
+            Err(reason) => Terminal::error(reason),
+        };
+    }
     let terminal = first_restore::run(
         deps,
         &services(deps, &runner, &tools),

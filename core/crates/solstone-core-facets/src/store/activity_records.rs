@@ -82,6 +82,10 @@ pub enum ActivityRecordStoreError {
         detail: String,
     },
     EditRefused(EditRefusal),
+    /// The record has an open move: only its destination can change.
+    BodyRecordMoving {
+        detail: String,
+    },
 }
 
 /// Why an edit could not be removed. Nothing is written when one is refused.
@@ -138,7 +142,9 @@ impl std::fmt::Display for ActivityRecordStoreError {
             Self::DestinationMuted { facet } => {
                 write!(formatter, "destination facet is muted: {facet}")
             }
-            Self::PublicationRefused { detail } => write!(formatter, "{detail}"),
+            Self::PublicationRefused { detail } | Self::BodyRecordMoving { detail } => {
+                write!(formatter, "{detail}")
+            }
             Self::EditRefused(refusal) => write!(
                 formatter,
                 "{}",
@@ -449,7 +455,7 @@ pub fn adopt_moved_activity_rows(
     }
 }
 
-fn locked_modify_day_records<T>(
+pub(super) fn locked_modify_day_records<T>(
     root: &Path,
     facet: &str,
     day: &str,
@@ -533,12 +539,18 @@ pub fn load_activity_records(
     day: &str,
     include_hidden: bool,
 ) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
-    let rows = read_rows(&day_path(root, facet, day)?)?;
-    Ok(rows
+    let rows = read_rows(&day_path(root, facet, day)?)?
         .into_iter()
         .map(normalize)
+        .collect::<Vec<_>>();
+    let superseded = super::superseded::superseded_record_ids(root, facet, day, &rows);
+    Ok(rows
+        .into_iter()
         .filter(|row| {
-            !is_retired_plan(row) && !is_body_record(row) && (include_hidden || !hidden(row))
+            !is_retired_plan(row)
+                && !is_body_record(row)
+                && (include_hidden || !hidden(row))
+                && !superseded.contains(id(row))
         })
         .collect())
 }
@@ -555,10 +567,15 @@ pub fn load_activity_records_readable(
     day: &str,
     include_hidden: bool,
 ) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
-    Ok(read_activity_records_readable(root, facet, day)?
+    let rows = read_activity_records_readable(root, facet, day)?;
+    let superseded = super::superseded::superseded_record_ids(root, facet, day, &rows);
+    Ok(rows
         .into_iter()
         .filter(|row| {
-            !is_retired_plan(row) && !is_body_record(row) && (include_hidden || !hidden(row))
+            !is_retired_plan(row)
+                && !is_body_record(row)
+                && (include_hidden || !hidden(row))
+                && !superseded.contains(id(row))
         })
         .collect())
 }
@@ -717,6 +734,7 @@ fn append_activity_record_with_check(
     );
     locked_modify_day_records(root, facet, day, true, &facet_id, |rows| {
         checkpoint().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        super::body_moves::refuse_create_while_moving(root, &record)?;
         let record_id = id(&record).to_owned();
         if !record_id.is_empty() && rows.iter().any(|row| id(row) == record_id) {
             return Ok((rows, AppendOutcome::AlreadyExists));
@@ -842,6 +860,7 @@ fn update_activity_record_with_check(
     let mut derive = Some(derive);
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
         checkpoint().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        refuse_while_moving(root, facet, day, &rows, record_id)?;
         let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
         for row in &rows {
@@ -934,6 +953,7 @@ pub fn refresh_body_account(
 ) -> Result<BodyAccountRefresh, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        refuse_while_moving(root, facet, day, &rows, record_id)?;
         let mut outcome = BodyAccountRefresh::NotFound;
         let updated = rows
             .into_iter()
@@ -1045,6 +1065,7 @@ fn set_activity_hidden_with_check(
     let current_id = admit_activity_destination(root, facet)?;
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
         checkpoint().map_err(|detail| ActivityRecordStoreError::PublicationRefused { detail })?;
+        refuse_while_moving(root, facet, day, &rows, record_id)?;
         let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
         for row in &rows {
@@ -1107,13 +1128,31 @@ pub fn append_edit(
     record
 }
 
+fn refuse_while_moving(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    rows: &[ActivityRecord],
+    record_id: &str,
+) -> Result<(), ActivityRecordStoreError> {
+    super::body_moves::refuse_while_moving(
+        root,
+        &super::body_moves::BodyRecordPlace {
+            day: day.to_owned(),
+            facet: facet.to_owned(),
+        },
+        rows,
+        record_id,
+    )
+}
+
 /// Only the owner writes a body record. To anyone else it reads as no record,
 /// as it does to every default reader.
 fn actor_may_write(record: &ActivityRecord, actor: &str) -> bool {
     !is_body_record(record) || actor.starts_with("owner:")
 }
 
-fn normalize(mut record: ActivityRecord) -> ActivityRecord {
+pub(super) fn normalize(mut record: ActivityRecord) -> ActivityRecord {
     let title = title(&record);
     record.insert("title".to_owned(), Value::String(title));
     record.insert(
@@ -1367,6 +1406,7 @@ fn modify_record(
     let current_id = admit_activity_destination(root, facet)?;
     let mut change = Some(change);
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        refuse_while_moving(root, facet, day, &rows, record_id)?;
         let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
         let mut updated = Vec::with_capacity(rows.len());
@@ -1475,7 +1515,7 @@ fn python_quote(value: &str) -> String {
             .replace('\t', "\\t")
     )
 }
-fn id(record: &ActivityRecord) -> &str {
+pub(super) fn id(record: &ActivityRecord) -> &str {
     record.get("id").and_then(Value::as_str).unwrap_or_default()
 }
 

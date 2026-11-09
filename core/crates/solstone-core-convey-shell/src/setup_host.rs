@@ -148,6 +148,31 @@ impl SetupHost for ConveySetupHost {
         }
     }
 
+    fn init_restore<'a>(
+        &'a self,
+        journal_root: &'a Path,
+        op: String,
+        body: axum::body::Bytes,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = axum::response::Response> + Send + 'a>>
+    {
+        Box::pin(async move {
+            use axum::response::IntoResponse;
+            if journal_root != self.backup.journal_root {
+                return axum::http::StatusCode::CONFLICT.into_response();
+            }
+            let root = match self.backup.retained_root() {
+                Ok(root) => root,
+                Err(_) => return axum::http::StatusCode::CONFLICT.into_response(),
+            };
+            let drain: solstone_core_backup_web::init_restore::Drain = Box::new(move || {
+                crate::recovery_drain::pause_admitted_work(std::sync::Arc::clone(&root)).map(
+                    |paused| Box::new(paused) as Box<dyn solstone_core_backup_web::PausedRestore>,
+                )
+            });
+            solstone_core_backup_web::init_restore::api(self.backup.clone(), op, body, drain).await
+        })
+    }
+
     fn recover_whole_journal(&self, journal_root: &Path, body: &[u8]) -> Result<(), String> {
         if journal_root != self.backup.journal_root {
             return Err("recovery host is bound to a different journal".into());

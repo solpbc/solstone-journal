@@ -34,9 +34,7 @@ impl SavedFolderProvider for NativeProvider {
         request: SavedFolderRequest<'_>,
         destination: &Path,
     ) -> Result<(), SourceCopyError> {
-        if request.stop.is_requested()
-            || !matches!(request.backend, BackendName::Obsidian | BackendName::Audio)
-        {
+        if request.stop.is_requested() || request.backend != BackendName::Audio {
             return Err(SourceCopyError::Unavailable);
         }
         let material =

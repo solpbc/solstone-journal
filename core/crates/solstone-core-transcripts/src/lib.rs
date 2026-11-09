@@ -1979,6 +1979,34 @@ mod tests {
     }
 
     #[test]
+    fn a_previously_imported_note_stays_readable_with_its_note_label() {
+        let root = TempDir::new().unwrap();
+        let notes = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("import.obsidian")
+            .join("160000_300");
+        fs::create_dir_all(&notes).unwrap();
+        fs::write(
+            notes.join("note_transcript.md"),
+            "## Harbour\nSource: Harbour.md\n\nmeet at the lighthouse\n",
+        )
+        .unwrap();
+        let everything = sources(true, true, TalentSource::All);
+        let (segment, counts) = cluster_period(
+            root.path(),
+            DAY,
+            "160000_300",
+            &everything,
+            Some("import.obsidian"),
+        );
+        assert!(segment.contains("meet at the lighthouse"), "{segment}");
+        assert_eq!(counts.total(), 1);
+        assert_eq!(transcript_header(Some("import.obsidian")), "Note");
+    }
+
+    #[test]
     fn calendar_notes_never_enter_day_or_segment_material() {
         let root = TempDir::new().unwrap();
         let notes = root

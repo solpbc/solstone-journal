@@ -287,6 +287,10 @@ class Element {
     child.parentElement = null;
   }
 
+  remove() {
+    if (this.parentElement) this.parentElement.removeChild(this);
+  }
+
   replaceWith(other) {
     const parent = this.parentElement;
     if (!parent) return;
@@ -350,13 +354,17 @@ class Document {
   constructor() {
     this.listeners = {};
     this.documentElement = new Element('html', this);
+    this.head = new Element('head', this);
+    this.documentElement.appendChild(this.head);
     this.body = new Element('body', this);
     this.documentElement.appendChild(this.body);
     this.activeElement = this.body;
   }
 
   createElement(tagName) {
-    return new Element(tagName, this);
+    const element = new Element(tagName, this);
+    if (element.tagName === 'TEMPLATE') element.content = element;
+    return element;
   }
 
   getElementById(id) {
@@ -1920,6 +1928,176 @@ testCase('notification storage that throws leaves the shell starting', () => {
   notifications._addToHistory({ app: 'home', title: 't', message: 'm', timestamp: 1 });
   assert.strictEqual(notifications.getHistory().length, 1, 'kept in memory');
 });
+
+function srcReadable(h) {
+  const create = h.document.createElement.bind(h.document);
+  h.created = [];
+  h.document.createElement = (tagName) => {
+    const element = create(tagName);
+    if (element.tagName === 'SCRIPT') {
+      Object.defineProperty(element, 'src', { get() { return this.getAttribute('src') || ''; } });
+      h.created.push(element);
+    }
+    return element;
+  };
+  return h;
+}
+
+// The scripts the mount has actually inserted: only those listen for `load`.
+function inserted(h) {
+  return h.created.filter((script) => script.listeners.load);
+}
+
+function headLinks(h, rel) {
+  return h.document.head.querySelectorAll('link').filter((link) => link.getAttribute('rel') === rel);
+}
+
+const threeScripts = '<script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>';
+
+asyncCase('a view\'s scripts download together and run one at a time, in order', async () => {
+  const h = srcReadable(createHarness({ boot: true, fetchResponses: {
+    '/app/home/workspace': { status: 200, body: threeScripts },
+  }}));
+  let finished = false;
+  const mounted = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' })
+    .then(() => { finished = true; });
+  await settle();
+  assert.deepStrictEqual(
+    headLinks(h, 'preload').map((link) => [link.getAttribute('as'), link.getAttribute('href')]),
+    [['script', '/a.js'], ['script', '/b.js'], ['script', '/c.js']],
+    'all three start downloading at once',
+  );
+  assert.deepStrictEqual(inserted(h).map((s) => s.src), ['/a.js'], 'the second waits for the first');
+  inserted(h)[0].dispatchEvent({ type: 'load' });
+  await settle();
+  assert.deepStrictEqual(inserted(h).map((s) => s.src), ['/a.js', '/b.js']);
+  assert.strictEqual(finished, false);
+  inserted(h)[1].dispatchEvent({ type: 'load' });
+  await settle();
+  assert.deepStrictEqual(inserted(h).map((s) => s.src), ['/a.js', '/b.js', '/c.js']);
+  inserted(h)[2].dispatchEvent({ type: 'load' });
+  await mounted;
+  assert.strictEqual(headLinks(h, 'preload').length, 0, 'no preload outlives the mount');
+});
+
+asyncCase('one failing script rejects the mount and nothing after it runs', async () => {
+  const h = srcReadable(createHarness({ boot: true, api: true, fetchResponses: {
+    '/app/home/workspace': { status: 200, body: threeScripts },
+  }}));
+  const stale = [];
+  h.window.recoverFromStaleAsset = (url) => { stale.push(url); };
+  const mounted = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  await settle();
+  inserted(h)[0].dispatchEvent({ type: 'load' });
+  await settle();
+  inserted(h)[1].dispatchEvent({ type: 'error' });
+  await assert.rejects(mounted, /Failed to load script \/b\.js/);
+  assert.deepStrictEqual(inserted(h).map((s) => s.src), ['/a.js', '/b.js'], 'the third never runs');
+  assert.deepStrictEqual(stale, ['/b.js'], 'the failure goes through stale-asset recovery');
+  assert.strictEqual(h.surfaceCalls.filter((call) => call.kind === 'error').length, 1, 'the error state shows');
+  assert.strictEqual(headLinks(h, 'preload').length, 0, 'a failed chain leaves no preloads');
+  const ready = h.marks.filter((entry) => entry.name === 'view:ready');
+  assert.strictEqual(ready[ready.length - 1].detail.state, 'error');
+});
+
+asyncCase('a view\'s stylesheet is in place before its markup shows, once', async () => {
+  const fragment = '<link rel="stylesheet" href="/x.css"><section id="view"></section>';
+  const h = createHarness({ boot: true, fetchResponses: {
+    '/app/home/workspace': { status: 200, body: fragment },
+  }});
+  const target = h.document.getElementById('main-content');
+  const mount = () => h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  const first = mount();
+  await settle();
+  assert.strictEqual(headLinks(h, 'stylesheet').length, 1);
+  assert.strictEqual(target.querySelector('#view'), null, 'the markup waits for its stylesheet');
+  headLinks(h, 'stylesheet')[0].dispatchEvent({ type: 'load' });
+  await first;
+  assert.ok(target.querySelector('#view'), 'then the markup shows');
+  assert.strictEqual(target.querySelectorAll('link').length, 0, 'the head holds the one copy');
+  await mount();
+  assert.strictEqual(headLinks(h, 'stylesheet').length, 1, 'a remount reuses it');
+});
+
+asyncCase('a failed view stylesheet does not stop the view', async () => {
+  const h = createHarness({ boot: true, fetchResponses: {
+    '/app/home/workspace': { status: 200, body: '<link rel="stylesheet" href="/x.css"><section id="view"></section>' },
+  }});
+  const mounted = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  await settle();
+  headLinks(h, 'stylesheet')[0].dispatchEvent({ type: 'error' });
+  await mounted;
+  assert.ok(h.document.getElementById('main-content').querySelector('#view'));
+  assert.strictEqual(headLinks(h, 'stylesheet').length, 0, 'the failed sheet is gone');
+  const retried = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  await settle();
+  assert.strictEqual(headLinks(h, 'stylesheet').length, 1, 'a retry asks for it again');
+  headLinks(h, 'stylesheet')[0].dispatchEvent({ type: 'load' });
+  await retried;
+});
+
+asyncCase('date view code comes into the cache once, after a view is ready', async () => {
+  const timers = [];
+  const h = createHarness({
+    boot: true,
+    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    fetchResponses: { '/app/home/workspace': { status: 200, body: '<section id="view"></section>' } },
+  });
+  const dateCode = () => h.fetchCalls.filter((url) => /\/(date-nav|day-grid)\.(js|css)$/.test(url));
+  const runTimers = () => timers.splice(0).forEach((fn) => fn());
+  const mount = () => h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  await mount();
+  runTimers();
+  assert.deepStrictEqual(dateCode(), [], 'nothing before the view is ready');
+  h.window.createViewReady('home')('error');
+  runTimers();
+  assert.deepStrictEqual(dateCode(), [], 'a view that failed asks for nothing more');
+  await mount();
+  h.window.createViewReady('home')('content');
+  assert.deepStrictEqual(dateCode(), [], 'readiness waits for a quiet moment');
+  runTimers();
+  assert.deepStrictEqual(dateCode(), [
+    '/static/date-nav.css', '/static/date-nav.js', '/static/day-grid.css', '/static/day-grid.js',
+  ]);
+  await mount();
+  h.window.createViewReady('home')('content');
+  runTimers();
+  assert.strictEqual(dateCode().length, 4, 'once for the page');
+  await settle();
+});
+
+const homeScriptTags = (() => {
+  const html = fs.readFileSync(path.resolve(crateDir, '..', 'solstone-core-home-web', 'assets', 'workspace.html'), 'utf8');
+  return (html.match(/<script\b[^>]*\bsrc=[^>]*><\/script>/g) || []).join('');
+})();
+
+for (const [pathname, expected] of [
+  ['/app/home/', []],
+  ['/app/home/week/202611W2', ['/app/home/static/week.js']],
+  ['/app/home/originals/', ['/app/home/static/removals.js']],
+]) {
+  asyncCase('home at ' + pathname + ' loads only its own route\'s scripts', async () => {
+    const h = srcReadable(createHarness({ boot: true, pathname, fetchResponses: {
+      '/app/home/workspace': { status: 200, body: homeScriptTags },
+    }}));
+    const mounted = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+    await settle();
+    const hrefs = headLinks(h, 'preload').map((link) => link.getAttribute('href'));
+    assert.deepStrictEqual(
+      hrefs.filter((href) => href === '/app/home/static/week.js' || href === '/app/home/static/removals.js'),
+      expected,
+    );
+    assert.ok(hrefs.includes('/app/home/static/home.js'), 'home.js loads on every route');
+    for (let index = 0; index < 8 && inserted(h).length > index; index += 1) {
+      inserted(h)[index].dispatchEvent({ type: 'load' });
+      await settle();
+    }
+    await mounted;
+    const ran = inserted(h).map((script) => script.src)
+      .filter((src) => src === '/app/home/static/week.js' || src === '/app/home/static/removals.js');
+    assert.deepStrictEqual(ran, expected, 'a script for another route never runs');
+  });
+}
 
 async function runAsyncCases() {
   for (const runCase of asyncCases) {

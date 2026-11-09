@@ -53,12 +53,6 @@ pub enum SyncBackendRequest {
         journal_root: PathBuf,
         save: bool,
     },
-    Obsidian {
-        journal_root: PathBuf,
-        save: bool,
-        source_path: Option<PathBuf>,
-        force: bool,
-    },
     Audio {
         journal_root: PathBuf,
         save: bool,
@@ -80,7 +74,6 @@ impl SyncBackendRequest {
     pub const fn backend(&self) -> BackendName {
         match self {
             Self::Plaud { .. } => BackendName::Plaud,
-            Self::Obsidian { .. } => BackendName::Obsidian,
             Self::Audio { .. } => BackendName::Audio,
             Self::Oura { .. } => BackendName::Oura,
         }

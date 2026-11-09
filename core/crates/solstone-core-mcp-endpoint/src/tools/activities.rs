@@ -746,7 +746,20 @@ pub(crate) fn execute_list(
             if raw_rows.len() != normalized.len() {
                 return Err(DispatchError::Tool(ToolError::FileUnreadable));
             }
+            let superseded = solstone_core_facets::superseded_record_ids(
+                journal_root,
+                facet_dir,
+                &day,
+                &normalized,
+            );
             for ((record, trimmed), normalized_row) in raw_rows.into_iter().zip(normalized) {
+                if record
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| superseded.contains(id))
+                {
+                    continue;
+                }
                 // Same predicate as load_activity_records(..., include_hidden: false).
                 // Identity stays the raw line, not the normalized object.
                 let hidden = normalized_row

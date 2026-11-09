@@ -93,7 +93,7 @@ fn ac5_every_production_argv_round_trips_byte_for_byte() {
             "solstone", "journal", "importer", "--sync", "plaud", "--save",
         ]),
         words(&[
-            "solstone", "journal", "importer", "--sync", "obsidian", "--save",
+            "solstone", "journal", "importer", "--sync", "audio", "--save",
         ]),
         words(&[
             "solstone",

@@ -9,6 +9,10 @@
 /// Root-relative patterns. `*` spans one component; `**` spans directories.
 /// A matching directory also omits its descendants. The numeric day selector
 /// uses eight `[0-9]` classes, shared with restic's glob syntax.
+/// Marks a whole-journal restore started during setup, so it may finish by
+/// removing what the snapshot doesn't hold. Local state: backups omit it.
+pub const INIT_RESTORE_FILE: &str = "health/init-restore.json";
+
 pub const COPY_EXCLUDES: &[&str] = &[
     "indexer",
     "cache",
@@ -20,6 +24,7 @@ pub const COPY_EXCLUDES: &[&str] = &[
     // These namespaces are application-owned, unlike raw segment filenames.
     "health/sync",
     "health/brain.json",
+    "health/init-restore.json",
     // Local restore obligation. A snapshot must not import, overwrite, or erase it.
     crate::whole_journal_restore::WHOLE_JOURNAL_RESTORE_FILE,
     "health/!solstone-claim-00000000-*",

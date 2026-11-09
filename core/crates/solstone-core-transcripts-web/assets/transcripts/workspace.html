@@ -1,3 +1,7 @@
+<link rel="stylesheet" href="/static/date-nav.css">
+<script src="/static/date-nav.js"></script>
+<script src="/static/vendor/marked/marked.min.js"></script>
+<script src="/static/vendor/dompurify/dompurify.min.js"></script>
 <style>
 /* Transcripts app styles - all classes prefixed with .tr- to avoid conflicts */
 
@@ -2669,10 +2673,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	        <ul class="tr-warning-details" id="trWarningDetails" hidden></ul>
 	      </div>
       <div class="tr-panel" id="trPanel">
-        <div class="surface-state surface-state--empty">
-          <div class="surface-state-icon" id="trInitialEmptyIcon" aria-hidden="true"></div>
-          <h2 class="surface-state-heading">your day at a glance</h2>
-          <p class="surface-state-desc">pick a stretch of the day on the left, then a block in detail to read it</p>
+        <div class="surface-state surface-state--loading" role="status" aria-busy="true">
+          <div class="surface-state-spinner" aria-hidden="true"></div>
+          <span class="surface-state-text" data-role="loading-status">loading this day…</span>
+          <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
         </div>
       </div>
     </div>
@@ -2865,14 +2869,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const deleteSegmentModalConfirm = document.getElementById('trDeleteSegmentModalConfirm');
   const deleteSegmentModalBack = document.getElementById('trDeleteSegmentModalBack');
   const deleteSegmentModalEraseConfirm = document.getElementById('trDeleteSegmentModalEraseConfirm');
-  const initialEmptyIcon = document.getElementById('trInitialEmptyIcon');
-  if (initialEmptyIcon) {
-    initialEmptyIcon.innerHTML = window.ConveyIcons.svg('clock');
-  }
   // The "pick a stretch of the day" invitation is for a day that has loaded.
   // While the day is read the panel says so; on a slow link the invitation
   // read as an empty day.
-  const dayInvitationHtml = panel ? panel.innerHTML : '';
+  const dayInvitationHtml = window.SurfaceState.empty({
+    icon: window.ConveyIcons.svg('clock'),
+    heading: 'your day at a glance',
+    desc: 'pick a stretch of the day on the left, then a block in detail to read it'
+  });
 
   function emptyIconForModality(modality) {
     switch (modality) {
@@ -4819,6 +4823,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return `<div class="surface-state surface-state--loading tr-analyzing-state" role="status" aria-busy="true">`
         + `<div class="surface-state-spinner" aria-hidden="true"></div>`
         + `<span class="surface-state-text">${escapeHtml(label)}</span>`
+        + '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>'
         + `</div>`;
     }
     if (state === 'failed' || state === 'failed_final') {

@@ -675,9 +675,7 @@ pub fn register_admitted_folder(
 ) -> Result<Value, solstone_core_import::FolderAdmitError> {
     use solstone_core_import::FolderAdmitError;
     // These are the supported picked-folder routes. Body setup remains held.
-    if !matches!(source, "obsidian" | "gemini" | "document" | "audio_archive")
-        || client_item_id.is_empty()
-    {
+    if !matches!(source, "gemini" | "document" | "audio_archive") || client_item_id.is_empty() {
         return Err(FolderAdmitError::Denied);
     }
     let path = root
@@ -1340,6 +1338,13 @@ pub(crate) fn command(
         cmd.extend(["--snapshot-digest".to_owned(), digest.to_owned()]);
         if let Some(token) = metadata["preview"]["token"].as_str() {
             cmd.extend(["--preview-token".to_owned(), token.to_owned()]);
+        }
+        // What the card showed the owner would move: the run moves no more.
+        if metadata.contains_key(solstone_core_import::BODY_FACET_METADATA) {
+            let shown = metadata["preview"]["size"]["listed_moves"]["count"]
+                .as_u64()
+                .unwrap_or(0);
+            cmd.extend(["--listed-moves-shown".to_owned(), shown.to_string()]);
         }
     }
     cmd

@@ -10,7 +10,6 @@
     "rule": "detect_file_importer iterates the registry in insertion order and returns the FIRST importer whose detect() returns True",
     "detection_order": [
       "ics",
-      "obsidian",
       "claude",
       "chatgpt",
       "gemini",
@@ -21,7 +20,7 @@
       "oura",
       "strava"
     ],
-    "file_patterns_are_NOT_the_predicate": "file_patterns is DISPLAY metadata shown by --list-importers. detect() is the predicate and they disagree: six importers advertise *.zip but discriminate by ARCHIVE CONTENT, and obsidian advertises *.md but detect() returns False for any FILE \u2014 it requires a DIRECTORY plus .obsidian/, logseq/, or >=3 non-hidden .md files. A native port that built detection from file_patterns would be wrong for every importer.",
+    "file_patterns_are_NOT_the_predicate": "file_patterns is DISPLAY metadata shown by --list-importers. detect() is the predicate and they disagree: six importers advertise *.zip but discriminate by ARCHIVE CONTENT. A native port that built detection from file_patterns would be wrong for every importer.",
     "zip_claimants": [
       "ics",
       "claude",
@@ -75,13 +74,13 @@
       "detected": null
     },
     "vault_dot_obsidian/": {
-      "detected": "obsidian"
+      "detected": null
     },
     "vault_one_md/": {
       "detected": null
     },
     "vault_three_md/": {
-      "detected": "obsidian"
+      "detected": null
     }
   }
 }

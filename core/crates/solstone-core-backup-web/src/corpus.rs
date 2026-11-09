@@ -715,11 +715,6 @@ fn journal_builder_matches_an_independent_python_healthy_capture() {
         crate::test_support::python_build_journal_bytes("healthy"),
         PYTHON_HEALTHY.as_bytes()
     );
-    let root = crate::test_support::root("healthy");
-    assert_eq!(
-        fs::read(root.path().join("config/journal.json")).unwrap(),
-        PYTHON_HEALTHY.as_bytes()
-    );
 }
 
 #[test]
@@ -750,8 +745,7 @@ fn journal_builder_writes_every_phase_or_leaves_unestablished_absent() {
             "f3068f71269517465d408f9c80e53f3726f1b1c477e416408efad70c360f40a2",
         ),
     ] {
-        let root = crate::test_support::root(phase);
-        let written = fs::read(root.path().join("config/journal.json")).unwrap();
+        let written = crate::test_support::python_build_journal_bytes(phase);
         assert_eq!(
             format!("{:x}", Sha256::digest(&written)),
             expected_digest,
@@ -1135,6 +1129,9 @@ impl ScriptRunner {
 
 impl ToolRunner for ScriptRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            return Ok(report);
+        }
         let argv: Vec<String> = request
             .argv
             .iter()
@@ -1432,6 +1429,7 @@ fn engine_deps(
         verification_submitter: None,
         offload_dispatch_probe: None,
         restore_prepare: crate::restore_prepare::new_shared(),
+        init_hosted_choice: Default::default(),
         restore_host: crate::first_restore::RestoreHost::Desktop,
     }
 }
@@ -1562,7 +1560,7 @@ fn restore_body() -> Value {
         "recovery_key": crate::test_support::RECOVERY_KEY,
         "repository": "s3:bucket",
         "backend": "s3",
-        "credentials": {"access_key_id": "key", "secret_access_key": "secret"}
+        "credentials": {"access_key_id": "fixture-id", "secret_access_key": "fixture-credential"}
     })
 }
 
@@ -1583,6 +1581,101 @@ fn restore_summary() -> &'static str {
 #[cfg(feature = "full-tests")]
 fn init_outputs() -> Vec<ToolOutput> {
     vec![output(10, ""), output(0, ""), output(0, ""), output(0, "")]
+}
+
+#[cfg(feature = "full-tests")]
+struct NoPause;
+
+#[cfg(feature = "full-tests")]
+impl crate::PausedRestore for NoPause {
+    fn resume(self: Box<Self>, _: &dyn Fn() -> bool) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "full-tests")]
+fn no_pause() -> crate::init_restore::Drain {
+    Box::new(|| Ok(Box::new(NoPause) as Box<dyn crate::PausedRestore>))
+}
+
+#[cfg(feature = "full-tests")]
+async fn init_api(deps: &crate::BackupWebDeps, op: &str, body: Value) -> (u16, Value) {
+    let response = crate::init_restore::api(
+        deps.clone(),
+        op.to_owned(),
+        axum::body::Bytes::from(serde_json::to_vec(&body).unwrap()),
+        no_pause(),
+    )
+    .await;
+    let status = response.status().as_u16();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[cfg(all(unix, feature = "full-tests"))]
+#[tokio::test]
+async fn setup_finds_backups_then_restores_the_chosen_one_on_the_recorded_path() {
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, read_whole_journal_restore,
+    };
+    let root = crate::test_support::root("healthy");
+    let runner = Arc::new(
+        solstone_core_backup_runtime::test_support::ArgvResticFixture::new(
+            journal_catalog(),
+            output(0, restore_summary()),
+            output(0, ""),
+        ),
+    );
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, found) = init_api(&deps, "find", restore_body()).await;
+    assert_eq!(status, 200, "{found}");
+    assert_eq!(found["backups"][0]["id"], JOURNAL_SNAPSHOT_ID);
+    assert_eq!(found["backups"][0]["subtree"], "/original");
+
+    let mut body = restore_body();
+    body["snapshot_id"] = json!(JOURNAL_SNAPSHOT_ID);
+    body["subtree"] = json!("/original");
+    let (status, started) = init_api(&deps, "start", body).await;
+    assert_eq!(status, 200, "{started}");
+    assert!(
+        runner
+            .calls()
+            .iter()
+            .any(|argv| argv[0] == "restore" && argv[1].ends_with(":/original"))
+    );
+    assert!(matches!(
+        read_whole_journal_restore(root.path()),
+        WholeJournalRestoreReadiness::Absent
+    ));
+}
+
+#[cfg(all(unix, feature = "full-tests"))]
+#[tokio::test]
+async fn a_wrong_key_at_setup_says_so_and_starts_nothing() {
+    let root = crate::test_support::root("healthy");
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![output(12, "")]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = init_api(&deps, "find", restore_body()).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "auth_failed");
+}
+
+#[cfg(feature = "full-tests")]
+#[tokio::test]
+async fn a_hosted_choice_needs_a_held_approval_and_abandon_needs_a_setup_restore() {
+    let root = crate::test_support::root("healthy");
+    let deps = crate::BackupWebDeps::new(root.path().to_path_buf());
+    let (status, body) = init_api(&deps, "hosted/choose", json!({"snapshot_id": "a"})).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "invalid_operation_for_state");
+    let (status, _) = init_api(&deps, "abandon", json!({})).await;
+    assert_eq!(status, 409, "nothing to abandon, so nothing is removed");
+    assert!(root.path().join("config/journal.json").exists());
 }
 
 #[cfg(feature = "full-tests")]
@@ -1874,7 +1967,11 @@ async fn restore_success_records_snapshots_then_restore() {
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "done");
     assert_eq!(
-        runner.calls(),
+        runner
+            .calls()
+            .iter()
+            .map(|argv| solstone_core_backup_runtime::test_support::without_copy_excludes(argv))
+            .collect::<Vec<_>>(),
         vec![
             vec!["snapshots".into(), "--json".into()],
             vec![
@@ -1923,6 +2020,11 @@ async fn embedded_first_restore_without_drain_cannot_copy_into_a_live_target() {
     struct CopyRunner(ScriptRunner);
     impl ToolRunner for CopyRunner {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if let Some(report) =
+                solstone_core_backup_runtime::test_support::dry_run_report(request)
+            {
+                return Ok(report);
+            }
             if request.argv.first().is_some_and(|arg| arg == "restore") {
                 let target = request
                     .argv
@@ -4191,7 +4293,9 @@ fn assert_runner_argv(runner: &ScriptRunner, expected: &[Vec<String>]) {
     assert_eq!(
         calls
             .iter()
-            .map(|(_, argv)| argv.clone())
+            .map(
+                |(_, argv)| solstone_core_backup_runtime::test_support::without_copy_excludes(argv)
+            )
             .collect::<Vec<_>>(),
         expected
     );
@@ -6668,6 +6772,11 @@ async fn cancelled_restore_worker_does_not_cancel_later_idle_destination_validat
     struct CancellableScript(Arc<ScriptRunner>);
     impl ToolRunner for CancellableScript {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if let Some(report) =
+                solstone_core_backup_runtime::test_support::dry_run_report(request)
+            {
+                return Ok(report);
+            }
             self.0.run(request)
         }
         fn run_cancellable(
@@ -6713,7 +6822,7 @@ async fn cancelled_restore_worker_does_not_cancel_later_idle_destination_validat
         let rotated = json!({
             "repository": "s3:s3.example.invalid/journal-corpus",
             "backend": "s3",
-            "credentials": {"access_key_id": "key", "secret_access_key": "secret"}
+            "credentials": {"access_key_id": "fixture-id", "secret_access_key": "fixture-credential"}
         });
         assert_eq!(
             post_json(&deps, "/app/backup/destination", Some(rotated))

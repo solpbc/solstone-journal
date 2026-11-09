@@ -114,7 +114,7 @@ impl Fixture {
         }
     }
     pub(crate) fn request(&self) -> Value {
-        json!({"source":"obsidian","folder_name":"Picked notes","client_item_id":"ios-native-folder", "authority":self.authority,"admissionGeneration":0})
+        json!({"source":"gemini","folder_name":"Picked notes","client_item_id":"ios-native-folder", "authority":self.authority,"admissionGeneration":0})
     }
     pub(crate) fn finish(&self) {
         journal_ios_processing_request_stop();

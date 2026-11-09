@@ -19,6 +19,9 @@ pub struct ImportSize {
     pub skipped: usize,
     /// Sources without chronicle recordings (for example body data) name their own unit.
     pub other_units: Option<(String, usize)>,
+    /// Workouts already listed that this import's facet would move, and the
+    /// facets they'd move from.
+    pub listed_moves: Option<(usize, Vec<String>)>,
 }
 
 impl ImportSize {
@@ -31,16 +34,17 @@ impl ImportSize {
 
     pub fn render(&self, json: bool) -> String {
         if json {
-            format!(
-                "{}\n",
-                serde_json::json!({
+            let mut size = serde_json::json!({
                 "schema": "solstone.import.size.v1",
                 "recordings": self.recordings.len(),
                 "days": self.days().len(),
                 "skipped": self.skipped,
                 "other_units": self.other_units,
-                })
-            )
+            });
+            if let Some((count, from)) = &self.listed_moves {
+                size["listed_moves"] = serde_json::json!({"count": count, "from": from});
+            }
+            format!("{size}\n")
         } else {
             let mut result = format!(
                 "{} {} across {} {}\n",
@@ -63,6 +67,14 @@ impl ImportSize {
             if self.skipped > 0 {
                 result.push_str(&format!("{} skipped\n", self.skipped));
             }
+            if let Some((count, from)) = &self.listed_moves {
+                result.push_str(&format!(
+                    "{} {} already listed on the activities page would move to this import's facet from {}\n",
+                    count,
+                    if *count == 1 { "workout" } else { "workouts" },
+                    from.join(", ")
+                ));
+            }
             result
         }
     }
@@ -76,7 +88,8 @@ impl ImportSize {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(rendered.trim_end()) {
             return !(value["schema"] == "solstone.import.size.v1"
                 && value["recordings"] == 0
-                && value["other_units"].is_null());
+                && value["other_units"].is_null()
+                && value["listed_moves"].is_null());
         }
         let mut lines = rendered.lines();
         !(lines.next() == Some("0 recordings across 0 days")
@@ -102,6 +115,7 @@ mod tests {
                 .collect(),
             skipped,
             other_units: other_units.map(|(unit, count)| (unit.to_owned(), count)),
+            listed_moves: None,
         }
     }
 
@@ -130,5 +144,18 @@ mod tests {
         assert!(ImportSize::rendered_announces_work(
             "2 events, 1 unique attendees\n"
         ));
+    }
+
+    #[test]
+    fn listed_moves_are_said_in_both_forms_and_absent_when_none() {
+        let mut size = sized(1, 0, None);
+        assert!(!size.render(true).contains("listed_moves"));
+        assert!(!size.render(false).contains("already listed"));
+        size.listed_moves = Some((2, vec!["Work".to_owned()]));
+        assert!(
+            size.render(true)
+                .contains(r#""listed_moves":{"count":2,"from":["Work"]}"#)
+        );
+        assert!(size.render(false).contains("2 workouts already listed"));
     }
 }

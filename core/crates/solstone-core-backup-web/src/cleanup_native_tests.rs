@@ -356,6 +356,9 @@ fn archive_query_cleanup_releases_original_page_owner() {
 
 impl ToolRunner for FaultRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            return Ok(report);
+        }
         self.calls.fetch_add(1, Ordering::SeqCst);
         let mut native = child_request(request.resources.clone());
         if let Some(path) = &self.partial_output {
@@ -403,6 +406,9 @@ struct RestoreWriterFault {
 
 impl ToolRunner for RestoreWriterFault {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            return Ok(report);
+        }
         assert_eq!(request.resources.len(), self.expected_resources);
         match request.argv.first().and_then(|arg| arg.to_str()) {
             Some("snapshots") => Ok(ToolOutput {

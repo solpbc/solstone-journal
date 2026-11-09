@@ -144,7 +144,6 @@ fn connection(root: &JournalRoot, source: &str) -> (StatusCode, Value) {
             BackendName, SyncStateRead, public_connection_status, read_sync_state_bound,
         };
         let backend = match source {
-            "obsidian" => BackendName::Obsidian,
             "audio" => BackendName::Audio,
             _ => unreachable!("source whitelist checked before read"),
         };

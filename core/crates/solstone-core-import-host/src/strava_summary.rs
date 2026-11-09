@@ -26,6 +26,12 @@ pub(crate) struct StravaRunSummary {
     pub filing: Filing,
     pub records: RecordCounts,
     pub names: StravaNamesOutcome,
+    pub conversion: crate::strava_convert::ConversionCounts,
+    /// Workouts already listed that the owner's facet moved, and from where.
+    pub listed_moved: Option<(usize, Vec<String>)>,
+    /// `(shown, would move)` when more would have moved than the owner saw,
+    /// and so none did.
+    pub listed_over: Option<(usize, usize)>,
 }
 
 fn plural(count: u64, one: &str, many: &str) -> String {
@@ -36,7 +42,7 @@ fn plural(count: u64, one: &str, many: &str) -> String {
     }
 }
 
-const NO_FACET_MEANS: &str = "a workout with no facet isn't listed with your activities, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
+const NO_FACET_MEANS: &str = "a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
 
 /// `one` when `count` is 1, otherwise `many`.
 fn either<'a>(count: u64, one: &'a str, many: &'a str) -> &'a str {
@@ -88,6 +94,26 @@ impl StravaRunSummary {
         match (self.shown_facet(), self.facet.basis) {
             (Some(facet), FacetBasis::Chosen) => {
                 let _ = writeln!(text, "you chose the {facet} facet for this import.\n");
+                if let Some((count, from)) = &self.listed_moved {
+                    let _ = writeln!(
+                        text,
+                        "{} already listed on the activities page moved there, from {}.\n",
+                        plural(*count as u64, "workout", "workouts"),
+                        from.join(", ")
+                    );
+                }
+                if let Some((shown, count)) = self.listed_over {
+                    let _ = writeln!(
+                        text,
+                        "nothing already listed moved: {} would have, and you {}.\n",
+                        plural(count as u64, "workout", "workouts"),
+                        if shown == 0 {
+                            "weren't shown any".to_owned()
+                        } else {
+                            format!("were told {shown}")
+                        },
+                    );
+                }
             }
             (Some(facet), _) => {
                 let _ = writeln!(
@@ -127,7 +153,7 @@ impl StravaRunSummary {
         if filing.kept_sensed > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because {} already listed with your activities.\n",
+                "{} left where {}, because {} already listed on the activities page.\n",
                 plural(filing.kept_sensed, "workout was", "workouts were"),
                 either(filing.kept_sensed, "it was", "they were"),
                 either(filing.kept_sensed, "it's", "they're"),
@@ -136,7 +162,7 @@ impl StravaRunSummary {
         if filing.kept_unreadable > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because your journal couldn't read what's listed with your activities on {} day. importing again tries once more.\n",
+                "{} left where {}, because your journal couldn't read what's listed on the activities page on {} day. importing again tries once more.\n",
                 plural(filing.kept_unreadable, "workout was", "workouts were"),
                 either(filing.kept_unreadable, "it was", "they were"),
                 either(filing.kept_unreadable, "its", "their"),
@@ -150,7 +176,7 @@ impl StravaRunSummary {
         if records.written > 0 {
             let _ = writeln!(
                 text,
-                "{} newly listed with your activities on {}.\n",
+                "{} newly listed on the activities page for {}.\n",
                 plural(records.written, "workout is", "workouts are"),
                 either(records.written, "its day", "their days"),
             );
@@ -158,7 +184,7 @@ impl StravaRunSummary {
         if records.no_facet > 0 {
             let _ = writeln!(
                 text,
-                "{} no facet, so {} listed with your activities.\n",
+                "{} no facet, so {} listed on the activities page.\n",
                 plural(records.no_facet, "workout has", "workouts have"),
                 either(records.no_facet, "it isn't", "they aren't"),
             );
@@ -166,7 +192,21 @@ impl StravaRunSummary {
         if !records.refused.is_empty() {
             let _ = writeln!(
                 text,
-                "not every workout could be listed with your activities this time. importing again tries once more.\n"
+                "not every workout could be listed on the activities page this time. importing again tries once more.\n"
+            );
+        }
+        if self.conversion.waiting + self.conversion.skipped_locked > 0 {
+            let _ = writeln!(
+                text,
+                "some earlier workouts couldn't be updated yet. your journal tries again the next time it starts.\n"
+            );
+        }
+        if self.conversion.moves_open > 0 {
+            let _ = writeln!(
+                text,
+                "{} couldn't finish moving yet. your journal tries again the next time it starts, and you can edit {} after that.\n",
+                plural(self.conversion.moves_open, "record", "records"),
+                either(self.conversion.moves_open, "it", "them"),
             );
         }
     }
@@ -301,6 +341,9 @@ mod tests {
 
     fn summary(facet: Option<&str>, basis: FacetBasis) -> StravaRunSummary {
         StravaRunSummary {
+            conversion: Default::default(),
+            listed_moved: None,
+            listed_over: None,
             new_workouts: 2,
             updated_workouts: 1,
             replaced_workouts: 0,
@@ -452,5 +495,25 @@ mod tests {
         assert!(!not_added.contains(store_line));
         assert_eq!(not_added[0], plain[0]);
         assert_eq!(not_added.len(), plain.len());
+    }
+
+    #[test]
+    fn workouts_still_waiting_are_counted_with_no_names_in_the_words() {
+        let mut waiting = summary(Some("body"), FacetBasis::Chosen);
+        waiting.conversion.waiting = 1;
+        waiting.conversion.skipped_locked = 1;
+        waiting.conversion.moves_open = 1;
+        let text = waiting.text();
+        assert!(
+            text.contains("some earlier workouts couldn't be updated yet"),
+            "{text}"
+        );
+        assert!(
+            text.contains("1 record couldn't finish moving yet"),
+            "{text}"
+        );
+        let none = summary(Some("body"), FacetBasis::Chosen).text();
+        assert!(!none.contains("earlier workouts"), "{none}");
+        assert!(!none.contains("finish moving"), "{none}");
     }
 }

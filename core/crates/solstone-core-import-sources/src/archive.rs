@@ -29,9 +29,9 @@ use solstone_core_facets::{
 use solstone_core_import::ImportPreview;
 use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DirectoryIdentityWitness, JournalRootError, LockError, LockOptions,
-    PathOrDay, RecordIdentity, Segment, StagedDirOptions, StreamLocation, append_jsonl,
-    atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
+    AtomicWriteOptions, DirectoryIdentityWitness, FileLock, JournalRootError, LockError,
+    LockOptions, PathOrDay, RecordIdentity, Segment, StagedDirOptions, StreamLocation,
+    append_jsonl, atomic_replace, contained_path, hold_lock, iter_segments, publish_staged_dir,
     realpath_non_strict, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
@@ -546,6 +546,17 @@ fn archive_merge_lock_path(journal_root: &Path) -> PathBuf {
     journal_root.join("health/locks/archive-merge")
 }
 
+/// The merge lock, if no merge is running on this journal. Held, it keeps one
+/// from starting.
+#[must_use]
+pub fn hold_lock_if_no_merge_running(journal_root: &Path) -> Option<FileLock> {
+    let no_wait = LockOptions {
+        timeout: Duration::ZERO,
+        ..LockOptions::default()
+    };
+    hold_lock(archive_merge_lock_path(journal_root), no_wait).ok()
+}
+
 /// Remove extraction directories that a killed merge left in the journal's merge
 /// working root, and return how many were removed. A merge holds the merge lock
 /// for its whole life and the kernel releases it when the holder dies, so a lock
@@ -670,6 +681,15 @@ pub fn merge_journal_archive(
         },
     })?;
     write_owner_metadata(&owner_path)?;
+    // A merged journal may hold old Strava records again, and they must stay
+    // hidden from the moment they land.
+    if let Err(detail) = crate::strava::reopen_strava_conversion(target_journal_root) {
+        let _ = fs::remove_file(&owner_path);
+        return Err(ImportSourcesError::ImportMerge {
+            path: target_journal_root.join("imports"),
+            detail,
+        });
+    }
 
     let token = run_token();
     let extraction_dir = options.working_root.join(format!("extract-{token}"));
@@ -2738,14 +2758,22 @@ fn stage_body_zones(
                 state.import_units.insert(relative, PublishUnit::NewFile);
             }
             Err(error) => return Err(import_error(destination, error)),
-            Ok(held) if zone_named(&held).is_some() && zone_named(&held) == zone_named(&bytes) => {}
-            Ok(_) => {
-                let hours = body_hours_staged(state, source);
-                if hours > 0 {
+            // Only two zones this can name can differ.
+            Ok(held) => {
+                let differs = matches!(
+                    (zone_named(&held), zone_named(&bytes)),
+                    (Some(held), Some(arriving)) if held != arriving
+                );
+                let covered = if differs {
+                    body_seconds_staged(state, source)
+                } else {
+                    0
+                };
+                if covered > 0 {
                     state.summary.body_zones_differ.push(BodyZoneDiffers {
                         source: solstone_core_format::content::body_records::source_words(source)
                             .to_owned(),
-                        hours,
+                        hours: covered.unsigned_abs() / 3600,
                     });
                 }
             }
@@ -2754,15 +2782,17 @@ fn stage_body_zones(
     Ok(())
 }
 
-/// How many hours of `source`'s body windows this merge is bringing in.
-fn body_hours_staged(state: &MergeState, source: &str) -> u64 {
+/// How many seconds of the clock `source`'s body windows in this merge cover,
+/// each counted once however many windows hold it. A whole-day window holds
+/// dated rows with no time, so it covers none.
+fn body_seconds_staged(state: &MergeState, source: &str) -> i64 {
     let stream = format!("import.{source}");
-    let seconds = state
+    let mut spans = state
         .chronicle_units
         .keys()
         .filter_map(|relative| {
             let mut parts = relative.split('/');
-            let (Some("chronicle"), Some(_day), Some(found), Some(key)) =
+            let (Some("chronicle"), Some(day), Some(found), Some(key)) =
                 (parts.next(), parts.next(), parts.next(), parts.next())
             else {
                 return None;
@@ -2774,10 +2804,37 @@ fn body_hours_staged(state: &MergeState, source: &str) -> u64 {
             if !solstone_core_segment::is_body_only_dir(&stream, &staged) {
                 return None;
             }
-            key.split('_').nth(1)?.parse::<u64>().ok()
+            window_span(day, key)
         })
-        .sum::<u64>();
-    seconds.div_ceil(3600)
+        .collect::<Vec<_>>();
+    spans.sort_unstable();
+    let mut covered = 0;
+    let mut reached = i64::MIN;
+    for (start, end) in spans {
+        let from = start.max(reached);
+        if end > from {
+            covered += end - from;
+            reached = end;
+        }
+    }
+    covered
+}
+
+/// The stretch of the clock a window's key names, in seconds. `None` for a key
+/// that names no stretch, and for a whole-day window.
+fn window_span(day: &str, key: &str) -> Option<(i64, i64)> {
+    let (clock, rest) = key.split_once('_')?;
+    let length = rest.split('_').next()?.parse::<i64>().ok()?;
+    if length >= 86_400 {
+        return None;
+    }
+    let time = chrono::NaiveTime::parse_from_str(clock, "%H%M%S").ok()?;
+    let start = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .ok()?
+        .and_time(time)
+        .and_utc()
+        .timestamp();
+    Some((start, start + length))
 }
 
 fn log_skipped_extras(source: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
@@ -4426,6 +4483,78 @@ mod tests {
         assert!(is_activity_day("20260101.jsonl"));
         assert!(!is_activity_day("notes.jsonl"));
         assert!(!is_activity_day("nested/20260101.jsonl"));
+    }
+
+    const FOLDED_LINE: &str = "exercise_070000_300";
+
+    /// A journal that says nothing's left to convert, with a code record
+    /// holding a line an archive is about to bring back.
+    fn finished_strava_journal(target: &Path) {
+        write_target(target, "facets/work/facet.json", br#"{"title":"Work"}"#);
+        let key = format!("20260102|work|{FOLDED_LINE}");
+        let record = json!({"id": "body_0123456789abcdef", "source": "body",
+            "activity": "workout",
+            "account": {"key": "import.strava\u{1f}1", "start": "2026-01-02T07:00:00+00:00",
+                "end": "2026-01-02T07:30:00+00:00", "recorder": "r"},
+            "converted": {"lines": {key: {"sha256": "x", "hidden": false, "fields": {}}}}});
+        write_target(
+            target,
+            "facets/work/activities/20260102.jsonl",
+            format!("{record}\n").as_bytes(),
+        );
+        write_target(target, "imports/.strava-converted", b"");
+    }
+
+    fn strava_line() -> String {
+        json!({"id": FOLDED_LINE, "activity": "exercise", "stream": "import.strava",
+            "segments": ["070000_300"], "created_at": 1})
+        .to_string()
+    }
+
+    #[test]
+    fn a_merged_back_line_a_record_already_holds_never_shows() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        finished_strava_journal(&target);
+        let line = strava_line();
+        let archive = write_zip(
+            &tree.path,
+            &[("facets/work/activities/20260102.jsonl", line.as_bytes())],
+        );
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        let day = fs::read_to_string(target.join("facets/work/activities/20260102.jsonl")).unwrap();
+        assert!(day.contains(FOLDED_LINE), "{day}");
+        // This reader lists ordinary records, so the line would be its only row.
+        let rows =
+            solstone_core_facets::load_activity_records(&target, "work", "20260102", true).unwrap();
+        assert!(rows.is_empty(), "{rows:?}");
+    }
+
+    #[test]
+    fn a_merge_that_stops_part_way_has_already_taken_the_marker_away() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        finished_strava_journal(&target);
+        fs::remove_file(target.join("facets/work/facet.json")).unwrap();
+        fs::create_dir(target.join("facets/work/facet.json")).unwrap();
+        let line = strava_line();
+        let archive = write_zip(
+            &tree.path,
+            &[("facets/work/activities/20260103.jsonl", line.as_bytes())],
+        );
+        assert!(merge_journal_archive(&archive, &target, &merge_options(&tree), None).is_err());
+        assert!(!target.join("imports/.strava-converted").exists());
+        assert_eq!(crate::strava::strava_conversion_epoch(&target), 1);
+    }
+
+    #[test]
+    fn a_merge_into_a_journal_with_no_marker_adds_nothing_to_imports() {
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        write_target(&target, "facets/work/facet.json", br#"{"title":"Work"}"#);
+        let archive = write_zip(&tree.path, &[("facets/work/notes.txt", b"hello")]);
+        merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap();
+        assert!(!target.join("imports/.strava-epoch").exists());
     }
 
     #[test]

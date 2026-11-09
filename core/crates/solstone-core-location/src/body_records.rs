@@ -471,9 +471,16 @@ pub fn stored_body_records(
     // A line that isn't a record costs only itself.
     let records = solstone_core_facets::read_activity_records_readable(journal, facet, day)
         .map_err(|error| ComposeError(error.to_string()))?;
+    let superseded = solstone_core_facets::superseded_record_ids(journal, facet, day, &records);
     Ok(records
         .iter()
         .filter(|record| is_body_record(record))
+        .filter(|record| {
+            !record
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| superseded.contains(id))
+        })
         .filter_map(|record| {
             let key = text(record, &["account", "key"]);
             let (stream, row_id) = split_key(&key)?;

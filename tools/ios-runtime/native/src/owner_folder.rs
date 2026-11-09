@@ -60,7 +60,7 @@ unsafe fn copy_folder(
             .map_err(|_| ())?;
     let copy = copy.ok_or(())?;
     let source = request["source"].as_str().ok_or(())?;
-    if !matches!(source, "obsidian" | "gemini" | "document" | "audio_archive") {
+    if !matches!(source, "gemini" | "document" | "audio_archive") {
         return Err(());
     }
     let reference = request["client_item_id"]

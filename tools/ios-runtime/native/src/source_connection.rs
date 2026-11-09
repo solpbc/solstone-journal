@@ -51,7 +51,6 @@ unsafe fn change(
         serde_json::from_slice(unsafe { std::slice::from_raw_parts(request, length) })
             .map_err(|_| ())?;
     let backend = match request["source"].as_str() {
-        Some("obsidian") => BackendName::Obsidian,
         Some("audio") => BackendName::Audio,
         _ => return Err(()),
     };

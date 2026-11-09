@@ -300,7 +300,7 @@ fn late_obligation_preserves_payload_facts_and_stops_active_binding_restore() {
     impl ToolRunner for Late<'_> {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
             assert_busy(self.journal);
-            if request.argv.first().is_some_and(|arg| arg == "restore") {
+            if request.argv.first().is_some_and(|arg| arg == "restore") && !is_dry_run(request) {
                 assert!(
                     request.argv.windows(2).any(|args| {
                         args[0] == "--exclude" && args[1] == "backup-activity.lock"

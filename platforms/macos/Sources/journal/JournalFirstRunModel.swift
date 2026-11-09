@@ -588,11 +588,21 @@ final class JournalFirstRunModel {
         startBrowserWaitIfNeeded()
     }
 
+    /// Restoring from a backup happens on the setup page, on its restore view.
+    func openRestoreInBrowser() {
+        Task { @MainActor in await openInitPage(fragment: "restore") }
+        startBrowserWaitIfNeeded()
+    }
+
     /// A one-time link, so only this account can finish setup once the journal gates its port.
     /// A journal without links gets its plain address from the client, as before.
-    private func openInitPage() async {
+    private func openInitPage(fragment: String? = nil) async {
         do {
-            if !openURL(try await browserLink("/init")) {
+            var link = try await browserLink("/init")
+            if let fragment, let fragmented = URL(string: "\(link.absoluteString)#\(fragment)") {
+                link = fragmented
+            }
+            if !openURL(link) {
                 Logger.journalApp.error("failed to open the journal's first-run page in the browser")
             }
         } catch { errorMessage = error.localizedDescription }

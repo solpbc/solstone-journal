@@ -116,6 +116,7 @@ window.whenShellReady(() => {
   document.addEventListener('workspace:mounted', () => {
     const host = document.getElementById('healthSystemDetails');
     statusPaneOpen = Boolean(host);
+    if (statusPaneOpen) startPaneTick();
     if (host && statusPane) {
       host.appendChild(statusPane);
       statusPane.hidden = false;
@@ -134,6 +135,18 @@ window.whenShellReady(() => {
   });
 
   // Update status pane metrics
+  let paneTickRunning = false;
+
+  function startPaneTick() {
+    if (paneTickRunning) return;
+    paneTickRunning = true;
+    if (window.AppServices?.visibleInterval) {
+      window.AppServices.visibleInterval(updateStatusPane, 1000);
+    } else {
+      window.setInterval(updateStatusPane, 1000);
+    }
+  }
+
   function updateStatusPane() {
     window.renderStatusMark?.();
     updateDiagnosticConsoleLink();
@@ -634,9 +647,15 @@ window.whenShellReady(() => {
   }
 
   fetchSystemStatus();
-  setInterval(fetchSystemStatus, 60000);
-  // Update status pane every second
-  setInterval(updateStatusPane, 1000);
+  // The capture rollup, the quiet-device count and the version come from this
+  // read only. It waits while the page is hidden and reads again on return.
+  const every = window.AppServices?.visibleInterval
+    ? (fn, ms) => window.AppServices.visibleInterval(fn, ms)
+    : (fn, ms) => window.setInterval(fn, ms);
+  every(fetchSystemStatus, 60000);
+  // The pane's clock ticks only while the pane is on the page and in view;
+  // the mark redraws itself on every change in connection or capture.
+  if (statusPaneOpen) startPaneTick();
   window.addEventListener('diagnostic-console-updated', updateDiagnosticConsoleLink);
   // Initial update
   setTimeout(updateStatusPane, 100);

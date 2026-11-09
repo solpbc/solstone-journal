@@ -1193,10 +1193,13 @@
     <div class="surface-state surface-state--loading" role="status" aria-busy="true">
       <div class="surface-state-spinner" aria-hidden="true"></div>
       <span class="surface-state-text" data-role="loading-status">loading your day…</span>
+      <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
     </div>
   </div>
 </div>
 
+<script src="/static/vendor/marked/marked.min.js"></script>
+<script src="/static/vendor/dompurify/dompurify.min.js"></script>
 <script src="/app/home/static/home.js"></script>
-<script src="/app/home/static/week.js"></script>
-<script src="/app/home/static/removals.js"></script>
+<script src="/app/home/static/week.js" data-route-prefix="/app/home/week/"></script>
+<script src="/app/home/static/removals.js" data-route-prefix="/app/home/originals/"></script>

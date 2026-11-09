@@ -4136,6 +4136,21 @@ fn search_recovers_by_itself_after_a_real_failure() {
 /// and one with them, and the index rows for it: the ordinary record's entry at
 /// position 0, whose words happen to hold a body entry's line, and the body
 /// record's after it.
+/// An ordinary record whose own words hold the body entry's line.
+fn body_fixture_ordinary() -> serde_json::Value {
+    serde_json::json!({"id": "a1", "activity": "meeting", "title": "Kestrel",
+        "description": "of note\n- Kind: in a description"})
+}
+
+fn body_fixture_ordinary_entry() -> String {
+    let record = body_fixture_ordinary().as_object().unwrap().clone();
+    solstone_core_format::content::ordinary_entries(
+        "facets/body/activities/20260107.jsonl",
+        &[record],
+    )
+    .remove(0)
+}
+
 fn body_entry_root(name: &str) -> (PathBuf, &'static str) {
     const FILE: &str = "facets/body/activities/20260107.jsonl";
     let (root, connection) = seeded_root(name);
@@ -4145,11 +4160,11 @@ fn body_entry_root(name: &str) -> (PathBuf, &'static str) {
             "fields": ["title"], "note": ""}],
     });
     let bare = serde_json::json!({"id": "body_bare", "source": "body", "activity": "sleep"});
-    let other = serde_json::json!({"id": "a1", "activity": "meeting", "title": "Kestrel"});
+    let other = body_fixture_ordinary();
     write_rel(&root, FILE, &format!("{bare}\n{held}\n{other}\n"));
     insert(
         &connection,
-        "### Kestrel\n- Kind: of note in a description",
+        &body_fixture_ordinary_entry(),
         FILE,
         "20260107",
         "body",
@@ -4189,6 +4204,116 @@ fn hit_positions<'a>(hits: impl Iterator<Item = &'a crate::SearchHit>) -> Vec<i6
     positions
 }
 
+const KESTREL_FILE: &str = "facets/body/activities/20260107.jsonl";
+
+fn kestrel_sense_line() -> serde_json::Value {
+    serde_json::json!({"id": "exercise_1", "activity": "exercise", "title": "Kestrel Ride",
+        "stream": "import.strava", "segments": ["070000_300"], "created_at": 1})
+}
+
+/// A search for a Strava line in the index, its file as `extra` lines leave it.
+fn sense_line_hits(name: &str, extra: &[serde_json::Value], marker: bool) -> Vec<i64> {
+    let (root, connection) = seeded_root(name);
+    let line = kestrel_sense_line();
+    let entry = solstone_core_format::content::ordinary_entries(
+        KESTREL_FILE,
+        &[line.as_object().unwrap().clone()],
+    )
+    .remove(0);
+    let mut text = format!("{line}\n");
+    for other in extra {
+        text.push_str(&format!("{other}\n"));
+    }
+    write_rel(&root, KESTREL_FILE, &text);
+    if marker {
+        write_rel(&root, "imports/.strava-converted", "");
+    }
+    insert(
+        &connection,
+        &entry,
+        KESTREL_FILE,
+        "20260107",
+        "body",
+        "activity",
+        "",
+        0,
+    );
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'transcript', 'test', 1, 0)",
+            [KESTREL_FILE],
+        )
+        .ok();
+    drop(connection);
+    let mut asked = request("Kestrel");
+    asked.body_owner_words = true;
+    let results = search(&root, &asked, reference_date()).unwrap();
+    let positions = hit_positions(results.results.iter());
+    fs::remove_dir_all(root).unwrap();
+    positions
+}
+
+fn kestrel_code_record(key: &str) -> serde_json::Value {
+    serde_json::json!({"id": "body_code", "source": "body", "activity": "workout",
+        "account": {"key": "import.strava\u{1f}1"},
+        "converted": {"primary": key, "decided_at": "t",
+            "lines": {key: {"sha256": "x", "hidden": false, "fields": {}}}}})
+}
+
+#[test]
+fn a_strava_line_a_code_record_holds_comes_back_to_no_search() {
+    assert_eq!(sense_line_hits("sense-open", &[], false), [0]);
+    let other = kestrel_code_record("20260107|body|exercise_2");
+    assert_eq!(sense_line_hits("sense-other", &[other], false), [0]);
+    let held = kestrel_code_record("20260107|body|exercise_1");
+    assert_eq!(
+        sense_line_hits("sense-held", std::slice::from_ref(&held), false),
+        [] as [i64; 0]
+    );
+    // Nothing left to convert: the search doesn't look.
+    assert_eq!(sense_line_hits("sense-marker", &[held], true), [0]);
+}
+
+#[test]
+fn a_body_entry_shows_from_one_side_of_an_open_move() {
+    let (root, file) = body_entry_root("body-entry-move");
+    let text = fs::read_to_string(root.join(file)).unwrap();
+    let keyed = text.replace(
+        r#""id":"body_held""#,
+        r#""account":{"key":"k"},"id":"body_held""#,
+    );
+    assert_ne!(keyed, text);
+    write_rel(&root, file, &keyed);
+    let log = |placed: bool| {
+        let intent = serde_json::json!({"move": "m", "key": "k", "record": "body_held",
+            "from": {"day": "20260101", "facet": "other"},
+            "to": {"day": "20260107", "facet": "body"}, "copy": {"id": "body_held"}});
+        let done = serde_json::json!({"placed": "m", "appended": true});
+        if placed {
+            format!("{intent}\n{done}\n")
+        } else {
+            format!("{intent}\n")
+        }
+    };
+    let mut opened = request("Kestrel");
+    opened.body_owner_words = true;
+    write_rel(&root, "imports/.body-moves.jsonl", &log(false));
+    let waiting = search(&root, &opened, reference_date()).unwrap();
+    assert_eq!(
+        hit_positions(waiting.results.iter()),
+        [0],
+        "the target waits"
+    );
+    write_rel(&root, "imports/.body-moves.jsonl", &log(true));
+    let placed = search(&root, &opened, reference_date()).unwrap();
+    assert_eq!(
+        hit_positions(placed.results.iter()),
+        [0, 1],
+        "the target shows"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn a_body_entry_comes_back_only_to_a_search_that_asks_for_one() {
     let (root, _) = body_entry_root("body-entry-owner");
@@ -4199,6 +4324,90 @@ fn a_body_entry_comes_back_only_to_a_search_that_asks_for_one() {
     opened.body_owner_words = true;
     let open = search(&root, &opened, reference_date()).unwrap();
     assert_eq!(hit_positions(open.results.iter()), [0, 1]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A default search, the only kind a talent makes, after the file changed and
+/// before the indexer reached it.
+fn default_positions_after_rewrite(name: &str, lines: &[serde_json::Value]) -> Vec<i64> {
+    let (root, file) = body_entry_root(name);
+    let text = lines
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
+    write_rel(&root, file, &text);
+    let results = search(&root, &request("Kestrel"), reference_date()).unwrap();
+    let positions = hit_positions(results.results.iter());
+    fs::remove_dir_all(root).unwrap();
+    positions
+}
+
+fn body_fixture_held(edits: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"id": "body_held", "source": "body", "activity": "workout",
+        "title": "Kestrel Zebra", "edits": edits})
+}
+
+#[test]
+fn an_ordinary_record_added_before_a_reindex_lets_no_body_words_through() {
+    let held = body_fixture_held(serde_json::json!([{"timestamp": "2026-01-08T00:00:00Z",
+        "actor": "owner:update", "fields": ["title"], "note": ""}]));
+    let added = serde_json::json!({"id": "a2", "activity": "email", "title": "Other"});
+    // The body entry's position 1 now falls in the ordinary range.
+    assert_eq!(
+        default_positions_after_rewrite("body-gate-added", &[held, body_fixture_ordinary(), added]),
+        [0]
+    );
+}
+
+#[test]
+fn an_owner_edit_removed_before_a_reindex_lets_no_body_words_through() {
+    let held = body_fixture_held(serde_json::json!([{"timestamp": "2026-01-08T00:00:00Z",
+        "actor": "owner:update", "fields": ["title"], "note": "",
+        "removed": "2026-01-09T00:00:00Z"}]));
+    assert_eq!(
+        default_positions_after_rewrite("body-gate-removed", &[held, body_fixture_ordinary()]),
+        [0]
+    );
+}
+
+#[test]
+fn an_ordinary_entry_the_file_no_longer_says_is_held_back_until_reindexed() {
+    let changed = serde_json::json!({"id": "a1", "activity": "meeting", "title": "Renamed"});
+    assert!(default_positions_after_rewrite("body-gate-stale", &[changed]).is_empty());
+}
+
+#[test]
+fn an_unreadable_day_file_vouches_for_nothing() {
+    let (root, file) = body_entry_root("body-gate-unreadable");
+    fs::remove_file(root.join(file)).unwrap();
+    let results = search(&root, &request("Kestrel"), reference_date()).unwrap();
+    assert!(results.results.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_indexer_stores_what_an_ordinary_entry_is_compared_with() {
+    let root = temp_root("body-gate-real-index");
+    let file = "facets/body/activities/20260107.jsonl";
+    write_rel(&root, "facets/body/facet.json", r#"{"title":"Body"}"#);
+    let record = body_fixture_ordinary();
+    write_rel(&root, file, &format!("{record}\n"));
+    solstone_core_indexer_store::scan::scan_journal(&root, false).unwrap();
+    let results = search(&root, &request("Kestrel"), reference_date()).unwrap();
+    assert_eq!(hit_positions(results.results.iter()), [0]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn each_query_reads_the_day_file_as_it_is_then() {
+    let (root, file) = body_entry_root("body-gate-each-query");
+    let mut index = crate::open_owner_index(&root, OwnerBoundary).unwrap();
+    let first = index.search(&request("Kestrel"), reference_date()).unwrap();
+    assert_eq!(hit_positions(first.results.iter()), [0]);
+    write_rel(&root, file, "");
+    let second = index.search(&request("Kestrel"), reference_date()).unwrap();
+    assert!(second.results.is_empty());
+    drop(index);
     fs::remove_dir_all(root).unwrap();
 }
 

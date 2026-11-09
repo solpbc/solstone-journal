@@ -602,6 +602,24 @@ fn a_record_naming_a_tile_placed_under_another_key_counts_as_sensed() {
     assert_eq!(write_strava_records(root, DAY).sensed, 1);
 }
 
+/// A record an earlier version filed at a key it misplaced the workout at.
+#[test]
+fn a_record_naming_a_misplaced_key_counts_as_sensed() {
+    let journal = strava_journal();
+    let root = journal.path();
+    let (start, elapsed) = (
+        chrono::DateTime::parse_from_rfc3339("2026-10-10T07:00:00-06:00").unwrap(),
+        720,
+    );
+    let zone = solstone_core_journal_config::placed_zone(root, STRAVA_SOURCE).expect("placed zone");
+    let (day, key) = solstone_core_import_sources::strava::misread_tile_keys(start, elapsed, zone)
+        .into_iter()
+        .next()
+        .expect("a misplaced key");
+    sense_record(root, "body", &day, "import.strava", &[&key]);
+    assert_eq!(write_strava_records(root, DAY).sensed, 1);
+}
+
 /// A workout across midnight: a record on the next day naming its tile there.
 #[test]
 fn a_record_on_a_later_day_the_workout_covers_counts_as_sensed() {

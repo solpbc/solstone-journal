@@ -28,7 +28,7 @@
 //! no journal, supervisor, or source bytes. [`classify_arguments`] returns
 //! that parse: the sync backend, `--path` when present, and whether the
 //! command is a held Body entry or a stored Oura sync. It does not load saved
-//! Obsidian or audio settings. [`WorkStop::linked`] observes a
+//! audio settings. [`WorkStop::linked`] observes a
 //! parent cancellation flag and a deadline at each check.
 //! [`WorkStop::linked_with_checkpoint`] also calls the caller's retained
 //! checkpoint, which already includes host stop and root binding. There is
@@ -219,7 +219,7 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     use std::sync::Arc;
     #[cfg(all(test, feature = "full-tests"))]
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicBool;
     use std::sync::mpsc::{self, TryRecvError};
 
     use solstone_core_import_sources::document::{
@@ -635,51 +635,6 @@ mod tests {
         );
     }
 
-    #[cfg(all(test, feature = "full-tests"))]
-    #[test]
-    fn stopped_sync_keeps_the_saved_count_and_fails_the_join() {
-        let journal = tempfile::tempdir().unwrap();
-        let vault = tempfile::tempdir().unwrap();
-        std::fs::write(vault.path().join("a.md"), "").unwrap();
-        std::fs::write(vault.path().join("b.md"), "").unwrap();
-        let seen = AtomicUsize::new(0);
-        // The attempt checks once before dispatch and once before the first
-        // note. The next check is the following note, which must not start.
-        let stop =
-            WorkStop::linked_with_checkpoint(Arc::new(AtomicBool::new(false)), None, move || {
-                seen.fetch_add(1, Ordering::AcqRel) >= 2
-            });
-        let seams = idle_seams(journal.path());
-        let handle = start(
-            vec![
-                "--sync".to_owned(),
-                "obsidian".to_owned(),
-                "--save".to_owned(),
-                "--path".to_owned(),
-                vault.path().display().to_string(),
-            ],
-            journal.path().to_path_buf(),
-            seams,
-            stop,
-        )
-        .unwrap();
-        let (run, id) = handle.join();
-        assert_eq!(run.exit_code, 1, "{}", run.stderr);
-        assert_eq!(run.stderr, "import stopped\n");
-        assert!(run.stdout.contains("saved=1"), "{}", run.stdout);
-        assert!(run.stdout.contains("errors=0"), "{}", run.stdout);
-        assert!(id.is_none());
-        let state: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(journal.path().join("imports").join("obsidian.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(state["files"]["a.md"]["status"], "imported");
-        assert_eq!(state["files"]["b.md"]["status"], "available");
-        assert!(!journal.path().join("chronicle").exists());
-        assert!(vault.path().join("a.md").is_file());
-        assert!(vault.path().join("b.md").is_file());
-    }
-
     #[test]
     fn preview_of_sync_save_and_audio_archive_does_not_publish() {
         let journal = tempfile::tempdir().unwrap();
@@ -762,11 +717,6 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let missing = directory.path().join("export.zip");
         let missing_arg = missing.display().to_string();
-
-        let obsidian = classify_arguments(&["--sync".to_owned(), "obsidian".to_owned()]).unwrap();
-        assert_eq!(obsidian.sync_source.as_deref(), Some("obsidian"));
-        assert_eq!(obsidian.explicit_path, None);
-        assert_eq!(obsidian.body, BodyAdmission::NotBody);
 
         let audio = classify_arguments(&[
             "--sync".to_owned(),

@@ -26,8 +26,8 @@ const BODY_ENTRIES_QUEUED: &str = "indexer/body-entries-queued";
 
 /// Queue, once, every activity day file holding a body record the owner has
 /// written on, so words written before those records had search entries are
-/// found. Best effort: a run that fails part way leaves no marker, and the next
-/// start does it again. The marker is written last.
+/// found. A file that can't be read is logged and left, so it doesn't send every
+/// later start through the whole walk. The marker is written last.
 pub fn queue_body_entries_once(journal_root: &Path) {
     let marker = journal_root.join(BODY_ENTRIES_QUEUED);
     if marker.exists() {
@@ -45,8 +45,16 @@ pub fn queue_body_entries_once(journal_root: &Path) {
             if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
                 continue;
             }
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                return;
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(error) => {
+                    log::warn!(
+                        target: "solstone::indexer",
+                        "body entries not queued for an unreadable activity file path={} cause={error}",
+                        path.display()
+                    );
+                    continue;
+                }
             };
             let holds_words = text.lines().any(|line| {
                 matches!(
@@ -118,6 +126,26 @@ mod tests {
             "account": {"key": format!("import.strava\u{1f}{id}"),
                 "start": "2026-05-10T07:00:00Z", "end": "2026-05-10T08:00:00Z"}})
         .to_string()
+    }
+
+    #[test]
+    fn an_unreadable_activity_file_is_left_and_the_walk_still_ends() {
+        let root = tempfile::tempdir().unwrap();
+        create_facet(root.path(), "body", "Body", "", "", "", None).unwrap();
+        let dir = root.path().join("facets/body/activities");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("20260509.jsonl"), [0xff, 0xfe, 0x00]).unwrap();
+        let held = json!([{"timestamp": "2026-05-11T00:00:00Z", "actor": "owner:update",
+            "fields": ["title"], "note": ""}]);
+        std::fs::write(dir.join("20260510.jsonl"), body_line("held", held) + "\n").unwrap();
+        super::queue_body_entries_once(root.path());
+        assert!(root.path().join(super::BODY_ENTRIES_QUEUED).exists());
+        solstone_core_indexer_store::todo::drain(root.path(), Default::default()).unwrap();
+        assert!(searchable(
+            root.path(),
+            "facets/body/activities/20260510.jsonl",
+            "Kestrel loop"
+        ));
     }
 
     #[test]
