@@ -564,6 +564,26 @@ mod tests {
         assert_eq!(fs::read(root.join("cache/model")).unwrap(), b"kept");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_file_held_open_stays_and_is_counted() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("held"), b"open").unwrap();
+        let _open = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(root.join("held"))
+            .unwrap();
+        let plan = Report {
+            deleted: vec!["held".into()],
+            ..Report::default()
+        };
+        assert_eq!(move_removed(root, FOLDER, &plan), 1);
+        assert!(root.join("held").exists());
+    }
+
     #[test]
     fn an_attempt_lasts_for_its_snapshot_only() {
         let dir = tempfile::tempdir().unwrap();

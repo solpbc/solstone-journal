@@ -180,6 +180,42 @@ impl Fixture {
         }
     }
 
+    fn snapshot_id(&self) -> String {
+        let output = Command::new(&self.binary)
+            .args(["--no-cache", "-r", &self.destination.repository, "snapshots", "--json"])
+            .env("RESTIC_PASSWORD", &self.key)
+            .output()
+            .unwrap();
+        let listed: Value = serde_json::from_slice(&output.stdout).unwrap();
+        listed[0]["id"].as_str().unwrap().to_owned()
+    }
+
+    fn restore_mobile(&self, runner: &Restic, drained: &Cell<usize>) -> RestoreOutcome {
+        let clock = TestClock;
+        let maintenance = Maintenance;
+        let services = BackupServices {
+            restic: Some(self.binary.as_path().into()),
+            ..services(runner, &clock, &maintenance)
+        };
+        let mut drain = || {
+            drained.set(drained.get() + 1);
+            Ok(())
+        };
+        restore_mobile_journal(
+            Arc::new(solstone_core_journal_io::JournalRoot::open(self.journal.path()).unwrap()),
+            &services,
+            &Recorder::new(),
+            self.destination.clone(),
+            &self.key,
+            MobileRestoreIdentity::Byo,
+            MobileSelection {
+                snapshot_id: self.snapshot_id(),
+                subtree: self.journal.path().display().to_string(),
+            },
+            &mut drain,
+        )
+    }
+
     fn restore(&self, runner: &Restic) -> RestoreOutcome {
         let clock = TestClock;
         let maintenance = Maintenance;
@@ -288,6 +324,32 @@ fn a_report_that_fails_after_the_restore_never_reads_as_success() {
     assert_eq!(read(fixture.journal.path(), "notes/newer.md"), "written since");
 }
 
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn on_mobile_a_failed_restore_keeps_its_obligation_and_the_retry_finishes() {
+    let fixture = Fixture::lived_in();
+    let root = fixture.journal.path();
+    let drained = Cell::new(0);
+    let failed = fixture.restore_mobile(&Restic::stopping(Stop::RestoreFails), &drained);
+    assert_eq!(failed.status, "error");
+    assert_eq!(drained.get(), 1, "the copies are made after the drain");
+    assert!(matches!(
+        read_whole_journal_restore(root),
+        WholeJournalRestoreReadiness::Pending(_)
+    ));
+    assert_eq!(read(&folder(root), "notes/changed.md"), "edited since");
+    assert_eq!(read(root, "notes/newer.md"), "written since");
+
+    let retried = fixture.restore_mobile(&Restic::stopping(Stop::Never), &drained);
+    assert_eq!((retried.status.as_str(), retried.reason_code.as_deref()), ("ok", None));
+    assert!(matches!(
+        read_whole_journal_restore(root),
+        WholeJournalRestoreReadiness::Absent
+    ));
+    fixture.assert_is_the_snapshot();
+    fixture.assert_nothing_was_lost();
+}
+
 /// Answers `snapshots` and fails the test if a restore actually runs.
 struct RefusesRestore {
     report: ToolOutput,
@@ -329,6 +391,36 @@ fn a_report_that_is_not_whole_refuses_before_anything_changes() {
         assert_eq!(read(journal.path(), "notes/changed.md"), "untouched");
         assert!(!journal.path().join(restore_set_aside::ATTEMPT_FILE).exists());
     }
+}
+
+#[test]
+fn on_mobile_a_refused_report_leaves_the_journal_running() {
+    let journal = tempfile::tempdir().unwrap();
+    let stored = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+    let runner = RefusesRestore {
+        report: output(1, ""),
+    };
+    let clock = TestClock;
+    let maintenance = Maintenance;
+    let mut drain = || -> Result<(), String> { panic!("a refused report must not drain") };
+    let outcome = restore_mobile_journal(
+        Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap()),
+        &services(&runner, &clock, &maintenance),
+        &Recorder::new(),
+        destination(),
+        &stored.recovery_key,
+        MobileRestoreIdentity::Byo,
+        MobileSelection {
+            snapshot_id: SNAPSHOT_ID.into(),
+            subtree: "/journal".into(),
+        },
+        &mut drain,
+    );
+    assert_eq!(outcome.reason_code.as_deref(), Some(RESTORE_REASON_PREVIEW_FAILED));
+    assert!(matches!(
+        read_whole_journal_restore(journal.path()),
+        WholeJournalRestoreReadiness::Absent
+    ));
 }
 
 #[test]
