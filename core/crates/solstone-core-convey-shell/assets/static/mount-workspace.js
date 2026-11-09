@@ -84,15 +84,28 @@
     return clone;
   }
 
-  function runScript(script) {
+  // A script element shows no bytes to the page, so its bound is on the whole
+  // load, set as high as the longest read bound. The largest view script
+  // takes a few seconds on a weak signal.
+  const SCRIPT_LOAD_BOUND_MS = 60000;
+
+  function runScript(script, chain) {
     return new Promise((resolve, reject) => {
       const clone = cloneScript(script);
       if (clone.src) {
         clone.async = false;
-        clone.addEventListener('load', () => resolve(), { once: true });
+        const timer = setTimeout(() => {
+          reject(new Error(`Script did not load within ${SCRIPT_LOAD_BOUND_MS} ms: ${clone.src}`));
+        }, SCRIPT_LOAD_BOUND_MS);
+        clone.addEventListener('load', () => {
+          clearTimeout(timer);
+          chain.ran = true;
+          resolve();
+        }, { once: true });
         clone.addEventListener(
           'error',
           () => {
+            clearTimeout(timer);
             // A view script from an older build: reload once for the new one.
             // A second failure stays on this view's error state.
             window.recoverFromStaleAsset?.(clone.src);
@@ -103,6 +116,7 @@
         script.replaceWith(clone);
         return;
       }
+      chain.ran = true;
       script.replaceWith(clone);
       resolve();
     });
@@ -115,14 +129,14 @@
     return !prefix || (window.location.pathname || '').startsWith(prefix);
   }
 
-  async function replayScripts(target) {
+  async function replayScripts(target, chain) {
     const scripts = Array.from(target.querySelectorAll('script'));
     for (const script of scripts) {
       if (!scriptRunsHere(script)) {
         script.remove();
         continue;
       }
-      await runScript(script);
+      await runScript(script, chain);
     }
   }
 
@@ -184,28 +198,60 @@
     ]);
   }
 
+  // Once any of a view's scripts has run, its listeners and timers are on the
+  // page, and running the fragment again would stack a second set on them.
+  // So "try again" after that point loads the whole page; before it, nothing
+  // was attached and the fragment is simply asked for again.
+  function retryAfter(chain, again) {
+    if (chain.ran) {
+      window.location.reload();
+      return;
+    }
+    again();
+  }
+
+  const BUILD_RELOAD_STAMP_KEY = 'solstone.serverBuildReloadAt';
+
   async function mountWorkspaceFragment(url, options = {}) {
     const target = getTarget(options);
     if (!target) {
       throw new Error('mountWorkspaceFragment requires a target');
     }
 
+    // The journal was upgraded under this page. A mount here would mix this
+    // page's code with the new build's, so load the page from the new build.
+    if (window.appEvents?.buildChanged?.() && window.reloadOnce?.(BUILD_RELOAD_STAMP_KEY)) {
+      return;
+    }
+
+    window.beginViewGeneration?.();
     activeMount = { view: options.appName || null, ready: false };
     const reportReady = window.createViewReady(activeMount.view);
+    const chain = { ran: false };
     const retry = () => {
-      mountWorkspaceFragment(url, options).catch((error) => {
-        if (window.logError) {
-          window.logError(error, { context: 'workspace-fragment-retry', url });
-        }
+      retryAfter(chain, () => {
+        mountWorkspaceFragment(url, options).catch((error) => {
+          if (window.logError) {
+            window.logError(error, { context: 'workspace-fragment-retry', url });
+          }
+        });
       });
     };
 
     try {
-      const response = await fetch(url, { credentials: 'same-origin' });
+      const request = window.boundedRequest
+        ? await window.boundedRequest(url, { credentials: 'same-origin' })
+        : await fetch(url, { credentials: 'same-origin' }).then((response) => ({
+          response,
+          readText: () => response.text(),
+          discard: () => {}
+        }));
+      const { response } = request;
       if (window.isLoopbackRefusal?.(response)) {
         window.recoverFromLoopbackRefusal?.();
       }
       if (response.redirected) {
+        request.discard();
         // A fragment route redirects only when the whole page belongs
         // elsewhere (first-run setup, for one). Follow it as a page; never
         // mount the page it lands on as if it were this view's fragment.
@@ -213,6 +259,7 @@
         return;
       }
       if (!response.ok) {
+        request.discard();
         const error = new Error(`Request failed (HTTP ${response.status})`);
         error.status = response.status;
         error.statusText = response.statusText || '';
@@ -220,7 +267,7 @@
         error.timestamp = Date.now();
         throw error;
       }
-      const html = await response.text();
+      const html = await request.readText();
       const fragment = parseFragment(html);
       const preloads = preloadScripts(fragment);
       try {
@@ -228,7 +275,7 @@
         target.innerHTML = html;
         target.querySelectorAll('link[rel="stylesheet"]').forEach((link) => link.remove());
         performance.mark('workspace:inserted');
-        await replayScripts(target);
+        await replayScripts(target, chain);
       } finally {
         preloads.forEach((link) => link.remove());
       }

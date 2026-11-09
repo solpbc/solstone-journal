@@ -282,7 +282,7 @@
     const context = pathContext();
     applyChromeCopy();
     try {
-      const shell = await window.apiJson('/api/shell');
+      const shell = await window.apiJson('/api/shell', { scope: 'shell' });
       performance.mark('shell:answered');
       const app = findApp(shell, context.appName);
       if (!app) {

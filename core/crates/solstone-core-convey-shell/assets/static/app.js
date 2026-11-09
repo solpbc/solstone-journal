@@ -648,7 +648,7 @@ window.AppServices = {
     };
     this._tasks[appName][taskName] = health;
 
-    const apiJsonForTask = (url, opts) => window.apiJson(url, { ...(opts || {}), noAuthRedirect: true });
+    const apiJsonForTask = (url, opts) => window.apiJson(url, { ...(opts || {}), noAuthRedirect: true, scope: 'shell' });
 
     const runTask = async () => {
       health.lastRunAt = Date.now();
