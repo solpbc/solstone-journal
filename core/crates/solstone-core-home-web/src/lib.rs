@@ -148,8 +148,10 @@ async fn pulse(
 ) -> Response {
     let now = clock.now();
     spawn_blocking_response(OwnerReadRole::HomePulse, move || {
+        let originals_total = removals::originals_total(&journal_root);
         let context = solstone_core_home::HomeContext::new(journal_root, now);
         let mut payload = solstone_core_home::pulse::pulse_payload(&context);
+        payload["originals_total"] = originals_total;
         if let Some(deps) = backup {
             payload["backup"] = solstone_core_backup_web::home_backup_observation(&deps);
         }
@@ -549,6 +551,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn pulse_carries_the_originals_total_the_list_reports() {
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 8, 14, 22, 28, 35)
+            .unwrap();
+        for root in [
+            TempDir::new().expect("temporary journal"),
+            established_root(),
+        ] {
+            let router = super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
+                false
+            });
+            let pulse = get(router.clone(), "/app/home/api/pulse").await;
+            let list = get(router, "/app/home/api/removals?offset=0").await;
+            let pulse: Value = serde_json::from_slice(&pulse.3).expect("pulse JSON");
+            let list: Value = serde_json::from_slice(&list.3).expect("list JSON");
+            // What home showed before pulse carried it: an empty first page is
+            // none, a readable page is its total, anything else is unknown.
+            let expected = match list["state"].as_str() {
+                Some("list.empty") => json!(0),
+                Some("list.ready" | "list.review_too_large") => list["total_rows"].clone(),
+                _ => Value::Null,
+            };
+            assert_eq!(pulse["originals_total"], expected, "{list}");
+        }
+    }
+
+    #[tokio::test]
     async fn pulse_handler_returns_capture_health_for_a_seeded_client() {
         let root = TempDir::new().expect("temporary journal");
         let now = chrono::Utc
@@ -672,6 +701,7 @@ mod tests {
             "journal_age_days",
             "home_state",
             "welcome_framing",
+            "originals_total",
         ]
         .into_iter()
         .map(str::to_owned)

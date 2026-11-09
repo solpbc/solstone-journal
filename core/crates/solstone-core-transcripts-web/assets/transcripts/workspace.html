@@ -2676,6 +2676,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
           <span class="surface-state-text" data-role="loading-status">loading this day…</span>
+          <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
         </div>
       </div>
     </div>
@@ -4822,6 +4823,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return `<div class="surface-state surface-state--loading tr-analyzing-state" role="status" aria-busy="true">`
         + `<div class="surface-state-spinner" aria-hidden="true"></div>`
         + `<span class="surface-state-text">${escapeHtml(label)}</span>`
+        + '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>'
         + `</div>`;
     }
     if (state === 'failed' || state === 'failed_final') {

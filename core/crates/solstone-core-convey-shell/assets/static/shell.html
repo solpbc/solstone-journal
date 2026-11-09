@@ -19,6 +19,23 @@
     if (window.location.pathname === '/') {
       window.history.replaceState(window.history.state, '', '/app/home/' + window.location.hash);
     }
+    // Moving between pages animates when both pages allow it. The browser
+    // drops the animation when it can't run it (a page replaced mid-way, or
+    // one that doesn't allow it), and says so by rejecting the transition's
+    // promises. The page itself is unaffected, so that rejection is expected.
+    (function () {
+      function expectAbort(event) {
+        var transition = event && event.viewTransition;
+        if (!transition) return;
+        ['ready', 'finished', 'updateCallbackDone'].forEach(function (name) {
+          if (transition[name] && typeof transition[name].catch === 'function') {
+            transition[name].catch(function () {});
+          }
+        });
+      }
+      window.addEventListener('pageswap', expectAbort);
+      window.addEventListener('pagereveal', expectAbort);
+    })();
   </script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -138,6 +155,7 @@
   <div class="surface-state surface-state--loading" role="status" aria-busy="true">
     <div class="surface-state-spinner" aria-hidden="true"></div>
     <span class="surface-state-text" data-role="loading-status" id="shell-first-paint-loading">loading&hellip;</span>
+    <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
   </div>
 </main>
 <script>

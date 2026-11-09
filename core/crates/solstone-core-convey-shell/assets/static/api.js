@@ -3,6 +3,30 @@
 
 (function() {
   const savedControlValues = new WeakMap();
+  // Timers, where the host has them. Without them a read has no deadline.
+  function startTimer(fn, ms) {
+    return typeof setTimeout === 'function' ? setTimeout(fn, ms) : null;
+  }
+
+  function stopTimer(id) {
+    if (id !== null && id !== undefined && typeof clearTimeout === 'function') clearTimeout(id);
+  }
+
+  // Every browser the dashboard supports has AbortController. Without it
+  // (a bare script host), requests simply can't be cut short.
+  const Abort = typeof AbortController === 'function' ? AbortController : class {
+    constructor() {
+      this.signal = {
+        aborted: false,
+        addEventListener() {},
+        removeEventListener() {}
+      };
+    }
+
+    abort() {
+      this.signal.aborted = true;
+    }
+  };
 
   class ApiError extends Error {
     constructor({
@@ -352,14 +376,18 @@
     return new Promise((resolve, reject) => {
       const live = signals.filter(Boolean);
       const stop = () => {
-        clearTimeout(timer);
+        stopTimer(timer);
         live.forEach(signal => signal.removeEventListener('abort', stop));
-        reject(new DOMException('aborted', 'AbortError'));
+        reject((typeof DOMException === 'function' ? new DOMException('aborted', 'AbortError') : new Error('aborted')));
       };
-      const timer = setTimeout(() => {
+      const timer = startTimer(() => {
         live.forEach(signal => signal.removeEventListener('abort', stop));
         resolve();
       }, ms);
+      if (timer === null) {
+        resolve();
+        return;
+      }
       if (live.some(signal => signal.aborted)) {
         stop();
         return;
@@ -376,7 +404,7 @@
   // response once its headers are in; `readText()` then reads the body under
   // the stall clock. Any signal in `signals` aborts it.
   function boundedAttempt(url, fetchOptions, bounds, signals) {
-    const controller = new AbortController();
+    const controller = new Abort();
     let failure = null;
     let timer = null;
     const live = signals.filter(Boolean);
@@ -386,13 +414,13 @@
       else signal.addEventListener('abort', onAbort, { once: true });
     });
     const release = () => {
-      clearTimeout(timer);
+      stopTimer(timer);
       live.forEach(signal => signal.removeEventListener('abort', onAbort));
     };
     const arm = (kind, ms) => {
-      clearTimeout(timer);
+      stopTimer(timer);
       if (!ms) return;
-      timer = setTimeout(() => {
+      timer = startTimer(() => {
         failure = new ReadDeadlineError(kind, ms, url);
         controller.abort();
       }, ms);
@@ -405,6 +433,7 @@
         const readText = async () => {
           try {
             const reader = response.body && typeof response.body.getReader === 'function'
+              && typeof TextDecoder === 'function'
               ? response.body.getReader()
               : null;
             if (!reader) {
@@ -471,20 +500,29 @@
   // Views also read with plain `fetch`. Those reads get the same two clocks,
   // with no retry and nothing else changed: a same-origin GET or HEAD only,
   // never the live stream, never a write.
-  const nativeFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+  const nativeFetch = typeof fetch === 'function'
+    ? (typeof window.fetch === 'function' ? window.fetch.bind(window) : fetch)
+    : null;
   const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
+  // The fetch a bounded request goes out on: the browser's own, or whatever
+  // a test host put in its place after this file ran.
   function rawFetch() {
-    return window.fetch === boundedFetch || !window.fetch ? nativeFetch : window.fetch;
+    const current = typeof fetch === 'function' ? fetch : null;
+    return current && current !== boundedFetch ? current : nativeFetch;
+  }
+
+  function isRequest(input) {
+    return typeof Request === 'function' && input instanceof Request;
   }
 
   function boundedFetchApplies(input, init) {
-    const method = String(init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    const method = String(init?.method || (isRequest(input) ? input.method : 'GET')).toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') return false;
     if (init?.keepalive) return false;
     let url;
     try {
-      url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+      url = new URL(isRequest(input) ? input.url : String(input), window.location.href);
     } catch (_) {
       return false;
     }
@@ -495,7 +533,8 @@
   // caller reads from a fetched response stay as fetch gave them.
   function streamedResponse(attempt) {
     const { response, discard } = attempt;
-    if (!response.body || NULL_BODY_STATUSES.has(response.status) || typeof ReadableStream !== 'function') {
+    if (!response.body || NULL_BODY_STATUSES.has(response.status) || typeof ReadableStream !== 'function'
+        || typeof Response !== 'function') {
       return response;
     }
     const reader = response.body.getReader();
@@ -537,10 +576,10 @@
     if (!fetchImpl || !boundedFetchApplies(input, init)) {
       return fetchImpl ? fetchImpl(input, init) : Promise.reject(new TypeError('fetch unavailable'));
     }
-    const url = input instanceof Request ? input.url : String(input);
+    const url = isRequest(input) ? input.url : String(input);
     const bounds = readBoundsFor(url);
-    const controller = new AbortController();
-    const callerSignal = init?.signal || (input instanceof Request ? input.signal : null);
+    const controller = new Abort();
+    const callerSignal = init?.signal || (isRequest(input) ? input.signal : null);
     let failure = null;
     let timer = null;
     const onAbort = () => controller.abort(callerSignal.reason);
@@ -549,12 +588,12 @@
       else callerSignal.addEventListener('abort', onAbort, { once: true });
     }
     const finish = () => {
-      clearTimeout(timer);
+      stopTimer(timer);
       callerSignal?.removeEventListener('abort', onAbort);
     };
     const arm = (kind, ms) => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
+      stopTimer(timer);
+      timer = startTimer(() => {
         failure = new ReadDeadlineError(kind, ms, url);
         controller.abort();
       }, ms);
@@ -578,7 +617,7 @@
     );
   }
 
-  if (nativeFetch) {
+  if (nativeFetch && typeof window.fetch === 'function') {
     window.fetch = boundedFetch;
   }
 
@@ -587,11 +626,11 @@
   // aborted and its answer is never delivered, so an older view can't draw
   // onto a newer one or put its error state there. Reads the shell itself
   // makes pass `scope: 'shell'` and outlive mounts.
-  let viewGeneration = new AbortController();
+  let viewGeneration = new Abort();
 
   function beginViewGeneration() {
     viewGeneration.abort();
-    viewGeneration = new AbortController();
+    viewGeneration = new Abort();
   }
 
   const NEVER = new Promise(() => {});

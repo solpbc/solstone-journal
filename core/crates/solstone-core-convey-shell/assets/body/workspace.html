@@ -2362,7 +2362,11 @@ a.body-day-cell:focus-visible {
         .then((payload) => {
           if (payload.warming) {
             showStatus("preparing daily values. building your whole history takes a minute.");
-            window.setTimeout(loadTrends, POLL_MS);
+            // A hidden page waits to be seen before it asks again.
+            window.setTimeout(() => {
+              if (window.AppServices?.whenVisible) window.AppServices.whenVisible(loadTrends);
+              else loadTrends();
+            }, POLL_MS);
             return;
           }
           renderTrends(payload);

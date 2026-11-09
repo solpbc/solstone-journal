@@ -2123,7 +2123,9 @@
         scheduleUpdatingPoll();
         return;
       }
-      fetchView();
+      // A hidden page waits to be seen before it asks again.
+      if (window.AppServices?.whenVisible) window.AppServices.whenVisible(fetchView);
+      else fetchView();
     }, UPDATING_POLL_MS);
   }
 

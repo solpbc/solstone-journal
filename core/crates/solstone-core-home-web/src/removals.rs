@@ -102,6 +102,17 @@ pub async fn list(
     }
 }
 
+/// The originals list's item total as the list's first page reports it, for
+/// home's waiting list: `0` when that page is empty, `null` when the register
+/// can't be read. Pulse carries it, so home needn't read the list too.
+pub(crate) fn originals_total(journal_root: &Path) -> serde_json::Value {
+    match rendered_review(journal_root, 0) {
+        Ok(page) if page.state == LIST_EMPTY => serde_json::json!(0),
+        Ok(page) => serde_json::json!(page.total_rows),
+        Err(_) => serde_json::Value::Null,
+    }
+}
+
 fn rendered_review(journal_root: &Path, offset: usize) -> Result<ReviewPage, &'static str> {
     let root = JournalRoot::open(journal_root).map_err(|_| LIST_REGISTER_UNAVAILABLE)?;
     let register = load_at_root(&root).map_err(|_| LIST_REGISTER_UNAVAILABLE)?;

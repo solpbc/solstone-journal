@@ -423,6 +423,7 @@
     if (marksPrefetched) return;
     marksPrefetched = true;
     const start = () => {
+      if (typeof fetch !== 'function') return;
       for (const stem of ['mark-offline', 'mark-connecting', 'mark-connecting-animated']) {
         fetch(STATUS_MARKS + stem + '.svg', { credentials: 'same-origin', priority: 'low' })
           .then((response) => response.arrayBuffer())
@@ -506,15 +507,18 @@
       return;
     }
     if (window.isLoopbackRefusal?.(response)) {
+      stopWatching();
       window.recoverFromLoopbackRefusal?.();
       return;
     }
     if (response.status === 401 || response.status === 403) {
       // The sign-in is gone; a new stream would be refused the same way.
+      stopWatching();
       window.location.href = '/';
       return;
     }
     if (response.redirected && /^\/init(\/|$)/.test(new URL(response.url).pathname)) {
+      stopWatching();
       window.location.href = response.url;
       return;
     }
@@ -525,6 +529,18 @@
     }
     // The journal answers, so the stream alone is dead: open a new one.
     connect();
+  }
+
+  // The page is leaving for sign-in or setup: nothing more to ask.
+  function stopWatching() {
+    if (watchTimer !== null) {
+      window.clearInterval(watchTimer);
+      watchTimer = null;
+    }
+    window.clearTimeout(probeTimer);
+    probeTimer = null;
+    eventSource?.close();
+    eventSource = null;
   }
 
   function watchStream() {
@@ -562,7 +578,7 @@
     lastEventAt = Date.now();
     updateStatusIcon('connecting');
     eventSource = new EventSource('/sse/events');
-    if (watchTimer === null) {
+    if (watchTimer === null && typeof window.setInterval === 'function') {
       watchTimer = window.setInterval(watchStream, WATCH_INTERVAL_MS);
     }
 

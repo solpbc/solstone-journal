@@ -68,6 +68,10 @@ function captureReportContext({ heading, apiError, customDetail }) {
  * Load order: call only after DOMContentLoaded or from later event/callback code.
  */
 window.SurfaceState = (() => {
+  // A wait past ten seconds says it is still working. The line is in place
+  // from the start and shown by the stylesheet at ten seconds; until then it
+  // is hidden from assistive technology as well as from sight.
+  const STILL_WORKING_HTML = '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>';
   const HEADING_LEVELS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
   const ERROR_ICON = window.ConveyIcons.svg('triangle-alert');
   // X-19 turned the em-dash that used to introduce this tail into a period or
@@ -265,6 +269,7 @@ window.SurfaceState = (() => {
       return `<div class="surface-state surface-state--loading" role="status" aria-busy="true">`
         + `<div class="surface-state-spinner" aria-hidden="true"></div>`
         + `${text ? `<span class="surface-state-text" data-role="loading-status">${escapeHtml(text)}</span>` : ''}`
+        + STILL_WORKING_HTML
         + `</div>`;
     },
 
@@ -621,6 +626,64 @@ window.AppServices = {
   },
 
   markBackgroundFailing(_appName, _error) {},
+
+  /**
+   * Run fn now if the page is in view, or as soon as it comes into view.
+   */
+  whenVisible(fn) {
+    if (!document.hidden) {
+      fn();
+      return;
+    }
+    const onVisibility = () => {
+      if (document.hidden) return;
+      document.removeEventListener('visibilitychange', onVisibility);
+      fn();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+  },
+
+  /**
+   * Run fn every ms while the page is in view. It stops while the page is
+   * hidden, runs once when the page comes back, and carries on from there.
+   * Returns a function that stops it for good.
+   */
+  visibleInterval(fn, ms) {
+    let timer = null;
+    let stopped = false;
+    const tick = () => {
+      try {
+        fn();
+      } catch (error) {
+        console.error('[AppServices] visible interval failed:', error);
+      }
+    };
+    const start = () => {
+      if (timer === null && !stopped) timer = window.setInterval(tick, ms);
+    };
+    const pause = () => {
+      if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVisibility = () => {
+      if (stopped) return;
+      if (document.hidden) {
+        pause();
+      } else if (timer === null) {
+        tick();
+        start();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    if (!document.hidden) start();
+    return () => {
+      stopped = true;
+      pause();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  },
 
   registerTask(appName, taskName, {
     run,
