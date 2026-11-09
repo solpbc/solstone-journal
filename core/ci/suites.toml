@@ -2823,6 +2823,21 @@ runtime = "none"
 
 
 [[suites]]
+id = "solstone-core-convey-shell::shell_bundle_dom"
+package = "solstone-core-convey-shell"
+target = "shell_bundle_dom"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+
+[[suites]]
 id = "solstone-core-convey-shell::node_test_guard"
 package = "solstone-core-convey-shell"
 target = "node_test_guard"

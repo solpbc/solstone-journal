@@ -176,6 +176,8 @@ mod service_handoffs;
 pub mod session;
 pub mod session_gate;
 mod setup_host;
+#[cfg(test)]
+mod shell_bundle_tests;
 pub mod source_link;
 mod speakers;
 mod speakers_attribution;

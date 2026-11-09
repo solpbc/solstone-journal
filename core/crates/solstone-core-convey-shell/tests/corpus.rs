@@ -503,6 +503,34 @@ fn strip_permanent_app_metadata_from_actual(actual: &mut Value) {
 /// Permanent documented divergence: `more` is served with the shell and is not
 /// in the frozen corpus. Remove that one app after its metadata has been
 /// validated.
+/// The app definitions and settings now ship in the shell's script bundle, and
+/// `/api/shell` names the served apps. Rejoin the two as a page does, so the
+/// capture compares against what the shell sees.
+fn rejoin_permanent_shipped_app_table(actual: &mut Value) {
+    let table = serde_json::to_value(solstone_core_convey_shell::registry::shell_registry())
+        .expect("app table serializes");
+    let object = actual.as_object_mut().expect("shell object");
+    let names = object
+        .remove("app_names")
+        .expect("the live shell names its served apps");
+    let apps: Vec<Value> = names
+        .as_array()
+        .expect("app names are an array")
+        .iter()
+        .map(|name| {
+            table["apps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|app| app["name"] == *name)
+                .cloned()
+                .unwrap_or_else(|| panic!("{name} is in the shipped table"))
+        })
+        .collect();
+    object.insert("apps".to_owned(), Value::Array(apps));
+    object.insert("settings".to_owned(), table["settings"].clone());
+}
+
 fn strip_permanent_more_addition_from_actual(actual: &mut Value) {
     let apps = actual["apps"]
         .as_array_mut()
@@ -914,6 +942,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     apply_permanent_news_removal_divergence(&mut expected);
                     apply_permanent_support_background_removal_divergence(&mut expected);
                     apply_permanent_starred_removal_divergence(&mut expected);
+                    rejoin_permanent_shipped_app_table(&mut actual);
                     strip_permanent_app_metadata_from_actual(&mut actual);
                     strip_permanent_map_addition_from_actual(&mut actual);
                     strip_permanent_more_addition_from_actual(&mut actual);
@@ -1048,18 +1077,24 @@ async fn registry_contract_is_stable() {
     let journal = journal_for_phase("established");
     let (_, _, _, shell_body) = get(router(journal.0.clone()), "/api/shell").await;
     let shell: Value = serde_json::from_slice(&shell_body).expect("shell parses");
-    let apps = shell["apps"].as_array().expect("apps array");
     assert!(shell.get("chat_bar").is_none());
-    assert_eq!(apps.len(), 18);
-    for app in apps {
-        assert_eq!(app.as_object().unwrap().len(), 15);
-        assert!(app["icon_svg"].is_string());
+    // `/api/shell` names the served apps; their definitions ship with the code.
+    let names = shell["app_names"].as_array().expect("app names");
+    assert_eq!(names.len(), 18);
+    let apps = solstone_core_convey_shell::registry::shell_payload().apps;
+    assert_eq!(
+        names
+            .iter()
+            .map(|name| name.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        apps.iter().map(|app| app.name).collect::<Vec<_>>()
+    );
+    for app in &apps {
+        let encoded = serde_json::to_value(app).unwrap();
+        assert_eq!(encoded.as_object().unwrap().len(), 15);
+        assert!(encoded["icon_svg"].is_string());
     }
-    let backgrounds: Vec<_> = apps
-        .iter()
-        .filter_map(|app| app["background_url"].as_str())
-        .collect();
-    assert!(backgrounds.is_empty());
+    assert!(apps.iter().all(|app| app.background_url.is_none()));
 }
 
 #[tokio::test]
