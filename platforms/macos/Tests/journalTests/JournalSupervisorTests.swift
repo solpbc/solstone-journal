@@ -250,6 +250,81 @@ struct JournalSupervisorTests {
         #expect(supervisor.blockedReason == blockage.ownerMessage)
     }
 
+    @Test func stopDuringAnInFlightStartLeavesTheJournalStopped() async throws {
+        let events = EventRecorder()
+        let runner = HoldingStartRunner()
+        let supervisor = JournalSupervisor(
+            gate: RecordingGate(events: events, result: .success),
+            materializer: try await RecordingMaterializer(events: events),
+            runner: runner,
+            readinessGate: RecordingReadinessGate(events: events, result: .ready)
+        )
+        _ = configureInMemoryReceiptContext(supervisor)
+        let root = try makeTemporaryDirectory()
+
+        let starting = Task { await supervisor.start(journalRoot: root) }
+        try await runner.waitForHeldStart()
+        _ = await supervisor.stop()
+        // The real runner fails a start that a stop overtook with a cancellation.
+        await runner.releaseHeldStart(throwing: CancellationError())
+        let started = await starting.value
+
+        #expect(!started)
+        #expect(supervisor.state == .idle)
+        #expect(supervisor.runtimeStatus == .stoppedByUser)
+    }
+
+    @Test func startPressedAgainWhileStartingLeavesTheNewerStartInCharge() async throws {
+        let events = EventRecorder()
+        let runner = HoldingStartRunner()
+        let supervisor = JournalSupervisor(
+            gate: RecordingGate(events: events, result: .success),
+            materializer: try await RecordingMaterializer(events: events),
+            runner: runner,
+            readinessGate: RecordingReadinessGate(events: events, result: .ready)
+        )
+        _ = configureInMemoryReceiptContext(supervisor)
+        let root = try makeTemporaryDirectory()
+
+        let first = Task { await supervisor.start(journalRoot: root) }
+        try await runner.waitForHeldStarts(1)
+        let second = Task { await supervisor.start(journalRoot: root) }
+        try await runner.waitForHeldStarts(2)
+        // The real runner fails the overtaken start with a cancellation.
+        await runner.releaseHeldStart(throwing: CancellationError())
+        let firstStarted = await first.value
+        #expect(supervisor.state == .starting)
+        await runner.releaseHeldStart(throwing: nil)
+        let secondStarted = await second.value
+
+        #expect(!firstStarted)
+        #expect(secondStarted)
+        #expect(supervisor.state == .running)
+    }
+
+    @Test func restartPressedWhileTheFirstStartIsInFlightLetsThatStartFinish() async throws {
+        let events = EventRecorder()
+        let runner = HoldingStartRunner()
+        let supervisor = JournalSupervisor(
+            gate: RecordingGate(events: events, result: .success),
+            materializer: try await RecordingMaterializer(events: events),
+            runner: runner,
+            readinessGate: RecordingReadinessGate(events: events, result: .ready)
+        )
+        _ = configureInMemoryReceiptContext(supervisor)
+        let root = try makeTemporaryDirectory()
+
+        let starting = Task { await supervisor.start(journalRoot: root) }
+        try await runner.waitForHeldStart()
+        let restarted = await supervisor.restart()
+        await runner.releaseHeldStart(throwing: nil)
+        let started = await starting.value
+
+        #expect(!restarted)
+        #expect(started)
+        #expect(supervisor.state == .running)
+    }
+
     @Test func restartWithoutActiveRuntimeFailsClosed() async throws {
         let events = EventRecorder()
         let supervisor = JournalSupervisor(
@@ -424,6 +499,61 @@ struct JournalSupervisorTests {
         }
         Issue.record("timed out waiting for supervisor state")
     }
+}
+
+private actor HoldingStartRunner: SupervisedChildRunning {
+    private var heldStarts: [CheckedContinuation<Void, Error>] = []
+    private var held: CheckedContinuation<Void, Error>? { heldStarts.first }
+
+    func start(
+        runtime: MaterializedRuntime,
+        journalRoot: URL,
+        port: Int,
+        receiptContext: JournalRuntimeEntryReceiptContext
+    ) async throws {
+        try await withCheckedThrowingContinuation { heldStarts.append($0) }
+    }
+
+    func waitForHeldStarts(_ count: Int) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while heldStarts.count < count {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("start never reached the runner")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func waitForHeldStart() async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while held == nil {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("start never reached the runner")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    /// Releases the oldest held start.
+    func releaseHeldStart(throwing error: Error?) {
+        guard !heldStarts.isEmpty else { return }
+        let next = heldStarts.removeFirst()
+        if let error {
+            next.resume(throwing: error)
+        } else {
+            next.resume()
+        }
+    }
+
+    func restart() async throws {}
+    func stop() async {}
+    func stopForTermination() async {}
+    func currentRuntimeKey() async -> String? { nil }
+    func currentIdentity() async -> SupervisedChildIdentity? { nil }
+    func terminalReason() async -> JournalDiagnostic? { nil }
+    func markReady(identity: SupervisedChildIdentity) async -> Bool { false }
 }
 
 private actor EventRecorder {

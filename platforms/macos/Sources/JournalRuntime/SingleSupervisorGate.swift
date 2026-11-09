@@ -21,6 +21,7 @@ public enum SingleSupervisorGateBlockage: Equatable, Sendable {
     case orphanSweep(JournalDiagnostic)
     case portConflict(JournalDiagnostic)
     case portVerificationFailed(JournalDiagnostic)
+    case portHeldElsewhere(JournalDiagnostic)
 
     public var diagnostic: JournalDiagnostic {
         switch self {
@@ -28,7 +29,8 @@ public enum SingleSupervisorGateBlockage: Equatable, Sendable {
              .legacyServiceVerificationFailed(let diagnostic),
              .orphanSweep(let diagnostic),
              .portConflict(let diagnostic),
-             .portVerificationFailed(let diagnostic):
+             .portVerificationFailed(let diagnostic),
+             .portHeldElsewhere(let diagnostic):
             return diagnostic
         }
     }
@@ -43,6 +45,8 @@ public enum SingleSupervisorGateBlockage: Equatable, Sendable {
             return UICopy.JOURNAL_SPAWN_BLOCKED_PORTS
         case .portVerificationFailed:
             return UICopy.JOURNAL_SPAWN_PORT_CHECK_FAILED
+        case .portHeldElsewhere:
+            return UICopy.JOURNAL_SPAWN_PORT_HELD_ELSEWHERE
         }
     }
 }
@@ -56,6 +60,9 @@ public struct SingleSupervisorGate: SingleSupervisorGating {
     private let portProbeTimeout: Duration
     private let serviceRetirer: any LegacyJournalServiceRetiring
     private let evidenceReader: any JournalProcessEvidenceReading
+    // Whether the journal's port can be bound. Process listings show only this
+    // account's processes, so another account's journal shows up only here.
+    private let portBindable: (@Sendable () -> Bool)?
 
     public init(
         runner: SubprocessRunning = SubprocessRunner(),
@@ -70,7 +77,8 @@ public struct SingleSupervisorGate: SingleSupervisorGating {
         },
         clock: any MonotonicClock = SystemMonotonicClock(),
         orphanGracePeriod: Duration = .seconds(3),
-        portProbeTimeout: Duration = .seconds(10)
+        portProbeTimeout: Duration = .seconds(10),
+        portBindable: (@Sendable () -> Bool)? = nil
     ) {
         self.runner = runner
         self.pidExists = pidExists
@@ -80,6 +88,7 @@ public struct SingleSupervisorGate: SingleSupervisorGating {
         self.portProbeTimeout = portProbeTimeout
         self.serviceRetirer = serviceRetirer ?? LegacyJournalServiceRetirer(runner: runner, clock: clock)
         self.evidenceReader = evidenceReader
+        self.portBindable = portBindable
     }
 
     public func prepareForSpawn(journalRoot: URL) async -> SingleSupervisorGateResult {
@@ -131,6 +140,15 @@ public struct SingleSupervisorGate: SingleSupervisorGating {
             case .couldNotVerify:
                 return .blocked(.portVerificationFailed(diagnostic))
             }
+        }
+
+        // Last, once a service for this journal has been retired and its ports released.
+        if let portBindable, !portBindable() {
+            Logger.setup.warning("journal-lifecycle: gate-blocked reason=port-held-elsewhere")
+            return .blocked(.portHeldElsewhere(JournalDiagnostic(
+                commandLabel: "journal local port",
+                outputExcerpt: UICopy.JOURNAL_SPAWN_PORT_HELD_ELSEWHERE
+            )))
         }
 
         return .success

@@ -30,7 +30,6 @@ final class JournalSupervisor {
     private let runner: any SupervisedChildRunning
     private let readinessGate: any JournalReadinessChecking
     private let markerURL: URL
-    private let portAvailable: (@Sendable () -> Bool)?
     private let driveCannotRun: @Sendable (URL) -> Bool
     private let port: Int
     private let readinessTimeout: Duration
@@ -39,6 +38,9 @@ final class JournalSupervisor {
     private var receiptContext: JournalRuntimeEntryReceiptContext?
     private var replacementReadinessTask: Task<Void, Never>?
     private var replacementReadinessGeneration: UInt64?
+    // Bumped by every start, stop, restart and quit. An operation still awaiting
+    // after a newer one began changes nothing: the newer one owns the state.
+    private var operation: UInt64 = 0
 
     private(set) var state: JournalSupervisorState = .idle
     private(set) var runtimeStatus: JournalRuntimeStatus = .unobserved
@@ -53,7 +55,6 @@ final class JournalSupervisor {
         readinessGate: any JournalReadinessChecking = JournalReadinessGate(),
         markerURL: URL = ExpectedExitMarker.markerURL(for: ExpectedExitMarker.journalMarkerDiscriminator),
         port: Int = 5015,
-        portAvailable: (@Sendable () -> Bool)? = nil,
         driveCannotRun: @escaping @Sendable (URL) -> Bool = { JournalDriveCheck.cannotRunJournal(root: $0) },
         readinessTimeout: Duration = .seconds(120),
         receiptContextFactory: @escaping () -> JournalRuntimeEntryReceiptContext = {
@@ -73,7 +74,6 @@ final class JournalSupervisor {
         }, gate: gate)
         self.readinessGate = readinessGate
         self.markerURL = markerURL
-        self.portAvailable = portAvailable
         self.driveCannotRun = driveCannotRun
         self.port = port
         self.readinessTimeout = readinessTimeout
@@ -108,6 +108,8 @@ final class JournalSupervisor {
 
     @discardableResult
     func start(journalRoot rawJournalRoot: URL) async -> Bool {
+        operation &+= 1
+        let op = operation
         cancelReplacementReadiness()
         let journalRoot = rawJournalRoot.standardizedFileURL
         blockedReason = nil
@@ -126,6 +128,7 @@ final class JournalSupervisor {
             let liveKey = await runner.currentRuntimeKey()
             runtime = try await materializer.materialize(excludingLiveKey: liveKey)
         } catch {
+            guard op == operation else { return false }
             let diagnostic = JournalDiagnostic(
                 commandLabel: "journal runtime materialize",
                 outputExcerpt: error.localizedDescription
@@ -136,13 +139,8 @@ final class JournalSupervisor {
             return false
         }
 
+        guard op == operation else { return false }
         do {
-            if let portAvailable, !portAvailable() {
-                let diagnostic = JournalDiagnostic(commandLabel: "journal local port", outputExcerpt: JournalLocalHTTPClient.portInUse)
-                state = .blocked(diagnostic)
-                blockedReason = JournalLocalHTTPClient.portInUse
-                return false
-            }
             state = .starting
             try await runner.start(
                 runtime: runtime,
@@ -151,12 +149,14 @@ final class JournalSupervisor {
                 receiptContext: resolvedReceiptContext()
             )
         } catch SupervisedJournalRunnerError.gateBlocked(let blockage) {
+            guard op == operation else { return false }
             let diagnostic = blockage.diagnostic
             state = .blocked(diagnostic)
             blockedReason = blockage.ownerMessage
             emitBootFailure(.warning, reason: "gate-blocked", diagnostic: diagnostic)
             return false
         } catch {
+            guard op == operation else { return false }
             let diagnostic = JournalDiagnostic(
                 commandLabel: "solstone journal start --hosted-parent",
                 outputExcerpt: error.localizedDescription
@@ -167,14 +167,17 @@ final class JournalSupervisor {
             return false
         }
 
-        return await finishReadiness(journalRoot: journalRoot, runtime: runtime)
+        return await finishReadiness(journalRoot: journalRoot, runtime: runtime, operation: op)
     }
 
     @discardableResult
     func stop() async -> Bool {
+        operation &+= 1
+        let op = operation
         cancelReplacementReadiness()
         blockedReason = nil
         await runner.stop()
+        guard op == operation else { return true }
         activeRuntime = nil
         activeJournalRoot = nil
         state = .idle
@@ -184,9 +187,10 @@ final class JournalSupervisor {
 
     @discardableResult
     func restart() async -> Bool {
-        cancelReplacementReadiness()
-        blockedReason = nil
         guard let runtime = activeRuntime, let journalRoot = activeJournalRoot else {
+            // Nothing is running to restart. A start still in flight keeps
+            // ownership, so this changes only what it reports.
+            blockedReason = nil
             let diagnostic = JournalDiagnostic(
                 commandLabel: "solstone journal start --hosted-parent",
                 outputExcerpt: "journal is not running"
@@ -195,17 +199,23 @@ final class JournalSupervisor {
             applyRuntimeStatus(.unknown(diagnostic))
             return false
         }
+        operation &+= 1
+        let op = operation
+        cancelReplacementReadiness()
+        blockedReason = nil
 
         do {
             state = .starting
             try await runner.restart()
         } catch SupervisedJournalRunnerError.gateBlocked(let blockage) {
+            guard op == operation else { return false }
             let diagnostic = blockage.diagnostic
             state = .blocked(diagnostic)
             blockedReason = blockage.ownerMessage
             emitBootFailure(.warning, reason: "gate-blocked", diagnostic: diagnostic)
             return false
         } catch {
+            guard op == operation else { return false }
             let diagnostic = JournalDiagnostic(
                 commandLabel: "solstone journal start --hosted-parent",
                 outputExcerpt: error.localizedDescription
@@ -216,15 +226,16 @@ final class JournalSupervisor {
             return false
         }
 
-        return await finishReadiness(journalRoot: journalRoot, runtime: runtime)
+        return await finishReadiness(journalRoot: journalRoot, runtime: runtime, operation: op)
     }
 
     private func finishReadiness(
         journalRoot: URL,
         runtime: MaterializedRuntime,
+        operation op: UInt64,
         replacementGeneration: UInt64? = nil
     ) async -> Bool {
-        guard readinessAttemptIsCurrent(replacementGeneration) else { return false }
+        guard readinessAttemptIsCurrent(replacementGeneration, operation: op) else { return false }
         state = .waitingForReadiness
         switch await readinessGate.waitUntilReady(
             journalRoot: journalRoot,
@@ -243,7 +254,7 @@ final class JournalSupervisor {
             }
         ) {
         case .ready:
-            guard readinessAttemptIsCurrent(replacementGeneration) else { return false }
+            guard readinessAttemptIsCurrent(replacementGeneration, operation: op) else { return false }
             finishReplacementReadiness(generation: replacementGeneration)
             activeRuntime = runtime
             activeJournalRoot = journalRoot
@@ -251,7 +262,7 @@ final class JournalSupervisor {
             Logger.journalSupervisor.notice("journal supervisor ready")
             return true
         case .failed(let diagnostic):
-            guard readinessAttemptIsCurrent(replacementGeneration) else { return false }
+            guard readinessAttemptIsCurrent(replacementGeneration, operation: op) else { return false }
             finishReplacementReadiness(generation: replacementGeneration)
             await runner.stop()
             activeRuntime = nil
@@ -261,7 +272,7 @@ final class JournalSupervisor {
             emitBootFailure(.warning, reason: "readiness-failed", diagnostic: diagnostic)
             return false
         case .failedTerminal(let diagnostic):
-            guard readinessAttemptIsCurrent(replacementGeneration) else { return false }
+            guard readinessAttemptIsCurrent(replacementGeneration, operation: op) else { return false }
             finishReplacementReadiness(generation: replacementGeneration)
             await runner.stop()
             activeRuntime = nil
@@ -339,6 +350,7 @@ final class JournalSupervisor {
 
     func terminate(reason: String = "ordinary-quit") async {
         guard state != .terminating else { return }
+        operation &+= 1
         cancelReplacementReadiness()
         state = .terminating
         blockedReason = nil
@@ -353,14 +365,16 @@ final class JournalSupervisor {
         cancelReplacementReadiness()
         guard let runtime = activeRuntime, let journalRoot = activeJournalRoot else { return }
         replacementReadinessGeneration = generation
+        let op = operation
         replacementReadinessTask = Task { @MainActor [weak self] in
             guard let self,
-                  self.readinessAttemptIsCurrent(generation),
+                  self.readinessAttemptIsCurrent(generation, operation: op),
                   let identity = await self.runner.currentIdentity(),
                   identity.generation == generation else { return }
             _ = await self.finishReadiness(
                 journalRoot: journalRoot,
                 runtime: runtime,
+                operation: op,
                 replacementGeneration: generation
             )
         }
@@ -378,7 +392,8 @@ final class JournalSupervisor {
         replacementReadinessGeneration = nil
     }
 
-    private func readinessAttemptIsCurrent(_ generation: UInt64?) -> Bool {
+    private func readinessAttemptIsCurrent(_ generation: UInt64?, operation op: UInt64) -> Bool {
+        guard op == operation else { return false }
         guard let generation else { return true }
         return replacementReadinessGeneration == generation && !Task.isCancelled
     }
