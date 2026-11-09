@@ -20,8 +20,9 @@ def shared_receipt():
     loader = 'core/distribution/mobile/parakeet-mapped-weights.patch'
     guard = 'core/distribution/mobile/ggml-metal-mapped-buffer-null.patch'
     failure = 'core/distribution/mobile/parakeet-graph-failure.patch'
+    weights = 'core/distribution/mobile/parakeet-weight-failure.patch'
     captured['patches'] = [dict(component='parakeet', path=name, sha256=digest(repo / name))
-                           for name in (loader, failure)]
+                           for name in (loader, failure, weights)]
     current = copy.deepcopy(captured['inputs'])
     pins = json.loads((Path(__file__).resolve().parents[2] /
                        'core/distribution/mobile/inputs.json').read_text())['inputs']
@@ -187,6 +188,17 @@ class AudioPins(unittest.TestCase):
             if checksum is not None:
                 changed['patches'].append(dict(component='parakeet', path=failure, sha256=checksum))
             with self.assertRaisesRegex(ValueError, 'checked Parakeet graph failures'):
+                verify_audio_pins(changed, current)
+
+    def test_unchecked_weight_preparation_receipt_is_refused(self):
+        captured, current = shared_receipt()
+        weights = 'core/distribution/mobile/parakeet-weight-failure.patch'
+        for checksum in (None, '0' * 64):
+            changed = copy.deepcopy(captured)
+            changed['patches'] = [row for row in changed['patches'] if row['path'] != weights]
+            if checksum is not None:
+                changed['patches'].append(dict(component='parakeet', path=weights, sha256=checksum))
+            with self.assertRaisesRegex(ValueError, 'checked Parakeet weight preparation'):
                 verify_audio_pins(changed, current)
 
     def test_matching_shared_closure_is_returned_without_mutating_receipt(self):

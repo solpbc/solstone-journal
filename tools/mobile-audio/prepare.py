@@ -49,6 +49,11 @@ def verify_audio_pins(receipt, current):
                and row.get('sha256') == digest(repo / failure_patch)
                for row in receipt.get('patches', []) if isinstance(row, dict)):
         raise ValueError('retained audio needs checked Parakeet graph failures; rebuild mobile media native inputs')
+    weight_patch = 'core/distribution/mobile/parakeet-weight-failure.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == weight_patch
+               and row.get('sha256') == digest(repo / weight_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs checked Parakeet weight preparation; rebuild mobile media native inputs')
     inputs = receipt.get('inputs', {})
     if not isinstance(inputs, dict):
         raise ValueError('retained audio source pins are missing')
