@@ -65,8 +65,8 @@ pub use dedupe::{
     find_manifest_by_hash_where, hash_source, windowed_source_hash, write_manifest,
 };
 pub use detect::{
-    ModelDetectionError, RegistrySource, ResolutionError, ResolutionOptions, ResolutionOutcome,
-    ResolutionSeams, ResolvedSource, SkipReason,
+    ManifestSummary, ModelDetectionError, RegistrySource, ResolutionError, ResolutionOptions,
+    ResolutionOutcome, ResolutionSeams, ResolvedSource, SkipReason,
 };
 pub use events::{
     EnrichmentReady, EventEmitter, FileImported, ImporterCompleted, ImporterError, ImporterStarted,

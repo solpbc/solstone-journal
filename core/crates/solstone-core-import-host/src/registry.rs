@@ -109,7 +109,14 @@ fn preview_size(
         zone,
         None,
     ) {
-        return save::preview_size(journal, &rendered?);
+        let rendered = rendered?;
+        if !dispatch.force && already_saved(journal, &dispatch.media) {
+            return Ok(solstone_core_import::size::ImportSize {
+                skipped: rendered.files.len(),
+                ..Default::default()
+            });
+        }
+        return save::preview_size(journal, &rendered);
     }
     match dispatch.source {
         RegistrySource::Image => image::preview_size(
@@ -265,12 +272,29 @@ fn record_finished_import_at(
     .map_err(|error| error.to_string())
 }
 
+/// Whether these exact bytes already landed entries through an import still in the
+/// journal. An import in the trash or erased has left `imports/`, so its file
+/// imports again and comes back.
+fn already_saved(journal: &Path, media: &Path) -> bool {
+    solstone_core_import::hash_source(media)
+        .ok()
+        .and_then(|hash| solstone_core_import::find_manifest_by_hash(journal, &hash).ok())
+        .and_then(|scan| scan.found)
+        .and_then(|found| {
+            found
+                .manifest
+                .get("entry_count")
+                .and_then(serde_json::Value::as_u64)
+        })
+        .is_some_and(|entries| entries > 0)
+}
+
 /// Save a source that renders into text segments: conversation exports, calendars, notes.
 ///
 /// Admit, render, write, then publish and record under the import lock. Segment keys come
-/// from the source's own timestamps, so importing the same file again rewrites the same
-/// segments: what arrives again is new data, and nothing is refused for matching an
-/// earlier import.
+/// from the source's own timestamps, so importing the same file again would rewrite the same
+/// segments and re-run every day they touch. Unless forced, a file an import still in the
+/// journal already brought in is skipped, as the web import refuses it.
 fn run_save(
     mut dispatch: RegistryDispatch,
     journal: &Path,
@@ -278,6 +302,11 @@ fn run_save(
 ) -> CliRun {
     let source = dispatch.source;
     let name = source.name();
+    if !dispatch.force && already_saved(journal, &dispatch.media) {
+        return success(cli_render::resolution_skipped(
+            solstone_core_import::SkipReason::AlreadyImported,
+        ));
+    }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
         return failure(format!("{name} import failed: {error}\n"));
     }
@@ -3268,8 +3297,34 @@ mod tests {
             }
         }
 
-        // Run 2: the same file again, with nothing forced.
-        let (run2, id2) = run_bound(chat_dispatch(&zip_path, "20260104_110000"), journal.path());
+        // The same file again is skipped, and touches nothing, unless forced.
+        let imports_before = fs::read_dir(journal.path().join("imports"))
+            .unwrap()
+            .count();
+        let (skipped, skipped_id) =
+            run_bound(chat_dispatch(&zip_path, "20260104_103000"), journal.path());
+        assert_eq!(skipped.exit_code, 0, "{}", skipped.stderr);
+        assert!(
+            skipped.stdout.contains("already imported"),
+            "{}",
+            skipped.stdout
+        );
+        assert_eq!(skipped_id, None);
+        assert_eq!(
+            fs::read_dir(journal.path().join("imports"))
+                .unwrap()
+                .count(),
+            imports_before
+        );
+
+        // Run 2
+        let (run2, id2) = run_bound(
+            RegistryDispatch {
+                force: true,
+                ..chat_dispatch(&zip_path, "20260104_110000")
+            },
+            journal.path(),
+        );
         assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
         let id2 = id2.unwrap();
 
