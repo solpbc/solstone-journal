@@ -6,6 +6,18 @@
 use super::*;
 use crate::runner::run_restic;
 use std::cell::Cell;
+use std::path::PathBuf;
+
+fn folder(root: &Path) -> PathBuf {
+    let mut found = fs::read_dir(root)
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(FOLDER_GLOB))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    assert_eq!(found.len(), 1, "{found:?}");
+    found.pop().unwrap()
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Stop {
@@ -31,7 +43,7 @@ impl Restic {
     }
 
     fn execute(request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-        crate::runner::SystemToolRunner::default().run(request)
+        crate::runner::SystemToolRunner.run(request)
     }
 }
 
@@ -98,7 +110,7 @@ impl Fixture {
         let restic = |args: &[&str]| {
             let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
             let output = run_restic(
-                &crate::runner::SystemToolRunner::default(),
+                &crate::runner::SystemToolRunner,
                 &args,
                 &destination.repository,
                 &key,
@@ -150,7 +162,7 @@ impl Fixture {
 
     fn snapshot_id(&self) -> String {
         let output = run_restic(
-            &crate::runner::SystemToolRunner::default(),
+            &crate::runner::SystemToolRunner,
             &["snapshots".to_owned()],
             &self.destination.repository,
             &self.key,

@@ -5,7 +5,6 @@
 //! it replaced. The real-restic cases are in `native`.
 
 use super::*;
-use std::path::PathBuf;
 
 #[cfg(all(test, feature = "full-tests"))]
 mod native;
@@ -20,17 +19,6 @@ fn write(root: &Path, rel: &str, bytes: &str) {
 
 fn read(root: &Path, rel: &str) -> String {
     fs::read_to_string(root.join(rel)).unwrap_or_else(|error| panic!("{rel}: {error}"))
-}
-
-fn folder(root: &Path) -> PathBuf {
-    let mut found = fs::read_dir(root)
-        .unwrap()
-        .flatten()
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with(FOLDER_GLOB))
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    assert_eq!(found.len(), 1, "{found:?}");
-    found.pop().unwrap()
 }
 
 /// Answers `snapshots` and fails the test if a restore actually runs.

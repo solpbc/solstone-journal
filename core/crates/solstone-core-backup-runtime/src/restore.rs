@@ -1018,7 +1018,7 @@ fn restore_journal_with(
         admitted: &admitted,
         snapshot_id: &snapshot.id,
         tree_path: &tree_path,
-        target: &target_path,
+        target: target_path,
         destination: &destination,
         key: &canonical,
         env: &env,
