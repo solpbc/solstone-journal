@@ -256,6 +256,15 @@ fn archive_selections(journal: &Path, id: &str) -> Vec<String> {
 
 /// What kind of import `id` is, from its records.
 fn source_of(journal: &Path, id: &str) -> String {
+    // A record that names its kind says so; the Import page reads the same.
+    let dir = journal.join(IMPORTS_DIR).join(id);
+    for name in ["manifest.json", "imported.json"] {
+        if let Some(source) = read_json(&dir.join(name))
+            .and_then(|record| str_of(&record, "source_type").map(str::to_owned))
+        {
+            return source;
+        }
+    }
     let projection = crate::projection::project_import_result(journal, id);
     let source = projection.source_type.trim();
     if source.is_empty() {
