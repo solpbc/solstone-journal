@@ -530,10 +530,14 @@
     }
     window.appEvents.probeCount += 1;
     const response = request?.response;
+    const askAgainNow = wokeDuringProbe;
+    wokeDuringProbe = false;
     if (!response) {
-      // No answer: the link is down. Ask again later.
+      // No answer: the link is down. Ask again later, or at once if the
+      // network came back while this question was out.
       if (connectionState !== 'disconnected') linkLost();
-      scheduleProbe();
+      if (askAgainNow) probe();
+      else scheduleProbe();
       return;
     }
     if (window.isLoopbackRefusal?.(response)) {
@@ -600,9 +604,40 @@
     }
   }
 
+  // The network coming back, or the page coming back into view, is the best
+  // moment to ask again: a link that just returned shouldn't wait out the
+  // backoff. Only a stream already known to be lost is asked about here; a
+  // page that comes back to a stream that looked fine first gets a moment for
+  // its buffered events (RETURN_GRACE_MS).
+  let wokeDuringProbe = false;
+
+  function streamKnownLost() {
+    return probeTimer !== null
+      || connectionState === 'disconnected'
+      || (eventSource && eventSource.readyState === 2);
+  }
+
+  function wake() {
+    if (!eventSource && watchTimer === null) return;
+    if (!streamKnownLost()) return;
+    probeAttempt = 0;
+    window.clearTimeout(probeTimer);
+    probeTimer = null;
+    if (probing) {
+      wokeDuringProbe = true;
+      return;
+    }
+    probe();
+  }
+
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) visibleSince = Date.now();
+    if (document.hidden) return;
+    visibleSince = Date.now();
+    wake();
   });
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('online', wake);
+  }
 
   function connect() {
     if (eventSource) {
@@ -708,7 +743,9 @@
     eventSource.onerror = err => {
       busConnected = false;
       linkLost();
-      console.error('[SSE] Error:', err);
+      // A lost stream is expected and handled here, so it isn't logged as
+      // an error.
+      console.warn('[SSE] stream lost; reconnecting', err);
     };
 
     eventSource.onmessage = event => {

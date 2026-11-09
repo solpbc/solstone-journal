@@ -318,9 +318,10 @@ function makePage({ scripts = ['api.js'] } = {}) {
     performance: { mark() {} },
     matchMedia: () => ({ matches: false }),
   };
+  const consoleErrors = [];
   const context = {
     window,
-    console: { log() {}, debug() {}, warn() {}, error() {} },
+    console: { log() {}, debug() {}, warn() {}, error: (...args) => consoleErrors.push(args.map(String).join(' ')) },
     fetch: server.fetch,
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
@@ -342,11 +343,14 @@ function makePage({ scripts = ['api.js'] } = {}) {
   const document = makeDocument(context);
   context.document = document;
   window.document = document;
-  window.addEventListener = () => {};
+  const windowEvents = new FakeEventTarget();
+  window.addEventListener = windowEvents.addEventListener.bind(windowEvents);
+  window.removeEventListener = windowEvents.removeEventListener.bind(windowEvents);
+  window.dispatchEvent = windowEvents.dispatchEvent.bind(windowEvents);
   for (const name of scripts) {
     vm.runInContext(staticSource(name), context, { filename: name });
   }
-  return { clock, server, window, document, reloads, assigned, consolePushes, eventSources, context };
+  return { clock, server, window, document, reloads, assigned, consolePushes, eventSources, context, consoleErrors };
 }
 
 let cases = 0;
@@ -753,6 +757,81 @@ asyncCase('stream: a stream that keeps closing after the journal answers backs o
   }
   const opened = page.eventSources.length;
   assert.ok(opened <= 15, `${opened} streams in two minutes`);
+});
+
+async function lostWithBackoff(page) {
+  openStream(page.eventSources[0]);
+  page.eventSources[0].error(true);
+  // the link is down: the first rounds find nothing, and the backoff grows
+  for (let round = 0; round < 4; round += 1) {
+    await page.clock.advance(500);
+    for (const call of aboutCalls(page)) if (!call.settled) call.failTransport();
+    await page.clock.advance(4000);
+    for (const call of aboutCalls(page)) if (!call.settled) call.failTransport();
+  }
+  await flush();
+  return aboutCalls(page).length;
+}
+
+asyncCase('stream: the network coming back asks at once, not after the backoff', async () => {
+  const page = streamPage();
+  const asked = await lostWithBackoff(page);
+  page.window.dispatchEvent({ type: 'online' });
+  await flush();
+  assert.strictEqual(aboutCalls(page).length, asked + FANOUT, 'one round at once');
+  aboutCalls(page)[aboutCalls(page).length - 1].respond(200, '{}');
+  await flush();
+  assert.strictEqual(page.eventSources.length, 2, 'a new stream with no wait');
+});
+
+asyncCase('stream: coming back into view after a loss asks at once', async () => {
+  const page = streamPage();
+  await lostWithBackoff(page);
+  page.document.hidden = true;
+  page.document.dispatchEvent({ type: 'visibilitychange' });
+  await page.clock.advance(60000);
+  for (const call of aboutCalls(page)) if (!call.settled) call.failTransport();
+  await flush();
+  const asked = aboutCalls(page).length;
+  page.document.hidden = false;
+  page.document.dispatchEvent({ type: 'visibilitychange' });
+  await flush();
+  assert.strictEqual(aboutCalls(page).length, asked + FANOUT);
+});
+
+asyncCase('stream: the network coming back mid-question asks again as soon as it ends', async () => {
+  const page = streamPage();
+  openStream(page.eventSources[0]);
+  page.eventSources[0].error(true);
+  await page.clock.advance(3000);
+  const first = aboutCalls(page).length;
+  assert.strictEqual(first, FANOUT, 'a round is out');
+  page.window.dispatchEvent({ type: 'online' });
+  await flush();
+  assert.strictEqual(aboutCalls(page).length, first, 'no second round while one is out');
+  for (const call of aboutCalls(page)) if (!call.settled) call.failTransport();
+  await flush();
+  assert.strictEqual(aboutCalls(page).length, first + FANOUT, 'the next round goes at once');
+});
+
+asyncCase('stream: a healthy page coming into view, or online again, asks nothing', async () => {
+  const page = streamPage();
+  openStream(page.eventSources[0]);
+  page.window.dispatchEvent({ type: 'online' });
+  page.document.dispatchEvent({ type: 'visibilitychange' });
+  await page.clock.advance(5000);
+  beat(page.eventSources[0]);
+  await flush();
+  assert.strictEqual(aboutCalls(page).length, 0);
+});
+
+asyncCase('stream: a handled loss is not logged as an error', async () => {
+  const page = streamPage();
+  openStream(page.eventSources[0]);
+  page.eventSources[0].error(false);
+  page.eventSources[0].error(true);
+  await flush();
+  assert.deepStrictEqual(page.consoleErrors, []);
 });
 
 asyncCase('stream: a new build on reconnect marks the page stale', async () => {
