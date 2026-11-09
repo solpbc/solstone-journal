@@ -64,6 +64,17 @@ assert.strictEqual(sequence([true, false, true, true]), 1);
 assert.strictEqual(sequence([true, false, true, false, true]), 2);
 // A page that subscribed while still connecting recovers on its first connect.
 assert.strictEqual(sequence([false, true]), 1);
+// ...unless its first read is still being answered at that connect; later
+// reconnects still recover.
+function coveredSequence(states) {
+  let refreshes = 0;
+  const handle = connectionRecovery(() => { refreshes += 1; }, () => true);
+  states.forEach((connected) => handle({ connected, state: connected ? 'connected' : 'disconnected' }));
+  return refreshes;
+}
+assert.strictEqual(coveredSequence([false, true]), 0);
+assert.strictEqual(coveredSequence([false, true, false, true]), 1);
+assert.strictEqual(coveredSequence([true, false, true]), 1);
 // A missing state is treated as disconnected, never as a reconnect.
 const tolerant = connectionRecovery(() => { throw new Error('unexpected refresh'); });
 tolerant(undefined);
