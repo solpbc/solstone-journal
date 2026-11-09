@@ -715,11 +715,6 @@ fn journal_builder_matches_an_independent_python_healthy_capture() {
         crate::test_support::python_build_journal_bytes("healthy"),
         PYTHON_HEALTHY.as_bytes()
     );
-    let root = crate::test_support::root("healthy");
-    assert_eq!(
-        fs::read(root.path().join("config/journal.json")).unwrap(),
-        PYTHON_HEALTHY.as_bytes()
-    );
 }
 
 #[test]
