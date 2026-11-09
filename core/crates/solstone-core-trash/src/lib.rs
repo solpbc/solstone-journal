@@ -1560,6 +1560,93 @@ mod tests {
         assert_eq!(events(&root).len(), 1);
     }
 
+    fn chosen() -> Chosen {
+        Chosen {
+            unit: unit(),
+            paths: vec![SEGMENT.into()],
+            label: Some("the owner's name".into()),
+        }
+    }
+
+    /// A set stopped after it was written down and before anything moved: the
+    /// sweep moves what the owner confirmed, then forgets the set.
+    #[test]
+    fn a_set_stopped_before_anything_moved_is_finished_by_a_sweep() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let set = Set {
+            schema: SCHEMA,
+            id: item_id(Utc::now()),
+            action: Action::SegmentDelete,
+            surface: web(),
+            erase: false,
+            chosen: vec![chosen()],
+        };
+        publish_set(&root, &set).unwrap();
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 1);
+        let items = list(&root).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label.as_deref(), Some("the owner's name"));
+        assert!(waiting_sets(&root).is_empty());
+        // A second sweep has nothing left of it to do.
+        assert_eq!(sweep(&root, &[&kind], Utc::now()).resumed, 0);
+    }
+
+    /// A set stopped after its thing moved: the sweep finds it gone, moves
+    /// nothing twice, and forgets the set.
+    #[test]
+    fn a_set_stopped_after_its_thing_moved_moves_nothing_twice() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let set = Set {
+            schema: SCHEMA,
+            id: item_id(Utc::now()),
+            action: Action::SegmentDelete,
+            surface: web(),
+            erase: false,
+            chosen: vec![chosen()],
+        };
+        publish_set(&root, &set).unwrap();
+        let _ = run_set(&root, &[&kind], &set);
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 0);
+        assert!(swept.failed.is_empty());
+        assert_eq!(list(&root).unwrap().len(), 1);
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// A set the owner asked erased is erased, each thing as its own item.
+    #[test]
+    fn a_set_asked_erased_leaves_nothing_in_the_trash() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let results = detach_set(
+            &root,
+            &[&kind],
+            vec![chosen()],
+            Action::SegmentDelete,
+            web(),
+            true,
+        )
+        .unwrap();
+        assert!(matches!(results[0], SetResult::Moved { erased: true, .. }));
+        assert!(list(&root).unwrap().is_empty());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The paths the trash could still give back: every item but one being
+    /// erased.
+    #[test]
+    fn held_paths_name_what_could_come_back() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        assert_eq!(held_paths(&root).unwrap(), vec![SEGMENT.to_owned()]);
+        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        assert!(held_paths(&root).unwrap().is_empty());
+    }
+
     /// A stop after the item was published but before anything moved: the
     /// sweep moves it, as the owner asked.
     #[test]

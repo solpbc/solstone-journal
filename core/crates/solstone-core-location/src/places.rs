@@ -609,6 +609,59 @@ mod tests {
     }
 
     #[test]
+    fn a_named_place_whose_stays_are_in_the_trash_waits_and_comes_back_whole() {
+        let mut store = PlaceStore::default();
+        let stays = vec![stay("20261001", 0.0, 25.0), stay("20261002", 0.0, 25.0)];
+        recompute(&mut store, &stays);
+        let id = store.places[0].id.clone();
+        store.places[0].name = Some("the climbing gym".to_owned());
+        store.places[0].hidden = true;
+        // Every stay goes to the trash: the place waits, unseen.
+        recompute_holding(&mut store, &[], &|day| day == "20261002");
+        assert_eq!(store.places.len(), 1);
+        assert!(store.places[0].dormant);
+        assert!(
+            store.hides(LAT, LON),
+            "a hidden place keeps hiding while it waits"
+        );
+        // Recovered: the same place, with the owner's words.
+        let members = recompute_holding(&mut store, &stays, &|_| false);
+        assert_eq!(store.places[0].id, id);
+        assert!(!store.places[0].dormant);
+        assert_eq!(members[&id].len(), 2);
+        assert_eq!(
+            store.places[0].owner_name().as_deref(),
+            Some("the climbing gym")
+        );
+    }
+
+    #[test]
+    fn a_waiting_place_is_gone_once_nothing_of_its_days_is_held() {
+        let mut store = PlaceStore::default();
+        recompute(
+            &mut store,
+            &[stay("20261001", 0.0, 25.0), stay("20261002", 0.0, 25.0)],
+        );
+        store.places[0].alias = Some(Alias::Home);
+        recompute_holding(&mut store, &[], &|_| true);
+        assert_eq!(store.places.len(), 1);
+        // Erased: nothing holds its days any more.
+        recompute_holding(&mut store, &[], &|_| false);
+        assert!(store.places.is_empty());
+    }
+
+    #[test]
+    fn a_place_the_owner_never_touched_does_not_wait() {
+        let mut store = PlaceStore::default();
+        recompute(
+            &mut store,
+            &[stay("20261001", 0.0, 25.0), stay("20261002", 0.0, 25.0)],
+        );
+        recompute_holding(&mut store, &[], &|_| true);
+        assert!(store.places.is_empty());
+    }
+
+    #[test]
     fn a_place_whose_stays_are_all_deleted_is_gone_with_its_name() {
         let mut store = PlaceStore::default();
         recompute(

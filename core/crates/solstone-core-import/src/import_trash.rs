@@ -511,3 +511,268 @@ impl Kind for Imports<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code"
+)]
+mod tests {
+    use super::*;
+    use solstone_core_removals::Page;
+    use solstone_core_retention::NoIndex;
+    use std::fs;
+    use tempfile::TempDir;
+
+    const ID: &str = "20260801_090000";
+    const OTHER: &str = "20260801_100000";
+
+    fn write(root: &Path, rel: &str, bytes: &[u8]) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn published(root: &Path, id: &str, segments: &[(&str, &str, &str)]) {
+        let segments: Vec<Value> = segments
+            .iter()
+            .map(|(day, stream, key)| {
+                serde_json::json!({"day": day, "segment": key, "stream": stream,
+                    "outcome": {"status": "bound", "prev_day": null, "prev_segment": null, "seq": 1}})
+            })
+            .collect();
+        write(
+            root,
+            &format!("imports/{id}/imported.json"),
+            serde_json::json!({"schema": "solstone.import.publication.v2", "status": "success",
+                "segments": segments, "indexing": {"queued": [], "declined": [], "errored": []},
+                "day_markers": []})
+            .to_string()
+            .as_bytes(),
+        );
+        write(
+            root,
+            &format!("imports/{id}/import.json"),
+            serde_json::json!({"import_id": id, "original_filename": "notes.ics"})
+                .to_string()
+                .as_bytes(),
+        );
+        write(
+            root,
+            &format!("imports/{id}/manifest.json"),
+            br#"{"source_type": "ics"}"#,
+        );
+    }
+
+    /// A journal with two calendar imports: each has a segment of its own, and
+    /// they share one, where each keeps its own calendar file.
+    fn journal() -> TempDir {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        published(
+            root.path(),
+            ID,
+            &[
+                ("20260801", "import.ics", "090000_300"),
+                ("20260802", "import.ics", "090000_300"),
+            ],
+        );
+        published(
+            root.path(),
+            OTHER,
+            &[
+                ("20260802", "import.ics", "090000_300"),
+                ("20260803", "import.ics", "090000_300"),
+            ],
+        );
+        for (day, owner) in [("20260801", ID), ("20260803", OTHER)] {
+            write(
+                root.path(),
+                &format!("chronicle/{day}/import.ics/090000_300/event_transcript.md"),
+                owner.as_bytes(),
+            );
+        }
+        let shared = "chronicle/20260802/import.ics/090000_300";
+        write(
+            root.path(),
+            &format!("{shared}/event_transcript.md"),
+            b"last writer",
+        );
+        for id in [ID, OTHER] {
+            write(
+                root.path(),
+                &format!("{shared}/calendar_{id}.jsonl"),
+                format!("{{\"import\":\"{id}\"}}\n").as_bytes(),
+            );
+        }
+        root
+    }
+
+    fn surface() -> Surface {
+        Surface::Web { page: Page::Import }
+    }
+
+    fn trash(root: &Path) -> Item {
+        Imports::new(&NoIndex)
+            .trash(root, ID, Action::ImportDelete, surface())
+            .unwrap()
+    }
+
+    #[test]
+    fn an_import_lists_its_own_segments_and_only_its_files_in_a_shared_one() {
+        let root = journal();
+        let things = import_things(root.path(), ID).unwrap();
+        assert_eq!(things.source, "ics");
+        assert_eq!(things.record, format!("imports/{ID}"));
+        assert_eq!(
+            things.segments,
+            vec!["chronicle/20260801/import.ics/090000_300".to_owned()]
+        );
+        assert_eq!(
+            things.files,
+            vec![format!(
+                "chronicle/20260802/import.ics/090000_300/calendar_{ID}.jsonl"
+            )]
+        );
+    }
+
+    #[test]
+    fn trash_moves_the_import_whole_and_leaves_the_other_import_as_it_was() {
+        let root = journal();
+        let item = trash(root.path());
+        assert_eq!(item.label.as_deref(), Some("notes.ics"));
+        assert!(!root.path().join("imports").join(ID).exists());
+        // Its own segment holds only the tombstone now.
+        let own = root.path().join("chronicle/20260801/import.ics/090000_300");
+        let names: Vec<_> = fs::read_dir(&own)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names, vec!["tombstone.json".to_owned()]);
+        // The shared segment keeps the other import's file and the transcript.
+        let shared = root.path().join("chronicle/20260802/import.ics/090000_300");
+        assert!(shared.join(format!("calendar_{OTHER}.jsonl")).is_file());
+        assert!(shared.join("event_transcript.md").is_file());
+        assert!(!shared.join(format!("calendar_{ID}.jsonl")).exists());
+        // The other import is untouched.
+        assert!(root.path().join("imports").join(OTHER).is_dir());
+        assert!(
+            root.path()
+                .join("chronicle/20260803/import.ics/090000_300/event_transcript.md")
+                .is_file()
+        );
+        assert!(import_things(root.path(), ID).is_none());
+    }
+
+    #[test]
+    fn recover_puts_every_part_back_exactly() {
+        let root = journal();
+        let before = import_things(root.path(), ID).unwrap();
+        let item = trash(root.path());
+        crate::trash_kinds::with_kinds(root.path(), |kinds| {
+            solstone_core_trash::attach(root.path(), kinds, &item.id, Action::Recover, surface())
+        })
+        .unwrap();
+        assert_eq!(import_things(root.path(), ID).unwrap(), before);
+        assert_eq!(
+            fs::read(
+                root.path()
+                    .join("chronicle/20260801/import.ics/090000_300/event_transcript.md")
+            )
+            .unwrap(),
+            ID.as_bytes()
+        );
+        assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn erase_unlinks_the_import_and_nothing_else() {
+        let root = journal();
+        let item = trash(root.path());
+        solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
+        assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
+        assert!(!root.path().join("imports").join(ID).exists());
+        assert!(root.path().join("imports").join(OTHER).is_dir());
+        assert!(
+            root.path()
+                .join(format!(
+                    "chronicle/20260802/import.ics/090000_300/calendar_{OTHER}.jsonl"
+                ))
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn a_set_of_imports_moves_each_as_its_own_item() {
+        let root = journal();
+        let chosen: Vec<solstone_core_trash::Chosen> = [ID, OTHER]
+            .iter()
+            .map(|id| {
+                let things = import_things(root.path(), id).unwrap();
+                solstone_core_trash::Chosen {
+                    unit: Unit::Import {
+                        source: things.source.clone(),
+                        id: (*id).to_owned(),
+                    },
+                    paths: things.paths(),
+                    label: None,
+                }
+            })
+            .collect();
+        let results = crate::trash_kinds::with_kinds(root.path(), |kinds| {
+            solstone_core_trash::detach_set(
+                root.path(),
+                kinds,
+                chosen,
+                Action::ImportDelete,
+                surface(),
+                false,
+            )
+        })
+        .unwrap();
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, solstone_core_trash::SetResult::Moved { .. }))
+        );
+        assert_eq!(solstone_core_trash::list(root.path()).unwrap().len(), 2);
+        assert!(!root.path().join("imports").join(OTHER).exists());
+    }
+
+    #[test]
+    fn a_running_import_is_held() {
+        let root = journal();
+        let now = 1_700_000_000_000;
+        crate::admit_running_attempt(root.path(), ID, now, None).unwrap();
+        let error = Imports::new(&NoIndex)
+            .trash(root.path(), ID, Action::ImportDelete, surface())
+            .unwrap_err();
+        assert_eq!(failure_key(&error), "importing");
+        assert!(root.path().join("imports").join(ID).is_dir());
+        crate::metadata::release_attempt(root.path(), ID);
+    }
+
+    #[test]
+    fn deletes_here_leaves_the_body_lane_and_merges_alone() {
+        for source in ["strava", "apple_health", "oura", "journal_archive"] {
+            assert!(!deletes_here(source), "{source}");
+        }
+        for source in [
+            "document",
+            "image",
+            "text",
+            "audio",
+            "audio_archive",
+            "ics",
+            "chatgpt",
+        ] {
+            assert!(deletes_here(source), "{source}");
+        }
+    }
+}
