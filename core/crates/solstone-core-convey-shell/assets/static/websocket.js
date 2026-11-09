@@ -483,12 +483,13 @@
     }, Math.round(base * (0.7 + Math.random() * 0.6)));
   }
 
-  // One question, asked a few times at once. A link that dropped silently can
-  // leave the browser holding idle connections that will never answer, and a
-  // single question can land on one of them and wait out its bound. Each copy
-  // takes a different connection, so whichever reaches the journal answers
-  // for all of them, and the rest are stopped.
-  const PROBE_FANOUT = 4;
+  // One question, asked on as many connections as a browser keeps to one
+  // address. A link that dropped silently can leave the browser holding idle
+  // connections that will never answer, and a single question can land on one
+  // of them and wait out its bound. Each copy takes a different connection, so
+  // whichever reaches the journal answers for all of them, and the rest are
+  // stopped. The silent stream is closed first, so its connection is free.
+  const PROBE_FANOUT = 6;
 
   function askOnce(signal) {
     if (window.boundedRequest) {
@@ -582,6 +583,12 @@
     if (probing || probeTimer !== null) return;
     if (now - visibleSince < RETURN_GRACE_MS) return;
     if (eventSource.readyState === 2 || silence > SUSPECT_SILENCE_MS) {
+      // A silent stream is no longer trusted: it is closed, and the mark says
+      // it is connecting until a new one is heard from.
+      if (eventSource.readyState !== 2) {
+        eventSource.close();
+        if (connectionState === 'connected') updateStatusIcon('connecting');
+      }
       // The first question goes at once; a stream that keeps failing after
       // the journal answered is asked about on the backoff, never in a loop.
       if (probeAttempt === 0) {
