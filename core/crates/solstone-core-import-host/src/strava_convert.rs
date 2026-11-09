@@ -50,6 +50,8 @@ thread_local! {
     /// Stop after this many durable writes, for a test of every stop point.
     static STOP_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     static WRITES_SEEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Runs once, just before a pass removes its lines.
+    static BEFORE_REMOVING: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
 }
 
 #[cfg(test)]
@@ -778,6 +780,10 @@ fn convert_component(
         }
         remove_activity_state(journal)?;
         stop_point()?;
+        #[cfg(test)]
+        if let Some(hook) = BEFORE_REMOVING.take() {
+            hook(journal);
+        }
         let mut changed = false;
         for (line, digest) in digests {
             let place = BodyRecordPlace {
@@ -1027,7 +1033,6 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
     }
     if !found_any
         && counts.waiting == 0
-        && counts.skipped_locked == 0
         && let Ok(_held) = hold_lock(journal.join(STRAVA_LOCK), lock_options)
         && read_epoch(journal) == epoch
         && fs::create_dir_all(journal.join("imports")).is_ok()

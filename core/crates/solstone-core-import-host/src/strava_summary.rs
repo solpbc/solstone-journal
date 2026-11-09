@@ -37,7 +37,7 @@ fn plural(count: u64, one: &str, many: &str) -> String {
     }
 }
 
-const NO_FACET_MEANS: &str = "a workout with no facet isn't listed with your activities, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
+const NO_FACET_MEANS: &str = "a workout with no facet isn't listed on the activities page, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
 
 /// `one` when `count` is 1, otherwise `many`.
 fn either<'a>(count: u64, one: &'a str, many: &'a str) -> &'a str {
@@ -128,7 +128,7 @@ impl StravaRunSummary {
         if filing.kept_sensed > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because {} already listed with your activities.\n",
+                "{} left where {}, because {} already listed on the activities page.\n",
                 plural(filing.kept_sensed, "workout was", "workouts were"),
                 either(filing.kept_sensed, "it was", "they were"),
                 either(filing.kept_sensed, "it's", "they're"),
@@ -137,7 +137,7 @@ impl StravaRunSummary {
         if filing.kept_unreadable > 0 {
             let _ = writeln!(
                 text,
-                "{} left where {}, because your journal couldn't read what's listed with your activities on {} day. importing again tries once more.\n",
+                "{} left where {}, because your journal couldn't read what's listed on the activities page on {} day. importing again tries once more.\n",
                 plural(filing.kept_unreadable, "workout was", "workouts were"),
                 either(filing.kept_unreadable, "it was", "they were"),
                 either(filing.kept_unreadable, "its", "their"),
@@ -151,7 +151,7 @@ impl StravaRunSummary {
         if records.written > 0 {
             let _ = writeln!(
                 text,
-                "{} newly listed with your activities on {}.\n",
+                "{} newly listed on the activities page for {}.\n",
                 plural(records.written, "workout is", "workouts are"),
                 either(records.written, "its day", "their days"),
             );
@@ -159,7 +159,7 @@ impl StravaRunSummary {
         if records.no_facet > 0 {
             let _ = writeln!(
                 text,
-                "{} no facet, so {} listed with your activities.\n",
+                "{} no facet, so {} listed on the activities page.\n",
                 plural(records.no_facet, "workout has", "workouts have"),
                 either(records.no_facet, "it isn't", "they aren't"),
             );
@@ -167,7 +167,7 @@ impl StravaRunSummary {
         if !records.refused.is_empty() {
             let _ = writeln!(
                 text,
-                "not every workout could be listed with your activities this time. importing again tries once more.\n"
+                "not every workout could be listed on the activities page this time. importing again tries once more.\n"
             );
         }
         if self.conversion.waiting + self.conversion.skipped_locked > 0 {
@@ -179,8 +179,9 @@ impl StravaRunSummary {
         if self.conversion.moves_open > 0 {
             let _ = writeln!(
                 text,
-                "{} still being moved, and can be edited once that finishes.\n",
-                plural(self.conversion.moves_open, "record is", "records are"),
+                "{} couldn't finish moving yet. your journal tries again the next time it starts, and you can edit {} after that.\n",
+                plural(self.conversion.moves_open, "record", "records"),
+                either(self.conversion.moves_open, "it", "them"),
             );
         }
     }
@@ -480,9 +481,12 @@ mod tests {
             text.contains("some earlier workouts couldn't be updated yet"),
             "{text}"
         );
-        assert!(text.contains("1 record is still being moved"), "{text}");
+        assert!(
+            text.contains("1 record couldn't finish moving yet"),
+            "{text}"
+        );
         let none = summary(Some("body"), FacetBasis::Chosen).text();
         assert!(!none.contains("earlier workouts"), "{none}");
-        assert!(!none.contains("being moved"), "{none}");
+        assert!(!none.contains("finish moving"), "{none}");
     }
 }

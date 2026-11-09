@@ -69,7 +69,7 @@ impl ImportSize {
             }
             if let Some((count, from)) = &self.listed_moves {
                 result.push_str(&format!(
-                    "{} {} already listed with your activities would move to this import's facet from {}\n",
+                    "{} {} already listed on the activities page would move to this import's facet from {}\n",
                     count,
                     if *count == 1 { "workout" } else { "workouts" },
                     from.join(", ")

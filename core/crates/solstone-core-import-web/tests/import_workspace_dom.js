@@ -3552,7 +3552,7 @@ async function runPreviewWithOnlyMovesCanStartAndSaysHowMany() {
   vm.runInContext(functionSource(workspace, 'startGuidedImport'), h.context);
   await h.context.startGuidedImport({ name: 'workout' });
   const said = h.elements.guidedSizePreview.textContent;
-  assert.ok(said.includes("2 workouts already listed with your activities would move to this import's facet from Work"), said);
+  assert.ok(said.includes("2 workouts already listed on the activities page would move to this import's facet from Work"), said);
   assert.ok(!said.includes('nothing to import'), said);
   assert.strictEqual(h.elements.guidedStartBtn.focused, true, 'a preview with only moves can start');
   cases += 1;

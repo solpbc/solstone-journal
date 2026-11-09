@@ -222,6 +222,48 @@ fn snapshot(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 #[test]
+fn an_import_nobody_answered_for_moves_nothing_already_listed() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(count(&run, "filed"), 0);
+    assert_eq!(count(&run, "kept_sensed"), 3);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[test]
 fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() {
     let journal = journal(&["body", "work"]);
     let root = journal.path();

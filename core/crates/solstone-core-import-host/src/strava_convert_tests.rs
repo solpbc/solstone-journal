@@ -539,7 +539,7 @@ fn a_sweep_queues_tiles_it_moves_and_leaves_the_refile_list_empty() {
     );
     add_line(root, "b", DAY, sense(json!({})));
     run(root);
-    assert!(!root.join("imports/.strava-refiled.json").exists());
+    assert!(!root.join("imports/.strava-refile.json").exists());
     let queued = fs::read_dir(root.join("indexer/todo"))
         .unwrap()
         .flatten()
@@ -956,4 +956,42 @@ fn a_move_that_cant_finish_is_counted_and_finished_at_the_next_start() {
     assert_eq!(run(root).moves_open, 0);
     assert_eq!(lines(root, "b", "20260102").len(), 1);
     assert!(lines(root, "a", DAY).is_empty());
+}
+
+#[test]
+fn a_line_changed_just_before_its_removal_stays_until_it_is_carried() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    BEFORE_REMOVING.set(Some(|root| {
+        let path = file(root, "a", DAY);
+        let edited = fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let mut value: Value = serde_json::from_str(line).unwrap();
+                if value.get("stream").is_some() {
+                    value["title"] = json!("Mine");
+                    value["edits"] = json!([title_edit("2026-11-09T05:00:00Z", "Mine")]);
+                }
+                format!("{value}\n")
+            })
+            .collect::<String>();
+        fs::write(&path, edited).unwrap();
+    }));
+    assert_eq!(run(root).converted, 1);
+    let records = lines(root, "a", DAY);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["title"], "Mine");
+}
+
+#[test]
+fn only_an_unreadable_file_writes_no_marker() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    fs::create_dir_all(file(root, "a", "20260105")).unwrap();
+    let counts = run(root);
+    assert_eq!(counts.waiting, 1, "{counts:?}");
+    assert!(!root.join(MARKER).exists());
 }

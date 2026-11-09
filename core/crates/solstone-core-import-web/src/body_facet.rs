@@ -37,7 +37,7 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ),
     (
         "no_means",
-        "if you say no, new workouts aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
+        "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
     ),
     ("yes", "yes"),
     ("no", "no"),
@@ -45,11 +45,11 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ("none_option", "no facet"),
     (
         "files_earlier",
-        "this files every workout in this download under {facet}, including any already listed with your activities. the preview says how many of those would move.",
+        "this files every workout in this download under {facet}, including any already listed on the activities page. the preview says how many of those would move.",
     ),
     (
         "none_hint",
-        "new workouts in this import aren't listed with your activities, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
+        "new workouts in this import aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.",
     ),
     (
         "unanswered",
