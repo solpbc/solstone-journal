@@ -1178,6 +1178,13 @@ fn inspect_day(
     let mut recorded_seconds = 0_u64;
     let mut set_aside_seconds = 0_u64;
     let mut owed_segments = Vec::new();
+    // A vault's notes from before the last week are history arriving, and take
+    // the ladder's import place, as an equally large import would.
+    let note_history = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .is_ok_and(|date| today.signed_duration_since(date).num_days() > 7);
+    let is_note_stream =
+        |stream: &str| note_history && solstone_core_segment::is_obsidian_stream(journal, stream);
+    let mut day_holds_note_history = false;
     for segment in &segments {
         if is_mcp_audit_segment(Some(&segment.stream)) {
             continue;
@@ -1212,10 +1219,13 @@ fn inspect_day(
             stream: segment.stream.clone(),
             segment: segment.key.clone(),
         };
-        let imported = sources
-            .imports
-            .iter()
-            .any(|import| import.segments.contains(&coordinate));
+        let is_note_history = is_note_stream(&segment.stream);
+        day_holds_note_history |= is_note_history;
+        let imported = is_note_history
+            || sources
+                .imports
+                .iter()
+                .any(|import| import.segments.contains(&coordinate));
         let explicit = intent
             .map(|_| WorkBand::Waiting)
             .or_else(|| (segment.stream == "import.archive").then_some(WorkBand::Import))
@@ -1275,10 +1285,11 @@ fn inspect_day(
         false
     } else {
         let closing = day_still_closing(journal, queue, SystemTime::now()).as_deref() == Some(day);
-        let imported = sources
-            .imports
-            .iter()
-            .any(|import| import.days.contains(day));
+        let imported = day_holds_note_history
+            || sources
+                .imports
+                .iter()
+                .any(|import| import.days.contains(day));
         let explicit = intent
             .map(|_| WorkBand::Waiting)
             .or_else(|| imported.then_some(WorkBand::Import));
@@ -3658,6 +3669,32 @@ mod tests {
         assert_eq!(report.oldest_day.as_deref(), Some("20000101"));
         assert!(queue.contains_reference("supervisor-work-20000101-notes-120000_60"));
         assert!(!queue.contains_reference("supervisor-work-19990101-daily"));
+    }
+
+    #[test]
+    fn a_vaults_old_notes_take_the_import_place_on_the_ladder() {
+        let root = fixture("local");
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join("streams/mac_obsidian.json"),
+            r#"{"name":"mac_obsidian","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"obsidian"}"#,
+        )
+        .unwrap();
+        let notes = root
+            .path()
+            .join("chronicle/19990101/mac_obsidian/094000_300");
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::write(
+            notes.join("note_transcript.md"),
+            "## a\nSource: a.md\n\nwords\n",
+        )
+        .unwrap();
+        let (mut report, _queue) = inventory_after_a_pass(root.path());
+        let import = report.band(WorkBand::Import).segments_owed
+            + report.band(WorkBand::Import).segments_complete;
+        assert!(import > 0, "{report:?}");
+        let completing = report.band(WorkBand::Completing).segments_owed;
+        assert_eq!(completing, 0, "{report:?}");
     }
 
     /// A body window as the real writer leaves it, with a chosen facet.

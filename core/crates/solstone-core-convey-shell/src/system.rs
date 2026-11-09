@@ -13,7 +13,7 @@ use solstone_core_home::readers::get_capture_health;
 /// What this journal understands from a linked device, beyond the ingest
 /// protocol itself. A device sends a kind of content only to a journal that
 /// lists it here.
-const CAPABILITIES: &[&str] = &["calendar_notes"];
+const CAPABILITIES: &[&str] = &["calendar_notes", "obsidian_notes"];
 
 /// What the journal's own update check last learned. The status route reads
 /// only this, so no page or device reading it causes a request to the update

@@ -385,6 +385,17 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Excluded,
     },
+    // Note changes a linked device reports from an Obsidian vault, written by
+    // ingest as one transcript per window.
+    FamilyPattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/note_transcript.md",
+        family: Family::Markdown,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
+    },
     // Notes about the owner's calendar. Readable by a connection that sees the
     // whole journal's transcripts; they belong to no facet.
     FamilyPattern {

@@ -11,6 +11,7 @@
 use std::path::Path;
 
 use solstone_core_format::calendar::CALENDAR_SOURCE;
+use solstone_core_format::obsidian::OBSIDIAN_SOURCE;
 use solstone_core_journal_io::Segment;
 
 use crate::segment_dir::is_safe_stream_component;
@@ -23,6 +24,16 @@ pub fn is_calendar_stream(journal: &Path, stream: &str) -> bool {
         && matches!(
             read_typed_stream_record(&stream_record_path(journal, stream)),
             Ok(Some(record)) if record.source.as_deref() == Some(CALENDAR_SOURCE)
+        )
+}
+
+/// Whether `stream` is bound to the Obsidian source: note changes reported
+/// from a vault.
+pub fn is_obsidian_stream(journal: &Path, stream: &str) -> bool {
+    is_safe_stream_component(stream)
+        && matches!(
+            read_typed_stream_record(&stream_record_path(journal, stream)),
+            Ok(Some(record)) if record.source.as_deref() == Some(OBSIDIAN_SOURCE)
         )
 }
 

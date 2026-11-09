@@ -6052,15 +6052,18 @@ name = "solstone-core-ingest"
 version = "2.0.72"
 dependencies = [
  "axum",
+ "chrono",
  "log",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-format",
  "solstone-core-indexer-todo",
  "solstone-core-ingest-contract",
  "solstone-core-ingest-resolve",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "solstone-core-sol-link",

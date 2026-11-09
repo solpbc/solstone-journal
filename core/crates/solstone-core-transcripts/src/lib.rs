@@ -1899,6 +1899,7 @@ fn transcript_header(stream: Option<&str>) -> &'static str {
         Some("import.ics") => "Calendar Event",
         Some("import.obsidian") => "Note",
         Some("import.kindle") => "Highlights",
+        Some(stream) if solstone_core_format::obsidian::is_obsidian_stream_name(stream) => "Note",
         _ => "Transcript",
     }
 }

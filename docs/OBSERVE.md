@@ -54,6 +54,14 @@ A kept file is stored exactly as sent and queued for search at once. It sends no
 
 Importing a calendar exported as an `.ics` file writes notes in the same format beside each import window's transcript; [THINK.md](THINK.md#calendar-listing) describes how they differ.
 
+### Obsidian notes
+
+The solstone app on the device where a vault lives reports each note change to its journal with `source="obsidian"`, through the same protocol-v3 ingest path. It sends only to a journal whose `/api/system/status` lists `obsidian_notes` in `capabilities`. The wire contract is in the [client ingest contract](openapi/client-ingest-contract/projection.openapi.json) and the producer's golden lines.
+
+A file named `obsidian_<sha256>.jsonl` carries a window's changes. It is validated whole, and refused whole with `obsidian_note_invalid` if any rule breaks. It is never stored: ingest applies its lines to the journal's private state under `config/obsidian-vaults/` and writes one `note_transcript.md` for the window, holding only what changed. A note seen for the first time is the whole note. An edit holds what was inserted, with a count of the words removed and never the words themselves. A rename or delete is one entry, and link rewrites caused by a rename fold into it. An upload that changes nothing, such as a resend or a second device reporting what the journal already has, writes nothing and answers `duplicate`. A window later than the journal's today answers `obsidian_note_ahead` and the device sends it again later.
+
+The private state is one file per note holding its latest text, used only to work out what changed. It is never a memory, never indexed and never served. `GET /app/devices/ingest/obsidian/vaults` lists vaults held from other devices, so an app can warn before the first send of a vault with the same name. A vault's notes from before the last week take the import place on the priority ladder and send no live processing event.
+
 ## Commands
 
 | Command | Purpose |

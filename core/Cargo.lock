@@ -5461,6 +5461,7 @@ dependencies = [
  "solstone-core-indexer-todo",
  "solstone-core-ingest-contract",
  "solstone-core-ingest-resolve",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "solstone-core-sol-link",

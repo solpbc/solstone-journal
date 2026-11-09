@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "15.1.0";
+const BUNDLE_SEMVER: &str = "15.2.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -31,27 +31,37 @@ const ARTIFACTS: [&str; 5] = [
     "fixtures/wire-behavior.json",
     "consumer-audit.json",
 ];
-const OPERATION_SPECS: [(&str, &str, &str); 2] = [
+const OPERATION_SPECS: [(&str, &str, &str); 3] = [
     ("/app/devices/ingest", "post", "client.ingestUpload"),
     (
         "/app/devices/ingest/segments/{day}",
         "get",
         "client.ingestSegments",
     ),
+    (
+        "/app/devices/ingest/obsidian/vaults",
+        "get",
+        "client.ingestObsidianVaults",
+    ),
 ];
-const COMPONENT_CLOSURE: [&str; 5] = [
+const COMPONENT_CLOSURE: [&str; 6] = [
     "Error",
     "FileDescriptor",
     "SegmentFile",
+    "ObsidianVaultsEnvelope",
     "SegmentItem",
     "SegmentsEnvelope",
 ];
 /// Upload refusals a device must handle for content it sends, each with an
 /// example detail.
-const UPLOAD_REFUSALS: [(&str, &str); 2] = [
+const UPLOAD_REFUSALS: [(&str, &str); 3] = [
     ("browser_record_invalid", "row=1 field=blocks cause=limit"),
     (
         "calendar_note_invalid",
+        "line 2: changed_at falls outside the segment window",
+    ),
+    (
+        "obsidian_note_invalid",
         "line 2: changed_at falls outside the segment window",
     ),
 ];
@@ -159,7 +169,7 @@ fn selected_projection(authority: &Value) -> Value {
         "info": {
             "title": "Linked-device v3 ingest client contract",
             "version": BUNDLE_SEMVER,
-            "description": "Generated from client_ingest_authority.json. Covers only the two Rust-served linked-device devices/ingest operations: upload and segment listing.",
+            "description": "Generated from client_ingest_authority.json. Covers only the three Rust-served linked-device devices/ingest operations: upload, segment listing and the Obsidian vault list.",
             "x-generated": true,
             "x-generated-by": "solstone-core-repository-contracts"
         },
@@ -595,7 +605,11 @@ fn regenerate_client_ingest_contract_bundle() {
 
 #[test]
 fn content_refusals_are_enumerated_in_authority_and_bundle() {
-    for reason_code in ["browser_record_invalid", "calendar_note_invalid"] {
+    for reason_code in [
+        "browser_record_invalid",
+        "calendar_note_invalid",
+        "obsidian_note_invalid",
+    ] {
         assert_refusal_enumerated(reason_code);
     }
 }

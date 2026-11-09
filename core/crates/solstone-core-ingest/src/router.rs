@@ -24,6 +24,9 @@ use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_respon
 use solstone_core_format::calendar::{
     CALENDAR_SOURCE, names_calendar_file, validate_calendar_file,
 };
+use solstone_core_format::obsidian::{
+    NOTE_TRANSCRIPT_FILE, NoteChange, OBSIDIAN_SOURCE, names_obsidian_file, validate_obsidian_file,
+};
 use solstone_core_ingest_contract::{
     CONNECTION_BODY_LIMIT, MAX_PART_BYTES, validate_browser_jsonl,
 };
@@ -90,7 +93,15 @@ impl IngestNotifier for CallosumIngestNotifier {
             "files".to_owned(),
             Value::Array(notice.files.iter().cloned().map(Value::String).collect()),
         );
-        extra.insert("batch".to_owned(), Value::Bool(false));
+        // A note from an earlier day is history arriving, not something
+        // happening now: the daily catch-up takes it, as it does an import's.
+        extra.insert(
+            "batch".to_owned(),
+            Value::Bool(
+                notice.source == OBSIDIAN_SOURCE
+                    && notice.day < today(&self.journal, now_ms()).as_str(),
+            ),
+        );
         extra.insert("meta".to_owned(), Value::Object(notice.meta.clone()));
         let envelope = CallosumEnvelope {
             tract: "observe".to_owned(),
@@ -140,13 +151,24 @@ fn marks_owner_activity(source: &str) -> bool {
     source != CALENDAR_SOURCE
 }
 
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
 fn wall_clock_ms() -> Arc<dyn Fn() -> i64 + Send + Sync> {
-    Arc::new(|| {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64
-    })
+    Arc::new(now_ms)
+}
+
+/// The journal's own day at this moment, in the owner's zone.
+fn today(journal: &Path, now_ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(now_ms)
+        .unwrap_or_default()
+        .with_timezone(&solstone_core_journal_config::owner_zone(journal))
+        .format("%Y%m%d")
+        .to_string()
 }
 
 /// Build the mergeable linked-device segment-arrival routes.
@@ -173,6 +195,10 @@ fn api_router_with(
     Router::new()
         .route("/app/devices/ingest", post(ingest_upload))
         .route("/app/devices/ingest/segments/{day}", get(ingest_segments))
+        .route(
+            "/app/devices/ingest/obsidian/vaults",
+            get(crate::obsidian::obsidian_vaults),
+        )
         .layer(DefaultBodyLimit::max(CONNECTION_BODY_LIMIT))
         .layer(RequestBodyLimitLayer::new(CONNECTION_BODY_LIMIT))
         .with_state(IngestState {
@@ -412,6 +438,8 @@ struct Envelope {
     source: String,
     meta: Map<String, Value>,
     files: Vec<IncomingFile>,
+    /// The checked lines of an Obsidian upload.
+    note_changes: Option<Vec<NoteChange>>,
 }
 
 fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (ReasonCode, String)> {
@@ -547,12 +575,14 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
         }
         validate_calendar_upload(&source, &day, &segment, file)?;
     }
+    let note_changes = validate_obsidian_upload(&source, &day, &segment, &files)?;
     Ok(Envelope {
         day,
         segment,
         source,
         meta,
         files,
+        note_changes,
     })
 }
 
@@ -584,6 +614,39 @@ fn validate_calendar_upload(
     validate_calendar_file(&file.submitted, &file.bytes, day, segment)
         .map(|_| ())
         .map_err(|error| (ReasonCode::CalendarNoteInvalid, error.to_string()))
+}
+
+/// Note files arrive only under the Obsidian source, one to an upload, and
+/// that source carries nothing else.
+fn validate_obsidian_upload(
+    source: &str,
+    day: &str,
+    segment: &str,
+    files: &[IncomingFile],
+) -> Result<Option<Vec<NoteChange>>, (ReasonCode, String)> {
+    let invalid = |detail: &str| (ReasonCode::ObsidianNoteInvalid, detail.to_owned());
+    if source != OBSIDIAN_SOURCE {
+        if files
+            .iter()
+            .any(|file| names_obsidian_file(&file.submitted))
+        {
+            return Err(invalid(
+                "note files are accepted only from the obsidian source",
+            ));
+        }
+        return Ok(None);
+    }
+    let [file] = files else {
+        return Err(invalid(
+            "the obsidian source carries one note file per upload",
+        ));
+    };
+    if !names_obsidian_file(&file.submitted) {
+        return Err(invalid("the obsidian source carries only note files"));
+    }
+    validate_obsidian_file(&file.submitted, &file.bytes, day, segment)
+        .map(Some)
+        .map_err(|error| (ReasonCode::ObsidianNoteInvalid, error.to_string()))
 }
 
 fn stream_kind(source: &str) -> Kind {
@@ -700,8 +763,84 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
         }
     };
     let source = Some(envelope.source.clone());
-    let completion = write_envelope_inner(state, cid, envelope).with_source(source);
+    let completion = if envelope.note_changes.is_some() {
+        write_note_changes(state, cid, envelope)
+    } else {
+        write_envelope_inner(state, cid, envelope)
+    }
+    .with_source(source);
     finish_ingest_completion(state, cid, completion)
+}
+
+/// Turn an Obsidian upload into its window's memory and write that the
+/// ordinary way. The note's text never reaches the segment; only what changed
+/// does. The caller holds the source lock, so uploads apply one at a time.
+fn write_note_changes(state: &IngestState, cid: &str, mut envelope: Envelope) -> IngestCompletion {
+    let write_failed = |detail: &str| {
+        IngestCompletion::rejected(
+            ReasonCode::JournalWriteFailed,
+            outcome_error(
+                "failed",
+                ReasonCode::JournalWriteFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                detail,
+            ),
+        )
+    };
+    // Nothing may be dated after the journal's today. The device holds the
+    // file and sends it again once the journal's day has caught up.
+    if envelope.day > today(&state.journal_root, (state.now_ms)()) {
+        return IngestCompletion::rejected(
+            ReasonCode::ObsidianNoteAhead,
+            refusal(
+                ReasonCode::ObsidianNoteAhead,
+                StatusCode::CONFLICT,
+                "this window is later than the journal's today; send it again later",
+            ),
+        );
+    }
+    let changes = envelope.note_changes.take().unwrap_or_default();
+    let prepared = match crate::obsidian::prepare(&state.journal_root, changes) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            log::warn!("obsidian note state unreadable: {error}");
+            return write_failed("cannot read note state");
+        }
+    };
+    let Some(transcript) = prepared.transcript.clone() else {
+        // Nothing here is new: a resend, or a second device reporting what
+        // the journal already has.
+        if let Err(error) = prepared.commit(&state.journal_root, cid) {
+            log::warn!("obsidian note state not saved: {error}");
+            return write_failed("cannot save note state");
+        }
+        let body = json!({
+            "status": "duplicate",
+            "existing_segment": envelope.segment,
+            "message": "Nothing new in this file",
+            "file_descriptors": [],
+            "meta": envelope.meta,
+        });
+        return IngestCompletion::accepted(
+            envelope.day,
+            envelope.segment,
+            Json(body).into_response(),
+        );
+    };
+    envelope.files = vec![IncomingFile {
+        submitted: NOTE_TRANSCRIPT_FILE.to_owned(),
+        bytes: transcript,
+        descriptor_extra: Map::new(),
+    }];
+    let completion = write_envelope_inner(state, cid, envelope);
+    if !matches!(completion.activity, IngestActivity::Accepted(_)) {
+        return completion;
+    }
+    if let Err(error) = prepared.commit(&state.journal_root, cid) {
+        log::warn!("obsidian note state not saved: {error}");
+        return write_failed("cannot save note state");
+    }
+    completion
 }
 
 fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> IngestCompletion {
@@ -1781,6 +1920,7 @@ mod tests {
                 bytes: b"upload".to_vec(),
                 descriptor_extra: Map::new(),
             }],
+            note_changes: None,
         }
     }
 
@@ -5548,6 +5688,37 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn an_earlier_day_arrives_as_history_and_today_as_it_happens() {
+            use sha2::Digest as _;
+            let dir = root();
+            let root = dir.path();
+            let (server, mut peer, _namespace) = listening_peer(root).await;
+            let app = api_router(root);
+            let text = "words\n";
+            let line = format!(
+                "{}\n",
+                json!({"v":1,"change":"changed","vault":"Notes","path":"a.md","previous_path":null,
+                       "changed_at":"2026-10-19T09:42:10-07:00","observed_at":"2026-10-19T09:42:10-07:00",
+                       "text":text,"content_hash":format!("{:x}", sha2::Sha256::digest(text.as_bytes()))})
+            );
+            let name = format!("obsidian_{:x}.jsonl", sha2::Sha256::digest(line.as_bytes()));
+            let bytes = line.into_bytes();
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "obsidian", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            let observed = next_observing(&mut peer).await;
+            assert_eq!(observed.extra["batch"], true);
+            assert_eq!(stream_marker_generation(root, "20261019"), 1);
+            peer.stop().await;
+            server.stop().await;
+        }
+
+        #[tokio::test]
         async fn the_window_is_read_in_each_note_s_own_offset_never_the_journal_zone_or_meta() {
             let dir = root();
             let root = dir.path();
@@ -5684,6 +5855,170 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(serde_json::from_str(line).unwrap());
+        }
+    }
+
+    mod obsidian_ingest {
+        use sha2::{Digest, Sha256};
+
+        use super::*;
+
+        fn upload(day: &str, segment: &str, source: &str, name: &str) -> Value {
+            json!({"day": day, "segment": segment, "source": source, "files": [{"submitted": name}]})
+        }
+
+        fn chronicle_files(root: &Path) -> Vec<String> {
+            fn walk(dir: &Path, out: &mut Vec<String>) {
+                let Ok(entries) = fs::read_dir(dir) else {
+                    return;
+                };
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        walk(&path, out);
+                    } else {
+                        out.push(path.display().to_string());
+                    }
+                }
+            }
+            let mut files = Vec::new();
+            walk(&root.join("chronicle"), &mut files);
+            files.sort();
+            files
+        }
+
+        fn note_line(path: &str, changed_at: &str, text: &str) -> String {
+            let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
+            format!(
+                "{}\n",
+                json!({"v":1,"change":"changed","vault":"Notes","path":path,"previous_path":null,
+                       "changed_at":changed_at,"observed_at":changed_at,"text":text,"content_hash":hash})
+            )
+        }
+
+        fn note_file(line: &str) -> (String, Vec<u8>) {
+            let name = format!("obsidian_{:x}.jsonl", Sha256::digest(line.as_bytes()));
+            (name, line.as_bytes().to_vec())
+        }
+
+        #[tokio::test]
+        async fn a_change_becomes_a_memory_and_only_what_changed_is_stored() {
+            let dir = root();
+            let root = dir.path();
+            let app = api_router_with_notifier(root, SpyNotifier::succeeding());
+            let line = note_line("a.md", "2026-10-19T09:42:10-07:00", "first words\n");
+            let (name, bytes) = note_file(&line);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "obsidian", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "ok");
+            let memory = "20261019/device_obsidian/094000_300/note_transcript.md";
+            assert_eq!(
+                fs::read_to_string(root.join("chronicle").join(memory)).unwrap(),
+                "## a\nSource: a.md\n\nfirst words\n"
+            );
+            assert!(solstone_core_format::content::resolve_spec(memory).is_some());
+
+            // The edit: what's stored holds the new words and never the old ones,
+            // and the upload itself, a whole note, is stored nowhere in the chronicle.
+            let line = note_line(
+                "a.md",
+                "2026-10-19T10:02:10-07:00",
+                "first words\nand second words\n",
+            );
+            let (name, bytes) = note_file(&line);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "100000_300", "obsidian", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            let edit = fs::read_to_string(
+                root.join("chronicle/20261019/device_obsidian/100000_300/note_transcript.md"),
+            )
+            .unwrap();
+            assert!(edit.contains("and second words"), "{edit}");
+            assert!(!edit.contains("first words"), "{edit}");
+            let files = chronicle_files(root);
+            assert!(
+                files.iter().all(|file| !file.contains("/obsidian_")),
+                "{files:?}"
+            );
+
+            // A resend is recognised, and writes nothing.
+            let count = chronicle_files(root).len();
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "100000_300", "obsidian", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "duplicate");
+            assert_eq!(chronicle_files(root).len(), count);
+        }
+
+        #[tokio::test]
+        async fn a_window_later_than_the_journal_s_today_is_held_not_stored() {
+            let dir = root();
+            let root = dir.path();
+            fs::create_dir_all(root.join("config")).unwrap();
+            fs::write(
+                root.join("config/journal.json"),
+                json!({"identity": {"timezone": "UTC"}}).to_string(),
+            )
+            .unwrap();
+            // 2026-10-19 12:00 UTC.
+            let noon = 1_792_411_200_000_i64;
+            let app = api_router_with(root, SpyNotifier::succeeding(), Arc::new(move || noon));
+            let line = note_line("a.md", "2026-10-20T09:42:10-07:00", "words\n");
+            let (name, bytes) = note_file(&line);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261020", "094000_300", "obsidian", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::CONFLICT, "{body}");
+            assert_eq!(body["reason_code"], "obsidian_note_ahead", "{body}");
+            assert!(chronicle_files(root).is_empty());
+        }
+
+        #[tokio::test]
+        async fn a_note_file_elsewhere_and_a_broken_file_are_refused_whole() {
+            let dir = root();
+            let root = dir.path();
+            let app = api_router_with_notifier(root, SpyNotifier::succeeding());
+            let line = note_line("a.md", "2026-10-19T09:42:10-07:00", "words\n");
+            let (name, bytes) = note_file(&line);
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094000_300", "audio", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(body["reason_code"], "obsidian_note_invalid", "{body}");
+            let (status, body) = call_upload(
+                &app,
+                upload("20261019", "094500_300", "obsidian", &name),
+                &name,
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(body["reason_code"], "obsidian_note_invalid", "{body}");
+            assert!(chronicle_files(root).is_empty());
         }
     }
 

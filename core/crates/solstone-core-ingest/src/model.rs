@@ -51,11 +51,13 @@ pub enum ReasonCode {
     SegmentRemoved,
     BrowserRecordInvalid,
     CalendarNoteInvalid,
+    ObsidianNoteInvalid,
+    ObsidianNoteAhead,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 45] = [
+    const ALL: [Self; 47] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -101,6 +103,8 @@ impl ReasonCode {
         Self::SegmentRemoved,
         Self::BrowserRecordInvalid,
         Self::CalendarNoteInvalid,
+        Self::ObsidianNoteInvalid,
+        Self::ObsidianNoteAhead,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -150,6 +154,8 @@ impl ReasonCode {
             Self::SegmentRemoved => "segment_removed",
             Self::BrowserRecordInvalid => "browser_record_invalid",
             Self::CalendarNoteInvalid => "calendar_note_invalid",
+            Self::ObsidianNoteInvalid => "obsidian_note_invalid",
+            Self::ObsidianNoteAhead => "obsidian_note_ahead",
         }
     }
 }

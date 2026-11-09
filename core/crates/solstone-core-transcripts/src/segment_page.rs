@@ -463,6 +463,9 @@ fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static st
             Some("import.obsidian") => "Note",
             Some("import.kindle") => "Highlights",
             Some("import.ics") => "Calendar Event",
+            Some(stream) if solstone_core_format::obsidian::is_obsidian_stream_name(stream) => {
+                "Note"
+            }
             _ => "Imported Text",
         },
     }

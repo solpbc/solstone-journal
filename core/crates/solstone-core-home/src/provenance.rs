@@ -45,6 +45,7 @@ pub enum WhatWord {
     Camera,
     Location,
     Calendar,
+    Notes,
 }
 
 impl WhatWord {
@@ -55,6 +56,7 @@ impl WhatWord {
             Self::Camera => "camera",
             Self::Location => "location",
             Self::Calendar => "calendar",
+            Self::Notes => "notes",
         }
     }
 }
@@ -329,8 +331,8 @@ fn classify_bound_source(
         source if source.starts_with("browser") => (Some(DeviceWord::Browser), None),
         // An empty source is what ingest stores when a client names none: the
         // device's own recording, with nothing read about what it recorded.
-        "" | "audio" | "screen" | "camera" | "location" | "calendar" | "mobile-segment"
-        | "mobile" => {
+        "" | "audio" | "screen" | "camera" | "location" | "calendar" | "obsidian"
+        | "mobile-segment" | "mobile" => {
             let device_word = resolve_platform_device_word(record, description, ledger_entry);
             let what_word = match source {
                 "audio" => Some(WhatWord::Audio),
@@ -338,6 +340,7 @@ fn classify_bound_source(
                 "camera" => Some(WhatWord::Camera),
                 "location" => Some(WhatWord::Location),
                 "calendar" => Some(WhatWord::Calendar),
+                "obsidian" => Some(WhatWord::Notes),
                 _ => None,
             };
             (device_word, what_word)

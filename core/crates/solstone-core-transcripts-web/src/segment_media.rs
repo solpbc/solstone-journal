@@ -131,7 +131,9 @@ impl SegmentMedia {
 }
 
 pub(crate) fn markdown_only(dir: &Path, stream: &str) -> bool {
-    if !stream.starts_with("import.") {
+    if !stream.starts_with("import.")
+        && !solstone_core_format::obsidian::is_obsidian_stream_name(stream)
+    {
         return false;
     }
     let Ok(entries) = fs::read_dir(dir) else {
