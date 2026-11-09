@@ -466,6 +466,60 @@ struct SupervisedJournalRunnerTests {
         #expect(diagnostic.outputExcerpt == UICopy.JOURNAL_CHILD_BREAKER_TRIPPED)
     }
 
+    @Test func automaticRelaunchRetriesAGateThatCouldNotCheck() async throws {
+        let fixture = try RunnerFixture()
+        defer { fixture.clear() }
+        let statuses = RunnerStatusRecorder()
+        let spawner = RecordingProcessSpawner(pids: [4242, 4243])
+        let blockage = SingleSupervisorGateBlockage.legacyServiceVerificationFailed(
+            JournalDiagnostic(commandLabel: "legacy journal service", outputExcerpt: "legacy service could not be inspected")
+        )
+        let runner = SupervisedJournalRunner(
+            clock: NoopRunnerClock(),
+            statusSink: { statuses.append($0) },
+            gate: ScriptedRunnerGate([.success, .blocked(blockage), .success]),
+            containmentEvidenceReader: FixedStartTimeReader(startTimes: [1_000, 2_000]),
+            processSpawner: spawner,
+            pidExists: { _ in false }
+        )
+
+        try await runner.start(runtime: fixture.runtime, journalRoot: fixture.realJournalRoot, port: 5015, receiptContext: makeReceiptFixture().context)
+        spawner.exit(spawn: 0, status: 9)
+        try await waitForSpawnCount(spawner, count: 2)
+
+        #expect(await runner.currentIdentity()?.generation == 2)
+        #expect(!statuses.snapshot().contains { if case .stopped = $0 { return true } else { return false } })
+    }
+
+    @Test func automaticRelaunchThatStaysBlockedStopsWithTheGatesReason() async throws {
+        let fixture = try RunnerFixture()
+        defer { fixture.clear() }
+        let statuses = RunnerStatusRecorder()
+        let spawner = RecordingProcessSpawner(pids: [4242])
+        let blockage = SingleSupervisorGateBlockage.legacyServiceVerificationFailed(
+            JournalDiagnostic(commandLabel: "legacy journal service", outputExcerpt: "legacy service could not be inspected")
+        )
+        let runner = SupervisedJournalRunner(
+            clock: NoopRunnerClock(),
+            statusSink: { statuses.append($0) },
+            gate: ScriptedRunnerGate([.success], then: .blocked(blockage)),
+            containmentEvidenceReader: FixedStartTimeReader(startTimes: [1_000]),
+            processSpawner: spawner,
+            pidExists: { _ in false }
+        )
+
+        try await runner.start(runtime: fixture.runtime, journalRoot: fixture.realJournalRoot, port: 5015, receiptContext: makeReceiptFixture().context)
+        spawner.exit(spawn: 0, status: 9)
+        try await waitForStatusCount(statuses, count: 1)
+
+        #expect(spawner.spawnRequests().count == 1)
+        guard case .stopped(let diagnostic) = statuses.snapshot().last else {
+            Issue.record("expected a terminal stop")
+            return
+        }
+        #expect(diagnostic.outputExcerpt == UICopy.JOURNAL_SPAWN_SERVICE_CHECK_FAILED)
+    }
+
     @Test func unresolvedContainmentSignalsOnlyVerifiedMembersAndNeverReachesRelaunchGate() async throws {
         let fixture = try RunnerFixture()
         defer { fixture.clear() }
@@ -878,6 +932,20 @@ private final class RecordingRunnerGate: SingleSupervisorGating, @unchecked Send
 
     func roots() -> [String] {
         lock.withLock { journalRoots }
+    }
+}
+
+private actor ScriptedRunnerGate: SingleSupervisorGating {
+    private var script: [SingleSupervisorGateResult]
+    private let fallback: SingleSupervisorGateResult
+
+    init(_ script: [SingleSupervisorGateResult], then fallback: SingleSupervisorGateResult = .success) {
+        self.script = script
+        self.fallback = fallback
+    }
+
+    func prepareForSpawn(journalRoot: URL) async -> SingleSupervisorGateResult {
+        script.isEmpty ? fallback : script.removeFirst()
     }
 }
 

@@ -688,6 +688,10 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
         }
 
         guard launchRequest != nil else { return }
+        scheduleBackoffRelaunch(afterGeneration: generation)
+    }
+
+    private func scheduleBackoffRelaunch(afterGeneration generation: UInt64) {
         let delay = backoffSchedule[min(backoffIndex, backoffSchedule.count - 1)]
         backoffIndex = min(backoffIndex + 1, backoffSchedule.count - 1)
         pendingRelaunchGeneration = generation
@@ -718,8 +722,9 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
               let launchRequest else { return }
         pendingRelaunchGeneration = nil
         relaunchTask = nil
-        generationRecords.removeValue(forKey: generation)
+        let exitedRecord = generationRecords.removeValue(forKey: generation)
         Logger.journal.notice("journal-lifecycle: runner-backoff-relaunch delaySeconds=\(delay.components.seconds, privacy: .public)")
+        let preparationBeforeLaunch = preparationGeneration
         do {
             try await launch(
                 runtime: launchRequest.runtime,
@@ -729,8 +734,27 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
                 automaticReplacement: true
             )
         } catch SupervisedJournalRunnerError.gateBlocked(let blockage) {
-            Logger.journal.error("journal-lifecycle: runner-backoff-gate-blocked")
-            let diagnostic = blockage.diagnostic
+            // A start, restart or stop that began while the gate ran owns the
+            // runner now; this attempt has nothing left to report.
+            guard preparationGeneration == preparationBeforeLaunch &+ 1,
+                  !stopping,
+                  activeGeneration == nil,
+                  pendingRelaunchGeneration == nil else { return }
+            // A blocked gate is one more failed attempt, not the end: the check
+            // may not have been able to run (launchd slow under memory pressure,
+            // ports not yet released). The usual breaker still bounds retries.
+            recordUnexpectedExit()
+            if unexpectedExitTimes.count < restartLimit, let exitedRecord {
+                Logger.journal.warning("journal-lifecycle: runner-backoff-gate-blocked retry=true unexpectedCount=\(self.unexpectedExitTimes.count, privacy: .public)")
+                generationRecords[generation] = exitedRecord
+                scheduleBackoffRelaunch(afterGeneration: generation)
+                return
+            }
+            Logger.journal.error("journal-lifecycle: runner-backoff-gate-blocked retry=false unexpectedCount=\(self.unexpectedExitTimes.count, privacy: .public)")
+            let diagnostic = JournalDiagnostic(
+                commandLabel: blockage.diagnostic.commandLabel,
+                outputExcerpt: blockage.ownerMessage
+            )
             terminalDiagnostic = diagnostic
             breakerTripped = true
             statusSink(.stopped(diagnostic))
