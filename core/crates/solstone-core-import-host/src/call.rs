@@ -19,15 +19,13 @@
 //! waiting. Cancellation is not reported while a native call is still inside
 //! its owner.
 //!
-//! Apple Health import and Oura connect stay on the desktop importer. An
-//! ordinary Oura sync does too. A stored Oura sync that already carries
-//! `--confirm-body-save` or `--scheduled` keeps the existing handwritten
-//! approval and is not given a new connect, card, or schedule entry.
+//! Apple Health import, Oura connect and every Oura sync stay on the desktop
+//! importer.
 //!
 //! [`crate::cli_argv::admit_arguments`] parses the same grammar and touches
 //! no journal, supervisor, or source bytes. [`classify_arguments`] returns
 //! that parse: the sync backend, `--path` when present, and whether the
-//! command is a held Body entry or a stored Oura sync. It does not load saved
+//! command is a held Body entry. It does not load saved
 //! audio settings. [`WorkStop::linked`] observes a
 //! parent cancellation flag and a deadline at each check.
 //! [`WorkStop::linked_with_checkpoint`] also calls the caller's retained

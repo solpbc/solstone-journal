@@ -215,10 +215,6 @@ mod tests {
     struct UnusedRestoreHooks;
 
     impl JournalMaintenance for UnusedRestoreHooks {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("backup routines do not restore")
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("backup routines do not restore")
         }

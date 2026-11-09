@@ -3889,7 +3889,6 @@ mod tests {
             Some(RegistrySource::Strava)
         );
         assert_eq!(RegistrySource::Strava.name(), "strava");
-        assert!(solstone_core_format::body::is_body_stream("import.strava"));
         assert!(
             !solstone_core_import_sources::registry::claims(RegistrySource::Strava, &csv_file)
                 .unwrap()

@@ -456,13 +456,6 @@ mod tests {
         }
         struct Maintenance;
         impl solstone_core_backup_runtime::JournalMaintenance for Maintenance {
-            fn rebuild_body_history(
-                &self,
-                root: &std::path::Path,
-            ) -> Result<(), solstone_core_backup_runtime::JournalMaintenanceError> {
-                std::fs::write(root.join("rebuild-finished"), b"rebuild")
-                    .map_err(|_| solstone_core_backup_runtime::JournalMaintenanceError)
-            }
             fn full_scan(
                 &self,
                 root: &std::path::Path,
@@ -554,7 +547,6 @@ mod tests {
             std::fs::read(journal.path().join("restored-through-retained-frame")).unwrap(),
             b"restored"
         );
-        assert!(journal.path().join("rebuild-finished").exists());
         assert!(journal.path().join("scan-enqueued").exists());
         assert!(matches!(
             read_whole_journal_restore(journal.path()),

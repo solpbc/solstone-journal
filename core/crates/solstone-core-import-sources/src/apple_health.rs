@@ -19,15 +19,18 @@ use chrono::{DateTime, Duration, FixedOffset, TimeZone, Timelike};
 use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_body_ingest::{AppleElement, AppleItem};
-#[cfg(test)]
-use solstone_core_body_ingest::{BodyIngestError, scan_apple_export};
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, DATED_WINDOW, RowKind, decode_rows, encode_rows, parse_source_time,
     plain_words, sort_rows, source_words,
 };
+#[cfg(test)]
+use solstone_core_import::BodyIngestError;
 use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
+
+#[cfg(test)]
+use crate::apple_export::scan_apple_export;
+use crate::apple_export::{AppleElement, AppleItem};
 use solstone_core_segment::{holds_foreign_content, owner_deleted};
 
 use crate::body_stream::{APPLE, BodySource, SpanPolicy, TileIds};

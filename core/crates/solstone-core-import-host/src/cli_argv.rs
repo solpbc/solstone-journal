@@ -1365,9 +1365,9 @@ fn resolve(
     if options.source.is_none()
         && options.media.exists()
         && requires_registry_classification(options.media)
-        && !solstone_core_body_ingest::detect_apple_source(options.media).map_err(|_| {
-            "could not inspect Apple Health export; retry with a valid export".to_owned()
-        })?
+        && !solstone_core_import_sources::apple_export::detect_apple_source(options.media).map_err(
+            |_| "could not inspect Apple Health export; retry with a valid export".to_owned(),
+        )?
     {
         // An export dropped with no source named is recognised by its content, in registry
         // order, as each source's own detector reads it.
@@ -1389,7 +1389,7 @@ fn resolve(
     }
     let zone = solstone_core_journal_config::owner_zone(journal_path);
     let mut seams = ResolutionSeams {
-        apple_detector: solstone_core_body_ingest::detect_apple_source,
+        apple_detector: solstone_core_import_sources::apple_export::detect_apple_source,
         // The source crate does not depend on this crate. The host pre-classifies
         // through solstone_core_import_sources::registry::claims in classify_export.
         // The resolver seam stays no_registry_claim so selection is not applied twice.
@@ -2526,7 +2526,7 @@ mod tests {
         assert_eq!(run.exit_code, 1, "{}", run.stderr);
         assert_eq!(
             run.stderr.trim_end(),
-            solstone_core_body_ingest::EXPORT_INCOMPLETE_TEXT
+            solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT
         );
     }
 

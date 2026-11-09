@@ -5148,7 +5148,6 @@ dependencies = [
  "sha2 0.10.9",
  "socket2",
  "solstone-core-backup",
- "solstone-core-body-rebuild",
  "solstone-core-callosum",
  "solstone-core-distribution",
  "solstone-core-indexer-store",
@@ -5190,55 +5189,6 @@ dependencies = [
  "solstone-core-sol-link",
  "solstone-core-system",
  "tokio",
-]
-
-[[package]]
-name = "solstone-core-body-ingest"
-version = "2.0.73"
-dependencies = [
- "chrono",
- "chrono-tz",
- "getrandom 0.3.4",
- "nix 0.30.1",
- "quick-xml",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-auth-flow",
- "solstone-core-body-rebuild",
- "solstone-core-body-source",
- "solstone-core-journal-config",
- "solstone-core-journal-config-write",
- "solstone-core-journal-io",
- "ureq",
- "zip",
-]
-
-[[package]]
-name = "solstone-core-body-rebuild"
-version = "2.0.73"
-dependencies = [
- "nix 0.30.1",
- "rusqlite",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-body-source",
- "solstone-core-body-store",
- "solstone-core-journal-io",
-]
-
-[[package]]
-name = "solstone-core-body-source"
-version = "2.0.73"
-dependencies = [
- "ryu",
- "sha2 0.10.9",
-]
-
-[[package]]
-name = "solstone-core-body-store"
-version = "2.0.73"
-dependencies = [
- "solstone-core-body-source",
 ]
 
 [[package]]
@@ -5738,7 +5688,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
@@ -5873,19 +5822,21 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
+ "solstone-core-auth-flow",
  "solstone-core-callosum",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-removals",
  "solstone-core-segment",
  "tempfile",
  "tokio",
+ "ureq",
 ]
 
 [[package]]
@@ -5900,7 +5851,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
  "solstone-core-callosum",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -5937,10 +5887,10 @@ dependencies = [
  "icalendar",
  "image",
  "nix 0.30.1",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
  "solstone-core-depict",
  "solstone-core-entity",
  "solstone-core-entity-matching",
@@ -7026,7 +6976,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",

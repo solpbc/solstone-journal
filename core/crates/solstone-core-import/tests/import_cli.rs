@@ -3,5 +3,3 @@
 
 #[path = "connect.rs"]
 mod connect;
-#[path = "consent_gate.rs"]
-mod consent_gate;

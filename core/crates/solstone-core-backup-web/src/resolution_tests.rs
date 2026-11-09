@@ -31,9 +31,6 @@ impl Clock for NoOpClock {
 
 struct NoOpMaintenance;
 impl JournalMaintenance for NoOpMaintenance {
-    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-        Ok(())
-    }
     fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
         Ok(())
     }

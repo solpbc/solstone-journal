@@ -1832,14 +1832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solstone-core-body-source"
-version = "2.0.73"
-dependencies = [
- "ryu",
- "sha2 0.10.9",
-]
-
-[[package]]
 name = "solstone-core-brain"
 version = "2.0.73"
 dependencies = [
@@ -2021,7 +2013,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
@@ -2459,7 +2450,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",

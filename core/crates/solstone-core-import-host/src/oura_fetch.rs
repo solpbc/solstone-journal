@@ -10,7 +10,7 @@
 //! the page after the last one the index names.
 //!
 //! The transport, its retries on 429 and 5xx, the reading of a 403 and the token
-//! refresh are the old sync's own (`solstone-core-body-ingest`'s `oura_sync`).
+//! refresh are the old sync's own (`solstone-core-import`'s `oura_http`).
 //! Tokens are the journal's. They are read from config when the fetch starts, and
 //! a 401 is answered by taking the old sync's lock, reading them again, and either
 //! using a refresh the other path just made or making the one refresh this run
@@ -31,11 +31,11 @@ use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use solstone_core_body_ingest::oura_sync::{
+use solstone_core_import::oura_http::{
     API_BASE, HttpResponse, LiveOuraHttp, OuraHttp, OuraSettings, ResponseClass, classify_response,
     encode_form, refresh, request_with_retry, settings,
 };
-use solstone_core_body_ingest::{BodyIngestError, BodyIngestErrorKind};
+use solstone_core_import::{BodyIngestError, BodyIngestErrorKind};
 use solstone_core_import_sources::oura::ENDPOINTS;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
@@ -827,7 +827,7 @@ impl<'j> Tokens<'j> {
             LockError::Timeout(_) => Fault::Stop(OuraStop::AnotherSync),
             other => Fault::Run(format!("the Oura sync lock couldn't be taken: {other}")),
         })?;
-        solstone_core_body_ingest::oura_sync::apply_held_renewal(self.journal)
+        solstone_core_import::oura_http::apply_held_renewal(self.journal)
             .map_err(|_| Fault::Run(TOKEN_STORE_WORDS.to_owned()))?;
         let mut current = load_settings(self.journal)?;
         if current.access_token != self.settings.access_token

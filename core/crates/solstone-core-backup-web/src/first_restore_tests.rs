@@ -366,9 +366,6 @@ async fn initial_route_records_then_drains_actual_consumer_before_copy_and_resum
 
 struct LateCreatorStage(bool);
 impl JournalMaintenance for LateCreatorStage {
-    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-        Ok(())
-    }
     fn full_scan(&self, root: &Path) -> Result<(), JournalMaintenanceError> {
         if self.0 {
             fs::create_dir(root.join(".tmp-offload-00000000000000000000000000000001"))

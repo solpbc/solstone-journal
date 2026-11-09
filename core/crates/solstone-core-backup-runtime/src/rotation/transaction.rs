@@ -840,12 +840,6 @@ mod tests {
     }
     struct Maintenance;
     impl JournalMaintenance for Maintenance {
-        fn rebuild_body_history(
-            &self,
-            _: &Path,
-        ) -> Result<(), crate::engine::JournalMaintenanceError> {
-            Ok(())
-        }
         fn full_scan(&self, _: &Path) -> Result<(), crate::engine::JournalMaintenanceError> {
             Ok(())
         }

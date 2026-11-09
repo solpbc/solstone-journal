@@ -58,20 +58,19 @@ fn main() {
     };
     let mut recorded;
     let mut live;
-    let (transport, auth): (&mut dyn solstone_core_body_ingest::oura_sync::OuraHttp, _) =
-        match pages {
-            Some(folder) => {
-                recorded = RecordedOura::open(Path::new(folder)).unwrap_or_else(|error| {
-                    eprintln!("oura import failed: {error}");
-                    std::process::exit(1);
-                });
-                (&mut recorded, OuraAuth::None)
-            }
-            None => {
-                live = LiveOuraTransport::default();
-                (&mut live, OuraAuth::Journal)
-            }
-        };
+    let (transport, auth): (&mut dyn solstone_core_import::oura_http::OuraHttp, _) = match pages {
+        Some(folder) => {
+            recorded = RecordedOura::open(Path::new(folder)).unwrap_or_else(|error| {
+                eprintln!("oura import failed: {error}");
+                std::process::exit(1);
+            });
+            (&mut recorded, OuraAuth::None)
+        }
+        None => {
+            live = LiveOuraTransport::default();
+            (&mut live, OuraAuth::Journal)
+        }
+    };
     let mut request = OuraImportRequest::new(timestamp, facet, transport);
     request.range = range;
     request.auth = auth;
