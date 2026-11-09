@@ -168,7 +168,12 @@
       link.setAttribute('href', href);
       pending.push(new Promise((resolve) => {
         link.addEventListener('load', resolve, { once: true });
-        link.addEventListener('error', resolve, { once: true });
+        link.addEventListener('error', () => {
+          // Forget it, so "try again" asks for it again.
+          loadedStylesheets.delete(href);
+          link.remove();
+          resolve();
+        }, { once: true });
       }));
       document.head.appendChild(link);
     }
