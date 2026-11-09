@@ -25,6 +25,8 @@ class BindingTests(unittest.TestCase):
         names = ['core/distribution/mobile/llama-embedded-lifecycle.patch']
         if platform == 'android':
             names.append('core/distribution/mobile/llama-android-dotprod-repack.patch')
+        else:
+            names.append('core/distribution/mobile/llama-metal-ios-residency.patch')
         patches = [{'path': name, 'sha256': mobile.sha256(qwen.ROOT / name)} for name in names]
         inputs = {'driver_sha256': mobile.sha256(qwen.ROOT / 'scripts/mobile_native_build.py'),
                   'inputs_sha256': mobile.sha256(qwen.ROOT / 'core/distribution/mobile/inputs.json'),
@@ -49,6 +51,61 @@ class BindingTests(unittest.TestCase):
             old['binding'], sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         with self.assertRaisesRegex(ValueError, 'maintained source'):
             qwen.validate_record(old, 'android')
+
+    def test_ios_requires_encoder_residency_and_current_patch_without_diagnostics(self):
+        record = self.record('ios')
+        qwen.validate_record(record, 'ios')
+        self.assertEqual(record['binding']['policy']['metal_resource_residency'], 'encoder-managed')
+        self.assertEqual(record['binding']['policy']['context_tokens'], 32768)
+        self.assertEqual(record['binding']['policy']['parallel_slots'], 1)
+        self.assertEqual(record['binding']['policy']['cpu_workers'], 4)
+        for variant in ('missing-policy', 'wrong-policy', 'wrong-type', 'missing-patch',
+                        'wrong-patch', 'legacy', 'diagnostic', 'private-diagnostic'):
+            with self.subTest(variant=variant):
+                changed = copy.deepcopy(record)
+                binding = changed['binding']
+                if variant in ('missing-policy', 'legacy'):
+                    binding['policy'].pop('metal_resource_residency')
+                elif variant == 'wrong-policy':
+                    binding['policy']['metal_resource_residency'] = 'explicit-sets'
+                elif variant == 'wrong-type':
+                    binding['policy']['metal_resource_residency'] = False
+                if variant in ('missing-patch', 'legacy'):
+                    binding['patches'].pop()
+                elif variant == 'wrong-patch':
+                    binding['patches'][-1]['sha256'] = '0' * 64
+                elif variant in ('diagnostic', 'private-diagnostic'):
+                    binding['diagnostics'] = {'metal_no_residency': True}
+                    if variant == 'private-diagnostic':
+                        binding['policy'].pop('metal_resource_residency')
+                        binding['patches'][-1]['path'] = 'core/distribution/mobile/llama-metal-residency-diagnostic.patch'
+                # A self-consistent digest must not admit a different policy.
+                changed['runtime_identity'] = 'sha256:' + hashlib.sha256(json.dumps(
+                    binding, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+                with self.assertRaisesRegex(ValueError, 'maintained source'):
+                    qwen.validate_record(changed, 'ios')
+        changed = copy.deepcopy(record)
+        changed['runtime_identity'] = 'sha256:' + '0' * 64
+        with self.assertRaisesRegex(ValueError, 'maintained source'):
+            qwen.validate_record(changed, 'ios')
+
+    def test_android_keeps_its_policy_and_does_not_consume_ios_patch(self):
+        record = self.record('android')
+        self.assertNotIn('metal_resource_residency', record['binding']['policy'])
+        real_sha = qwen.mobile_native_build.sha256
+
+        def sha(path):
+            if Path(path).name == 'llama-metal-ios-residency.patch':
+                raise AssertionError('iOS-only patch read by Android admission')
+            return real_sha(path)
+
+        with mock.patch.object(qwen.mobile_native_build, 'sha256', side_effect=sha):
+            qwen.validate_record(record, 'android')
+        record['binding']['policy']['metal_resource_residency'] = 'encoder-managed'
+        record['runtime_identity'] = 'sha256:' + hashlib.sha256(json.dumps(
+            record['binding'], sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'maintained source'):
+            qwen.validate_record(record, 'android')
 
     def test_ios_validation_does_not_consume_android_patch(self):
         record = self.record('ios')

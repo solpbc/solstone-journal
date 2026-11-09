@@ -88,6 +88,8 @@ def validate_record(record, platform):
     patch_paths = ["core/distribution/mobile/llama-embedded-lifecycle.patch"]
     if platform == "android":
         patch_paths.append("core/distribution/mobile/llama-android-dotprod-repack.patch")
+    else:
+        patch_paths.append("core/distribution/mobile/llama-metal-ios-residency.patch")
     patches = [{"path": name, "sha256": mobile_native_build.sha256(ROOT / name)} for name in patch_paths]
     build_inputs = dict(binding.get("build_inputs", {}))
     build_inputs.update({

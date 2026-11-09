@@ -87,6 +87,8 @@ def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, bui
                           "context_shift": False, "web_ui": False,
                           "bind_address": "127.0.0.1", "requested_port": 0,
                           "backend": "metal" if platform_name == "ios" else "cpu"}}
+    if platform_name == "ios":
+        binding["policy"]["metal_resource_residency"] = "encoder-managed"
     digest = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return binding, "sha256:" + digest
 
@@ -430,11 +432,15 @@ class Build:
         return prefix
 
     def patch_llama(self, source):
-        if self.args.platform != "android":
+        if self.args.platform == "android":
+            name, step = "llama-android-dotprod-repack.patch", "llama-repack"
+        elif self.args.platform == "ios":
+            name, step = "llama-metal-ios-residency.patch", "llama-metal-ios-residency"
+        else:
             return
-        patch = ROOT / "core/distribution/mobile/llama-android-dotprod-repack.patch"
-        self.run("llama-repack-patch", ["git", "apply", "--no-index", patch], source)
-        self.run("llama-repack-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
+        patch = ROOT / "core/distribution/mobile" / name
+        self.run(step + "-patch", ["git", "apply", "--no-index", patch], source)
+        self.run(step + "-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
         self.summary["patches"].append({"component": "llama", "path": str(patch.relative_to(ROOT)),
                                         "sha256": sha256(patch)})
         self.summary["inputs"]["llama-patched-source"] = {"tree_sha256": tree_digest(source)}

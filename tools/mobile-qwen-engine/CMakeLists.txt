@@ -49,6 +49,7 @@ target_compile_definitions(journal_mobile_qwen PRIVATE
     JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
     JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_compile_definitions(ggml-metal PRIVATE GGML_METAL_RESIDENCY_DISABLED=1)
     target_compile_definitions(journal_mobile_qwen PRIVATE JOURNAL_MOBILE_QWEN_METAL=1)
 endif()
 target_link_libraries(journal_mobile_qwen PRIVATE llama-server-impl)

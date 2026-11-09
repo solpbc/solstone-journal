@@ -71,8 +71,10 @@ class BuildControls(unittest.TestCase):
             self.assertEqual(binding["policy"]["context_tokens"], 32768)
             self.assertEqual(binding["policy"]["parallel_slots"], 1)
             self.assertEqual((binding["policy"]["batch_tokens"], binding["policy"]["ubatch_tokens"]), (128, 128))
+            self.assertEqual(binding["policy"]["metal_resource_residency"], "encoder-managed")
             android = mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[0]
             self.assertEqual((android["policy"]["batch_tokens"], android["policy"]["ubatch_tokens"]), (2048, 512))
+            self.assertNotIn("metal_resource_residency", android["policy"])
             self.assertEqual(mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
             self.assertNotEqual(mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
             (wrapper / "journal_mobile_qwen.cpp").write_text("changed adapter")
@@ -127,17 +129,21 @@ class BuildControls(unittest.TestCase):
                 for file in ("common.c", "metal.metal", "cpu.c", "leaf.c", "guard.c"):
                     self.assertEqual((ggml / file).read_text(), "fixed\n")
 
-    def test_android_llama_patch_binds_only_a_successfully_patched_tree(self):
-        for before, succeeds in (("base", True), ("different", False)):
-            with self.subTest(before=before), tempfile.TemporaryDirectory() as directory:
+    def test_platform_llama_patch_binds_only_a_successfully_patched_tree(self):
+        cases = ((platform, name, before, succeeds)
+                 for platform, name in (("android", "llama-android-dotprod-repack.patch"),
+                                        ("ios", "llama-metal-ios-residency.patch"))
+                 for before, succeeds in (("base", True), ("different", False)))
+        for platform, name, before, succeeds in cases:
+            with self.subTest(platform=platform, before=before), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
-                                          jobs=1, platform="android", components=["llama"], full_run=False)
+                                          jobs=1, platform=platform, components=["llama"], full_run=False)
                 build = mobile.Build(args)
                 source = build.sources / "llama"
                 source.mkdir()
                 (source / "kernel.cpp").write_text(before + "\n")
-                patch = root / "core/distribution/mobile/llama-android-dotprod-repack.patch"
+                patch = root / "core/distribution/mobile" / name
                 patch.parent.mkdir(parents=True)
                 patch.write_text(self.patch("kernel.cpp"))
                 with mock.patch.object(mobile, "ROOT", root), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -153,17 +159,6 @@ class BuildControls(unittest.TestCase):
                 else:
                     self.assertNotIn("llama-patched-source", build.summary["inputs"])
                     self.assertEqual(build.summary["patches"], [])
-
-    def test_ios_llama_does_not_require_or_apply_the_android_patch(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
-                                      jobs=1, platform="ios", components=["llama"], full_run=False)
-            build = mobile.Build(args)
-            with mock.patch.object(mobile, "ROOT", root), mock.patch.object(build, "run", side_effect=AssertionError("unexpected patch")):
-                build.patch_llama(root / "missing-source")
-            self.assertEqual(build.summary["patches"], [])
-            self.assertNotIn("llama-patched-source", build.summary["inputs"])
 
     def test_conflicting_media_patch_cannot_publish_a_closure_binding(self):
         with tempfile.TemporaryDirectory() as directory:
