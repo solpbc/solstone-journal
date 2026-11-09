@@ -263,6 +263,14 @@ class Element {
 
   append(...children) { children.forEach((child) => this.appendChild(child)); }
 
+  replaceChildren(...children) {
+    this.children.forEach((child) => { child.parentElement = null; });
+    this.children = [];
+    this._textContent = '';
+    this._innerHTML = '';
+    this.append(...children);
+  }
+
   insertAdjacentHTML(position, html) {
     if (!html || !this.ownerDocument) return;
     const parsed = parseMockHtmlForWorkspace(html, this.ownerDocument);
@@ -477,6 +485,28 @@ function loadTranscriptsScript() {
 }
 
 const scriptSource = loadTranscriptsScript();
+
+// A copy table the page declares as a plain object literal, read from its source
+// so a test names a copy key and never the words behind it.
+function sourceTable(source, name) {
+  const start = source.indexOf(`const ${name} = {`);
+  assert.ok(start >= 0, `${name} is declared`);
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  let end = open;
+  for (; end < source.length; end++) {
+    if (source[end] === '{') depth++;
+    else if (source[end] === '}' && --depth === 0) break;
+  }
+  return vm.runInNewContext(`(${source.slice(open, end + 1)})`);
+}
+const TRASH_COPY = sourceTable(scriptSource, 'TRASH_COPY');
+
+function receiptButton(notice, label) {
+  const button = (notice?.buttons || []).find((item) => item.label === label);
+  assert.ok(button, `the receipt carries ${label}`);
+  return button;
+}
 const dateFormatSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/date_format.js'), 'utf8');
 
 // The shell's real JournalFormat with a seeded provenance table. Seeded labels
@@ -489,6 +519,16 @@ function seededJournalFormat(labels, says = {}) {
   const format = context.window.JournalFormat;
   format.installStreamLabels({ status: 'complete', labels, says });
   return format;
+}
+// The shell's real JournalClock, seeded with a zone, so a date that has to be on
+// the journal's clock can be told from one on the device's.
+const journalClockSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/journal_clock.js'), 'utf8');
+function seededJournalClock(tz) {
+  const context = { window: {}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console };
+  vm.createContext(context);
+  vm.runInContext(journalClockSource, context);
+  context.window.JournalClock.seed({ tz, label: '' });
+  return context.window.JournalClock;
 }
 const apiSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/api.js'), 'utf8');
 const drawerSource = fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static/drawer.js'), 'utf8');
@@ -614,18 +654,28 @@ function createTranscriptsDOM() {
   bodyPanel.appendChild(bodyPanelClose);
   doc.body.appendChild(bodyPanel);
 
+  // The delete dialog, as workspace.html lays it out: header, body, and the two footers.
   const deleteSegmentModal = doc.createElement('div');
   deleteSegmentModal.id = 'trDeleteSegmentModal';
   deleteSegmentModal.style.display = 'none';
-  const deleteSegmentModalBody = doc.createElement('div');
-  deleteSegmentModalBody.id = 'trDeleteSegmentModalBody';
-  const deleteSegmentModalConfirm = doc.createElement('button');
-  deleteSegmentModalConfirm.id = 'trDeleteSegmentModalConfirm';
-  const deleteSegmentModalClose = doc.createElement('button');
-  deleteSegmentModalClose.id = 'trDeleteSegmentModalClose';
-  deleteSegmentModal.appendChild(deleteSegmentModalBody);
-  deleteSegmentModal.appendChild(deleteSegmentModalConfirm);
-  deleteSegmentModal.appendChild(deleteSegmentModalClose);
+  const modalPart = (tag, id, parent, hidden = false) => {
+    const el = doc.createElement(tag);
+    el.id = id;
+    if (hidden) el.hidden = true;
+    parent.appendChild(el);
+    return el;
+  };
+  const deleteSegmentModalHeader = modalPart('div', 'trDeleteSegmentModalHeader', deleteSegmentModal);
+  modalPart('h3', 'trDeleteSegmentModalTitle', deleteSegmentModalHeader);
+  modalPart('span', 'trDeleteSegmentModalClose', deleteSegmentModalHeader);
+  modalPart('div', 'trDeleteSegmentModalBody', deleteSegmentModal);
+  const moveFoot = modalPart('div', 'trDeleteSegmentModalMoveFoot', deleteSegmentModal);
+  modalPart('button', 'trDeleteSegmentModalErase', moveFoot);
+  modalPart('button', 'trDeleteSegmentModalCancel', moveFoot);
+  modalPart('button', 'trDeleteSegmentModalConfirm', moveFoot);
+  const eraseFoot = modalPart('div', 'trDeleteSegmentModalEraseFoot', deleteSegmentModal, true);
+  modalPart('button', 'trDeleteSegmentModalBack', eraseFoot);
+  modalPart('button', 'trDeleteSegmentModalEraseConfirm', eraseFoot);
   doc.body.appendChild(deleteSegmentModal);
 
   const initialEmptyIcon = doc.createElement('div');
@@ -686,7 +736,9 @@ async function createEnvironment(
     JournalFormat: options.journalFormat || {
       stream: (s) => String(s ?? ''),
       streamSays: () => ({ what: null, imported: false }),
+      day: (key) => `DAY-${key}`,
     },
+    JournalClock: options.journalClock,
     ApiError: class ApiError extends Error {
       constructor(opts = {}) {
         super(opts.serverMessage || 'ApiError');
@@ -706,7 +758,7 @@ async function createEnvironment(
   windowObj.history = history;
 
   const segmentGetRequests = [];
-  let deleteStatusState = options.deleteStatusState || 'deleted';
+  const deletes = [];
   let deleteIdCounter = 0;
 
   const defaultSegments = [
@@ -738,6 +790,7 @@ async function createEnvironment(
       };
       posts.push(record);
       const reply = options.postResponse ? options.postResponse(record) : { status: 200, body: { ok: true, asked: true } };
+      if (reply === 'unanswered') return Promise.reject(new TypeError('Failed to fetch'));
       return Promise.resolve({ ok: reply.status < 400, status: reply.status, json: async () => reply.body });
     }
 
@@ -749,29 +802,16 @@ async function createEnvironment(
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ speakers: options.knownSpeakers || [] }) });
     }
 
+    // A delete moves the segment to the trash unless a test answers otherwise.
     if (fetchOpts.method === 'DELETE') {
       deleteIdCounter++;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ pending: 'del_' + deleteIdCounter, ttl_seconds: 0 }),
-      });
-    }
-
-    if (urlStr.includes('/app/transcripts/api/delete-status/')) {
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ state: deleteStatusState }),
-      });
-    }
-
-    if (urlStr.includes('/app/transcripts/api/delete-outcomes')) {
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ outcomes: options.deleteOutcomes || [] }),
-      });
+      const record = { url: urlStr, body: fetchOpts.body ? JSON.parse(fetchOpts.body) : null };
+      deletes.push(record);
+      const reply = options.deleteResponse
+        ? options.deleteResponse(record)
+        : { status: 200, body: { success: true, deleted: urlStr.split('/').pop(), trash: { id: 'trash_' + deleteIdCounter, erase_at: '2020-01-22T09:00:00Z' } } };
+      if (reply === 'unanswered') return Promise.reject(new TypeError('Failed to fetch'));
+      return Promise.resolve({ ok: reply.status < 400, status: reply.status, json: async () => reply.body });
     }
 
     if (urlStr.startsWith('/app/transcripts/api/location/')) {
@@ -885,6 +925,7 @@ async function createEnvironment(
                 audio_file: payloadOverride?.audio_file,
                 data_state: dataState,
                 holds_location: payloadOverride?.holds_location,
+                media_sizes: payloadOverride?.media_sizes,
                 location_readings: payloadOverride?.location_readings,
                 signals: { events: [] },
                 speaker_labels: payloadOverride?.speaker_labels,
@@ -1008,13 +1049,6 @@ async function createEnvironment(
   // Flush microtasks for day load
   await new Promise((r) => setTimeout(r, 10));
 
-  const closeBtn = doc.querySelector('#trDeleteSegmentModalClose');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      windowObj.closeDeleteSegmentModal?.();
-    });
-  }
-
   return {
     doc,
     window: windowObj,
@@ -1024,7 +1058,7 @@ async function createEnvironment(
     segmentGetRequests,
     pendingLocationGets,
     posts,
-    setDeleteStatusState: (st) => { deleteStatusState = st; },
+    deletes,
     timelineResizeObserver: resizeObserverCallbacks[0],
     zoomResizeObserver: resizeObserverCallbacks[1],
     flushHashchanges: async () => {
@@ -1228,8 +1262,8 @@ test('case 5: deep link boot selects segment without adding history entry', asyn
 });
 
 // 6. Real delete path. Click A, release. Click B, release. Click A again, release. Length is baseline+3.
-// Click #trDeleteBtn, then await window.confirmDeleteSegment(). Flush the real 500ms wait and the
-// delete-status fetch before backing up. back, flush hashchange, release: B selected (key 115500_300).
+// Click #trDeleteBtn, then await window.confirmDeleteSegment() (move to the trash).
+// back, flush hashchange, release: B selected (key 115500_300).
 // back again, flush hashchange: not visible, no selected tab, and the location still has hash
 // #114500_300/ and search stream=room (the earlier A entry was not rewritten).
 test('case 6: delete flow navigation preserves past entries and leaves unselected on deleted segment', async () => {
@@ -1248,9 +1282,6 @@ test('case 6: delete flow navigation preserves past entries and leaves unselecte
   const deleteBtn = env.doc.querySelector('#trDeleteBtn');
   deleteBtn.dispatchEvent({ type: 'click' });
   await env.window.confirmDeleteSegment();
-
-  // Wait for 500ms delete outcome polling
-  await new Promise((r) => setTimeout(r, 600));
 
   env.history.back();
   await env.flushHashchanges();
@@ -1365,15 +1396,17 @@ test('deleting one stream keeps its same-key sibling selectable', async () => {
   assert.ok(env.segmentGetRequests.at(-1).url.includes('/desk/114500_300'));
 });
 
-test('cancelling restores the selected stream alongside its same-key sibling', async () => {
-  const env = await createEnvironment();
+test('recover on the receipt restores the selected stream alongside its same-key sibling', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    postResponse: (record) => ({ status: 200, body: { done: record.body.ids, failed: [] } }),
+  });
   getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
   await env.releasePendingSegmentGets();
   env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
   await env.window.confirmDeleteSegment();
-  const cancel = env.notifications.find(notice => notice.buttons?.length)?.buttons[0];
-  assert.ok(cancel);
-  await cancel.onClick();
+  assert.strictEqual(getZoomPills(env.doc).length, 2);
+  const recover = receiptButton(env.notifications.at(-1), TRASH_COPY.buttons.recover);
+  await recover.onClick();
   assert.strictEqual(getZoomPills(env.doc).length, 3);
 });
 
@@ -1938,21 +1971,25 @@ test('failed day fetch plus successful location list: error stays and section pr
   assert.ok(h.doc.querySelector('[data-location-section="true"]'));
 });
 
-test('delete one location row from 3 rows: cancel, cancelled, not_deleted restore order; incomplete leaves off', async () => {
+test('delete one location row from 3 rows: recover restores its order, a refusal keeps it, erase leaves it off', async () => {
   const locSegments = [
     { key: '090000_60', stream: 'phone', start: '09:00' },
     { key: '090000_60', stream: 'watch', start: '09:00' },
     { key: '100000_60', stream: 'phone', start: '10:00' },
   ];
+  let deleteReply = null;
   const h = await createEnvironment(
     'https://journal.example/app/transcripts/20200115?ref=keep',
     'analyzed',
     false,
     null,
-    { locationSegments: locSegments }
+    {
+      locationSegments: locSegments,
+      deleteResponse: (record) => deleteReply ? deleteReply(record) : { status: 200, body: { success: true, deleted: '090000_60', trash: { id: 't-watch', erase_at: '2020-01-22T09:00:00Z' } } },
+      postResponse: (record) => ({ status: 200, body: { done: record.body.ids, failed: [] } }),
+    }
   );
 
-  const initialAllSegsCount = 3;
   const snapshotZoomPills = () =>
     [...h.doc.querySelectorAll('#trZoomSegments .tr-zoom-pill')].map((p) => ({
       key: p.getAttribute('data-key'),
@@ -1967,11 +2004,9 @@ test('delete one location row from 3 rows: cancel, cancelled, not_deleted restor
   assert.strictEqual(rows.length, 3);
   rows[1].dispatchEvent({ type: 'click' });
 
-  // Delete watch row
+  // Move the watch row to the trash: it leaves at once.
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
   await h.window.confirmDeleteSegment();
-
-  // Watch row is gone: two rows remain, section present, aria-expanded still true, pills unchanged
   assert.ok(h.doc.querySelector('[data-location-section="true"]'));
   const toggleAfterDel = h.doc.querySelector('.tr-location-toggle');
   assert.ok(toggleAfterDel);
@@ -1981,12 +2016,9 @@ test('delete one location row from 3 rows: cancel, cancelled, not_deleted restor
   assert.ok([...remainingRows].every((r) => r.dataset.stream !== 'watch'));
   assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
 
-  // 1. Cancel via notification button
-  const notifCancelBtn = h.notifications.at(-1)?.buttons?.[0];
-  assert.ok(notifCancelBtn);
-  notifCancelBtn.onClick();
-  await new Promise((r) => setTimeout(r, 10));
-
+  // 1. Recover from the receipt puts it back in its place.
+  await receiptButton(h.notifications.at(-1), TRASH_COPY.buttons.recover).onClick();
+  assert.deepStrictEqual(h.posts.at(-1).body, { ids: ['t-watch'], page: 'transcripts' });
   const restoredRows = h.doc.querySelectorAll('.tr-location-row');
   assert.strictEqual(restoredRows.length, 3);
   assert.strictEqual(restoredRows[0].dataset.stream, 'phone');
@@ -1994,43 +2026,25 @@ test('delete one location row from 3 rows: cancel, cancelled, not_deleted restor
   assert.strictEqual(restoredRows[2].dataset.stream, 'phone');
   assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
 
-  // 2. Delete watch again, test watcher state cancelled
+  // 2. A refused move changes nothing: the row stays selected, still in the journal.
+  deleteReply = () => ({ status: 409, body: { success: false, message: 'refused' } });
   restoredRows[1].dispatchEvent({ type: 'click' });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
   await h.window.confirmDeleteSegment();
+  assert.strictEqual(isDeleteBtnVisible(h.doc), true);
+  assert.strictEqual(h.deletes.length, 2);
 
-  h.setDeleteStatusState('cancelled');
-  await new Promise((r) => setTimeout(r, 600));
-
-  const restoredRows2 = h.doc.querySelectorAll('.tr-location-row');
-  assert.strictEqual(restoredRows2.length, 3);
-  assert.strictEqual(restoredRows2[1].dataset.stream, 'watch');
-  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
-
-  // 3. Delete watch again, test watcher state not_deleted
-  restoredRows2[1].dispatchEvent({ type: 'click' });
+  // 3. Erase now leaves it off, with no recover on the receipt.
+  deleteReply = () => ({ status: 200, body: { success: true, deleted: '090000_60', erased: true } });
   h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  await h.window.confirmDeleteSegment();
-
-  h.setDeleteStatusState('not_deleted');
-  await new Promise((r) => setTimeout(r, 600));
-
-  const restoredRows3 = h.doc.querySelectorAll('.tr-location-row');
-  assert.strictEqual(restoredRows3.length, 3);
-  assert.strictEqual(restoredRows3[1].dataset.stream, 'watch');
-  assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
-
-  // 4. Delete watch again, test watcher state incomplete (leaves it off)
-  restoredRows3[1].dispatchEvent({ type: 'click' });
-  h.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
-  await h.window.confirmDeleteSegment();
-
-  h.setDeleteStatusState('incomplete');
-  await new Promise((r) => setTimeout(r, 600));
-
-  const rowsAfterIncomplete = h.doc.querySelectorAll('.tr-location-row');
-  assert.strictEqual(rowsAfterIncomplete.length, 2);
-  assert.ok([...rowsAfterIncomplete].every((r) => r.dataset.stream !== 'watch'));
+  h.doc.getElementById('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  h.doc.getElementById('trDeleteSegmentModalEraseConfirm').dispatchEvent({ type: 'click' });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.deepStrictEqual(h.deletes.at(-1).body, { erase: true });
+  const rowsAfterErase = h.doc.querySelectorAll('.tr-location-row');
+  assert.strictEqual(rowsAfterErase.length, 2);
+  assert.ok([...rowsAfterErase].every((r) => r.dataset.stream !== 'watch'));
+  assert.strictEqual(h.notifications.at(-1).buttons.length, 0);
   assert.deepStrictEqual(snapshotZoomPills(), initialZoomPills);
 });
 
@@ -2278,16 +2292,157 @@ test('a label that says half of a segment type keeps the type, an import drops i
   assert.ok(imported.title.endsWith('(import.oura)'), imported.title);
 });
 
-test('an unfinished delete reported on open names its stream by label, keeping the id behind it', async () => {
-  const format = seededJournalFormat({ room: 'LABEL-A', desk: 'LABEL-B' });
-  const env = await createEnvironment(undefined, 'analyzed', false, null, {
-    journalFormat: format,
-    deleteOutcomes: [{ pending: 'p1', state: 'not_deleted', reason: 'synthetic reason', stream: 'room', day: '20200115', segment_key: '114500_300' }],
+// The delete dialog: one dialog, three buttons, and erase now always gets its own step.
+test('delete dialog: a neutral first step with three buttons, and erase now swaps to its own danger step', async () => {
+  const env = await createEnvironment();
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', { media_sizes: { audio: 2048, screen: 0 } });
+  const $ = (id) => env.doc.getElementById(id);
+  const text = (selector) => env.doc.querySelector(`#trDeleteSegmentModalBody ${selector}`)?.textContent;
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+
+  // First step: the trash, not danger-styled, focus on the reversible act.
+  assert.strictEqual($('trDeleteSegmentModal').style.display, 'flex');
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, TRASH_COPY.move.title);
+  assert.strictEqual($('trDeleteSegmentModalHeader').classList.contains('danger'), false);
+  assert.ok($('trDeleteSegmentModalBody').classList.contains('trash-dlg-note'));
+  assert.strictEqual($('trDeleteSegmentModalMoveFoot').hidden, false);
+  assert.strictEqual($('trDeleteSegmentModalEraseFoot').hidden, true);
+  assert.strictEqual($('trDeleteSegmentModalErase').textContent, TRASH_COPY.buttons.eraseNow);
+  assert.strictEqual($('trDeleteSegmentModalCancel').textContent, TRASH_COPY.buttons.cancel);
+  assert.strictEqual($('trDeleteSegmentModalConfirm').textContent, TRASH_COPY.buttons.moveToTrash);
+  assert.strictEqual(env.doc.activeElement, $('trDeleteSegmentModalConfirm'));
+  assert.strictEqual(text('.tr-delete-reach'), TRASH_COPY.move.reach);
+  assert.strictEqual(text('.tr-delete-lead'), TRASH_COPY.move.lead);
+  assert.strictEqual(text('.tr-delete-stays'), TRASH_COPY.move.stays);
+  assert.ok(text('.tr-delete-segment-size').startsWith(TRASH_COPY.move.size.replace('{size}', '')));
+  const dayName = env.doc.querySelectorAll('.tr-delete-segment-meta strong')[1];
+  assert.strictEqual(dayName.textContent, 'DAY-20200115'.toLowerCase(), 'the day goes through JournalFormat.day, lowercased');
+  assert.ok(!$('trDeleteSegmentModalBody')._innerHTML, 'the dialog body is built from text, never markup');
+
+  // Erase now: the same dialog, its own danger-styled confirm, focus on back.
+  $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, TRASH_COPY.erase.title);
+  assert.strictEqual($('trDeleteSegmentModalHeader').classList.contains('danger'), true);
+  assert.ok($('trDeleteSegmentModalBody').classList.contains('delete-warning'));
+  assert.strictEqual($('trDeleteSegmentModalMoveFoot').hidden, true);
+  assert.strictEqual($('trDeleteSegmentModalEraseFoot').hidden, false);
+  assert.strictEqual($('trDeleteSegmentModalBack').textContent, TRASH_COPY.buttons.back);
+  assert.strictEqual($('trDeleteSegmentModalEraseConfirm').textContent, TRASH_COPY.buttons.eraseNow);
+  assert.strictEqual(env.doc.activeElement, $('trDeleteSegmentModalBack'));
+  assert.strictEqual(text('.tr-delete-reach'), TRASH_COPY.erase.reach);
+  assert.strictEqual(text('.tr-delete-lead'), TRASH_COPY.erase.lead);
+  assert.strictEqual(text('.tr-delete-stays'), TRASH_COPY.erase.stays);
+  assert.strictEqual(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-size'), null, 'no size line on the erase step');
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+
+  // Back returns to the first step with focus on erase now; nothing was deleted.
+  $('trDeleteSegmentModalBack').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, TRASH_COPY.move.title);
+  assert.strictEqual(env.doc.activeElement, $('trDeleteSegmentModalErase'));
+  assert.strictEqual(env.deletes.length, 0);
+
+  // Escape on the erase step closes the whole dialog.
+  $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  env.doc.dispatchEvent({ type: 'keydown', key: 'Escape', target: env.doc.body, preventDefault() {} });
+  assert.strictEqual($('trDeleteSegmentModal').style.display, 'none');
+
+  // So does the close mark, and cancel; neither deletes.
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalClose').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModal').style.display, 'none');
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, TRASH_COPY.move.title, 'a new delete starts on the first step');
+  $('trDeleteSegmentModalCancel').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModal').style.display, 'none');
+  assert.strictEqual(env.deletes.length, 0);
+
+  // Move to trash sends no erase; erase now asks for one.
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(env.deletes.length, 1);
+  assert.strictEqual(env.deletes[0].body, null);
+  assert.ok(env.deletes[0].url.endsWith('/app/transcripts/api/segment/20200115/room/114500_300'));
+});
+
+async function deleteFromDialog(options, { erase = false } = {}) {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, options);
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  env.doc.querySelector('#trDeleteBtn').dispatchEvent({ type: 'click' });
+  if (erase) {
+    env.doc.getElementById('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+    env.doc.getElementById('trDeleteSegmentModalEraseConfirm').dispatchEvent({ type: 'click' });
+  } else {
+    env.doc.getElementById('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  }
+  await new Promise((r) => setTimeout(r, 10));
+  return env;
+}
+
+function assertReceipt(notice, kind, { settled, buttons = [], date = null }) {
+  const copy = TRASH_COPY.receipt[kind];
+  const fill = (template) => template.replace('{noun}', TRASH_COPY.noun.segment).replace('{date}', date);
+  assert.ok(notice, `a ${kind} receipt is shown`);
+  assert.strictEqual(notice.app, 'transcripts');
+  assert.strictEqual(notice.title, fill(copy.title), kind);
+  assert.strictEqual(notice.message, copy.message ? fill(copy.message) : undefined, kind);
+  assert.strictEqual(notice.autoDismiss, settled ? 10000 : undefined, `${kind}: only a settled receipt dismisses itself`);
+  assert.deepStrictEqual([...notice.buttons].map((button) => button.label), buttons, kind);
+}
+
+test('receipt: moved, with recover and open trash, dated on the journal clock', async () => {
+  // Noon UTC on the 22nd is already the 23rd on the journal's clock in Auckland.
+  const env = await deleteFromDialog({
+    journalClock: seededJournalClock('Pacific/Auckland'),
+    deleteResponse: () => ({ status: 200, body: { success: true, deleted: '114500_300', trash: { id: 't1', erase_at: '2020-01-22T12:00:00Z' } } }),
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const notice = env.notifications.find((item) => String(item.message || '').includes('LABEL-A'));
-  assert.ok(notice, 'the outcome names the label');
-  assert.ok(notice.message.includes('<span title="room">LABEL-A</span>'), notice.message);
+  assert.strictEqual(getZoomPills(env.doc).length, 2, 'the row leaves at once');
+  const moved = env.notifications.at(-1);
+  assertReceipt(moved, 'moved', { settled: true, date: 'DAY-20200123'.toLowerCase(), buttons: [TRASH_COPY.buttons.recover, TRASH_COPY.buttons.openTrash] });
+  receiptButton(moved, TRASH_COPY.buttons.openTrash).onClick();
+  assert.strictEqual(env.window.location.pathname + env.window.location.hash, '/app/settings#trash');
+});
+
+test('receipt: recover from the receipt, recovered, failed, refused and unanswered', async () => {
+  const cases = [
+    { reply: (record) => ({ status: 200, body: { done: record.body.ids, failed: [] } }), kind: 'recovered', settled: true, back: true },
+    { reply: (record) => ({ status: 200, body: { done: [], failed: [{ id: record.body.ids[0], reason: 'synthetic reason' }] } }), kind: 'recoverFailed', buttons: [TRASH_COPY.buttons.openTrash] },
+    { reply: () => ({ status: 500, body: { message: 'synthetic' } }), kind: 'recoverFailed', buttons: [TRASH_COPY.buttons.openTrash] },
+    { reply: () => 'unanswered', kind: 'noAnswerRecover' },
+  ];
+  for (const item of cases) {
+    const env = await deleteFromDialog({ postResponse: item.reply });
+    await receiptButton(env.notifications.at(-1), TRASH_COPY.buttons.recover).onClick();
+    assert.ok(env.posts.at(-1).url.endsWith('/app/settings/api/trash/recover'));
+    assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['trash_1'], page: 'transcripts' });
+    assertReceipt(env.notifications.at(-1), item.kind, { settled: Boolean(item.settled), buttons: item.buttons || [] });
+    assert.strictEqual(getZoomPills(env.doc).length, item.back ? 3 : 2, `${item.kind}: the row comes back only when recovered`);
+  }
+});
+
+test('receipt: every answer to a delete has its own card, and only a change takes the row off', async () => {
+  const cases = [
+    { erase: true, reply: () => ({ status: 200, body: { success: true, deleted: '114500_300', erased: true } }), kind: 'erased', settled: true, gone: true },
+    { erase: true, reply: () => ({ status: 200, body: { success: true, deleted: '114500_300', erased: false, erase_failed: true, trash: { id: 't1', erase_at: '2020-01-22T09:00:00Z' } } }), kind: 'eraseFailed', buttons: [TRASH_COPY.buttons.openTrash], gone: true },
+    { erase: false, reply: () => ({ status: 409, body: { success: false, message: 'synthetic' } }), kind: 'moveRefused' },
+    { erase: true, reply: () => ({ status: 409, body: { success: false, message: 'synthetic' } }), kind: 'eraseRefused' },
+    { erase: false, reply: () => 'unanswered', kind: 'noAnswerMove' },
+    { erase: true, reply: () => 'unanswered', kind: 'noAnswerErase' },
+    { erase: false, reply: () => ({ status: 200, body: undefined }), kind: 'noAnswerMove' },
+  ];
+  for (const item of cases) {
+    const env = await deleteFromDialog({ deleteResponse: item.reply }, { erase: item.erase });
+    assert.deepStrictEqual(env.deletes.at(-1).body, item.erase ? { erase: true } : null);
+    assertReceipt(env.notifications.at(-1), item.kind, { settled: Boolean(item.settled), buttons: item.buttons || [] });
+    assert.strictEqual(getZoomPills(env.doc).length, item.gone ? 2 : 3, `${item.kind}: the row leaves only when the journal changed`);
+    if (item.buttons) {
+      receiptButton(env.notifications.at(-1), TRASH_COPY.buttons.openTrash).onClick();
+      assert.strictEqual(env.window.location.pathname + env.window.location.hash, '/app/settings#trash');
+    }
+  }
 });
 
 // The speaker picker: the owner's answer for who said one line.

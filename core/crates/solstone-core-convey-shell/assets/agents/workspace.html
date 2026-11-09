@@ -26,6 +26,10 @@
   .agents .mstep{display:grid;grid-template-columns:26px 1fr;gap:10px;padding:14px 0;border-top:1px solid var(--line)}.agents .mstep:first-of-type{border-top:0}.agents .mstep .n{width:24px;height:24px;border-radius:50%;background:var(--cream-bright);border:1px solid var(--hairline-2);display:grid;place-items:center;font-size:12px;font-weight:600}.agents .mstep p{margin:0 0 6px}.agents .addr{display:grid;gap:4px;margin:8px 0}.agents .addr span{font-size:.8rem;color:var(--muted)}.agents .addr div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.agents .copy-code{font-size:1.6rem;padding:8px 12px}
   .agents .modal-card button[data-close-modal]{min-width:44px;min-height:44px}
   .agents .modal-card h2{font-family:var(--font-display);font-size:1.35rem;margin:0 0 4px}
+  .agents .trash-dlg-note{padding:16px 18px;border-radius:12px;background:var(--cream);border-left:4px solid var(--hairline-2);color:var(--ink)}.agents .trash-dlg-note p{margin:0 0 12px}.agents .trash-dlg-note p:last-child{margin-bottom:0}
+  .agents .trash-erase-note{padding:16px 18px;border-radius:12px;background:var(--danger-wash);border-left:4px solid var(--hairline-2);color:var(--danger)}.agents .trash-erase-note p{margin:0 0 12px}.agents .trash-erase-note p:last-child{margin-bottom:0}
+  .agents .modal-card.trash-erase h2{color:var(--danger)}.agents .trash-dlg-foot{justify-content:flex-start}.agents .trash-dlg-right{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}.agents .btn.danger-fill{background:var(--danger);border-color:var(--danger);color:var(--ink-on-danger)}
+  @media(max-width:480px){.agents .trash-dlg-foot .btn{min-height:44px}}
   .agents .check small{display:block}
   .agents .chip.paused{background:var(--warn-wash);border-color:transparent;color:var(--ink)}.agents .paused-card{border-left:4px solid var(--amber)}.agents .paused-card p{margin:8px 0 0}.agents .paused-card + .card{margin-top:26px}
   .agents .outcome.empty{padding:4px 8px;text-align:left}.agents .activity-row .outcome{flex:none;align-self:flex-start}
@@ -37,7 +41,7 @@
   @media(max-width:700px){.agents .seg3{grid-template-columns:1fr}}
   .agents .key{font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}.agents h1 .key{font-family:var(--font-body);font-size:.5em;margin-left:.2em}.agents .ag-row small.mems{color:var(--ink)}.agents .later{margin-top:22px}
   .agents .day{font-size:.84rem;font-weight:600;color:var(--muted);margin:20px 0 8px}.agents .day:first-of-type{margin-top:14px}.agents .peek{margin-top:10px}.agents .peek .mem{padding:11px 0}
-  .agents .mem{display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-top:1px solid var(--hairline)}.agents .mem:first-child{border-top:0}.agents .mem .m{flex:1;min-width:0}.agents .mem-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;font-size:.95rem}.agents .mem-text.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.agents .mem small{display:block;color:var(--muted);font-size:.8rem;margin-top:5px}.agents .mem .more{appearance:none;background:none;border:0;padding:0;margin:0 0 0 8px;font:inherit;color:var(--orange-text-aa);font-weight:600;cursor:pointer}.agents .mem.going{background:var(--warn-wash)}.agents .mem.going .mem-text,.agents .mem.bad .mem-text{color:var(--muted)}.agents .mem.here{box-shadow:inset 3px 0 0 var(--orange);background:var(--cream-bright)}.agents .quote.mem-quote{white-space:pre-wrap}
+  .agents .mem{display:flex;gap:12px;align-items:flex-start;padding:13px 16px;border-top:1px solid var(--hairline)}.agents .mem:first-child{border-top:0}.agents .mem .m{flex:1;min-width:0}.agents .mem-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;font-size:.95rem}.agents .mem-text.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.agents .mem small{display:block;color:var(--muted);font-size:.8rem;margin-top:5px}.agents .mem .more{appearance:none;background:none;border:0;padding:0;margin:0 0 0 8px;font:inherit;color:var(--orange-text-aa);font-weight:600;cursor:pointer}.agents .mem.bad .mem-text{color:var(--muted)}.agents .mem.here{box-shadow:inset 3px 0 0 var(--orange);background:var(--cream-bright)}.agents .quote.mem-quote{white-space:pre-wrap}
   @media(max-width:640px){.agents .mem{flex-wrap:wrap}.agents .mem .m{flex-basis:100%}.agents .mem .btn{margin-left:auto;min-height:44px;min-width:44px}}
   @media(max-width:640px){.agents h1{font-size:2rem}.agents .activity-row time{flex-basis:100%}.agents .seg2{grid-template-columns:1fr}.agents .lane-row{grid-template-columns:1fr;gap:4px}}
 </style>
@@ -83,9 +87,10 @@
   // What each agent saved: counts for every agent, and the pages opened so far.
   let memorySummary = null;
   const memoryPages = new Map();
-  const memoryHolds = new Map();
   const memoryOpen = new Set();
   let memoryToDelete = null;
+  // Which step of the delete dialog is open: 'move' (to the trash) or 'erase' (its own confirm).
+  let memoryDeleteStep = 'move';
 
   async function api(path, options) { return window.apiJson(path, options); }
   function jsonOptions(method, body) { return {method, headers:{'content-type':'application/json'}, body:JSON.stringify(body)}; }
@@ -724,18 +729,16 @@
     const sameYear = day.slice(0, 4) === String(new Date().getFullYear());
     return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC', ...(sameYear ? {} : { year: 'numeric' }) });
   }
-  function holdSeconds(hold) { return Math.max(0, Math.ceil((hold.until - Date.now()) / 1000)); }
   function memoryRow(memory, {stamp = false} = {}) {
     const place = memoryPlace(memory);
-    const hold = memoryHolds.get(place);
     const here = route.target && route.target.day === memory.day && route.target.segment === memory.segment;
     const text = memory.unreadable ? "this memory couldn't be read." : String(memory.content || '');
     const long = !memory.unreadable && (text.length > 240 || text.split('\n').length > 3);
     const clamped = long && !memoryOpen.has(place);
     const when = memory.created_at ? formatMemoryInstant(memory.created_at, stamp ? MEMORY_STAMP : MEMORY_TIME) : formatMemoryDay(memory.day);
-    const line = hold ? `<span data-memory-left="${esc(place)}">deleting in ${holdSeconds(hold)}s</span>` : `${esc(when)}${clamped ? `<button class="more" data-memory-open="${esc(place)}">show all</button>` : ''}`;
-    const action = hold ? `<button class="btn sm" data-memory-cancel="${esc(place)}">cancel</button>` : `<button class="btn sm" data-memory-delete="${esc(place)}">delete</button>`;
-    return `<div class="mem${hold ? ' going' : ''}${memory.unreadable ? ' bad' : ''}${here ? ' here' : ''}"><div class="m"><p class="mem-text${clamped ? ' clamp' : ''}">${esc(text)}</p><small>${line}</small></div>${action}</div>`;
+    const line = `${esc(when)}${clamped ? `<button class="more" data-memory-open="${esc(place)}">show all</button>` : ''}`;
+    const action = `<button class="btn sm" data-memory-delete="${esc(place)}">delete</button>`;
+    return `<div class="mem${memory.unreadable ? ' bad' : ''}${here ? ' here' : ''}"><div class="m"><p class="mem-text${clamped ? ' clamp' : ''}">${esc(text)}</p><small>${line}</small></div>${action}</div>`;
   }
   function memoriesTrouble(page) {
     if (page?.failed) return `<div class="notice" data-memories-failed><p>your journal couldn't read these memories.</p><div class="button-row"><button class="btn sm" data-memories-retry="${esc(route.source || '')}">try again</button></div></div>`;
@@ -820,79 +823,119 @@
     return null;
   }
   function sourceOf(memory) { return String(memory.stream).replace('agent-memory-', ''); }
+  // Owner copy for deleting a memory: the dialog, its erase step and the receipt.
+  const TRASH_COPY = {
+    noun: {memory: 'memory'},
+    move: {
+      title: 'delete this memory?',
+      reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+      stays: 'summaries made from it elsewhere in your journal stay where they are and may still mention it.',
+      agentRead: 'anything an agent already read stays with it.',
+    },
+    erase: {
+      title: 'erase this memory now?',
+      reach: "it leaves your journal now and can't be recovered.",
+      stays: "summaries made from it elsewhere in your journal aren't erased and may still mention it.",
+      agentRead: 'anything an agent already read stays with it.',
+    },
+    buttons: {eraseNow: 'erase now', cancel: 'cancel', moveToTrash: 'move to trash', back: 'back', recover: 'recover', openTrash: 'open trash'},
+    receipt: {
+      moved: {title: 'moved to the trash', message: 'erases {date} unless you recover it.'},
+      recovered: {title: '{noun} recovered', message: "it's back in your journal."},
+      erased: {title: '{noun} erased from your journal'},
+      recoverFailed: {title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there."},
+      moveRefused: {title: "couldn't move that to the trash", message: "it's still in your journal."},
+      eraseRefused: {title: "couldn't erase that {noun}", message: "it's still in your journal."},
+      eraseFailed: {title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there."},
+      noAnswerMove: {title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.'},
+      noAnswerErase: {title: "your journal didn't answer", message: 'it may already be erased. reload to check.'},
+      noAnswerRecover: {title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.'},
+    },
+  };
+  const TRASH_PAGE = '/app/settings#trash';
   function deleteMemoryDialog() {
     const memory = memoryToDelete;
     const source = sourceOf(memory);
     const when = memory.created_at ? formatMemoryInstant(memory.created_at, MEMORY_STAMP) : formatMemoryDay(memory.day);
     const text = memory.unreadable ? "this memory couldn't be read." : memory.content;
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="delete this memory"><h2>delete this memory?</h2><p class="meta">${esc(memoryAgentName(source))}${keyMark(source)} · ${esc(when)}</p><p class="quote mem-quote">${esc(text)}</p><p>you'll have about 10 seconds to cancel after confirming.</p><p>summaries made from it elsewhere in your journal aren't deleted and may still mention it. anything an agent already read stays with it.</p><div class="button-row"><button class="btn" data-close-modal>cancel</button><button class="btn danger" data-memory-confirm="1">delete memory</button></div></article></div>`;
+    const erasing = memoryDeleteStep === 'erase';
+    const copy = erasing ? TRASH_COPY.erase : TRASH_COPY.move;
+    const note = `<div class="${erasing ? 'trash-erase-note' : 'trash-dlg-note'}" data-memory-step="${erasing ? 'erase' : 'move'}"><p data-copy="reach">${esc(copy.reach)}</p><p data-copy="stays">${esc(copy.stays)} ${esc(copy.agentRead)}</p></div>`;
+    const buttons = erasing
+      ? `<div class="button-row trash-dlg-foot"><span class="trash-dlg-right"><button class="btn" data-memory-back="1">${esc(TRASH_COPY.buttons.back)}</button><button class="btn danger-fill" data-memory-erase="1">${esc(TRASH_COPY.buttons.eraseNow)}</button></span></div>`
+      : `<div class="button-row trash-dlg-foot"><button class="btn danger" data-memory-erase-step="1">${esc(TRASH_COPY.buttons.eraseNow)}</button><span class="trash-dlg-right"><button class="btn" data-close-modal>${esc(TRASH_COPY.buttons.cancel)}</button><button class="btn primary" data-memory-confirm="1">${esc(TRASH_COPY.buttons.moveToTrash)}</button></span></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card${erasing ? ' trash-erase' : ''}" role="dialog" aria-modal="true" aria-label="${esc(copy.title)}"><h2>${esc(copy.title)}</h2><p class="meta">${esc(memoryAgentName(source))}${keyMark(source)} · ${esc(when)}</p><p class="quote mem-quote">${esc(text)}</p>${note}${buttons}</article></div>`;
   }
-  async function deleteMemory(memory) {
+  // Show one step of the delete dialog and put the focus where that step wants it.
+  function openMemoryDeleteStep(step, focus) {
+    memoryDeleteStep = step;
+    dialog = 'memory-delete';
+    render();
+    view.querySelector?.(focus)?.focus?.();
+  }
+  function trashEraseDate(eraseAt) {
+    const instant = new Date(eraseAt);
+    if (!eraseAt || Number.isNaN(instant.getTime()) || !window.JournalFormat?.day) return '';
+    const key = window.JournalClock?.dayKey
+      ? window.JournalClock.dayKey(instant)
+      : `${instant.getFullYear()}${String(instant.getMonth() + 1).padStart(2, '0')}${String(instant.getDate()).padStart(2, '0')}`;
+    return window.JournalFormat.day(key).toLowerCase();
+  }
+  function trashReceipt(kind, fill = {}, buttons = []) {
+    const copy = TRASH_COPY.receipt[kind];
+    const put = value => value.replace('{noun}', TRASH_COPY.noun.memory).replace('{date}', fill.date || '');
+    const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
+    const notice = {app: 'agents', icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert', title: put(copy.title), dismissible: true, buttons};
+    if (copy.message && (kind !== 'moved' || fill.date)) notice.message = put(copy.message);
+    // A refused or failed card stays until the owner dismisses it.
+    if (settled) notice.autoDismiss = 10000;
+    window.AppServices?.notifications?.show?.(notice);
+  }
+  function openTrashButton() { return {label: TRASH_COPY.buttons.openTrash, onClick: () => { window.location.href = TRASH_PAGE; }}; }
+  // A refusal answers with a status and changes nothing; no answer, or one that can't be read, may have.
+  function unanswered(error) { return !error?.status || error.cause === 'parse'; }
+  async function deleteMemory(memory, erase) {
     const place = memoryPlace(memory);
-    try {
-      const accepted = await api(`/app/transcripts/api/segment/${encodeURIComponent(memory.day)}/${encodeURIComponent(memory.stream)}/${encodeURIComponent(memory.segment)}`, ownerOptions('DELETE'));
-      const seconds = typeof accepted.ttl_seconds === 'number' ? accepted.ttl_seconds : 10;
-      const hold = {pending: accepted.pending, until: Date.now() + seconds * 1000};
-      memoryHolds.set(place, hold);
-      render();
-      tickMemoryHold(place, hold);
-      setTimeout(() => watchMemoryDelete(memory, place, hold, 0), seconds * 1000 + 500);
-    } catch (error) {
-      // No answer at all can mean the journal took the delete and the reply was lost.
-      notify(error?.status ? "your journal couldn't start that delete, so nothing was deleted." : "your journal didn't answer, so the delete may still go ahead. check back to see whether it did.");
-      render();
-    }
-  }
-  function tickMemoryHold(place, hold) {
-    if (memoryHolds.get(place) !== hold) return;
-    const left = [...(view.querySelectorAll?.('[data-memory-left]') || [])].find(node => node.dataset?.memoryLeft === place);
-    if (left) left.textContent = `deleting in ${holdSeconds(hold)}s`;
-    if (holdSeconds(hold) > 0) setTimeout(() => tickMemoryHold(place, hold), 1000);
-  }
-  async function settleMemoryDelete(memory, place, removed) {
-    memoryHolds.delete(place);
     const source = sourceOf(memory);
-    if (removed) {
-      const page = memoryPages.get(source);
-      if (page) page.memories = page.memories.filter(item => memoryPlace(item) !== place);
-    } else {
-      await loadMemories(source);
+    const url = `/app/transcripts/api/segment/${encodeURIComponent(memory.day)}/${encodeURIComponent(memory.stream)}/${encodeURIComponent(memory.segment)}`;
+    let answer;
+    try {
+      answer = await api(url, erase ? jsonOptions('DELETE', {erase: true}) : ownerOptions('DELETE'));
+    } catch (error) {
+      trashReceipt(unanswered(error) ? (erase ? 'noAnswerErase' : 'noAnswerMove') : (erase ? 'eraseRefused' : 'moveRefused'));
+      render();
+      return;
     }
+    // The row leaves the list at once.
+    const page = memoryPages.get(source);
+    if (page) page.memories = page.memories.filter(item => memoryPlace(item) !== place);
     await loadMemorySummary();
     render();
+    if (answer?.erased === true) { trashReceipt('erased'); return; }
+    if (answer?.erase_failed === true) { trashReceipt('eraseFailed', {}, [openTrashButton()]); return; }
+    const trashId = answer?.trash?.id;
+    trashReceipt('moved', {date: trashEraseDate(answer?.trash?.erase_at)}, [
+      {label: TRASH_COPY.buttons.recover, onClick: () => recoverMemory(trashId, source)},
+      openTrashButton(),
+    ]);
   }
-  // The delete runs after its cancel window, so its first answer only says it was accepted.
-  async function watchMemoryDelete(memory, place, hold, attempt) {
-    if (memoryHolds.get(place) !== hold) return;
-    let status = null;
-    let unknown = false;
-    try { status = await api(`/app/transcripts/api/delete-status/${encodeURIComponent(hold.pending)}`); }
-    catch (error) { unknown = error?.status === 404; }
-    if (memoryHolds.get(place) !== hold) return;
-    if (status?.state === 'deleted') { await settleMemoryDelete(memory, place, true); notify('memory deleted.'); return; }
-    if (status?.state === 'cancelled') { await settleMemoryDelete(memory, place, false); return; }
-    if (status?.state === 'not_deleted' || status?.state === 'incomplete') {
-      notify(status.state === 'incomplete' ? 'that memory was only partly deleted. some of it may already be gone.' : "that memory wasn't deleted. it's still in your journal.");
-      await settleMemoryDelete(memory, place, false);
-      return;
-    }
-    if (unknown || attempt >= 20) {
-      notify(unknown ? 'your journal has no record of this delete. check whether the memory is still here.' : 'your journal still holds this delete, even across a restart. check back later to see whether it went through.');
-      await settleMemoryDelete(memory, place, false);
-      return;
-    }
-    setTimeout(() => watchMemoryDelete(memory, place, hold, attempt + 1), 1000);
-  }
-  async function cancelMemoryDelete(place) {
-    const hold = memoryHolds.get(place);
-    if (!hold) return;
+  // The receipt's recover is the trash page's recover; the memory's page is read again after it.
+  async function recoverMemory(trashId, source) {
+    let answer;
     try {
-      await api(`/app/transcripts/api/cancel-delete/${encodeURIComponent(hold.pending)}`, ownerOptions('POST'));
-      memoryHolds.delete(place);
-      render();
-    } catch (_) {
-      notify("couldn't cancel that delete.");
+      answer = await api('/app/settings/api/trash/recover', jsonOptions('POST', {ids: [trashId], page: 'agents'}));
+    } catch (error) {
+      trashReceipt(unanswered(error) ? 'noAnswerRecover' : 'recoverFailed', {}, unanswered(error) ? [] : [openTrashButton()]);
+      return;
     }
+    if (!(Array.isArray(answer?.done) && answer.done.includes(trashId))) {
+      trashReceipt('recoverFailed', {}, [openTrashButton()]);
+      return;
+    }
+    await loadMemories(source);
+    await loadMemorySummary();
+    render();
+    trashReceipt('recovered');
   }
 
 
@@ -1145,9 +1188,10 @@
     if (target.dataset.memoriesRetry !== undefined) { const source = target.dataset.memoriesRetry || route.connection?.memory_source; if (source) await loadMemories(source); render(); return; }
     if (target.dataset.memoriesOlder) { await loadMemories(route.source, {more: true}); render(); return; }
     if (target.dataset.memoryOpen) { memoryOpen.add(target.dataset.memoryOpen); render(); return; }
-    if (target.dataset.memoryDelete) { memoryToDelete = memoryAt(target.dataset.memoryDelete); if (memoryToDelete) { dialog = 'memory-delete'; render(); } return; }
-    if (target.dataset.memoryConfirm) { const memory = memoryToDelete; memoryToDelete = null; dialog = null; await deleteMemory(memory); return; }
-    if (target.dataset.memoryCancel) { await cancelMemoryDelete(target.dataset.memoryCancel); return; }
+    if (target.dataset.memoryDelete) { memoryToDelete = memoryAt(target.dataset.memoryDelete); if (memoryToDelete) openMemoryDeleteStep('move', '[data-memory-confirm]'); return; }
+    if (target.dataset.memoryEraseStep) { if (memoryToDelete) openMemoryDeleteStep('erase', '[data-memory-back]'); return; }
+    if (target.dataset.memoryBack) { if (memoryToDelete) openMemoryDeleteStep('move', '[data-memory-erase-step]'); return; }
+    if (target.dataset.memoryConfirm || target.dataset.memoryErase) { const memory = memoryToDelete; const erase = Boolean(target.dataset.memoryErase); memoryToDelete = null; dialog = null; await deleteMemory(memory, erase); return; }
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
     if (target.dataset.connection) { event.preventDefault(); const [kind,id] = target.dataset.connection.split(':'); await openConnection(state.connections.find(item => item.kind === kind && item.id === id)); return; }
     if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent = 'copied'; return; }

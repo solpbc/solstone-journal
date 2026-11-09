@@ -2166,6 +2166,31 @@ button:focus:not(:focus-visible) {
 .removal-units { list-style: none; margin: 0.4em 0 0.1em; padding: 0 0 0 0.75em; border-left: 1px solid var(--hairline-2); }
 .removal-units li { padding: 0.15em 0; color: var(--ink-soft); }
 .removals-foot { padding: 0.6em 1em 0.75em; border-top: 1px solid var(--hairline); color: var(--ink-faint); font-size: 0.8em; text-align: center; }
+
+/* Trash: what waits before it's erased. One strip above the rows swaps in place. */
+.trash-panel { margin-top: .5em; }
+.trash-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
+.trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
+.trash-bar[hidden], .trash-bar-group[hidden], .trash-result[hidden] { display: none; }
+.trash-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em .75em; }
+.trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
+.trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
+.trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
+.trash-danger-outline { padding: .5em 1em; background: var(--paper); color: var(--danger); border: 1px solid var(--danger); border-radius: 6px; font-size: .9em; cursor: pointer; }
+.trash-result { padding: .5em 1em; border-bottom: 1px solid var(--hairline); color: var(--ink-soft); font-size: .9em; }
+.trash-row { display: flex; align-items: flex-start; gap: .75em; padding: .65em 1em; font-size: .85em; cursor: pointer; }
+.trash-row + .trash-row { border-top: 1px solid var(--hairline); }
+.trash-row input { margin-top: .25em; flex: none; }
+.trash-row-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.trash-row-body > span { display: block; }
+.trash-row-body > .removal-line { display: flex; }
+.trash-soon { color: var(--ink); font-weight: 500; }
+.trash-returned { color: var(--ink-soft); font-size: .9em; margin-top: .2em; }
+.trash-setting { margin-top: 1.5em; }
+.trash-confirm h3 { color: var(--danger); margin-bottom: .75em; }
+.trash-confirm-body p { margin: 0 0 .75em; }
+.trash-confirm-actions { display: flex; gap: .75em; justify-content: flex-end; margin-top: 1em; }
+@media (max-width: 480px) { .trash-row, .trash-all { min-height: 44px; } .trash-bar-actions button, .trash-confirm-actions button { min-height: 44px; } .trash-row input { width: 20px; height: 20px; } }
 </style>
 
 <script src="/app/settings/static/settings.js"></script>
@@ -2192,6 +2217,7 @@ button:focus:not(:focus-visible) {
       <optgroup label="data">
         <option value="sync">sync</option>
         <option value="storage">storage</option>
+        <option value="trash">trash</option>
         <option value="facets">facets</option>
       </optgroup>
       <optgroup label="this computer" id="navSelectLocalAccess" hidden>
@@ -2227,6 +2253,7 @@ button:focus:not(:focus-visible) {
       <div class="settings-nav-label">data</div>
       <button class="settings-nav-item" data-section="sync" id="tab-sync" role="tab" aria-selected="false" aria-controls="section-sync" tabindex="-1">sync</button>
       <button class="settings-nav-item" data-section="storage" id="tab-storage" role="tab" aria-selected="false" aria-controls="section-storage" tabindex="-1">storage</button>
+      <button class="settings-nav-item" data-section="trash" id="tab-trash" role="tab" aria-selected="false" aria-controls="section-trash" tabindex="-1">trash</button>
       <button class="settings-nav-item" data-section="facets" id="tab-facets" role="tab" aria-selected="false" aria-controls="section-facets" tabindex="-1">facets</button>
     </div>
     <div class="settings-nav-group" id="navGroupLocalAccess" hidden>
@@ -2736,9 +2763,39 @@ button:focus:not(:focus-visible) {
       </div>
       </form>
 
+    </section>
+
+    <!-- Trash Section: what waits before it's erased, the setting, and the removal history -->
+    <section class="settings-section" id="section-trash" role="tabpanel" aria-labelledby="tab-trash">
+      <h2 id="trashHeading">trash</h2>
+      <p class="settings-section-desc">segments and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
+      <div class="log-panel trash-panel">
+        <div class="trash-bar" id="trashBar" tabindex="-1" hidden>
+          <div class="trash-bar-group" id="trashBarIdle">
+            <label class="trash-all"><input type="checkbox" id="trashSelectAll"> <span id="trashSelectAllLabel"></span></label>
+            <span class="trash-bar-actions"><button type="button" class="trash-danger-outline" id="trashEmptyBtn"></button></span>
+          </div>
+          <div class="trash-bar-group" id="trashBarSome" hidden>
+            <span class="trash-count" id="trashCount"></span>
+            <span class="trash-bar-actions"><button type="button" class="btn-secondary" id="trashRecoverBtn"></button><button type="button" class="trash-danger-outline" id="trashEraseBtn"></button></span>
+          </div>
+        </div>
+        <div class="trash-result" id="trashResult" role="status" aria-live="polite" tabindex="-1" hidden></div>
+        <div class="log-entries" id="trashList"><div class="log-empty">loading…</div></div>
+      </div>
+
+      <div class="settings-field trash-setting" id="trashSettingField">
+        <label for="trashEraseAfterDays">erase after</label>
+        <small>how long things wait in the trash before they're erased. what's already in the trash keeps its date.</small>
+        <div class="retention-days-row" style="margin-top: 0.5em;">
+          <input type="number" id="trashEraseAfterDays" min="1" max="30" step="1" disabled style="width: 7em; padding: 0.4em 0.6em; border: 1px solid var(--hairline-2); border-radius: 4px;">
+          <span style="color: var(--ink-soft); font-size: 0.9em;">days</span>
+        </div>
+      </div>
+
       <div id="removalHistory" class="removals-block">
         <h3 class="settings-subsection-title">removal history</h3>
-        <p class="settings-subsection-desc">a line for each thing removed from your journal or your backup: what it was, when, and where it was removed from. this history never keeps what was in it.</p>
+        <p class="settings-subsection-desc">a line each time something leaves your journal or your backup, comes back from the trash or is erased: what it was, when, and where. this history never keeps what was in it.</p>
         <div class="log-panel removals-panel">
           <div class="log-header" id="removalHistoryHeader" hidden>newest first</div>
           <div class="log-entries" id="removalHistoryList" aria-live="polite"><div class="log-empty">loading…</div></div>
@@ -2972,6 +3029,18 @@ button:focus:not(:focus-visible) {
   </div>
 </div>
 
+<!-- Trash erase now / empty trash confirmation -->
+<div id="trashConfirmModal" class="color-modal trash-confirm" role="dialog" aria-modal="true" aria-labelledby="trashConfirmHeading" aria-describedby="trashConfirmBody">
+  <div class="color-modal-content" style="max-width: 480px;">
+    <h3 id="trashConfirmHeading"></h3>
+    <div id="trashConfirmBody" class="trash-confirm-body"></div>
+    <div class="trash-confirm-actions">
+      <button type="button" class="btn-secondary" id="trashConfirmCancel"></button>
+      <button type="button" class="cleanup-confirm-btn" id="trashConfirmErase"></button>
+    </div>
+  </div>
+</div>
+
 <!-- Operational Logs Cleanup Modal -->
 <div id="cleanupLogsModal" class="color-modal" role="dialog" aria-modal="true" aria-labelledby="cleanupLogsHeading">
   <div class="color-modal-content" style="max-width: 560px;">
@@ -3131,10 +3200,11 @@ setupModalAccessibility('iconPickerModal');
 setupModalAccessibility('customActivityModal');
 setupModalAccessibility('ownerVoiceConsentModal');
 setupModalAccessibility('cleanupModal');
+setupModalAccessibility('trashConfirmModal');
 setupModalAccessibility('facetCreateModal');
 
 // ========== NAVIGATION ==========
-const VALID_SECTIONS = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'support', 'facets', 'localaccess'];
+const VALID_SECTIONS = ['about', 'guide', 'profile', 'apikeys', 'transcription', 'vision', 'sync', 'storage', 'trash', 'support', 'facets', 'localaccess'];
 
 let settingsAbout = '';
 let settingsAboutLoad = null;
@@ -3245,6 +3315,7 @@ function switchSection(sectionId, updateHash = true, loadSection = true, replace
 
 
   if (loadSection && sectionId === 'about') loadAbout();
+  if (loadSection && sectionId === 'trash') loadTrash();
   if (loadSection && sectionId === 'facets') {
     loadFacetsList();
   }
@@ -6756,8 +6827,11 @@ const REMOVAL_COPY = {
   footAll: "anything removed before your journal started keeping this history isn't listed.",
   footSome: 'showing the newest {shown} of {total}.',
   nameNotKept: "its name isn't kept",
-  mixed: '{n} removed together',
+  mixed: '{n} things',
+  erasedOnItsDate: 'erased on its date',
 };
+// A move into, out of or through the trash reads by what happened, not by why.
+const REMOVAL_EVENT = { trashed: 'moved to the trash', recovered: 'recovered', erased: 'erased' };
 const REMOVAL_KIND = {
   segment: ['segment', 'segments'],
   original: ['original media', 'originals'],
@@ -6843,6 +6917,14 @@ function removalWhat(unit) {
 }
 
 function removalHow(entry) {
+  const happened = REMOVAL_EVENT[entry.event];
+  if (happened) {
+    if (entry.event === 'erased' && entry.surface === 'policy' && entry.policy === 'trash') {
+      return REMOVAL_COPY.erasedOnItsDate;
+    }
+    const where = REMOVAL_SURFACE[removalSurfaceKey(entry)];
+    return where ? `${happened} ${where}` : happened;
+  }
   const action = REMOVAL_ACTION[entry.action] || REMOVAL_ACTION_FALLBACK;
   const surface = removalSurfaceKey(entry);
   const place = REMOVAL_ACTION_NAMES_PLACE[entry.action] !== surface && REMOVAL_SURFACE[surface];
@@ -6958,6 +7040,277 @@ async function loadRemovalHistory() {
   renderRemovalHistory(history);
 }
 
+// ========== TRASH ==========
+// What waits before it's erased, and the owner's recover, erase now and empty.
+const TRASH_COPY = {
+  loading: 'loading…',
+  empty: 'the trash is empty.',
+  error: "couldn't load your trash. reload the page to try again.",
+  selectAll: 'select all',
+  emptyTrash: 'empty trash',
+  selected: '{n} selected',
+  recover: 'recover',
+  eraseNow: 'erase now',
+  cancel: 'cancel',
+  erasesOn: 'erases {date}',
+  erasingSoon: 'erasing soon',
+  returned: 'the same segment is back in your journal. recovering replaces that copy.',
+  range: 'choose a number from 1 to 30.',
+  recovered: 'recovered {n} {things}.',
+  erased: 'erased {n} {things} from your journal.',
+  partialRecoverOne: "recovered {done} of {n}. the other couldn't be recovered and is still in the trash.",
+  partialRecoverMany: "recovered {done} of {n}. the others couldn't be recovered and are still in the trash.",
+  partialEraseOne: "erased {done} of {n}. the other couldn't be erased and is still in the trash.",
+  partialEraseMany: "erased {done} of {n}. the others couldn't be erased and are still in the trash.",
+  recoverFailedOne: "couldn't recover that, so it's still in the trash. try again.",
+  recoverFailedMany: "couldn't recover those, so they're still in the trash. try again.",
+  eraseFailedOne: "couldn't erase that, so it's still in the trash. try again.",
+  eraseFailedMany: "couldn't erase those, so they're still in the trash. try again.",
+  emptyFailed: "couldn't empty the trash. what's listed here is still in it. try again.",
+  confirmOne: 'erase this {thing} now?',
+  confirmMany: 'erase {n} {things} now?',
+  confirmEmpty: 'empty the trash?',
+  bodyOne: "it can't be recovered after this.",
+  bodyMany: "they can't be recovered after this.",
+  bodyEmpty: "{n} {things} can't be recovered after this.",
+  staysOne: "summaries made from it elsewhere in your journal aren't erased and may still mention it.",
+  staysMany: "summaries made from them elsewhere in your journal aren't erased and may still mention them.",
+  agentOne: 'anything an agent already read stays with it.',
+  agentMany: 'anything an agent already read stays with them.',
+};
+const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved' };
+
+let trashItems = [];
+let trashDays = null;
+let trashConfirmed = null;
+const trashSelected = new Set();
+
+function trashWord(items, count) {
+  const kinds = new Set(items.map(item => item.kind));
+  const pair = kinds.size === 1 && kinds.has('segment') ? ['segment', 'segments']
+    : kinds.size === 1 && kinds.has('memory') ? ['memory', 'memories']
+    : ['thing', 'things'];
+  return pair[count === 1 ? 0 : 1];
+}
+
+function trashFill(template, values) {
+  return Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, value), template);
+}
+
+function trashSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+// When an item erases, on the journal's clock. Never a date in the past.
+function trashEraseDate(eraseAt, now) {
+  const instant = new Date(eraseAt);
+  if (Number.isNaN(instant.getTime())) return { text: TRASH_COPY.erasingSoon, soon: true };
+  if (instant <= now) return { text: TRASH_COPY.erasingSoon, soon: true };
+  const day = removalDay(window.JournalClock.dayKey(instant));
+  return { text: trashFill(TRASH_COPY.erasesOn, { date: day }), soon: day === 'today' || day === 'tomorrow' };
+}
+
+function trashRow(item) {
+  const row = removalEl('label', 'trash-row');
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = trashSelected.has(item.id);
+  box.dataset.trashId = item.id;
+  box.addEventListener('change', () => {
+    if (box.checked) trashSelected.add(item.id); else trashSelected.delete(item.id);
+    paintTrashBar();
+  });
+  const body = removalEl('span', 'trash-row-body');
+  const what = removalEl('span', 'removal-line');
+  what.append(removalEl('span', 'removal-what', TRASH_KIND_LABEL[item.kind] || TRASH_KIND_LABEL.segment));
+  const qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
+  if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
+  qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
+  const when = removalEl('span', 'removal-how');
+  const date = trashEraseDate(item.erase_at, new Date());
+  when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
+  const size = item.kind === 'segment' ? trashSize(item.bytes) : '';
+  if (size) when.append(document.createTextNode(` · ${size}`));
+  body.append(what, when);
+  if (item.replaces) body.append(removalEl('span', 'trash-returned', TRASH_COPY.returned));
+  row.append(box, body);
+  return row;
+}
+
+function paintTrashBar() {
+  const count = trashSelected.size;
+  document.getElementById('trashBar').hidden = trashItems.length === 0;
+  document.getElementById('trashBarIdle').hidden = count > 0;
+  document.getElementById('trashBarSome').hidden = count === 0;
+  document.getElementById('trashCount').textContent = trashFill(TRASH_COPY.selected, { n: count });
+  document.getElementById('trashSelectAll').checked = false;
+}
+
+function renderTrash(payload) {
+  const list = document.getElementById('trashList');
+  list.replaceChildren();
+  const items = payload && Array.isArray(payload.items) ? payload.items : null;
+  trashItems = items || [];
+  // A failure is never the empty line: that would say nothing is waiting.
+  if (!items) {
+    trashSelected.clear();
+    paintTrashBar();
+    list.append(removalEl('div', 'log-empty', TRASH_COPY.error));
+    return false;
+  }
+  const listed = new Set(items.map(item => item.id));
+  [...trashSelected].forEach(id => { if (!listed.has(id)) trashSelected.delete(id); });
+  paintTrashBar();
+  if (window.JournalClock) window.JournalClock.placeNote(document.getElementById('trashHeading'), { inside: true });
+  if (items.length === 0) list.append(removalEl('div', 'log-empty', TRASH_COPY.empty));
+  items.forEach(item => list.append(trashRow(item)));
+  const input = document.getElementById('trashEraseAfterDays');
+  if (Number.isInteger(payload.erase_after_days)) {
+    trashDays = payload.erase_after_days;
+    if (document.activeElement !== input) input.value = String(trashDays);
+    input.disabled = false;
+  }
+  return true;
+}
+
+async function loadTrash() {
+  let payload = null;
+  try {
+    payload = await window.apiJson('api/trash');
+  } catch (err) {
+    payload = null;
+  }
+  return renderTrash(payload);
+}
+
+// What an act's answer says, checked against what the reloaded list still holds.
+function trashResultLine(act, chosen, answer, listedIds) {
+  const done = answer && Array.isArray(answer.done) ? answer.done : [];
+  const failed = answer && Array.isArray(answer.failed) ? answer.failed : chosen.map(item => ({ id: item.id }));
+  const still = failed.filter(entry => listedIds && listedIds.has(entry.id));
+  const gone = failed.filter(entry => !listedIds || !listedIds.has(entry.id));
+  const doneItems = chosen.filter(item => done.includes(item.id));
+  const n = done.length + still.length;
+  const recovering = act === 'recover';
+  const lines = [];
+  if (done.length && !still.length) {
+    lines.push(trashFill(recovering ? TRASH_COPY.recovered : TRASH_COPY.erased, { n: done.length, things: trashWord(doneItems, done.length) }));
+  } else if (done.length) {
+    const key = `${recovering ? 'partialRecover' : 'partialErase'}${still.length === 1 ? 'One' : 'Many'}`;
+    lines.push(trashFill(TRASH_COPY[key], { done: done.length, n }));
+  } else if (still.length && act === 'empty') {
+    lines.push(TRASH_COPY.emptyFailed);
+  } else if (still.length) {
+    lines.push(TRASH_COPY[`${recovering ? 'recoverFailed' : 'eraseFailed'}${still.length === 1 ? 'One' : 'Many'}`]);
+  }
+  [...new Set(gone.map(entry => entry.reason).filter(Boolean))].forEach(reason => lines.push(`${reason}.`));
+  return lines.join(' ');
+}
+
+function trashConfirmCopy(act, items) {
+  const n = items.length;
+  const memory = items.some(item => item.kind === 'memory');
+  const one = n === 1;
+  const paragraphs = [];
+  let title;
+  if (act === 'empty') {
+    title = TRASH_COPY.confirmEmpty;
+    paragraphs.push(trashFill(TRASH_COPY.bodyEmpty, { n, things: trashWord(items, n) }));
+  } else {
+    title = one
+      ? trashFill(TRASH_COPY.confirmOne, { thing: trashWord(items, 1) })
+      : trashFill(TRASH_COPY.confirmMany, { n, things: trashWord(items, n) });
+    paragraphs.push(one ? TRASH_COPY.bodyOne : TRASH_COPY.bodyMany);
+  }
+  paragraphs.push(one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany);
+  if (memory) paragraphs.push(one ? TRASH_COPY.agentOne : TRASH_COPY.agentMany);
+  return { title, paragraphs };
+}
+
+async function runTrashAct(act, chosen) {
+  const options = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+  if (act !== 'empty') options.body = JSON.stringify({ ids: chosen.map(item => item.id) });
+  let answer = null;
+  try {
+    answer = await window.apiJson(`api/trash/${act}`, options);
+  } catch (err) {
+    answer = null;
+  }
+  trashSelected.clear();
+  const loaded = await loadTrash();
+  const listed = loaded ? new Set(trashItems.map(item => item.id)) : null;
+  const result = document.getElementById('trashResult');
+  result.textContent = trashResultLine(act, chosen, answer, listed);
+  result.hidden = !result.textContent;
+  const bar = document.getElementById('trashBar');
+  (bar.hidden ? result : bar).focus();
+  loadRemovalHistory();
+}
+
+function openTrashConfirm(act, items, trigger) {
+  const copy = trashConfirmCopy(act, items);
+  document.getElementById('trashConfirmHeading').textContent = copy.title;
+  document.getElementById('trashConfirmBody').replaceChildren(...copy.paragraphs.map(text => removalEl('p', '', text)));
+  trashConfirmed = () => runTrashAct(act, items);
+  const modal = document.getElementById('trashConfirmModal');
+  modal.style.display = 'flex';
+  modal._openAccessible(trigger);
+}
+
+function closeTrashConfirm() {
+  trashConfirmed = null;
+  document.getElementById('trashConfirmModal')._closeAccessible();
+}
+
+function trashChosen() {
+  return trashItems.filter(item => trashSelected.has(item.id));
+}
+
+function saveTrashDays(input) {
+  const raw = input.value.trim();
+  const days = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!(days >= 1 && days <= 30)) {
+    showFieldStatus(input, 'error', TRASH_COPY.range);
+    return;
+  }
+  if (days === trashDays) return;
+  trashDays = days;
+  saveField(input, 'trash', 'erase_after_days', days);
+}
+
+function setupTrash() {
+  const byId = id => document.getElementById(id);
+  byId('trashSelectAllLabel').textContent = TRASH_COPY.selectAll;
+  byId('trashEmptyBtn').textContent = TRASH_COPY.emptyTrash;
+  byId('trashRecoverBtn').textContent = TRASH_COPY.recover;
+  byId('trashEraseBtn').textContent = TRASH_COPY.eraseNow;
+  byId('trashConfirmCancel').textContent = TRASH_COPY.cancel;
+  byId('trashConfirmErase').textContent = TRASH_COPY.eraseNow;
+  byId('trashSelectAll').addEventListener('change', () => {
+    trashItems.forEach(item => trashSelected.add(item.id));
+    document.querySelectorAll('#trashList input[type="checkbox"]').forEach(box => { box.checked = true; });
+    paintTrashBar();
+  });
+  byId('trashRecoverBtn').addEventListener('click', () => runTrashAct('recover', trashChosen()));
+  byId('trashEraseBtn').addEventListener('click', (event) => openTrashConfirm('erase', trashChosen(), event.currentTarget));
+  byId('trashEmptyBtn').addEventListener('click', (event) => openTrashConfirm('empty', trashItems.slice(), event.currentTarget));
+  byId('trashConfirmCancel').addEventListener('click', closeTrashConfirm);
+  byId('trashConfirmErase').addEventListener('click', () => {
+    const act = trashConfirmed;
+    closeTrashConfirm();
+    if (act) act();
+  });
+  byId('trashConfirmModal').addEventListener('click', (event) => {
+    if (event.target === byId('trashConfirmModal')) closeTrashConfirm();
+  });
+  byId('trashEraseAfterDays').addEventListener('change', (event) => saveTrashDays(event.currentTarget));
+}
+// ========== END TRASH ==========
+
 function initSettings() {
   if (settingsInitialized) return;
   settingsInitialized = true;
@@ -6967,6 +7320,8 @@ function initSettings() {
   loadSync();
   loadStorage();
   loadRemovalHistory();
+  setupTrash();
+  loadTrash();
   loadLocalAccess();
   setupAutoSave();
   setupStorageListeners();

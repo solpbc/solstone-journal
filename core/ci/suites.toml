@@ -5555,6 +5555,19 @@ required_features = ["full-tests"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-settings-web::trash_dom"
+package = "solstone-core-settings-web"
+target = "trash_dom"
+set = "component"
+areas = ["home"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-settings-web::facets_dom"
 package = "solstone-core-settings-web"
 target = "facets_dom"
