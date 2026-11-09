@@ -144,16 +144,12 @@ pub(crate) fn activity_file_place(path: &str) -> Option<(String, String)> {
 /// The activity day files one query has read: many matching rows share a file,
 /// and a query reads each one once.
 #[derive(Clone, Default)]
-pub(crate) struct ActivityDayFiles(
-    Arc<Mutex<BTreeMap<String, Option<Arc<Vec<solstone_core_format::content::JsonObject>>>>>>,
-);
+pub(crate) struct ActivityDayFiles(Arc<Mutex<BTreeMap<String, Option<DayRecords>>>>);
+
+type DayRecords = Arc<Vec<solstone_core_format::content::JsonObject>>;
 
 impl ActivityDayFiles {
-    fn records(
-        &self,
-        journal_root: &Path,
-        path: &str,
-    ) -> Option<Arc<Vec<solstone_core_format::content::JsonObject>>> {
+    fn records(&self, journal_root: &Path, path: &str) -> Option<DayRecords> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
