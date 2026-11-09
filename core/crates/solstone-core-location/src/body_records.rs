@@ -399,10 +399,14 @@ fn later_piece_removed(
     false
 }
 
-/// A window length's grid: an hour window and its step-around (`3601`) are one
-/// grid, a five-minute tile and its step-around (`301`) another.
+/// A window length's grid: a whole-day window, an hour window and a five-minute
+/// tile are three, each with its step-around (`86401`, `3601`, `301`).
 fn grid_of(length: u32) -> u32 {
-    if length >= 3_600 { 3_600 } else { 300 }
+    match length {
+        86_400.. => 86_400,
+        3_600.. => 3_600,
+        _ => 300,
+    }
 }
 
 fn split_key(key: &str) -> Option<(&str, &str)> {

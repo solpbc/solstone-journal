@@ -183,6 +183,19 @@ fn retention_reaching_a_later_piece_marks_it_and_a_release_does_not() {
 }
 
 #[test]
+fn a_deleted_whole_day_window_on_the_day_a_night_ends_leaves_it_live() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    window(root, NEXT, "000000_3600", &[tile(1)]);
+    // The next day's dated scores: not a piece of the night.
+    let dated = window(root, NEXT, "000000_86400", &[]);
+    record(root, json!({}));
+    delete(&dated);
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+}
+
+#[test]
 fn a_deleted_window_on_another_grid_inside_the_span_leaves_the_account_live() {
     let journal = journal();
     let root = journal.path();
