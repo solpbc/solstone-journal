@@ -90,6 +90,27 @@ fn covers_at(root: &Path, day: &str) -> Vec<(OldSource, CoverScope)> {
 }
 
 #[test]
+fn days_an_old_bundle_covers_leave_out_one_a_new_import_read() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    with_native(root);
+    let days = ["20260101", "20270101"];
+    assert_eq!(
+        covered_days_among(root, days.into_iter()),
+        BTreeSet::from(["20260101".to_owned()])
+    );
+    let import = root.join("imports/20260201_120000");
+    fs::create_dir_all(&import).unwrap();
+    fs::write(import.join(TOUCHED_FILE), "").unwrap();
+    fs::write(
+        import.join(MANIFEST_FILE),
+        json!({"source_type": "apple_health", "span": [["20260101", "20260102"]]}).to_string(),
+    )
+    .unwrap();
+    assert!(covered_days_among(root, days.into_iter()).is_empty());
+}
+
+#[test]
 fn a_new_path_import_alone_is_not_an_old_bundle_and_says_nothing() {
     let root = tempfile::tempdir().unwrap();
     let import = root.path().join("imports/20260110_120000");
