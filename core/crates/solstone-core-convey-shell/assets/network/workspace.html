@@ -1918,7 +1918,7 @@ systemctl --user start solstone-linux</code></div>
       });
     }
     // Paused while the page is hidden, read again on return.
-    const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => setInterval(fn, ms));
+    const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
     every(refreshStatus, 15000);
     every(refreshPrivateLinkStatus, 15000);
   }
@@ -2420,7 +2420,7 @@ function landOnDevices() {
 function initClients() {
   loadClients().then(landOnDevices);
 
-  const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => setInterval(fn, ms));
+  const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
   every(loadClients, 30000);
 }
 

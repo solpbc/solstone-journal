@@ -143,7 +143,7 @@ window.whenShellReady(() => {
     if (window.AppServices?.visibleInterval) {
       window.AppServices.visibleInterval(updateStatusPane, 1000);
     } else {
-      setInterval(updateStatusPane, 1000);
+      window.setInterval(updateStatusPane, 1000);
     }
   }
 
@@ -651,7 +651,7 @@ window.whenShellReady(() => {
   // read only. It waits while the page is hidden and reads again on return.
   const every = window.AppServices?.visibleInterval
     ? (fn, ms) => window.AppServices.visibleInterval(fn, ms)
-    : (fn, ms) => setInterval(fn, ms);
+    : (fn, ms) => window.setInterval(fn, ms);
   every(fetchSystemStatus, 60000);
   // The pane's clock ticks only while the pane is on the page and in view;
   // the mark redraws itself on every change in connection or capture.

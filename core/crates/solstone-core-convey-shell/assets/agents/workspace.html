@@ -1241,7 +1241,7 @@
   reload().then(openMemoryFromAddress);
   window.addEventListener?.('hashchange', openMemoryFromAddress);
   // Paused while the page is hidden, read again on return.
-  const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => setInterval(fn, ms));
+  const every = (window.AppServices?.visibleInterval ? (fn, ms) => window.AppServices.visibleInterval(fn, ms) : (fn, ms) => window.setInterval(fn, ms));
   every(() => {
     if (route.name !== 'home' || dialog) return;
     if (lane === 'byo' && state?.byo?.hostname && state?.byo?.account_uri && !byoReady()) {
