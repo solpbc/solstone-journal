@@ -7,7 +7,7 @@
 //! and speaker names don't arise. `docs/BODY_SEGMENTS.md` is the contract.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
@@ -412,6 +412,44 @@ fn is_kind(row: &BodyRow, kind: &str) -> bool {
         || (row.kind == RowKind::Event && kind.eq_ignore_ascii_case("workout"))
 }
 
+/// The row ids a same-clock sibling this reader may also read holds, when that
+/// sibling is the better copy of this window. A sibling that can't be read or
+/// is withheld holds nothing, so no row is lost to it.
+fn ids_in_a_better_copy(
+    journal_root: &Path,
+    readable: &[Window],
+    window: &Window,
+    day: &str,
+    stream: &str,
+) -> BTreeSet<String> {
+    let clock = window.name.split('_').next().unwrap_or_default();
+    let rank = (
+        solstone_core_format::content::body_records::copy_rank(&window.name),
+        window.name.as_str(),
+    );
+    let mut ids = BTreeSet::new();
+    for sibling in readable.iter().filter(|sibling| {
+        sibling.name.split('_').next() == Some(clock)
+            && (
+                solstone_core_format::content::body_records::copy_rank(&sibling.name),
+                sibling.name.as_str(),
+            ) < rank
+            && released(journal_root, day, stream, &sibling.name)
+    }) {
+        let Ok(text) = std::fs::read_to_string(sibling.segment.path().join(BODY_RECORDS_FILE))
+        else {
+            continue;
+        };
+        ids.extend(
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<BodyRow>(line).ok())
+                .filter(|row| row.kind != RowKind::Moved)
+                .map(|row| row.id),
+        );
+    }
+    ids
+}
+
 /// A window's rows that belong to a read, each at its place in time order, which
 /// stays inside the window. A row before the window's start, such as a tile of an
 /// experience that began earlier, takes the window's start. A damaged line reads as
@@ -782,9 +820,9 @@ pub(crate) fn read_source_span(
             position.row.clone(),
         )
     });
-    let windows = readable_windows(journal_root, snapshot, &reference.day, &reference.stream)?;
+    let readable = readable_windows(journal_root, snapshot, &reference.day, &reference.stream)?;
     let reach = from.saturating_sub(LOOK_BACK_SECONDS);
-    let windows: Vec<&Window> = windows
+    let windows: Vec<&Window> = readable
         .iter()
         .filter(|window| window.start_seconds.max(reach) < window.end_seconds.min(to))
         // A window that ends before the cursor holds nothing still to serve.
@@ -826,10 +864,20 @@ pub(crate) fn read_source_span(
             ) {
                 continue;
             }
-            let Ok(rows) = rows else {
+            let Ok(mut rows) = rows else {
                 unreadable += 1;
                 continue;
             };
+            // A row an archive merge left a second copy of is read once, from
+            // the copy the importer still writes to.
+            let better = ids_in_a_better_copy(
+                journal_root,
+                &readable,
+                window,
+                &reference.day,
+                &reference.stream,
+            );
+            rows.retain(|row| !better.contains(&row.2));
             waiting.extend(
                 rows.into_iter()
                     .filter(|row| {

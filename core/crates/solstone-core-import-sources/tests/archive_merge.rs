@@ -1042,6 +1042,178 @@ impl Drop for TempTree {
     }
 }
 
+fn write(root: &Path, rel: &str, bytes: &[u8]) {
+    let path = root.join(rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, bytes).unwrap();
+}
+
+/// A body window as a real import leaves one: rows, and nothing else.
+fn body_window(root: &Path, day: &str, key: &str, row_id: &str) {
+    let row = json!({"kind": "reading", "id": row_id, "source": "apple_health",
+        "type": "HKQuantityTypeIdentifierHeartRate", "label": "heart rate", "value": "60",
+        "at": format!("2026-01-10 09:00:00 -0700")});
+    write(
+        root,
+        &format!("chronicle/{day}/import.apple_health/{key}/body.jsonl"),
+        format!("{row}\n").as_bytes(),
+    );
+}
+
+const APPLE_ZONE: &str = "imports/.apple_health-zone.json";
+const DENVER: &[u8] = br#"{"zone":"America/Denver"}"#;
+const NEW_YORK: &[u8] = br#"{"zone":"America/New_York"}"#;
+
+#[test]
+fn a_merged_body_source_keeps_its_zone_and_leaves_another_journals_run_state_behind() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    body_window(&source, "20260110", "090000_3600", "r1");
+    write(&source, APPLE_ZONE, DENVER);
+    write(&source, "imports/.apple_health-run/state.json", b"{}");
+    write(&source, "imports/.oura-run/state.json", b"{}");
+    // Old bundles, native and Python-era, are carried as they always were.
+    write(
+        &source,
+        "imports/body-01ARZ3NDEKTSV4RRFFQ69G5FAV/manifest.json",
+        b"{}",
+    );
+    write(&source, "imports/20240101_120000/manifest.json", b"{}");
+
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    assert_eq!(fs::read(target.join(APPLE_ZONE)).unwrap(), DENVER);
+    assert!(
+        target
+            .join("chronicle/20260110/import.apple_health/090000_3600/body.jsonl")
+            .is_file()
+    );
+    assert!(!target.join("imports/.apple_health-run").exists());
+    assert!(!target.join("imports/.oura-run").exists());
+    assert!(
+        target
+            .join("imports/body-01ARZ3NDEKTSV4RRFFQ69G5FAV/manifest.json")
+            .is_file()
+    );
+    assert!(
+        target
+            .join("imports/20240101_120000/manifest.json")
+            .is_file()
+    );
+    assert!(result.merge_summary.body_zones_differ.is_empty());
+}
+
+#[test]
+fn a_zone_this_journal_already_holds_is_kept_and_a_different_one_is_counted_in_hours() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    body_window(&source, "20260110", "090000_3600", "r1");
+    body_window(&source, "20260110", "100000_300", "r2");
+    write(&source, APPLE_ZONE, NEW_YORK);
+    write(&target, APPLE_ZONE, DENVER);
+
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    assert_eq!(fs::read(target.join(APPLE_ZONE)).unwrap(), DENVER);
+    // The windows merge anyway, and the summary says how much is on another clock.
+    assert_eq!(result.merge_summary.body_zones_differ.len(), 1);
+    assert_eq!(
+        result.merge_summary.body_zones_differ[0].source,
+        "Apple Health"
+    );
+    assert_eq!(result.merge_summary.body_zones_differ[0].hours, 2);
+}
+
+#[test]
+fn the_same_zone_on_both_sides_says_nothing() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    body_window(&source, "20260110", "090000_3600", "r1");
+    write(&source, APPLE_ZONE, DENVER);
+    write(&target, APPLE_ZONE, DENVER);
+    let archive = archive_from(&source, &tree.path);
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert!(result.merge_summary.body_zones_differ.is_empty());
+}
+
+#[test]
+fn a_body_window_landing_on_a_retired_card_steps_around_it_and_an_old_card_merges_as_ever() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    let card = "chronicle/20260110/import.apple_health/000000_300/day_summary_transcript.md";
+    write(&target, card, b"# a retired card");
+    body_window(&source, "20260110", "000000_300", "r1");
+    write(&source, APPLE_ZONE, DENVER);
+    // The archive's own card, on a day the target doesn't hold, comes in too.
+    let other_card = "chronicle/20260111/import.apple_health/000000_300/day_summary_transcript.md";
+    write(&source, other_card, b"# another retired card");
+
+    let archive = archive_from(&source, &tree.path);
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    assert!(target.join(card).is_file());
+    assert!(
+        target
+            .join("chronicle/20260110/import.apple_health/000000_301/body.jsonl")
+            .is_file()
+    );
+    assert!(target.join(other_card).is_file());
+}
+
+#[test]
+fn a_journal_that_merged_the_same_hour_keeps_both_copies_on_the_grid() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    body_window(&source, "20260110", "090000_3600", "from-archive");
+    body_window(&target, "20260110", "090000_3600", "from-here");
+    write(&source, APPLE_ZONE, DENVER);
+    write(&target, APPLE_ZONE, DENVER);
+
+    let archive = archive_from(&source, &tree.path);
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+
+    let stream = target.join("chronicle/20260110/import.apple_health");
+    assert!(stream.join("090000_3600/body.jsonl").is_file());
+    assert!(stream.join("090000_3601/body.jsonl").is_file());
+}
+
+#[test]
+fn an_exported_journal_carries_its_body_zone_through_a_merge() {
+    use solstone_core_journal_archive::{ArchiveSource, EncodeArchiveRequest, encode_archive};
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    fs::create_dir_all(&target).unwrap();
+    body_window(&source, "20260110", "090000_3600", "r1");
+    write(&source, APPLE_ZONE, DENVER);
+    let archive = tree.path.join("portable.zip");
+    let opened = ArchiveSource::open(&source).unwrap();
+    encode_archive(
+        &EncodeArchiveRequest {
+            source: &opened,
+            solstone_version: "2.0.0",
+            exported_at: "2026-01-01T00:00:00Z",
+            day_window: None,
+        },
+        &mut File::create(&archive).unwrap(),
+    )
+    .unwrap();
+    merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert_eq!(fs::read(target.join(APPLE_ZONE)).unwrap(), DENVER);
+}
+
 #[test]
 fn an_entity_merged_away_in_this_journal_refuses_the_import_and_changes_nothing() {
     let tree = TempTree::new();

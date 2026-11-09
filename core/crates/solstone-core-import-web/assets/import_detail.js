@@ -84,6 +84,8 @@
     day: 'day',
     days: 'days',
     copied: 'copied',
+    zone_differs_one: "1 hour of {source} may show at the wrong time: it was saved on a different time zone from the one this journal holds for {source}.",
+    zone_differs_many: "{hours} hours of {source} may show at the wrong time: they were saved on a different time zone from the one this journal holds for {source}.",
     skipped: 'skipped',
     errored: 'errored',
     created: 'created',
@@ -513,8 +515,19 @@
           counter('imports_copied', strings.copied),
           counter('imports_skipped', strings.skipped)
         ]
+      ),
+      ...asArray(summary.body_zones_differ).map((differs) =>
+        `<p class="import-zone-differs">${escapeHtml(zoneDiffersLine(differs))}</p>`
       )
     ]);
+  }
+
+  function zoneDiffersLine(differs) {
+    const hours = numberValue(differs?.hours);
+    const source = differs?.source || '';
+    return (hours === 1 ? strings.zone_differs_one : strings.zone_differs_many)
+      .replace('{hours}', String(hours))
+      .replaceAll('{source}', source);
   }
 
   function renderCollisionCallout(data) {

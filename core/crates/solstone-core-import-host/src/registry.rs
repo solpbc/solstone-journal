@@ -787,7 +787,7 @@ fn run_archive_with_seams(
                         dispatch.source.name()
                     ));
                 }
-                success(cli_render::source_archive_merge_complete(
+                let mut text = cli_render::source_archive_merge_complete(
                     dispatch.source,
                     outcome.merge_summary.segments_copied,
                     outcome.merge_summary.imports_copied,
@@ -795,7 +795,14 @@ fn run_archive_with_seams(
                     outcome.merge_summary.entities_merged,
                     outcome.merge_summary.facets_created,
                     outcome.merge_summary.facets_merged,
-                ))
+                );
+                for differs in &outcome.merge_summary.body_zones_differ {
+                    text.push_str(&cli_render::body_zones_differ(
+                        &differs.source,
+                        differs.hours,
+                    ));
+                }
+                success(text)
             }
             RetryDisposition::IdempotentNoop => {
                 let rec = (seams.record_completed)(

@@ -142,6 +142,20 @@ pub struct MergeSummary {
     pub imports_copied: usize,
     pub imports_skipped: usize,
     pub errors: Vec<String>,
+    /// Body sources whose windows came in placed on another time zone than the
+    /// one this journal holds for them, so their times may read wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_zones_differ: Vec<BodyZoneDiffers>,
+}
+
+/// One body source merged from an archive whose fixed zone differs from this
+/// journal's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BodyZoneDiffers {
+    /// The source's name, in words.
+    pub source: String,
+    /// How many hours of its windows came in.
+    pub hours: u64,
 }
 
 /// What happened to a source segment.
@@ -1209,6 +1223,8 @@ enum PublishUnit {
     Tree,
     /// A file, created or replaced.
     File,
+    /// A file only this merge may create: one already there stops the merge.
+    NewFile,
 }
 
 type PublishUnits = BTreeMap<String, PublishUnit>;
@@ -2654,6 +2670,13 @@ fn stage_imports(
         detail: error.to_string(),
     })? {
         let name = file_name(&source_import)?;
+        // Another journal's unfinished run means nothing here.
+        if BODY_SOURCES
+            .iter()
+            .any(|source| name == format!(".{source}-run"))
+        {
+            continue;
+        }
         let destination = target.join("imports").join(&name);
         if fs::symlink_metadata(&destination).is_ok() {
             state.summary.imports_skipped += 1;
@@ -2672,7 +2695,89 @@ fn stage_imports(
         state.writes += 1;
         state.import_units.insert(relative, PublishUnit::Tree);
     }
+    stage_body_zones(&imports, target, state)
+}
+
+/// The sources whose windows sit in `import.<source>` and whose fixed zone is
+/// kept in `imports/.<source>-zone.json`.
+const BODY_SOURCES: [&str; 3] = ["apple_health", "oura", "strava"];
+
+fn zone_named(bytes: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(bytes)
+        .ok()?
+        .get("zone")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// A body source's windows read on the zone that placed them, so a merged
+/// journal needs it. A target with none takes the archive's; one with another
+/// keeps its own, and the summary says how much came in on the other clock.
+fn stage_body_zones(
+    imports: &Path,
+    target: &Path,
+    state: &mut MergeState,
+) -> Result<(), ImportSourcesError> {
+    for source in BODY_SOURCES {
+        let name = format!(".{source}-zone.json");
+        let source_file = imports.join(&name);
+        if !fs::symlink_metadata(&source_file).is_ok_and(|metadata| metadata.is_file()) {
+            continue;
+        }
+        let import_error = |path: PathBuf, error: io::Error| ImportSourcesError::ImportMerge {
+            path,
+            detail: error.to_string(),
+        };
+        let bytes =
+            fs::read(&source_file).map_err(|error| import_error(source_file.clone(), error))?;
+        let destination = target.join("imports").join(&name);
+        match fs::read(&destination) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let relative = format!("imports/{name}");
+                stage_bytes(state, &relative, &bytes)?;
+                state.import_units.insert(relative, PublishUnit::NewFile);
+            }
+            Err(error) => return Err(import_error(destination, error)),
+            Ok(held) if zone_named(&held).is_some() && zone_named(&held) == zone_named(&bytes) => {}
+            Ok(_) => {
+                let hours = body_hours_staged(state, source);
+                if hours > 0 {
+                    state.summary.body_zones_differ.push(BodyZoneDiffers {
+                        source: solstone_core_format::content::body_records::source_words(source)
+                            .to_owned(),
+                        hours,
+                    });
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+/// How many hours of `source`'s body windows this merge is bringing in.
+fn body_hours_staged(state: &MergeState, source: &str) -> u64 {
+    let stream = format!("import.{source}");
+    let seconds = state
+        .chronicle_units
+        .keys()
+        .filter_map(|relative| {
+            let mut parts = relative.split('/');
+            let (Some("chronicle"), Some(_day), Some(found), Some(key)) =
+                (parts.next(), parts.next(), parts.next(), parts.next())
+            else {
+                return None;
+            };
+            if found != stream {
+                return None;
+            }
+            let staged = join_contained(&state.staged_publish, relative).ok()?;
+            if !solstone_core_segment::is_body_only_dir(&stream, &staged) {
+                return None;
+            }
+            key.split('_').nth(1)?.parse::<u64>().ok()
+        })
+        .sum::<u64>();
+    seconds.div_ceil(3600)
 }
 
 fn log_skipped_extras(source: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
@@ -3033,6 +3138,15 @@ fn publish_one(
             }
         }
         PublishUnit::File => {
+            publish_file(state, &destination, &staged, relative, mutation)?;
+        }
+        PublishUnit::NewFile => {
+            if fs::symlink_metadata(&destination).is_ok() {
+                return Err(ImportSourcesError::MergePublishFailed {
+                    detail: format!("{relative} appeared while the import was running"),
+                    mutation,
+                });
+            }
             publish_file(state, &destination, &staged, relative, mutation)?;
         }
     }
@@ -4663,6 +4777,46 @@ mod tests {
                 .join("chronicle")
                 .join("20260311")
                 .join("120000_60")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn a_zone_file_appearing_during_a_merge_stops_it_with_nothing_of_the_archive_left() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (
+                    "chronicle/20260311/import.apple_health/090000_3600/body.jsonl",
+                    b"{}\n",
+                ),
+                (
+                    "imports/.apple_health-zone.json",
+                    br#"{"zone":"America/Denver"}"#,
+                ),
+            ],
+        );
+        let path = target.join("imports/.apple_health-zone.json");
+        let appeared = path.clone();
+        inject_before_publish(Some(Box::new(move || {
+            fs::create_dir_all(appeared.parent().unwrap()).unwrap();
+            fs::write(&appeared, br#"{"zone":"Asia/Tokyo"}"#).unwrap();
+        })));
+        let error = merge_journal_archive(&archive, &target, &merge_options(&tree), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("appeared while the import was running"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), br#"{"zone":"Asia/Tokyo"}"#);
+        assert!(
+            !target
+                .join("chronicle/20260311/import.apple_health/090000_3600")
                 .exists()
         );
     }

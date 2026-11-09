@@ -279,6 +279,14 @@ pub fn source_archive_merge_complete(
     )
 }
 
+/// What the owner reads about body data that came in on another time zone.
+pub fn body_zones_differ(source: &str, hours: u64) -> String {
+    let unit = if hours == 1 { "hour" } else { "hours" };
+    format!(
+        "{hours} {unit} of {source} may show at the wrong time: they were saved on a different time zone from the one this journal holds for {source}.\n"
+    )
+}
+
 pub fn source_archive_already_present(source: RegistrySource) -> String {
     format!(
         "{} import did not merge anything: archive content is already present\n",

@@ -383,8 +383,13 @@ fn later_piece_removed(
             break;
         }
         if that_day.windows.iter().any(|window| {
-            matches!(window.held, Held::Deleted { released: false, .. })
-                && (on != stored.day || window.start > first_start)
+            matches!(
+                window.held,
+                Held::Deleted {
+                    released: false,
+                    ..
+                }
+            ) && (on != stored.day || window.start > first_start)
                 && window.start < reaches
                 && grid_of(window.end - window.start) == grid
         }) {
