@@ -299,7 +299,10 @@ mod tests {
         let wire = read_wire(&mut body, "\n\n").await;
         assert!(wire.starts_with("event: hello\n"), "{wire}");
         assert!(wire.contains("retry: 2000\n"), "{wire}");
-        assert!(wire.contains("data: {\"server_build\":\"0123456789abcdef\"}\n"), "{wire}");
+        assert!(
+            wire.contains("data: {\"server_build\":\"0123456789abcdef\"}\n"),
+            "{wire}"
+        );
         assert!(!wire.contains("id:"), "{wire}");
     }
 
@@ -316,7 +319,8 @@ mod tests {
 
     #[tokio::test]
     async fn heartbeats_keep_coming_while_events_flow_and_stop_with_the_stream() {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Result<Event, Infallible>>();
+        let (sender, receiver) =
+            tokio::sync::mpsc::unbounded_channel::<Result<Event, Infallible>>();
         let live = tokio_stream_from(receiver);
         let mut stream = Heartbeating::new(live, "build", Duration::from_millis(20));
         let hello = stream.next().await.unwrap().unwrap();
@@ -351,7 +355,9 @@ mod tests {
     fn tokio_stream_from(
         mut receiver: tokio::sync::mpsc::UnboundedReceiver<Result<Event, Infallible>>,
     ) -> impl Stream<Item = Result<Event, Infallible>> + Unpin {
-        Box::pin(futures_util::stream::poll_fn(move |cx| receiver.poll_recv(cx)))
+        Box::pin(futures_util::stream::poll_fn(move |cx| {
+            receiver.poll_recv(cx)
+        }))
     }
 
     #[tokio::test]

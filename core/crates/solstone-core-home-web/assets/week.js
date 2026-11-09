@@ -329,6 +329,7 @@
     surface.innerHTML = '<div class="surface-state surface-state--loading" role="status" aria-busy="true">'
       + '<div class="surface-state-spinner" aria-hidden="true"></div>'
       + '<span class="surface-state-text">loading your week…</span>'
+      + '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>'
       + '</div>';
     fetch('/app/home/api/week/' + encodeURIComponent(stem))
       .then(function (res) {

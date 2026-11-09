@@ -9,7 +9,6 @@
   const FIRST_MINUTES_URL = '/app/home/api/first-minutes';
   const AGENTS_STATE_URL = '/app/agents/api/state';
   const SETUP_ACTION_URL = '/init/api/action';
-  const ORIGINALS_URL = '/app/home/api/removals?offset=0';
   const ORIGINALS_PAGE = '/app/home/originals/';
   const WAITING_HEADING = 'waiting on you';
   // The page's sections in the order they stand. A live refresh that brings a
@@ -50,7 +49,6 @@
   // when it couldn't be read. Page state, not pulse data, so every re-render
   // of the status block keeps it.
   let originalsTotal;
-  let originalsRequest = null;
   let isFirstPage = false;
   const ACTIVITY_PREVIEW = 6;
   let todayActivitiesExpanded = false;
@@ -110,6 +108,7 @@
     return '<div class="surface-state surface-state--loading" role="status" aria-busy="true">'
       + '<div class="surface-state-spinner" aria-hidden="true"></div>'
       + '<span class="surface-state-text" data-role="loading-status">' + esc(text) + '</span>'
+      + '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>'
       + '</div>';
   }
 
@@ -252,6 +251,9 @@
       .catch(function (error) {
         if (read < pulseAppliedVersion) return;
         pulseAppliedVersion = read;
+        // The early briefing read was for this first page. A retry reads a
+        // fresh one rather than draw what was read before the failure.
+        earlyBriefing = null;
         logError(error, 'home: loadPulse failed');
         surface.innerHTML = surfaceError(error, "Couldn't load pulse");
         bindSurfaceRetry();
@@ -278,6 +280,7 @@
     pulseReadFailed = false;
     pulseObservedAt = Date.now();
     observeBackup(data);
+    observeOriginalsTotal(data);
     briefingData = normalizeBriefingFromPulse(data);
     const welcome = data.home_state === 'welcome';
     paintedSide = welcome ? null : (dayHasMaterial(data) ? 'today' : 'yesterday');
@@ -1632,24 +1635,11 @@
   }
 
   // The originals list's item total, for the waiting list's originals row.
-  // Read once per mount, and again when the browser restores the page from
-  // its back/forward cache; never polled.
-  function readOriginalsTotal() {
-    if (originalsRequest) return originalsRequest;
-    originalsRequest = apiJson(ORIGINALS_URL)
-      .then(function (data) {
-        const page = isPlainObject(data) && Number.isSafeInteger(data.total_rows) && data.total_rows >= 0
-          && ['list.ready', 'list.empty', 'list.review_too_large'].indexOf(data.state) !== -1;
-        originalsTotal = page ? (data.state === 'list.empty' ? 0 : data.total_rows) : null;
-      })
-      .catch(function () {
-        originalsTotal = null;
-      })
-      .finally(function () {
-        originalsRequest = null;
-        if (lastPulse) renderVitals(lastPulse);
-      });
-    return originalsRequest;
+  // Pulse carries it, so the first page needn't read the list as well.
+  function observeOriginalsTotal(data) {
+    const total = data?.originals_total;
+    if (total === undefined) return;
+    originalsTotal = Number.isSafeInteger(total) && total >= 0 ? total : null;
   }
 
   function refreshVitals() {
@@ -1674,6 +1664,7 @@
         pulseReadFailed = false;
         pulseObservedAt = Date.now();
         observeBackup(data);
+        observeOriginalsTotal(data);
         renderPair(data);
         renderVitals(data);
         clearPulseRefreshError('pulse-vitals');
@@ -1717,6 +1708,7 @@
         pulseReadFailed = false;
         pulseObservedAt = Date.now();
         observeBackup(data);
+        observeOriginalsTotal(data);
         renderVitals(data);
         renderPair(data);
         clearPulseRefreshError('pulse-vitals');
@@ -1855,8 +1847,68 @@
     // Match Health's freshness boundary; unrelated bus activity cannot renew it.
     heldWorkExpiry = window.setTimeout(invalidateHeldWork, 30000);
     if (lastPulse) renderVitals(lastPulse);
+    // The supervisor reports every few seconds. Pulse is read again only
+    // when something it reports has changed, not on every report.
+    const key = supervisorStatusKey(msg);
+    if (key === lastSupervisorKey) return;
+    lastSupervisorKey = key;
     refreshVitals();
   }
+
+  // What in a supervisor report can change what pulse says: which services
+  // run and how, what crashed, which tasks run, finished or are held, and
+  // which heartbeats are stale. Not pids, uptimes or durations, which move on
+  // every report.
+  let lastSupervisorKey = null;
+  const observeStatusKeys = new Map();
+
+  function rows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function supervisorStatusKey(msg) {
+    return JSON.stringify([
+      rows(msg.services).map(function (s) { return [s?.name, s?.phase, s?.reason_code]; }),
+      rows(msg.crashed).map(function (c) { return [c?.name, c?.phase, c?.reason_code]; }),
+      rows(msg.tasks).map(function (t) { return [t?.reference, t?.name, !!t?.slow, !!t?.stuck]; }),
+      rows(msg.recent_tasks).map(function (t) { return [t?.reference, t?.exit_status]; }),
+      rows(msg.held).map(function (h) { return [h?.reference, h?.reasons]; }),
+      msg.queue_hold ? [msg.queue_hold.reason] : null,
+      rows(msg.stale_heartbeats).map(function (h) { return h?.source_filename ?? h?.name ?? null; })
+    ]);
+  }
+
+  // An observer reports its counters every few seconds; only its mode moving
+  // (idle, screencast, terminal) is news for pulse.
+  function observeStatusChanged(msg) {
+    const stream = String(msg.stream ?? '');
+    const key = String(msg.mode ?? '');
+    if (observeStatusKeys.get(stream) === key) return false;
+    observeStatusKeys.set(stream, key);
+    return true;
+  }
+
+  // A day's material changed. Pulse speaks for today and yesterday.
+  function changeTouchesPulse(msg) {
+    if (msg.event !== 'changed' || msg.kind !== 'day') return false;
+    const today = lastPulse?.today;
+    if (!today) return true;
+    const key = String(msg.key ?? '');
+    return key >= previousDayKey(today);
+  }
+
+  function previousDayKey(day) {
+    const value = String(day).replace(/-/g, '');
+    if (!/^\d{8}$/.test(value)) return '';
+    const date = new Date(Date.UTC(+value.slice(0, 4), +value.slice(4, 6) - 1, +value.slice(6, 8)));
+    date.setUTCDate(date.getUTCDate() - 1);
+    return date.toISOString().slice(0, 10).replace(/-/g, '');
+  }
+
+  // Some of what pulse says moves with time alone (a device going quiet, a
+  // briefing coming due), so it is read once a minute while the page is in
+  // view, as well as on each change.
+  const PULSE_FLOOR_MS = 60000;
 
   // A finished narrative or a recovered connection invalidates any earlier
   // observation. Follow an in-flight read once, even if several events arrive.
@@ -1891,8 +1943,13 @@
     });
     window.appEvents.listen('supervisor', receiveSupervisorStatus);
     window.appEvents.listen('observe', function (msg) {
-      if (msg.event === 'observed' || msg.event === 'status') refreshVitals();
+      if (msg.event === 'observed') refreshVitals();
+      else if (msg.event === 'status' && observeStatusChanged(msg)) refreshVitals();
     });
+    window.appEvents.listen('change', function (msg) {
+      if (changeTouchesPulse(msg)) refreshChangedPulse();
+    });
+    window.AppServices?.visibleInterval?.(refreshVitals, PULSE_FLOOR_MS);
     window.appEvents.listen('cortex', function (msg) {
       if (msg.event === 'finish' && (msg.name === 'flow' || msg.name === 'pulse')) refreshChangedPulse();
       if (msg.event === 'finish' && msg.name === 'morning_briefing') refreshBriefing();
@@ -1928,7 +1985,6 @@
     loadPulse();
     readFirstMinutes();
     readAgents();
-    readOriginalsTotal();
   }
 
   document.addEventListener('visibilitychange', function () {
@@ -1940,7 +1996,7 @@
   // Back from the originals page can restore this page from the browser's
   // cache without mounting it again, so read the total once more.
   window.addEventListener('pageshow', function (event) {
-    if (isFirstPage && event && event.persisted) readOriginalsTotal();
+    if (isFirstPage && event && event.persisted) refreshVitals();
   });
 
   window.selectAccountSide = selectAccountSide;

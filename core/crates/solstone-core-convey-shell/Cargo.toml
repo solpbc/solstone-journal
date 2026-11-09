@@ -93,6 +93,11 @@ path = "tests/network_corpus.rs"
 name = "shell_chrome_dom"
 path = "tests/shell_chrome_dom.rs"
 
+# The dashboard's reads, mounts and live stream on a simulated clock.
+[[test]]
+name = "read_resilience_dom"
+path = "tests/read_resilience_dom.rs"
+
 # The node test guard preloaded through .cargo/config.toml.
 [[test]]
 name = "node_test_guard"

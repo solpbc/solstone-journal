@@ -1155,9 +1155,9 @@ async function runTests() {
     await new Promise((r) => setTimeout(r, 10));
 
     assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/pulse')), 'pulse requested on /app/home');
-    // The first page reads the originals list's total for its waiting row; the
-    // list itself lives on its own page.
-    assert.ok(apiCalls2.some((u) => u.includes('/app/home/api/removals')), 'originals total read on /app/home');
+    // The first page's waiting row takes the originals total from pulse; the
+    // list itself lives on its own page and isn't read here.
+    assert.ok(!apiCalls2.some((u) => u.includes('/app/home/api/removals')), 'no originals list read on /app/home');
     assert.strictEqual(envHome.doc.querySelector('[data-removals-card]'), null, 'no originals card on /app/home');
 
     // 8c: the originals page mounts the list and reads nothing else home reads.

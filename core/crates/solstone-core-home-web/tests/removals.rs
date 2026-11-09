@@ -278,6 +278,24 @@ fn narrative_and_briefing_placeholder_states_stay_honest() {
 }
 
 #[test]
+fn an_unchanged_report_reads_nothing() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // without_executor empties PATH for the whole process; hold its lock so node resolves.
+    let _env = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let output = Command::new("node")
+        .arg(manifest_dir.join("tests/heartbeat_refresh.js"))
+        .arg(manifest_dir)
+        .output()
+        .expect("heartbeat refresh harness");
+    assert!(
+        output.status.success(),
+        "heartbeat refresh harness: {}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn reconnect_rereads_what_a_lost_completion_event_would_have_refreshed() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // without_executor empties PATH for the whole process; hold its lock so node resolves.
