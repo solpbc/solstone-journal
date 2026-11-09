@@ -680,9 +680,13 @@ pub fn recompute_places(journal: &Path) -> std::io::Result<()> {
                 // A trash that can't be read never lets an owner's name go.
                 Err(_) => true,
             };
+            // Not rebuilt since its recordings changed: a record that no
+            // longer matches, or none yet for a day that holds location.
             in_trash
-                || read_build_record(journal, day)
-                    .is_none_or(|record| record.source != build_token(journal, day))
+                || match read_build_record(journal, day) {
+                    Some(record) => record.source != build_token(journal, day),
+                    None => holds_location(journal, day),
+                }
         };
         crate::places::recompute_holding(store, &stays, &held);
     })

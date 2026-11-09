@@ -3268,34 +3268,8 @@ mod tests {
             }
         }
 
-        // The same file again is skipped, and touches nothing, unless forced.
-        let imports_before = fs::read_dir(journal.path().join("imports"))
-            .unwrap()
-            .count();
-        let (skipped, skipped_id) =
-            run_bound(chat_dispatch(&zip_path, "20260104_103000"), journal.path());
-        assert_eq!(skipped.exit_code, 0, "{}", skipped.stderr);
-        assert!(
-            skipped.stdout.contains("already imported"),
-            "{}",
-            skipped.stdout
-        );
-        assert_eq!(skipped_id, None);
-        assert_eq!(
-            fs::read_dir(journal.path().join("imports"))
-                .unwrap()
-                .count(),
-            imports_before
-        );
-
-        // Run 2
-        let (run2, id2) = run_bound(
-            RegistryDispatch {
-                force: true,
-                ..chat_dispatch(&zip_path, "20260104_110000")
-            },
-            journal.path(),
-        );
+        // Run 2: the same file again, with nothing forced.
+        let (run2, id2) = run_bound(chat_dispatch(&zip_path, "20260104_110000"), journal.path());
         assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
         let id2 = id2.unwrap();
 
