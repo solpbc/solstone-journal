@@ -7066,6 +7066,10 @@ const TRASH_COPY = {
   eraseFailedOne: "couldn't erase that, so it's still in the trash. try again.",
   eraseFailedMany: "couldn't erase those, so they're still in the trash. try again.",
   emptyFailed: "couldn't empty the trash. what's listed here is still in it. try again.",
+  goneOne: "that's no longer in the trash.",
+  goneMany: 'those are no longer in the trash.',
+  goneMoreOne: '1 more is no longer in the trash.',
+  goneMoreMany: '{n} more are no longer in the trash.',
   confirmOne: 'erase this {thing} now?',
   confirmMany: 'erase {n} {things} now?',
   confirmEmpty: 'empty the trash?',
@@ -7191,7 +7195,8 @@ function trashResultLine(act, chosen, answer, listedIds) {
   const done = answer && Array.isArray(answer.done) ? answer.done : [];
   const failed = answer && Array.isArray(answer.failed) ? answer.failed : chosen.map(item => ({ id: item.id }));
   const still = failed.filter(entry => listedIds && listedIds.has(entry.id));
-  const gone = failed.filter(entry => !listedIds || !listedIds.has(entry.id));
+  // Without a reloaded list there's nothing to check these against.
+  const gone = listedIds ? failed.filter(entry => !listedIds.has(entry.id)) : [];
   const doneItems = chosen.filter(item => done.includes(item.id));
   const n = done.length + still.length;
   const recovering = act === 'recover';
@@ -7206,7 +7211,10 @@ function trashResultLine(act, chosen, answer, listedIds) {
   } else if (still.length) {
     lines.push(TRASH_COPY[`${recovering ? 'recoverFailed' : 'eraseFailed'}${still.length === 1 ? 'One' : 'Many'}`]);
   }
-  [...new Set(gone.map(entry => entry.reason).filter(Boolean))].forEach(reason => lines.push(`${reason}.`));
+  if (gone.length) {
+    const key = `gone${lines.length ? 'More' : ''}${gone.length === 1 ? 'One' : 'Many'}`;
+    lines.push(trashFill(TRASH_COPY[key], { n: gone.length }));
+  }
   return lines.join(' ');
 }
 

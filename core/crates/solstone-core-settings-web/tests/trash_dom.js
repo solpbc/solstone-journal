@@ -173,10 +173,13 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(line('erase', { done: [], failed: [failA] }, new Set(['a'])), C.eraseFailedOne);
   assert.strictEqual(line('recover', { done: [], failed: [failA, { id: 'c' }] }, new Set(['a', 'c'])), C.recoverFailedMany);
   assert.strictEqual(line('empty', { done: [], failed: [failA] }, new Set(['a'])), C.emptyFailed);
-  // A failed id no longer listed isn't "still in the trash": its reason shows instead.
-  assert.strictEqual(line('erase', { done: [], failed: [failA] }, new Set()), 'busy.');
+  // A failed id no longer listed isn't "still in the trash", and no server reason shows.
+  assert.strictEqual(line('erase', { done: [], failed: [failA] }, new Set()), C.goneOne);
+  assert.strictEqual(line('erase', { done: [], failed: [failA, { id: 'c' }] }, new Set()), C.goneMany);
+  assert.strictEqual(line('recover', { done: ['c'], failed: [failA] }, new Set()), `${C.recovered.replace('{n}', 1).replace('{things}', 'segment')} ${C.goneMoreOne}`);
   // No answer and no list: nothing is claimed.
   assert.strictEqual(line('erase', null, null), '');
+  assert.strictEqual(line('erase', { done: [], failed: [failA] }, null), '');
 
   // The setting: out of range shows the error and saves nothing.
   const input = byId.trashEraseAfterDays;
