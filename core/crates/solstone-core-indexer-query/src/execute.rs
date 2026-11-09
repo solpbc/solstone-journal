@@ -676,7 +676,7 @@ pub(crate) struct QueryConnection {
     path: PathBuf,
     /// What this session's queries do with a body record's entry. The SQL
     /// function reads it, so a long-lived session can change it per request.
-    body_entries: Arc<Mutex<BodyEntries>>,
+    body_entries: Arc<Mutex<BodyEntryState>>,
     #[cfg(any(test, feature = "test-hooks"))]
     aggregate_calls: usize,
     #[cfg(any(test, feature = "test-hooks"))]
@@ -703,10 +703,13 @@ impl QueryConnection {
     }
 
     fn set_body_entries(&self, entries: BodyEntries) {
-        match self.body_entries.lock() {
-            Ok(mut held) => *held = entries,
-            Err(poisoned) => *poisoned.into_inner() = entries,
-        }
+        let mut state = self
+            .body_entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.entries = entries;
+        // A new query reads the journal as it is now.
+        state.ordinary.clear();
     }
 }
 
@@ -813,6 +816,14 @@ const BODY_ENTRY_ADMISSION_FUNCTION: &str = "solstone_body_entry_admitted";
 /// and position.
 pub type BodyEntryAdmission = std::sync::Arc<dyn Fn(&str, i64) -> bool + Send + Sync>;
 
+/// What a query does with body records' entries, and the day files it has read
+/// so far: many matching rows share a file, and a query reads each one once.
+#[derive(Default)]
+pub(crate) struct BodyEntryState {
+    entries: BodyEntries,
+    ordinary: BTreeMap<String, Option<Vec<String>>>,
+}
+
 /// What this session's queries do with a body record's entry.
 #[derive(Clone, Default)]
 pub(crate) enum BodyEntries {
@@ -825,29 +836,20 @@ pub(crate) enum BodyEntries {
     Admitted(BodyEntryAdmission),
 }
 
-/// Whether an entry at this position is a body record's. A file that can't be
-/// read says yes, so a row nothing can vouch for still goes through the gate.
-fn is_body_entry(journal: &Path, path: &str, idx: i64) -> bool {
-    let Ok(text) = std::fs::read_to_string(journal.join(path)) else {
-        return true;
-    };
-    let records = text
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
-        .filter_map(|value| match value {
-            serde_json::Value::Object(record) => Some(record),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    usize::try_from(idx)
-        .ok()
-        .is_some_and(|idx| solstone_core_format::content::body_record_at(&records, idx).is_some())
+/// What a day file's other records say in the index, by position. `None` when
+/// the file can't be read: it can vouch for nothing.
+fn ordinary_entries_of(journal: &Path, path: &str) -> Option<Vec<String>> {
+    let text = std::fs::read_to_string(journal.join(path)).ok()?;
+    let records = solstone_core_format::content::parse_jsonl_objects(&text);
+    Some(solstone_core_format::content::ordinary_entries(
+        path, &records,
+    ))
 }
 
 fn register_body_entry_admission(
     connection: &Connection,
     journal: Option<PathBuf>,
-    entries: Arc<Mutex<BodyEntries>>,
+    state: Arc<Mutex<BodyEntryState>>,
 ) -> rusqlite::Result<()> {
     connection.create_scalar_function(
         BODY_ENTRY_ADMISSION_FUNCTION,
@@ -871,18 +873,28 @@ fn register_body_entry_admission(
                 }
                 _ => return Ok(false),
             };
-            // An ordinary record's words can hold the line too: its position
-            // says which it is.
-            if journal
-                .as_deref()
-                .is_some_and(|journal| !is_body_entry(journal, path, idx))
-            {
-                return Ok(true);
+            let mut state = state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // An ordinary record's words can hold the line too. The row is one
+            // only if the file's record at that position still says exactly
+            // this. The index can lag the file, so anything else goes through
+            // the gate, an ordinary record included until it's reindexed.
+            if let Some(journal) = journal.as_deref() {
+                let vouched = state
+                    .ordinary
+                    .entry(path.to_owned())
+                    .or_insert_with(|| ordinary_entries_of(journal, path))
+                    .as_ref()
+                    .zip(usize::try_from(idx).ok())
+                    .and_then(|(ordinary, position)| ordinary.get(position))
+                    .is_some_and(|entry| entry == content.trim());
+                if vouched {
+                    return Ok(true);
+                }
             }
-            let entries = entries.lock().map_or_else(
-                |poisoned| poisoned.into_inner().clone(),
-                |held| held.clone(),
-            );
+            let entries = state.entries.clone();
+            drop(state);
             Ok(match entries {
                 BodyEntries::None => false,
                 BodyEntries::All => true,
@@ -1411,7 +1423,7 @@ impl QueryConnection {
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
-        let body_entries = Arc::new(Mutex::new(BodyEntries::default()));
+        let body_entries = Arc::new(Mutex::new(BodyEntryState::default()));
         register_body_entry_admission(
             &connection,
             path.parent().and_then(Path::parent).map(Path::to_path_buf),

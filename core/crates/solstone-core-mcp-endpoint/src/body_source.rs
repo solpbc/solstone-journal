@@ -9,6 +9,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
 use serde_json::{Value, json};
@@ -140,25 +141,45 @@ pub(crate) fn activity_file_place(path: &str) -> Option<(String, String)> {
     Some((facet.to_owned(), day.to_owned()))
 }
 
+/// The activity day files one query has read: many matching rows share a file,
+/// and a query reads each one once.
+#[derive(Clone, Default)]
+pub(crate) struct ActivityDayFiles(
+    Arc<Mutex<BTreeMap<String, Option<Arc<Vec<solstone_core_format::content::JsonObject>>>>>>,
+);
+
+impl ActivityDayFiles {
+    fn records(
+        &self,
+        journal_root: &Path,
+        path: &str,
+    ) -> Option<Arc<Vec<solstone_core_format::content::JsonObject>>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(path.to_owned())
+            .or_insert_with(|| {
+                let text = std::fs::read_to_string(journal_root.join(path)).ok()?;
+                Some(Arc::new(
+                    solstone_core_format::content::parse_jsonl_objects(&text),
+                ))
+            })
+            .clone()
+    }
+}
+
 /// The composed record behind a body record's search entry, as this connection
 /// may read it. `None` when it may not: no Transcripts, no grant on its window,
 /// or a window that's gone.
 pub(crate) fn body_entry_face(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
+    files: &ActivityDayFiles,
     path: &str,
     idx: i64,
 ) -> Option<solstone_core_location::body_records::Face> {
     let (facet, day) = activity_file_place(path)?;
-    let text = std::fs::read_to_string(journal_root.join(path)).ok()?;
-    let records = text
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
-        .filter_map(|value| match value {
-            serde_json::Value::Object(record) => Some(record),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let records = files.records(journal_root, path)?;
     let position = usize::try_from(idx).ok()?;
     let record = solstone_core_format::content::body_record_at(&records, position)?;
     crate::dispatch::body_face_for(journal_root, snapshot, &facet, &day, record).ok()
@@ -168,11 +189,12 @@ pub(crate) fn body_entry_face(
 pub(crate) fn body_entry_admission(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
+    files: ActivityDayFiles,
 ) -> solstone_core_indexer_query::BodyEntryAdmission {
     let journal = journal_root.to_path_buf();
     let snapshot = snapshot.clone();
     std::sync::Arc::new(move |path: &str, idx: i64| {
-        body_entry_face(&journal, &snapshot, path, idx).is_some()
+        body_entry_face(&journal, &snapshot, &files, path, idx).is_some()
     })
 }
 
