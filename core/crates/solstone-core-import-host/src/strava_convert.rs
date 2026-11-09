@@ -1140,9 +1140,7 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
         let result = convert_component(journal, &workouts, &lines, part, scope, &held, &at);
         tally(&mut counts, result);
     }
-    if counts.waiting == 0 && counts.skipped_locked == 0 {
-        write_marker_if_finished(journal, lock_options);
-    }
+    write_marker_if_finished(journal, lock_options);
     counts
 }
 

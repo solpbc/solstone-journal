@@ -336,6 +336,7 @@ fn the_log_says_the_target_holds_it_before_the_source_goes() {
     std::fs::remove_file(&source).unwrap();
     std::fs::create_dir(&source).unwrap();
     assert!(complete_body_move(root.path(), &open).is_err());
-    assert!(open_body_moves(root.path()).unwrap()[0].placed);
+    let stopped = open_body_moves(root.path()).unwrap().remove(0);
+    assert!(stopped.placed && stopped.appended);
     assert_eq!(rows(root.path(), "b", "20260102").len(), 1);
 }

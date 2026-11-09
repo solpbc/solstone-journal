@@ -544,18 +544,32 @@ fn a_hidden_earlier_record_with_every_line_hidden_stays_hidden() {
 
 #[test]
 fn one_line_that_wont_go_leaves_the_rest_removed_and_is_counted() {
-    let journal = journal(&["a"]);
+    let journal = journal(&["z"]);
     let root = journal.path();
-    workout(root, Some("a"));
-    add_line(root, "a", DAY, sense(json!({})));
-    // A folder with no declaration: the store refuses to change its files.
+    workout(root, Some("z"));
+    add_line(root, "z", DAY, sense(json!({})));
+    // A folder with no declaration: the store refuses to change its files. It
+    // comes first, so the rest are removed after it fails.
     add_line(root, "gone", DAY, sense(json!({})));
     let counts = run(root);
     assert_eq!((counts.waiting, counts.lines_left), (1, 1), "{counts:?}");
-    assert_eq!(sense_lines_in_file(root, "a"), 0);
+    assert_eq!(sense_lines_in_file(root, "z"), 0);
     assert_eq!(sense_lines_in_file(root, "gone"), 1);
-    assert_eq!(visible(root, &["a", "gone"]), 1);
+    assert_eq!(visible(root, &["z", "gone"]), 1);
     assert!(!root.join(MARKER).exists());
+}
+
+#[test]
+fn a_folder_with_no_declaration_is_never_where_a_workout_is_filed() {
+    let journal = journal(&["z"]);
+    let root = journal.path();
+    workout(root, None);
+    add_line(root, "gone", DAY, sense(json!({})));
+    add_line(root, "z", DAY, sense(json!({})));
+    run(root);
+    let filed = lines(root, "z", DAY);
+    assert_eq!(filed.len(), 1, "{filed:?}");
+    assert_eq!(filed[0]["source"], json!("body"));
 }
 
 #[test]
@@ -583,6 +597,8 @@ fn a_workout_deleted_after_the_walk_gains_no_file_and_nothing_is_folded() {
     }
     assert_eq!(sense_lines_in_file(root, "b"), 1);
     assert!(lines(root, "b", DAY).len() == 1 && lines(root, "a", DAY).is_empty());
+    // Nothing says it was converted, or thinking would treat the line as settled.
+    assert!(read_strava_converted(root).unwrap().is_empty());
 }
 
 #[test]

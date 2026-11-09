@@ -894,34 +894,83 @@ mod tests {
         assert_eq!(value["intro"], "your week, a memory from each of 2 days.");
     }
 
+    fn folded_week(root: &Path, held: bool) -> Value {
+        whole(root);
+        write_raw(
+            root,
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        let key = "20260308|work|run_week";
+        let lines = if held {
+            json!({key: {"sha256": "x", "hidden": false, "fields": {}}})
+        } else {
+            json!({})
+        };
+        let line = json!({"id": "run_week", "activity": "exercise", "title": "Morning Run",
+            "created_at": 100, "stream": "import.strava", "segments": ["090000_300"]});
+        let code = json!({"id": "body_run", "source": "body", "activity": "workout",
+            "account": {"key": "import.strava\u{1f}1"},
+            "converted": {"primary": key, "decided_at": "t", "lines": lines}});
+        write_raw(
+            root,
+            "facets/work/activities/20260308.jsonl",
+            &format!("{line}\n{code}\n"),
+        );
+        probe(root, json!({"week": "20260308"})).unwrap()
+    }
+
     #[test]
-    fn a_strava_line_a_code_record_holds_isnt_a_row_or_a_recurring_week() {
-        let root = journal("solstone-week-folded-");
+    fn a_strava_line_a_code_record_holds_isnt_a_row() {
+        let open = journal("solstone-week-unfolded-");
+        assert_eq!(folded_week(open.path(), false)["activities_total"], 1);
+        let held = journal("solstone-week-folded-");
+        let value = folded_week(held.path(), true);
+        assert_eq!(value["activities"], json!([]));
+        assert_eq!(value["activities_total"], 0);
+    }
+
+    #[test]
+    fn a_strava_line_a_code_record_holds_doesnt_make_a_later_week_familiar() {
+        let root = journal("solstone-week-prior-folded-");
         whole(root.path());
         write_raw(
             root.path(),
             "facets/work/facet.json",
             &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
         );
-        let line = |id: &str| {
-            json!({"id": id, "activity": "exercise", "title": "Morning Run", "created_at": 100,
-                "stream": "import.strava", "segments": ["090000_300"]})
+        let key = "20260301|work|run_prior";
+        let line = json!({"id": "run_prior", "activity": "exercise", "title": "Morning Run",
+            "created_at": 50, "stream": "import.strava", "segments": ["090000_300"]});
+        let code = json!({"id": "body_prior", "source": "body", "activity": "workout",
+            "account": {"key": "import.strava\u{1f}2"},
+            "converted": {"primary": key, "decided_at": "t",
+                "lines": {key: {"sha256": "x", "hidden": false, "fields": {}}}}});
+        write_raw(
+            root.path(),
+            "facets/work/activities/20260301.jsonl",
+            &format!("{line}\n{code}\n"),
+        );
+        let row = |id: &str, title: &str, segment: &str| {
+            format!(
+                "{}\n",
+                json!({"id": id, "activity": "meeting", "title": title, "created_at": 100,
+                    "segments": [segment]})
+            )
         };
-        let code = |day: &str, id: &str| {
-            json!({"id": format!("body_{id}"), "source": "body", "activity": "workout",
-                "account": {"key": format!("import.strava\u{1f}{id}")},
-                "converted": {"primary": "p", "decided_at": "t",
-                    "lines": {format!("{day}|work|{id}"): {"sha256": "x", "hidden": false, "fields": {}}}}})
-        };
-        let solo = line("run_week");
         write_raw(
             root.path(),
             "facets/work/activities/20260308.jsonl",
-            &format!("{solo}\n{}\n", code("20260308", "run_week")),
+            &(row("first", "Morning Run", "090000_100") + &row("second", "Kickoff", "100000_100")),
         );
         let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
-        assert_eq!(value["activities"], json!([]));
-        assert_eq!(value["activities_total"], 0);
+        let titles = value["activities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["title"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(titles, ["Morning Run", "Kickoff"]);
     }
 
     #[test]
