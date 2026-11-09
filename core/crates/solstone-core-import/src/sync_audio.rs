@@ -38,6 +38,13 @@ pub trait AudioProbe {
 /// Caller-owned manifest lookup.
 pub trait ManifestLookup {
     fn imported_hash(&self, source_hash: &str) -> bool;
+
+    /// Whether an import of this content is in the journal at all, a run that
+    /// stopped included: what an entry the sync marked imported is checked
+    /// against.
+    fn import_exists(&self, source_hash: &str) -> bool {
+        self.imported_hash(source_hash)
+    }
 }
 
 /// Checkpoint seam, allowing progress ordering to be tested without the pipeline.
@@ -302,10 +309,13 @@ fn catalogue<M>(
             .entry(candidate.relative_path.clone())
             .or_insert_with(|| Value::Object(Map::new()));
         let entry = entry.as_object_mut().expect("sync-state files are objects");
-        // The sync's own state is its record of what it imported: an unchanged file it
-        // already brought in stays imported. `force` cleared that record above.
+        // The sync's own state is its record of what it imported, checked against what
+        // is in the journal: an unchanged file stays imported while its import is
+        // there. Once the owner deletes that import, the file comes back as new data.
+        // `force` cleared that record above.
         let already_synced = entry.get("status") == Some(&Value::String("imported".to_owned()))
-            && entry.get("hash") == Some(&Value::String(candidate.source_hash.clone()));
+            && entry.get("hash") == Some(&Value::String(candidate.source_hash.clone()))
+            && manifests.import_exists(&candidate.source_hash);
         entry.insert(
             "filename".to_owned(),
             Value::String(candidate.filename.clone()),

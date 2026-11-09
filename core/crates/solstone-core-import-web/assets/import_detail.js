@@ -108,6 +108,7 @@
     has_gaps: 'contains gaps',
     untimed_notice: 'no turn times found in this file, so it landed as one segment at the import\'s start time, each line as written. if your transcripts mark times in a way the journal doesn\'t read yet,',
     untimed_ask: 'ask us to add it',
+    delete_import: 'delete this import',
     file_size_units: Object.freeze(['b', 'kb', 'mb', 'gb'])
   });
   // --- end owner-facing strings ---
@@ -707,6 +708,44 @@
     });
   }
 
+  // Kinds that don't delete as a whole here: a journal archive merge, and the
+  // body sources, which move with their own pages. Strava keeps its own delete.
+  const DELETES_ELSEWHERE = new Set(['journal_archive', 'strava', 'apple_health', 'oura']);
+
+  function importSourceType(data) {
+    const importedJson = asObject(data?.imported_json) || {};
+    const importJson = asObject(data?.import_json) || {};
+    return String(data?.source_type || importedJson.source_type || importJson.source_type || '').toLowerCase();
+  }
+
+  // An import that has finished one way or another, of a kind that moves to
+  // the trash whole. Nothing on the page says why one can't: it has no delete.
+  function importDeletable(data) {
+    if (typeof data?.deletable === 'boolean') return data.deletable;
+    if (!hasValue(data?.timestamp) || !hasValue(data?.status)) return false;
+    if (data.status === 'running' || data.status === 'pending') return false;
+    const source = importSourceType(data);
+    return Boolean(source) && !DELETES_ELSEWHERE.has(source);
+  }
+
+  function renderImportDelete(data) {
+    if (isStrava(data) || !importDeletable(data)) return '';
+    return `<section class="import-delete"><button type="button" class="import-secondary-btn" data-import-delete="${escapeHtml(data.timestamp)}" data-import-delete-source="${escapeHtml(importSourceType(data))}" data-import-delete-display="${escapeHtml(data?.source_display || '')}">${escapeHtml(strings.delete_import)}</button></section>`;
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-import-delete]');
+      if (!button || typeof window.deleteImportFromPage !== 'function') return;
+      const sourceType = button.getAttribute('data-import-delete-source') || '';
+      const display = button.getAttribute('data-import-delete-display') || '';
+      window.deleteImportFromPage({
+        id: button.getAttribute('data-import-delete'),
+        source: typeof window.importSourceName === 'function' ? window.importSourceName(sourceType, display) : display,
+      });
+    });
+  }
+
   function rawBlock(data) {
     // A Strava import's publication record can list tens of thousands of pieces.
     if (isStrava(data)) return '';
@@ -913,7 +952,7 @@
     });
     const leads = derived.status === strings.completed ? renderLeadsCard(data) : '';
     const continuation = hasSavedFlow(data) ? '<div data-saved-start-slot></div>' : '';
-    return continuation + leads + drawer + renderStravaDelete(data);
+    return continuation + leads + drawer + renderStravaDelete(data) + renderImportDelete(data);
   }
 
   window.ImportDetail = Object.freeze({

@@ -1079,6 +1079,8 @@ mod tests {
                 name: Some("$source_packet".to_owned()),
                 alias: None,
                 hidden: false,
+                days: Vec::new(),
+                dormant: false,
             }],
         };
         store.write(root).unwrap();

@@ -123,6 +123,162 @@ pub(crate) async fn delete_segment(
     }
 }
 
+/// The most segments one set may hold.
+const SET_LIMIT: usize = 500;
+
+#[derive(Debug, serde::Deserialize)]
+struct SetBody {
+    segments: Vec<SetSegment>,
+    #[serde(default)]
+    erase: bool,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+struct SetSegment {
+    day: String,
+    stream: String,
+    key: String,
+}
+
+/// Move a set of segments to the trash under one confirmation, each as its
+/// own thing. One refused never stops the rest; a stop part-way through
+/// finishes when the journal starts again.
+pub(crate) async fn delete_segments(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Ok(request) = serde_json::from_slice::<SetBody>(&body) else {
+        return legacy_error_response(
+            "invalid_request",
+            "that delete couldn't be read, so nothing was deleted.",
+            "Invalid delete body",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    if request.segments.is_empty()
+        || request.segments.len() > SET_LIMIT
+        || request.segments.iter().any(|segment| {
+            !valid_day(&segment.day) || !valid_stream(&segment.stream) || !valid_key(&segment.key)
+        })
+    {
+        return invalid_segment("Invalid segment in the set", StatusCode::BAD_REQUEST);
+    }
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let root = state.journal_root.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        let mut seen = Vec::new();
+        let mut failed = Vec::new();
+        // One set is one page's: memories from the agents page, recordings
+        // from the transcripts page.
+        let page = request
+            .segments
+            .first()
+            .map_or(Page::Transcripts, |segment| page_of(&segment.stream));
+        let surface = Surface::of_request(page, user_agent.as_deref());
+        let action = if page == Page::Agents {
+            Action::MemoryDelete
+        } else {
+            Action::SegmentDelete
+        };
+        let mut chosen = Vec::new();
+        let mut order = Vec::new();
+        for segment in request.segments {
+            if seen.contains(&segment) {
+                continue;
+            }
+            seen.push(segment.clone());
+            let dir = crate::segment_media::physical_segment_dir(
+                &root,
+                &segment.day,
+                &segment.stream,
+                &segment.key,
+            );
+            if page_of(&segment.stream) != page || !dir.is_dir() || is_tombstone_only(&dir) {
+                failed.push(
+                    json!({"segment": segment, "key": "other", "reason": "that segment isn't in your journal."}),
+                );
+                continue;
+            }
+            let unit = if page == Page::Agents {
+                Unit::Memory {
+                    day: segment.day.clone(),
+                    segment: segment.key.clone(),
+                }
+            } else {
+                Unit::Segment {
+                    day: segment.day.clone(),
+                    stream: segment.stream.clone(),
+                    segment: segment.key.clone(),
+                }
+            };
+            chosen.push(solstone_core_trash::Chosen {
+                unit,
+                paths: vec![solstone_core_retention::layout::segment_rel(
+                    &segment.day,
+                    &segment.stream,
+                    &segment.key,
+                )],
+                label: None,
+            });
+            order.push(segment);
+        }
+        let mut done = Vec::new();
+        if !chosen.is_empty() {
+            let results = solstone_core_import::trash_kinds::with_kinds(&root, |kinds| {
+                solstone_core_trash::detach_set(
+                    &root,
+                    kinds,
+                    chosen,
+                    action,
+                    surface,
+                    request.erase,
+                )
+            })?;
+            for (segment, result) in order.into_iter().zip(results) {
+                match result {
+                    solstone_core_trash::SetResult::Moved { item, erased } => done.push(json!({
+                        "segment": segment,
+                        "trash": {"id": item.id, "erase_at": item.erase_at},
+                        "erased": erased,
+                    })),
+                    solstone_core_trash::SetResult::Refused(error) => failed.push(json!({
+                        "segment": segment,
+                        "key": solstone_core_import::import_trash::failure_key(&error),
+                        "reason": set_reason(&error),
+                    })),
+                }
+            }
+        }
+        Ok::<_, TrashError>(json!({"done": done, "failed": failed}))
+    })
+    .await;
+    match outcome {
+        Ok(Ok(payload)) => Json(payload).into_response(),
+        Ok(Err(error)) => trash_error(&error),
+        Err(_) => legacy_error_response(
+            "segment_delete_failed",
+            "your journal couldn't finish that delete. reload to check.",
+            "the delete task stopped",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+/// Why one segment of a set didn't move, in words the owner can read.
+fn set_reason(error: &TrashError) -> String {
+    match error {
+        TrashError::Missing(_) | TrashError::NotInTrash => {
+            "that segment isn't in your journal.".to_owned()
+        }
+        TrashError::Held(reason) => format!("{reason}."),
+        _ => "your journal couldn't move it to the trash.".to_owned(),
+    }
+}
+
 struct Trashed {
     key: String,
     id: String,
@@ -254,10 +410,7 @@ pub(crate) fn sweep_trash(journal_root: &Path) {
     let spawned = std::thread::Builder::new()
         .name("trash-sweep".to_owned())
         .spawn(move || {
-            let index = RetentionIndex::new(&journal_root);
-            let recordings = Recordings::new(&index);
-            let swept =
-                solstone_core_trash::sweep(&journal_root, &[&recordings], chrono::Utc::now());
+            let swept = solstone_core_import::trash_kinds::sweep(&journal_root, chrono::Utc::now());
             for failure in &swept.failed {
                 log::warn!("trash: {failure}");
             }

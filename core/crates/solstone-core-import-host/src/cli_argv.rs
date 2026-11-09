@@ -19,8 +19,8 @@ use solstone_core_import::cli_render::{self, CliRun};
 use solstone_core_import::connect::{OuraConnectRequest, connect_oura};
 use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::detect::{
-    ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
-    ResolvedSource, resolve_import,
+    RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
+    resolve_import,
 };
 use solstone_core_import::sync_audio::{
     AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioSyncRequest,
@@ -1372,17 +1372,6 @@ fn resolve(
                 .to_owned()
         })?);
     }
-    if options.source.is_none()
-        && is_generic_media(options.media)
-        && !options.force
-        && let Some(manifest) = generic_manifest_summary(journal_path, options.media)?
-        && manifest.entry_count > 0
-    {
-        return Ok(ResolutionOutcome::Skipped {
-            reason: solstone_core_import::SkipReason::AlreadyImported,
-            detected_timestamp: None,
-        });
-    }
     let zone = solstone_core_journal_config::owner_zone(journal_path);
     let mut seams = ResolutionSeams {
         apple_detector: solstone_core_import_sources::apple_export::detect_apple_source,
@@ -1395,9 +1384,6 @@ fn resolve(
                 .map(solstone_core_import::DetectedTimestamp::new)
         },
         model_detector: unavailable_model_timestamp,
-        // Generic manifest deduplication is performed above with the resolved
-        // journal root. The resolver retains this seam for its library callers.
-        manifest_lookup: no_manifest_match,
         generated_timestamp: || {
             solstone_core_import::validate_timestamp(
                 &chrono::Utc::now()
@@ -1465,30 +1451,6 @@ fn requires_registry_classification(path: &Path) -> bool {
         || GENERIC_TEXT_EXTENSIONS.contains(&extension.as_str()))
 }
 
-fn is_generic_media(path: &Path) -> bool {
-    lowercase_extension(path).is_some_and(|extension| {
-        is_generic_audio_extension(extension.as_str())
-            || GENERIC_TEXT_EXTENSIONS.contains(&extension.as_str())
-    })
-}
-
-fn generic_manifest_summary(
-    journal_path: &Path,
-    media: &Path,
-) -> Result<Option<ManifestSummary>, String> {
-    let source_hash =
-        solstone_core_import::hash_source(media).map_err(|error| error.to_string())?;
-    let scan = solstone_core_import::find_manifest_by_hash(journal_path, &source_hash)
-        .map_err(|error| error.to_string())?;
-    Ok(scan.found.and_then(|found| {
-        found
-            .manifest
-            .get("entry_count")
-            .and_then(serde_json::Value::as_u64)
-            .map(|entry_count| ManifestSummary { entry_count })
-    }))
-}
-
 fn no_registry_claim(_: solstone_core_import::RegistrySource, _: &Path) -> Result<bool, ()> {
     Ok(false)
 }
@@ -1508,10 +1470,6 @@ fn unavailable_model_timestamp(
     solstone_core_import::ModelDetectionError<()>,
 > {
     Ok(None)
-}
-
-fn no_manifest_match(_: &solstone_core_import::SourceHash) -> Option<ManifestSummary> {
-    None
 }
 
 fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
@@ -1838,6 +1796,13 @@ impl ManifestLookup for FilesystemManifestLookup<'_> {
         .ok()
         .and_then(|scan| scan.found)
         .is_some()
+    }
+
+    fn import_exists(&self, source_hash: &str) -> bool {
+        solstone_core_import::dedupe::import_of_source_exists(
+            self.journal_path,
+            &solstone_core_import::SourceHash::new(source_hash.to_owned()),
+        )
     }
 }
 

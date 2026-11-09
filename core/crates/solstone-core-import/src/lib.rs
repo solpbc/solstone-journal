@@ -22,6 +22,7 @@ pub mod events;
 pub mod folder_admit;
 pub mod force_notice;
 pub mod heartbeat;
+pub mod import_trash;
 pub mod metadata;
 pub mod oura_connect;
 pub mod oura_http;
@@ -40,6 +41,7 @@ pub mod sync_state;
 pub mod text;
 pub mod thinking;
 pub mod timestamp;
+pub mod trash_kinds;
 pub mod work_stop;
 
 pub use allocate::{
@@ -63,8 +65,8 @@ pub use dedupe::{
     find_manifest_by_hash_where, hash_source, windowed_source_hash, write_manifest,
 };
 pub use detect::{
-    ManifestSummary, ModelDetectionError, RegistrySource, ResolutionError, ResolutionOptions,
-    ResolutionOutcome, ResolutionSeams, ResolvedSource, SkipReason,
+    ModelDetectionError, RegistrySource, ResolutionError, ResolutionOptions, ResolutionOutcome,
+    ResolutionSeams, ResolvedSource, SkipReason,
 };
 pub use events::{
     EnrichmentReady, EventEmitter, FileImported, ImporterCompleted, ImporterError, ImporterStarted,

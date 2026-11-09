@@ -3526,6 +3526,8 @@ mod tests {
                 name: Some("Studio".into()),
                 alias: None,
                 hidden: false,
+                days: Vec::new(),
+                dormant: false,
             }],
         }
         .write(&context.journal)

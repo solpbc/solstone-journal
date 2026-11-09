@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- if you also set up your journal from Terminal, the journal app now takes over when it opens. before, it could stop on "couldn't verify journal service ownership" and not start your journal.
+- if your journal stops unexpectedly and the journal app can't check right away whether something else is running it, the app now tries again. if it still can't start your journal, it says why.
+
 ## [2.0.73 (build 125)] - 2026-11-09
 
 ### Changed

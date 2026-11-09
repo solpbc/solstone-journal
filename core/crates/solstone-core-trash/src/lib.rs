@@ -130,6 +130,15 @@ pub struct Item {
     pub bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending: Option<Pending>,
+    /// The owner's own name for it, where nothing else tells two items apart
+    /// (an import's file name). Kept with the item and erased with it; never
+    /// in the removal history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Paths it names but didn't take, because another thing still in the
+    /// journal held them too ([`Kind::refs`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
 }
 
 impl Item {
@@ -162,6 +171,12 @@ pub enum Change {
 pub trait Hold {
     /// Whether moving may continue.
     fn check(&self) -> Result<(), String>;
+
+    /// About to move `path`: whether it may, holding whatever that one path
+    /// needs until the next call or the hold is dropped.
+    fn moving(&self, _path: &str) -> Result<(), String> {
+        self.check()
+    }
 }
 
 /// One kind of thing the trash can hold: its exclusion and its references.
@@ -188,6 +203,19 @@ pub trait Kind {
         change: Change,
         files: &[String],
     ) -> Result<(), String>;
+
+    /// The thing's paths as they are now, for a thing chosen earlier and moved
+    /// later (a set the owner confirmed). `None` keeps the paths it was chosen
+    /// with.
+    fn current_paths(&self, _journal: &Path, _unit: &Unit) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Paths the thing names but doesn't hold, kept with its item so recovering
+    /// it can tell what it shares with another thing in the trash.
+    fn refs(&self, _journal: &Path, _unit: &Unit) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Why a trash step did not happen.
@@ -237,11 +265,55 @@ pub fn detach(
     surface: Surface,
     paths: Vec<String>,
 ) -> Result<Item, TrashError> {
+    detach_labelled(journal, kind, unit, action, surface, paths, None)
+}
+
+/// [`detach`], keeping the owner's own name for the thing with the item.
+pub fn detach_labelled(
+    journal: &Path,
+    kind: &dyn Kind,
+    unit: Unit,
+    action: Action,
+    surface: Surface,
+    paths: Vec<String>,
+    label: Option<String>,
+) -> Result<Item, TrashError> {
+    detach_as(
+        journal,
+        kind,
+        item_id(Utc::now()),
+        unit,
+        action,
+        surface,
+        paths,
+        label,
+    )
+}
+
+/// [`detach_labelled`] under an item id the caller chose, so a set can write
+/// the id down before anything moves.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one private step of the public detach, and of a set's"
+)]
+fn detach_as(
+    journal: &Path,
+    kind: &dyn Kind,
+    id: String,
+    unit: Unit,
+    action: Action,
+    surface: Surface,
+    paths: Vec<String>,
+    label: Option<String>,
+) -> Result<Item, TrashError> {
+    if paths.is_empty() {
+        return Err(TrashError::Missing(describe(&unit).to_owned()));
+    }
     let now = Utc::now();
     let erase_at = now + Duration::days(i64::from(erase_after_days(journal)));
     let mut item = Item {
         schema: SCHEMA,
-        id: item_id(now),
+        id,
         state: State::Detaching,
         unit,
         action,
@@ -251,7 +323,10 @@ pub fn detach(
         paths,
         bytes: 0,
         pending: None,
+        refs: Vec::new(),
+        label,
     };
+    item.refs = kind.refs(journal, &item.unit);
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
     let _lock = lock(journal)?;
@@ -267,7 +342,15 @@ pub fn detach(
         .sum();
     ensure_trash(journal)?;
     let dir = trash_root(journal).join(&item.id);
-    std::fs::create_dir(&dir).map_err(|error| TrashError::Io(error.to_string()))?;
+    match std::fs::create_dir(&dir) {
+        Ok(()) => {}
+        // A set names its item before moving it, so a stop here leaves the
+        // folder with no record yet, and nothing moved into it.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::AlreadyExists
+                && read_item(journal, &item.id)?.is_none() => {}
+        Err(error) => return Err(TrashError::Io(error.to_string())),
+    }
     if let Err(error) = publish_new(journal, &item) {
         abandon(journal, &item);
         return Err(error);
@@ -394,6 +477,59 @@ pub fn unfinished(journal: &Path) -> Result<usize, TrashError> {
         .count())
 }
 
+/// The journal-relative paths of everything that could still come back out of
+/// the trash: every item but one already being erased.
+///
+/// An item that can't be read is an error, not nothing: what it holds could
+/// still come back.
+pub fn held_paths(journal: &Path) -> Result<Vec<String>, TrashError> {
+    let dir = trash_root(journal);
+    let listing = match std::fs::read_dir(&dir) {
+        Ok(listing) => listing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(TrashError::Io(error.to_string())),
+    };
+    let mut paths = Vec::new();
+    for entry in listing {
+        let entry = entry.map_err(|error| TrashError::Io(error.to_string()))?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if name == SETS_DIR
+            || !valid_id(&name)
+            || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+        {
+            continue;
+        }
+        if let Some(item) = read_item(journal, &name)?
+            && item.state != State::Erasing
+        {
+            paths.extend(item.paths);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+/// Every item that holds `path` (or a path above it), whatever its state but
+/// erasing, other than `except`.
+pub fn holders(journal: &Path, path: &str, except: &str) -> Result<Vec<String>, TrashError> {
+    let mut found = Vec::new();
+    for item in all_items(journal)? {
+        if item.id == except || item.state == State::Erasing {
+            continue;
+        }
+        if item
+            .paths
+            .iter()
+            .any(|held| held == path || path.starts_with(&format!("{held}/")))
+        {
+            found.push(item.id);
+        }
+    }
+    Ok(found)
+}
+
 /// One item by id, whatever its state.
 pub fn item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
     read_item(journal, id)
@@ -430,6 +566,402 @@ pub struct Swept {
     pub waiting: usize,
     /// Steps that failed and stay for the next sweep, in words for a log.
     pub failed: Vec<String>,
+}
+
+/// One thing of a set the owner chose together.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Chosen {
+    pub unit: Unit,
+    /// Its journal-relative paths, as its kind listed them when the owner
+    /// chose it. A kind that can say what the thing is now
+    /// ([`Kind::current_paths`]) is asked again when it moves.
+    pub paths: Vec<String>,
+    /// The owner's own name for it, as [`Item::label`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// Where one thing of a set stands.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct Entry {
+    chosen: Chosen,
+    /// The item it becomes, named before anything of it moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    item: Option<String>,
+    /// That item has existed. An item gone after this was erased or recovered
+    /// by the owner, so nothing more is owed; only one that never arrived is
+    /// still to move.
+    #[serde(default)]
+    arrived: bool,
+    /// Nothing more is owed for it: it moved (and was erased if the owner
+    /// asked), or it was refused for good.
+    #[serde(default)]
+    settled: bool,
+}
+
+/// A set the owner chose together and confirmed once, kept until every thing
+/// in it is settled, so a stop part-way through is finished by [`sweep`].
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct Set {
+    schema: u32,
+    id: String,
+    action: Action,
+    #[serde(flatten)]
+    surface: Surface,
+    /// Erase each now, as well as moving it.
+    erase: bool,
+    entries: Vec<Entry>,
+}
+
+/// Where sets wait, inside the trash.
+const SETS_DIR: &str = "sets";
+
+/// What became of one thing of a set.
+#[derive(Debug)]
+pub enum SetResult {
+    /// In the trash; `erased` when the owner asked it erased now and it was.
+    Moved { item: Box<Item>, erased: bool },
+    /// Not moved, and why.
+    Refused(TrashError),
+}
+
+/// Move a set of things to the trash under one owner act, each as its own
+/// item, in the order given. One that is refused never stops the rest. The set
+/// is written down first and kept until each thing is settled, so a stop
+/// part-way through is finished by [`sweep`]: the owner confirmed the whole
+/// set. Results come back in the order of `chosen`.
+pub fn detach_set(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    chosen: Vec<Chosen>,
+    action: Action,
+    surface: Surface,
+    erase: bool,
+) -> Result<Vec<SetResult>, TrashError> {
+    let mut set = Set {
+        schema: SCHEMA,
+        id: item_id(Utc::now()),
+        action,
+        surface,
+        erase,
+        entries: chosen
+            .into_iter()
+            .map(|chosen| Entry {
+                chosen,
+                item: None,
+                arrived: false,
+                settled: false,
+            })
+            .collect(),
+    };
+    // Held from before the set exists until its run ends, so a sweep never
+    // takes a set a request is still running for one a stop left.
+    ensure_sets(journal)?;
+    let running = set_lock(journal, &set.id, LockOptions::default())?;
+    publish_set(journal, &set, true)?;
+    let results = run_set(journal, kinds, &mut set, false);
+    drop(running);
+    remove_set_lock(journal, &set.id);
+    Ok(results.into_iter().map(|(_, result)| result).collect())
+}
+
+/// Work through what of a set is still owed. `resuming` is a sweep finishing
+/// a set a stop interrupted: a thing held for now is left for the next sweep,
+/// where a live request reports it refused at once. Returns each entry's
+/// result, by index, for the entries this run acted on.
+fn run_set(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    set: &mut Set,
+    resuming: bool,
+) -> Vec<(usize, SetResult)> {
+    let mut results = Vec::new();
+    for index in 0..set.entries.len() {
+        let Some(entry) = set.entries.get(index).cloned() else {
+            continue;
+        };
+        if entry.settled {
+            continue;
+        }
+        // Its item's id is written down before anything of it moves, so a
+        // stop part-way knows which item it became.
+        let mut entry = entry;
+        if entry.item.is_none() {
+            entry.item = Some(item_id(Utc::now()));
+            if let Some(slot) = set.entries.get_mut(index) {
+                *slot = entry.clone();
+            }
+            if let Err(error) = publish_set(journal, set, false) {
+                log::warn!("trash set {}: its progress wasn't written: {error}", set.id);
+            }
+        }
+        let result = settle(journal, kinds, set, entry, resuming);
+        let (entry, result) = result;
+        if let Some(slot) = set.entries.get_mut(index) {
+            *slot = entry;
+        }
+        if let Err(error) = publish_set(journal, set, false) {
+            log::warn!("trash set {}: its progress wasn't written: {error}", set.id);
+        }
+        if let Some(result) = result {
+            results.push((index, result));
+        }
+    }
+    if set.entries.iter().all(|entry| entry.settled) {
+        remove_set(journal, &set.id);
+    }
+    results
+}
+
+/// Move one thing of a set, then erase it if the owner asked. Returns the entry
+/// as it now stands and, when this run acted on it, the result.
+fn settle(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    set: &Set,
+    mut entry: Entry,
+    resuming: bool,
+) -> (Entry, Option<SetResult>) {
+    let Some(id) = entry.item.clone() else {
+        entry.settled = true;
+        return (entry, Some(SetResult::Refused(TrashError::NotInTrash)));
+    };
+    let existing = match read_item(journal, &id) {
+        Ok(existing) => existing,
+        // An item that can't be read can't be settled by trying again.
+        Err(error) => {
+            log::warn!("trash set {}: item {id}: {error}", set.id);
+            entry.settled = true;
+            return (entry, Some(SetResult::Refused(error)));
+        }
+    };
+    let item = match existing {
+        Some(item) => {
+            entry.arrived = true;
+            item
+        }
+        // It arrived and has gone: the owner recovered or erased it. Moving
+        // it again would undo what they just did.
+        None if entry.arrived => {
+            entry.settled = true;
+            return (entry, None);
+        }
+        // Not moved yet. A stop before this leaves it to do; a thing gone
+        // since is refused as missing, so every entry answers.
+        None => {
+            let kind = match kind_for(kinds, &entry.chosen.unit) {
+                Ok(kind) => kind,
+                Err(error) => {
+                    entry.settled = true;
+                    return (entry, Some(SetResult::Refused(error)));
+                }
+            };
+            let paths = kind
+                .current_paths(journal, &entry.chosen.unit)
+                .unwrap_or_else(|| entry.chosen.paths.clone());
+            match detach_as(
+                journal,
+                kind,
+                id.clone(),
+                entry.chosen.unit.clone(),
+                set.action,
+                set.surface,
+                paths,
+                entry.chosen.label.clone(),
+            ) {
+                Ok(_) | Err(TrashError::Unfinished(_)) => {}
+                Err(error @ (TrashError::Held(_) | TrashError::InFlight)) if resuming => {
+                    // Held for now: the next sweep tries again.
+                    return (entry, Some(SetResult::Refused(error)));
+                }
+                Err(error) => {
+                    entry.settled = true;
+                    return (entry, Some(SetResult::Refused(error)));
+                }
+            }
+            match read_item(journal, &id) {
+                Ok(Some(item)) => {
+                    entry.arrived = true;
+                    item
+                }
+                // A detach that found nothing to move keeps no item.
+                Ok(None) => {
+                    entry.settled = true;
+                    let what = describe(&entry.chosen.unit).to_owned();
+                    return (entry, Some(SetResult::Refused(TrashError::Missing(what))));
+                }
+                Err(error) => {
+                    entry.settled = true;
+                    return (entry, Some(SetResult::Refused(error)));
+                }
+            }
+        }
+    };
+    if !set.erase {
+        entry.settled = item.state != State::Detaching;
+        return (
+            entry,
+            Some(SetResult::Moved {
+                item: Box::new(item),
+                erased: false,
+            }),
+        );
+    }
+    match item.state {
+        State::Trashed | State::Erasing => match erase(journal, &id, set.action, set.surface) {
+            Ok(()) => {
+                entry.settled = true;
+                (
+                    entry,
+                    Some(SetResult::Moved {
+                        item: Box::new(item),
+                        erased: true,
+                    }),
+                )
+            }
+            Err(error) => {
+                log::warn!("trash item {id}: erase now was refused: {error}");
+                (
+                    entry,
+                    Some(SetResult::Moved {
+                        item: Box::new(item),
+                        erased: false,
+                    }),
+                )
+            }
+        },
+        // Still moving in, or being recovered: a sweep settles it later.
+        State::Detaching | State::Attaching => (
+            entry,
+            Some(SetResult::Moved {
+                item: Box::new(item),
+                erased: false,
+            }),
+        ),
+    }
+}
+
+fn set_rel(id: &str) -> String {
+    format!("{SETS_DIR}/{id}.json")
+}
+
+fn set_lock(journal: &Path, id: &str, options: LockOptions) -> Result<FileLock, TrashError> {
+    hold_lock(trash_entry(journal, &set_rel(id))?, options)
+        .map_err(|_| TrashError::Held("that set is being moved now".to_owned()))
+}
+
+fn ensure_sets(journal: &Path) -> Result<(), TrashError> {
+    ensure_trash(journal)?;
+    solstone_core_journal_io::paths::create_directory_with_mode(
+        &trash_root(journal).join(SETS_DIR),
+        0o700,
+    )?;
+    Ok(())
+}
+
+fn publish_set(journal: &Path, set: &Set, new: bool) -> Result<(), TrashError> {
+    ensure_sets(journal)?;
+    let bytes =
+        serde_json::to_vec_pretty(set).map_err(|error| TrashError::Io(error.to_string()))?;
+    let path = trash_entry(journal, &set_rel(&set.id))?;
+    let options = AtomicWriteOptions { mode: Some(0o600) };
+    if new {
+        write_bytes_exclusive(&path, &bytes, options)
+    } else {
+        atomic_replace(path, &bytes, options)
+    }
+    .map_err(|error| TrashError::Io(error.to_string()))
+}
+
+fn remove_set(journal: &Path, id: &str) {
+    let removed =
+        trash_entry(journal, &set_rel(id)).and_then(|path| match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(TrashError::Io(error.to_string())),
+        });
+    if let Err(error) = removed {
+        log::warn!("trash set {id}: its record was left: {error}");
+    }
+}
+
+/// A set's run lock leaves a sidecar file; once the set is gone and its lock
+/// let go, the sidecar goes too.
+fn remove_set_lock(journal: &Path, id: &str) {
+    if trash_entry(journal, &set_rel(id)).is_ok_and(|path| path.exists()) {
+        return;
+    }
+    if let Ok(path) = trash_entry(journal, &format!("{}.lock", set_rel(id))) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Sets still owed something, oldest first.
+fn waiting_sets(journal: &Path) -> Vec<Set> {
+    let Ok(listing) = std::fs::read_dir(trash_root(journal).join(SETS_DIR)) else {
+        return Vec::new();
+    };
+    let mut sets: Vec<Set> = listing
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry
+                .file_name()
+                .to_str()?
+                .strip_suffix(".json")?
+                .to_owned();
+            if !valid_id(&name) {
+                return None;
+            }
+            let bytes = std::fs::read(trash_entry(journal, &set_rel(&name)).ok()?).ok()?;
+            serde_json::from_slice::<Set>(&bytes)
+                .inspect_err(|error| log::warn!("trash set {name} can't be read: {error}"))
+                .ok()
+        })
+        .collect();
+    sets.sort_by(|left, right| left.id.cmp(&right.id));
+    sets
+}
+
+/// Finish what of each waiting set is owed, skipping a set a live request is
+/// running now.
+fn sweep_sets(journal: &Path, kinds: &[&dyn Kind], swept: &mut Swept) {
+    for set in waiting_sets(journal) {
+        let id = set.id.clone();
+        sweep_set(journal, kinds, set, swept);
+        remove_set_lock(journal, &id);
+    }
+}
+
+/// Finish one waiting set, unless a live request holds it.
+fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swept) {
+    {
+        let Ok(_running) = set_lock(
+            journal,
+            &set.id,
+            LockOptions {
+                timeout: std::time::Duration::ZERO,
+                ..LockOptions::default()
+            },
+        ) else {
+            return;
+        };
+        // Read again under the lock: the request may have just finished it.
+        let Some(current) = waiting_sets(journal)
+            .into_iter()
+            .find(|waiting| waiting.id == set.id)
+        else {
+            return;
+        };
+        set = current;
+        for (_, result) in run_set(journal, kinds, &mut set, true) {
+            match result {
+                SetResult::Moved { .. } => swept.resumed += 1,
+                // Gone already, or settled: nothing to say.
+                SetResult::Refused(TrashError::Missing(_)) => {}
+                SetResult::Refused(error) => swept.failed.push(format!("set {}: {error}", set.id)),
+            }
+        }
+    }
 }
 
 /// Finish every step a stop interrupted, then erase what is due by `now`.
@@ -491,6 +1023,9 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
             swept.failed.push(format!("{}: {error}", item.id));
         }
     }
+    // After the items, so a set's thing whose move a stop interrupted is in
+    // the trash now and can be erased if the owner asked.
+    sweep_sets(journal, kinds, &mut swept);
     swept
 }
 
@@ -535,7 +1070,7 @@ fn finish_detach(
                 // there): nothing of it is left to move.
                 continue;
             }
-            hold.check().map_err(TrashError::Held)?;
+            hold.moving(path).map_err(TrashError::Held)?;
             ensure_trash_parent(journal, &trashed)?;
             move_entry(&live, &held)?;
             sync_parent(journal, path);
@@ -575,7 +1110,7 @@ fn finish_attach(
         let trashed = files_rel(&item.id, path);
         let held = trash_entry(journal, &trashed)?;
         if path_lexists(&held)? {
-            hold.check().map_err(TrashError::Held)?;
+            hold.moving(path).map_err(TrashError::Held)?;
             ensure_journal_parent(journal, path)?;
             let live = journal_entry(journal, path)?;
             if path_lexists(&live)? {
@@ -683,6 +1218,8 @@ fn describe(unit: &Unit) -> &'static str {
     match unit {
         Unit::Memory { .. } => "memory",
         Unit::Segment { .. } => "recording",
+        Unit::Import { .. } => "import",
+        Unit::Workout { .. } => "workout",
         _ => "thing",
     }
 }
@@ -1267,6 +1804,8 @@ mod tests {
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
+            label: None,
+            refs: Vec::new(),
         };
         fs::create_dir(root.join(TRASH_DIR).join(&stale.id)).unwrap();
         publish_new(&root, &stale).unwrap();
@@ -1351,6 +1890,264 @@ mod tests {
         assert_eq!(events(&root).len(), 1);
     }
 
+    fn chosen() -> Chosen {
+        Chosen {
+            unit: unit(),
+            paths: vec![SEGMENT.into()],
+            label: Some("the owner's name".into()),
+        }
+    }
+
+    fn set_of(erase: bool) -> Set {
+        Set {
+            schema: SCHEMA,
+            id: item_id(Utc::now()),
+            action: Action::SegmentDelete,
+            surface: web(),
+            erase,
+            entries: vec![Entry {
+                chosen: chosen(),
+                item: None,
+                arrived: false,
+                settled: false,
+            }],
+        }
+    }
+
+    /// A set stopped after it was written down and before anything moved: the
+    /// sweep moves what the owner confirmed, then forgets the set.
+    #[test]
+    fn a_set_stopped_before_anything_moved_is_finished_by_a_sweep() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        publish_set(&root, &set_of(false), true).unwrap();
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 1);
+        let items = list(&root).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label.as_deref(), Some("the owner's name"));
+        assert!(waiting_sets(&root).is_empty());
+        // A second sweep has nothing left of it to do.
+        assert_eq!(sweep(&root, &[&kind], Utc::now()).resumed, 0);
+    }
+
+    /// A set stopped after its thing moved but before the set said so: the
+    /// sweep finds it gone, moves nothing twice, and forgets the set.
+    #[test]
+    fn a_set_stopped_after_its_thing_moved_moves_nothing_twice() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        publish_set(&root, &set_of(false), true).unwrap();
+        trash(&root, &kind);
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 0);
+        assert!(swept.failed.is_empty());
+        assert_eq!(list(&root).unwrap().len(), 1);
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The owner asked the set erased; a stop came after the move and before
+    /// the erase. The sweep erases it.
+    #[test]
+    fn a_set_asked_erased_is_erased_after_a_stop() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item.id.clone());
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(list(&root).unwrap().is_empty());
+        assert!(waiting_sets(&root).is_empty());
+        assert!(
+            events(&root)
+                .iter()
+                .any(|(event, _)| *event == Event::Erased)
+        );
+    }
+
+    /// The stop came mid-move: the item is on its way in, and the set knows
+    /// which it is. The sweep finishes the move and then the erase.
+    #[test]
+    fn a_set_asked_erased_is_erased_after_a_stop_mid_move() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let mut item = trash(&root, &kind);
+        item.state = State::Detaching;
+        publish(&root, &item).unwrap();
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item.id.clone());
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(list(&root).unwrap().is_empty());
+        assert!(all_items(&root).unwrap().is_empty());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The stop came after the set named the item and before it existed.
+    #[test]
+    fn a_set_asked_erased_is_erased_when_stopped_before_its_item_exists() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item_id(Utc::now()));
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(all_items(&root).unwrap().is_empty());
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The owner recovered it while the set still owed its erase: a sweep
+    /// leaves it alone.
+    #[test]
+    fn a_set_never_moves_again_what_the_owner_took_back() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item.id.clone());
+        set.entries[0].arrived = true;
+        publish_set(&root, &set, true).unwrap();
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(root.join(SEGMENT).join("audio.flac").exists());
+        assert!(all_items(&root).unwrap().is_empty());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// A recover a stop interrupted is finished first, and the set leaves it.
+    #[test]
+    fn a_set_leaves_alone_a_recover_a_stop_interrupted() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let mut item = trash(&root, &kind);
+        item.state = State::Attaching;
+        item.pending = Some(Pending {
+            action: Action::Recover,
+            surface: web(),
+            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        });
+        publish(&root, &item).unwrap();
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item.id.clone());
+        set.entries[0].arrived = true;
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(root.join(SEGMENT).join("audio.flac").exists());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The stop came after the item's folder and before its record.
+    #[test]
+    fn a_set_moves_a_thing_whose_item_folder_has_no_record_yet() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let id = item_id(Utc::now());
+        fs::create_dir_all(root.join(TRASH_DIR).join(&id)).unwrap();
+        let mut set = set_of(false);
+        set.entries[0].item = Some(id.clone());
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Trashed);
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// Every thing of a set answers, a thing already gone included, in order.
+    #[test]
+    fn a_set_answers_once_for_each_thing_it_was_given() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let gone = Chosen {
+            unit: unit(),
+            paths: vec!["chronicle/20261108/phone/080000_300".into()],
+            label: None,
+        };
+        let results = detach_set(
+            &root,
+            &[&kind],
+            vec![gone, chosen()],
+            Action::SegmentDelete,
+            web(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(results.len(), 2);
+        assert!(matches!(
+            results[0],
+            SetResult::Refused(TrashError::Missing(_))
+        ));
+        assert!(matches!(results[1], SetResult::Moved { .. }));
+    }
+
+    /// A thing held on resume stays owed, and the next sweep moves it.
+    #[test]
+    fn a_set_thing_held_on_resume_is_moved_by_a_later_sweep() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        publish_set(&root, &set_of(false), true).unwrap();
+        kind.refuse_check_at.set(1);
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 0);
+        assert_eq!(waiting_sets(&root).len(), 1);
+        kind.refuse_check_at.set(0);
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(list(&root).unwrap().len(), 1);
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// A sweep leaves alone a set a live request is running.
+    #[test]
+    fn a_sweep_skips_a_set_a_request_is_running() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let set = set_of(false);
+        publish_set(&root, &set, true).unwrap();
+        let running = set_lock(&root, &set.id, LockOptions::default()).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(list(&root).unwrap().is_empty());
+        drop(running);
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(list(&root).unwrap().len(), 1);
+        // Nothing of the set is left behind, its lock's sidecar included.
+        let sets = std::fs::read_dir(root.join(TRASH_DIR).join(SETS_DIR))
+            .unwrap()
+            .count();
+        assert_eq!(sets, 0);
+    }
+
+    /// A set the owner asked erased is erased, each thing as its own item.
+    #[test]
+    fn a_set_asked_erased_leaves_nothing_in_the_trash() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let results = detach_set(
+            &root,
+            &[&kind],
+            vec![chosen()],
+            Action::SegmentDelete,
+            web(),
+            true,
+        )
+        .unwrap();
+        assert!(matches!(results[0], SetResult::Moved { erased: true, .. }));
+        assert!(list(&root).unwrap().is_empty());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The paths the trash could still give back: every item but one being
+    /// erased.
+    #[test]
+    fn held_paths_name_what_could_come_back() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        assert_eq!(held_paths(&root).unwrap(), vec![SEGMENT.to_owned()]);
+        erase(&root, &item.id, Action::Erase, web()).unwrap();
+        assert!(held_paths(&root).unwrap().is_empty());
+    }
+
     /// A stop after the item was published but before anything moved: the
     /// sweep moves it, as the owner asked.
     #[test]
@@ -1369,6 +2166,8 @@ mod tests {
             paths: vec![SEGMENT.into()],
             bytes: 8,
             pending: None,
+            label: None,
+            refs: Vec::new(),
         };
         ensure_trash(&root).unwrap();
         fs::create_dir(root.join(TRASH_DIR).join(&item.id)).unwrap();

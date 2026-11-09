@@ -1696,6 +1696,57 @@
   }
 }
 
+/* The set dialog lists up to five segments, then how many more. */
+#trDeleteSegmentModal .trash-set-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  font-size: 14px;
+}
+
+#trDeleteSegmentModal .trash-set-list li + li {
+  margin-top: 2px;
+}
+
+#trDeleteSegmentModal .trash-set-more {
+  color: var(--ink-soft);
+}
+
+/* Select mode: the transcript gives way to a list of this range's segments. */
+.tr-head-actions { display: inline-flex; align-items: center; gap: 8px; }
+.tr-pick-btn { padding: .4em .9em; font-size: .9em; font-weight: 600; border: 0; border-radius: 6px; background: var(--cream-bright); color: var(--ink-soft); cursor: pointer; }
+.tr-pick-btn:hover { background: var(--hairline); }
+.tr-pick-btn[hidden], .tr-pick-panel[hidden] { display: none; }
+.tr-picking > .tr-tabs, .tr-picking > .tr-warning-notice, .tr-picking > .tr-panel, .tr-picking .tr-head-actions { display: none !important; }
+.tr-pick-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
+.tr-pick-panel .trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em .5em .85em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
+.tr-pick-panel .trash-bar:focus { outline: none; }
+.tr-pick-panel .trash-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em .75em; }
+.tr-pick-panel .trash-bar-group[hidden] { display: none; }
+.tr-pick-panel .trash-count, .tr-pick-panel .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
+.tr-pick-panel .trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
+.tr-pick-panel .trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
+.tr-pick-panel .trash-row { display: flex; align-items: flex-start; gap: .75em; padding: .65em 1em; font-size: .85em; cursor: pointer; }
+.tr-pick-panel .trash-row + .trash-row { border-top: 1px solid var(--hairline); }
+.tr-pick-panel .trash-row input { margin-top: .25em; flex: none; }
+.tr-pick-panel .trash-row-body { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tr-pick-panel .trash-row-body > span { display: block; }
+.tr-pick-panel .removal-line { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 0.1em; }
+.tr-pick-panel .removal-what { color: var(--ink); font-weight: 500; }
+.tr-pick-panel .removal-time { white-space: nowrap; }
+.tr-pick-panel .removal-qual { color: var(--ink-faint); font-weight: 400; }
+.tr-pick-panel .removal-qual::before { content: "\00b7"; margin: 0 0.4em; }
+.tr-pick-note { margin-top: .25em; color: var(--ink-soft); font-size: .95em; }
+.tr-zoom-pill.tr-picked::after { content: "\2713"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font: 700 12px/1 system-ui; color: var(--ink); }
+@media (max-width: 768px) {
+  .tr-picking .tr-segment-picker { display: none; }
+}
+@media (max-width: 480px) {
+  .tr-pick-panel .trash-row, .tr-pick-panel .trash-all { min-height: 44px; }
+  .tr-pick-panel .trash-row input, .tr-pick-panel .trash-all input { width: 20px; height: 20px; }
+  .tr-pick-btn { min-height: 44px; }
+}
+
 /* Unified timeline view */
 .tr-unified {
   display: flex;
@@ -2641,7 +2692,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     </div>
 
     <!-- Right content panel -->
-    <div class="tr-content">
+    <div class="tr-content" id="trContent">
       <label class="tr-segment-picker" for="trSegmentPicker">segments in this range
         <select id="trSegmentPicker" disabled><option value="">choose a segment</option></select>
       </label>
@@ -2656,12 +2707,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           </div>
           <div class="tr-range-text" id="trRangeText"></div>
         </div>
-        <button type="button" id="trDeleteBtn" class="tr-delete-btn" title="delete segment">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </button>
+        <span class="tr-head-actions">
+          <button type="button" id="trSelectBtn" class="tr-pick-btn" hidden></button>
+          <button type="button" id="trDeleteBtn" class="tr-delete-btn" title="delete segment">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+        </span>
       </div>
       <div class="tr-tabs" id="trTabs"></div>
 	      <div id="trWarningNotice" class="tr-warning-notice" aria-expanded="false">
@@ -2678,6 +2732,20 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
           <span class="surface-state-text" data-role="loading-status">loading this day…</span>
           <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
         </div>
+      </div>
+      <!-- Select mode: the segments in this range, to delete several at once -->
+      <div class="log-panel tr-pick-panel" id="trPickPanel" hidden>
+        <div class="trash-bar" id="trPickBar" tabindex="-1">
+          <div class="trash-bar-group" id="trPickIdle">
+            <label class="trash-all"><input type="checkbox" id="trPickAll"> <span id="trPickAllLabel"></span></label>
+            <span class="trash-bar-actions"><button type="button" class="tr-pick-btn" id="trPickDoneIdle"></button></span>
+          </div>
+          <div class="trash-bar-group" id="trPickSome" hidden>
+            <span class="trash-count" id="trPickCount"></span>
+            <span class="trash-bar-actions"><button type="button" class="tr-pick-btn" id="trPickDelete"></button><button type="button" class="tr-pick-btn" id="trPickDoneSome"></button></span>
+          </div>
+        </div>
+        <div class="log-entries" id="trPickList"></div>
       </div>
     </div>
   </div>
@@ -2852,6 +2920,23 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 	  const warningDetails = document.getElementById('trWarningDetails');
 	  const warningCaret = document.getElementById('trWarningCaret');
 	  const deleteBtn = document.getElementById('trDeleteBtn');
+  // Select mode: several segments in this range chosen together.
+  const contentEl = document.getElementById('trContent');
+  const selectBtn = document.getElementById('trSelectBtn');
+  const pickPanel = document.getElementById('trPickPanel');
+  const pickBar = document.getElementById('trPickBar');
+  const pickIdle = document.getElementById('trPickIdle');
+  const pickSome = document.getElementById('trPickSome');
+  const pickAll = document.getElementById('trPickAll');
+  const pickAllLabel = document.getElementById('trPickAllLabel');
+  const pickCount = document.getElementById('trPickCount');
+  const pickDelete = document.getElementById('trPickDelete');
+  const pickDoneIdle = document.getElementById('trPickDoneIdle');
+  const pickDoneSome = document.getElementById('trPickDoneSome');
+  const pickList = document.getElementById('trPickList');
+  // Whether select mode is on, the chosen segments by choice id, and the note
+  // a refused one carries.
+  const segPick = { on: false, chosen: new Map(), notes: new Map() };
   const bodyPanel = document.getElementById('trBodyPanel');
   const bodyPanelTitle = document.getElementById('trBodyPanelTitle');
   const bodyPanelRange = document.getElementById('trBodyPanelRange');
@@ -4222,6 +4307,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       segmentPicker.appendChild(option);
     });
     segmentPicker.value = selectedSegment && !selectedSegment.locationRow ? segmentChoiceId(selectedSegment) : '';
+    renderSegPick(filtered);
 
     if (filtered.length === 0) {
       zoomSegments.innerHTML = '<div class="tr-zoom-empty">nothing in this range</div>';
@@ -4289,7 +4375,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
       const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
 
-      if (selectedSegment && selectedSegment.key === seg.key && selectedSegment.stream === seg.stream) {
+      // In select mode the ring marks what is chosen, not what is open.
+      if (segPick.on) {
+        const picked = segPick.chosen.has(segmentChoiceId(seg));
+        pill.classList.toggle('tr-active', picked);
+        pill.classList.toggle('tr-picked', picked);
+      } else if (selectedSegment && selectedSegment.key === seg.key && selectedSegment.stream === seg.stream) {
         pill.classList.add('tr-active');
       }
 
@@ -4309,11 +4400,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       pill.dataset.key = seg.key;
       pill.dataset.stream = seg.stream;
 
-      pill.addEventListener('click', () => selectSegment(seg));
+      pill.addEventListener('click', () => (segPick.on ? toggleSegPick(seg) : selectSegment(seg)));
       pill.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          selectSegment(seg);
+          if (segPick.on) toggleSegPick(seg);
+          else selectSegment(seg);
         }
       });
       zoomSegments.appendChild(pill);
@@ -7278,7 +7370,56 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
   // Owner copy for deleting a segment: the dialog, its erase step and the receipt.
   const TRASH_COPY = {
-    noun: { segment: 'segment' },
+    noun: { segment: 'segment', segments: 'segments' },
+    select: 'select',
+    selectAll: 'select all',
+    selected: '{n} selected',
+    delete: 'delete',
+    done: 'done',
+    pickRange: '{start} – {end}',
+    set: {
+      moveTitle: 'delete {n} segments?',
+      eraseTitle: 'erase {n} segments now?',
+      more: 'and {n} more',
+      moveReach: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
+      eraseReach: "they leave your journal now and can't be recovered.",
+      moveLead: "this moves each segment's own:",
+      eraseLead: "this erases each segment's own:",
+      moveStays: 'summaries made from them elsewhere in your journal stay where they are and may still mention them.',
+      eraseStays: "summaries made from them elsewhere in your journal aren't erased and may still mention them.",
+      size: 'current raw media size: {size}',
+    },
+    notes: {
+      busy: 'this is already being moved or erased. reload in a minute to check.',
+      importing: "this wasn't moved because it's still importing. try again once it's done.",
+      other: "this wasn't moved. try again.",
+      eraseImporting: "this wasn't erased because it's still importing. try again once it's done.",
+      eraseOther: "this wasn't erased. try again.",
+    },
+    setReceipt: {
+      moved: { title: 'moved {n} {things} to the trash', message: 'they erase {date} unless you recover them.' },
+      partMoved: { title: 'moved {done} of {n} to the trash' },
+      stillOne: "{k} couldn't be moved and is still in your journal, marked below.",
+      stillMany: "{k} couldn't be moved and are still in your journal, marked below.",
+      noneMoved: { title: "couldn't move those to the trash" },
+      noneStillOne: '{k} is still in your journal, marked below.',
+      noneStillMany: '{k} are still in your journal, marked below.',
+      erased: { title: 'erased {n} {things} from your journal' },
+      partErased: { title: 'erased {done} of {n}' },
+      partErasedOne: "the other wasn't erased. look for it below or in the trash.",
+      partErasedMany: "the others weren't erased. look for them below or in the trash.",
+      noneErased: { title: "couldn't erase those" },
+      noneErasedOne: 'look for it below or in the trash.',
+      noneErasedMany: 'look for them below or in the trash.',
+      recovered: { title: '{n} {things} recovered', message: "they're back in your journal." },
+      partRecovered: { title: 'recovered {done} of {n}' },
+      partRecoveredOne: 'the other is still in the trash. you can try again from there.',
+      partRecoveredMany: 'the others are still in the trash. you can try again from there.',
+      recoverFailed: { title: "couldn't recover those", message: "they're still in the trash. you can try again from there." },
+      noAnswerMove: { title: "your journal didn't answer", message: 'they may already be in the trash. reload to check.' },
+      noAnswerErase: { title: "your journal didn't answer", message: 'they may already be erased. reload to check.' },
+      noAnswerRecover: { title: "your journal didn't answer", message: 'they may already be back in your journal. reload to check.' },
+    },
     move: {
       title: 'delete segment?',
       reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
@@ -7340,7 +7481,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   function renderDeleteSegmentStep(seg, step) {
     const copy = TRASH_COPY[step];
     const isLocRow = Boolean(seg.locationRow);
-    const holdsLoc = Boolean(segmentData?.holds_location);
+    // What the page knows of a segment's files is the open segment's alone.
+    const ownData = isOpenSegment(seg) ? segmentData : null;
+    const holdsLoc = Boolean(ownData?.holds_location);
     const erasing = step === 'erase';
 
     deleteSegmentModalTitle.textContent = copy.title;
@@ -7371,16 +7514,26 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       list,
       deleteDialogElement('p', 'tr-delete-stays', copy.stays),
     );
-    const totalBytes = (segmentData?.media_sizes?.audio || 0) + (segmentData?.media_sizes?.screen || 0);
+    const totalBytes = (ownData?.media_sizes?.audio || 0) + (ownData?.media_sizes?.screen || 0);
     if (!erasing && !isLocRow && totalBytes > 0) {
       deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', copy.size.replace('{size}', formatSize(totalBytes))));
     }
   }
 
-  function showDeleteSegmentModal() {
-    if (!selectedSegment) return;
+  // The segments the open dialog would delete: the open one, or what select
+  // mode chose. One segment gets the single dialog; several, the set's.
+  let deleteDialogSegs = null;
 
-    renderDeleteSegmentStep(selectedSegment, 'move');
+  function renderDeleteStep(step) {
+    if (deleteDialogSegs.length === 1) renderDeleteSegmentStep(deleteDialogSegs[0], step);
+    else renderDeleteSetStep(deleteDialogSegs, step);
+  }
+
+  function showDeleteSegmentModal(segs = selectedSegment ? [selectedSegment] : null) {
+    if (!segs || !segs.length) return;
+
+    deleteDialogSegs = segs;
+    renderDeleteStep('move');
     deleteModalReturnFocus = document.activeElement;
     deleteModalPrevOverflow = document.body.style.overflow;
     deleteSegmentModal.style.display = 'flex';
@@ -7390,14 +7543,14 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   }
 
   function showEraseSegmentStep() {
-    if (!selectedSegment || deleteSegmentModal.style.display === 'none') return;
-    renderDeleteSegmentStep(selectedSegment, 'erase');
+    if (!deleteDialogSegs || deleteSegmentModal.style.display === 'none') return;
+    renderDeleteStep('erase');
     deleteSegmentModalBack.focus();
   }
 
   function backFromEraseSegmentStep() {
-    if (!selectedSegment || deleteSegmentModal.style.display === 'none') return;
-    renderDeleteSegmentStep(selectedSegment, 'move');
+    if (!deleteDialogSegs || deleteSegmentModal.style.display === 'none') return;
+    renderDeleteStep('move');
     deleteSegmentModalErase.focus();
   }
 
@@ -7406,6 +7559,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     deleteSegmentModal.style.display = 'none';
     deleteSegmentModalBody.replaceChildren();
+    deleteDialogSegs = null;
     document.body.style.overflow = deleteModalPrevOverflow;
     deleteModalPrevOverflow = '';
     if (restoreFocus && deleteModalReturnFocus && document.contains(deleteModalReturnFocus)) {
@@ -7414,25 +7568,22 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     deleteModalReturnFocus = null;
   }
 
-  async function confirmDeleteSegment() {
-    if (!selectedSegment) return;
+  async function confirmDeleteSegment(erase = false) {
+    const segs = deleteDialogSegs;
+    if (!segs) return;
 
-    const seg = selectedSegment;
     closeDeleteSegmentModal(false);
-    await performDeleteSegment(seg, false);
+    if (segPick.on) await performPickDelete(segs, erase);
+    else await performDeleteSegment(segs[0], erase);
   }
 
   async function confirmEraseSegment() {
-    if (!selectedSegment) return;
-
-    const seg = selectedSegment;
-    closeDeleteSegmentModal(false);
-    await performDeleteSegment(seg, true);
+    await confirmDeleteSegment(true);
   }
 
   deleteSegmentModalClose.addEventListener('click', () => closeDeleteSegmentModal());
   deleteSegmentModalCancel.addEventListener('click', () => closeDeleteSegmentModal());
-  deleteSegmentModalConfirm.addEventListener('click', () => confirmDeleteSegment());
+  deleteSegmentModalConfirm.addEventListener('click', () => confirmDeleteSegment(false));
   deleteSegmentModalErase.addEventListener('click', () => showEraseSegmentStep());
   deleteSegmentModalBack.addEventListener('click', () => backFromEraseSegmentStep());
   deleteSegmentModalEraseConfirm.addEventListener('click', () => confirmEraseSegment());
@@ -7511,10 +7662,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       clearSegmentSelection();
       return;
     }
+    const wasOpen = isOpenSegment(seg);
     allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
-    clearSegmentSelection();
+    if (wasOpen) clearSegmentSelection();
     buildZoomSegments();
     refreshSegmentIndicators();
+  }
+
+  function isOpenSegment(seg) {
+    return Boolean(selectedSegment && seg && selectedSegment.key === seg.key && selectedSegment.stream === seg.stream
+      && Boolean(selectedSegment.locationRow) === Boolean(seg.locationRow));
   }
 
   // Moves the segment to the trash, or erases it now. A non-200 answer means
@@ -7528,32 +7685,33 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         : { method: 'DELETE' });
     } catch (_) {
       trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
-      return;
+      return { kind: 'noAnswer' };
     }
     const data = await response.json().catch(() => null);
     if (!response.ok) {
       trashReceipt(erase ? 'eraseRefused' : 'moveRefused');
-      return;
+      return { kind: 'refused', key: data?.key };
     }
     if (!data || data.success !== true) {
       trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
-      return;
+      return { kind: 'noAnswer' };
     }
 
     dropDeletedSegment(seg);
     if (data.erased === true) {
       trashReceipt('erased');
-      return;
+      return { kind: 'erased' };
     }
     if (data.erase_failed === true) {
       trashReceipt('eraseFailed', {}, [openTrashButton()]);
-      return;
+      return { kind: 'eraseFailed' };
     }
     const trashId = data.trash?.id;
     trashReceipt('moved', { date: trashEraseDate(data.trash?.erase_at) }, [
       { label: TRASH_COPY.buttons.recover, onClick: () => recoverFromReceipt(trashId, seg, segDay) },
       openTrashButton(),
     ]);
+    return { kind: 'moved' };
   }
 
   // The receipt's recover is the trash page's recover: the same files go back.
@@ -7656,6 +7814,303 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     resetSegmentSelection();
     history.replaceState(null, '', window.location.pathname);
   }
+
+  // ----- Select mode: several segments of this range, deleted together -----
+  function segPickFill(template, values = {}) {
+    return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+  }
+
+  function segPickRange(seg) {
+    return segPickFill(TRASH_COPY.pickRange, { start: seg.start, end: seg.end });
+  }
+
+  function segPickNoteKey(key, erase) {
+    if (key === 'busy') return 'busy';
+    if (key === 'importing') return erase ? 'eraseImporting' : 'importing';
+    return erase ? 'eraseOther' : 'other';
+  }
+
+  // One row per segment in this range, in the picker's order: its time and its
+  // stream, and the note a refused one carries.
+  function segPickRow(seg) {
+    const id = segmentChoiceId(seg);
+    const row = deleteDialogElement('label', 'trash-row');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = segPick.chosen.has(id);
+    box.dataset.pick = id;
+    box.addEventListener('change', () => setSegPicked(seg, box.checked));
+    const body = deleteDialogElement('span', 'trash-row-body');
+    const line = deleteDialogElement('span', 'removal-line');
+    line.append(
+      deleteDialogElement('span', 'removal-what removal-time', segPickRange(seg)),
+      deleteDialogElement('span', 'removal-qual', humanizeStreamName(seg.stream)),
+    );
+    body.append(line);
+    const note = segPick.notes.get(id);
+    if (note) body.append(deleteDialogElement('span', 'tr-pick-note', TRASH_COPY.notes[note] || TRASH_COPY.notes.other));
+    row.append(box, body);
+    return row;
+  }
+
+  function paintSegPickBar() {
+    const count = segPick.chosen.size;
+    pickIdle.hidden = count > 0;
+    pickSome.hidden = count === 0;
+    pickAll.checked = false;
+    pickAllLabel.textContent = TRASH_COPY.selectAll;
+    pickCount.textContent = segPickFill(TRASH_COPY.selected, { n: count });
+    pickDelete.textContent = TRASH_COPY.delete;
+    pickDoneIdle.textContent = TRASH_COPY.done;
+    pickDoneSome.textContent = TRASH_COPY.done;
+  }
+
+  // Runs with every rebuild of the detail column. Moving the window keeps the
+  // chosen segments still in the range and drops the rest.
+  function renderSegPick(filtered) {
+    selectBtn.textContent = TRASH_COPY.select;
+    selectBtn.hidden = filtered.length === 0;
+    if (!segPick.on) return;
+    const inRange = new Set(filtered.map(segmentChoiceId));
+    [...segPick.chosen.keys()].forEach((id) => {
+      if (!inRange.has(id)) {
+        segPick.chosen.delete(id);
+        segPick.notes.delete(id);
+      }
+    });
+    pickList.replaceChildren(...filtered.map(segPickRow));
+    paintSegPickBar();
+  }
+
+  function setSegPicked(seg, picked) {
+    const id = segmentChoiceId(seg);
+    if (picked) segPick.chosen.set(id, seg);
+    else segPick.chosen.delete(id);
+    segPick.notes.delete(id);
+    buildZoomSegments();
+  }
+
+  function toggleSegPick(seg) {
+    setSegPicked(seg, !segPick.chosen.has(segmentChoiceId(seg)));
+  }
+
+  function setSegPickMode(on) {
+    segPick.on = on;
+    segPick.chosen.clear();
+    segPick.notes.clear();
+    contentEl.classList.toggle('tr-picking', on);
+    pickPanel.hidden = !on;
+    if (!on) pickList.replaceChildren();
+    buildZoomSegments();
+  }
+
+  function enterSegPick() {
+    setSegPickMode(true);
+    pickBar.focus();
+  }
+
+  function exitSegPick() {
+    setSegPickMode(false);
+    selectBtn.focus();
+  }
+
+  function chosenSegments() {
+    return filterSegmentsInRange().filter((seg) => segPick.chosen.has(segmentChoiceId(seg)));
+  }
+
+  // The size is the sum only when every chosen segment's size is known, and
+  // the page knows only the open segment's.
+  function knownSegmentBytes(seg) {
+    if (!isOpenSegment(seg) || !segmentData?.media_sizes) return null;
+    return (segmentData.media_sizes.audio || 0) + (segmentData.media_sizes.screen || 0);
+  }
+
+  // The set's own dialog: the day, up to five segments by time and stream, and
+  // what moves, as the union of what each segment holds. Never a time span.
+  function renderDeleteSetStep(segs, step) {
+    const erasing = step === 'erase';
+    const copy = TRASH_COPY.set;
+    deleteSegmentModalTitle.textContent = segPickFill(erasing ? copy.eraseTitle : copy.moveTitle, { n: segs.length });
+    deleteSegmentModalHeader.classList.toggle('danger', erasing);
+    deleteSegmentModalBody.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+    deleteSegmentModalBody.dataset.step = step;
+    deleteSegmentModalMoveFoot.hidden = erasing;
+    deleteSegmentModalEraseFoot.hidden = !erasing;
+
+    const meta = deleteDialogElement('p', 'tr-delete-segment-meta trash-dlg-meta');
+    meta.append(deleteDialogElement('strong', null, window.JournalFormat.day(day).toLowerCase()));
+    const shown = deleteDialogElement('ul', 'trash-set-list');
+    segs.slice(0, 5).forEach((seg) => {
+      const item = deleteDialogElement('li');
+      item.append(deleteDialogElement('strong', null, segPickRange(seg)), deleteDialogElement('span', null, ` · ${humanizeStreamName(seg.stream)}`));
+      shown.append(item);
+    });
+    if (segs.length > 5) shown.append(deleteDialogElement('li', 'trash-set-more', segPickFill(copy.more, { n: segs.length - 5 })));
+
+    const holdsLoc = segs.some((seg) => isOpenSegment(seg) && segmentData?.holds_location);
+    const parts = ['audio', 'screen', 'transcript', 'analysis', ...(holdsLoc ? ['location'] : [])];
+    const list = deleteDialogElement('ul', 'tr-delete-segment-list');
+    parts.forEach((part) => list.append(deleteDialogElement('li', null, TRASH_COPY.parts[part])));
+
+    deleteSegmentModalBody.replaceChildren(
+      meta,
+      shown,
+      deleteDialogElement('p', 'tr-delete-reach', erasing ? copy.eraseReach : copy.moveReach),
+      deleteDialogElement('p', 'tr-delete-lead', erasing ? copy.eraseLead : copy.moveLead),
+      list,
+      deleteDialogElement('p', 'tr-delete-stays', erasing ? copy.eraseStays : copy.moveStays),
+    );
+    const sizes = segs.map(knownSegmentBytes);
+    const total = sizes.every((bytes) => bytes !== null) ? sizes.reduce((sum, bytes) => sum + bytes, 0) : 0;
+    if (!erasing && total > 0) {
+      deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', segPickFill(copy.size, { size: formatSize(total) })));
+    }
+  }
+
+  function setTrashReceipt(copy, fill = {}, buttons = [], options = {}) {
+    const put = (text) => segPickFill(text, { things: TRASH_COPY.noun.segments, ...fill });
+    const notice = {
+      app: 'transcripts',
+      icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+      title: put(copy.title),
+      dismissible: true,
+      buttons,
+    };
+    const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+    if (message) notice.message = message;
+    if (options.settled) notice.autoDismiss = 10000;
+    window.AppServices.notifications.show(notice);
+  }
+
+  // One chosen uses the single delete; several, the set's. All done leaves
+  // select mode; what was refused stays chosen, with its note.
+  async function performPickDelete(segs, erase) {
+    if (segs.length === 1) {
+      const outcome = await performDeleteSegment(segs[0], erase);
+      if (outcome?.kind === 'refused') {
+        segPick.notes.set(segmentChoiceId(segs[0]), segPickNoteKey(outcome.key, erase));
+        buildZoomSegments();
+      } else if (outcome && outcome.kind !== 'noAnswer') {
+        exitSegPick();
+      }
+      return;
+    }
+    await performDeleteSegmentSet(segs, erase);
+  }
+
+  async function performDeleteSegmentSet(segs, erase) {
+    const segDay = day;
+    const R = TRASH_COPY.setReceipt;
+    const n = segs.length;
+    let answer = null;
+    try {
+      const response = await fetch('/app/transcripts/api/segments/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segments: segs.map((seg) => ({ day: segDay, stream: seg.stream, key: seg.key })), ...(erase ? { erase: true } : {}) }),
+      });
+      answer = response.ok ? await response.json().catch(() => null) : null;
+    } catch (_) {
+      answer = null;
+    }
+    if (!answer || !Array.isArray(answer.done) || !Array.isArray(answer.failed)) {
+      setTrashReceipt(erase ? R.noAnswerErase : R.noAnswerMove);
+      return;
+    }
+    const find = (ref) => segs.find((seg) => ref && seg.stream === ref.stream && seg.key === ref.key);
+    const done = answer.done.map((entry) => ({ seg: find(entry.segment), entry })).filter((item) => item.seg);
+    const failed = answer.failed.map((entry) => ({ seg: find(entry.segment), key: entry.key })).filter((item) => item.seg);
+
+    // What moved leaves the timeline, the detail column and the list at once.
+    if (done.some(({ seg }) => isOpenSegment(seg))) clearSegmentSelection();
+    const gone = new Set(done.map(({ seg }) => segmentChoiceId(seg)));
+    allSegments = allSegments.filter((seg) => !gone.has(segmentChoiceId(seg)));
+    if (failed.length) {
+      segPick.chosen = new Map(failed.map(({ seg }) => [segmentChoiceId(seg), seg]));
+      segPick.notes = new Map(failed.map(({ seg, key }) => [segmentChoiceId(seg), segPickNoteKey(key, erase)]));
+      buildZoomSegments();
+    } else {
+      exitSegPick();
+    }
+    refreshSegmentIndicators();
+
+    const k = failed.length;
+    const openTrash = openTrashButton();
+    if (erase) {
+      const erased = done.filter(({ entry }) => entry.erased === true).length;
+      if (erased === n) {
+        setTrashReceipt(R.erased, { n }, [], { settled: true });
+      } else if (erased) {
+        setTrashReceipt(R.partErased, { done: erased, n }, [openTrash], { message: n - erased === 1 ? R.partErasedOne : R.partErasedMany });
+      } else {
+        setTrashReceipt(R.noneErased, {}, [openTrash], { message: n === 1 ? R.noneErasedOne : R.noneErasedMany });
+      }
+      return;
+    }
+    const moved = done.filter(({ entry }) => entry.trash?.id);
+    const recover = { label: TRASH_COPY.buttons.recover, onClick: () => recoverSetFromReceipt(moved, segDay) };
+    if (!k) {
+      const earliest = moved.map(({ entry }) => entry.trash.erase_at).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0];
+      const date = trashEraseDate(earliest);
+      setTrashReceipt(R.moved, { n, date }, [recover, openTrash], { settled: true, message: date ? undefined : '' });
+    } else if (done.length) {
+      setTrashReceipt(R.partMoved, { done: done.length, n }, [recover, openTrash], { message: segPickFill(k === 1 ? R.stillOne : R.stillMany, { k }) });
+    } else {
+      setTrashReceipt(R.noneMoved, {}, [], { message: segPickFill(k === 1 ? R.noneStillOne : R.noneStillMany, { k }) });
+    }
+  }
+
+  // Recover on a set's card brings back only what moved, each to its place.
+  async function recoverSetFromReceipt(moved, segDay) {
+    const R = TRASH_COPY.setReceipt;
+    const ids = moved.map(({ entry }) => entry.trash.id);
+    const one = ids.length === 1;
+    let response;
+    try {
+      response = await fetch('/app/settings/api/trash/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, page: 'transcripts' }),
+      });
+    } catch (_) {
+      if (one) trashReceipt('noAnswerRecover');
+      else setTrashReceipt(R.noAnswerRecover);
+      return;
+    }
+    const data = response.ok ? await response.json().catch(() => null) : null;
+    if (response.ok && !data) {
+      if (one) trashReceipt('noAnswerRecover');
+      else setTrashReceipt(R.noAnswerRecover);
+      return;
+    }
+    const back = moved.filter(({ entry }) => Array.isArray(data?.done) && data.done.includes(entry.trash.id));
+    back.forEach(({ seg }) => restoreDeletedSegment(seg, segDay));
+    if (back.length && back.length === ids.length) {
+      if (one) trashReceipt('recovered');
+      else setTrashReceipt(R.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+    } else if (back.length) {
+      const others = ids.length - back.length;
+      setTrashReceipt(R.partRecovered, { done: back.length, n: ids.length }, [openTrashButton()], { message: others === 1 ? R.partRecoveredOne : R.partRecoveredMany });
+    } else if (one) {
+      trashReceipt('recoverFailed', {}, [openTrashButton()]);
+    } else {
+      setTrashReceipt(R.recoverFailed, {}, [openTrashButton()]);
+    }
+  }
+
+  selectBtn.addEventListener('click', enterSegPick);
+  pickDoneIdle.addEventListener('click', exitSegPick);
+  pickDoneSome.addEventListener('click', exitSegPick);
+  pickAll.addEventListener('change', () => {
+    filterSegmentsInRange().forEach((seg) => segPick.chosen.set(segmentChoiceId(seg), seg));
+    buildZoomSegments();
+    // The strip just swapped away the control that had focus.
+    pickDelete.focus();
+  });
+  pickDelete.addEventListener('click', () => {
+    const segs = chosenSegments();
+    if (segs.length) showDeleteSegmentModal(segs);
+  });
 
   // Delete segment handler
   deleteBtn.addEventListener('click', () => {

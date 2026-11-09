@@ -2752,7 +2752,7 @@ button:focus:not(:focus-visible) {
     <!-- Trash Section: what waits before it's erased, the setting, and the removal history -->
     <section class="settings-section" id="section-trash" role="tabpanel" aria-labelledby="tab-trash">
       <h2 id="trashHeading">trash</h2>
-      <p class="settings-section-desc">segments and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
+      <p class="settings-section-desc">segments, imports and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
       <div class="log-panel trash-panel">
         <div class="trash-bar" id="trashBar" tabindex="-1" hidden>
           <div class="trash-bar-group" id="trashBarIdle">
@@ -6795,8 +6795,8 @@ const REMOVAL_KIND = {
   segment: ['segment', 'segments'],
   original: ['original media', 'originals'],
   memory: ['memory an agent saved', 'memories agents saved'],
-  workout: ['{source} workout', '{source} workouts'],
-  import: ['{source} import', '{source} imports'],
+  workout: ['workout', 'workouts'],
+  import: ['import', 'imports'],
   entity: ['entity', 'entities'],
   facet: ['facet', 'facets'],
   detected_entities: ['detected entity', 'detected entities'],
@@ -6806,7 +6806,27 @@ const REMOVAL_KIND = {
 };
 const REMOVAL_KIND_FALLBACK = ['something else', 'other things'];
 const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'facet_file', 'detected_entities']);
-const REMOVAL_SOURCE = { strava: 'Strava' };
+// The Import page's own name for each source, for the trash page and this
+// history alike. A source not listed here shows no qualifier.
+// ========== SOURCE NAMES ==========
+const REMOVAL_SOURCE = {
+  ics: 'calendar', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', kindle: 'Kindle Highlights', journal_archive: 'journal',
+  audio_archive: 'audio archive', recording: 'meeting audio', document: 'document', image: 'image',
+  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
+  obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
+};
+const REMOVAL_IMPORTED = 'imported {day}';
+
+function removalSourceName(source) {
+  return Object.prototype.hasOwnProperty.call(REMOVAL_SOURCE, source) ? REMOVAL_SOURCE[source] : '';
+}
+
+// An import's id is the moment it came in, YYYYMMDD_HHMMSS on the journal's clock.
+function removalImportedDay(id) {
+  const day = /^(\d{8})_\d{6}/.exec(id || '');
+  return day ? REMOVAL_IMPORTED.replace('{day}', removalDay(day[1])) : null;
+}
+// ========== END SOURCE NAMES ==========
 const REMOVAL_BACKUP = { own: 'your own storage', operated: 'storage sol pbc operates' };
 const REMOVAL_ACTION = {
   segment_delete: 'deleted', workout_delete: 'deleted', import_delete: 'deleted',
@@ -6863,6 +6883,9 @@ function removalQualifiers(unit) {
     case 'segment': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
     case 'original': return [unit.file, unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
     case 'memory': return [unit.day && removalDay(unit.day), removalSegmentTime(unit.segment)].filter(Boolean);
+    // Never the import's file name: this history outlives it.
+    case 'import': return [removalSourceName(unit.source), removalImportedDay(unit.id)].filter(Boolean);
+    case 'workout': return [unit.day && removalDay(unit.day), removalSourceName(unit.source)].filter(Boolean);
     case 'backup': return [REMOVAL_BACKUP[unit.storage]].filter(Boolean);
     default: return REMOVAL_NAMELESS.has(unit.kind) ? [REMOVAL_COPY.nameNotKept] : [];
   }
@@ -7013,6 +7036,9 @@ const TRASH_COPY = {
   erasesOn: 'erases {date}',
   erasingSoon: 'erasing soon',
   returned: 'the same segment is back in your journal. recovering replaces that copy.',
+  returnedImport: 'some of what it brought in is back in your journal. recovering replaces those copies.',
+  segmentOne: '{n} segment',
+  segmentMany: '{n} segments',
   range: 'choose a number from 1 to 30.',
   recovered: 'recovered {n} {things}.',
   erased: 'erased {n} {things} from your journal.',
@@ -7039,8 +7065,11 @@ const TRASH_COPY = {
   staysMany: "summaries made from them elsewhere in your journal aren't erased and may still mention them.",
   agentOne: 'anything an agent already read stays with it.',
   agentMany: 'anything an agent already read stays with them.',
+  madeOne: "summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
+  madeMany: "summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
 };
-const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved' };
+const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved', import: 'import', workout: 'workout' };
+const TRASH_WORDS = { segment: ['segment', 'segments'], memory: ['memory', 'memories'], import: ['import', 'imports'], workout: ['workout', 'workouts'] };
 
 let trashItems = [];
 let trashConfirmed = null;
@@ -7048,9 +7077,7 @@ const trashSelected = new Set();
 
 function trashWord(items, count) {
   const kinds = new Set(items.map(item => item.kind));
-  const pair = kinds.size === 1 && kinds.has('segment') ? ['segment', 'segments']
-    : kinds.size === 1 && kinds.has('memory') ? ['memory', 'memories']
-    : ['thing', 'things'];
+  const pair = (kinds.size === 1 && TRASH_WORDS[[...kinds][0]]) || ['thing', 'things'];
   return pair[count === 1 ? 0 : 1];
 }
 
@@ -7088,16 +7115,26 @@ function trashRow(item) {
   const body = removalEl('span', 'trash-row-body');
   const what = removalEl('span', 'removal-line');
   what.append(removalEl('span', 'removal-what', TRASH_KIND_LABEL[item.kind] || TRASH_KIND_LABEL.segment));
-  const qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
+  const isImport = item.kind === 'import';
+  // An import shows the owner's own file name: two imports of one source on one
+  // day are otherwise the same row. It comes from the item's own record.
+  const qualifiers = isImport
+    ? [removalSourceName(item.source), item.label, item.imported_day && REMOVAL_IMPORTED.replace('{day}', removalDay(item.imported_day))]
+    : [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
   if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
   qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
   const when = removalEl('span', 'removal-how');
   const date = trashEraseDate(item.erase_at, new Date());
   when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
-  const size = item.kind === 'segment' ? trashSize(item.bytes) : '';
-  if (size) when.append(document.createTextNode(` · ${size}`));
+  const extra = [];
+  if (isImport && Number.isInteger(item.segments)) {
+    extra.push(trashFill(item.segments === 1 ? TRASH_COPY.segmentOne : TRASH_COPY.segmentMany, { n: item.segments }));
+  }
+  const size = item.kind === 'segment' || isImport ? trashSize(item.bytes) : '';
+  if (size) extra.push(size);
+  if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
   body.append(what, when);
-  if (item.replaces) body.append(removalEl('span', 'trash-returned', TRASH_COPY.returned));
+  if (item.replaces) body.append(removalEl('span', 'trash-returned', isImport ? TRASH_COPY.returnedImport : TRASH_COPY.returned));
   row.append(box, body);
   return row;
 }
@@ -7192,7 +7229,9 @@ function trashConfirmCopy(act, items) {
       : trashFill(TRASH_COPY.confirmMany, { n, things: trashWord(items, n) });
     paragraphs.push(one ? TRASH_COPY.bodyOne : TRASH_COPY.bodyMany);
   }
-  paragraphs.push(one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany);
+  // What an import or a workout made elsewhere includes entities, not only summaries.
+  const made = items.some(item => item.kind === 'import' || item.kind === 'workout');
+  paragraphs.push(made ? (one ? TRASH_COPY.madeOne : TRASH_COPY.madeMany) : (one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany));
   if (memory) paragraphs.push(one ? TRASH_COPY.agentOne : TRASH_COPY.agentMany);
   return { title, paragraphs };
 }

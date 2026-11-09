@@ -55,6 +55,10 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
     private let uid: uid_t
     private let fileManager: FileManager
     private let commandTimeout: Duration
+    // `launchctl bootout` returns at once; the job stays loaded until it has
+    // exited. launchd gives a job 20 seconds (its default ExitTimeOut) before
+    // killing it, and the journal's own shutdown is budgeted inside that, so the
+    // wait for the job to go has to clear it.
     private let absenceTimeout: Duration
     private let absencePollInterval: Duration
 
@@ -67,8 +71,8 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
             .appendingPathComponent("Library/LaunchAgents/\(LegacyJournalServiceRetirer.label).plist"),
         uid: uid_t = getuid(),
         fileManager: FileManager = .default,
-        commandTimeout: Duration = .seconds(2),
-        absenceTimeout: Duration = .seconds(3),
+        commandTimeout: Duration = .seconds(10),
+        absenceTimeout: Duration = .seconds(30),
         absencePollInterval: Duration = .milliseconds(250)
     ) {
         self.runner = runner
@@ -142,10 +146,17 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
     }
 
     fileprivate struct ServicePlist: Equatable {
+        static let journalTokenKey = "SOLSTONE_INSTALLATION_JOURNAL_TOKEN"
+
         let label: String
         let programArguments: [String]
-        let standardOutPath: String
-        let standardErrorPath: String
+        // Written by the earlier service install, which logged to
+        // <journal>/health/service.log.
+        let standardOutPath: String?
+        let standardErrorPath: String?
+        // The current service install writes no log paths. It names its
+        // journal in this environment value: the path's bytes, lower-case hex.
+        let journalToken: String?
     }
 
     private func retirementPlan(journalRoot: URL) async -> RetirementPlan {
@@ -267,17 +278,36 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         guard let data = try? Data(contentsOf: plistURL),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let label = plist["Label"] as? String,
-              let arguments = plist["ProgramArguments"] as? [String],
-              let stdout = plist["StandardOutPath"] as? String,
-              let stderr = plist["StandardErrorPath"] as? String else {
+              let arguments = plist["ProgramArguments"] as? [String] else {
             return nil
         }
+        guard let stdout = optionalString(plist["StandardOutPath"]),
+              let stderr = optionalString(plist["StandardErrorPath"]) else {
+            return nil
+        }
+        let tokenLookup: String??
+        if let environment = plist["EnvironmentVariables"] {
+            guard let environment = environment as? [String: Any] else { return nil }
+            tokenLookup = optionalString(environment[ServicePlist.journalTokenKey])
+        } else {
+            tokenLookup = .some(nil)
+        }
+        guard let journalToken = tokenLookup else { return nil }
         return ServicePlist(
             label: label,
             programArguments: arguments,
             standardOutPath: stdout,
-            standardErrorPath: stderr
+            standardErrorPath: stderr,
+            journalToken: journalToken
         )
+    }
+
+    /// `.some(nil)` when the key is absent, `nil` when it holds something that
+    /// is not a string.
+    private func optionalString(_ value: Any?) -> String?? {
+        guard let value else { return .some(nil) }
+        guard let string = value as? String else { return nil }
+        return .some(string)
     }
 
     private func parseLaunchdJob(_ output: String) -> LaunchdJob {
@@ -346,7 +376,15 @@ private extension LegacyJournalServiceRetirer.ServicePlist {
     }
 
     func rootMatch(journalRoot: URL) -> RootMatch {
-        guard standardOutPath == standardErrorPath,
+        if let journalToken {
+            guard let tokenPath = decodeJournalToken(journalToken) else {
+                return .malformed
+            }
+            let actualPath = canonicalPath(URL(fileURLWithPath: tokenPath, isDirectory: true))
+            return actualPath == canonicalPath(journalRoot) ? .same : .different
+        }
+        guard let standardOutPath,
+              standardOutPath == standardErrorPath,
               standardOutPath.hasPrefix("/") else {
             return .malformed
         }
@@ -355,6 +393,38 @@ private extension LegacyJournalServiceRetirer.ServicePlist {
         let actualPath = canonicalPath(URL(fileURLWithPath: standardOutPath))
         let expectedPath = canonicalPath(expected)
         return actualPath == expectedPath ? .same : .different
+    }
+
+    private func decodeJournalToken(_ token: String) -> String? {
+        let digits = Array(token.utf8)
+        guard !digits.isEmpty, digits.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(digits.count / 2)
+        var index = 0
+        while index < digits.count {
+            guard let high = lowerHexValue(digits[index]),
+                  let low = lowerHexValue(digits[index + 1]) else {
+                return nil
+            }
+            bytes.append(high << 4 | low)
+            index += 2
+        }
+        guard let path = String(bytes: bytes, encoding: .utf8),
+              path.hasPrefix("/") else {
+            return nil
+        }
+        return path
+    }
+
+    private func lowerHexValue(_ digit: UInt8) -> UInt8? {
+        switch digit {
+        case UInt8(ascii: "0")...UInt8(ascii: "9"):
+            return digit - UInt8(ascii: "0")
+        case UInt8(ascii: "a")...UInt8(ascii: "f"):
+            return digit - UInt8(ascii: "a") + 10
+        default:
+            return nil
+        }
     }
 }
 

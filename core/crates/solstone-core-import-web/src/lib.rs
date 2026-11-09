@@ -17,6 +17,7 @@ mod audio_archive;
 mod body_facet;
 mod callosum;
 mod content;
+mod delete;
 mod embedded_route;
 mod http;
 mod imports;
@@ -96,6 +97,15 @@ fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router 
             get(content::detail),
         )
         .route("/app/import/api/{timestamp}/content", get(content::list))
+        .route("/app/import/api/imports/delete", post(delete::delete_set))
+        .route(
+            "/app/import/api/imports/{timestamp}/delete",
+            get(delete::preview),
+        )
+        .route(
+            "/app/import/api/imports/{timestamp}",
+            axum::routing::delete(delete::delete),
+        )
         .route("/app/import/api/{timestamp}", get(imports::detail))
         .route("/app/import/{timestamp}", get(assets::shell))
         .layer(DefaultBodyLimit::max(multipart::MAX_BODY_BYTES))

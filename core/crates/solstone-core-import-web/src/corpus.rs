@@ -227,11 +227,24 @@ pub(crate) mod tests {
                         } else {
                             json!([])
                         };
+                        // Each row says whether it can be deleted as a whole:
+                        // not while it runs or waits to.
+                        if let Some(rows) = expected["imports"].as_array_mut() {
+                            for row in rows {
+                                let busy =
+                                    matches!(row["status"].as_str(), Some("running" | "pending"));
+                                row["deletable"] = json!(!busy);
+                            }
+                        }
                     }
                     // Recorded detail rows are legacy records. The new read-only
                     // authority field explicitly leaves them unknown.
                     if phase == "populated" && expected.get("import_json").is_some() {
                         expected["saved_start"] = json!({"state": "unknown", "active": false});
+                        // Whether the page offers deleting it whole: not the
+                        // one still waiting to run.
+                        expected["deletable"] =
+                            json!(!path.ends_with(crate::test_support::PENDING));
                     }
                     serde_json::from_slice::<Value>(&actual_body)
                         .map(|value| {
@@ -366,13 +379,13 @@ pub(crate) mod tests {
         assert_eq!(rows.len(), 4);
         assert_eq!(
             rows.iter()
-                .filter(|row| row.as_object().unwrap().len() == 24)
+                .filter(|row| row.as_object().unwrap().len() == 25)
                 .count(),
             3
         );
         assert_eq!(
             rows.iter()
-                .filter(|row| row.as_object().unwrap().len() == 17)
+                .filter(|row| row.as_object().unwrap().len() == 18)
                 .count(),
             1
         );
@@ -1030,13 +1043,13 @@ pub(crate) mod tests {
         let (_, body) = json_request(root.path(), "GET", "/app/import/api/list").await;
         let rows = body["imports"].as_array().unwrap();
         assert!(rows.iter().any(
-            |row| row["timestamp"] == "20260105_000000" && row.as_object().unwrap().len() == 14
+            |row| row["timestamp"] == "20260105_000000" && row.as_object().unwrap().len() == 15
         ));
         assert!(rows.iter().any(
-            |row| row["timestamp"] == "20260106_000000" && row.as_object().unwrap().len() == 7
+            |row| row["timestamp"] == "20260106_000000" && row.as_object().unwrap().len() == 8
         ));
         assert!(rows.iter().any(
-            |row| row["timestamp"] == "20260107_000000" && row.as_object().unwrap().len() == 15
+            |row| row["timestamp"] == "20260107_000000" && row.as_object().unwrap().len() == 16
         ));
     }
 

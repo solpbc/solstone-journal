@@ -12,7 +12,13 @@
 //! - a stay joins the place whose centre is within [`PLACE_RADIUS_M`]; places
 //!   keep at least twice that apart, so there is never more than one;
 //! - a place's centre is recomputed from the stays that survive, and a place
-//!   with none left is gone, with whatever the owner called it.
+//!   with none left is gone, with whatever the owner called it;
+//! - except while those stays may come back: a place the owner named, called
+//!   home or work, or hid, whose stays are gone while one of its days has
+//!   something in the trash (or has not been rebuilt yet), is kept dormant.
+//!   It is not shown, and its stays rejoin it by distance when they are
+//!   recovered, so its id and the owner's words come back with them. Once
+//!   nothing of its days is held, it is gone.
 //!
 //! The owner may name a place, call it "home" or "work", or hide it from the
 //! map. Nothing asks them to. Those choices live in
@@ -112,9 +118,22 @@ pub struct Place {
     pub alias: Option<Alias>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// The dates of the stays it rests on, kept so a place whose stays are
+    /// all in the trash knows which days could bring them back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub days: Vec<String>,
+    /// Its stays are gone for now (see the module notes): kept, not shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dormant: bool,
 }
 
 impl Place {
+    /// Whether the owner gave it any words or hid it: what a recovered stay
+    /// would otherwise lose.
+    pub fn owner_touched(&self) -> bool {
+        self.name.is_some() || self.alias.is_some() || self.hidden
+    }
+
     /// What the owner calls it, if anything: their name, else their alias.
     pub fn owner_name(&self) -> Option<String> {
         self.name
@@ -259,6 +278,16 @@ impl PlaceStore {
 /// Recompute the places from every surviving stay. Returns the stays each
 /// place rests on, by place id.
 pub fn recompute(store: &mut PlaceStore, stays: &[StayRecord]) -> BTreeMap<String, Vec<usize>> {
+    recompute_holding(store, stays, &|_| false)
+}
+
+/// [`recompute`], keeping dormant an owner-touched place whose stays are all
+/// gone while `held` says one of its days may still bring them back.
+pub fn recompute_holding(
+    store: &mut PlaceStore,
+    stays: &[StayRecord],
+    held: &dyn Fn(&str) -> bool,
+) -> BTreeMap<String, Vec<usize>> {
     let eligible: Vec<usize> = (0..stays.len())
         .filter(|&index| stays[index].eligible())
         .collect();
@@ -337,16 +366,43 @@ pub fn recompute(store: &mut PlaceStore, stays: &[StayRecord]) -> BTreeMap<Strin
             name: None,
             alias: None,
             hidden: false,
+            days: Vec::new(),
+            dormant: false,
         });
         members.insert(id, group);
     }
+    // A place with no stays left is gone, unless the owner touched it and one
+    // of its days may still bring its stays back: then it waits, dormant.
+    store
+        .places
+        .retain_mut(|place| match members.get(&place.id) {
+            Some(group) => {
+                // Its days are where its stays are now, and any earlier day
+                // of it that could still bring stays back: a place whose
+                // recordings go to the trash a day at a time keeps every day
+                // it may need.
+                let mut days: BTreeSet<String> = group
+                    .iter()
+                    .map(|&index| stays[index].day.clone())
+                    .collect();
+                days.extend(place.days.iter().filter(|day| held(day.as_str())).cloned());
+                place.days = days.into_iter().collect();
+                place.dormant = false;
+                true
+            }
+            None => {
+                place.dormant =
+                    place.owner_touched() && place.days.iter().any(|day| held(day.as_str()));
+                place.dormant
+            }
+        });
     // Centres follow the surviving stays, unless the move would leave one of
     // them out of reach or bring the place within reach of another, so a
-    // place never walks away from the stays it rests on. A place with none
-    // left is gone.
-    store.places.retain(|place| members.contains_key(&place.id));
+    // place never walks away from the stays it rests on.
     for index in 0..store.places.len() {
-        let group = &members[&store.places[index].id];
+        let Some(group) = members.get(&store.places[index].id) else {
+            continue;
+        };
         let (latitude, longitude) = mean(stays, group);
         let strands = group.iter().any(|&member| {
             distance_m(
@@ -464,6 +520,8 @@ mod tests {
                 name: Some("old".to_owned()),
                 alias: None,
                 hidden: false,
+                days: Vec::new(),
+                dormant: false,
             }],
         };
         store.write(journal.path()).unwrap();
@@ -553,6 +611,84 @@ mod tests {
             store.places[0].owner_name().as_deref(),
             Some("the climbing gym")
         );
+    }
+
+    #[test]
+    fn a_named_place_whose_stays_are_in_the_trash_waits_and_comes_back_whole() {
+        let mut store = PlaceStore::default();
+        let stays = vec![stay("20261001", 0.0, 25.0), stay("20261002", 0.0, 25.0)];
+        recompute(&mut store, &stays);
+        let id = store.places[0].id.clone();
+        store.places[0].name = Some("the climbing gym".to_owned());
+        store.places[0].hidden = true;
+        // Every stay goes to the trash: the place waits, unseen.
+        recompute_holding(&mut store, &[], &|day| day == "20261002");
+        assert_eq!(store.places.len(), 1);
+        assert!(store.places[0].dormant);
+        assert!(
+            store.hides(LAT, LON),
+            "a hidden place keeps hiding while it waits"
+        );
+        // Recovered: the same place, with the owner's words.
+        let members = recompute_holding(&mut store, &stays, &|_| false);
+        assert_eq!(store.places[0].id, id);
+        assert!(!store.places[0].dormant);
+        assert_eq!(members[&id].len(), 2);
+        assert_eq!(
+            store.places[0].owner_name().as_deref(),
+            Some("the climbing gym")
+        );
+    }
+
+    #[test]
+    fn a_named_place_trashed_a_day_at_a_time_keeps_every_day_it_may_need() {
+        let mut store = PlaceStore::default();
+        let d1 = stay("20261001", 0.0, 25.0);
+        let d2 = stay("20261002", 0.0, 25.0);
+        recompute(&mut store, &[d1.clone(), d2.clone()]);
+        let id = store.places[0].id.clone();
+        store.places[0].name = Some("the climbing gym".to_owned());
+        // Day one's recording goes to the trash, then day two's.
+        recompute_holding(&mut store, std::slice::from_ref(&d2), &|day| {
+            day == "20261001"
+        });
+        recompute_holding(&mut store, &[], &|_| true);
+        assert!(store.places[0].dormant);
+        // Day two's is erased; day one's is recovered.
+        recompute_holding(&mut store, &[], &|day| day == "20261001");
+        assert_eq!(store.places.len(), 1);
+        recompute_holding(&mut store, &[d1], &|_| false);
+        assert_eq!(store.places[0].id, id);
+        assert_eq!(
+            store.places[0].owner_name().as_deref(),
+            Some("the climbing gym")
+        );
+    }
+
+    #[test]
+    fn a_waiting_place_is_gone_once_nothing_of_its_days_is_held() {
+        let mut store = PlaceStore::default();
+        recompute(
+            &mut store,
+            &[stay("20261001", 0.0, 25.0), stay("20261002", 0.0, 25.0)],
+        );
+        store.places[0].alias = Some(Alias::Home);
+        recompute_holding(&mut store, &[], &|_| true);
+        assert_eq!(store.places.len(), 1);
+        // Erased: nothing holds its days any more.
+        recompute_holding(&mut store, &[], &|_| false);
+        assert!(store.places.is_empty());
+    }
+
+    #[test]
+    fn a_place_the_owner_never_touched_does_not_wait() {
+        let mut store = PlaceStore::default();
+        recompute(
+            &mut store,
+            &[stay("20261001", 0.0, 25.0), stay("20261002", 0.0, 25.0)],
+        );
+        recompute_holding(&mut store, &[], &|_| true);
+        assert!(store.places.is_empty());
     }
 
     #[test]

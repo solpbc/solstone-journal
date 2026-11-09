@@ -121,9 +121,7 @@ fn auto_does_not_swallow_a_path_positional() {
     );
     assert_eq!(result.exit_code, 1);
     assert!(
-        result
-            .stderr
-            .contains("import source is missing: /tmp/solstone-cycle2-does-not-exist.md"),
+        result.stderr.contains("source path does not exist"),
         "stderr={}",
         result.stderr
     );

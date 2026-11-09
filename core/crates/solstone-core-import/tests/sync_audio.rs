@@ -319,47 +319,56 @@ fn string_auto_mode_reaches_the_pipeline_unchanged() {
     assert_eq!(pipeline.0.as_deref(), Some("quiet"));
 }
 
-struct NoManifests;
-impl ManifestLookup for NoManifests {
+/// The journal as the sync sees it: whether the file's import is there.
+struct JournalImports<'a>(&'a std::cell::Cell<bool>);
+impl ManifestLookup for JournalImports<'_> {
     fn imported_hash(&self, _: &str) -> bool {
-        false
+        self.0.get()
     }
 }
 
-struct CountingPipeline(u32);
-impl ImportPipeline for CountingPipeline {
+struct ImportingPipeline<'a>(u32, &'a std::cell::Cell<bool>);
+impl ImportPipeline for ImportingPipeline<'_> {
     fn import_one(&mut self, _: PipelineImportRequest<'_>) -> Result<PipelineOutcome, String> {
         self.0 += 1;
+        self.1.set(true);
         Ok(PipelineOutcome::Imported)
     }
 }
 
 #[test]
-fn a_file_the_sync_already_imported_is_not_imported_again() {
+fn a_file_comes_back_once_its_import_is_deleted_and_not_before() {
     let tree = TempDir::new().unwrap();
-    let mut pipeline = CountingPipeline(0);
-    for force in [false, false, true] {
+    let in_journal = std::cell::Cell::new(false);
+    let mut pipeline = ImportingPipeline(0, &in_journal);
+    let sync = |pipeline: &mut ImportingPipeline<'_>| {
         let mut writer = FilesystemAudioStateWriter;
+        let manifests = JournalImports(&in_journal);
         let preview = AudioPreviewSeams {
             scanner: &OneScanner,
             probe: &Probe,
-            manifests: &NoManifests,
+            manifests: &manifests,
             clock: &Clock,
             state_writer: &mut writer,
         };
-        let mut seams = AudioSaveSeams {
-            preview,
-            pipeline: &mut pipeline,
-        };
+        let mut seams = AudioSaveSeams { preview, pipeline };
         let request = AudioSyncRequest::<SyncSaveRequest>::new(
             tree.path().to_path_buf(),
             PathBuf::from("audio"),
-            force,
+            false,
             AudioAuto::Enabled,
         );
         sync_audio_save(&request, &mut seams).unwrap();
-    }
-    // Once for the first sync, not for the second, and again when forced.
+    };
+    sync(&mut pipeline);
+    sync(&mut pipeline);
+    assert_eq!(
+        pipeline.0, 1,
+        "an unchanged file whose import is there stays imported"
+    );
+    // The owner deletes the import: the same file is new data again.
+    in_journal.set(false);
+    sync(&mut pipeline);
     assert_eq!(pipeline.0, 2);
 }
 

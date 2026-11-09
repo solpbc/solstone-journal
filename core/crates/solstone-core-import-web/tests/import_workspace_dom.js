@@ -663,7 +663,7 @@ function runImportRowColumns() {
     'G3-113: an import with no filename still names its source instead of dashing the column'
   );
   assert.ok(
-    /<td>—<\/td>/.test(namelessHtml),
+    /<td class="import-file-cell">—<\/td>/.test(namelessHtml),
     'G3-113: the file column holds a file or a dash, never a copy of the source'
   );
 
@@ -678,7 +678,7 @@ function runImportRowColumns() {
   };
   const recordedFilenameHtml = vm.runInContext(`renderImportRow(${JSON.stringify(recordedFilenameRow)})`, context);
   assert.ok(
-    recordedFilenameHtml.includes('<td>2026-07-06_12_09_03.opus</td>'),
+    recordedFilenameHtml.includes('<td class="import-file-cell">2026-07-06_12_09_03.opus</td>'),
     'G3-308: a recorded filename is shown in the file column'
   );
   assert.ok(
@@ -3615,6 +3615,7 @@ async function runHistoryFilterPaginationRaces() {
     loadSourceGrid: async () => {}, clearImportListErrors() {}, pruneImportGenerationFloor() {},
     buildHistoryHeader: () => '', renderImportRow: () => '', sourceFilterOptionsHtml: () => '',
     trackPendingImport() {}, clearPendingImport() {}, renderLoadMoreError() { throw new Error('unexpected paging error'); },
+    importPick: { on: false, ids: new Set(), notes: new Map() }, importPickHeadHtml: () => '', paintImportPick() {},
   });
   vm.runInContext(`let currentPage = 1, historyRequestGeneration = 0, loadingMoreGeneration = null;
     let historyLoading = false, currentSourceFilter = '', importsCache = [], importSourceOptions = [], totalImports = 0;
@@ -4035,6 +4036,368 @@ async function runArchiveProgressTimerPausesInBackground() {
   cases++;
 }
 
+// --- deleting imports: the dialog, select mode and the set's outcome ---
+// A small element tree: enough for the delete block's createElement, append,
+// classList, attributes and the few selectors it asks for.
+class DeleteNode {
+  constructor(tag, attributes = {}) {
+    this.tag = tag;
+    this.children = [];
+    this.parent = null;
+    this.className = attributes.class || '';
+    this.attributes = { ...attributes };
+    this.dataset = {};
+    this.style = {};
+    this.hidden = false;
+    this.checked = false;
+    this.listeners = {};
+    this._text = '';
+    const node = this;
+    this.classList = {
+      toggle(name, on) { const set = new Set(node.className.split(/\s+/).filter(Boolean)); if (on) set.add(name); else set.delete(name); node.className = [...set].join(' '); },
+      contains(name) { return node.className.split(/\s+/).includes(name); },
+    };
+  }
+  set textContent(value) { this._text = String(value); this.children = []; }
+  get textContent() { return this._text + this.children.map((child) => child.textContent).join(''); }
+  get firstChild() { return this._text ? { textContent: this._text } : this.children[0] || null; }
+  append(...nodes) { nodes.forEach((node) => { node.parent = this; this.children.push(node); }); }
+  replaceChildren(...nodes) { this.children = []; this._text = ''; this.append(...nodes); }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter((child) => child !== this); this.parent = null; }
+  getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; }
+  addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+  focus() { deleteDocument.activeElement = this; }
+  matches(selector) {
+    if (selector.startsWith('.')) return this.className.split(/\s+/).includes(selector.slice(1));
+    const match = /^([a-z]+)\[([a-z-]+)\]$/.exec(selector);
+    return Boolean(match) && this.tag === match[1] && match[2] in this.attributes;
+  }
+  querySelector(selector) {
+    for (const child of this.children) {
+      if (child.matches(selector)) return child;
+      const deeper = child.querySelector(selector);
+      if (deeper) return deeper;
+    }
+    return null;
+  }
+  all(cls) { const out = []; for (const child of this.children) { if (child.matches(`.${cls}`)) out.push(child); out.push(...child.all(cls)); } return out; }
+}
+
+let deleteDocument = null;
+
+function importDeleteBlock() {
+  const start = workspace.indexOf('// ========== IMPORT DELETE ==========');
+  const end = workspace.indexOf('// ========== END IMPORT DELETE ==========');
+  assert.ok(start > 0 && end > start, 'the import delete block is marked');
+  return workspace.slice(start, end);
+}
+
+// The delete block in a page of its own: the dialog's elements, the strip's,
+// and list rows built as renderImportRow builds them in select mode.
+function importDeleteHarness({ rows = [], fetchAnswers = {} } = {}) {
+  const ids = ['importDeleteModal', 'importDeleteModalHeader', 'importDeleteModalTitle', 'importDeleteModalBody',
+    'importDeleteModalMoveFoot', 'importDeleteModalEraseFoot', 'importDeleteModalClose', 'importDeleteModalErase',
+    'importDeleteModalCancel', 'importDeleteModalConfirm', 'importDeleteModalBack', 'importDeleteModalEraseConfirm',
+    'importSelectBtn', 'importPickBar', 'importPickIdle', 'importPickSome', 'importPickAll', 'importPickAllLabel',
+    'importPickCount', 'importPickDelete', 'importPickDoneIdle', 'importPickDoneSome'];
+  const byId = Object.fromEntries(ids.map((id) => [id, new DeleteNode('div')]));
+  const tableRows = rows.map((row) => {
+    const tr = new DeleteNode('tr', { 'data-import-id': row.timestamp, 'data-deletable': String(row.deletable === true) });
+    const pick = new DeleteNode('td', { class: 'import-pick-col' });
+    if (row.deletable === true) pick.append(new DeleteNode('input', { 'data-import-pick': '' }));
+    const file = new DeleteNode('td', { class: 'import-file-cell' });
+    file.textContent = row.original_filename || '—';
+    tr.append(pick, file);
+    return tr;
+  });
+  const notices = [];
+  const requests = [];
+  deleteDocument = {
+    activeElement: null,
+    body: { style: { overflow: '' } },
+    getElementById: (id) => byId[id] || null,
+    createElement: (tag) => new DeleteNode(tag),
+    querySelector: () => null,
+    querySelectorAll: (selector) => (selector.includes('tr[data-import-id]') ? tableRows : []),
+    contains: () => true,
+    addEventListener: () => {},
+  };
+  const window = {
+    JournalFormat: { day: (key) => `d:${key}` },
+    JournalClock: { dayKey: (instant) => instant.toISOString().slice(0, 10).replace(/-/g, '') },
+    AppServices: { notifications: { show: (notice) => notices.push(notice) } },
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    location: { href: '' },
+  };
+  const fetch = async (url, options = {}) => {
+    requests.push({ url, options });
+    const answer = fetchAnswers[`${options.method || 'GET'} ${url}`];
+    if (answer instanceof Error) throw answer;
+    const { status = 200, body = {} } = typeof answer === 'function' ? answer() : (answer || {});
+    return { ok: status >= 200 && status < 300, status, json: async () => body };
+  };
+  const context = vm.createContext({ console, window, document: deleteDocument, fetch, Date, JSON, Promise, Set, Map, Number, Array, Object, String });
+  installRealEscapeHtml(context);
+  vm.runInContext(`const sourceMetadataByName = { chatgpt: { display_name: 'CARD:chatgpt' } };
+    let importsCache = ${JSON.stringify(rows)};
+    let listReads = 0;
+    let nextList = null;
+    async function loadImports() { listReads += 1; if (nextList) importsCache = nextList; return nextList !== false; }`, context);
+  vm.runInContext(functionSource(workspace, 'sourceLabel'), context);
+  vm.runInContext(`${importDeleteBlock()}\nthis.api = { IMPORT_DELETE_COPY, importPick, importOneListLines, importSetBody, importSetOutcome,
+    openImportDeleteDialog, importOneSpec, deleteChosenImports, toggleImportPick, paintImportPick, enterImportPick, exitImportPick,
+    selectAllImports, deleteSetFromList, deleteOneFromList, importSourceName };`, context);
+  return { api: context.api, context, byId, tableRows, notices, requests };
+}
+
+const flushDelete = () => new Promise((resolve) => setImmediate(resolve));
+
+function runImportDetailDeleteButton() {
+  const ImportDetail = loadImportDetailModule();
+  const done = { timestamp: '20261102_161200', status: 'success', source_type: 'chatgpt', import_json: {}, imported_json: {} };
+  const has = (data) => ImportDetail.renderDetail(data).includes('data-import-delete=');
+  assert.ok(has(done), 'a finished import of a kind that moves whole has the delete button');
+  assert.ok(has({ ...done, status: 'failed' }), 'a failed import can be deleted too');
+  for (const status of ['running', 'pending']) {
+    assert.ok(!has({ ...done, status }), `a ${status} import has no delete`);
+  }
+  for (const source of ['journal_archive', 'apple_health', 'oura']) {
+    assert.ok(!has({ ...done, source_type: source }), `${source} has no delete`);
+  }
+  assert.ok(!has({ ...done, deletable: false }), 'the server saying no wins');
+  const strava = ImportDetail.renderDetail({ ...done, source_type: 'strava' });
+  assert.ok(!strava.includes('data-import-delete='), 'strava gets no new delete');
+  assert.ok(strava.includes('data-strava-import-delete='), 'strava keeps its own delete');
+  const html = ImportDetail.renderDetail(done);
+  assert.ok(html.indexOf('data-import-delete=') > html.indexOf('class="drawer"'), 'the button sits after the bookkeeping drawer');
+  assert.ok(/class="import-secondary-btn" data-import-delete=/.test(html), 'it is the secondary button, not danger');
+  cases += 1;
+}
+
+async function runImportDeleteDialog() {
+  const preview = { id: '20261102_161200', source: 'chatgpt', segments: 12, days: ['20261005', '20261009'], originals: 1, bytes: 50331648 };
+  const h = importDeleteHarness({ fetchAnswers: { 'GET /app/import/api/imports/20261102_161200/delete': { body: preview } } });
+  const C = h.api.IMPORT_DELETE_COPY;
+
+  // The preview's lines: only what is true, words without counts if it failed.
+  const lines = (value) => Array.from(h.api.importOneListLines(value));
+  assert.deepStrictEqual(lines(undefined), [], 'nothing is listed before the preview arrives');
+  assert.deepStrictEqual(lines(null), [C.list.segmentsUnknown, C.list.originalUnknown, C.list.row]);
+  const full = lines(preview);
+  assert.strictEqual(full.length, 3);
+  assert.ok(full[0].includes('12') && full[0].includes('d:20261005') && full[0].includes('d:20261009'));
+  assert.strictEqual(full[1], C.list.originalOne);
+  assert.strictEqual(full[2], C.list.row);
+  assert.deepStrictEqual(lines({ segments: 0, originals: 0 }), [C.list.row], 'no segments and no original: only its row');
+  assert.ok(lines({ segments: 3, days: ['20261005', '20261005'], originals: 2 })[0].includes('d:20261005'));
+  assert.strictEqual(lines({ segments: 3, days: ['20261005', '20261005'], originals: 2 })[1], C.list.originalMany.replace('{n}', 2));
+
+  // One import's dialog opens at once, then fills from the preview.
+  let acted = null;
+  h.api.openImportDeleteDialog(h.api.importOneSpec({ id: '20261102_161200', source: 'ChatGPT' }, (erase) => { acted = erase; }));
+  assert.strictEqual(h.byId.importDeleteModal.style.display, 'flex');
+  assert.strictEqual(h.byId.importDeleteModalTitle.textContent, C.move.title);
+  assert.strictEqual(deleteDocument.activeElement, h.byId.importDeleteModalConfirm, 'focus lands on move to trash');
+  assert.strictEqual(h.byId.importDeleteModalBody.all('import-delete-list')[0].children.length, 0);
+  await flushDelete();
+  await flushDelete();
+  const body = h.byId.importDeleteModalBody;
+  assert.strictEqual(body.all('import-delete-list')[0].children.length, 3, 'the list fills when the preview arrives');
+  assert.strictEqual(body.all('trash-dlg-meta')[0].children[0].textContent, 'ChatGPT', 'the source leads the meta');
+  assert.strictEqual(body.all('import-delete-size').length, 1, 'the first step shows the size');
+  assert.strictEqual(body.all('import-delete-stays')[0].textContent, C.move.stays);
+
+  // Erase now has its own step: danger, focus on back, no size.
+  h.byId.importDeleteModalErase.listeners.click[0]();
+  assert.strictEqual(h.byId.importDeleteModalTitle.textContent, C.erase.title);
+  assert.ok(h.byId.importDeleteModalHeader.classList.contains('danger'));
+  assert.strictEqual(h.byId.importDeleteModalMoveFoot.hidden, true);
+  assert.strictEqual(h.byId.importDeleteModalEraseFoot.hidden, false);
+  assert.strictEqual(deleteDocument.activeElement, h.byId.importDeleteModalBack);
+  assert.strictEqual(body.all('import-delete-size').length, 0);
+  assert.strictEqual(body.all('import-delete-stays')[0].textContent, C.erase.stays);
+  h.byId.importDeleteModalBack.listeners.click[0]();
+  assert.strictEqual(deleteDocument.activeElement, h.byId.importDeleteModalErase, 'back returns focus to erase now');
+  h.byId.importDeleteModalErase.listeners.click[0]();
+  h.byId.importDeleteModalEraseConfirm.listeners.click[0]();
+  assert.strictEqual(acted, true, 'erase now confirms through its own step');
+  assert.strictEqual(h.byId.importDeleteModal.style.display, 'none');
+
+  // A preview that fails falls back to words and never blocks the delete.
+  const failing = importDeleteHarness({ fetchAnswers: { 'GET /app/import/api/imports/20261102_161200/delete': { status: 500 } } });
+  failing.api.openImportDeleteDialog(failing.api.importOneSpec({ id: '20261102_161200', source: '' }, () => {}));
+  await flushDelete();
+  await flushDelete();
+  const fallback = failing.byId.importDeleteModalBody;
+  assert.deepStrictEqual(fallback.all('import-delete-list')[0].children.map((li) => li.textContent),
+    [failing.api.IMPORT_DELETE_COPY.list.segmentsUnknown, failing.api.IMPORT_DELETE_COPY.list.originalUnknown, failing.api.IMPORT_DELETE_COPY.list.row]);
+  assert.strictEqual(fallback.all('import-delete-size').length, 0, 'no size without a preview');
+  assert.strictEqual(fallback.all('trash-dlg-meta')[0].children.length, 1, 'an unknown source leaves only the day');
+
+  // Source names: the Import page's card, then its own table, else nothing.
+  assert.strictEqual(h.api.importSourceName('chatgpt', ''), 'CARD:chatgpt');
+  assert.ok(h.api.importSourceName('plaud', '').length > 0);
+  assert.strictEqual(h.api.importSourceName('', 'x.pdf'), '');
+  cases += 1;
+}
+
+function runImportSetDialogListsFiveThenMore() {
+  const h = importDeleteHarness();
+  const C = h.api.IMPORT_DELETE_COPY;
+  const items = Array.from({ length: 7 }, (_, index) => ({ id: `2026110${index}_120000`, source: `S${index}` }));
+  const [list, reach, own, stays] = h.api.importSetBody('move', items);
+  assert.strictEqual(list.children.length, 6, 'five imports, then one more line');
+  assert.ok(list.children[0].textContent.includes('S0') && list.children[0].textContent.includes('d:20261100'));
+  const more = list.children[5];
+  assert.ok(more.matches('.trash-set-more'));
+  assert.strictEqual(more.textContent, C.more.replace('{n}', 2));
+  assert.deepStrictEqual([reach.textContent, own.textContent, stays.textContent], [C.move.reachMany, C.move.ownMany, C.move.staysMany]);
+  const five = h.api.importSetBody('erase', items.slice(0, 5))[0];
+  assert.strictEqual(five.children.length, 5, 'five or fewer: no more line');
+  assert.strictEqual(h.api.importSetBody('erase', items)[2].textContent, C.erase.ownMany);
+  cases += 1;
+}
+
+async function runImportSelectMode() {
+  const rows = [
+    { timestamp: '20261102_161200', source_type: 'chatgpt', original_filename: 'a.zip', deletable: true },
+    { timestamp: '20261101_094000', source_type: 'document', original_filename: 'b.pdf', deletable: true },
+    { timestamp: '20261101_093800', source_type: 'document', original_filename: 'c.pdf', deletable: true },
+    { timestamp: '20261030_200200', source_type: 'strava', original_filename: 'd.zip', deletable: false },
+  ];
+  const h = importDeleteHarness({ rows });
+  const { api, byId, tableRows } = h;
+  const C = api.IMPORT_DELETE_COPY;
+  api.paintImportPick();
+  assert.strictEqual(byId.importSelectBtn.hidden, false);
+  assert.strictEqual(byId.importSelectBtn.textContent, C.select);
+  assert.strictEqual(byId.importPickBar.hidden, true);
+
+  api.enterImportPick();
+  assert.strictEqual(byId.importSelectBtn.hidden, true);
+  assert.strictEqual(byId.importPickBar.hidden, false);
+  assert.strictEqual(byId.importPickIdle.hidden, false, 'nothing selected: select all and done');
+  assert.strictEqual(byId.importPickSome.hidden, true);
+
+  // A press on a deletable row toggles it; one that can't be deleted has no checkbox.
+  assert.strictEqual(api.toggleImportPick(tableRows[0]), true);
+  assert.strictEqual(tableRows[0].querySelector('input[data-import-pick]').checked, true);
+  assert.ok(tableRows[0].classList.contains('import-row--picked'));
+  assert.strictEqual(byId.importPickSome.hidden, false);
+  assert.ok(byId.importPickCount.textContent.includes('1'));
+  assert.strictEqual(api.toggleImportPick(tableRows[3]), false, 'the strava row keeps opening its page');
+  assert.strictEqual(api.toggleImportPick(tableRows[0]), true);
+  assert.strictEqual(api.importPick.ids.size, 0, 'a second press clears it');
+
+  // Select all takes the loaded rows that can be deleted.
+  api.selectAllImports();
+  assert.strictEqual(api.importPick.ids.size, 3);
+  assert.strictEqual(deleteDocument.activeElement, byId.importPickDelete);
+
+  // done clears the selection and leaves the mode.
+  api.exitImportPick();
+  assert.strictEqual(api.importPick.on, false);
+  assert.strictEqual(api.importPick.ids.size, 0);
+  assert.strictEqual(byId.importPickBar.hidden, true);
+  cases += 1;
+}
+
+async function runImportSetRefusalsStaySelected() {
+  const rows = [
+    { timestamp: '20261102_161200', source_type: 'chatgpt', original_filename: 'a.zip', deletable: true },
+    { timestamp: '20261101_094000', source_type: 'document', original_filename: 'b.pdf', deletable: true },
+    { timestamp: '20261101_093800', source_type: 'document', original_filename: 'c.pdf', deletable: true },
+    { timestamp: '20261030_200200', source_type: 'ics', original_filename: 'e.ics', deletable: true },
+  ];
+  const ids = rows.map((row) => row.timestamp);
+  const later = '2099-11-15T00:00:00.000Z';
+  const answer = {
+    done: [{ id: ids[0], result: { success: true, trash: { id: 't0', erase_at: later } } }],
+    failed: [{ id: ids[1], key: 'busy', reason: 'x' }, { id: ids[2], key: 'importing', reason: 'x' }, { id: ids[3], key: 'other', reason: 'x' }],
+  };
+  const h = importDeleteHarness({ rows, fetchAnswers: { 'POST /app/import/api/imports/delete': { body: answer } } });
+  const { api, tableRows, notices } = h;
+  const C = api.IMPORT_DELETE_COPY;
+
+  // The pure outcome: refused rows the reloaded list still shows stay, keyed by failure.
+  const listed = new Set(ids.slice(1, 3));
+  const moved = api.importSetOutcome(false, ids, answer, listed);
+  assert.deepStrictEqual(Array.from(moved.keep, (entry) => Array.from(entry)), [[ids[1], 'busy'], [ids[2], 'importing']]);
+  assert.strictEqual(moved.receipt, C.set.partMoved);
+  assert.ok(moved.message.startsWith(C.set.markedMany.replace('{k}', 2)), 'refused rows still listed are marked below');
+  assert.ok(moved.message.endsWith(C.set.goneMoreOne.replace('{g}', 1)), 'the one no longer listed is counted apart');
+  assert.deepStrictEqual(Array.from(moved.buttons), ['recover', 'openTrash']);
+  const erased = api.importSetOutcome(true, ids, answer, listed);
+  assert.deepStrictEqual(Array.from(erased.keep, (entry) => entry[1]), ['busy', 'eraseImporting'], 'an erase keys its own notes');
+  assert.strictEqual(erased.receipt, C.set.noneErased);
+  assert.strictEqual(api.importSetOutcome(false, ids, answer, null).message, '', 'no reload: the title only');
+  assert.strictEqual(api.importSetOutcome(false, ids, answer, null).keep.length, 0);
+  const allMoved = api.importSetOutcome(false, ids.slice(0, 1).concat(ids[1]), {
+    done: [answer.done[0], { id: ids[1], result: { success: true, trash: { id: 't1', erase_at: later } } }], failed: [],
+  }, new Set());
+  assert.strictEqual(allMoved.receipt, C.set.moved);
+  assert.strictEqual(allMoved.settled, true);
+  assert.strictEqual(api.importSetOutcome(false, ids, null, new Set(ids)).receipt, C.set.noAnswerMove);
+
+  // The act end to end: the list reloads, the refused rows stay selected with their notes.
+  vm.runInContext(`nextList = ${JSON.stringify(rows.slice(1))};`, h.context);
+  api.enterImportPick();
+  api.selectAllImports();
+  api.deleteChosenImports();
+  assert.strictEqual(h.byId.importDeleteModalTitle.textContent, C.move.titleMany.replace('{n}', 4));
+  h.byId.importDeleteModalConfirm.listeners.click[0]();
+  for (let turn = 0; turn < 4; turn += 1) await flushDelete();
+  const post = h.requests.find((request) => request.options.method === 'POST');
+  assert.deepStrictEqual(JSON.parse(post.options.body), { ids });
+  assert.strictEqual(vm.runInContext('listReads', h.context), 1, 'the list reloads after the act');
+  assert.strictEqual(api.importPick.on, true, 'some refused: select mode stays');
+  assert.deepStrictEqual([...api.importPick.ids].sort(), ids.slice(1).sort());
+  const note = (row) => row.querySelector('.import-row-note');
+  assert.strictEqual(note(tableRows[1]).textContent, C.notes.busy);
+  assert.strictEqual(note(tableRows[2]).textContent, C.notes.importing);
+  assert.strictEqual(note(tableRows[3]).textContent, C.notes.other);
+  assert.strictEqual(note(tableRows[0]), null);
+  const notice = notices[notices.length - 1];
+  assert.strictEqual(notice.title, C.set.partMoved.title.replace('{done}', 1).replace('{n}', 4));
+  assert.strictEqual(notice.message, C.set.stillMany.replace('{k}', 3));
+  assert.strictEqual(notice.autoDismiss, undefined, 'a partial card stays');
+  assert.strictEqual(notice.buttons[0].label, C.buttons.recover);
+
+  // recover on that card brings back only what moved.
+  notice.buttons[0].onClick();
+  await flushDelete();
+  const recover = h.requests.find((request) => request.url === '/app/settings/api/trash/recover');
+  assert.deepStrictEqual(JSON.parse(recover.options.body), { ids: ['t0'], page: 'import' });
+
+  // One selected uses the single dialog and the single delete.
+  const one = importDeleteHarness({ rows, fetchAnswers: { [`DELETE /app/import/api/imports/${ids[0]}`]: { status: 409, body: { key: 'importing' } } } });
+  one.api.enterImportPick();
+  one.api.toggleImportPick(one.tableRows[0]);
+  one.api.deleteChosenImports();
+  assert.strictEqual(one.byId.importDeleteModalTitle.textContent, one.api.IMPORT_DELETE_COPY.move.title);
+  one.byId.importDeleteModalConfirm.listeners.click[0]();
+  for (let turn = 0; turn < 4; turn += 1) await flushDelete();
+  assert.strictEqual(one.api.importPick.notes.get(ids[0]), 'importing');
+  assert.strictEqual(one.notices[one.notices.length - 1].title, one.api.IMPORT_DELETE_COPY.receipt.moveRefused.title);
+  cases += 1;
+}
+
+// The release takes the same content again as a new import, so neither the
+// duplicate notice nor the error message says a file was already imported.
+function runAlreadyImportedCopyIsGone() {
+  const context = makeContext({ console });
+  for (const name of ['duplicateNoticeText', 'importErrorMessage']) vm.runInContext(functionSource(workspace, name), context);
+  const staged = vm.runInContext("duplicateNoticeText({ state: 'staged', import_id: 'x' })", context);
+  assert.strictEqual(vm.runInContext("duplicateNoticeText({ state: 'imported', import_id: 'x' })", context), staged,
+    'an imported state reads as the staged one; there is no imported branch');
+  assert.notStrictEqual(vm.runInContext("duplicateNoticeText({}, true)", context), staged);
+  const generic = vm.runInContext("importErrorMessage({ reason_code: 'invalid_operation_for_state', detail: 'something else' })", context);
+  for (const detail of ['content already imported', 'content already imported; will not start']) {
+    assert.strictEqual(vm.runInContext(`importErrorMessage({ reason_code: 'invalid_operation_for_state', detail: ${JSON.stringify(detail)} })`, context), generic);
+  }
+  cases += 1;
+}
+
 Promise.resolve()
   .then(runArchivePreviewUsesMemberMetrics)
   .then(runArchiveCountsKeepSavedAndProcessedDistinct)
@@ -4112,6 +4475,12 @@ Promise.resolve()
   .then(runCheckStatusFocusLandsOnThePanel)
   .then(runStalledRowNamesTheImportId)
   .then(runGenerationFloorIsPruned)
+  .then(runImportDetailDeleteButton)
+  .then(runImportDeleteDialog)
+  .then(runImportSetDialogListsFiveThenMore)
+  .then(runImportSelectMode)
+  .then(runImportSetRefusalsStaySelected)
+  .then(runAlreadyImportedCopyIsGone)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {
     console.error(error.stack || error);
