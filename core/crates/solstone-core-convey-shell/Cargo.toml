@@ -240,6 +240,10 @@ nix = { workspace = true, features = ["signal"] }
 [build-dependencies]
 sha2.workspace = true
 serde_json.workspace = true
+# The app table is generated from the registry's own source, and the shell's
+# files are gzipped once at build time instead of on every request.
+serde.workspace = true
+flate2.workspace = true
 
 [dev-dependencies]
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }

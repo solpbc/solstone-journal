@@ -21,15 +21,18 @@ Framework-level shell changes live in [CONVEY.md](CONVEY.md).
 
 ## Shell chrome metadata
 
-`/api/shell` exposes each registry row with the fields the chrome reads:
+The shell's script bundle carries each registry row, generated from the
+registry at build time as `window.SOL_SHELL_REGISTRY`, with the fields the
+chrome reads:
 `app_bar`, `background_url`, `date_nav`, `description`, `focus`, `icon`,
 `icon_svg`, `keywords`, `label`, `name`, `pinnable`, `rail_group`,
 `rail_rank`, `source`, and `workspace_url`. `focus` is
 `{ "group": "keeps"|"shape"|"runs", "rank": <number> }`, or `null` on `more`.
 `rail_group` is `"management"` or `null`.
 
-`pinned` is not stored on that registry payload. Each `GET /api/shell`
-inserts it for that request, the same way it inserts `clock`: the resolved
+`GET /api/shell` is the per-request part: `app_names` (the apps this router
+serves, in order, so the agents app appears only where its routes are
+mounted), `version`, `clock`, and `pinned`, the resolved
 `convey.pinned_views` list from `config/journal.json`. The side rail's top
 group is home, then those pins, then `more`. The bottom group is the
 management rail (import, settings, network, and agents when agent routes are

@@ -27,14 +27,19 @@
 //! ## D4: fixed native registry inventory
 //!
 //! The app definitions and Lucide mapping are compiled into this crate as a
-//! fixed native inventory. The side rail's top group is home, then the pins
-//! read from the journal on each `/api/shell` request, then more. The chat-bar
+//! fixed native inventory, and the build generates the same table into the
+//! shell's script bundle, so a page caches it with the code. `/api/shell` names
+//! which of those apps the router serves. The side rail's top group is home,
+//! then the pins read from the journal on each `/api/shell` request, then more. The chat-bar
 //! placeholder uses its stable default, not live state.
 //!
 //! ## D5: generated, dependency-free asset embedding
 //!
 //! `build.rs` emits auditable `include_bytes!` entries for the full top-level
-//! static tree plus selected app workspace assets. This avoids a proc-macro asset crate
+//! static tree plus selected app workspace assets. It also concatenates the
+//! shell page's stylesheets and scripts, unchanged and in order, into one file
+//! each (`build-support/convey_shell_bundle.rs`), and gzips every compressible
+//! dashboard file once, so no request spends a worker compressing it. This avoids a proc-macro asset crate
 //! while retaining byte-identical source assets where appropriate; Thinking and Network use
 //! intentionally shrunken crate-local copies.
 //!
@@ -1923,14 +1928,28 @@ async fn agents_workspace() -> Response {
     asset_response("/app/agents/workspace")
 }
 
+/// The shell's per-request part. The app table ships in the shell's script
+/// bundle; this names which of those apps this router serves, in order, with
+/// the journal's version, clock and the owner's pins.
 async fn shell_api(
     Extension(shell): Extension<Arc<ShellPayload>>,
     Extension(journal): Extension<Arc<JournalRoot>>,
 ) -> Response {
-    let mut payload = match serde_json::to_value(&*shell) {
-        Ok(Value::Object(map)) => map,
-        _ => return (StatusCode::INTERNAL_SERVER_ERROR, "shell payload error").into_response(),
-    };
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "app_names".to_string(),
+        Value::Array(
+            shell
+                .apps
+                .iter()
+                .map(|app| Value::String(app.name.to_owned()))
+                .collect(),
+        ),
+    );
+    payload.insert(
+        "version".to_string(),
+        Value::String(shell.version.to_owned()),
+    );
     let zone = owner_zone(&journal.0);
     let now = Utc::now().with_timezone(&zone);
     let label = zone_label(Some(zone), now.offset().fix().local_minus_utc());

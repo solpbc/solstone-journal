@@ -26,7 +26,8 @@ use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::Request;
 use axum::http::header::{
-    CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG, HeaderValue, IF_NONE_MATCH,
+    ACCEPT_ENCODING, ACCEPT_RANGES, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_RANGE,
+    CONTENT_TYPE, ETAG, HeaderValue, IF_NONE_MATCH, VARY,
 };
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::middleware::Next;
@@ -127,17 +128,24 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
     let head = *request.method() == Method::HEAD;
     let path = request.uri().path().to_owned();
     let validators = request.headers().get(IF_NONE_MATCH).cloned();
+    let gzip = !head && accepts_gzip(request.headers());
     let response = next.run(request).await;
     if !readable || response.status() != StatusCode::OK {
         return classed(response, CacheClass::Personal);
     }
     if let Some(record) = assets::hashed_record(&path) {
         let response = served(record, head, response).await;
-        return classed(response, CacheClass::Hashed);
+        return precompressed(record, gzip, classed(response, CacheClass::Hashed));
     }
     let Some(record) = assets::record(&path) else {
         return match shell_page(response).await {
-            Ok((response, tag)) => revalidated(response, tag, validators.as_ref()),
+            Ok((response, tag)) => {
+                let response = revalidated(response, tag, validators.as_ref());
+                match assets::record("/static/shell.html") {
+                    Some(page) => precompressed(page, gzip, response),
+                    None => response,
+                }
+            }
             Err(response) => classed(response, CacheClass::Personal),
         };
     };
@@ -150,7 +158,119 @@ pub(crate) async fn apply(request: Request, next: Next) -> Response {
     if response.status() != StatusCode::OK {
         return classed(response, CacheClass::Personal);
     }
-    revalidated(response, &tag, validators.as_ref())
+    let response = revalidated(response, &tag, validators.as_ref());
+    match record.kind {
+        AssetKind::File => precompressed(record, gzip, response),
+        _ => response,
+    }
+}
+
+/// Whether the server's compression layer would gzip an answer to these
+/// request headers: the same rule (`gzip` or `x-gzip` with a nonzero q-value,
+/// preferred over `identity` at an equal q-value). Kept in step with it by a
+/// test that asks both the same questions.
+pub(crate) fn accepts_gzip(headers: &HeaderMap) -> bool {
+    let mut gzip: Option<u16> = None;
+    let mut identity: Option<u16> = None;
+    for value in headers.get_all(ACCEPT_ENCODING) {
+        let Ok(value) = value.to_str() else { continue };
+        for item in value.split(',') {
+            let mut parts = item.splitn(2, ';');
+            let coding = parts.next().unwrap_or_default().trim();
+            let quality = match parts.next() {
+                None => Some(1000),
+                Some(parameter) => qvalue(parameter.trim()),
+            };
+            let Some(quality) = quality else { continue };
+            let slot =
+                if coding.eq_ignore_ascii_case("gzip") || coding.eq_ignore_ascii_case("x-gzip") {
+                    &mut gzip
+                } else if coding.eq_ignore_ascii_case("identity") {
+                    &mut identity
+                } else {
+                    continue;
+                };
+            *slot = Some(slot.map_or(quality, |seen| seen.max(quality)));
+        }
+    }
+    match gzip {
+        Some(gzip) if gzip > 0 => identity.is_none_or(|identity| gzip >= identity),
+        _ => false,
+    }
+}
+
+/// A q-value in thousandths, as `q=0.5` or `q=1`; `None` if malformed.
+fn qvalue(parameter: &str) -> Option<u16> {
+    let mut chars = parameter.chars();
+    if !matches!(chars.next(), Some('q' | 'Q')) || chars.next() != Some('=') {
+        return None;
+    }
+    let mut value: u16 = match chars.next() {
+        Some('0') => 0,
+        Some('1') => 1000,
+        _ => return None,
+    };
+    match chars.next() {
+        None => return Some(value),
+        Some('.') => {}
+        _ => return None,
+    }
+    let mut factor = 100;
+    for c in chars {
+        let digit = c.to_digit(10)? as u16;
+        if factor == 0 {
+            return None;
+        }
+        if value == 1000 && digit != 0 {
+            return None;
+        }
+        value += digit * factor;
+        factor /= 10;
+    }
+    Some(value)
+}
+
+/// The length of a file's served bytes: its source with the edits applied.
+fn served_length(record: &AssetRecord) -> usize {
+    record
+        .edits
+        .iter()
+        .fold(record.byte_len, |length, (start, end, text)| {
+            length - (end - start) + text.len()
+        })
+}
+
+/// Answer with the file's build-time gzip copy where the server would
+/// otherwise gzip the same bytes now. The compression layer passes an encoded
+/// answer through, and marks its validator `-gzip` as it would its own.
+fn precompressed(record: &AssetRecord, gzip: bool, response: Response) -> Response {
+    let headers = response.headers();
+    if !gzip
+        || record.gzip.is_empty()
+        || response.status() != StatusCode::OK
+        || headers.contains_key(CONTENT_ENCODING)
+        || headers.contains_key(CONTENT_RANGE)
+        || !solstone_core_convey_http::serve::compressible_content_type(headers)
+        || exact_length(&response) != Some(served_length(record))
+    {
+        return response;
+    }
+    let (mut parts, _) = response.into_parts();
+    let already_varies = parts.headers.get_all(VARY).iter().any(|value| {
+        value
+            .to_str()
+            .is_ok_and(|value| value.to_ascii_lowercase().contains("accept-encoding"))
+    });
+    if !already_varies {
+        parts
+            .headers
+            .append(VARY, HeaderValue::from_static("accept-encoding"));
+    }
+    parts.headers.remove(ACCEPT_RANGES);
+    parts
+        .headers
+        .insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+    with_body(parts, Bytes::from_static(record.gzip))
 }
 
 fn classed(mut response: Response, class: CacheClass) -> Response {

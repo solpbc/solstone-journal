@@ -12,7 +12,8 @@ serving path.
 - **One static shell**
   (`core/crates/solstone-core-convey-shell/assets/static/shell.html`) is served
   unconditionally for every `/app/{name}` route. The client derives the
-  current app from `location.pathname` and boots from `GET /api/shell`.
+  current app from `location.pathname` and boots from the app table that ships
+  in the shell's script bundle plus `GET /api/shell`, the per-request part.
 - **Per-app workspace fragments** stay one file per app
   (`assets/workspace.html` or `assets/{name}/workspace.html` in the crate that
   carries the app, such as
@@ -20,13 +21,42 @@ serving path.
   verbatim as a static asset — zero server-side template processing. The shell
   fetches the fragment, mounts it into `<main>`, and re-executes its scripts in
   document order via the shared mount helper.
-- **No framework, no build step.** Vanilla JS (ES modules or classic scripts),
+- **No framework, no build step for authors.** Vanilla JS (ES modules or classic scripts),
   template literals, `<template>` elements where they help. Static files are
   compiled into the journal binary as-is and served by axum. Consistency comes from the shared helpers and design
   tokens (`static/tokens.css` and `static/tokens-dark.css`), not from a framework;
-  `init.html` links `tokens-dark.css` immediately after `tokens.css`. `shell.html` loads it behind
-  `media="(prefers-color-scheme: dark)"` so it doesn't block a light first paint, and declares
-  `color-scheme` in its own `app.css` to stand in for what that query hides.
+  `init.html` links `tokens-dark.css` immediately after `tokens.css`. `shell.html` lists it behind
+  `media="(prefers-color-scheme: dark)"`, and declares `color-scheme` in its own `app.css` to
+  stand in for what that query hides. The served shell carries it inside `shell.css` (below), in
+  an `@media (prefers-color-scheme: dark)` block at its place, so the cascade is the same, and its
+  bytes load with the rest of that one stylesheet.
+- **The shell is served as two files.** `shell.html` keeps listing every
+  stylesheet and deferred script it loads, in order; that list is the source.
+  The convey shell's `build.rs` concatenates them, unchanged, into
+  `/static/shell.css` and `/static/shell.js`
+  (`core/build-support/convey_shell_bundle.rs`), with a `/* file: … */` banner
+  per file, and the served page names those two instead. Nothing is minified or
+  transpiled, and no other toolchain is involved.
+  - Each script runs inside its own function, so a file that throws stops only
+    itself; its error still reaches `window`'s `error` event, named by its file
+    and line (the diagnostic console maps bundle positions; `shell.js.map` does
+    the same for developer tools).
+  - Every name a file declares at its top level stays a global, read and
+    written through the same binding, so `relativeTime` works from any file as
+    before. The build refuses a name declared at the top of two files, a
+    top-level destructuring declaration, and anything its lexer can't read (an
+    unclosed string or bracket, a `/` it can't tell is division or a regular
+    expression). A full parse of every file and of the bundle runs under Node
+    in `make ci-full`.
+  - A new shell script or stylesheet is added to `shell.html` like any other.
+    It must be a plain `/static/` file, and a script must be a classic `defer`
+    script (no `type`, no `async`).
+- **Precompressed.** Every compressible dashboard file the shell's build knows
+  (the shell's own and each web crate's recorded assets) is gzipped once at
+  build time. A client that accepts gzip gets that copy, with
+  `Content-Encoding: gzip`, one `Vary: accept-encoding` and the `"<tag>-gzip"`
+  validator, as on-the-fly compression gave. JSON reads and filled templates
+  are still compressed per response.
 - **`AppServices`** (`static/app.js`) is the shared client runtime: service
   and task registration, notifications, `renderMarkdown` (marked + DOMPurify),
   `escapeHtml`. **`apiJson`/`ApiError`** (`static/api.js`) is the only HTTP
@@ -35,10 +65,15 @@ serving path.
 ## Shell boot sequence
 
 1. Static shell parses with `#app-rail`, `#app-dock`, and `#status-instrument`
-   slots.
-2. `GET /api/shell` returns the app registry and shell state. `pinned` is
-   computed for that request, the same way `clock` is, and is not cached with
-   the registry. `shell_boot.js` calls `renderAppRail`, `renderAppDock`, and
+   slots. An inline script in its `<head>` starts `GET /api/shell` at once, so
+   the read runs beside the download of the shell's two files, not after them.
+2. `shell_boot.js` takes that answer, or asks again through `apiJson` with
+   `scope: 'shell'` if it failed, wasn't JSON or outlasted the ordinary
+   first-byte bound (so sign-in, setup and refusals behave as for any read). It
+   joins `app_names` with the app table the bundle carries
+   (`window.SOL_SHELL_REGISTRY`, generated from the registry at build time) and
+   hands the rest of the shell one object with `apps`, `settings`, `version`,
+   `clock` and `pinned`. `shell_boot.js` calls `renderAppRail`, `renderAppDock`, and
    `renderStatusInstrument`. The rail's top group is home, the resolved pins,
    and more. The dock is home, the first two pins, and more. Status sits in
    the desktop rail or mobile dock, with a tooltip and a link to Health details.
@@ -56,9 +91,31 @@ contract. The day, where an app is day-scoped, lives in the URL path
 
 ## `GET /api/shell` (contract sketch)
 
+The shell's per-request part, `no-store`, read on every page:
+
 ```json
 {
-  "version": "0.7.0",
+  "app_names": ["activities", "backup", "body", "…", "home", "more", "…"],
+  "version": "2.0.73",
+  "clock": { "tz": "America/Denver", "label": "Denver", "today": "20261109" },
+  "pinned": ["search", "entities", "thinking"]
+}
+```
+
+- `app_names` lists the apps this router serves, in order: the registry, then
+  `agents` when its routes are mounted. That can differ between routers, so it
+  stays here, not in the shipped table.
+- `version` is the journal's version. It stays here so a release doesn't change
+  the shell's cached files when none of them changed.
+- `clock` is the journal's zone, its label, and the journal's day key `today`
+  (for clients with no zone table of their own, like the `solstone` CLI).
+- `pinned` is the resolved `convey.pinned_views` list.
+
+The app definitions ship with the code, in `shell.js`, as
+`window.SOL_SHELL_REGISTRY`:
+
+```json
+{
   "apps": [
     {
       "name": "home",
@@ -78,20 +135,19 @@ contract. The day, where an app is day-scoped, lives in the URL path
       "background_url": null
     }
   ],
-  "pinned": ["search", "entities", "thinking"],
   "settings": { "reporting_enabled": true }
 }
 ```
 
 Notes:
 
-- Each app carries `app_bar`, `background_url`, `date_nav`, `description`,
+- The table holds every app any router can serve, the agents app included.
+  Each app carries `app_bar`, `background_url`, `date_nav`, `description`,
   `focus`, `icon`, `icon_svg`, `keywords`, `label`, `name`, `pinnable`,
   `rail_group`, `rail_rank`, `source`, and `workspace_url`. `focus` is
   `{ "group": "keeps"|"shape"|"runs", "rank": <number> }`, or `null` on
   `more`. `rail_group` is `"management"` or `null`. The side rail's top group
-  is home, then `pinned`, then more. `pinned` is per-request chrome, inserted
-  like `clock`, and is not a field of the registry payload built at startup.
+  is home, then `pinned`, then more.
 - `workspace_url` always points at the static workspace fragment route.
   `background_url` points at the static background fragment route when present;
   a `null` `background_url` means the app registers no background service.

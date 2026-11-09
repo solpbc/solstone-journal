@@ -36,6 +36,20 @@
       window.addEventListener('pageswap', expectAbort);
       window.addEventListener('pagereveal', expectAbort);
     })();
+    // The shell's own state (which views this journal serves, its clock, the
+    // pins) is read now, beside the shell's files rather than after them;
+    // shell_boot.js takes this answer, or asks again itself if it failed.
+    (function () {
+      try {
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var response = fetch('/api/shell', {
+          credentials: 'same-origin',
+          signal: controller ? controller.signal : undefined
+        });
+        response.catch(function () {});
+        window.__solShellEarly = { response: response, controller: controller };
+      } catch (_) {}
+    })();
   </script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -70,14 +84,26 @@
 </head>
 <body>
 <script>
-  // Presentation mode's class is on the body before the first paint; the rest
-  // of it (the toggle, the stored setting) loads with the other scripts.
+  // Presentation mode is decided here, once, so its class is on the body
+  // before the first paint: ?present=1|on|true turns it on and stores it,
+  // ?present=0|off|false turns it off and clears it, and otherwise the stored
+  // setting holds. presentation_mode.js reads the class this leaves and adds
+  // the toggle.
   (function () {
+    var KEY = 'solstone:presentation-mode';
     try {
       var p = new URLSearchParams(window.location.search).get('present');
-      if (/^(1|on|true)$/.test(p) || (!/^(0|off|false)$/.test(p) && sessionStorage.getItem('solstone:presentation-mode') === '1')) {
-        document.body.classList.add('presentation-mode');
+      var on;
+      if (/^(1|on|true)$/.test(p)) {
+        on = true;
+        sessionStorage.setItem(KEY, '1');
+      } else if (/^(0|off|false)$/.test(p)) {
+        on = false;
+        sessionStorage.removeItem(KEY);
+      } else {
+        on = sessionStorage.getItem(KEY) === '1';
       }
+      if (on) document.body.classList.add('presentation-mode');
     } catch (_) {}
   })();
 </script>
