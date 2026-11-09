@@ -4267,7 +4267,7 @@ fn a_strava_line_a_code_record_holds_comes_back_to_no_search() {
     assert_eq!(sense_line_hits("sense-other", &[other], false), [0]);
     let held = kestrel_code_record("20260107|body|exercise_1");
     assert_eq!(
-        sense_line_hits("sense-held", &[held.clone()], false),
+        sense_line_hits("sense-held", std::slice::from_ref(&held), false),
         [] as [i64; 0]
     );
     // Nothing left to convert: the search doesn't look.
