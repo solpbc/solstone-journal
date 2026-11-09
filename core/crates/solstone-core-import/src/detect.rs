@@ -6,8 +6,6 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use crate::SourceHash;
-use crate::dedupe::hash_source;
 use crate::stream_name::{StreamNameError, import_stream_name};
 use crate::timestamp::{
     AutoTimestamp, DetectedTimestamp, Timestamp, TimestampError, validate_timestamp,
@@ -97,7 +95,7 @@ pub struct ResolutionOptions<'a> {
 }
 
 /// Named externally-owned resolution decisions.
-pub struct ResolutionSeams<A, C, D, M, L, T> {
+pub struct ResolutionSeams<A, C, D, M, T> {
     /// Called only by the source-absent Apple directory/ZIP pre-empt; errors stop resolution.
     pub apple_detector: A,
     /// Called in registry order; an error is a swallowed non-answer, matching Python's sweep.
@@ -106,8 +104,6 @@ pub struct ResolutionSeams<A, C, D, M, L, T> {
     pub deterministic_detector: D,
     /// Called once after a deterministic generic no-match, with optional auto guidance.
     pub model_detector: M,
-    /// Called only for non-dry generic deduplication; `None` means no previous manifest.
-    pub manifest_lookup: L,
     /// Called only for a selected registry source missing an explicit or fallback timestamp.
     pub generated_timestamp: T,
 }
@@ -120,14 +116,8 @@ pub enum ModelDetectionError<E> {
     Failed(E),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ManifestSummary {
-    pub entry_count: u64,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SkipReason {
-    AlreadyImported,
     NoDeterministicMatch,
     TimestampRequired,
 }
@@ -208,16 +198,15 @@ impl<AE, ME> ResolutionError<AE, ME> {
 }
 
 /// Resolves a source without staging it or writing any journal state.
-pub fn resolve_import<A, C, D, M, L, T, AE, CE, ME>(
+pub fn resolve_import<A, C, D, M, T, AE, CE, ME>(
     options: &ResolutionOptions<'_>,
-    seams: &mut ResolutionSeams<A, C, D, M, L, T>,
+    seams: &mut ResolutionSeams<A, C, D, M, T>,
 ) -> Result<ResolutionOutcome, ResolutionError<AE, ME>>
 where
     A: FnMut(&Path) -> Result<bool, AE>,
     C: FnMut(RegistrySource, &Path) -> Result<bool, CE>,
     D: FnMut(&Path, Option<&str>) -> Option<DetectedTimestamp>,
     M: FnMut(&Path, Option<&str>) -> Result<Option<DetectedTimestamp>, ModelDetectionError<ME>>,
-    L: FnMut(&SourceHash) -> Option<ManifestSummary>,
     T: FnMut() -> Timestamp,
 {
     if !options.media.exists() {
@@ -256,17 +245,6 @@ where
         Some(RegistrySource::AppleHealth) => return Ok(ResolutionOutcome::RouteAppleHealth),
         Some(RegistrySource::Oura) => return Err(ResolutionError::OuraRequiresSync),
         _ => {}
-    }
-    if selected.is_none() && !options.dry_run {
-        let hash = hash_source(options.media).map_err(ResolutionError::Hash)?;
-        if !options.force
-            && (seams.manifest_lookup)(&hash).is_some_and(|manifest| manifest.entry_count > 0)
-        {
-            return Ok(ResolutionOutcome::Skipped {
-                reason: SkipReason::AlreadyImported,
-                detected_timestamp: None,
-            });
-        }
     }
     let timestamp = if let Some(raw) = options.timestamp {
         validate(raw)?

@@ -6,11 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::Value;
-use solstone_core_import::dedupe::hash_source;
 use solstone_core_import::{
-    AutoTimestamp, DetectedTimestamp, ManifestSummary, ModelDetectionError, RegistrySource,
+    AutoTimestamp, DetectedTimestamp, ModelDetectionError, RegistrySource,
     ResolutionError, ResolutionOptions, ResolutionOutcome, ResolutionSeams, ResolvedSource,
-    SkipReason, SourceHash, Timestamp, validate_timestamp,
+    SkipReason, Timestamp, validate_timestamp,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -130,15 +129,11 @@ fn no_model(
 ) -> Result<Option<DetectedTimestamp>, ModelDetectionError<()>> {
     Ok(None)
 }
-fn lookup_none(_: &SourceHash) -> Option<ManifestSummary> {
-    None
-}
 type TestSeams = ResolutionSeams<
     fn(&Path) -> Result<bool, ()>,
     fn(RegistrySource, &Path) -> Result<bool, ()>,
     fn(&Path, Option<&str>) -> Option<DetectedTimestamp>,
     fn(&Path, Option<&str>) -> Result<Option<DetectedTimestamp>, ModelDetectionError<()>>,
-    fn(&SourceHash) -> Option<ManifestSummary>,
     fn() -> Timestamp,
 >;
 
@@ -148,7 +143,6 @@ fn seams() -> TestSeams {
         claims: no_claim,
         deterministic_detector: deterministic,
         model_detector: no_model,
-        manifest_lookup: lookup_none,
         generated_timestamp,
     }
 }
@@ -220,7 +214,6 @@ fn ac2a_apple_detector_seam_expresses_yes_no_and_error() {
         claims: no_claim,
         deterministic_detector: deterministic,
         model_detector: no_model,
-        manifest_lookup: lookup_none,
         generated_timestamp,
     };
     assert!(matches!(
@@ -319,62 +312,10 @@ fn ac8_oura_file_source_requires_sync() {
     option.timestamp = None;
     option.auto = AutoTimestamp::Bare;
     option.dry_run = false;
-    let mut duplicate = seams();
-    duplicate.manifest_lookup = |_| Some(ManifestSummary { entry_count: 1 });
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&option, &mut duplicate),
-        Ok(ResolutionOutcome::Skipped {
-            reason: SkipReason::AlreadyImported,
-            ..
-        })
-    ));
     option.dry_run = true;
     let mut dry = seams();
     assert!(matches!(
         solstone_core_import::detect::resolve_import(&option, &mut dry),
-        Ok(ResolutionOutcome::Resolved { .. })
-    ));
-}
-
-#[test]
-fn ac9_zero_entry_manifest_does_not_skip_generic_source() {
-    // constructed original and staged-lookalike files; the resolver must hash the original.
-    let tree = Tree::new();
-    let path = tree.file("generic.m4a");
-    let staged = tree.file("staged.m4a");
-    fs::write(&staged, b"different staged copy").unwrap();
-    let original_hash = hash_source(&path).unwrap();
-    let mut options = opt(&path);
-    options.dry_run = false;
-    let mut positive = ResolutionSeams {
-        apple_detector: no_apple,
-        claims: no_claim,
-        deterministic_detector: deterministic,
-        model_detector: no_model,
-        manifest_lookup: |hash: &SourceHash| {
-            assert_eq!(hash, &original_hash);
-            Some(ManifestSummary { entry_count: 1 })
-        },
-        generated_timestamp,
-    };
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&options, &mut positive),
-        Ok(ResolutionOutcome::Skipped {
-            reason: SkipReason::AlreadyImported,
-            ..
-        })
-    ));
-    let mut zero = seams();
-    zero.manifest_lookup = |_| Some(ManifestSummary { entry_count: 0 });
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&options, &mut zero),
-        Ok(ResolutionOutcome::Resolved { .. })
-    ));
-    options.force = true;
-    let mut force = seams();
-    force.manifest_lookup = |_| Some(ManifestSummary { entry_count: 1 });
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&options, &mut force),
         Ok(ResolutionOutcome::Resolved { .. })
     ));
 }
@@ -400,7 +341,6 @@ fn registry_exports_keep_the_supplied_fallback_across_later_resolution() {
             claims: no_claim,
             deterministic_detector: deterministic,
             model_detector: no_model,
-            manifest_lookup: lookup_none,
             generated_timestamp: || panic!("saved export must retain its fallback identity"),
         };
         let outcome = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap();
@@ -433,7 +373,6 @@ fn registry_timestamp_is_injected_and_not_used_by_generic_resolution() {
         claims: no_claim,
         deterministic_detector: deterministic,
         model_detector: no_model,
-        manifest_lookup: lookup_none,
         generated_timestamp: || {
             calls += 1;
             generated.clone()
@@ -451,27 +390,10 @@ fn registry_timestamp_is_injected_and_not_used_by_generic_resolution() {
         claims: no_claim,
         deterministic_detector: deterministic,
         model_detector: no_model,
-        manifest_lookup: lookup_none,
         generated_timestamp: || panic!("generic path must not read generated timestamp"),
     };
     assert!(matches!(
         solstone_core_import::detect::resolve_import(&generic_options, &mut generic_seam),
-        Ok(ResolutionOutcome::Resolved { .. })
-    ));
-}
-
-#[test]
-fn ac10_dry_run_suppresses_generic_dedup_lookup() {
-    // constructed generic source
-    let tree = Tree::new();
-    let path = tree.file("generic.m4a");
-    let mut options = opt(&path);
-    options.timestamp = None;
-    options.auto = AutoTimestamp::Bare;
-    let mut seam = seams();
-    seam.manifest_lookup = |_| panic!("dry run must not look up a manifest");
-    assert!(matches!(
-        solstone_core_import::detect::resolve_import(&options, &mut seam),
         Ok(ResolutionOutcome::Resolved { .. })
     ));
 }
@@ -560,7 +482,6 @@ fn ac12a_guidance_reaches_model_for_non_detectable_source() {
                 captured = guidance.map(str::to_owned);
                 Ok::<_, ModelDetectionError<()>>(Some(answer()))
             },
-            manifest_lookup: lookup_none,
             generated_timestamp,
         };
         let _ = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap();
@@ -585,7 +506,6 @@ fn ac12b_model_detector_runs_exactly_once() {
             calls += 1;
             Ok::<_, ModelDetectionError<()>>(Some(answer()))
         },
-        manifest_lookup: lookup_none,
         generated_timestamp,
     };
     assert!(matches!(
@@ -609,7 +529,6 @@ fn ac12c_unexpected_model_failure_is_named_refusal() {
         model_detector: |_: &Path, _: Option<&str>| {
             Err::<Option<DetectedTimestamp>, _>(ModelDetectionError::Failed("raw provider failure"))
         },
-        manifest_lookup: lookup_none,
         generated_timestamp,
     };
     let error = solstone_core_import::detect::resolve_import(&options, &mut seam).unwrap_err();
@@ -627,7 +546,6 @@ fn ac12c_unexpected_model_failure_is_named_refusal() {
         model_detector: |_: &Path, _: Option<&str>| {
             Err::<Option<DetectedTimestamp>, _>(ModelDetectionError::<&str>::Unavailable)
         },
-        manifest_lookup: lookup_none,
         generated_timestamp,
     };
     let error =
@@ -640,7 +558,6 @@ fn ac12c_unexpected_model_failure_is_named_refusal() {
         claims: no_claim,
         deterministic_detector: undetected,
         model_detector: |_: &Path, _: Option<&str>| Ok::<_, ModelDetectionError<()>>(None),
-        manifest_lookup: lookup_none,
         generated_timestamp,
     };
     let error = solstone_core_import::detect::resolve_import(&options, &mut none).unwrap_err();

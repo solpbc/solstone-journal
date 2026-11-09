@@ -109,14 +109,7 @@ fn preview_size(
         zone,
         None,
     ) {
-        let rendered = rendered?;
-        if !dispatch.force && already_saved(journal, &dispatch.media) {
-            return Ok(solstone_core_import::size::ImportSize {
-                skipped: rendered.files.len(),
-                ..Default::default()
-            });
-        }
-        return save::preview_size(journal, &rendered);
+        return save::preview_size(journal, &rendered?);
     }
     match dispatch.source {
         RegistrySource::Image => image::preview_size(
@@ -275,24 +268,9 @@ fn record_finished_import_at(
 /// Save a source that renders into text segments: conversation exports, calendars, notes.
 ///
 /// Admit, render, write, then publish and record under the import lock. Segment keys come
-/// from the source's own timestamps, so importing the same file again would rewrite the same
-/// segments and re-run every day they touch. Unless forced, a file already imported is
-/// skipped, as the web import refuses it.
-/// Whether these exact bytes already landed entries through an earlier import.
-fn already_saved(journal: &Path, media: &Path) -> bool {
-    solstone_core_import::hash_source(media)
-        .ok()
-        .and_then(|hash| solstone_core_import::find_manifest_by_hash(journal, &hash).ok())
-        .and_then(|scan| scan.found)
-        .and_then(|found| {
-            found
-                .manifest
-                .get("entry_count")
-                .and_then(serde_json::Value::as_u64)
-        })
-        .is_some_and(|entries| entries > 0)
-}
-
+/// from the source's own timestamps, so importing the same file again rewrites the same
+/// segments: what arrives again is new data, and nothing is refused for matching an
+/// earlier import.
 fn run_save(
     mut dispatch: RegistryDispatch,
     journal: &Path,
@@ -300,11 +278,6 @@ fn run_save(
 ) -> CliRun {
     let source = dispatch.source;
     let name = source.name();
-    if !dispatch.force && already_saved(journal, &dispatch.media) {
-        return success(cli_render::resolution_skipped(
-            solstone_core_import::SkipReason::AlreadyImported,
-        ));
-    }
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
         return failure(format!("{name} import failed: {error}\n"));
     }
