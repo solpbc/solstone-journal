@@ -483,15 +483,45 @@
     }, Math.round(base * (0.7 + Math.random() * 0.6)));
   }
 
+  // One question, asked a few times at once. A link that dropped silently can
+  // leave the browser holding idle connections that will never answer, and a
+  // single question can land on one of them and wait out its bound. Each copy
+  // takes a different connection, so whichever reaches the journal answers
+  // for all of them, and the rest are stopped.
+  const PROBE_FANOUT = 4;
+
+  function askOnce(signal) {
+    if (window.boundedRequest) {
+      return window.boundedRequest(PROBE_URL, { credentials: 'same-origin', cache: 'no-store' },
+        { bounds: PROBE_BOUNDS, retry: false, signals: [signal] });
+    }
+    return fetch(PROBE_URL, { credentials: 'same-origin', cache: 'no-store', signal })
+      .then((response) => ({ response, discard() {} }));
+  }
+
+  async function ask() {
+    const stop = typeof AbortController === 'function' ? new AbortController() : null;
+    const attempts = Array.from({ length: PROBE_FANOUT }, () => askOnce(stop?.signal));
+    try {
+      return await new Promise((resolve, reject) => {
+        let failed = 0;
+        attempts.forEach((attempt) => attempt.then(resolve, () => {
+          failed += 1;
+          if (failed === attempts.length) reject(new Error('no answer'));
+        }));
+      });
+    } finally {
+      stop?.abort();
+      attempts.forEach((attempt) => attempt.then((request) => request.discard?.(), () => {}));
+    }
+  }
+
   async function probe() {
     if (probing) return;
     probing = true;
     let request = null;
     try {
-      request = window.boundedRequest
-        ? await window.boundedRequest(PROBE_URL, { credentials: 'same-origin', cache: 'no-store' },
-          { bounds: PROBE_BOUNDS, retry: false })
-        : { response: await fetch(PROBE_URL, { credentials: 'same-origin', cache: 'no-store' }), discard() {} };
+      request = await ask();
     } catch (_) {
       request = null;
     } finally {
@@ -499,7 +529,6 @@
     }
     window.appEvents.probeCount += 1;
     const response = request?.response;
-    request?.discard();
     if (!response) {
       // No answer: the link is down. Ask again later.
       if (connectionState !== 'disconnected') linkLost();
