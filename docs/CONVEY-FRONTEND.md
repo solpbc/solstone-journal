@@ -141,6 +141,52 @@ Every workspace must be honest about what it knows:
 - **Empty:** a true empty state says what would appear here and, where
   applicable, how to get it.
 
+## Read bounds and the live stream
+
+**Reads are bounded.** `api.js` gives every read two clocks, never a total:
+a first-byte bound (30 s, or 60 s on the single-flight routes listed in
+`api.js`) and a 20 s stall bound that every received byte resets. The bounds
+apply to `apiJson`, the fragment fetch and every same-origin GET or HEAD
+through `window.fetch`, which `api.js` wraps. They don't apply to `/sse/`,
+`keepalive` requests or writes: a write has no deadline, so the client never
+gives up on one that may still succeed. A read past its bound ends in the
+view's error state. A loading state shows "still working…" after 10 s.
+
+**Retries are for transport only.** A GET through `apiJson` or the fragment
+fetch is retried at most twice, about 1 s and then 3 s apart with jitter,
+after a network error or a `502`, `503` or `504`. A plain `fetch` read is not
+retried. A read that passed its bound is not retried either, because the
+server is probably still running it.
+
+**`apiJson` reads belong to their mount.** A newer in-page mount aborts the
+`apiJson` reads an older one started, and their answers are never drawn.
+Shell-level reads pass `scope: 'shell'` and outlive mounts. A plain `fetch`
+read needs its own `signal`.
+
+**`/sse/events` wire contract.** Changes to it are additive only: the phone
+runtime in `tools/mobile-serving` and `tools/journal_device_sim` read it too.
+- On connect: `event: hello`, `retry: 2000` and
+  `data: {"server_build":"<16 hex>"}`. `server_build` changes when the version
+  or any recorded asset changes. A page that sees it change does one full load
+  on its next in-page mount.
+- Every 5 s: `event: heartbeat` with `data: {"at":<unix ms>}`, in the same
+  frame as a `: heartbeat` comment. The 15 s keep-alive comment also stays.
+- No `id:`. The stream has no replay, so it doesn't promise a resume.
+
+**The client heals the stream** (`websocket.js`). After 15 s with no event it
+closes the stream and asks `/api/system/about` at once:
+- an OK answer opens a new stream;
+- a `401` or `403` takes the sign-in path, without a reconnect loop (a `403`
+  carrying the phone proxy's refusal marker reloads the page once instead);
+- no answer, or any other answer, asks again on a backoff that grows to every
+  15 s, with jitter. A new stream that fails after an OK answer also waits on
+  that backoff, so the client never loops.
+
+The `online` event, or the page coming back into view, asks at once when the
+stream is already known lost. Otherwise a page coming back into view gives
+its buffered events 3 s before it judges the stream silent. The status mark
+never shows "connected" when the last event is more than 40 s old.
+
 ## Testing
 
 - Component-level behavior is exercised by the static test pages under

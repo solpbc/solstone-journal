@@ -50,8 +50,11 @@ use crate::validation::{
     validate_access, validate_day, validate_protocol, validate_segment, validate_source,
 };
 
-const MAX_FILES: usize = 8;
-const MAX_PARTS: usize = 12;
+// A terminal segment carries one screen file per tmux session, so an upload
+// has to fit a computer with many sessions open. Bytes stay bounded by
+// `CONNECTION_BODY_LIMIT`.
+const MAX_FILES: usize = 64;
+const MAX_PARTS: usize = MAX_FILES + 4;
 const MAX_FILENAME_BYTES: usize = 128;
 const MAX_HEADERS: usize = 16;
 #[derive(Clone)]
@@ -1645,9 +1648,9 @@ mod tests {
     #[cfg(feature = "full-tests")]
     use super::api_router;
     use super::{
-        ApplyPhase, Envelope, IngestState, MAX_PART_BYTES, TestIngestNotifier, api_router_with,
-        api_router_with_notifier, clear_before_apply_hook, resolve_and_apply, router,
-        set_before_apply_hook, wall_clock_ms, write_envelope,
+        ApplyPhase, Envelope, IngestState, MAX_FILES, MAX_PART_BYTES, MAX_PARTS,
+        TestIngestNotifier, api_router_with, api_router_with_notifier, clear_before_apply_hook,
+        resolve_and_apply, router, set_before_apply_hook, wall_clock_ms, write_envelope,
     };
     use crate::model::IncomingFile;
     #[cfg(feature = "full-tests")]
@@ -4583,17 +4586,16 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn excess_multipart_files_have_their_own_refusal() {
-        let dir = root();
-        let root = dir.path().to_path_buf();
-        let app = router(&root);
-        let names: Vec<String> = (0..9).map(|index| format!("file{index}.flac")).collect();
+    async fn upload_terminal_sessions(app: &axum::Router, sessions: usize) -> (StatusCode, Value) {
+        let mut names = vec!["112409_desktop_activity.jsonl".to_owned()];
+        names.extend((0..sessions).map(|index| format!("tmux_session{index}_screen.jsonl")));
         let files = Value::Array(names.iter().map(|name| json!({"submitted":name})).collect());
-        let encoded = envelope("20260804", "120001_1", files).to_string();
+        let mut encoded = envelope("20260804", "112409_300", files);
+        encoded["source"] = json!("tmux");
+        let encoded = encoded.to_string();
         let mut parts = vec![("envelope".to_owned(), None, encoded.into_bytes(), 0)];
         for name in &names {
-            parts.push(("files".to_owned(), Some(name.clone()), b"x".to_vec(), 1));
+            parts.push(("files".to_owned(), Some(name.clone()), b"{}\n".to_vec(), 1));
         }
         let refs: Vec<_> = parts
             .iter()
@@ -4607,19 +4609,34 @@ mod tests {
             })
             .collect();
         let (content_type, body) = multipart_parts(&refs);
+        call(
+            app,
+            "POST",
+            "/app/devices/ingest",
+            Some(content_type),
+            body,
+            basis(CID_A),
+            Some("3"),
+            &[],
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn a_terminal_segment_with_many_sessions_goes_in() {
+        let dir = root();
+        let app = router(dir.path());
+        let (status, body) = upload_terminal_sessions(&app, 12).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn excess_multipart_files_have_their_own_refusal() {
+        let dir = root();
+        let app = router(dir.path());
         assert_eq!(
-            call(
-                &app,
-                "POST",
-                "/app/devices/ingest",
-                Some(content_type),
-                body,
-                basis(CID_A),
-                Some("3"),
-                &[]
-            )
-            .await
-            .1["reason_code"],
+            upload_terminal_sessions(&app, MAX_FILES).await.1["reason_code"],
             "multipart_too_many_files"
         );
     }
@@ -4640,7 +4657,7 @@ mod tests {
                 1,
             ),
         ];
-        for _ in 0..11 {
+        for _ in 0..MAX_PARTS - 1 {
             parts.push(("ignored".to_owned(), None, b"x".to_vec(), 0));
         }
         let refs: Vec<_> = parts

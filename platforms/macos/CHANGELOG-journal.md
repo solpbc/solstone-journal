@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.73 (build 125)] - 2026-11-09
+
+### Changed
+
+- updated the bundled journal to [2.0.73](https://solstone.app/releases#v2.0.73) →
+
+## [2.0.72 (build 124)] - 2026-11-08
+
+### Changed
+
+- updated the bundled journal to [2.0.72](https://solstone.app/releases#v2.0.72) →
+
 ## [2.0.71 (build 123)] - 2026-11-07
 
 ### Changed
