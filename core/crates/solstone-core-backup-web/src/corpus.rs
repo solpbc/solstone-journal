@@ -1930,7 +1930,9 @@ async fn embedded_first_restore_without_drain_cannot_copy_into_a_live_target() {
     struct CopyRunner(ScriptRunner);
     impl ToolRunner for CopyRunner {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-            if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            if let Some(report) =
+                solstone_core_backup_runtime::test_support::dry_run_report(request)
+            {
                 return Ok(report);
             }
             if request.argv.first().is_some_and(|arg| arg == "restore") {
@@ -4201,7 +4203,9 @@ fn assert_runner_argv(runner: &ScriptRunner, expected: &[Vec<String>]) {
     assert_eq!(
         calls
             .iter()
-            .map(|(_, argv)| solstone_core_backup_runtime::test_support::without_copy_excludes(argv))
+            .map(
+                |(_, argv)| solstone_core_backup_runtime::test_support::without_copy_excludes(argv)
+            )
             .collect::<Vec<_>>(),
         expected
     );
@@ -6678,7 +6682,9 @@ async fn cancelled_restore_worker_does_not_cancel_later_idle_destination_validat
     struct CancellableScript(Arc<ScriptRunner>);
     impl ToolRunner for CancellableScript {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-            if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            if let Some(report) =
+                solstone_core_backup_runtime::test_support::dry_run_report(request)
+            {
                 return Ok(report);
             }
             self.0.run(request)

@@ -60,11 +60,7 @@ impl Attempt {
 }
 
 /// The attempt in progress for this snapshot, or a new one.
-pub(crate) fn begin_attempt(
-    journal: &Path,
-    snapshot_id: &str,
-    stamp: &str,
-) -> io::Result<Attempt> {
+pub(crate) fn begin_attempt(journal: &Path, snapshot_id: &str, stamp: &str) -> io::Result<Attempt> {
     let path = journal.join(ATTEMPT_FILE);
     if let Ok(bytes) = fs::read(&path)
         && let Ok(attempt) = serde_json::from_slice::<Attempt>(&bytes)
@@ -463,19 +459,25 @@ mod tests {
         assert_eq!(parsed.deleted, ["sub/b"]);
         assert_eq!(parsed.bytes_to_restore, 5);
         assert_eq!(
-            parse_report(r#"{"message_type":"verbose_status","action":"updated","item":"/a"}"#, target),
+            parse_report(
+                r#"{"message_type":"verbose_status","action":"updated","item":"/a"}"#,
+                target
+            ),
             None,
             "no summary, no report"
         );
         assert_eq!(parse_report("not json\n", target), None);
         // A removal outside the target is no report at all.
-        let outside = report(&[r#"{"message_type":"verbose_status","action":"deleted","item":"/other/b"}"#]);
+        let outside =
+            report(&[r#"{"message_type":"verbose_status","action":"deleted","item":"/other/b"}"#]);
         assert_eq!(parse_report(&outside, target), None);
     }
 
     #[test]
     fn a_name_restic_cannot_print_is_counted_and_blocks_the_success_claim() {
-        let text = report(&["{\"message_type\":\"verbose_status\",\"action\":\"updated\",\"item\":\"/bad\u{fffd}name\"}"]);
+        let text = report(&[
+            "{\"message_type\":\"verbose_status\",\"action\":\"updated\",\"item\":\"/bad\u{fffd}name\"}",
+        ]);
         let parsed = parse_report(&text, Path::new("/j")).unwrap();
         assert!(parsed.updated.is_empty());
         assert_eq!(parsed.unreadable_names, 1);
@@ -484,10 +486,23 @@ mod tests {
 
     #[test]
     fn what_backups_do_not_carry_stays_and_owner_paths_named_alike_do_not() {
-        for path in ["cache/models/x", "indexer/journal.sqlite", "config/chatgpt-sign-in.json", ".before-restore-9/a", "health/service.log", "health/providers/local.json"] {
+        for path in [
+            "cache/models/x",
+            "indexer/journal.sqlite",
+            "config/chatgpt-sign-in.json",
+            ".before-restore-9/a",
+            "health/service.log",
+            "health/providers/local.json",
+        ] {
             assert!(kept(path), "{path}");
         }
-        for path in ["entities/cache/entity.json", "chronicle/20260101/x/audio.flac", "config/removals/a.json", ".trash/abc/item.json", "backup/hosted/binding.json"] {
+        for path in [
+            "entities/cache/entity.json",
+            "chronicle/20260101/x/audio.flac",
+            "config/removals/a.json",
+            ".trash/abc/item.json",
+            "backup/hosted/binding.json",
+        ] {
             assert!(!kept(path), "{path}");
         }
     }
@@ -537,7 +552,10 @@ mod tests {
         let root = dir.path();
         std::os::unix::fs::symlink("target", root.join("link")).unwrap();
         copy_originals(root, FOLDER, &["link".to_owned()]).unwrap();
-        assert_eq!(fs::read_link(root.join(FOLDER).join("link")).unwrap(), Path::new("target"));
+        assert_eq!(
+            fs::read_link(root.join(FOLDER).join("link")).unwrap(),
+            Path::new("target")
+        );
     }
 
     #[test]
@@ -559,7 +577,10 @@ mod tests {
             ..Report::default()
         };
         assert_eq!(move_removed(root, FOLDER, &plan), 0);
-        assert_eq!(fs::read(root.join(FOLDER).join("sub/deep/new")).unwrap(), b"new");
+        assert_eq!(
+            fs::read(root.join(FOLDER).join("sub/deep/new")).unwrap(),
+            b"new"
+        );
         assert!(!root.join("sub").exists());
         assert_eq!(fs::read(root.join("cache/model")).unwrap(), b"kept");
     }

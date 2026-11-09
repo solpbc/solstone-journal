@@ -703,9 +703,9 @@ pub fn restore_mobile_latest_journal(
 fn preview_failure_reason(error: &crate::runner::RunnerError) -> &'static str {
     #[cfg(windows)]
     if let crate::runner::RunnerError::Process(error) = error
-        && let Some(failure) = error
-            .get_ref()
-            .and_then(|inner| inner.downcast_ref::<solstone_core_system::process::BoundedHelperFailure>())
+        && let Some(failure) = error.get_ref().and_then(|inner| {
+            inner.downcast_ref::<solstone_core_system::process::BoundedHelperFailure>()
+        })
         && matches!(
             failure.cause(),
             solstone_core_system::process::BoundedHelperError::OutputLimitExceeded { .. }
@@ -1220,7 +1220,10 @@ fn restore_journal_with(
     }
     #[cfg(not(target_os = "ios"))]
     let (status, reason_code) = if integrity_ok && !set_aside.sweep(journal, &attempt) {
-        ("degraded", Some(RESTORE_REASON_SET_ASIDE_INCOMPLETE.to_owned()))
+        (
+            "degraded",
+            Some(RESTORE_REASON_SET_ASIDE_INCOMPLETE.to_owned()),
+        )
     } else {
         (status, reason_code)
     };
@@ -1719,8 +1722,7 @@ mod tests {
         }
         impl ToolRunner for BindingRestore<'_> {
             fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-                if request.argv.first().is_some_and(|arg| arg == "restore")
-                    && !is_dry_run(request)
+                if request.argv.first().is_some_and(|arg| arg == "restore") && !is_dry_run(request)
                 {
                     let mut retired = solstone_core_backup::load_hosted_binding(self.journal)
                         .expect("active binding");

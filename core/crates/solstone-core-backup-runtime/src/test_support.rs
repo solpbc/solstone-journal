@@ -272,7 +272,9 @@ impl ToolRunner for ArgvResticFixture {
             Some("restore") if argv.iter().any(|argument| argument == "--dry-run") => {
                 let plain = argv
                     .iter()
-                    .filter(|argument| !matches!(argument.as_str(), "--dry-run" | "-v" | "--delete"))
+                    .filter(|argument| {
+                        !matches!(argument.as_str(), "--dry-run" | "-v" | "--delete")
+                    })
                     .cloned()
                     .collect::<Vec<_>>();
                 if admitted_restore_argv(&plain) {
@@ -402,7 +404,11 @@ fn admitted_restore_argv(argv: &[String]) -> bool {
     expected.extend(["--exclude", "/health/whole-journal-restore.json"]);
     expected.extend(["--exclude", "/health/!solstone-claim-00000000-*"]);
     let rooted = rooted_copy_excludes();
-    expected.extend(rooted.iter().flat_map(|pattern| ["--exclude", pattern.as_str()]));
+    expected.extend(
+        rooted
+            .iter()
+            .flat_map(|pattern| ["--exclude", pattern.as_str()]),
+    );
     let keeps = expected.len();
     expected.push("--json");
     let with_lock = {

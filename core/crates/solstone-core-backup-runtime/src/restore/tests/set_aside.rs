@@ -154,7 +154,11 @@ impl Fixture {
         write(root, "notes/changed.md", "as backed up");
         write(root, "notes/removed-since.md", "still here then");
         write(root, "config/removals/old.json", "old entry");
-        write(root, "chronicle/20260101/s/090000_300/audio.flac", "the recording");
+        write(
+            root,
+            "chronicle/20260101/s/090000_300/audio.flac",
+            "the recording",
+        );
         write(root, "entities/cache/entity.json", "owner cache");
         write(root, "cache/model", "snapshot's model");
         write(root, ".trash/kept/item.json", "trashed before the backup");
@@ -182,7 +186,13 @@ impl Fixture {
 
     fn snapshot_id(&self) -> String {
         let output = Command::new(&self.binary)
-            .args(["--no-cache", "-r", &self.destination.repository, "snapshots", "--json"])
+            .args([
+                "--no-cache",
+                "-r",
+                &self.destination.repository,
+                "snapshots",
+                "--json",
+            ])
             .env("RESTIC_PASSWORD", &self.key)
             .output()
             .unwrap();
@@ -247,13 +257,20 @@ impl Fixture {
             read(root, "chronicle/20260101/s/090000_300/audio.flac"),
             "the recording"
         );
-        assert!(!root.join("chronicle/20260101/s/090000_300/tombstone.json").exists());
+        assert!(
+            !root
+                .join("chronicle/20260101/s/090000_300/tombstone.json")
+                .exists()
+        );
         // Only the top-level cache is this computer's.
         assert_eq!(read(root, "entities/cache/entity.json"), "owner cache");
         assert_eq!(read(root, "cache/model"), "this computer's model");
         assert_eq!(read(root, "health/service.log"), "this computer's log");
         // The trash is the snapshot's too.
-        assert_eq!(read(root, ".trash/kept/item.json"), "trashed before the backup");
+        assert_eq!(
+            read(root, ".trash/kept/item.json"),
+            "trashed before the backup"
+        );
         assert!(!root.join(".trash/since").exists());
     }
 
@@ -262,13 +279,28 @@ impl Fixture {
         let aside = folder(root);
         assert_eq!(read(&aside, "notes/changed.md"), "edited since");
         assert_eq!(read(&aside, "notes/newer.md"), "written since");
-        assert_eq!(read(&aside, "notes/deep/er/newest.md"), "written since, deeper");
+        assert_eq!(
+            read(&aside, "notes/deep/er/newest.md"),
+            "written since, deeper"
+        );
         assert_eq!(read(&aside, "config/removals/newer.json"), "newer entry");
-        assert_eq!(read(&aside, "chronicle/20260101/s/090000_300/tombstone.json"), "{}");
-        assert_eq!(read(&aside, "entities/cache/entity.json"), "changed owner cache");
-        assert_eq!(read(&aside, ".trash/since/item.json"), "trashed since the backup");
+        assert_eq!(
+            read(&aside, "chronicle/20260101/s/090000_300/tombstone.json"),
+            "{}"
+        );
+        assert_eq!(
+            read(&aside, "entities/cache/entity.json"),
+            "changed owner cache"
+        );
+        assert_eq!(
+            read(&aside, ".trash/since/item.json"),
+            "trashed since the backup"
+        );
         assert!(!aside.join("notes/same.md").exists(), "unchanged stays out");
-        assert!(!aside.join("cache").exists(), "what a restore leaves alone stays out");
+        assert!(
+            !aside.join("cache").exists(),
+            "what a restore leaves alone stays out"
+        );
     }
 }
 
@@ -277,22 +309,41 @@ impl Fixture {
 fn the_journal_becomes_the_snapshot_and_nothing_is_lost() {
     let fixture = Fixture::lived_in();
     let outcome = fixture.restore(&Restic::stopping(Stop::Never));
-    assert_eq!((outcome.status.as_str(), outcome.reason_code.as_deref()), ("ok", None));
+    assert_eq!(
+        (outcome.status.as_str(), outcome.reason_code.as_deref()),
+        ("ok", None)
+    );
     fixture.assert_is_the_snapshot();
     fixture.assert_nothing_was_lost();
-    assert!(!fixture.journal.path().join(restore_set_aside::ATTEMPT_FILE).exists());
+    assert!(
+        !fixture
+            .journal
+            .path()
+            .join(restore_set_aside::ATTEMPT_FILE)
+            .exists()
+    );
 }
 
 #[test]
 #[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
 fn a_stop_anywhere_ends_the_same_and_keeps_the_true_original() {
-    for stop in [Stop::BeforeRestore, Stop::AfterRestore, Stop::ReportAfterRestore] {
+    for stop in [
+        Stop::BeforeRestore,
+        Stop::AfterRestore,
+        Stop::ReportAfterRestore,
+    ] {
         let fixture = Fixture::lived_in();
         fixture.restore(&Restic::stopping(stop));
         // Whatever happened, the first copy of the changed file is the original.
-        assert_eq!(read(&folder(fixture.journal.path()), "notes/changed.md"), "edited since");
+        assert_eq!(
+            read(&folder(fixture.journal.path()), "notes/changed.md"),
+            "edited since"
+        );
         let outcome = fixture.restore(&Restic::stopping(Stop::Never));
-        assert_eq!((outcome.status.as_str(), outcome.reason_code.as_deref()), ("ok", None));
+        assert_eq!(
+            (outcome.status.as_str(), outcome.reason_code.as_deref()),
+            ("ok", None)
+        );
         fixture.assert_is_the_snapshot();
         fixture.assert_nothing_was_lost();
     }
@@ -321,7 +372,10 @@ fn a_report_that_fails_after_the_restore_never_reads_as_success() {
         outcome.reason_code.as_deref(),
         Some(RESTORE_REASON_SET_ASIDE_INCOMPLETE)
     );
-    assert_eq!(read(fixture.journal.path(), "notes/newer.md"), "written since");
+    assert_eq!(
+        read(fixture.journal.path(), "notes/newer.md"),
+        "written since"
+    );
 }
 
 #[test]
@@ -341,7 +395,10 @@ fn on_mobile_a_failed_restore_keeps_its_obligation_and_the_retry_finishes() {
     assert_eq!(read(root, "notes/newer.md"), "written since");
 
     let retried = fixture.restore_mobile(&Restic::stopping(Stop::Never), &drained);
-    assert_eq!((retried.status.as_str(), retried.reason_code.as_deref()), ("ok", None));
+    assert_eq!(
+        (retried.status.as_str(), retried.reason_code.as_deref()),
+        ("ok", None)
+    );
     assert!(matches!(
         read_whole_journal_restore(root),
         WholeJournalRestoreReadiness::Absent
@@ -384,12 +441,24 @@ fn refused_with(report: ToolOutput) -> (RestoreOutcome, tempfile::TempDir) {
 
 #[test]
 fn a_report_that_is_not_whole_refuses_before_anything_changes() {
-    for report in [output(1, ""), output(0, "{\"message_type\":\"status\"}\n"), output(0, "torn")] {
+    for report in [
+        output(1, ""),
+        output(0, "{\"message_type\":\"status\"}\n"),
+        output(0, "torn"),
+    ] {
         let (outcome, journal) = refused_with(report);
         assert_eq!(outcome.status, "error");
-        assert_eq!(outcome.reason_code.as_deref(), Some(RESTORE_REASON_PREVIEW_FAILED));
+        assert_eq!(
+            outcome.reason_code.as_deref(),
+            Some(RESTORE_REASON_PREVIEW_FAILED)
+        );
         assert_eq!(read(journal.path(), "notes/changed.md"), "untouched");
-        assert!(!journal.path().join(restore_set_aside::ATTEMPT_FILE).exists());
+        assert!(
+            !journal
+                .path()
+                .join(restore_set_aside::ATTEMPT_FILE)
+                .exists()
+        );
     }
 }
 
@@ -416,7 +485,10 @@ fn on_mobile_a_refused_report_leaves_the_journal_running() {
         },
         &mut drain,
     );
-    assert_eq!(outcome.reason_code.as_deref(), Some(RESTORE_REASON_PREVIEW_FAILED));
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some(RESTORE_REASON_PREVIEW_FAILED)
+    );
     assert!(matches!(
         read_whole_journal_restore(journal.path()),
         WholeJournalRestoreReadiness::Absent
@@ -427,9 +499,15 @@ fn on_mobile_a_refused_report_leaves_the_journal_running() {
 fn no_room_refuses_before_anything_changes() {
     let (outcome, journal) = refused_with(output(
         0,
-        &format!("{{\"message_type\":\"summary\",\"bytes_restored\":{}}}\n", u64::MAX / 2),
+        &format!(
+            "{{\"message_type\":\"summary\",\"bytes_restored\":{}}}\n",
+            u64::MAX / 2
+        ),
     ));
-    assert_eq!(outcome.reason_code.as_deref(), Some(RESTORE_REASON_INSUFFICIENT_FREE_SPACE));
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some(RESTORE_REASON_INSUFFICIENT_FREE_SPACE)
+    );
     assert_eq!(read(journal.path(), "notes/changed.md"), "untouched");
     let hidden = fs::read_dir(journal.path())
         .unwrap()
@@ -446,10 +524,16 @@ fn a_newer_entry_in_the_removal_record_leaves_with_the_rest() {
         deleted: vec!["config/removals/newer.json".into()],
         ..restore_set_aside::Report::default()
     };
-    assert_eq!(restore_set_aside::move_removed(root.path(), ".before-restore-1", &report), 0);
+    assert_eq!(
+        restore_set_aside::move_removed(root.path(), ".before-restore-1", &report),
+        0
+    );
     assert!(!root.path().join("config/removals/newer.json").exists());
     assert_eq!(
-        read(&root.path().join(".before-restore-1"), "config/removals/newer.json"),
+        read(
+            &root.path().join(".before-restore-1"),
+            "config/removals/newer.json"
+        ),
         "newer"
     );
 }
@@ -464,6 +548,9 @@ fn a_file_that_cannot_move_means_the_restore_is_not_finished() {
         deleted: vec!["notes/stuck.md".into()],
         ..restore_set_aside::Report::default()
     };
-    assert_eq!(restore_set_aside::move_removed(root.path(), ".before-restore-1", &report), 1);
+    assert_eq!(
+        restore_set_aside::move_removed(root.path(), ".before-restore-1", &report),
+        1
+    );
     assert_eq!(read(root.path(), "notes/stuck.md"), "held");
 }

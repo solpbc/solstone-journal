@@ -148,8 +148,20 @@ mod tests {
         assert!(!root.path().join(".before-restore-1").exists());
         assert!(kept(root.path()).unwrap().is_empty());
         let history = solstone_core_removals::history(root.path(), 10).unwrap();
-        assert!(history.entries.iter().any(|entry| entry.unit == Unit::PreviousJournal));
-        crate::attach(root.path(), &[&PreviousJournal], &item.id, Action::Recover, SURFACE).unwrap();
+        assert!(
+            history
+                .entries
+                .iter()
+                .any(|entry| entry.unit == Unit::PreviousJournal)
+        );
+        crate::attach(
+            root.path(),
+            &[&PreviousJournal],
+            &item.id,
+            Action::Recover,
+            SURFACE,
+        )
+        .unwrap();
         assert_eq!(
             fs::read(root.path().join(".before-restore-1/notes/a.md")).unwrap(),
             b"12345"

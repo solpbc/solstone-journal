@@ -67,12 +67,7 @@ fn view(journal_root: &Path, item: &Item) -> Value {
             Some(stream.clone()),
             segment.clone(),
         ),
-        (Unit::PreviousJournal, _) => (
-            "previous_journal",
-            String::new(),
-            None,
-            String::new(),
-        ),
+        (Unit::PreviousJournal, _) => ("previous_journal", String::new(), None, String::new()),
         _ => ("other", String::new(), None, String::new()),
     };
     json!({
@@ -148,11 +143,15 @@ pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
         let recordings = Recordings::new(&index);
         solstone_core_trash::attach(
             root,
-            &[&recordings, &solstone_core_trash::previous_journal::PreviousJournal],
+            &[
+                &recordings,
+                &solstone_core_trash::previous_journal::PreviousJournal,
+            ],
             id,
             Action::Recover,
             surface,
-        ).map(|_| ())
+        )
+        .map(|_| ())
     })
     .await
 }
