@@ -291,6 +291,7 @@
       earlyBriefing = null;
       cards.push(renderWelcomeHtml());
       setSurfaceHtml(cards.join(''));
+      reportHomeReady('empty');
       return;
     }
     cards.push(renderAccountHtml(data));
@@ -298,6 +299,7 @@
     setSurfaceHtml(cards.join(''));
     placeAccountZoneNote();
     refreshBriefing();
+    reportHomeReady('content');
   }
 
   function heldWorkIssues() {
@@ -1676,6 +1678,7 @@
         if (!lastPulse && surface) {
           surface.innerHTML = surfaceError(error, "Couldn't load pulse");
           bindSurfaceRetry();
+          reportHomeReady('error');
         }
         if (lastPulse) renderVitals(lastPulse);
         logError(error, 'home: refreshVitals failed');
@@ -1720,6 +1723,7 @@
         if (!lastPulse && surface) {
           surface.innerHTML = surfaceError(error, "Couldn't load pulse");
           bindSurfaceRetry();
+          reportHomeReady('error');
         }
         if (lastPulse) renderVitals(lastPulse);
         logError(error, 'home: refreshNarrative failed');
