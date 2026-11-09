@@ -3354,7 +3354,7 @@ mod tests {
         let output = restore_from_payload(
             &input,
             |destination, recovery_key| {
-                restore_journal(
+                solstone_core_backup_runtime::restore_journal(
                     journal.path(),
                     &services,
                     &recorder,
