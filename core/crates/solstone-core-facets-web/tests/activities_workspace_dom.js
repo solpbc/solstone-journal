@@ -344,6 +344,7 @@ async function createPage({ items, url = `https://journal.example/app/activities
     setTimeout: (fn, ms) => (ms && ms >= 1000 ? 0 : setTimeout(fn, ms)),
     clearTimeout: () => {},
     Promise, JSON, Math, Date, Number, String, Array, Object, Set, Map, Error, encodeURIComponent, decodeURIComponent, isNaN,
+    HTMLInputElement: class {}, HTMLSelectElement: class {}, HTMLTextAreaElement: class {},
   };
   win.window = win;
   vm.createContext(sandbox);
@@ -574,6 +575,54 @@ test('"this was a recording or video playing" confirms, then patches playback', 
   assert.strictEqual(env.posts().length, 0, 'nothing is saved before the confirm');
   await env.click(env.panel().querySelector('[data-playback-confirm]'));
   assert.deepStrictEqual(env.posts()[0].body, { patch: { playback: true } });
+});
+
+function bodyActivity(accounts, overrides = {}) {
+  return activity({
+    source: 'body', kind: 'workout', segments: [], summary: '', people: [],
+    accounts: accounts.map((acct, i) => ({ id: `body_${i}`, day: DAY, label: 'Running', by: `Recorder ${i}`, state: 'live', ...acct })),
+    ...overrides,
+  });
+}
+
+test('a body account says its state, and a live one says none', async () => {
+  for (const state of ['removed_by_you', 'removed', 'part_removed', 'unreadable', 'not_found']) {
+    const env = await createPage({ items: [bodyActivity([{ state }])] });
+    const said = env.panel().querySelector('[data-account-state]');
+    assert.ok(said, `${state} is shown`);
+    assert.strictEqual(said.getAttribute('data-account-state'), state);
+    assert.ok(keyed(env.panel(), `state-${state}`), `${state} has its own copy`);
+  }
+  const live = await createPage({ items: [bodyActivity([{ state: 'live' }])] });
+  assert.ok(keyed(live.panel(), 'heading-accounts'));
+  assert.strictEqual(live.panel().querySelector('[data-account-state]'), null);
+});
+
+test('an activity that is not a body record shows no accounts', async () => {
+  const env = await createPage({ items: [activity()] });
+  assert.strictEqual(keyed(env.panel(), 'heading-accounts'), null);
+});
+
+test('one account offers nothing to separate', async () => {
+  const env = await createPage({ items: [bodyActivity([{}])] });
+  assert.strictEqual(env.panel().querySelector('[data-separate]'), null);
+});
+
+test('separating an account asks first, then posts that account on its own day', async () => {
+  const items = [bodyActivity([{}, { day: '20261030' }])];
+  const env = await createPage({ items, post: () => respond(200, { id: 'body_1', separated: true }) });
+  await env.click(env.panel().querySelector('[data-separate="1"]'));
+  assert.ok(keyed(env.panel(), 'separate-confirm'));
+  assert.strictEqual(env.posts().length, 0, 'nothing is saved before the confirm');
+  await env.click(env.panel().querySelector('[data-separate-cancel]'));
+  assert.strictEqual(keyed(env.panel(), 'separate-confirm'), null);
+  assert.strictEqual(env.posts().length, 0, 'cancel saves nothing');
+  await env.click(env.panel().querySelector('[data-separate="1"]'));
+  const reads = env.viewReads();
+  await env.click(env.panel().querySelector('[data-separate-yes="1"]'));
+  assert.strictEqual(env.posts().length, 1);
+  assert.strictEqual(env.posts()[0].url, '/app/activities/api/day/20261030/record/body_1/separate?facet=work');
+  assert.ok(env.viewReads() > reads, 'the day is read again');
 });
 
 test('an activity already marked as playing does not offer it again', async () => {

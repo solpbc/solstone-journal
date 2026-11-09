@@ -2002,9 +2002,10 @@
       state.separating = null;
       renderPanel();
     });
-    panelArea.querySelector('[data-separate-yes]')?.addEventListener('click', (e) => {
-      const acct = (item.accounts || [])[Number(e.currentTarget.getAttribute('data-separate-yes'))];
-      if (acct) separateAccount(item, acct, e.currentTarget);
+    const separateYes = panelArea.querySelector('[data-separate-yes]');
+    separateYes?.addEventListener('click', () => {
+      const acct = (item.accounts || [])[Number(separateYes.getAttribute('data-separate-yes'))];
+      if (acct) separateAccount(item, acct, separateYes);
     });
   }
 
