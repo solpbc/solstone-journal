@@ -2793,6 +2793,20 @@ default_full = true
 required_features = []
 runtime = "none"
 
+[[suites]]
+id = "solstone-core-convey-shell::read_resilience_dom"
+package = "solstone-core-convey-shell"
+target = "read_resilience_dom"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
 
 [[suites]]
 id = "solstone-core-convey-shell::node_test_guard"
