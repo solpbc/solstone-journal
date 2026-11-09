@@ -93,10 +93,13 @@ async fn entities_workspace_round_trips_over_loopback() {
         }),
         "{headers}"
     );
-    let expected =
+    let source =
         fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/entities/workspace.html"))
             .expect("crate asset reads");
-    assert_eq!(body, expected);
+    assert_eq!(
+        body,
+        solstone_core_convey_shell::assets::served_from_source(&source)
+    );
 }
 
 #[tokio::test]
