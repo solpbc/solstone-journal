@@ -651,10 +651,28 @@ pub struct ProductionGenerateExecutor {
 }
 impl GenerateExecutor for ProductionGenerateExecutor {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        self.execute_talent_request(request, None)
+    }
+
+    fn execute_with_mobile_local_timeout(
+        &self,
+        request: &GenerateRequest,
+        timeout: Duration,
+    ) -> Result<GenerateResponse, ClientError> {
+        self.execute_talent_request(request, Some(timeout))
+    }
+}
+
+impl ProductionGenerateExecutor {
+    fn execute_talent_request(
+        &self,
+        request: &GenerateRequest,
+        mobile_local_timeout: Option<Duration>,
+    ) -> Result<GenerateResponse, ClientError> {
         let cancellation = solstone_core_generate::Cancellation::from_fn(self.cancelled.as_ref());
         let runtime = solstone_core_generate_wire::EndpointRuntime::default()
             .with_brain_observation(self.observation.clone());
-        solstone_core_generate_wire::respond_with_context(
+        solstone_core_generate_wire::respond_with_mobile_local_timeout(
             request,
             &runtime,
             self.root.canonical_path(),
@@ -663,6 +681,7 @@ impl GenerateExecutor for ProductionGenerateExecutor {
                 priority: self.priority,
                 cancellation: &cancellation,
             },
+            mobile_local_timeout,
         )
         .map_err(ClientError::Decode)
     }

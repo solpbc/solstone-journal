@@ -10,6 +10,7 @@
   "schema": "sense.schema.json",
   "max_output_tokens": 6912,
   "timeout_s": 480,
+  "mobile_local_timeout_s": 1200,
   "load": {"transcripts": true, "percepts": true, "talents": false}
 }
 

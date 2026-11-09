@@ -2374,6 +2374,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn direct_generate_keeps_its_default_and_explicit_deadlines() {
+        for platform in [Platform::Linux, Platform::Android, Platform::Ios] {
+            let mut request = input(json!([]));
+            request.platform = platform;
+            assert_eq!(request_timeout(&request), Duration::from_secs(120));
+            for seconds in [0.0, 0.25, 480.0, 1200.0] {
+                request.timeout_s = Some(seconds);
+                assert_eq!(request_timeout(&request), Duration::from_secs_f64(seconds));
+            }
+        }
+    }
+
     fn server() -> ConnectedServer {
         ConnectedServer {
             model_id: "default".into(),
