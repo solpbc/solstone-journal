@@ -2401,17 +2401,7 @@ mod tests {
         let deleted: Value =
             serde_json::from_slice(&to_bytes(deleted.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
-        let pending = deleted["pending"].as_str().unwrap();
-        let cancelled = app
-            .clone()
-            .oneshot(
-                Request::post(format!("/app/transcripts/api/cancel-delete/{pending}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(cancelled.status(), StatusCode::OK);
+        assert!(deleted["trash"]["id"].is_string(), "{deleted}");
 
         for (path, expected) in [
             ("/app/transcripts/", StatusCode::FOUND),

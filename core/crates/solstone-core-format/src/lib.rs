@@ -12,6 +12,7 @@ pub mod json;
 pub mod markdown;
 pub mod matcher;
 pub mod objects;
+pub mod obsidian;
 pub mod paths;
 pub mod segment;
 

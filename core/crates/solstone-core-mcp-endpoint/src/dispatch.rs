@@ -1317,6 +1317,7 @@ fn search(
                 .with_timezone(&solstone_core_journal_config::owner_zone(journal_root))
                 .date_naive(),
             possible_names.admission(),
+            crate::body_source::body_entry_admission(journal_root, snapshot),
         )
         .map_err(index_error)?;
         index_coverage_complete &= response.coverage_complete;
@@ -1390,6 +1391,25 @@ fn search(
             if let Some(anchor) = anchor.as_mut() {
                 anchor.activity_proof = activity_proof.clone();
             }
+            // A body record's entry reads as its composed record does for this
+            // connection, a group's hide included.
+            let hidden = if record
+                .as_ref()
+                .is_some_and(solstone_core_facets::is_body_record)
+            {
+                let Some(face) = crate::body_source::body_entry_face(
+                    journal_root,
+                    snapshot,
+                    &hit.metadata.path,
+                    hit.metadata.idx,
+                ) else {
+                    live_dropped = true;
+                    continue;
+                };
+                Some(face.hidden)
+            } else {
+                hidden
+            };
             // A possible name serves its label and the words it labels, which
             // the segment's transcript grant (this row's own classification)
             // lets this connection read.
@@ -1923,6 +1943,21 @@ fn fetch(
             )
             .map_err(index_error)?
             {
+                // Never the file's row: a body record is served composed, for
+                // this connection.
+                ActivityAdmit::Admitted(a) if solstone_core_facets::is_body_record(&a.record) => {
+                    let (facet, day) = crate::body_source::activity_file_place(&entry.path)
+                        .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
+                    return fetch_body_face(
+                        journal_root,
+                        snapshot,
+                        &facet,
+                        &day,
+                        &a.record_identity,
+                        &entry.path,
+                        &a.record,
+                    );
+                }
                 ActivityAdmit::Admitted(a) => {
                     let cleaned =
                         crate::tools::activities::clean_activity_record_for_wire(a.record.clone());
@@ -2041,7 +2076,15 @@ fn fetch(
             if let Some(body) =
                 crate::activity_admit::body_record_by_identity(&file_text, &act_ref.record_identity)
             {
-                return fetch_body_face(journal_root, snapshot, &act_ref, &rel_path, &body);
+                return fetch_body_face(
+                    journal_root,
+                    snapshot,
+                    &act_ref.facet_dir,
+                    &act_ref.day,
+                    &act_ref.record_identity,
+                    &rel_path,
+                    &body,
+                );
             }
             let Some((record, _)) =
                 crate::activity_admit::record_by_identity(&file_text, &act_ref.record_identity)
@@ -2120,11 +2163,13 @@ fn fetch(
 fn fetch_body_face(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
-    act_ref: &crate::references::ActivityReference,
+    facet_dir: &str,
+    day: &str,
+    record_identity: &str,
     rel_path: &str,
     record: &Map<String, Value>,
 ) -> Result<Prepared, DispatchError> {
-    let face = body_face_for(journal_root, snapshot, act_ref, record)?;
+    let face = body_face_for(journal_root, snapshot, facet_dir, day, record)?;
     // A source app names itself, so every value is a third party's text: served
     // literal, as a capture record is.
     let Value::Object(item) = solstone_core_location::body_records::face_json(&face) else {
@@ -2139,7 +2184,7 @@ fn fetch_body_face(
     if face.hidden {
         value["hidden"] = Value::Bool(true);
     }
-    let mut targets = vec![format!("{rel_path}#{}", act_ref.record_identity)];
+    let mut targets = vec![format!("{rel_path}#{record_identity}")];
     crate::body_source::name_windows(&mut targets, crate::body_source::face_windows(&face));
     Ok(Prepared::new(value, 1, targets).served_as_is(&["text"]))
 }
@@ -2148,24 +2193,26 @@ fn fetch_body_face(
 pub(crate) fn body_face_for(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
-    act_ref: &crate::references::ActivityReference,
+    facet_dir: &str,
+    day: &str,
     record: &Map<String, Value>,
 ) -> Result<solstone_core_location::body_records::Face, DispatchError> {
     let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
     let gate = crate::body_source::window_gate(journal_root, snapshot);
     // Every day the record's group can show under, grouped once.
-    let days = solstone_core_location::body_records::days_after(&act_ref.day);
+    let anchor_day = day.to_owned();
+    let days = solstone_core_location::body_records::days_after(day);
     let from = days
         .iter()
         .min()
-        .map_or(&act_ref.day, |day| day.min(&act_ref.day));
+        .map_or(&anchor_day, |day| day.min(&anchor_day));
     let to = days
         .iter()
         .max()
-        .map_or(&act_ref.day, |day| day.max(&act_ref.day));
+        .map_or(&anchor_day, |day| day.max(&anchor_day));
     solstone_core_location::body_records::body_faces_range(
         journal_root,
-        &act_ref.facet_dir,
+        facet_dir,
         from,
         to,
         Some(&gate),

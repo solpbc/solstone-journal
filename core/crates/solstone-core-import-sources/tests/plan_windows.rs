@@ -534,43 +534,8 @@ fn chatgpt_archive_with_conversations(
     path
 }
 
-#[test]
-fn tombstone_skips_only_that_key_and_leaves_second_window() {
-    let tree = TempTree::new();
-    let journal = setup_journal(&tree, "America/Denver");
-    let zone = solstone_core_journal_config::owner_zone(&journal);
-    let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
-    let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
-    let archive = chatgpt_archive_with_conversations(
-        &tree,
-        &[
-            &[(t1.timestamp(), "user", "earlier")],
-            &[(t2.timestamp(), "user", "later")],
-        ],
-    );
-    let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-tomb", zone, None)
-        .unwrap()
-        .unwrap();
-
-    let tomb_dir = journal.join("chronicle/20261101/import.chatgpt/015800_300");
-    fs::create_dir_all(&tomb_dir).unwrap();
-    fs::write(tomb_dir.join("tombstone.json"), b"{}").unwrap();
-
-    let outcome = save::write_rendered(&journal, Some("imp-tomb"), &rendered);
-    assert_eq!(
-        outcome.skipped_deleted,
-        vec![("20261101".to_string(), "015800_300".to_string())]
-    );
-    assert_eq!(outcome.created.len(), 1);
-    assert_eq!(outcome.created[0].segment, "015800_301");
-    assert!(outcome.created[0].path.exists());
-    assert!(
-        !journal
-            .join("chronicle/20261101/import.chatgpt/015800_302")
-            .exists()
-    );
-
-    let manifest_path = journal.join("imports/imp-tomb/content_manifest.jsonl");
+fn manifest_keys(journal: &std::path::Path, import_id: &str) -> Vec<String> {
+    let manifest_path = journal.join(format!("imports/{import_id}/content_manifest.jsonl"));
     let manifest_text = fs::read_to_string(&manifest_path).unwrap();
     let mut manifest_segments = Vec::new();
     for line in manifest_text.lines() {
@@ -581,7 +546,68 @@ fn tombstone_skips_only_that_key_and_leaves_second_window() {
             }
         }
     }
-    assert_eq!(manifest_segments, vec!["015800_301".to_string()]);
+    manifest_segments
+}
+
+#[test]
+fn a_removed_key_comes_back_and_a_removal_in_progress_skips_only_that_key() {
+    for staged in [false, true] {
+        let tree = TempTree::new();
+        let journal = setup_journal(&tree, "America/Denver");
+        let zone = solstone_core_journal_config::owner_zone(&journal);
+        let t1 = Utc.with_ymd_and_hms(2026, 11, 1, 7, 58, 0).unwrap();
+        let t2 = Utc.with_ymd_and_hms(2026, 11, 1, 8, 58, 0).unwrap();
+        let archive = chatgpt_archive_with_conversations(
+            &tree,
+            &[
+                &[(t1.timestamp(), "user", "earlier")],
+                &[(t2.timestamp(), "user", "later")],
+            ],
+        );
+        let rendered = save::render(RegistrySource::Chatgpt, &archive, "imp-tomb", zone, None)
+            .unwrap()
+            .unwrap();
+
+        let stream_dir = journal.join("chronicle/20261101/import.chatgpt");
+        let removed_dir = stream_dir.join("015800_300");
+        let staged_dir = stream_dir.join(".removing_015800_300");
+        if staged {
+            fs::create_dir_all(&staged_dir).unwrap();
+        } else {
+            fs::create_dir_all(&removed_dir).unwrap();
+            fs::write(removed_dir.join("tombstone.json"), b"{}").unwrap();
+        }
+
+        let outcome = save::write_rendered(&journal, Some("imp-tomb"), &rendered);
+        assert!(outcome.error.is_none());
+        assert!(!stream_dir.join("015800_302").exists());
+        if staged {
+            assert_eq!(
+                outcome.skipped_deleted,
+                vec![("20261101".to_string(), "015800_300".to_string())]
+            );
+            assert_eq!(outcome.created.len(), 1);
+            assert_eq!(outcome.created[0].segment, "015800_301");
+            assert!(outcome.created[0].path.exists());
+            assert!(!removed_dir.exists());
+            assert!(staged_dir.is_dir());
+            assert_eq!(manifest_keys(&journal, "imp-tomb"), vec!["015800_301"]);
+        } else {
+            assert!(outcome.skipped_deleted.is_empty());
+            let created: Vec<&str> = outcome
+                .created
+                .iter()
+                .map(|file| file.segment.as_str())
+                .collect();
+            assert_eq!(created, ["015800_300", "015800_301"]);
+            assert!(outcome.created.iter().all(|file| file.path.exists()));
+            assert!(!removed_dir.join("tombstone.json").exists());
+            assert_eq!(
+                manifest_keys(&journal, "imp-tomb"),
+                vec!["015800_300", "015800_301"]
+            );
+        }
+    }
 }
 
 #[test]

@@ -32,6 +32,7 @@ mod sync_authority;
 pub use sync::{parse_sync_update, source_sync_plaud_available};
 pub use sync_authority::{SourceSyncAuthority, SourceSyncDelegate, SourceSyncResponse};
 mod transcribe;
+mod trash;
 mod vision;
 
 pub fn routes(journal_root: PathBuf) -> Router {
@@ -66,6 +67,10 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
     let owner_voice_root = journal_root.clone();
     let storage_config_root = journal_root.clone();
     let removals_root = journal_root.clone();
+    let trash_list_root = journal_root.clone();
+    let trash_recover_root = journal_root.clone();
+    let trash_erase_root = journal_root.clone();
+    let trash_empty_root = journal_root.clone();
     let storage_put_root = journal_root.clone();
     let purge_root = journal_root.clone();
     let prune_logs_root = journal_root.clone();
@@ -169,6 +174,22 @@ pub fn routes_with_lock_options(journal_root: PathBuf, config_lock_options: Lock
         .route(
             "/app/settings/api/storage/removals",
             get(move || storage::removals(removals_root.clone())),
+        )
+        .route(
+            "/app/settings/api/trash",
+            get(move || trash::list(trash_list_root.clone())),
+        )
+        .route(
+            "/app/settings/api/trash/recover",
+            post(move |body| trash::recover(trash_recover_root.clone(), body)),
+        )
+        .route(
+            "/app/settings/api/trash/erase",
+            post(move |body| trash::erase(trash_erase_root.clone(), body)),
+        )
+        .route(
+            "/app/settings/api/trash/empty",
+            post(move || trash::empty(trash_empty_root.clone())),
         )
         .route(
             "/app/settings/api/storage/config",

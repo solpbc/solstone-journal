@@ -7,7 +7,7 @@
 //! and speaker names don't arise. `docs/BODY_SEGMENTS.md` is the contract.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Timelike};
@@ -123,6 +123,59 @@ fn readable_windows(
 /// same test `readable_windows` makes, and the Transcripts category, which that
 /// tool requires before it runs. No window to name, its directory gone with
 /// no tombstone say, is no window to read: only the owner sees that account.
+/// The facet folder and day of an activity day file's path.
+pub(crate) fn activity_file_place(path: &str) -> Option<(String, String)> {
+    let mut parts = path.split('/');
+    if parts.next()? != "facets" {
+        return None;
+    }
+    let facet = parts.next()?;
+    if parts.next()? != "activities" {
+        return None;
+    }
+    let day = parts.next()?.strip_suffix(".jsonl")?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((facet.to_owned(), day.to_owned()))
+}
+
+/// The composed record behind a body record's search entry, as this connection
+/// may read it. `None` when it may not: no Transcripts, no grant on its window,
+/// or a window that's gone.
+pub(crate) fn body_entry_face(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    path: &str,
+    idx: i64,
+) -> Option<solstone_core_location::body_records::Face> {
+    let (facet, day) = activity_file_place(path)?;
+    let text = std::fs::read_to_string(journal_root.join(path)).ok()?;
+    let records = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
+        .filter_map(|value| match value {
+            serde_json::Value::Object(record) => Some(record),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let position = usize::try_from(idx).ok()?;
+    let record = solstone_core_format::content::body_record_at(&records, position)?;
+    crate::dispatch::body_face_for(journal_root, snapshot, &facet, &day, record).ok()
+}
+
+/// Admits a body record's search entry for this connection, inside the query.
+pub(crate) fn body_entry_admission(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+) -> solstone_core_indexer_query::BodyEntryAdmission {
+    let journal = journal_root.to_path_buf();
+    let snapshot = snapshot.clone();
+    std::sync::Arc::new(move |path: &str, idx: i64| {
+        body_entry_face(&journal, &snapshot, path, idx).is_some()
+    })
+}
+
 pub(crate) fn window_gate<'a>(
     journal_root: &'a Path,
     snapshot: &'a ConnectionReadSnapshot,
@@ -357,6 +410,44 @@ fn is_kind(row: &BodyRow, kind: &str) -> bool {
             .is_some_and(|experience| experience.eq_ignore_ascii_case(kind))
         || (row.kind == RowKind::Stage && kind.eq_ignore_ascii_case("sleep"))
         || (row.kind == RowKind::Event && kind.eq_ignore_ascii_case("workout"))
+}
+
+/// The row ids a same-clock sibling this reader may also read holds, when that
+/// sibling is the better copy of this window. A sibling that can't be read or
+/// is withheld holds nothing, so no row is lost to it.
+fn ids_in_a_better_copy(
+    journal_root: &Path,
+    readable: &[Window],
+    window: &Window,
+    day: &str,
+    stream: &str,
+) -> BTreeSet<String> {
+    let clock = window.name.split('_').next().unwrap_or_default();
+    let rank = (
+        solstone_core_format::content::body_records::copy_rank(&window.name),
+        window.name.as_str(),
+    );
+    let mut ids = BTreeSet::new();
+    for sibling in readable.iter().filter(|sibling| {
+        sibling.name.split('_').next() == Some(clock)
+            && (
+                solstone_core_format::content::body_records::copy_rank(&sibling.name),
+                sibling.name.as_str(),
+            ) < rank
+            && released(journal_root, day, stream, &sibling.name)
+    }) {
+        let Ok(text) = std::fs::read_to_string(sibling.segment.path().join(BODY_RECORDS_FILE))
+        else {
+            continue;
+        };
+        ids.extend(
+            text.lines()
+                .filter_map(|line| serde_json::from_str::<BodyRow>(line).ok())
+                .filter(|row| row.kind != RowKind::Moved)
+                .map(|row| row.id),
+        );
+    }
+    ids
 }
 
 /// A window's rows that belong to a read, each at its place in time order, which
@@ -729,9 +820,9 @@ pub(crate) fn read_source_span(
             position.row.clone(),
         )
     });
-    let windows = readable_windows(journal_root, snapshot, &reference.day, &reference.stream)?;
+    let readable = readable_windows(journal_root, snapshot, &reference.day, &reference.stream)?;
     let reach = from.saturating_sub(LOOK_BACK_SECONDS);
-    let windows: Vec<&Window> = windows
+    let windows: Vec<&Window> = readable
         .iter()
         .filter(|window| window.start_seconds.max(reach) < window.end_seconds.min(to))
         // A window that ends before the cursor holds nothing still to serve.
@@ -773,10 +864,20 @@ pub(crate) fn read_source_span(
             ) {
                 continue;
             }
-            let Ok(rows) = rows else {
+            let Ok(mut rows) = rows else {
                 unreadable += 1;
                 continue;
             };
+            // A row an archive merge left a second copy of is read once, from
+            // the copy the importer still writes to.
+            let better = ids_in_a_better_copy(
+                journal_root,
+                &readable,
+                window,
+                &reference.day,
+                &reference.stream,
+            );
+            rows.retain(|row| !better.contains(&row.2));
             waiting.extend(
                 rows.into_iter()
                     .filter(|row| {

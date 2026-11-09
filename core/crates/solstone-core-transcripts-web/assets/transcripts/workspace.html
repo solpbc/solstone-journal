@@ -1487,6 +1487,20 @@
   border-radius: 16px;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Title and buttons stay put; only the body scrolls on a short screen. */
+#trDeleteSegmentModal .modal-header,
+#trDeleteSegmentModal .modal-footer {
+  flex: none;
+}
+
+#trDeleteSegmentModal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 #trDeleteSegmentModal .modal-header {
@@ -1590,6 +1604,13 @@
 
 #trDeleteSegmentModal .tr-delete-segment-meta {
   font-size: 14px;
+}
+
+#trDeleteSegmentModal .tr-delete-segment-meta strong {
+  white-space: nowrap;
+}
+
+#trDeleteSegmentModal .delete-warning .tr-delete-segment-meta {
   color: var(--danger);
 }
 
@@ -1604,7 +1625,71 @@
 
 #trDeleteSegmentModal .tr-delete-segment-size {
   font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* The first step moves to the trash and is not danger-styled; erase now has its own step. */
+#trDeleteSegmentModal .trash-dlg-note {
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--cream);
+  border-left: 4px solid var(--hairline-2);
+  color: var(--ink);
+}
+
+#trDeleteSegmentModal .trash-dlg-note p {
+  margin: 0 0 12px;
+}
+
+#trDeleteSegmentModal .trash-dlg-note p:last-child {
+  margin-bottom: 0;
+}
+
+#trDeleteSegmentModal .trash-dlg-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+#trDeleteSegmentModal .trash-dlg-foot[hidden] {
+  display: none;
+}
+
+#trDeleteSegmentModal .trash-dlg-right {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5em;
+}
+
+#trDeleteSegmentModal .trash-primary,
+#trDeleteSegmentModal .trash-danger-outline {
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#trDeleteSegmentModal .trash-primary {
+  background: var(--orange);
+  color: var(--ink-on-brand);
+  border: 0;
+}
+
+#trDeleteSegmentModal .trash-danger-outline {
+  background: var(--paper);
   color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+@media (max-width: 480px) {
+  #trDeleteSegmentModal .trash-dlg-foot button {
+    min-height: 44px;
+    padding-left: 12px;
+    padding-right: 12px;
+    white-space: nowrap;
+  }
 }
 
 /* Unified timeline view */
@@ -2607,16 +2692,25 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
 <div id="trDeleteSegmentModal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="trDeleteSegmentModalTitle">
   <div class="modal-content">
-    <div class="modal-header danger">
-      <h3 id="trDeleteSegmentModalTitle">delete segment?</h3>
-      <span class="close" id="trDeleteSegmentModalClose" onclick="closeDeleteSegmentModal()">&times;</span>
+    <div class="modal-header" id="trDeleteSegmentModalHeader">
+      <h3 id="trDeleteSegmentModalTitle"></h3>
+      <span class="close" id="trDeleteSegmentModalClose">&times;</span>
     </div>
     <div class="modal-body">
-      <div id="trDeleteSegmentModalBody" class="delete-warning"></div>
+      <div id="trDeleteSegmentModalBody" class="trash-dlg-note"></div>
     </div>
-    <div class="modal-footer">
-      <button type="button" class="btn-secondary" onclick="closeDeleteSegmentModal()">cancel</button>
-      <button type="button" id="trDeleteSegmentModalConfirm" class="btn-danger" onclick="confirmDeleteSegment()">delete</button>
+    <div class="modal-footer trash-dlg-foot" id="trDeleteSegmentModalMoveFoot">
+      <button type="button" id="trDeleteSegmentModalErase" class="trash-danger-outline"></button>
+      <span class="trash-dlg-right">
+        <button type="button" id="trDeleteSegmentModalCancel" class="btn-secondary"></button>
+        <button type="button" id="trDeleteSegmentModalConfirm" class="trash-primary"></button>
+      </span>
+    </div>
+    <div class="modal-footer trash-dlg-foot" id="trDeleteSegmentModalEraseFoot" hidden>
+      <span class="trash-dlg-right">
+        <button type="button" id="trDeleteSegmentModalBack" class="btn-secondary"></button>
+        <button type="button" id="trDeleteSegmentModalEraseConfirm" class="btn-danger"></button>
+      </span>
     </div>
   </div>
 </div>
@@ -2761,7 +2855,16 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
   const bodyPanelClose = document.getElementById('trBodyPanelClose');
   const deleteSegmentModal = document.getElementById('trDeleteSegmentModal');
   const deleteSegmentModalBody = document.getElementById('trDeleteSegmentModalBody');
+  const deleteSegmentModalHeader = document.getElementById('trDeleteSegmentModalHeader');
+  const deleteSegmentModalTitle = document.getElementById('trDeleteSegmentModalTitle');
+  const deleteSegmentModalClose = document.getElementById('trDeleteSegmentModalClose');
+  const deleteSegmentModalMoveFoot = document.getElementById('trDeleteSegmentModalMoveFoot');
+  const deleteSegmentModalEraseFoot = document.getElementById('trDeleteSegmentModalEraseFoot');
+  const deleteSegmentModalErase = document.getElementById('trDeleteSegmentModalErase');
+  const deleteSegmentModalCancel = document.getElementById('trDeleteSegmentModalCancel');
   const deleteSegmentModalConfirm = document.getElementById('trDeleteSegmentModalConfirm');
+  const deleteSegmentModalBack = document.getElementById('trDeleteSegmentModalBack');
+  const deleteSegmentModalEraseConfirm = document.getElementById('trDeleteSegmentModalEraseConfirm');
   const initialEmptyIcon = document.getElementById('trInitialEmptyIcon');
   if (initialEmptyIcon) {
     initialEmptyIcon.innerHTML = window.ConveyIcons.svg('clock');
@@ -7025,7 +7128,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     loadDayData();
     loadLocationData();
-    reportUnfinishedDeletes();
 
     // Popstate and a later hashchange share this restore, and an in-flight load
     // of the same segment and tab is already that page. The activeTab == null guard
@@ -7189,54 +7291,136 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return pos.charAt(0).toUpperCase() + pos.slice(1);
   }
 
+  // Owner copy for deleting a segment: the dialog, its erase step and the receipt.
+  const TRASH_COPY = {
+    noun: { segment: 'segment' },
+    move: {
+      title: 'delete segment?',
+      reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+      lead: "this moves the segment's own:",
+      stays: 'summaries made from it elsewhere in your journal stay where they are and may still mention it.',
+      size: 'current raw media size: {size}',
+    },
+    erase: {
+      title: 'erase this segment now?',
+      reach: "it leaves your journal now and can't be recovered.",
+      lead: "this erases the segment's own:",
+      stays: "summaries made from it elsewhere in your journal aren't erased and may still mention it.",
+    },
+    parts: {
+      audio: 'audio',
+      screen: 'screen frames',
+      transcript: 'transcript',
+      analysis: 'analysis stored with it',
+      location: 'location',
+    },
+    buttons: {
+      eraseNow: 'erase now',
+      cancel: 'cancel',
+      moveToTrash: 'move to trash',
+      back: 'back',
+      recover: 'recover',
+      openTrash: 'open trash',
+    },
+    receipt: {
+      moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
+      recovered: { title: '{noun} recovered', message: "it's back in your journal." },
+      erased: { title: '{noun} erased from your journal' },
+      recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
+      moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
+      eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
+      eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
+      noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
+      noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
+      noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+    },
+  };
+  const TRASH_PAGE = '/app/settings#trash';
+
+  deleteSegmentModalErase.textContent = TRASH_COPY.buttons.eraseNow;
+  deleteSegmentModalCancel.textContent = TRASH_COPY.buttons.cancel;
+  deleteSegmentModalConfirm.textContent = TRASH_COPY.buttons.moveToTrash;
+  deleteSegmentModalBack.textContent = TRASH_COPY.buttons.back;
+  deleteSegmentModalEraseConfirm.textContent = TRASH_COPY.buttons.eraseNow;
+
+  function deleteDialogElement(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  // One step of the delete dialog: 'move' (the trash, the default) or 'erase'
+  // (its own confirm). The segment's names are journal data, so they go in as text.
+  function renderDeleteSegmentStep(seg, step) {
+    const copy = TRASH_COPY[step];
+    const isLocRow = Boolean(seg.locationRow);
+    const holdsLoc = Boolean(segmentData?.holds_location);
+    const erasing = step === 'erase';
+
+    deleteSegmentModalTitle.textContent = copy.title;
+    deleteSegmentModalHeader.classList.toggle('danger', erasing);
+    deleteSegmentModalBody.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+    deleteSegmentModalBody.dataset.step = step;
+    deleteSegmentModalMoveFoot.hidden = erasing;
+    deleteSegmentModalEraseFoot.hidden = !erasing;
+
+    const meta = deleteDialogElement('p', 'tr-delete-segment-meta trash-dlg-meta');
+    const streamName = deleteDialogElement('strong', null, humanizeStreamName(seg.stream));
+    streamName.setAttribute('title', seg.stream);
+    const dayName = deleteDialogElement('strong', null, window.JournalFormat.day(day).toLowerCase());
+    const timeName = deleteDialogElement('strong', null, isLocRow ? seg.start : `${seg.start} - ${seg.end}`);
+    meta.append(streamName, deleteDialogElement('span', null, ' · '), dayName, deleteDialogElement('span', null, ' · '), timeName);
+
+    const parts = isLocRow
+      ? ['location']
+      : ['audio', 'screen', 'transcript', 'analysis', ...(holdsLoc ? ['location'] : [])];
+    const list = deleteDialogElement('ul', 'tr-delete-segment-list');
+    parts.forEach(part => list.append(deleteDialogElement('li', null, TRASH_COPY.parts[part])));
+
+    deleteSegmentModalBody.replaceChildren();
+    deleteSegmentModalBody.append(
+      meta,
+      deleteDialogElement('p', 'tr-delete-reach', copy.reach),
+      deleteDialogElement('p', 'tr-delete-lead', copy.lead),
+      list,
+      deleteDialogElement('p', 'tr-delete-stays', copy.stays),
+    );
+    const totalBytes = (segmentData?.media_sizes?.audio || 0) + (segmentData?.media_sizes?.screen || 0);
+    if (!erasing && !isLocRow && totalBytes > 0) {
+      deleteSegmentModalBody.append(deleteDialogElement('p', 'tr-delete-segment-size trash-dlg-size', copy.size.replace('{size}', formatSize(totalBytes))));
+    }
+  }
+
   function showDeleteSegmentModal() {
     if (!selectedSegment) return;
 
-    const seg = selectedSegment;
-    const isLocRow = Boolean(seg.locationRow);
-    const holdsLoc = Boolean(segmentData?.holds_location);
-    const totalBytes = (segmentData?.media_sizes?.audio || 0) + (segmentData?.media_sizes?.screen || 0);
-    const sizeLine = (!isLocRow && totalBytes > 0)
-      ? `<p class="tr-delete-segment-size">current raw media size: ${formatSize(totalBytes)}</p>`
-      : '';
-
-    const metaTime = isLocRow ? escapeHtml(seg.start) : `${escapeHtml(seg.start)} - ${escapeHtml(seg.end)}`;
-    const itemsHtml = isLocRow
-      ? `<li>location</li>`
-      : holdsLoc
-        ? `<li>audio</li>
-        <li>screen frames</li>
-        <li>transcript</li>
-        <li>analysis stored with it</li>
-        <li>location</li>`
-        : `<li>audio</li>
-        <li>screen frames</li>
-        <li>transcript</li>
-        <li>analysis stored with it</li>`;
-
-    deleteSegmentModalBody.innerHTML = `
-      <p class="tr-delete-segment-meta"><strong title="${escapeHtml(seg.stream)}">${escapeHtml(humanizeStreamName(seg.stream))}</strong> · <strong>${escapeHtml(day)}</strong> · <strong>${metaTime}</strong></p>
-      <p>You'll have about 10 seconds to cancel after confirming.</p>
-      <p>This deletes the segment's own:</p>
-      <ul class="tr-delete-segment-list">
-        ${itemsHtml}
-      </ul>
-      <p>Summaries made from it elsewhere in your journal aren't deleted and may still mention it.</p>
-      ${sizeLine}
-    `;
-
+    renderDeleteSegmentStep(selectedSegment, 'move');
     deleteModalReturnFocus = document.activeElement;
     deleteModalPrevOverflow = document.body.style.overflow;
     deleteSegmentModal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
+    // The reversible act takes the focus.
     deleteSegmentModalConfirm.focus();
+  }
+
+  function showEraseSegmentStep() {
+    if (!selectedSegment || deleteSegmentModal.style.display === 'none') return;
+    renderDeleteSegmentStep(selectedSegment, 'erase');
+    deleteSegmentModalBack.focus();
+  }
+
+  function backFromEraseSegmentStep() {
+    if (!selectedSegment || deleteSegmentModal.style.display === 'none') return;
+    renderDeleteSegmentStep(selectedSegment, 'move');
+    deleteSegmentModalErase.focus();
   }
 
   function closeDeleteSegmentModal(restoreFocus = true) {
     if (deleteSegmentModal.style.display === 'none') return;
 
     deleteSegmentModal.style.display = 'none';
-    deleteSegmentModalBody.innerHTML = '';
+    deleteSegmentModalBody.replaceChildren();
     document.body.style.overflow = deleteModalPrevOverflow;
     deleteModalPrevOverflow = '';
     if (restoreFocus && deleteModalReturnFocus && document.contains(deleteModalReturnFocus)) {
@@ -7250,8 +7434,23 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     const seg = selectedSegment;
     closeDeleteSegmentModal(false);
-    await performDeleteSegment(seg);
+    await performDeleteSegment(seg, false);
   }
+
+  async function confirmEraseSegment() {
+    if (!selectedSegment) return;
+
+    const seg = selectedSegment;
+    closeDeleteSegmentModal(false);
+    await performDeleteSegment(seg, true);
+  }
+
+  deleteSegmentModalClose.addEventListener('click', () => closeDeleteSegmentModal());
+  deleteSegmentModalCancel.addEventListener('click', () => closeDeleteSegmentModal());
+  deleteSegmentModalConfirm.addEventListener('click', () => confirmDeleteSegment());
+  deleteSegmentModalErase.addEventListener('click', () => showEraseSegmentStep());
+  deleteSegmentModalBack.addEventListener('click', () => backFromEraseSegmentStep());
+  deleteSegmentModalEraseConfirm.addEventListener('click', () => confirmEraseSegment());
 
   function sortSegmentsByKey() {
     allSegments.sort((a, b) => a.key.localeCompare(b.key));
@@ -7288,78 +7487,114 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       });
   }
 
-  async function performDeleteSegment(seg) {
-    try {
-      const response = await fetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(asSentence(data.error) || 'Failed to delete segment');
-      }
-
-      const data = await response.json();
-
-      if (seg.locationRow) {
-        locationSegments = locationSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
-        clearSegmentSelection();
-      } else {
-        // Remove segment from local state
-        allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
-
-        // Clear selection and UI
-        clearSegmentSelection();
-
-        // Re-render zoom timeline
-        buildZoomSegments();
-
-        refreshSegmentIndicators();
-      }
-
-      let pendingNotificationId = null;
-      pendingNotificationId = window.AppServices.notifications.show({
-        app: 'transcripts',
-        icon: 'trash-2',
-        title: 'Deleting segment…',
-        message: 'Cancels in 10s',
-        dismissible: true,
-        autoDismiss: 10000,
-        buttons: [{
-          label: 'Cancel',
-          dismiss: false,
-          onClick: () => cancelSegmentDelete(data.pending, seg, day, pendingNotificationId)
-        }]
-      });
-      // Time the wait from this answer, not the journal's clock: a paired
-      // device's clock can be minutes off.
-      const deleteDay = day;
-      const ttlSec = typeof data.ttl_seconds === 'number' ? data.ttl_seconds : 10;
-      watchDeleteOutcome(data.pending, seg, deleteDay, Date.now() + ttlSec * 1000);
-
-    } catch (err) {
-      if (err instanceof TypeError) {
-        err = new Error('Your journal didn\'t answer, so the delete may still go ahead. Reload to check.');
-      }
-      const notice = document.createElement('div');
-      notice.className = 'tr-warning-notice visible';
-      notice.style.borderColor = 'var(--danger)';
-      notice.style.background = 'var(--danger-wash)';
-      notice.style.color = 'var(--danger)';
-      notice.innerHTML = '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <span>' + escapeHtml(err.message) + '</span>';
-      panel.insertBefore(notice, panel.firstChild);
-      setTimeout(() => {
-        notice.style.opacity = '0';
-        setTimeout(() => notice.remove(), 300);
-      }, 5000);
-    }
+  function trashReceipt(kind, fill = {}, buttons = []) {
+    const copy = TRASH_COPY.receipt[kind];
+    const put = text => text
+      .replace('{noun}', TRASH_COPY.noun.segment)
+      .replace('{date}', fill.date || '');
+    const settled = kind === 'moved' || kind === 'recovered' || kind === 'erased';
+    const notice = {
+      app: 'transcripts',
+      icon: settled ? (kind === 'recovered' ? 'undo-2' : 'trash-2') : 'triangle-alert',
+      title: put(copy.title),
+      dismissible: true,
+      buttons,
+    };
+    if (copy.message && (kind !== 'moved' || fill.date)) notice.message = put(copy.message);
+    // A refused or failed card stays until the owner dismisses it.
+    if (settled) notice.autoDismiss = 10000;
+    window.AppServices.notifications.show(notice);
   }
 
-  function asSentence(text) {
-    const value = String(text || '').trim();
-    if (!value) return '';
-    const capitalized = value.charAt(0).toUpperCase() + value.slice(1);
-    return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
+  function openTrashButton() {
+    return { label: TRASH_COPY.buttons.openTrash, onClick: () => { window.location.href = TRASH_PAGE; } };
+  }
+
+  // The erase date on the journal's own clock, worded as the trash page words it.
+  function trashEraseDate(eraseAt) {
+    const instant = new Date(eraseAt);
+    if (!eraseAt || Number.isNaN(instant.getTime())) return '';
+    const key = window.JournalClock
+      ? window.JournalClock.dayKey(instant)
+      : `${instant.getFullYear()}${String(instant.getMonth() + 1).padStart(2, '0')}${String(instant.getDate()).padStart(2, '0')}`;
+    return window.JournalFormat.day(key).toLowerCase();
+  }
+
+  function dropDeletedSegment(seg) {
+    if (seg.locationRow) {
+      locationSegments = locationSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
+      clearSegmentSelection();
+      return;
+    }
+    allSegments = allSegments.filter(s => s.key !== seg.key || s.stream !== seg.stream);
+    clearSegmentSelection();
+    buildZoomSegments();
+    refreshSegmentIndicators();
+  }
+
+  // Moves the segment to the trash, or erases it now. A non-200 answer means
+  // nothing changed; no answer at all means it may have.
+  async function performDeleteSegment(seg, erase = false) {
+    const segDay = day;
+    let response;
+    try {
+      response = await fetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`, erase
+        ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true }) }
+        : { method: 'DELETE' });
+    } catch (_) {
+      trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
+      return;
+    }
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      trashReceipt(erase ? 'eraseRefused' : 'moveRefused');
+      return;
+    }
+    if (!data || data.success !== true) {
+      trashReceipt(erase ? 'noAnswerErase' : 'noAnswerMove');
+      return;
+    }
+
+    dropDeletedSegment(seg);
+    if (data.erased === true) {
+      trashReceipt('erased');
+      return;
+    }
+    if (data.erase_failed === true) {
+      trashReceipt('eraseFailed', {}, [openTrashButton()]);
+      return;
+    }
+    const trashId = data.trash?.id;
+    trashReceipt('moved', { date: trashEraseDate(data.trash?.erase_at) }, [
+      { label: TRASH_COPY.buttons.recover, onClick: () => recoverFromReceipt(trashId, seg, segDay) },
+      openTrashButton(),
+    ]);
+  }
+
+  // The receipt's recover is the trash page's recover: the same files go back.
+  async function recoverFromReceipt(trashId, seg, segDay) {
+    let response;
+    try {
+      response = await fetch('/app/settings/api/trash/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [trashId], page: 'transcripts' }),
+      });
+    } catch (_) {
+      trashReceipt('noAnswerRecover');
+      return;
+    }
+    const data = response.ok ? await response.json().catch(() => null) : null;
+    if (response.ok && !data) {
+      trashReceipt('noAnswerRecover');
+      return;
+    }
+    if (Array.isArray(data?.done) && data.done.includes(trashId)) {
+      restoreDeletedSegment(seg, segDay);
+      trashReceipt('recovered');
+      return;
+    }
+    trashReceipt('recoverFailed', {}, [openTrashButton()]);
   }
 
   // Put a segment back only on the day it was deleted from; the owner may have
@@ -7382,239 +7617,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
     buildZoomSegments();
     refreshSegmentIndicators();
-  }
-
-  // Ids whose outcome this browser has already shown, so a reload does not
-  // repeat them. Holds delete ids only.
-  const REPORTED_DELETES_KEY = 'transcripts.reportedDeletes';
-  const confirmedCancels = new Set();
-  // Ids whose outcome this page has already shown, so the watcher and the
-  // cancel answer never both report one delete.
-  const shownOutcomes = new Set();
-
-  function reportedDeletes() {
-    try {
-      return JSON.parse(window.localStorage.getItem(REPORTED_DELETES_KEY) || '[]');
-    } catch (_) {
-      return [];
-    }
-  }
-
-  // Keyed by id and state: a delete reported as not finished yet is reported
-  // again once the next start settles it.
-  function markDeleteReported(pendingId, state) {
-    const key = `${pendingId}:${state}`;
-    try {
-      const ids = reportedDeletes().filter(id => id !== key);
-      ids.push(key);
-      window.localStorage.setItem(REPORTED_DELETES_KEY, JSON.stringify(ids.slice(-50)));
-    } catch (_) {
-      // Without storage a later page may show this outcome once more.
-    }
-  }
-
-  // Not deleted: the segment is still there, so it goes back on the timeline.
-  // Partly deleted: some of it may be gone, so it stays off.
-  function showDeleteOutcome(pendingId, state, reason, seg, segDay, label) {
-    if (shownOutcomes.has(pendingId)) return;
-    shownOutcomes.add(pendingId);
-    markDeleteReported(pendingId, state);
-    if (state === 'not_deleted') restoreDeletedSegment(seg, segDay);
-    const title = {
-      incomplete: 'Segment only partly deleted',
-      pending: 'Delete not finished yet'
-    }[state] || 'Segment not deleted';
-    const fallback = {
-      incomplete: 'Some of it may already be gone.',
-      pending: 'Your journal will try again the next time it starts.'
-    }[state] || 'It\'s still in your journal.';
-    const retry = state === 'pending' && reason ? fallback : '';
-    const message = [label, asSentence(reason) || fallback, retry].filter(Boolean).join(' ');
-    window.AppServices.notifications.show({
-      app: 'transcripts',
-      icon: 'triangle-alert',
-      title,
-      message,
-      dismissible: true,
-      autoDismiss: 10000
-    });
-  }
-
-  const DELETE_WATCH_FAST_ATTEMPTS = 20;
-  const DELETE_WATCH_ATTEMPTS = DELETE_WATCH_FAST_ATTEMPTS + 180;
-
-  // The delete runs after its cancel window, so the answer to the DELETE is
-  // only that it was accepted. Ask what happened once the window has passed,
-  // so a refusal reaches the page and not just the journal's log.
-  async function watchDeleteOutcome(pendingId, seg, segDay, commitAtLocalMs) {
-    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-    await wait(Math.max(0, commitAtLocalMs - Date.now()) + 500);
-    let unknown = false;
-    let saidStillDeleting = false;
-    for (let attempt = 0; attempt < DELETE_WATCH_ATTEMPTS; attempt++) {
-      let data = null;
-      try {
-        const response = await fetch(`/app/transcripts/api/delete-status/${pendingId}`);
-        data = await response.json().catch(() => null);
-        if (response.status === 404) {
-          unknown = true;
-          break;
-        }
-      } catch (_) {
-        data = null;
-      }
-      if (data?.state === 'cancelled') {
-        // The cancel landed even if its answer never reached this page.
-        if (!confirmedCancels.has(pendingId) && !shownOutcomes.has(pendingId)) {
-          shownOutcomes.add(pendingId);
-          restoreDeletedSegment(seg, segDay);
-          window.AppServices.notifications.show({
-            app: 'transcripts',
-            icon: 'undo-2',
-            title: 'Delete cancelled',
-            autoDismiss: 3000
-          });
-        }
-        return;
-      }
-      if (data?.state === 'deleted') {
-        if (shownOutcomes.has(pendingId)) return;
-        shownOutcomes.add(pendingId);
-        window.AppServices.notifications.show({
-          app: 'transcripts',
-          icon: 'trash-2',
-          title: 'Segment deleted',
-          autoDismiss: 3000
-        });
-        return;
-      }
-      if (data?.state === 'not_deleted' || data?.state === 'incomplete') {
-        showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
-        return;
-      }
-      // A delete still pending with a reason has stopped until the next start.
-      if (data?.state === 'pending' && data.reason) {
-        showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
-        return;
-      }
-      // A large journal takes minutes, so keep watching at a slower pace and
-      // say so once, rather than leave the result to a reload.
-      if (attempt >= DELETE_WATCH_FAST_ATTEMPTS - 1 && data?.state === 'pending' && !saidStillDeleting && !shownOutcomes.has(pendingId)) {
-        saidStillDeleting = true;
-        window.AppServices.notifications.show({
-          app: 'transcripts',
-          icon: 'timer',
-          title: 'Still deleting',
-          message: 'This can take a while on a large journal. The result will show here.',
-          dismissible: true,
-          autoDismiss: 10000
-        });
-      }
-      await wait(attempt < DELETE_WATCH_FAST_ATTEMPTS ? 1000 : 5000);
-    }
-    if (shownOutcomes.has(pendingId)) return;
-    shownOutcomes.add(pendingId);
-    window.AppServices.notifications.show({
-      app: 'transcripts',
-      icon: 'triangle-alert',
-      title: unknown ? 'Delete not confirmed' : 'Delete not confirmed yet',
-      message: unknown
-        ? 'Your journal has no record of this delete. Reload to see whether the segment is still there.'
-        : 'Your journal still holds this delete, even across a restart. Reload later to see whether it went through.',
-      dismissible: true,
-      autoDismiss: 10000
-    });
-  }
-
-  // A delete that ended without removing its segment while no page was
-  // watching, for example across a restart, is shown the next time one opens.
-  async function reportUnfinishedDeletes() {
-    let data = null;
-    try {
-      const response = await fetch('/app/transcripts/api/delete-outcomes');
-      data = response.ok ? await response.json() : null;
-    } catch (_) {
-      return;
-    }
-    const shown = new Set(reportedDeletes());
-    for (const outcome of data?.outcomes || []) {
-      if (shown.has(`${outcome.pending}:${outcome.state}`)) continue;
-      const key = String(outcome.segment_key || '');
-      const time = key.length >= 4 ? `${key.slice(0, 2)}:${key.slice(2, 4)}` : key;
-      const date = String(outcome.day || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
-      const label = `<span title="${escapeHtml(outcome.stream)}">${escapeHtml(humanizeStreamName(outcome.stream))}</span> · ${date} ${time}.`;
-      showDeleteOutcome(outcome.pending, outcome.state, outcome.reason, null, null, label);
-    }
-  }
-
-  async function cancelSegmentDelete(pendingId, seg, segDay, notificationId) {
-    try {
-      const response = await fetch(`/app/transcripts/api/cancel-delete/${pendingId}`, {
-        method: 'POST'
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (notificationId !== null) {
-        window.AppServices.notifications.dismiss(notificationId);
-      }
-
-      if (response.ok) {
-        confirmedCancels.add(pendingId);
-        shownOutcomes.add(pendingId);
-        restoreDeletedSegment(seg, segDay);
-        window.AppServices.notifications.show({
-          app: 'transcripts',
-          icon: 'undo-2',
-          title: 'Delete cancelled',
-          autoDismiss: 3000
-        });
-        return;
-      }
-
-      // Each answer names what really happened; "already deleted" only when it was.
-      if (data.reason_code === 'segment_already_deleted') {
-        shownOutcomes.add(pendingId);
-        window.AppServices.notifications.show({
-          app: 'transcripts',
-          icon: 'timer',
-          title: 'Too late: already deleted',
-          autoDismiss: 3000
-        });
-        return;
-      }
-      if (data.reason_code === 'segment_not_deleted' || data.reason_code === 'segment_delete_incomplete') {
-        const state = data.reason_code === 'segment_not_deleted' ? 'not_deleted' : 'incomplete';
-        showDeleteOutcome(pendingId, state, data.detail, seg, segDay, '');
-        return;
-      }
-      if (data.reason_code === 'segment_delete_in_progress') {
-        window.AppServices.notifications.show({
-          app: 'transcripts',
-          icon: 'timer',
-          title: 'Too late to cancel',
-          message: 'The delete is already under way.',
-          autoDismiss: 3000
-        });
-        return;
-      }
-      if (response.status === 410) {
-        throw new Error('Your journal has no record of this delete. Reload to see whether the segment is still there.');
-      }
-
-      throw new Error(asSentence(data.error) || 'Failed to cancel delete');
-    } catch (err) {
-      const unanswered = err instanceof TypeError;
-      window.AppServices.notifications.show({
-        app: 'transcripts',
-        icon: 'triangle-alert',
-        title: 'Couldn\'t cancel delete',
-        message: unanswered
-          ? 'Your journal didn\'t answer, so the cancel may not have gone through. Reload to see whether the segment is still there.'
-          : (err.message || 'Please try again.'),
-        dismissible: unanswered,
-        autoDismiss: unanswered ? 10000 : 3000
-      });
-    }
   }
 
   window.closeDeleteSegmentModal = closeDeleteSegmentModal;

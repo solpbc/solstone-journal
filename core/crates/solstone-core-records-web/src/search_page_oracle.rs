@@ -86,6 +86,7 @@ mod tests {
             relax: true,
             counts: false,
             order: Default::default(),
+            body_owner_words: true,
         };
         let reference = today();
         let filtered = match search_counts(journal_root, OwnerBoundary, &request, reference) {

@@ -132,6 +132,83 @@ fn a_live_account_composes_from_its_window() {
 }
 
 #[test]
+fn a_record_reads_the_copy_the_importer_still_writes_to_when_a_merge_left_two() {
+    let journal = journal();
+    let root = journal.path();
+    let mut older = night();
+    older.by = Some("Older Copy".to_owned());
+    window(root, DAY, "220000_3600", &[older]);
+    window(root, DAY, "220000_3601", &[night()]);
+    record(root, json!({}));
+    let found = composed(root);
+    assert_eq!(found[0].window.as_deref(), Some("220000_3601"));
+    assert_eq!(found[0].account, Account::Live(Box::new(night())));
+}
+
+#[test]
+fn a_deleted_later_piece_marks_a_live_account_part_removed_as_a_deleted_start_does() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    let later = window(root, DAY, "230000_3600", &[tile(1)]);
+    window(root, NEXT, "000000_3600", &[tile(2)]);
+    record(root, json!({}));
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+    // The owner's delete of a later piece: the account says part of it is
+    // gone, and keeps the times its own row states.
+    delete(&later);
+    assert_eq!(
+        composed(root)[0].account,
+        Account::PartRemoved(Box::new(night()))
+    );
+}
+
+#[test]
+fn retention_reaching_a_later_piece_marks_it_and_a_release_does_not() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    let released = window(root, NEXT, "000000_3600", &[tile(1)]);
+    record(root, json!({}));
+    // A run's release puts its pieces back beside it on a later import, so
+    // it removes nothing from the account.
+    delete_for(&released, "import_run_release");
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+    let swept = window(root, NEXT, "010000_3600", &[tile(2)]);
+    delete_for(&swept, "retention");
+    assert_eq!(
+        composed(root)[0].account,
+        Account::PartRemoved(Box::new(night()))
+    );
+}
+
+#[test]
+fn a_deleted_whole_day_window_on_the_day_a_night_ends_leaves_it_live() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    window(root, NEXT, "000000_3600", &[tile(1)]);
+    // The next day's dated scores: not a piece of the night.
+    let dated = window(root, NEXT, "000000_86400", &[]);
+    record(root, json!({}));
+    delete(&dated);
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+}
+
+#[test]
+fn a_deleted_window_on_another_grid_inside_the_span_leaves_the_account_live() {
+    let journal = journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    window(root, DAY, "230000_3600", &[tile(1)]);
+    // A five-minute session's window inside the night is another grid's.
+    let session = window(root, DAY, "231500_300", &[]);
+    record(root, json!({}));
+    delete(&session);
+    assert_eq!(composed(root)[0].account, Account::Live(Box::new(night())));
+}
+
+#[test]
 fn removed_by_you_only_when_no_tile_of_the_span_survives() {
     let journal = journal();
     let root = journal.path();
@@ -1917,6 +1994,29 @@ fn a_strava_record_composes_from_its_tile_live_removed_by_you_or_unreadable() {
 }
 
 /// A body.jsonl in a Strava tile's folder isn't what the tile holds.
+#[test]
+fn a_strava_record_reads_the_lowest_key_the_strava_importer_keeps_writing() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    let (_, run) = strava_tile(
+        root,
+        DAY,
+        "070000_300",
+        (7001, 0, 1),
+        ("Run", "2026-10-10T07:00:00-06:00", 300),
+    );
+    // An archive merge's copy, on the next key.
+    strava_tile(
+        root,
+        DAY,
+        "070000_301",
+        (7001, 0, 1),
+        ("Run", "2026-10-10T07:00:00-06:00", 300),
+    );
+    record_in(root, STRAVA, DAY, &run);
+    assert_eq!(composed(root)[0].window.as_deref(), Some("070000_300"));
+}
+
 #[test]
 fn a_strava_window_is_read_by_its_own_file_only() {
     let journal = journal_with_strava();

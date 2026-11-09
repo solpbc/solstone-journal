@@ -27,7 +27,6 @@ mod inventory;
 mod line_label;
 mod location;
 mod media_removal;
-mod pending;
 mod reprocess;
 mod segment;
 mod segment_media;
@@ -104,7 +103,7 @@ fn router_with_dependencies(
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
 ) -> Router {
     let deferred_deletes = solstone_core_serving::held_delete::Registry::new();
-    delete::resume_pending(&journal_root, &deferred_deletes);
+    delete::sweep_trash(&journal_root);
     strava_delete::resume_pending(&journal_root, &deferred_deletes);
     Router::new()
         .route("/app/transcripts/", get(shell::root))
@@ -135,18 +134,6 @@ fn router_with_dependencies(
         .route(
             "/app/transcripts/api/segment/{day}/{stream}/{segment_key}",
             get(segment::segment_content).delete(delete::delete_segment),
-        )
-        .route(
-            "/app/transcripts/api/cancel-delete/{pending_id}",
-            post(delete::cancel_delete),
-        )
-        .route(
-            "/app/transcripts/api/delete-status/{pending_id}",
-            get(delete::delete_status),
-        )
-        .route(
-            "/app/transcripts/api/delete-outcomes",
-            get(delete::delete_outcomes),
         )
         .route(
             "/app/transcripts/api/strava/workout/{activity_id}",

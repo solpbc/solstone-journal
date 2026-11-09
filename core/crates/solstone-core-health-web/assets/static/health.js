@@ -1007,6 +1007,7 @@
     'maintenance:health:mark-raw': 'original media review',
     'maintenance:health:prune-logs': 'log cleanup',
     'maintenance:retention:owner-voice-originals': 'audio deletion catch-up',
+    'maintenance:trash:erase': 'trash erase',
     'maintenance:speakers:discover-voices': 'voice discovery',
     'maintenance:speakers:candidate-pair-suggestions': 'speaker suggestions',
     'maintenance:speakers:name-variants': 'speaker name suggestions',

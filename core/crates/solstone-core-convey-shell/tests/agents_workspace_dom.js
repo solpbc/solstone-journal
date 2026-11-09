@@ -17,6 +17,32 @@ const html = fs.readFileSync(path.join(root, 'assets/agents/workspace.html'), 'u
 const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.indexOf('</script>'));
 let cases = 0;
 
+// A copy table the page declares as a plain object literal, read from its source
+// so a test names a copy key and never the words behind it.
+function sourceTable(source, name) {
+  const start = source.indexOf(`const ${name} = {`);
+  assert(start >= 0, `${name} is declared`);
+  const open = source.indexOf('{', start);
+  let depth = 0;
+  let end = open;
+  for (; end < source.length; end++) {
+    if (source[end] === '{') depth++;
+    else if (source[end] === '}' && --depth === 0) break;
+  }
+  return vm.runInNewContext(`(${source.slice(open, end + 1)})`);
+}
+const TRASH_COPY = sourceTable(script, 'TRASH_COPY');
+const escText = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// The shell's real JournalClock, seeded with a zone, for dates on the journal's clock.
+function seededJournalClock(tz) {
+  const context = {window: {}, Intl, Date, Math, Number, String, Object, Array, Set, Map, Promise, JSON, console};
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(root, 'assets/static/journal_clock.js'), 'utf8'), context);
+  context.window.JournalClock.seed({tz, label: ''});
+  return context.window.JournalClock;
+}
+
 const ADDRESS = 'http://127.0.0.1:7659/mcp';
 const ME_ON = {enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'on'}};
 const FALSE_WITH_A_DOOR = ['nothing is reachable until you turn it on', 'this is off until you turn it on', 'stay connected on paper'];
@@ -41,7 +67,7 @@ function connection(kind, id, name, doorName) {
 
 // `journal` is what the watch endpoint answers: the open code and the agents paired in the browser.
 // A test changes it between ticks to play out what happens at the journal while the dialog is open.
-async function boot(state, {enable = null, pairingResponse, journal = null, activity = null, capable = false, capability = false, memories = null, deleteStates = null, hash = ''} = {}) {
+async function boot(state, {enable = null, pairingResponse, journal = null, activity = null, capable = false, capability = false, memories = null, deleteAnswer = null, recoverAnswer = null, journalClock = undefined, hash = ''} = {}) {
   const calls = [];
   const opened = [];
   const popups = [];
@@ -52,6 +78,7 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
   const fields = Object.fromEntries(['outcome', 'tool', 'agent', 'from', 'to', 'byo-hostname', 'byo-relay-address', 'byo-relay-port'].map(key => [key.startsWith('byo-') ? key : `a-${key}`, {value: ''}]));
   const view = {
     _html: '',
+    focused: null,
     get innerHTML() { return this._html; },
     set innerHTML(value) {
       this._html = value;
@@ -73,6 +100,11 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
       }
       const idMatch = selector.match(/^#([a-zA-Z0-9_-]+)$/);
       if (idMatch && fields[idMatch[1]]) return fields[idMatch[1]];
+      const attribute = selector.match(/^\[(data-[a-z-]+)\]$/);
+      if (attribute && this._html.includes(`${attribute[1]}=`)) {
+        const view = this;
+        return {focus() { view.focused = selector; }};
+      }
       return null;
     },
     querySelectorAll(selector) {
@@ -101,11 +133,13 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
     location,
     top: null,
     AppServices: {
-      escapeHtml: value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+      escapeHtml: escText,
       notifications: {
         show: opts => { notifications.push(opts); },
       },
     },
+    JournalFormat: {day: key => `DAY-${key}`},
+    JournalClock: journalClock,
     apiJson: async (url, options = {}) => {
       const method = options.method || 'GET';
       calls.push({url, method, body: options.body ? JSON.parse(options.body) : undefined});
@@ -136,9 +170,15 @@ async function boot(state, {enable = null, pairingResponse, journal = null, acti
         const page = before ? pages.find(item => item.after === before) : pages[0];
         return JSON.parse(JSON.stringify(page));
       }
-      if (url.startsWith('/app/transcripts/api/segment/') && method === 'DELETE') return {success: true, pending: 'p1', ttl_seconds: 10};
-      if (url.startsWith('/app/transcripts/api/delete-status/')) return {state: deleteStates?.shift() || 'pending'};
-      if (url.startsWith('/app/transcripts/api/cancel-delete/')) return {success: true};
+      // A delete moves the memory to the trash unless a test answers otherwise; a function may throw
+      // a refusal (an error with a status) or no answer (a TypeError).
+      if (url.startsWith('/app/transcripts/api/segment/') && method === 'DELETE') {
+        return deleteAnswer ? deleteAnswer(url) : {success: true, deleted: url.split('/').pop(), trash: {id: 'trash-1', erase_at: '2026-11-10T12:00:00Z'}};
+      }
+      if (url === '/app/settings/api/trash/recover' && method === 'POST') {
+        const ids = JSON.parse(options.body).ids;
+        return recoverAnswer ? recoverAnswer(ids) : {done: ids, failed: []};
+      }
       if (url.startsWith('/app/agents/api/activity')) return activity ? JSON.parse(JSON.stringify(activity)) : {entries: [], counts: {}, examination_complete: true};
       if (url === '/app/agents/api/enable') return {operation: method === 'POST' ? (enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}) : (enable || null)};
       throw new Error(`unexpected request ${method} ${url}`);
@@ -1086,7 +1126,7 @@ async function test(name, body) {
     assert(notifications.some(n => n.title === 'agents' && typeof n.message === 'string' && n.message.length > 0 && n.body === undefined));
   });
 
-  await test('an agent\'s memories: reach one, read it, delete it, cancel it', async () => {
+  await test('an agent\'s memories: reach one, read it, move it to the trash', async () => {
     const source = 'a3f2'.padEnd(64, '0');
     const earlierSource = '7c1e'.padEnd(64, '0');
     const stream = `agent-memory-${source}`;
@@ -1112,7 +1152,7 @@ async function test(name, body) {
     lacks(list, 'data-save-permission');
 
     // The agent's page shows the latest three and the way to the rest; the text is never markup.
-    const {view, click, calls, tick} = await boot(state(), {memories: memories(), deleteStates: ['deleted']});
+    const {view, click, calls, notifications} = await boot(state(), {memories: memories()});
     await click({connection: 'oauth:g1'});
     has(view, 'short answers please');
     has(view, '&lt;b&gt;not markup&lt;/b&gt;');
@@ -1122,22 +1162,139 @@ async function test(name, body) {
     await click({memories: source});
     has(view, 'fourth');
 
-    // Delete goes through the one segment delete, holds for its window, and the row leaves when it finishes.
+    // Delete opens one dialog with three buttons; move to trash goes through the one segment
+    // delete, and the row leaves the list at once.
     const place = `20261103/${stream}/094200_1`;
     await click({memoryDelete: place});
-    has(view, 'aria-label="delete this memory"');
+    has(view, `aria-label="${escText(TRASH_COPY.move.title)}"`);
+    has(view, 'data-memory-step="move"');
+    has(view, 'data-memory-erase-step="1"');
+    has(view, 'data-memory-confirm="1"');
+    has(view, '<button class="btn" data-close-modal>');
+    assert.strictEqual(view.focused, '[data-memory-confirm]', 'the reversible act takes the focus');
     assert(!calls.some(call => call.method === 'DELETE'), 'nothing is deleted before the owner confirms');
     await click({memoryConfirm: '1'});
-    assert(calls.some(call => call.method === 'DELETE' && call.url === `/app/transcripts/api/segment/20261103/${stream}/094200_1`), 'the delete names the memory\'s segment');
-    has(view, `data-memory-cancel="${place}"`);
-    has(view, 'short answers please');
-    await tick();
-    await tick();
+    const deleted = calls.find(call => call.method === 'DELETE');
+    assert.strictEqual(deleted.url, `/app/transcripts/api/segment/20261103/${stream}/094200_1`, 'the delete names the memory\'s segment');
+    assert.strictEqual(deleted.body, undefined, 'move to trash asks for no erase');
     lacks(view, 'short answers please');
+    lacks(view, 'class="modal"');
     has(view, '&lt;b&gt;not markup&lt;/b&gt;');
+    assert.strictEqual(notifications.at(-1).title, TRASH_COPY.receipt.moved.title);
   });
 
-  await test('an agent\'s memories: cancel keeps it, trouble says so, a link finds it', async () => {
+  await test('an agent\'s memory: erase now has its own step, back returns, and Escape closes', async () => {
+    const source = 'a3f2'.padEnd(64, '0');
+    const stream = `agent-memory-${source}`;
+    const claude = {...connection('oauth', 'g1', 'Claude', 'local'), memory_source: source};
+    const agents = [{source, count: 1, latest_at: '2026-11-03T16:42:00Z', label: 'Claude'}];
+    const page = {memories: [{day: '20261103', stream, segment: '094200_1', created_at: '2026-11-03T16:42:00Z', content: 'erase me'}], next: null, complete: true};
+    const place = `20261103/${stream}/094200_1`;
+    const {view, click, calls, keydown, notifications} = await boot(baseState({...door({listening: true}), connections: [claude]}), {
+      memories: {agents, pages: {[source]: [page]}},
+      deleteAnswer: () => ({success: true, deleted: '094200_1', erased: true}),
+    });
+    await click({memories: source});
+    await click({memoryDelete: place});
+    await click({memoryEraseStep: '1'});
+    has(view, `aria-label="${escText(TRASH_COPY.erase.title)}"`);
+    has(view, 'modal-card trash-erase');
+    has(view, 'data-memory-step="erase"');
+    has(view, escText(TRASH_COPY.erase.reach));
+    has(view, escText(TRASH_COPY.erase.agentRead));
+    has(view, 'data-memory-back="1"');
+    has(view, 'data-memory-erase="1"');
+    lacks(view, 'data-memory-confirm');
+    assert.strictEqual(view.focused, '[data-memory-back]');
+    await click({memoryBack: '1'});
+    has(view, 'data-memory-step="move"');
+    assert.strictEqual(view.focused, '[data-memory-erase-step]');
+    await click({memoryEraseStep: '1'});
+    await keydown('Escape');
+    lacks(view, 'class="modal"');
+    assert(!calls.some(call => call.method === 'DELETE'), 'stepping and closing delete nothing');
+    has(view, 'erase me');
+
+    await click({memoryDelete: place});
+    has(view, 'data-memory-step="move"', 'a new delete starts on the first step');
+    await click({memoryEraseStep: '1'});
+    await click({memoryErase: '1'});
+    assert.deepStrictEqual(calls.find(call => call.method === 'DELETE').body, {erase: true});
+    lacks(view, 'erase me');
+    assert.strictEqual(notifications.at(-1).title, TRASH_COPY.receipt.erased.title.replace('{noun}', TRASH_COPY.noun.memory));
+  });
+
+  await test('an agent\'s memory: every answer has its own receipt, and recover reads the page again', async () => {
+    const source = 'a3f2'.padEnd(64, '0');
+    const stream = `agent-memory-${source}`;
+    const claude = {...connection('oauth', 'g1', 'Claude', 'local'), memory_source: source};
+    const agents = [{source, count: 1, latest_at: '2026-11-03T16:42:00Z', label: 'Claude'}];
+    const page = {memories: [{day: '20261103', stream, segment: '094200_1', created_at: '2026-11-03T16:42:00Z', content: 'kept or not'}], next: null, complete: true};
+    const place = `20261103/${stream}/094200_1`;
+    const refused = () => { throw Object.assign(new Error('refused'), {status: 409}); };
+    const silent = () => { throw new TypeError('Failed to fetch'); };
+    const unreadable = () => { throw Object.assign(new Error('Malformed server response'), {status: 200, cause: 'parse'}); };
+    const fill = (text, date) => text.replace('{noun}', TRASH_COPY.noun.memory).replace('{date}', date);
+    const run = async ({deleteAnswer, recoverAnswer, erase = false, journalClock}) => {
+      const booted = await boot(baseState({...door({listening: true}), connections: [claude]}), {memories: {agents, pages: {[source]: [page]}}, deleteAnswer, recoverAnswer, journalClock});
+      await booted.click({memories: source});
+      await booted.click({memoryDelete: place});
+      if (erase) { await booted.click({memoryEraseStep: '1'}); await booted.click({memoryErase: '1'}); }
+      else await booted.click({memoryConfirm: '1'});
+      return booted;
+    };
+    const check = (notice, kind, {settled = false, buttons = [], date = ''} = {}) => {
+      const copy = TRASH_COPY.receipt[kind];
+      assert.strictEqual(notice.app, 'agents', kind);
+      assert.strictEqual(notice.title, fill(copy.title, date), kind);
+      assert.strictEqual(notice.message, copy.message ? fill(copy.message, date) : undefined, kind);
+      assert.strictEqual(notice.autoDismiss, settled ? 10000 : undefined, `${kind}: only a settled receipt dismisses itself`);
+      assert.deepStrictEqual([...notice.buttons].map(button => button.label), buttons, kind);
+    };
+
+    // Moved: dated on the journal's clock (noon UTC on the 10th is the 11th in Auckland), with recover and open trash.
+    const moved = await run({journalClock: seededJournalClock('Pacific/Auckland')});
+    check(moved.notifications.at(-1), 'moved', {settled: true, date: 'day-20261111', buttons: [TRASH_COPY.buttons.recover, TRASH_COPY.buttons.openTrash]});
+    lacks(moved.view, 'kept or not');
+    moved.notifications.at(-1).buttons[1].onClick();
+    assert.strictEqual(moved.location.assigned, '/app/settings#trash');
+    const reads = moved.calls.filter(call => call.url === `/app/agents/api/memories/${source}`).length;
+    await moved.notifications.at(-1).buttons[0].onClick();
+    await settle();
+    assert.deepStrictEqual(moved.calls.find(call => call.url === '/app/settings/api/trash/recover').body, {ids: ['trash-1'], page: 'agents'});
+    assert(moved.calls.filter(call => call.url === `/app/agents/api/memories/${source}`).length > reads, 'recover reads the memory\'s page again');
+    has(moved.view, 'kept or not');
+    check(moved.notifications.at(-1), 'recovered', {settled: true});
+
+    // Recover that didn't work, or got no answer.
+    for (const [recoverAnswer, kind, buttons] of [
+      [ids => ({done: [], failed: [{id: ids[0], reason: 'synthetic reason'}]}), 'recoverFailed', [TRASH_COPY.buttons.openTrash]],
+      [refused, 'recoverFailed', [TRASH_COPY.buttons.openTrash]],
+      [silent, 'noAnswerRecover', []],
+    ]) {
+      const booted = await run({recoverAnswer});
+      await booted.notifications.at(-1).buttons[0].onClick();
+      await settle();
+      check(booted.notifications.at(-1), kind, {buttons});
+      lacks(booted.view, 'kept or not');
+    }
+
+    // Each answer to the delete itself; the row leaves only when the journal changed.
+    for (const [deleteAnswer, erase, kind, gone, buttons, settled] of [
+      [() => ({success: true, deleted: '094200_1', erased: false, erase_failed: true, trash: {id: 'trash-1', erase_at: '2026-11-10T12:00:00Z'}}), true, 'eraseFailed', true, [TRASH_COPY.buttons.openTrash]],
+      [refused, false, 'moveRefused', false, []],
+      [refused, true, 'eraseRefused', false, []],
+      [silent, false, 'noAnswerMove', false, []],
+      [silent, true, 'noAnswerErase', false, []],
+      [unreadable, false, 'noAnswerMove', false, []],
+    ]) {
+      const booted = await run({deleteAnswer, erase});
+      check(booted.notifications.at(-1), kind, {buttons, settled});
+      (gone ? lacks : has)(booted.view, 'kept or not', `${kind}: the row leaves only when the journal changed`);
+    }
+  });
+
+  await test('an agent\'s memories: cancel in the dialog keeps it, trouble says so, a link finds it', async () => {
     const source = 'a3f2'.padEnd(64, '0');
     const stream = `agent-memory-${source}`;
     const memory = (segment, content, extra = {}) => ({day: '20261103', stream, segment, created_at: '2026-11-03T16:42:00Z', content, ...extra});
@@ -1148,7 +1305,7 @@ async function test(name, body) {
     const older = {after: '081500_1', memories: [memory('071500_1', 'found further back')], next: null, complete: true};
     const place = `20261103/${stream}/094200_1`;
 
-    // Cancel inside the window keeps the memory.
+    // Cancel in the dialog keeps the memory and asks nothing of the journal.
     const {view, click, calls} = await boot(state(), {memories: {agents, pages: {[source]: [page, older]}}});
     await click({memories: source});
     has(view, 'data-memories-partial');
@@ -1156,10 +1313,9 @@ async function test(name, body) {
     has(view, `data-memory-delete="20261103/${stream}/081500_1"`);
     has(view, 'data-memories-older');
     await click({memoryDelete: place});
-    await click({memoryConfirm: '1'});
-    await click({memoryCancel: place});
-    assert(calls.some(call => call.method === 'POST' && call.url === '/app/transcripts/api/cancel-delete/p1'), 'cancel reaches the journal');
-    lacks(view, 'data-memory-cancel');
+    await click({closeModal: ''});
+    assert(!calls.some(call => call.method === 'DELETE'), 'cancel deletes nothing');
+    lacks(view, 'class="modal"');
     has(view, 'keep me');
 
     // A page that can't be read says so and offers another try.

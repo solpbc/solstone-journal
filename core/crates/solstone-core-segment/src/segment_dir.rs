@@ -903,3 +903,97 @@ mod tests {
         }
     }
 }
+
+/// What a segment's place holds when the same segment arrives again.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Arrival {
+    /// Nothing is there: write it as new.
+    Free,
+    /// The owner removed it before and only its tombstone stood there. The
+    /// tombstone is gone now and the folder is empty: write the arrival into it.
+    Reclaimed,
+    /// A live segment is there.
+    Live,
+    /// A removal of it is part-way through, or its place holds something a
+    /// segment write must not take. Refuse the arrival for now.
+    Removing,
+}
+
+/// Make room for a segment that arrives again where the owner removed it.
+///
+/// What arrives is new data and comes back: the owner's earlier removal is not
+/// a reason to refuse it. A tombstone left by that removal stays only to tell
+/// readers the place is removed, so it gives way here, under the same segment
+/// lock a removal and the trash take. The folder itself stays, because a
+/// stream's chain may name it. A removal still in progress, or a tombstone
+/// beside other files, is left alone and refused.
+pub fn reclaim_for_arrival(segment_dir: &Path) -> Result<Arrival, SegmentError> {
+    match owner_deletion_state(segment_dir)? {
+        OwnerDeletionState::Live => {
+            return Ok(if path_present(segment_dir)? {
+                Arrival::Live
+            } else {
+                Arrival::Free
+            });
+        }
+        OwnerDeletionState::Staged | OwnerDeletionState::Occupied => return Ok(Arrival::Removing),
+        OwnerDeletionState::Deleted => {}
+    }
+    let _lock = solstone_core_journal_io::hold_lock(
+        segment_dir,
+        solstone_core_journal_io::LockOptions::default(),
+    )
+    .map_err(|_| SegmentError::StreamInput("the segment is busy; try again"))?;
+    if owner_deletion_state(segment_dir)? != OwnerDeletionState::Deleted {
+        return reclaim_for_arrival_unlocked(segment_dir);
+    }
+    let entries = std::fs::read_dir(segment_dir)
+        .map_err(|source| SegmentError::Io {
+            path: segment_dir.to_path_buf(),
+            source,
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| SegmentError::Io {
+            path: segment_dir.to_path_buf(),
+            source,
+        })?;
+    if entries.len() != 1
+        || entries
+            .iter()
+            .any(|entry| entry.file_name() != TOMBSTONE_NAME)
+    {
+        return Ok(Arrival::Removing);
+    }
+    let tombstone = segment_dir.join(TOMBSTONE_NAME);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "system internal: a removal's tombstone giving way to the same segment arriving again; the tombstone is a marker, not owner data"
+    )]
+    std::fs::remove_file(&tombstone).map_err(|source| SegmentError::Io {
+        path: tombstone,
+        source,
+    })?;
+    if let Ok(dir) = std::fs::File::open(segment_dir) {
+        let _ = dir.sync_all();
+    }
+    Ok(Arrival::Reclaimed)
+}
+
+fn reclaim_for_arrival_unlocked(segment_dir: &Path) -> Result<Arrival, SegmentError> {
+    Ok(match owner_deletion_state(segment_dir)? {
+        OwnerDeletionState::Live if path_present(segment_dir)? => Arrival::Live,
+        OwnerDeletionState::Live => Arrival::Free,
+        _ => Arrival::Removing,
+    })
+}
+
+fn path_present(path: &Path) -> Result<bool, SegmentError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(SegmentError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}

@@ -364,6 +364,9 @@ pub enum StravaError {
         skips: SkipCounts,
     },
     ZoneUnrecognised(String),
+    /// The zone record appeared, naming another zone, while this run placed
+    /// its tiles on the one it had read.
+    ZoneChanged,
     LockUnavailable,
     TileUnreadable {
         day: String,
@@ -401,6 +404,7 @@ impl StravaError {
             Self::LayoutUnrecognised { .. } => "strava_layout_unrecognised",
             Self::NoWorkouts { .. } => "strava_no_workouts",
             Self::ZoneUnrecognised(_) => "strava_zone_unrecognised",
+            Self::ZoneChanged => "strava_zone_changed",
             Self::LockUnavailable => "strava_lock_unavailable",
             Self::TileUnreadable { .. } => "strava_tile_unreadable",
             Self::DayUnreadable { .. } => "strava_day_unreadable",
@@ -439,6 +443,13 @@ impl fmt::Display for StravaError {
             }
             Self::ZoneUnrecognised(detail) => {
                 write!(f, "{}: zone record unrecognised: {detail}", self.code())
+            }
+            Self::ZoneChanged => {
+                write!(
+                    f,
+                    "{}: this journal's Strava time zone changed during the import. import again",
+                    self.code()
+                )
             }
             Self::LockUnavailable => {
                 write!(f, "{}: failed to acquire Strava ingest lock", self.code())
@@ -1032,10 +1043,19 @@ pub fn read_zone_record(journal: &Path) -> Result<Option<Tz>, StravaError> {
     }
 }
 
+/// Refuses a zone record that already names another zone: the run placed its
+/// tiles on `zone`, and they mustn't be read on a zone they weren't placed on.
+fn held_zone_is(journal: &Path, zone: Tz) -> Result<(), StravaError> {
+    match read_zone_record(journal)? {
+        Some(held) if held != zone => Err(StravaError::ZoneChanged),
+        _ => Ok(()),
+    }
+}
+
 pub fn create_zone_record(journal: &Path, zone: Tz) -> Result<(), StravaError> {
     let path = journal.join(ZONE_FILE_REL);
     if path.exists() {
-        return Ok(());
+        return held_zone_is(journal, zone);
     }
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -1050,7 +1070,7 @@ pub fn create_zone_record(journal: &Path, zone: Tz) -> Result<(), StravaError> {
         Err(solstone_core_journal_io::AtomicWriteError::Io { source, .. })
             if source.kind() == std::io::ErrorKind::AlreadyExists =>
         {
-            Ok(())
+            held_zone_is(journal, zone)
         }
         Err(e) => Err(StravaError::ZoneUnrecognised(e.to_string())),
     }
@@ -2972,6 +2992,21 @@ mod tests {
                 ("20261101".to_owned(), (*expected_seg).to_owned())
             );
         }
+    }
+
+    #[test]
+    fn a_zone_record_naming_another_zone_stops_a_run_placed_on_its_own() {
+        let tmp = TempDir::new().unwrap();
+        let journal = tmp.path();
+        create_zone_record(journal, chrono_tz::Asia::Tokyo).unwrap();
+        // The same zone is what a repeat import finds: nothing to say.
+        create_zone_record(journal, chrono_tz::Asia::Tokyo).unwrap();
+        let refused = create_zone_record(journal, chrono_tz::America::Denver).unwrap_err();
+        assert_eq!(refused.code(), "strava_zone_changed");
+        assert_eq!(
+            read_zone_record(journal).unwrap(),
+            Some(chrono_tz::Asia::Tokyo)
+        );
     }
 
     #[test]

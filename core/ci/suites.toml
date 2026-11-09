@@ -1332,6 +1332,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-trash"
+package = "solstone-core-trash"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-retention-client"
 package = "solstone-core-retention-client"
 set = "component"
@@ -5552,6 +5563,19 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = ["full-tests"]
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-settings-web::trash_dom"
+package = "solstone-core-settings-web"
+target = "trash_dom"
+set = "component"
+areas = ["home"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
 runtime = "none"
 
 [[suites]]

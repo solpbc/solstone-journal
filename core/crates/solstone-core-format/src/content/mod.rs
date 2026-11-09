@@ -3,7 +3,11 @@
 
 mod action_logs;
 mod activities;
-pub use activities::{BODY_RECORD_SOURCE, is_body_record, is_retired_plan, is_strava_reading};
+pub use activities::{
+    BODY_ENTRY_LINE, BODY_RECORD_SOURCE, EDIT_REMOVED, activity_field_held, body_record_at,
+    body_record_indexed, edit_names, edit_removed, is_body_record, is_retired_plan,
+    is_strava_reading, non_body_entries, owner_edit,
+};
 mod ai_chat;
 mod audio;
 pub mod body_records;
@@ -384,6 +388,17 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         family: Family::Browser,
         root: PatternRoot::DayRooted,
         disposition: IndexDisposition::Excluded,
+    },
+    // Note changes a linked device reports from an Obsidian vault, written by
+    // ingest as one transcript per window.
+    FamilyPattern {
+        pattern: "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/*/*/note_transcript.md",
+        family: Family::Markdown,
+        root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
     },
     // Notes about the owner's calendar. Readable by a connection that sees the
     // whole journal's transcripts; they belong to no facet.

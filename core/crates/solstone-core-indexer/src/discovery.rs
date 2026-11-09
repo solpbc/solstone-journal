@@ -821,7 +821,7 @@ mod tests {
                 format!("file_{idx}.md")
             } else if *comp == "*.jsonl" {
                 format!("file_{idx}.jsonl")
-            } else if comp.ends_with("_transcript.md") {
+            } else if comp.contains('*') && comp.ends_with("_transcript.md") {
                 format!("clip_{idx}_transcript.md")
             } else if comp.starts_with("browser_") && comp.ends_with(".jsonl") {
                 format!("browser_{idx}.jsonl")

@@ -85,6 +85,9 @@ mod installation_binding_admission_surface;
 #[path = "contracts/journal_artifact_durability.rs"]
 mod journal_artifact_durability;
 #[cfg(test)]
+#[path = "contracts/journal_trash_hidden.rs"]
+mod journal_trash_hidden;
+#[cfg(test)]
 #[path = "contracts/journal_web_host_contract.rs"]
 mod journal_web_host_contract;
 #[cfg(all(test, feature = "full-tests"))]

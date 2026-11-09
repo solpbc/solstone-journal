@@ -142,6 +142,20 @@ pub struct MergeSummary {
     pub imports_copied: usize,
     pub imports_skipped: usize,
     pub errors: Vec<String>,
+    /// Body sources whose windows came in placed on another time zone than the
+    /// one this journal holds for them, so their times may read wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_zones_differ: Vec<BodyZoneDiffers>,
+}
+
+/// One body source merged from an archive whose fixed zone differs from this
+/// journal's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BodyZoneDiffers {
+    /// The source's name, in words.
+    pub source: String,
+    /// How many hours of its windows came in.
+    pub hours: u64,
 }
 
 /// What happened to a source segment.
@@ -164,9 +178,9 @@ pub enum SegmentDispositionKind {
     },
     /// Its own key and every key ingest would try held different content.
     DifferingContentCollision,
-    /// The owner deleted this segment from the journal (its key holds a
-    /// tombstone, or its removal is in progress), so the archive's copy is not
-    /// brought back.
+    /// The owner's removal of the segment at this key is part-way through, so
+    /// the archive's copy is not placed there now. A key the owner already
+    /// removed is not this: the archive's copy is new data and comes back.
     DeletedByOwner,
 }
 
@@ -1209,6 +1223,8 @@ enum PublishUnit {
     Tree,
     /// A file, created or replaced.
     File,
+    /// A file only this merge may create: one already there stops the merge.
+    NewFile,
 }
 
 type PublishUnits = BTreeMap<String, PublishUnit>;
@@ -1485,7 +1501,8 @@ fn stage_segments(
             // siblings (`093000_300_a` / `_b`) land at distinct paths.
             let mut relative = segment_relative_for(&day_name, &segment, identity);
             let mut disposition = SegmentDispositionKind::Copied;
-            if deleted_by_owner(&target.join(&relative))? {
+            let own_key = key_state(&target.join(&relative))?;
+            if own_key == KeyState::Removing {
                 state.summary.segments_skipped += 1;
                 state.segment_dispositions.push(SegmentDisposition {
                     day: day_name.clone(),
@@ -1495,7 +1512,9 @@ fn stage_segments(
                 });
                 continue;
             }
-            if fs::symlink_metadata(target.join(&relative)).is_ok() {
+            // A key the owner removed takes the archive's copy as a free key
+            // would; its tombstone gives way at publication.
+            if own_key == KeyState::Live {
                 match place_colliding_segment(
                     target, &day_name, &segment, identity, &own_paths, state,
                 )? {
@@ -1595,12 +1614,13 @@ fn place_colliding_segment(
     for name in &candidates {
         let relative = segment_relative_for(day, segment, RecordIdentity { name, ..identity });
         let destination = target.join(&relative);
-        if fs::symlink_metadata(&destination).is_ok() {
+        let candidate = key_state(&destination)?;
+        if candidate == KeyState::Live {
             if tree_digest(&destination)? == source_digest {
                 return Ok(CollisionPlacement::Held);
             }
         } else if free.is_none()
-            && !deleted_by_owner(&destination)?
+            && candidate != KeyState::Removing
             && !state.chronicle_units.contains_key(&relative)
             && !own_paths.contains(&relative)
         {
@@ -2650,6 +2670,13 @@ fn stage_imports(
         detail: error.to_string(),
     })? {
         let name = file_name(&source_import)?;
+        // Another journal's unfinished run means nothing here.
+        if BODY_SOURCES
+            .iter()
+            .any(|source| name == format!(".{source}-run"))
+        {
+            continue;
+        }
         let destination = target.join("imports").join(&name);
         if fs::symlink_metadata(&destination).is_ok() {
             state.summary.imports_skipped += 1;
@@ -2668,7 +2695,89 @@ fn stage_imports(
         state.writes += 1;
         state.import_units.insert(relative, PublishUnit::Tree);
     }
+    stage_body_zones(&imports, target, state)
+}
+
+/// The sources whose windows sit in `import.<source>` and whose fixed zone is
+/// kept in `imports/.<source>-zone.json`.
+const BODY_SOURCES: [&str; 3] = ["apple_health", "oura", "strava"];
+
+fn zone_named(bytes: &[u8]) -> Option<String> {
+    serde_json::from_slice::<Value>(bytes)
+        .ok()?
+        .get("zone")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// A body source's windows read on the zone that placed them, so a merged
+/// journal needs it. A target with none takes the archive's; one with another
+/// keeps its own, and the summary says how much came in on the other clock.
+fn stage_body_zones(
+    imports: &Path,
+    target: &Path,
+    state: &mut MergeState,
+) -> Result<(), ImportSourcesError> {
+    for source in BODY_SOURCES {
+        let name = format!(".{source}-zone.json");
+        let source_file = imports.join(&name);
+        if !fs::symlink_metadata(&source_file).is_ok_and(|metadata| metadata.is_file()) {
+            continue;
+        }
+        let import_error = |path: PathBuf, error: io::Error| ImportSourcesError::ImportMerge {
+            path,
+            detail: error.to_string(),
+        };
+        let bytes =
+            fs::read(&source_file).map_err(|error| import_error(source_file.clone(), error))?;
+        let destination = target.join("imports").join(&name);
+        match fs::read(&destination) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let relative = format!("imports/{name}");
+                stage_bytes(state, &relative, &bytes)?;
+                state.import_units.insert(relative, PublishUnit::NewFile);
+            }
+            Err(error) => return Err(import_error(destination, error)),
+            Ok(held) if zone_named(&held).is_some() && zone_named(&held) == zone_named(&bytes) => {}
+            Ok(_) => {
+                let hours = body_hours_staged(state, source);
+                if hours > 0 {
+                    state.summary.body_zones_differ.push(BodyZoneDiffers {
+                        source: solstone_core_format::content::body_records::source_words(source)
+                            .to_owned(),
+                        hours,
+                    });
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+/// How many hours of `source`'s body windows this merge is bringing in.
+fn body_hours_staged(state: &MergeState, source: &str) -> u64 {
+    let stream = format!("import.{source}");
+    let seconds = state
+        .chronicle_units
+        .keys()
+        .filter_map(|relative| {
+            let mut parts = relative.split('/');
+            let (Some("chronicle"), Some(_day), Some(found), Some(key)) =
+                (parts.next(), parts.next(), parts.next(), parts.next())
+            else {
+                return None;
+            };
+            if found != stream {
+                return None;
+            }
+            let staged = join_contained(&state.staged_publish, relative).ok()?;
+            if !solstone_core_segment::is_body_only_dir(&stream, &staged) {
+                return None;
+            }
+            key.split('_').nth(1)?.parse::<u64>().ok()
+        })
+        .sum::<u64>();
+    seconds.div_ceil(3600)
 }
 
 fn log_skipped_extras(source: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {
@@ -2952,6 +3061,14 @@ fn publish_one(
     })?;
     match unit {
         PublishUnit::Tree => {
+            if state.chronicle_units.contains_key(&relative) {
+                reclaim_removed_key(&destination).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                        mutation,
+                    }
+                })?;
+            }
             if fs::symlink_metadata(&destination).is_ok() {
                 return Err(ImportSourcesError::MergePublishFailed {
                     detail: format!("{relative} appeared while the import was running"),
@@ -3021,6 +3138,15 @@ fn publish_one(
             }
         }
         PublishUnit::File => {
+            publish_file(state, &destination, &staged, relative, mutation)?;
+        }
+        PublishUnit::NewFile => {
+            if fs::symlink_metadata(&destination).is_ok() {
+                return Err(ImportSourcesError::MergePublishFailed {
+                    detail: format!("{relative} appeared while the import was running"),
+                    mutation,
+                });
+            }
             publish_file(state, &destination, &staged, relative, mutation)?;
         }
     }
@@ -3353,11 +3479,71 @@ fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesE
     })
 }
 
-fn deleted_by_owner(path: &Path) -> Result<bool, ImportSourcesError> {
-    solstone_core_segment::owner_deleted(path).map_err(|error| ImportSourcesError::SegmentMerge {
+/// What a segment key in the target journal holds, for placing an archive
+/// segment there. Planning only reads; the tombstone gives way at publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KeyState {
+    /// Nothing is there.
+    Free,
+    /// The owner removed the segment and only its tombstone stands: the key is
+    /// free again for what arrives.
+    Removed,
+    /// Something live is there.
+    Live,
+    /// A removal is part-way through (a staged sibling, an occupied marker, or
+    /// a tombstone beside other files).
+    Removing,
+}
+
+fn key_state(path: &Path) -> Result<KeyState, ImportSourcesError> {
+    let io = |detail: String| ImportSourcesError::SegmentMerge {
         path: path.to_path_buf(),
-        detail: error.to_string(),
-    })
+        detail,
+    };
+    match solstone_core_segment::owner_deletion_state(path)
+        .map_err(|error| io(error.to_string()))?
+    {
+        solstone_core_segment::OwnerDeletionState::Live => {
+            Ok(if fs::symlink_metadata(path).is_ok() {
+                KeyState::Live
+            } else {
+                KeyState::Free
+            })
+        }
+        solstone_core_segment::OwnerDeletionState::Deleted => {
+            let mut entries = fs::read_dir(path).map_err(|error| io(error.to_string()))?;
+            let only_tombstone = match (entries.next(), entries.next()) {
+                (Some(entry), None) => {
+                    entry.map_err(|error| io(error.to_string()))?.file_name() == "tombstone.json"
+                }
+                _ => false,
+            };
+            Ok(if only_tombstone {
+                KeyState::Removed
+            } else {
+                KeyState::Removing
+            })
+        }
+        solstone_core_segment::OwnerDeletionState::Staged
+        | solstone_core_segment::OwnerDeletionState::Occupied => Ok(KeyState::Removing),
+    }
+}
+
+/// At publication, a removed key's tombstone gives way to the archive segment
+/// arriving there, and its emptied folder makes room for the staged pivot. A
+/// removal in progress, or anything written into the folder meanwhile, stays
+/// and the publication refuses as for any occupied name.
+fn reclaim_removed_key(destination: &Path) -> io::Result<()> {
+    if key_state(destination).map_err(io::Error::other)? != KeyState::Removed {
+        return Ok(());
+    }
+    if solstone_core_segment::reclaim_for_arrival(destination).map_err(io::Error::other)?
+        == solstone_core_segment::Arrival::Reclaimed
+    {
+        // `remove_dir` takes only an empty folder.
+        fs::remove_dir(destination)?;
+    }
+    Ok(())
 }
 
 fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'_>) -> String {
@@ -4591,6 +4777,46 @@ mod tests {
                 .join("chronicle")
                 .join("20260311")
                 .join("120000_60")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn a_zone_file_appearing_during_a_merge_stops_it_with_nothing_of_the_archive_left() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                (
+                    "chronicle/20260311/import.apple_health/090000_3600/body.jsonl",
+                    b"{}\n",
+                ),
+                (
+                    "imports/.apple_health-zone.json",
+                    br#"{"zone":"America/Denver"}"#,
+                ),
+            ],
+        );
+        let path = target.join("imports/.apple_health-zone.json");
+        let appeared = path.clone();
+        inject_before_publish(Some(Box::new(move || {
+            fs::create_dir_all(appeared.parent().unwrap()).unwrap();
+            fs::write(&appeared, br#"{"zone":"Asia/Tokyo"}"#).unwrap();
+        })));
+        let error = merge_journal_archive(&archive, &target, &merge_options(&tree), None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("appeared while the import was running"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), br#"{"zone":"Asia/Tokyo"}"#);
+        assert!(
+            !target
+                .join("chronicle/20260311/import.apple_health/090000_3600")
                 .exists()
         );
     }

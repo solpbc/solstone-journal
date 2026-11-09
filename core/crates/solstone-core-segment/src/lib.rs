@@ -47,7 +47,7 @@ pub use body_only::{
     day_holds_nothing_the_owner_did, holds_foreign_content, holds_nothing_the_owner_did,
     is_body_only_dir, is_body_only_listing, is_body_only_segment,
 };
-pub use calendar::{is_calendar_segment, is_calendar_stream};
+pub use calendar::{is_calendar_segment, is_calendar_stream, is_obsidian_stream};
 pub use chronicle_migration::{
     ChronicleMigrationError, ChronicleMigrationReport, migrate_root_days_to_chronicle,
 };
@@ -77,8 +77,9 @@ pub use relocate::{
     relocate_segment, restructure_segments_by_stream,
 };
 pub use segment_dir::{
-    OwnerDeletionState, RetainedOwnerDeletion, SegmentDir, is_safe_stream_component, list_days,
-    list_segments, list_segments_in, list_stream_segments, owner_deleted, owner_deletion_state,
+    Arrival, OwnerDeletionState, RetainedOwnerDeletion, SegmentDir, is_safe_stream_component,
+    list_days, list_segments, list_segments_in, list_stream_segments, owner_deleted,
+    owner_deletion_state, reclaim_for_arrival,
 };
 pub use solstone_core_journal_io::{
     DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, RecordIdentity, Segment,

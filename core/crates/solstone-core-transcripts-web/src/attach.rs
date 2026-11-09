@@ -40,7 +40,9 @@ pub(crate) fn normalize_markdown_only_segments(
     segments: &mut [TranscriptSegment],
 ) {
     for segment in segments {
-        if !segment.stream.starts_with("import.") {
+        let holds_notes = segment.stream.starts_with("import.")
+            || solstone_core_format::obsidian::is_obsidian_stream_name(&segment.stream);
+        if !holds_notes {
             continue;
         }
         let directory = crate::segment_media::physical_segment_dir(
@@ -64,7 +66,7 @@ pub(crate) fn normalize_markdown_only_segments(
                 || name.ends_with("screen.jsonl")
                 || name.ends_with("_transcript.jsonl")
         });
-        if segment.stream.starts_with("import.") && markdown && !jsonl {
+        if markdown && !jsonl {
             segment.types = vec!["markdown".to_owned()];
             segment.data_state = BTreeMap::from([("markdown".to_owned(), "analyzed".to_owned())]);
         }

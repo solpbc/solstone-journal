@@ -5065,6 +5065,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-body-source",
+ "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
 ]
@@ -5461,6 +5462,7 @@ dependencies = [
  "solstone-core-indexer-todo",
  "solstone-core-ingest-contract",
  "solstone-core-ingest-resolve",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-segment",
  "solstone-core-sol-link",
@@ -5561,6 +5563,7 @@ version = "2.0.72"
 dependencies = [
  "nix 0.30.1",
  "serde_json",
+ "solstone-core-journal",
  "solstone-core-journal-io",
  "zip",
 ]
@@ -5790,6 +5793,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
+ "solstone-core-trash",
  "tempfile",
 ]
 
@@ -6160,6 +6164,7 @@ dependencies = [
  "solstone-core-processing-record",
  "solstone-core-removals",
  "solstone-core-segment",
+ "solstone-core-trash",
  "tempfile",
 ]
 
@@ -6175,6 +6180,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-removals",
  "solstone-core-retention",
+ "solstone-core-trash",
 ]
 
 [[package]]
@@ -6279,6 +6285,7 @@ dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
+ "log",
  "nix 0.30.1",
  "serde",
  "serde_json",
@@ -6289,6 +6296,7 @@ dependencies = [
  "solstone-core-describe-categories",
  "solstone-core-entity",
  "solstone-core-facets",
+ "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
@@ -6299,6 +6307,7 @@ dependencies = [
  "solstone-core-sense",
  "solstone-core-speaker-resolve",
  "solstone-core-system",
+ "solstone-core-trash",
  "temp-env",
  "tempfile",
  "tokio",
@@ -6993,6 +7002,7 @@ dependencies = [
  "filetime",
  "getrandom 0.3.4",
  "jsonschema",
+ "log",
  "nix 0.30.1",
  "rusqlite",
  "serde",
@@ -7025,10 +7035,27 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-transcripts",
+ "solstone-core-trash",
  "tempfile",
  "tokio",
  "tower",
  "zip",
+]
+
+[[package]]
+name = "solstone-core-trash"
+version = "2.0.72"
+dependencies = [
+ "chrono",
+ "getrandom 0.3.4",
+ "log",
+ "serde",
+ "serde_json",
+ "solstone-core-journal",
+ "solstone-core-journal-config",
+ "solstone-core-journal-io",
+ "solstone-core-removals",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

@@ -44,6 +44,22 @@ pub fn segment_rel(day: &str, stream: &str, dir: &str) -> String {
     format!("{}/{}", stream_rel(day, stream), dir)
 }
 
+/// The day, stream and directory name of a segment path [`segment_rel`] built.
+pub fn parse_segment_rel(rel: &str) -> Option<(String, String, String)> {
+    let parts: Vec<&str> = rel.split('/').collect();
+    match parts.as_slice() {
+        ["chronicle", day, dir] => Some((
+            (*day).to_owned(),
+            DEFAULT_STREAM.to_owned(),
+            (*dir).to_owned(),
+        )),
+        ["chronicle", day, stream, dir] if *stream != DEFAULT_STREAM => {
+            Some(((*day).to_owned(), (*stream).to_owned(), (*dir).to_owned()))
+        }
+        _ => None,
+    }
+}
+
 /// A file inside a segment, journal-relative.
 pub fn content_rel(day: &str, stream: &str, dir: &str, name: &str) -> String {
     format!("{}/{}", segment_rel(day, stream, dir), name)

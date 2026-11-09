@@ -14,6 +14,8 @@ pub enum JournalPathError {
     Absolute,
     Backslash,
     InvalidComponent,
+    /// The trash folder, which nothing outside the trash reads.
+    Trash,
 }
 
 impl fmt::Display for JournalPathError {
@@ -25,6 +27,7 @@ impl fmt::Display for JournalPathError {
             JournalPathError::InvalidComponent => {
                 "rel must not contain empty, '.', or '..' components"
             }
+            JournalPathError::Trash => "rel must not name the trash",
         })
     }
 }
@@ -35,6 +38,9 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, Journa
     let rel = normalize_rel(rel);
     validate_rel(&rel)?;
     let first = rel.split('/').next().unwrap_or("");
+    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
+        return Err(JournalPathError::Trash);
+    }
     let mut resolved = if is_date_key(first) {
         journal.join(CHRONICLE_DIR)
     } else {
@@ -195,5 +201,21 @@ mod tests {
             resolve_journal_path(journal, "a\\b").unwrap_err(),
             JournalPathError::Backslash
         );
+    }
+}
+
+#[cfg(test)]
+mod trash_resolution_tests {
+    use super::{JournalPathError, resolve_journal_path};
+    use std::path::Path;
+
+    #[test]
+    fn a_path_into_the_trash_resolves_to_nothing() {
+        let journal = Path::new("/journal");
+        assert_eq!(
+            resolve_journal_path(journal, ".trash/x/files").unwrap_err(),
+            JournalPathError::Trash
+        );
+        assert!(resolve_journal_path(journal, "20260731/x").is_ok());
     }
 }

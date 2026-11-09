@@ -1999,58 +1999,54 @@ fn sweep_help_names_force_and_consent() {
 }
 
 #[test]
-fn staged_segment_refusal_is_registered_and_recovery_reconciles_it() {
-    let bed = Bed::new("segment-register");
-    let segment = bed.proven_segment(
+fn remove_segments_moves_to_the_trash_and_refuses_one_mid_removal() {
+    let bed = Bed::new("segment-trash-and-staged");
+    let journal = bed.journal().to_str().unwrap().to_owned();
+    let run = |bed: &Bed, segment: &str| {
+        bed.run(
+            "remove-segments",
+            &["--journal", &journal, "--segment", segment],
+        )
+    };
+    let live = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "080000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let trashed = run(&bed, "20260701/field.audio/080000_17");
+    assert_eq!(trashed.status.code(), Some(0), "{:?}", receipt(&trashed));
+    assert_eq!(receipt(&trashed)["trashed"].as_array().unwrap().len(), 1);
+    assert!(live.join("tombstone.json").is_file());
+    let items = solstone_core_trash::list(bed.journal()).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        items[0].action,
+        solstone_core_removals::Action::RetentionTool
+    );
+
+    // Already removed: nothing to trash again.
+    let again = run(&bed, "20260701/field.audio/080000_17");
+    assert_eq!(again.status.code(), Some(3));
+    assert_eq!(solstone_core_trash::list(bed.journal()).unwrap().len(), 1);
+
+    // An older removal part-way through keeps its place.
+    let staging = bed.proven_segment(
         "20260701",
         "field.audio",
         "070000_17",
         "2026-07-01T00:00:00Z",
     );
-    let staged = segment.parent().unwrap().join(".removing_070000_17");
+    let staged = staging.parent().unwrap().join(".removing_070000_17");
     fs::create_dir(&staged).unwrap();
-    let refused = bed.run(
-        "remove-segments",
-        &[
-            "--journal",
-            bed.journal().to_str().unwrap(),
-            "--at",
-            "2026-08-06T00:00:00Z",
-            "--did",
-            "owner",
-            "--segment",
-            "20260701/field.audio/070000_17",
-        ],
+    let refused = run(&bed, "20260701/field.audio/070000_17");
+    assert_eq!(refused.status.code(), Some(3), "{:?}", receipt(&refused));
+    assert_eq!(receipt(&refused)["refused"].as_array().unwrap().len(), 1);
+    assert!(
+        staging.join("audio.jsonl").exists() || fs::read_dir(&staging).unwrap().next().is_some()
     );
-    assert_eq!(refused.status.code(), Some(3));
-    let listed = bed.run("marks", &["--journal", bed.journal().to_str().unwrap()]);
-    let marks = receipt(&listed)["marks"]["marks"]
-        .as_object()
-        .unwrap()
-        .clone();
-    assert_eq!(marks.len(), 1);
-    let failed = marks.values().next().unwrap();
-    assert_eq!(failed["class"], "owner_segment_removal");
-    assert_eq!(
-        failed["state"]["failed"]["staged"],
-        "chronicle/20260701/field.audio/.removing_070000_17"
-    );
-
-    fs::remove_dir(&staged).unwrap();
-    let recovered = bed.run(
-        "recover",
-        &[
-            "--journal",
-            bed.journal().to_str().unwrap(),
-            "--at",
-            "2026-08-06T00:01:00Z",
-            "--did",
-            "owner",
-        ],
-    );
-    assert_eq!(recovered.status.code(), Some(0));
-    let after = bed.run("marks", &["--journal", bed.journal().to_str().unwrap()]);
-    assert_eq!(receipt(&after)["marks"]["marks"], json!({}));
+    assert!(staged.is_dir());
+    assert_eq!(solstone_core_trash::list(bed.journal()).unwrap().len(), 1);
 }
 
 #[test]
@@ -2225,7 +2221,7 @@ fn rfc3339_flag_refusals_leave_the_register_unchanged() {
 }
 
 #[test]
-fn remove_segments_prunes_index_and_keeps_siblings_with_real_scan() {
+fn remove_segments_trashes_prunes_index_and_keeps_siblings_with_real_scan() {
     let bed = Bed::new("remove-segments-prunes-index");
     let target = bed.proven_segment(
         "20260805",
@@ -2265,19 +2261,12 @@ fn remove_segments_prunes_index_and_keeps_siblings_with_real_scan() {
         &[
             "--journal",
             bed.journal().to_str().unwrap(),
-            "--at",
-            "2026-08-05T12:00:00Z",
-            "--did",
-            "owner",
             "--segment",
             "20260805/field.audio/070000_17",
         ],
     );
     assert_eq!(output.status.code(), Some(0));
-    let rep = receipt(&output);
-    let chunks = rep["index"]["chunks"].as_u64().expect("index.chunks u64");
-    let files = rep["index"]["files"].as_u64().expect("index.files u64");
-    assert_eq!((chunks, files), (0, 0), "removal queues the index update");
+    assert_eq!(receipt(&output)["trashed"].as_array().unwrap().len(), 1);
     assert!(
         !solstone_core_indexer_store::todo::inspect(bed.journal())
             .unwrap()

@@ -35,7 +35,7 @@ Linked-device clients send segments to the journal through protocol v3 at [`POST
 |----------|-----------------|------|---------|
 | **solstone-linux** | Screen + audio on Linux | `solstone-linux` | systemd user service / standalone |
 | **solstone-macos** | Screen + audio on macOS | `solstone-macos` | Native menu bar app |
-| **solstone-tmux** | Tmux terminal sessions | `solstone-tmux` | systemd user service / standalone |
+| **solstone app (terminal)** | Tmux terminal sessions | the `tmux` source of `solstone-linux` and `solstone-macos` | part of the app, off until the owner turns it on |
 | **solstone-windows** | Audited protocol-v3 ingest consumer | `solstone-windows` | — |
 
 An authenticated linked device may upload browser JSONL with `source="browser"` through the existing protocol-v3 ingest path; admission is independent of `solstone journal sense`, `solstone journal transcribe`, and `solstone journal describe`; each finalized segment period is one immutable `browser_pages.jsonl`. Allocation, reconciliation, reserved-marker, and segment-listing behavior follow the rules specified below.
@@ -48,11 +48,19 @@ A linked device may send the owner's calendar as calendar notes, with `source="c
 - **Window.** `day` and `segment` name one window on the journal's 300-second grid. Every line's `changed_at`, read as wall-clock time in its own offset, falls inside that window. The journal checks each line against its own offset, never against `meta` or the journal's configured zone.
 - **Lines.** Every key is always present, with `null` for a value that is not known: `v` (`1`), `change` (`added`, `changed` or `removed`), `event`, `occurrence`, `changed_at` (RFC 3339 with an offset), `calendar`, `title`, `location`, `notes`, `url`, `start`, `end`, `all_day`, `time_zone`, `organizer`, `attendees` and `repeats`. A timed event's `start` and `end` carry the event zone's offset, a floating event's carry none, and an all-day event's are dates with `end` the day after its last day. A `removed` line carries only the last-known `title` and `calendar` besides its identity and `changed_at`. Unknown keys are ignored.
 - **Identity.** An event's identity is its `event` and `occurrence`. Occurrences compare as normalized values, so `…T15:00:00Z`, `…T15:00:00.000Z` and `…T15:00:00+00:00` are one occurrence. Repeating events arrive already expanded, one line per occurrence.
-- **Answers.** `ok`, `duplicate` and `collision` mean delivered. `segment_removed` means the owner deleted that window's segment, and the notes are not sent again. A file that breaks any rule is refused whole with `calendar_note_invalid`, and so is a calendar file under another source or any other file under the calendar source.
+- **Answers.** `ok`, `duplicate` and `collision` mean delivered. `segment_removed` means a removal of that window's segment is still in progress, and the notes are not sent again; a segment the owner removed earlier takes them again as new data. A file that breaks any rule is refused whole with `calendar_note_invalid`, and so is a calendar file under another source or any other file under the calendar source.
 
 A kept file is stored exactly as sent and queued for search at once. It sends no processing event and does not mark its day as changed: a calendar note is not something the owner did, so sense, the daily and weekly units, the maintenance schedule, health and the agent transcript listing leave it out. Search finds each note on the day it was stored and lists every event under the days it happens, as described in [THINK.md](THINK.md#calendar-listing).
 
 Importing a calendar exported as an `.ics` file writes notes in the same format beside each import window's transcript; [THINK.md](THINK.md#calendar-listing) describes how they differ.
+
+### Obsidian notes
+
+The solstone app on the device where a vault lives reports each note change to its journal with `source="obsidian"`, through the same protocol-v3 ingest path. It sends only to a journal whose `/api/system/status` lists `obsidian_notes` in `capabilities`. The wire contract is in the [client ingest contract](openapi/client-ingest-contract/projection.openapi.json) and the producer's golden lines.
+
+A file named `obsidian_<sha256>.jsonl` carries a window's changes. It is validated whole, and refused whole with `obsidian_note_invalid` if any rule breaks. It is never stored: ingest applies its lines to the journal's private state under `config/obsidian-vaults/` and writes one `note_transcript.md` for the window, holding only what changed. A note seen for the first time is the whole note. An edit holds what was inserted, with a count of the words removed and never the words themselves. A rename or delete is one entry, and link rewrites caused by a rename fold into it. An upload that changes nothing, such as a resend or a second device reporting what the journal already has, writes nothing and answers `duplicate`. A window later than the journal's today answers `obsidian_note_ahead` and the device sends it again later.
+
+The private state is one file per note holding its latest text, used only to work out what changed. It is never a memory, never indexed and never served. `GET /app/devices/ingest/obsidian/vaults` lists vaults held from other devices, so an app can warn before the first send of a vault with the same name. A vault's notes from before the last week take the import place on the priority ladder and send no live processing event.
 
 ## Commands
 
@@ -80,8 +88,8 @@ solstone journal sense (coordination)
 ## Journal processing
 
 Screen/audio collection, platform activity detection, and the upload client live
-in the per-platform repositories (`solstone-linux`, `solstone-macos`,
-`solstone-tmux`). The journal processes the resulting records with:
+in the per-platform repositories (`solstone-linux`, `solstone-macos`).
+The journal processes the resulting records with:
 
 - **`solstone journal sense`** dispatches transcription and description jobs.
 - **`solstone journal transcribe`** creates audio transcription and speaker-analysis embeddings. Its exit-code contract is [here](transcribe-failure-and-telemetry.md).
@@ -115,7 +123,7 @@ Each client is a standalone package in its own repository, with its own recordin
 
 - **`solstone-linux`** records screen and audio on Linux; it runs as a systemd user service.
 - **`solstone-macos`** records screen and audio on macOS; it is a native menu-bar app.
-- **`solstone-tmux`** records tmux terminal sessions; it runs as a systemd user service.
+- **The solstone app's terminal source** records tmux terminal sessions, in `solstone-linux` and `solstone-macos`, off until the owner turns it on. Earlier installs of `solstone-tmux` still upload the same format.
 - **`solstone-windows`** is an audited protocol-v3 ingest consumer.
 
 All linked-device segments use the same [protocol-v3 contract](openapi/client-ingest-contract/projection.openapi.json). Device association and the linked-device mTLS identity authorize uploads and reconciliation. Legacy device-record keys do not authorize this path.

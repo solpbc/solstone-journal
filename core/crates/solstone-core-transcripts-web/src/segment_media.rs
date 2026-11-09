@@ -131,7 +131,9 @@ impl SegmentMedia {
 }
 
 pub(crate) fn markdown_only(dir: &Path, stream: &str) -> bool {
-    if !stream.starts_with("import.") {
+    if !stream.starts_with("import.")
+        && !solstone_core_format::obsidian::is_obsidian_stream_name(stream)
+    {
         return false;
     }
     let Ok(entries) = fs::read_dir(dir) else {
@@ -197,17 +199,6 @@ pub(crate) fn physical_segment_dir(
         .join(segment_rel(day, stream, key))
 }
 
-pub(crate) fn physical_staged_dir(
-    journal_root: &Path,
-    day: &str,
-    stream: &str,
-    key: &str,
-) -> PathBuf {
-    let mut path = physical_segment_dir(journal_root, day, stream, key);
-    path.pop();
-    path.push(solstone_core_retention::staged_name(key));
-    path
-}
 pub(crate) fn modality(path: &Path, unclaimed_images: &BTreeSet<String>) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?;
     match media_kind(extension)? {
@@ -254,14 +245,6 @@ mod tests {
             physical_segment_dir(root, day, default_stream, key),
             root.join(layout::segment_rel(day, default_stream, key))
         );
-        assert_eq!(
-            physical_staged_dir(root, day, default_stream, key),
-            root.join(format!(
-                "{}/{}",
-                layout::stream_rel(day, default_stream),
-                solstone_core_retention::staged_name(key)
-            ))
-        );
 
         // Named stream agreement
         let named_rel = format!("chronicle/{}", segment_rel(day, named_stream, key));
@@ -269,14 +252,6 @@ mod tests {
         assert_eq!(
             physical_segment_dir(root, day, named_stream, key),
             root.join(layout::segment_rel(day, named_stream, key))
-        );
-        assert_eq!(
-            physical_staged_dir(root, day, named_stream, key),
-            root.join(format!(
-                "{}/{}",
-                layout::stream_rel(day, named_stream),
-                solstone_core_retention::staged_name(key)
-            ))
         );
     }
 }

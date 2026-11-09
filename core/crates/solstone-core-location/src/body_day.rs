@@ -17,8 +17,8 @@ use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::{
-    BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time,
-    source_label, user_entered,
+    BODY_RECORD_STREAMS, BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, one_copy_per_row,
+    parse_source_time, source_label, user_entered,
 };
 use solstone_core_journal_io::{HealthMarkerKind, day_dirs};
 
@@ -67,6 +67,7 @@ fn read_rows(journal: &Path, day: &str) -> Result<BTreeMap<String, Vec<BodyRow>>
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
         };
+        let mut windows = Vec::new();
         for entry in entries.flatten() {
             // The stream directory also holds each window's `<key>.lock`, and a removal
             // in progress keeps its file under a staged name.
@@ -90,9 +91,13 @@ fn read_rows(journal: &Path, day: &str) -> Result<BTreeMap<String, Vec<BodyRow>>
                 path,
                 detail: error.to_string(),
             })?;
-            // A moved row marks what is in another window now, so a source whose
-            // rows here are all moved has nothing to say for the day.
-            for row in rows.into_iter().filter(|row| row.kind != RowKind::Moved) {
+            windows.push((entry.file_name().to_string_lossy().into_owned(), rows));
+        }
+        // A moved row marks what is in another window now, so a source whose
+        // rows here are all moved has nothing to say for the day. A row an
+        // archive merge left a second copy of counts once.
+        for (_, rows) in one_copy_per_row(windows) {
+            for row in rows {
                 by_source.entry(row.source.clone()).or_default().push(row);
             }
         }
@@ -499,6 +504,33 @@ mod tests {
 
     fn document(root: &Path, day: &str) -> Option<String> {
         fs::read_to_string(document_path(root, day)).ok()
+    }
+
+    #[test]
+    fn a_row_an_archive_merge_left_a_second_copy_of_counts_once_and_reads_the_live_copy() {
+        let journal = tempfile::tempdir().unwrap();
+        let root = journal.path();
+        // The target's frozen copy, and the merged copy the importer now writes to.
+        window(
+            root,
+            "20261010",
+            "090000_3600",
+            &[reading("r1", "2026-10-10 09:05:00 -0600", "60")],
+        );
+        window(
+            root,
+            "20261010",
+            "090000_3601",
+            &[
+                reading("r1", "2026-10-10 09:05:00 -0600", "61"),
+                reading("r2", "2026-10-10 09:10:00 -0600", "62"),
+            ],
+        );
+        let rows = read_rows(root, "20261010").unwrap();
+        let rows = &rows["apple_health"];
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        let first = rows.iter().find(|row| row.id == "r1").unwrap();
+        assert_eq!(first.value.as_deref(), Some("61"));
     }
 
     #[test]

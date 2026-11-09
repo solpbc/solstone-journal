@@ -633,6 +633,7 @@ const MAINTENANCE_ROUTINE_IDS: &[&str] = &[
     "backup:offload",
     "health:mark-raw",
     "health:prune-logs",
+    "trash:erase",
     "retention:owner-voice-originals",
 ];
 

@@ -16,6 +16,24 @@ use std::ffi::OsString;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
+/// The trash folder at the journal root, where what an owner removes waits
+/// before it is erased. Nothing that reads or walks the journal looks inside it;
+/// a journal-relative path whose first component is this name resolves to
+/// nothing. The trash itself lives in `solstone-core-trash`.
+pub const TRASH_DIR: &str = ".trash";
+
+/// Whether a name at the journal root is the trash folder. Every walk that
+/// lists the journal root skips a name for which this is true.
+///
+/// Case and trailing dots or spaces are ignored: macOS and Windows file
+/// systems give `.TRASH` and `.trash.` the same folder.
+pub fn is_trash_root_name(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|name| {
+        name.trim_end_matches(['.', ' '])
+            .eq_ignore_ascii_case(TRASH_DIR)
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Env,

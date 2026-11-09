@@ -101,6 +101,20 @@
     },
     {
       "decision": {
+        "accepted": false,
+        "http_status": 400,
+        "kind": "refusal",
+        "reason_code": "obsidian_note_invalid"
+      },
+      "fixture_id": "declared.client.ingestUpload.refusal.obsidian_note_invalid",
+      "id": "client.ingestUpload.refusal.obsidian_note_invalid",
+      "kind": "declared",
+      "pointers": [
+        "/reason_code"
+      ]
+    },
+    {
+      "decision": {
         "accepted": true,
         "kind": "listing_collision_identity",
         "selected": [

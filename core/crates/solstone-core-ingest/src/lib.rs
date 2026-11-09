@@ -25,6 +25,7 @@
 mod health;
 mod listing;
 mod model;
+mod obsidian;
 mod read_routes;
 mod rejection_notice;
 mod router;

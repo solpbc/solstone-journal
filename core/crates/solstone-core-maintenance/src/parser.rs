@@ -161,6 +161,9 @@ fn run_routine(
     if id == "speakers:backfill-labels" {
         return crate::bodies::speakers::backfill_labels(forwarded, journal);
     }
+    if id == "trash:erase" {
+        return crate::bodies::trash::erase(forwarded, journal);
+    }
     if id == "retention:owner-voice-originals" {
         return match health_services {
             Some(health_services) => {

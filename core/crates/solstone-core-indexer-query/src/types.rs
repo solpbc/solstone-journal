@@ -184,6 +184,11 @@ pub struct SearchRequest {
     pub counts: bool,
     #[serde(default)]
     pub order: Order,
+    /// Whether body records' entries, the words their owner wrote on them, may
+    /// come back. Only the owner's own surfaces set it. A talent's search never
+    /// does, so a new caller gets none unless it opts in.
+    #[serde(default)]
+    pub body_owner_words: bool,
 }
 
 impl Default for SearchRequest {
@@ -202,6 +207,7 @@ impl Default for SearchRequest {
             relax: false,
             counts: false,
             order: Order::Relevance,
+            body_owner_words: false,
         }
     }
 }

@@ -974,6 +974,15 @@
     'action-unhide': 'unhide',
     'sheet-close': 'close',
     'reason-owner': 'you hid this',
+    'heading-accounts': 'what recorded it',
+    'state-removed_by_you': 'removed by you',
+    'state-removed': 'removed',
+    'state-part_removed': 'part of it removed',
+    'state-unreadable': "can't be read right now",
+    'state-not_found': 'no longer in your journal',
+    'action-separate': 'separate',
+    'separate-confirm': "it won't join this group again. nothing is deleted.",
+    'action-separate-yes': 'separate it',
     'reason-command': 'hidden with the solstone command',
     'reason-cancelled': 'seen as cancelled or declined',
     'reason-other': 'hidden',
@@ -1105,6 +1114,7 @@
     day: null,
     facet: null,
     includeHidden: false,
+    separating: null,
     view: null,
     selectedFacet: null,
     selectedId: null,
@@ -1912,6 +1922,30 @@
 
     phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-history">${STRINGS['heading-history']}</h3><ul class="act-panel-history-list">${historyEntries.map(e => e.html).join('')}</ul></div>`;
 
+    // A body item's accounts: what recorded it, each one's state, and the
+    // owner's separate for a group.
+    if (item.source === 'body' && Array.isArray(item.accounts) && item.accounts.length) {
+      const grouped = item.accounts.length > 1;
+      let ahtml = '';
+      item.accounts.forEach((acct, i) => {
+        const who = [acct.label, acct.by].filter(Boolean).map(esc).join(' · ');
+        const stateKey = acct.state && acct.state !== 'live' ? `state-${acct.state}` : null;
+        const stateHtml = stateKey && STRINGS[stateKey]
+          ? `<span class="act-panel-history-date" data-account-state="${esc(acct.state)}" data-copy-key="${stateKey}">${esc(STRINGS[stateKey])}</span>`
+          : '';
+        let sep = '';
+        if (grouped && acct.id) {
+          if (state.separating === `${itemKey(item)}#${i}`) {
+            sep = `<span data-copy-key="separate-confirm">${esc(STRINGS['separate-confirm'])}</span><button type="button" class="act-btn" data-copy-key="action-separate-yes" data-separate-yes="${i}">${esc(STRINGS['action-separate-yes'])}</button><button type="button" class="act-btn" data-copy-key="cancel" data-separate-cancel>${esc(STRINGS['cancel'])}</button>`;
+          } else {
+            sep = `<button type="button" class="act-history-remove" data-copy-key="action-separate" data-separate="${i}">${esc(STRINGS['action-separate'])}</button>`;
+          }
+        }
+        ahtml += `<li class="act-panel-history-item" data-account="${i}"><span>${who}</span>${stateHtml}${sep}</li>`;
+      });
+      phtml += `<div class="act-panel-section"><h3 class="act-panel-heading" data-copy-key="heading-accounts">${STRINGS['heading-accounts']}</h3><ul class="act-panel-history-list">${ahtml}</ul></div>`;
+    }
+
     // Actions
     phtml += `<div class="act-panel-actions">`;
     if (!item.hidden) {
@@ -1958,6 +1992,37 @@
     panelArea.querySelector('[data-action-unhide]')?.addEventListener('click', (e) => {
       mutateUnhide(item, e.currentTarget);
     });
+    panelArea.querySelectorAll('[data-separate]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.separating = `${itemKey(item)}#${btn.getAttribute('data-separate')}`;
+        renderPanel();
+      });
+    });
+    panelArea.querySelector('[data-separate-cancel]')?.addEventListener('click', () => {
+      state.separating = null;
+      renderPanel();
+    });
+    const separateYes = panelArea.querySelector('[data-separate-yes]');
+    separateYes?.addEventListener('click', () => {
+      const acct = (item.accounts || [])[Number(separateYes.getAttribute('data-separate-yes'))];
+      if (acct) separateAccount(item, acct, separateYes);
+    });
+  }
+
+  async function separateAccount(item, acct, control) {
+    const url = `/app/activities/api/day/${acct.day || state.day}/record/${encodeURIComponent(acct.id)}/separate?facet=${encodeURIComponent(item.facet)}`;
+    const opts = { method: 'POST', headers: { [ACTOR_HEADER]: ACTOR_OWNER, 'Content-Type': 'application/json' }, body: '{}' };
+    try {
+      if (control && window.saveControl) {
+        await window.saveControl({ el: control, fetchArgs: [url, opts], revertOnError: false });
+      } else {
+        await window.apiJson(url, opts);
+      }
+      state.separating = null;
+      await fetchView();
+    } catch (_) {
+      // saveControl has shown the error beside the control; nothing changed.
+    }
   }
 
   function renderEditForm(panelArea, item) {

@@ -32,4 +32,14 @@ impl IndexNotify for RetentionIndex<'_> {
         }
         Ok(PruneCounts::default())
     }
+
+    fn paths_returned(&self, returned: &[String]) -> Result<(), NotifyError> {
+        // The drain reads each path afresh: present is indexed, absent pruned.
+        for path in returned {
+            enqueue_path(self.journal, Path::new(path)).map_err(|error| NotifyError {
+                reason: format!("the search update could not be queued: {error}"),
+            })?;
+        }
+        Ok(())
+    }
 }

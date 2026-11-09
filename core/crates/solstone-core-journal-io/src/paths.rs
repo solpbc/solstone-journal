@@ -342,6 +342,9 @@ pub fn resolve_journal_path(journal: &Path, rel: &str) -> Result<PathBuf, PathEr
         return Err(invalid(rel, "journal path contains invalid component"));
     }
     let first = normalized.split('/').next().unwrap_or("");
+    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
+        return Err(invalid(rel, "journal path is not readable"));
+    }
     let mut resolved = if is_day_key(first) {
         journal.join(CHRONICLE_DIR)
     } else {
@@ -1455,5 +1458,30 @@ mod native_relative_tests {
         for rel in ["D:escape", "chronicle/D:escape", "D:/escape"] {
             assert!(resolve_journal_path(root, rel).is_err(), "{rel}");
         }
+    }
+}
+
+#[cfg(test)]
+mod trash_resolution_tests {
+    use super::resolve_journal_path;
+    use std::path::Path;
+
+    #[test]
+    fn a_path_into_the_trash_resolves_to_nothing() {
+        let journal = Path::new("/journal");
+        for rel in [
+            ".trash",
+            ".trash/x/files/chronicle",
+            "./.trash/x",
+            ".trash/",
+            ".TRASH/x",
+            ".Trash/x",
+            ".trash./x",
+            ".trash /x",
+        ] {
+            assert!(resolve_journal_path(journal, rel).is_err(), "{rel}");
+        }
+        assert!(resolve_journal_path(journal, "chronicle/.trash").is_ok());
+        assert!(resolve_journal_path(journal, "config/journal.json").is_ok());
     }
 }

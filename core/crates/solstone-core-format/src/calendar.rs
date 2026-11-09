@@ -356,7 +356,7 @@ pub fn read_calendar_notes(text: &str) -> (Vec<(usize, CalendarNote)>, Vec<Strin
 /// The window a segment key names on its day, start inclusive and end
 /// exclusive. Only an `HHMMSS_300` key starting on the 300-second grid names
 /// one.
-fn segment_window(day: &str, segment: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
+pub(crate) fn segment_window(day: &str, segment: &str) -> Option<(NaiveDateTime, NaiveDateTime)> {
     if !is_date_key(day) {
         return None;
     }

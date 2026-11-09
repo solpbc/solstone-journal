@@ -655,6 +655,7 @@ fn run_one_indexer_query(
     request.agent = options.agent.clone();
     request.stream = options.stream.clone();
     request.counts = true;
+    request.body_owner_words = true;
     let today = Utc::now()
         .with_timezone(&solstone_core_journal_config::owner_zone(journal))
         .date_naive();

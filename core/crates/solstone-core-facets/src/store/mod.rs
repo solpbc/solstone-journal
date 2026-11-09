@@ -21,6 +21,7 @@ mod news;
 mod observations;
 mod paths;
 mod publication;
+pub use publication::queue_body_entries_once;
 mod recent_names;
 pub(crate) mod reference_scan;
 mod relationship_scans;

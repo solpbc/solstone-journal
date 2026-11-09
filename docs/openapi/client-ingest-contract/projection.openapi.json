@@ -83,6 +83,8 @@
               "multipart_malformed",
               "multipart_part_too_large",
               "capture_restart_failed",
+              "obsidian_note_ahead",
+              "obsidian_note_invalid",
               "operation_erased",
               "operation_in_progress",
               "operation_no_longer_available",
@@ -181,6 +183,41 @@
         ],
         "type": "object"
       },
+      "ObsidianVaultsEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "vaults": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "device": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_synced_at": {
+                  "type": "string"
+                },
+                "vault": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "vault",
+                "device",
+                "last_synced_at"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "vaults"
+        ],
+        "type": "object"
+      },
       "SegmentFile": {
         "additionalProperties": true,
         "properties": {
@@ -272,9 +309,9 @@
     }
   },
   "info": {
-    "description": "Generated from client_ingest_authority.json. Covers only the two Rust-served linked-device devices/ingest operations: upload and segment listing.",
+    "description": "Generated from client_ingest_authority.json. Covers only the three Rust-served linked-device devices/ingest operations: upload, segment listing and the Obsidian vault list.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "15.1.0",
+    "version": "15.2.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -442,7 +479,8 @@
               "multipart_malformed",
               "multipart_part_too_large",
               "browser_record_invalid",
-              "calendar_note_invalid"
+              "calendar_note_invalid",
+              "obsidian_note_invalid"
             ]
           },
           "403": {
@@ -466,12 +504,13 @@
                 }
               }
             },
-            "description": "Held sidecar bytes conflict, or the device's stream binding is refused.",
+            "description": "Held sidecar bytes conflict, the device's stream binding is refused, or a note window is later than the journal's today (held on the device and sent again later).",
             "x-reason-codes": [
               "content_conflict",
               "pairing_identity_unavailable",
               "foreign_stream_binding",
-              "malformed_evidence_row"
+              "malformed_evidence_row",
+              "obsidian_note_ahead"
             ]
           },
           "413": {
@@ -516,6 +555,66 @@
         "tags": [
           "client"
         ]
+      }
+    },
+    "/app/devices/ingest/obsidian/vaults": {
+      "get": {
+        "description": "List the Obsidian vaults this journal has from devices other than the caller, so an app can warn before the first send of a vault with the same name. `device` is the device's label as the journal knows it, or null.",
+        "operationId": "client.ingestObsidianVaults",
+        "parameters": [
+          {
+            "description": "Linked-device ingest protocol version. Must be 3.",
+            "in": "header",
+            "name": "X-Solstone-Protocol-Version",
+            "required": true,
+            "schema": {
+              "const": 3,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "vaults": [
+                    {
+                      "device": "studio",
+                      "last_synced_at": "2026-11-08T09:44:33-07:00",
+                      "vault": "Notes"
+                    }
+                  ]
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ObsidianVaultsEnvelope"
+                }
+              }
+            },
+            "description": "Vaults known from other devices."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The caller is not a linked device."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The vault list could not be read."
+          }
+        },
+        "summary": "List Obsidian vaults held from other devices"
       }
     },
     "/app/devices/ingest/segments/{day}": {

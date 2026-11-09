@@ -106,10 +106,6 @@ pub use solstone_core_system::owner_path::{
 /// owner stopped stays stopped. The task's recovery trigger is the backstop.
 #[cfg(windows)]
 pub fn resume_service_after_update() {
-    use std::os::windows::process::CommandExt;
-
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let Ok(executable) = std::env::current_exe() else {
         return;
     };
@@ -123,15 +119,36 @@ pub fn resume_service_after_update() {
         return;
     };
     let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-    let powershell = std::path::Path::new(&system_root)
-        .join("System32")
-        .join("WindowsPowerShell")
-        .join("v1.0")
-        .join("powershell.exe");
     // The updater reads this hook's output to its end. A child that inherited
     // the same pipes would hold them open, and the updater would wait out its
     // hook timeout on a process it never started.
     solstone_core_system::process::stop_standard_handle_inheritance();
+    let _ = resume_waiter_command(root, solstone, std::path::Path::new(&system_root)).spawn();
+}
+
+/// The Windows PowerShell process that waits out the updater's sweep.
+///
+/// It runs from the Windows directory. Velopack starts the hook in
+/// `<root>\current`, and a child left there would hold that folder as its
+/// working directory for as long as it waits. The force-stop at the start of
+/// the next Setup never reaches it, because its image is in System32, and a
+/// folder that is some process's working directory cannot be renamed, so that
+/// Setup fails with "Access is denied".
+#[cfg(windows)]
+fn resume_waiter_command(
+    root: &str,
+    solstone: &str,
+    system_root: &std::path::Path,
+) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let powershell = system_root
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
     let mut command = std::process::Command::new(powershell);
     command
         .args([
@@ -142,6 +159,7 @@ pub fn resume_service_after_update() {
             "-Command",
             &resume_after_update_script(root, solstone),
         ])
+        .current_dir(system_root)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -153,7 +171,7 @@ pub fn resume_service_after_update() {
     for name in solstone_core_system::process::launch_only_environment_names() {
         command.env_remove(name);
     }
-    let _ = command.spawn();
+    command
 }
 
 /// The waiter the post-update hook hands to Windows PowerShell. Paths travel
@@ -545,6 +563,24 @@ mod tests {
         let self_at = script.find("$self=").unwrap();
         assert!(self_at < script.find("do {").unwrap());
         assert!(script.is_ascii());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_post_update_waiter_runs_outside_the_install_root() {
+        // A waiter whose working directory is inside the root keeps the next
+        // Setup from renaming `<root>\current` for as long as it waits.
+        let root = "C:\\Users\\Owner\\AppData\\Local\\SolstoneJournal";
+        let command = resume_waiter_command(
+            root,
+            "C:\\Users\\Owner\\AppData\\Local\\SolstoneJournal\\current\\bin\\solstone.exe",
+            Path::new("C:\\Windows"),
+        );
+        let directory = command
+            .get_current_dir()
+            .expect("the waiter sets its own directory");
+        assert_eq!(directory, Path::new("C:\\Windows"));
+        assert!(!directory.starts_with(root));
     }
     use crate::manifest::{
         JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, all_leaf_paths, process_command_tokens,

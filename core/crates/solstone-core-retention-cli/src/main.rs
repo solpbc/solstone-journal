@@ -39,7 +39,7 @@
 //! forbids itself the clock so a verdict is reproducible from a receipt; a binary
 //! that silently supplied `now` would hand that property back.
 
-use solstone_core_removals::{Action, Page, Removal, Surface};
+use solstone_core_removals::{Action, Page, Removal, Surface, Unit};
 use solstone_core_retention::record::{record_released_originals, record_removed_segments};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -50,7 +50,6 @@ use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::content::{ClosedHandlerSet, JournalMedia};
 use solstone_core_retention::door::{
     compact_log, notify_index, recover, release_raw, remove_logs, remove_planned_oplogs,
-    remove_segments,
 };
 use solstone_core_retention::eligibility::{RawRelease, resolve};
 use solstone_core_retention::logs::{
@@ -294,22 +293,12 @@ fn record_originals(args: &Args, journal: &Path, outcome: &Outcome) {
     );
 }
 
+/// Move named segments to the trash. ⛔ Never erases: a delete from the command
+/// line always goes to the trash, where the owner can recover it until its
+/// erase date.
 fn run_remove_segments(args: &Args) -> ExitCode {
     let journal = match args.required("--journal") {
         Ok(value) => PathBuf::from(value),
-        Err(error) => return fail(&error),
-    };
-    let at = match parse_rfc3339_flag(args, "--at") {
-        Ok(value) => value,
-        Err(error) => return fail(&error),
-    };
-    let at_stamp = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let cid = match args.required("--did") {
-        Ok(value) => value,
-        Err(error) => return fail(&error),
-    };
-    let reason = match reason_for(args.one("--reason")) {
-        Ok(reason) => reason,
         Err(error) => return fail(&error),
     };
     let specs = args.all("--segment");
@@ -323,39 +312,47 @@ fn run_remove_segments(args: &Args) -> ExitCode {
             Err(error) => return fail(&error),
         }
     }
-    let outcome = remove_segments(&journal, &targets, &at_stamp, reason, cid);
-    // An integration test cannot cleanly fail only the register write after a real
-    // removal. Preserve the completed outcome even if that secondary write fails.
-    let mut register_errors = Vec::new();
-    for target_outcome in &outcome.targets {
-        let Some(failure) = target_outcome.not_removed.iter().find_map(|item| {
-            item.staged.as_ref().map(|staged| Failure {
-                at: String::new(),
-                reason: item.reason.clone(),
-                staged: Some(staged.clone()),
-            })
-        }) else {
-            continue;
+    let index = RetentionIndex::new(&journal);
+    let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+    let mut trashed = Vec::new();
+    let mut refused = Vec::new();
+    for target in &targets {
+        let unit = if target.stream.starts_with("agent-memory-") {
+            Unit::Memory {
+                day: target.day.clone(),
+                segment: target.dir.clone(),
+            }
+        } else {
+            Unit::Segment {
+                day: target.day.clone(),
+                stream: target.stream.clone(),
+                segment: target.dir.clone(),
+            }
         };
-        if let Err(error) = record_failure(
-            &journal,
-            RemovalClass::OwnerSegmentRemoval,
-            &target_outcome.target,
-            &[],
-            failure,
-            at,
-        ) {
-            register_errors.push(error.to_string());
+        match recordings.trash(&journal, target, unit, Action::RetentionTool, surface(args)) {
+            Ok(item) => trashed.push(serde_json::json!({
+                "day": target.day, "stream": target.stream, "dir": target.dir,
+                "trash": {"id": item.id, "erase_at": item.erase_at},
+            })),
+            Err(error) => refused.push(serde_json::json!({
+                "day": target.day, "stream": target.stream, "dir": target.dir,
+                "reason": error.to_string(),
+            })),
         }
     }
-    record_segments(args, &journal, Action::RetentionTool, &outcome);
-    finish(
-        &journal,
-        outcome,
+    let code = if refused.is_empty() {
+        EXIT_OK
+    } else {
+        EXIT_REFUSED
+    };
+    emit(
         serde_json::json!({
+            "ok": code == EXIT_OK,
             "verb": "remove-segments",
-            "register_error": (!register_errors.is_empty()).then(|| register_errors.join("; ")),
+            "trashed": trashed,
+            "refused": refused,
         }),
+        code,
     )
 }
 
@@ -1255,8 +1252,7 @@ fn run_prune_logs(args: &Args) -> ExitCode {
 const USAGE: &str = "\
 solstone-retention — the retention executor
 
-  remove-segments --journal P --at ISO --did ID --segment DAY/STREAM/DIR [--segment ...] \
-[--reason owner|policy]
+  remove-segments --journal P --segment DAY/STREAM/DIR [--segment ...]  (moves them to the trash)
   release-raw     --journal P --at ISO --segment DAY/STREAM/DIR [--segment ...]
   recover         --journal P --at ISO --did ID [--reason owner|policy] [--surface home]
   sweep           --journal P --today YYYY-MM-DD --now ISO [--policy JSON] [--force true]

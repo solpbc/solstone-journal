@@ -87,7 +87,7 @@ and remote-network boundary, not a defense against malware already running as th
 
 ### `observe` - Multimodal capture and processing
 **Sources:**
-- Capture: linked-device clients (solstone-linux, solstone-tmux, solstone-macos) upload through native client ingest
+- Capture: linked-device clients (solstone-linux, solstone-macos, and earlier solstone-tmux installs) upload through native client ingest
 - Processing: native `solstone journal sense`, `solstone-core-describe`, native `solstone journal transcribe`
 
 **Events:**

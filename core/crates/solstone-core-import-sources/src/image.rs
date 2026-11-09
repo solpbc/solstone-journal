@@ -553,14 +553,33 @@ fn allocate_image_segment(
         }
 
         let candidate_path = parent.join(&segment);
-        if solstone_core_segment::owner_deleted(&candidate_path).map_err(|error| {
-            ImageImportError::JournalIo {
+        let candidate_io =
+            |error: solstone_core_segment::SegmentError| ImageImportError::JournalIo {
                 path: candidate_path.clone(),
                 detail: error.to_string(),
+            };
+        // A key the owner removed is free again: what arrives is new data. Only
+        // a removal still in progress steps on. A preview does not touch the
+        // tombstone; a publish lets it give way before the write lock is taken.
+        let removed = match solstone_core_segment::owner_deletion_state(&candidate_path)
+            .map_err(candidate_io)?
+        {
+            solstone_core_segment::OwnerDeletionState::Live => false,
+            solstone_core_segment::OwnerDeletionState::Deleted => true,
+            solstone_core_segment::OwnerDeletionState::Staged
+            | solstone_core_segment::OwnerDeletionState::Occupied => continue,
+        };
+        let reclaimed = removed && publish && {
+            match solstone_core_segment::reclaim_for_arrival(&candidate_path)
+                .map_err(candidate_io)?
+            {
+                solstone_core_segment::Arrival::Reclaimed => true,
+                solstone_core_segment::Arrival::Free => false,
+                solstone_core_segment::Arrival::Live | solstone_core_segment::Arrival::Removing => {
+                    continue;
+                }
             }
-        })? {
-            continue;
-        }
+        };
         let _allocation = if publish {
             Some(
                 solstone_core_segment::output_attempt::SegmentMutation::acquire(
@@ -575,7 +594,17 @@ fn allocate_image_segment(
         } else {
             None
         };
-        let create = if publish {
+        let create = if reclaimed {
+            // Under the lock, the reclaimed folder is ours only while it is
+            // still empty; anything written into it meanwhile steps us on.
+            match fs::read_dir(&candidate_path).map(|mut entries| entries.next().is_none()) {
+                Ok(true) => Ok(()),
+                Ok(false) => continue,
+                Err(error) => Err(error),
+            }
+        } else if removed && !publish {
+            Ok(())
+        } else if publish {
             fs::create_dir(&candidate_path)
         } else {
             match fs::symlink_metadata(&candidate_path) {
@@ -2108,7 +2137,7 @@ mod tests {
     }
 
     #[test]
-    fn tombstoned_keys_are_skipped_even_with_matching_original_hash() {
+    fn an_image_lands_at_a_removed_key_and_steps_past_a_removal_in_progress() {
         let journal = tempfile::tempdir().unwrap();
         let source_dir = tempfile::tempdir().unwrap();
         let time = Local
@@ -2120,20 +2149,22 @@ mod tests {
         write_test_png(&img, [7, 8, 9], time);
         let img_bytes = fs::read(&img).unwrap();
 
-        // 120000_0 has only tombstone.json
+        // 120000_0 has tombstone.json AND matching original.png: a removal
+        // part-way through, so the image steps past it.
         let seg_0 = journal
             .path()
             .join("chronicle/20260615/import.image/120000_0");
         fs::create_dir_all(&seg_0).unwrap();
         fs::write(seg_0.join("tombstone.json"), b"{\"tombstone\":true}").unwrap();
+        fs::write(seg_0.join("original.png"), &img_bytes).unwrap();
 
-        // 120001_0 has tombstone.json AND matching original.png
+        // 120001_0 has only tombstone.json: the owner removed it, and what
+        // arrives again lands there.
         let seg_1 = journal
             .path()
             .join("chronicle/20260615/import.image/120001_0");
         fs::create_dir_all(&seg_1).unwrap();
         fs::write(seg_1.join("tombstone.json"), b"{\"tombstone\":true}").unwrap();
-        fs::write(seg_1.join("original.png"), &img_bytes).unwrap();
 
         let publication = TestPublication::new();
         let wire = RecordingWire {
@@ -2142,19 +2173,22 @@ mod tests {
 
         let res =
             import_image(&img, journal.path(), "import-1", None, &publication, &wire).unwrap();
-        assert_eq!(res.created_segment.segment, "120002_0");
+        assert_eq!(res.created_segment.segment, "120001_0");
+        assert!(!seg_1.join("tombstone.json").exists());
+        assert_eq!(fs::read(seg_1.join("original.png")).unwrap(), img_bytes);
+        assert!(
+            !journal
+                .path()
+                .join("chronicle/20260615/import.image/120002_0")
+                .exists()
+        );
 
-        // Assert tombstoned state unchanged
+        // The removal in progress is untouched.
         assert_eq!(
             fs::read(seg_0.join("tombstone.json")).unwrap(),
             b"{\"tombstone\":true}"
         );
-        assert!(!seg_0.join("original.png").exists());
-        assert_eq!(
-            fs::read(seg_1.join("tombstone.json")).unwrap(),
-            b"{\"tombstone\":true}"
-        );
-        assert_eq!(fs::read(seg_1.join("original.png")).unwrap(), img_bytes);
+        assert_eq!(fs::read(seg_0.join("original.png")).unwrap(), img_bytes);
     }
 
     #[test]

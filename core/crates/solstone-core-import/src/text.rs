@@ -375,7 +375,20 @@ fn import(
         let directory = parent.join(&segment_key);
         // Planning reserves nothing. Refuse a destination that became occupied before
         // this writer could claim it; do not overwrite a different import's recording.
-        if let Err(source) = fs::create_dir_all(&parent).and_then(|()| fs::create_dir(&directory)) {
+        // A removed segment's tombstone gives way here; only the caller that
+        // unlinked it gets `Reclaimed`, so its emptied folder is this tile's claim.
+        let claimed = fs::create_dir_all(&parent).and_then(|()| {
+            match solstone_core_segment::reclaim_for_arrival(&directory)
+                .map_err(std::io::Error::other)?
+            {
+                solstone_core_segment::Arrival::Reclaimed => Ok(()),
+                solstone_core_segment::Arrival::Free => fs::create_dir(&directory),
+                solstone_core_segment::Arrival::Live | solstone_core_segment::Arrival::Removing => {
+                    Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+                }
+            }
+        });
+        if let Err(source) = claimed {
             return Err((
                 created,
                 TextImportError::SourceRead {
@@ -676,22 +689,29 @@ fn text_segment_key(
         }
         let key = format!("{}_{TILE_SECONDS}", clock_key(candidate as u64));
         let path = parent.join(&key);
-        if occupied.contains(&key)
-            || solstone_core_journal_io::path_lexists(&path).map_err(|error| {
-                TextImportError::SegmentDeconflict(SegmentDeconflictError::Path(error))
-            })?
-        {
+        if occupied.contains(&key) {
             continue;
         }
-        if solstone_core_segment::owner_deleted(&path).map_err(|source| {
+        let present = solstone_core_journal_io::path_lexists(&path).map_err(|error| {
+            TextImportError::SegmentDeconflict(SegmentDeconflictError::Path(error))
+        })?;
+        // A key the owner removed is free again: what arrives is new data. Only
+        // live content or a removal still in progress steps on. Planning does
+        // not touch the tombstone; the writer lets it give way.
+        let free = match solstone_core_segment::owner_deletion_state(&path).map_err(|source| {
             TextImportError::SourceRead {
                 path,
                 source: std::io::Error::other(source),
             }
         })? {
-            continue;
+            solstone_core_segment::OwnerDeletionState::Live => !present,
+            solstone_core_segment::OwnerDeletionState::Deleted => true,
+            solstone_core_segment::OwnerDeletionState::Staged
+            | solstone_core_segment::OwnerDeletionState::Occupied => false,
+        };
+        if free {
+            return Ok(Some(key));
         }
-        return Ok(Some(key));
     }
     Ok(None)
 }

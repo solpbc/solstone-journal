@@ -19,7 +19,7 @@ use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use solstone_core_facets::{activity_field_held, is_body_record, update_activity_record_with};
 use solstone_core_format::content::body_records::{
-    BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time, user_entered,
+    BODY_RECORDS_FILE, BodyRow, RowKind, copy_rank, decode_rows, parse_source_time, user_entered,
 };
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
 
@@ -109,15 +109,20 @@ pub type Readable<'a> = &'a dyn Fn(&str, &str, Option<&str>) -> bool;
 #[derive(Debug)]
 enum Held {
     Rows(Vec<BodyRow>),
-    /// Tombstoned: by the owner's own delete, or not.
+    /// Tombstoned: by the owner's own delete, or not, and whether it was an
+    /// import run's release (which a later import puts back beside it).
     Deleted {
         by_owner: bool,
+        released: bool,
     },
     Unreadable,
 }
 
 /// The one tombstone reason that is the owner's delete of a window.
 const OWNER_DELETE: &str = "owner_segment_delete";
+/// The tombstone reason of an import run's release: its pieces come back
+/// beside it on a later import, so it removes nothing from an account.
+const RUN_RELEASE: &str = "import_run_release";
 
 #[derive(Debug)]
 struct Window {
@@ -146,11 +151,14 @@ fn window_span(name: &str) -> Option<(u32, u32)> {
 fn read_held(path: &Path, stream: &str) -> Held {
     if path.join(TOMBSTONE).exists() {
         // A tombstone that can't be read says nobody's delete in particular.
-        let by_owner = fs::read(path.join(TOMBSTONE))
+        let reason = fs::read(path.join(TOMBSTONE))
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            .is_some_and(|tombstone| tombstone["reason"] == OWNER_DELETE);
-        return Held::Deleted { by_owner };
+            .and_then(|tombstone| tombstone["reason"].as_str().map(str::to_owned));
+        return Held::Deleted {
+            by_owner: reason.as_deref() == Some(OWNER_DELETE),
+            released: reason.as_deref() == Some(RUN_RELEASE),
+        };
     }
     let strava = stream == STRAVA_STREAM;
     let file = if strava {
@@ -306,7 +314,7 @@ fn locate(
     let deleted = covering
         .iter()
         .filter_map(|window| match window.held {
-            Held::Deleted { by_owner } => Some((window.name.clone(), by_owner)),
+            Held::Deleted { by_owner, .. } => Some((window.name.clone(), by_owner)),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -343,6 +351,62 @@ fn locate(
         Account::Removed
     };
     (Some(name), account)
+}
+
+/// Whether a later window of a live account's own grid, inside its span, was
+/// deleted by the owner or by retention. An import run's release isn't a
+/// removal (its pieces come back beside it), and a window on another grid
+/// (a 300-second session inside an hour-tiled night) isn't this account's.
+fn later_piece_removed(
+    journal: &Path,
+    stored: &StoredBody,
+    start_window: &str,
+    row: &BodyRow,
+    days: &mut BTreeMap<(String, String), Day>,
+) -> bool {
+    let Some((first_start, first_end)) = window_span(start_window) else {
+        return false;
+    };
+    let grid = grid_of(first_end - first_start);
+    let Some(end) = row.end.as_deref().and_then(parse_source_time) else {
+        return false;
+    };
+    for on in std::iter::once(stored.day.clone()).chain(later_days(&stored.day)) {
+        let that_day = days
+            .entry((on.clone(), stored.stream.clone()))
+            .or_insert_with(|| Day {
+                windows: read_windows(journal, &on, &stored.stream),
+                zone: solstone_core_journal_config::placed_zone(journal, source_of(&stored.stream)),
+            });
+        let reaches = that_day.seconds_reached(&on, end);
+        if reaches == 0 && on != stored.day {
+            break;
+        }
+        if that_day.windows.iter().any(|window| {
+            matches!(
+                window.held,
+                Held::Deleted {
+                    released: false,
+                    ..
+                }
+            ) && (on != stored.day || window.start > first_start)
+                && window.start < reaches
+                && grid_of(window.end - window.start) == grid
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+/// A window length's grid: a whole-day window, an hour window and a five-minute
+/// tile are three, each with its step-around (`86401`, `3601`, `301`).
+fn grid_of(length: u32) -> u32 {
+    match length {
+        86_400.. => 86_400,
+        3_600.. => 3_600,
+        _ => 300,
+    }
 }
 
 fn split_key(key: &str) -> Option<(&str, &str)> {
@@ -489,7 +553,15 @@ impl Windows {
                         (!name.starts_with('.')).then_some((name, start, end))
                     })
                     .collect::<Vec<_>>();
-                names.sort();
+                // A record reads the copy the importer still writes to, when an
+                // archive merge left two. Strava's keeps the lowest key.
+                if stored.stream == STRAVA_STREAM {
+                    names.sort();
+                } else {
+                    names.sort_by(|left, right| {
+                        (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0))
+                    });
+                }
                 (
                     names,
                     solstone_core_journal_config::placed_zone(journal, source_of(&stored.stream)),
@@ -558,6 +630,16 @@ impl Windows {
             }
             _ => None,
         };
+        // A later piece of a live account deleted says so too, as a deleted
+        // start does: the line keeps the times its row states.
+        let live = live.map(|(name, account)| match (&name, account) {
+            (Some(start), Account::Live(row))
+                if later_piece_removed(journal, &stored, start, &row, &mut self.days) =>
+            {
+                (name, Account::PartRemoved(row))
+            }
+            (_, account) => (name, account),
+        });
         let (window, account) = live.unwrap_or_else(|| {
             locate(
                 journal,

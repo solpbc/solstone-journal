@@ -71,8 +71,8 @@
       removeResult: findById(documentRef, 'link-pairing-remove-result'),
     };
     // What's joining decides the method shown: a phone scans, a computer
-    // pastes the link, a terminal saves it to a file. The link is the same.
-    const DEVICE_TYPES = ['phone', 'computer', 'terminal'];
+    // pastes the link. The link is the same.
+    const DEVICE_TYPES = ['phone', 'computer'];
     const typeButtons = Object.fromEntries(DEVICE_TYPES.map((type) => [type, findById(documentRef, `link-pairing-type-${type}`)]));
     const typeBlocks = Object.fromEntries(DEVICE_TYPES.map((type) => [type, findById(documentRef, `link-pairing-for-${type}`)]));
     if ([...Object.values(typeButtons), ...Object.values(typeBlocks)].some((element) => !element)) return null;

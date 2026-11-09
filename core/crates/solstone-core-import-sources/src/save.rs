@@ -193,6 +193,35 @@ pub fn render(
     })
 }
 
+/// Whether this source's writer takes a key the owner removed.
+///
+/// Chat, calendar and notes saves place by a fixed key, and what arrives again
+/// there is new data: a removed key's tombstone gives way and the file is
+/// written. Strava and body writers keep their own deletion rules here.
+fn reclaims_removed_keys(source: RegistrySource) -> bool {
+    matches!(
+        source,
+        RegistrySource::Chatgpt
+            | RegistrySource::Claude
+            | RegistrySource::Gemini
+            | RegistrySource::Ics
+            | RegistrySource::Obsidian
+    )
+}
+
+/// Whether the writer skips this segment: a removal still in progress always,
+/// and a removed key only for sources that do not reclaim it.
+fn skips_segment(segment_dir: &Path, reclaims: bool) -> Result<bool, String> {
+    let state = solstone_core_segment::owner_deletion_state(segment_dir)
+        .map_err(|error| error.to_string())?;
+    Ok(match state {
+        solstone_core_segment::OwnerDeletionState::Live => false,
+        solstone_core_segment::OwnerDeletionState::Deleted => !reclaims,
+        solstone_core_segment::OwnerDeletionState::Staged
+        | solstone_core_segment::OwnerDeletionState::Occupied => true,
+    })
+}
+
 /// Count unique publishable recordings, applying the writer's owner-deletion rule.
 pub fn preview_size(
     journal: &Path,
@@ -203,6 +232,7 @@ pub fn preview_size(
         skipped: rendered.skipped,
         ..Default::default()
     };
+    let reclaims = reclaims_removed_keys(rendered.source);
     // A calendar note file shares its segment with the transcript beside it.
     for file in rendered.files.iter().filter(|file| !file.calendar) {
         let path = journal
@@ -210,7 +240,7 @@ pub fn preview_size(
             .join(&file.day)
             .join(&stream)
             .join(&file.segment);
-        if solstone_core_segment::owner_deleted(&path).map_err(|error| error.to_string())? {
+        if skips_segment(&path, reclaims)? {
             size.skipped += 1;
         } else {
             size.recordings
@@ -240,6 +270,7 @@ pub fn write_rendered(
     let mut skipped_deleted = Vec::new();
     let mut written_files = Vec::with_capacity(rendered.files.len());
     let mut written_segments = std::collections::BTreeSet::new();
+    let reclaims = reclaims_removed_keys(rendered.source);
 
     for file in &rendered.files {
         if !solstone_core_import::work_continues() {
@@ -267,7 +298,15 @@ pub fn write_rendered(
             .join(&stream)
             .join(&file.segment);
 
-        match solstone_core_segment::owner_deleted(&segment_dir) {
+        let skip = if reclaims {
+            // A removed key's tombstone gives way to what arrives again; only a
+            // removal still in progress is skipped.
+            solstone_core_segment::reclaim_for_arrival(&segment_dir)
+                .map(|arrival| arrival == solstone_core_segment::Arrival::Removing)
+        } else {
+            solstone_core_segment::owner_deleted(&segment_dir)
+        };
+        match skip {
             Ok(true) => {
                 skipped_deleted.push((file.day.clone(), file.segment.clone()));
                 continue;
@@ -567,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn write_rendered_respects_owner_deleted_and_filters_manifest() {
+    fn write_rendered_takes_a_removed_key_skips_a_removal_in_progress_and_filters_manifest() {
         let temporary = tempdir().unwrap();
         let root = temporary.path();
 
@@ -578,8 +617,6 @@ mod tests {
         let a_dir = stream_dir.join("seg_a");
         fs::create_dir_all(&a_dir).unwrap();
         fs::write(a_dir.join("tombstone.json"), b"{\"tombstone\":true}").unwrap();
-        let a_bytes = fs::read(a_dir.join("tombstone.json")).unwrap();
-        let a_listing = dir_listing(&a_dir);
 
         // B is absent and parent holds .removing_seg_b
         let b_dir = stream_dir.join("seg_b");
@@ -641,32 +678,49 @@ mod tests {
             summary: "sentinel_summary_value".to_owned(),
         };
 
-        // Execution with deletions
+        // Execution: the removed key comes back, the removal in progress is skipped
         let outcome = write_rendered(root, Some("imp-1"), &rendered);
         assert_eq!(outcome.error.as_ref().map(|e| e.to_string()), None);
-        assert_eq!(dir_listing(&a_dir), a_listing);
-        assert_eq!(fs::read(a_dir.join("tombstone.json")).unwrap(), a_bytes);
+        assert!(!a_dir.join("tombstone.json").exists());
+        assert_eq!(fs::read(a_dir.join("calendar.ics")).unwrap(), b"event a\n");
         assert!(!b_dir.exists());
         assert_eq!(dir_listing(&removing_b), removing_b_listing);
         assert!(c_dir.join("calendar.ics").exists());
         assert_eq!(
             outcome.skipped_deleted,
-            vec![
-                ("20260804".to_owned(), "seg_a".to_owned()),
-                ("20260804".to_owned(), "seg_b".to_owned()),
-            ]
+            vec![("20260804".to_owned(), "seg_b".to_owned())]
         );
-        assert_eq!(outcome.created.len(), 1);
-        assert_eq!(outcome.created[0].segment, "seg_c");
-        assert_eq!(outcome.entries, 3);
-        assert_eq!(outcome.summary, "imported 3 calendar events across 1 day");
+        let created: Vec<&str> = outcome.created.iter().map(|c| c.segment.as_str()).collect();
+        assert_eq!(created, ["seg_a", "seg_c"]);
+        assert_eq!(outcome.entries, 4);
+        assert_eq!(outcome.summary, "imported 4 calendar events across 1 day");
 
-        // Content manifest should contain only item-c; item-no-segments is dropped when anything was skipped
+        // item-a and item-c stay; item-no-segments is dropped when anything was skipped
         let manifest_path = root.join("imports/imp-1/content_manifest.jsonl");
         let manifest_content = fs::read_to_string(&manifest_path).unwrap();
-        assert!(!manifest_content.contains("item-a"));
+        assert!(manifest_content.contains("item-a"));
         assert!(!manifest_content.contains("item-no-segments"));
         assert!(manifest_content.contains("item-c"));
+
+        // A Strava save keeps its own rule: a removed key stays skipped.
+        let temp_strava = tempdir().unwrap();
+        let strava_root = temp_strava.path();
+        let strava_removed = strava_root.join("chronicle/20260804/import.strava/seg_a");
+        fs::create_dir_all(&strava_removed).unwrap();
+        fs::write(strava_removed.join("tombstone.json"), b"{}").unwrap();
+        let strava = RenderedImport {
+            source: RegistrySource::Strava,
+            files: rendered.files[..1].to_vec(),
+            items: Vec::new(),
+            ..rendered.clone()
+        };
+        let strava_outcome = write_rendered(strava_root, None, &strava);
+        assert!(strava_outcome.error.is_none());
+        assert_eq!(
+            strava_outcome.skipped_deleted,
+            vec![("20260804".to_owned(), "seg_a".to_owned())]
+        );
+        assert_eq!(dir_listing(&strava_removed), ["tombstone.json"]);
 
         // Control: nothing deleted
         let temp_control = tempdir().unwrap();

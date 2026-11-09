@@ -56,6 +56,7 @@ members = [
     "crates/solstone-core-retention-cli",
     "crates/solstone-core-retention-client",
     "crates/solstone-core-removals",
+    "crates/solstone-core-trash",
     "crates/solstone-core-transcribe",
     "crates/solstone-core-transcribe-cli",
     "crates/solstone-core-ced-sys",
@@ -227,6 +228,7 @@ solstone-core-retention = { path = "crates/solstone-core-retention" }
 solstone-core-retention-cli = { path = "crates/solstone-core-retention-cli" }
 solstone-core-retention-client = { path = "crates/solstone-core-retention-client" }
 solstone-core-removals = { path = "crates/solstone-core-removals" }
+solstone-core-trash = { path = "crates/solstone-core-trash" }
 solstone-core-transcribe = { path = "crates/solstone-core-transcribe" }
 solstone-core-transcribe-cli = { path = "crates/solstone-core-transcribe-cli" }
 solstone-core-ced-sys = { path = "crates/solstone-core-ced-sys" }

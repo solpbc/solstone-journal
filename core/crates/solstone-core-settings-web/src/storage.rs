@@ -81,7 +81,7 @@ fn read_config(journal_root: &std::path::Path) -> Result<Map<String, Value>, Str
         .map_err(|error| error.to_string())
 }
 
-fn read_failed(code: &str, message: &str, detail: String) -> Response {
+pub(crate) fn read_failed(code: &str, message: &str, detail: String) -> Response {
     solstone_core_convey_http::envelope::error_envelope(
         code,
         message,

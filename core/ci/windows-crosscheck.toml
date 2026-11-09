@@ -19,8 +19,12 @@ target = "x86_64-pc-windows-msvc"
 # one member and one library (142/135 -> 143/136). It is desktop Unix only:
 # its crate root is cfg(linux, macos), every dependent gates it the same way,
 # and on Windows it builds as an empty library.
-workspace_packages = 143
-library_packages = 136
+# Re-derived on 2026-11-08 with the same metadata join: solstone-core-removals
+# adds one member and one library (143/136 -> 144/137).
+# Re-derived on 2026-11-08 with the same metadata join: solstone-core-trash
+# adds one member and one library (144/137 -> 145/138).
+workspace_packages = 145
+library_packages = 138
 
 [[exclusions]]
 package = "ring"

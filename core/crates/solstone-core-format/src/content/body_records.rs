@@ -140,6 +140,48 @@ impl BodyRow {
     }
 }
 
+/// How much a window's key says its rows are the copy to read, when an archive
+/// merge left a second copy beside them (lower is better). The importer writes
+/// to `<clock>_<len + 1>` whenever that key holds records, otherwise to the grid
+/// key, so those two are the live ones, the step-around first; a key further
+/// along is never written again.
+#[must_use]
+pub fn copy_rank(key: &str) -> u8 {
+    let Some(length) = key
+        .split_once('_')
+        .and_then(|(_, length)| length.parse::<u64>().ok())
+    else {
+        return 2;
+    };
+    let grid = [86_400_u64, 3_600, 300]
+        .into_iter()
+        .find(|grid| length >= *grid)
+        .unwrap_or(length);
+    match length - grid {
+        1 => 0,
+        0 => 1,
+        _ => 2,
+    }
+}
+
+/// A day's windows of one stream, with their rows, keeping each row once when
+/// an archive merge left a second copy: a row id in two windows at one clock
+/// reads from the better copy by [`copy_rank`], then key order. `moved` rows are
+/// dropped first, so a mark never hides a row's new home.
+#[must_use]
+pub fn one_copy_per_row(mut windows: Vec<(String, Vec<BodyRow>)>) -> Vec<(String, Vec<BodyRow>)> {
+    windows
+        .sort_by(|left, right| (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0)));
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, rows) in &mut windows {
+        let clock = name.split('_').next().unwrap_or_default().to_owned();
+        rows.retain(|row| {
+            row.kind != RowKind::Moved && seen.insert((clock.clone(), row.id.clone()))
+        });
+    }
+    windows
+}
+
 /// A source's name in the owner's words.
 #[must_use]
 pub fn source_words(source: &str) -> &str {
@@ -545,6 +587,73 @@ pub fn render_line(line: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    fn row(kind: RowKind, id: &str) -> BodyRow {
+        BodyRow::new(kind, id.to_owned(), "apple_health", "t", "l".to_owned())
+    }
+
+    fn ids(windows: &[(String, Vec<BodyRow>)]) -> Vec<(String, Vec<String>)> {
+        windows
+            .iter()
+            .map(|(name, rows)| {
+                (
+                    name.clone(),
+                    rows.iter().map(|row| row.id.clone()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_copy_the_importer_still_writes_to_is_the_one_read() {
+        assert!(copy_rank("090000_3601") < copy_rank("090000_3600"));
+        assert!(copy_rank("090000_3600") < copy_rank("090000_3602"));
+        assert!(copy_rank("090000_301") < copy_rank("090000_300"));
+        assert!(copy_rank("000000_86401") < copy_rank("000000_86400"));
+        assert_eq!(copy_rank("not a key"), 2);
+    }
+
+    #[test]
+    fn a_row_in_two_windows_reads_once_from_the_better_copy() {
+        let read = one_copy_per_row(vec![
+            (
+                "090000_3600".to_owned(),
+                vec![row(RowKind::Reading, "r1"), row(RowKind::Reading, "r2")],
+            ),
+            ("090000_3601".to_owned(), vec![row(RowKind::Reading, "r1")]),
+        ]);
+        assert_eq!(
+            ids(&read),
+            [
+                ("090000_3601".to_owned(), vec!["r1".to_owned()]),
+                ("090000_3600".to_owned(), vec!["r2".to_owned()]),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_moved_mark_never_hides_a_rows_new_home() {
+        let read = one_copy_per_row(vec![
+            ("090000_3601".to_owned(), vec![row(RowKind::Moved, "r1")]),
+            ("090000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
+        ]);
+        assert_eq!(
+            ids(&read),
+            [
+                ("090000_3601".to_owned(), Vec::new()),
+                ("090000_3600".to_owned(), vec!["r1".to_owned()]),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_row_live_at_two_clocks_isnt_a_merged_copy_and_reads_at_both() {
+        let read = one_copy_per_row(vec![
+            ("090000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
+            ("100000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
+        ]);
+        assert_eq!(read.iter().map(|(_, rows)| rows.len()).sum::<usize>(), 2);
+    }
+
     #[test]
     fn owner_words_are_only_what_the_owner_wrote() {
         let mut row = BodyRow::new(

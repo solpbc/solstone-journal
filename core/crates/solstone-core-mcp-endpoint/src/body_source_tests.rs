@@ -816,6 +816,84 @@ fn a_span_reads_in_time_order_across_overlapping_windows_and_only_inside_it() {
 }
 
 #[test]
+fn a_row_an_archive_merge_left_a_second_copy_of_reads_once_from_the_live_copy() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    let at = "2026-10-10 09:05:00 -0600";
+    window(
+        root,
+        DAY,
+        "090000_3600",
+        &[reading("r1", at, "60")],
+        Some("health"),
+    );
+    window(
+        root,
+        DAY,
+        "090000_3601",
+        &[
+            reading("r1", at, "61"),
+            reading("r2", "2026-10-10 09:10:00 -0600", "62"),
+        ],
+        Some("health"),
+    );
+    index(root);
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(
+        entries.iter().any(|entry| entry.contains("61")),
+        "{entries:?}"
+    );
+    assert!(
+        !entries.iter().any(|entry| entry.contains(" 60")),
+        "{entries:?}"
+    );
+}
+
+#[test]
+fn a_connection_that_can_read_only_the_second_copy_still_gets_its_rows() {
+    let journal = journal();
+    let root = journal.path();
+    // Limited to the facet of the copy the importer no longer writes to.
+    grant(
+        root,
+        ReadScope::Facets {
+            ids: vec![WORK.to_owned()],
+        },
+    );
+    let at = "2026-10-10 09:05:00 -0600";
+    window(
+        root,
+        DAY,
+        "090000_3600",
+        &[reading("r1", at, "60")],
+        Some("work"),
+    );
+    window(
+        root,
+        DAY,
+        "090000_3601",
+        &[reading("r1", at, "61")],
+        Some("health"),
+    );
+    index(root);
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL}),
+    );
+    let (entries, _) = every_entry(root, list["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert!(entries[0].contains("60"), "{entries:?}");
+}
+
+#[test]
 fn a_kind_lists_only_the_windows_holding_it_and_says_when_none_do() {
     let journal = journal();
     let root = journal.path();

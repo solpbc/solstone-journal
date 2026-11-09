@@ -224,7 +224,6 @@
           <div class="link-pairing-type-options">
             <button type="button" id="link-pairing-type-phone" data-pairing-action="type" data-pairing-type="phone" aria-pressed="true" data-copy="PAIR_TYPE_PHONE"></button>
             <button type="button" id="link-pairing-type-computer" data-pairing-action="type" data-pairing-type="computer" aria-pressed="false" data-copy="PAIR_TYPE_COMPUTER"></button>
-            <button type="button" id="link-pairing-type-terminal" data-pairing-action="type" data-pairing-type="terminal" aria-pressed="false" data-copy="PAIR_TYPE_TERMINAL"></button>
           </div>
         </div>
         <p id="link-pairing-network-line" class="modal-warning" data-copy="PAIR_NETWORK_LINE"></p>
@@ -246,13 +245,6 @@
 solstone-linux setup &lt; pairing-link.txt
 systemctl --user start solstone-linux</code></div>
           </div>
-        </div>
-        <div id="link-pairing-for-terminal" hidden>
-          <ol class="link-pairing-steps">
-            <li data-copy="TERMINAL_STEP_1"></li>
-            <li data-copy="TERMINAL_STEP_2"></li>
-          </ol>
-          <div class="command-box"><code>solstone-tmux setup &lt; pairing-link.txt</code></div>
         </div>
         <div id="link-pairing-addresses" class="link-pairing-addresses" hidden>
           <p data-copy="PAIR_LINK_ADDRESSES_LINE"></p>
@@ -1909,10 +1901,10 @@ systemctl --user start solstone-linux</code></div>
     refreshPrivateLinkStatus();
     refreshLocalNetwork();
     loadIdentity();
-    // `?pair=phone|computer|terminal` opens the pair dialog with that device
+    // `?pair=phone|computer` opens the pair dialog with that device
     // type chosen, so a setup step can link straight to it.
     const pairType = new URLSearchParams(location.search).get('pair');
-    if (['phone', 'computer', 'terminal'].includes(pairType)) window.linkPairingCeremony?.open(pairType);
+    if (['phone', 'computer'].includes(pairType)) window.linkPairingCeremony?.open(pairType);
     const identityCopyBtn = document.getElementById('link-identity-id-copy');
     if (identityCopyBtn) {
       identityCopyBtn.addEventListener('click', async () => {

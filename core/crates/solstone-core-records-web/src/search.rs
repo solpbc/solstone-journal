@@ -120,6 +120,7 @@ pub(crate) fn search_response_with_index(
         relax: true,
         counts: false,
         order: Default::default(),
+        body_owner_words: true,
     };
     let reference = today(journal_root);
     // Possible names are found by the canonical name they label, and only

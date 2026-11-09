@@ -1142,7 +1142,10 @@ mod tests {
             &mut store,
         );
         let replacement = state.start.as_ref().unwrap().fence.clone();
-        assert_eq!(lifecycle.starts.as_slice(), std::slice::from_ref(&replacement));
+        assert_eq!(
+            lifecycle.starts.as_slice(),
+            std::slice::from_ref(&replacement)
+        );
         assert_eq!((replacement.generation, replacement.attempt), (8, 2));
         let (authority, _, _, _) = native_authority_at(false, true, replacement.generation);
         let ready = warmup_native(

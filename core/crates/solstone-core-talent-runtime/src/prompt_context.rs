@@ -406,6 +406,8 @@ fn python_value_string(value: &Value) -> String {
     }
 }
 
+const OBSIDIAN_SOURCE: &str = solstone_core_format::obsidian::OBSIDIAN_SOURCE;
+
 fn is_browser_route(stream: Option<&str>, source: Option<&str>, kind: Option<&str>) -> bool {
     if source == Some("browser") || kind == Some("browser") {
         return true;
@@ -426,6 +428,11 @@ fn stream_content_description(
 ) -> String {
     if is_browser_route(stream, source, kind) {
         return "semantic page text and change updates from browser web apps such as Gmail or Slack"
+            .to_owned();
+    }
+    if source == Some(OBSIDIAN_SOURCE) {
+        return "changes the owner made to their own notes in Obsidian, each note's title and path \
+                followed by what they wrote in that moment"
             .to_owned();
     }
     if let Some(stream) = stream
@@ -775,5 +782,16 @@ mod tests {
             assert!(imported_recording_rule(stream, None, None).is_empty());
         }
         assert!(imported_recording_rule(Some("import.audio"), Some("browser"), None).is_empty());
+    }
+
+    #[test]
+    fn a_note_from_a_vault_reads_as_the_owners_own_writing() {
+        let description =
+            stream_content_description(Some("mac_obsidian"), Some("obsidian"), Some("observer"));
+        assert!(
+            description.contains("their own notes in Obsidian"),
+            "{description}"
+        );
+        assert!(imported_recording_rule(Some("mac_obsidian"), Some("obsidian"), None).is_empty());
     }
 }

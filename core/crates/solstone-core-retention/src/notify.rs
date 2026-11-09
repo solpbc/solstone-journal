@@ -62,6 +62,10 @@ pub trait IndexNotify {
     /// filesystem, and being told about an unindexed path is ordinary. ⛔ And must
     /// not create an index — a prune is not a reason to bring one into existence.
     fn paths_removed(&self, removed: &[RemovedPath]) -> Result<PruneCounts, NotifyError>;
+
+    /// Index paths that have **come back** to the chronicle: a recording
+    /// recovered from the trash, whose rows its trashing dropped.
+    fn paths_returned(&self, returned: &[String]) -> Result<(), NotifyError>;
 }
 
 /// A notification target that does nothing, for a journal with no index.
@@ -74,6 +78,10 @@ pub struct NoIndex;
 impl IndexNotify for NoIndex {
     fn paths_removed(&self, _removed: &[RemovedPath]) -> Result<PruneCounts, NotifyError> {
         Ok(PruneCounts::default())
+    }
+
+    fn paths_returned(&self, _returned: &[String]) -> Result<(), NotifyError> {
+        Ok(())
     }
 }
 
