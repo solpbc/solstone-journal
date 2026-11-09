@@ -1332,6 +1332,17 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
+id = "package::solstone-core-trash"
+package = "solstone-core-trash"
+set = "component"
+areas = ["retention"]
+platforms = ["linux", "macos", "windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = false
+runtime = "none"
+
+[[package_suites]]
 id = "package::solstone-core-retention-client"
 package = "solstone-core-retention-client"
 set = "component"

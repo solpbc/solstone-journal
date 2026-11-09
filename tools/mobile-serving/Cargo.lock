@@ -6127,6 +6127,7 @@ name = "solstone-core-journal-archive"
 version = "2.0.72"
 dependencies = [
  "nix 0.30.1",
+ "solstone-core-journal",
  "solstone-core-journal-io",
  "zip",
 ]

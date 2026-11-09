@@ -781,6 +781,76 @@ mod tests {
             assert!(trash_items(root.path()).is_empty());
         }
 
+        /// A stop between the move and the tombstone: the recording is wholly
+        /// in the trash, its place is empty, and the sweep leaves the tombstone
+        /// a stream's chain needs, then lists it.
+        #[tokio::test]
+        async fn a_sweep_finishes_a_stop_between_the_move_and_the_tombstone() {
+            let root = deletion_root();
+            delete(root.path(), "").await;
+            let mut item = trash_items(root.path()).remove(0);
+            fs::remove_dir_all(root.path().join(SEGMENT)).unwrap();
+            item.state = solstone_core_trash::State::Detaching;
+            let record = root
+                .path()
+                .join(solstone_core_trash::TRASH_DIR)
+                .join(&item.id)
+                .join("item.json");
+            fs::write(&record, serde_json::to_vec(&item).unwrap()).unwrap();
+            assert!(trash_items(root.path()).is_empty());
+            let index = solstone_core_indexer_store::RetentionIndex::new(root.path());
+            let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+            let swept = solstone_core_trash::sweep(root.path(), &[&recordings], chrono::Utc::now());
+            assert_eq!(swept.failed, Vec::<String>::new());
+            assert_eq!(names(&root.path().join(SEGMENT)), vec!["tombstone.json"]);
+            assert_eq!(trash_items(root.path()).len(), 1);
+            assert_eq!(
+                solstone_core_removals::history(root.path(), 10)
+                    .unwrap()
+                    .entries
+                    .len(),
+                1,
+                "the trashing is recorded once"
+            );
+        }
+
+        /// A stop half way through a recover, after the tombstone was set
+        /// aside: the sweep puts the recording back.
+        #[tokio::test]
+        async fn a_sweep_finishes_a_recover_stopped_after_setting_the_tombstone_aside() {
+            let root = deletion_root();
+            let before = snapshot(root.path());
+            delete(root.path(), "").await;
+            let mut item = trash_items(root.path()).remove(0);
+            let held = root
+                .path()
+                .join(solstone_core_trash::TRASH_DIR)
+                .join(&item.id);
+            let aside = held.join("displaced").join(SEGMENT);
+            fs::create_dir_all(aside.parent().unwrap()).unwrap();
+            fs::rename(root.path().join(SEGMENT), &aside).unwrap();
+            item.state = solstone_core_trash::State::Attaching;
+            item.pending = Some(solstone_core_trash::Pending {
+                action: solstone_core_removals::Action::Recover,
+                surface: solstone_core_removals::Surface::Web {
+                    page: solstone_core_removals::Page::Settings,
+                },
+                at: chrono::Utc::now().to_rfc3339(),
+            });
+            fs::write(held.join("item.json"), serde_json::to_vec(&item).unwrap()).unwrap();
+            let index = solstone_core_indexer_store::RetentionIndex::new(root.path());
+            let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
+            let swept = solstone_core_trash::sweep(root.path(), &[&recordings], chrono::Utc::now());
+            assert_eq!(swept.failed, Vec::<String>::new());
+            let after = snapshot(root.path());
+            for (path, value) in &before {
+                if path.starts_with(SEGMENT) {
+                    assert_eq!(after.get(path), Some(value), "{}", path.display());
+                }
+            }
+            assert!(!held.exists());
+        }
+
         #[tokio::test]
         async fn a_body_that_is_not_json_deletes_nothing() {
             let root = deletion_root();
