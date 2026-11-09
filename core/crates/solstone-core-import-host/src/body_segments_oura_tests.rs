@@ -306,11 +306,11 @@ fn the_fixture_pages_land_by_the_read_table() {
 
     // What isn't read is counted and named, and none of it is stored.
     for line in [
-        "- blood_glucose: 1",
+        "- blood glucose: 1",
         "- sleep deleted: 1",
         "- sleep rest: 1",
-        "- heartrate: 3",
-        "- workout: 3",
+        "- heart rate: 3",
+        "- workouts: 3",
     ] {
         assert!(summary.contains(line), "{line}: {summary}");
     }
@@ -338,7 +338,7 @@ fn the_same_pages_again_change_nothing() {
     let again = run(root, &fixture(), "20261104_120001", Some("health"));
     assert_eq!(again.published, 0, "{}", again.summary);
     assert!(
-        again.summary.contains("0 windows written"),
+        again.summary.contains("0 parts of your journal written"),
         "{}",
         again.summary
     );
@@ -385,7 +385,7 @@ fn a_document_over_the_row_bound_is_refused_by_name_and_is_no_hole() {
     assert!(
         outcome
             .summary
-            .contains("## Refused\n\n- workout: row_too_large: 1"),
+            .contains("## Couldn't be read\n\n- workouts: too large to keep: 1"),
         "{}",
         outcome.summary
     );
@@ -821,7 +821,7 @@ fn a_start_across_the_owners_midnight_is_kept_as_first_written_and_within_its_wi
         assert!(
             outcome
                 .summary
-                .contains("Oura has since changed 1 entry; the journal keeps it as first written."),
+                .contains("Oura moved 1 entry to the other side of midnight; your journal keeps the time it first saved."),
             "{}",
             outcome.summary
         );
@@ -840,7 +840,7 @@ fn a_start_across_the_owners_midnight_is_kept_as_first_written_and_within_its_wi
         );
         assert!(
             outcome.summary.contains(&format!(
-                "- workout, {}: changed in Oura since",
+                "- workouts, {}: Oura moved this",
                 &revised.0[..10]
             )),
             "{}",
@@ -1091,7 +1091,7 @@ fn with_no_record_a_deleted_window_on_the_lookup_days_refuses_a_revision_by_its_
     // fills it.
     assert!(
         outcome.summary.contains(
-            "## Refused\n\n- enhanced_tag: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"
+            "## Couldn't be read\n\n- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"
         ),
         "{}",
         outcome.summary
@@ -1151,7 +1151,7 @@ fn a_window_on_the_lookup_days_that_isnt_rows_holds_a_document_back_and_its_twin
             assert!(placed(root, "w1").is_empty());
             assert!(
                 outcome.summary.contains("## Held back")
-                    && outcome.summary.contains("- workout: 1"),
+                    && outcome.summary.contains("- workouts: 1"),
                 "{}",
                 outcome.summary
             );
@@ -1327,7 +1327,7 @@ fn oura_experiences_get_records_with_a_facet_and_a_retyped_workouts_record_follo
         None,
     );
     assert!(
-        bare.summary.contains("3 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because their windows have no facet."),
+        bare.summary.contains("3 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because those parts of your journal have no facet."),
         "{}",
         bare.summary
     );
@@ -1401,7 +1401,11 @@ fn a_revision_kept_as_first_written_pulls_no_reading_onto_its_new_slot() {
         ],
     );
     let outcome = run(root, &pages, "20261104_120001", None);
-    assert!(outcome.summary.contains("Oura has since changed 1 entry"));
+    assert!(
+        outcome
+            .summary
+            .contains("Oura moved 1 entry to the other side of midnight")
+    );
     let windows = stored(root);
     assert!(!windows.contains_key(&("20260104".to_owned(), "235000_300".to_owned())));
     assert!(!windows.contains_key(&("20260104".to_owned(), "234000_300".to_owned())));
@@ -1832,7 +1836,11 @@ fn two_live_first_rows_on_one_day_heal_to_the_current_and_on_two_days_keep_a_rev
         );
         if apart {
             assert_eq!(stream_bytes(root), bytes);
-            assert!(outcome.summary.contains("Oura has since changed 1 entry"));
+            assert!(
+                outcome
+                    .summary
+                    .contains("Oura moved 1 entry to the other side of midnight")
+            );
         } else {
             let windows = windows_from("20260105", (8, 0), 300, 4);
             assert_converged(root, &rid, &before, &tiling(&rid, &as_refs(&windows)));
@@ -1870,7 +1878,10 @@ fn the_lookup_reaches_one_day_either_side_and_no_further() {
         "20261104_120001",
         None,
     );
-    assert!(near.summary.contains("Oura has since changed 1 entry"));
+    assert!(
+        near.summary
+            .contains("Oura moved 1 entry to the other side of midnight")
+    );
     assert_eq!(placed(root, "w1").len(), 1);
 
     // Two days later is past the lookup's reach: it lands as new, beside the
@@ -1921,7 +1932,11 @@ fn the_lookup_reaches_one_day_either_side_and_no_further() {
         "20261104_120004",
         None,
     );
-    assert!(moved.summary.contains("Oura has since changed 1 entry"));
+    assert!(
+        moved
+            .summary
+            .contains("Oura moved 1 entry to the other side of midnight")
+    );
     assert_eq!(placed(root, "n1").len(), 1);
     assert_eq!(placed(root, "n1")[0].0, "20260105");
 }
@@ -2088,7 +2103,9 @@ fn a_move_under_an_import_naming_no_facet_keeps_the_record_readable_under_its_fa
         if crowded {
             assert_eq!(facet_of("090000_300"), Some(facet_file_text("other")));
             assert!(
-                outcome.summary.contains("1 window already carries a facet"),
+                outcome
+                    .summary
+                    .contains("1 part of your journal already carries a facet"),
                 "{}",
                 outcome.summary
             );
@@ -2100,7 +2117,7 @@ fn a_move_under_an_import_naming_no_facet_keeps_the_record_readable_under_its_fa
             assert!(
                 outcome
                     .summary
-                    .contains("4 windows each took the facet of the entry Oura moved into it, so what's in them is readable under that facet."),
+                    .contains("4 parts of your journal each took the facet of the entry Oura moved into it, so what's in them is readable under that facet."),
                 "{}",
                 outcome.summary
             );

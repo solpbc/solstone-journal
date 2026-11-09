@@ -7808,7 +7808,6 @@ mod tests {
             "local",
             "generate",
             "brain",
-            "body",
             "grab",
             "spl",
             "supervisor",

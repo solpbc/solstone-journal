@@ -1538,6 +1538,9 @@ pub fn name_words(name: &str) -> String {
 /// Why something wasn't read, as an owner would say it.
 #[must_use]
 pub fn stage_words(stage: &str) -> String {
+    if let Some((name, why)) = stage.split_once(": ") {
+        return format!("{}: {}", name_words(name), stage_words(why));
+    }
     match stage {
         "end_before_start" => "ended before it started".to_owned(),
         "row_too_large" => "too large to keep".to_owned(),

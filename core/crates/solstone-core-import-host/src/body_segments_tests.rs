@@ -53,8 +53,11 @@ fn journal() -> tempfile::TempDir {
     journal
 }
 
+/// A run the owner answered for, so a facet it names moves what's filed elsewhere.
 fn run(root: &Path, source: &Path, timestamp: &str, facet: Option<&str>) -> AppleSegmentsOutcome {
-    run_apple_health_segments(root, &AppleSegmentsRequest::new(source, timestamp, facet)).unwrap()
+    let mut request = AppleSegmentsRequest::new(source, timestamp, facet);
+    request.listed = ListedMoves::Move;
+    run_apple_health_segments(root, &request).unwrap()
 }
 
 fn window(root: &Path, day: &str, key: &str) -> PathBuf {
@@ -436,7 +439,7 @@ fn a_day_whose_marker_failed_stays_owed_and_the_next_run_moves_it() {
         .unwrap();
     assert_eq!(record.status, PublicationStatus::Failure);
     assert!(
-        failed.summary.contains("20261010: day marker"),
+        failed.summary.contains("2026-10-10: day marker"),
         "{}",
         failed.summary
     );
@@ -505,7 +508,9 @@ fn the_summary_says_when_a_window_keeps_or_takes_on_another_imports_facet() {
     );
     let added = run(root, &second, "20261012_120001", None);
     assert!(
-        added.summary.contains("1 window already carries a facet"),
+        added
+            .summary
+            .contains("1 part of your journal already carries a facet"),
         "{}",
         added.summary
     );
@@ -516,7 +521,9 @@ fn the_summary_says_when_a_window_keeps_or_takes_on_another_imports_facet() {
     );
     let moved = run(root, &third, "20261012_120002", Some("other"));
     assert!(
-        moved.summary.contains("1 window already held records"),
+        moved
+            .summary
+            .contains("1 part of your journal already held records"),
         "{}",
         moved.summary
     );
@@ -883,7 +890,7 @@ fn one_window_that_wont_bind_is_named_and_the_rest_of_the_import_lands() {
     let partly = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
     assert!(!partly.finished);
     assert!(
-        partly.summary.contains("20261011 063000_300: bind"),
+        partly.summary.contains("2026-10-11: bind"),
         "{}",
         partly.summary
     );
@@ -909,7 +916,7 @@ fn one_window_that_wont_bind_is_named_and_the_rest_of_the_import_lands() {
     // Another run retries only that window, which still fails, and blocks nothing.
     let again = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
     assert!(!again.finished);
-    assert!(again.summary.contains("20261011 063000_300: bind"));
+    assert!(again.summary.contains("2026-10-11: bind"));
     // Once the stray marker is gone, it lands.
     fs::remove_file(stuck.join("stream.json")).unwrap();
     let fixed = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
@@ -1055,7 +1062,7 @@ fn another_export_after_a_stop_publishes_the_old_half_day_and_starts_fresh() {
     let summary = fs::read_to_string(root.join("imports/20261104_120000/summary.md")).unwrap();
     assert!(summary.contains("replaced by a later one"), "{summary}");
     assert!(
-        summary.contains(&format!("{written} windows written")),
+        summary.contains(&format!("{written} parts of your journal written")),
         "the half-done day counts: {written}: {summary}"
     );
     let mut named = BTreeSet::new();
@@ -1514,7 +1521,11 @@ fn the_same_bytes_at_the_same_time_leave_the_first_imports_record_alone() {
         ),
         "the first import's record was replaced"
     );
-    assert!(two.summary.contains("0 windows written"), "{}", two.summary);
+    assert!(
+        two.summary.contains("0 parts of your journal written"),
+        "{}",
+        two.summary
+    );
     // A row still names the import that first wrote it.
     let rows =
         decode_rows(&String::from_utf8(body_bytes(root, TEN, "060000_3600")).unwrap()).unwrap();
@@ -1589,7 +1600,11 @@ fn an_export_at_another_offset_changes_nothing_and_doubles_nothing() {
         "20261012_120001",
         None,
     );
-    assert!(two.summary.contains("0 windows written"), "{}", two.summary);
+    assert!(
+        two.summary.contains("0 parts of your journal written"),
+        "{}",
+        two.summary
+    );
     assert_eq!(two.published, 0, "{}", two.summary);
     let mut after = snapshot(root);
     after.retain(|path, _| !path.contains("20261012_120001"));
@@ -1696,8 +1711,8 @@ fn two_adjacent_windows_that_wont_bind_dont_stop_the_days_after_them() {
     }
     let one = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
     assert!(!one.finished);
-    assert!(one.summary.contains("063000_300"), "{}", one.summary);
-    assert!(one.summary.contains("063500_300"), "{}", one.summary);
+    assert!(one.summary.contains("2026-10-11"), "{}", one.summary);
+    assert!(!one.summary.contains("063000_300"), "{}", one.summary);
     assert!(
         window(root, "20261013", "063000_300")
             .join("stream.json")
@@ -2070,7 +2085,11 @@ fn one_record_that_cant_be_read_is_counted_and_the_rest_are_saved() {
         let shown = String::from_utf8_lossy(&bad).into_owned();
         assert!(done.finished, "{shown}: {}", done.summary);
         assert_eq!(saved_windows(root), 2, "{shown}");
-        assert!(done.summary.contains("## Refused"), "{}", done.summary);
+        assert!(
+            done.summary.contains("## Couldn't be read"),
+            "{}",
+            done.summary
+        );
         assert!(done.summary.contains("attributes"), "{}", done.summary);
         // Twice over, the same.
         let again = run(root, &source, "20261012_130000", None);
@@ -2266,7 +2285,7 @@ fn a_day_with_more_stuck_windows_than_the_bound_is_recorded_and_the_next_run_goe
         assert!(later_day_landed(root));
         assert!(!two.finished);
         assert_eq!(two.import_id, "20261104_120000");
-        assert!(two.summary.contains("Not saved"), "{}", two.summary);
+        assert!(two.summary.contains("Not saved yet"), "{}", two.summary);
         // Unstuck, a later run with the same export saves them.
         (0..slots).for_each(|slot| {
             let minutes = 6 * 60 + slot * 5;
@@ -2321,6 +2340,7 @@ fn a_kill_never_leaves_new_rows_under_a_windows_old_facet() {
     let stop = stopping_at("written", 1);
     let mut stopped = request(&more, "20261012_130000");
     stopped.facet = Some("other");
+    stopped.listed = ListedMoves::Move;
     stopped.stop_at = Some(&stop);
     run_apple_health_segments(root, &stopped).unwrap_err();
     let dir = window(root, "20261010", "060000_3600");
@@ -2489,6 +2509,144 @@ fn a_window_that_isnt_rows_where_its_reading_goes_is_counted_and_the_run_goes_on
                 .join(BODY_RECORDS_FILE)
                 .is_file()
         );
+    }
+}
+
+fn two_facets(root: &Path) {
+    for facet in ["work", "body"] {
+        let dir = root.join("facets").join(facet);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("facet.json"),
+            json!({"title": facet, "description": facet}).to_string(),
+        )
+        .unwrap();
+    }
+}
+
+fn records_in(root: &Path, facet: &str, day: &str) -> usize {
+    fs::read_to_string(root.join(format!("facets/{facet}/activities/{day}.jsonl")))
+        .unwrap_or_default()
+        .lines()
+        .count()
+}
+
+#[test]
+fn a_run_nobody_answered_for_moves_nothing_already_filed() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    assert_eq!(
+        records_in(root, "work", "20261010"),
+        1,
+        "{}",
+        outcome.summary
+    );
+    assert_eq!(records_in(root, "body", "20261010"), 0);
+    assert!(
+        !outcome.summary.contains("moved there"),
+        "{}",
+        outcome.summary
+    );
+}
+
+#[test]
+fn the_owners_answer_moves_the_record_with_its_window_and_says_how_many_from_where() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    let outcome = run(root, &source, "20261012_130000", Some("body"));
+    assert_eq!(
+        records_in(root, "work", "20261010"),
+        0,
+        "{}",
+        outcome.summary
+    );
+    assert_eq!(records_in(root, "body", "20261010"), 1);
+    assert!(
+        outcome
+            .summary
+            .contains("1 record already listed on the activities page moved there, from work."),
+        "{}",
+        outcome.summary
+    );
+}
+
+#[test]
+fn more_than_the_owner_was_told_moves_none_and_says_so() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    let mut told = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(1);
+    let outcome = run_apple_health_segments(root, &told).unwrap();
+    assert_eq!(
+        records_in(root, "work", "20261010"),
+        1,
+        "{}",
+        outcome.summary
+    );
+    assert!(
+        outcome
+            .summary
+            .contains("nothing already listed moved: 2 records would have, and you were told 1."),
+        "{}",
+        outcome.summary
+    );
+}
+
+#[test]
+fn an_exports_manifest_says_the_days_it_reached() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(
+        scratch.path(),
+        &[
+            heart("2026-10-10 06:31:10 -0600", "70"),
+            heart("2026-10-14 06:31:10 -0600", "71"),
+        ],
+    );
+    let outcome = run(root, &source, "20261015_120000", None);
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            root.join("imports")
+                .join(&outcome.import_id)
+                .join("manifest.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest["span"], json!([["20261010", "20261014"]]));
+}
+
+#[test]
+fn a_summary_holds_no_stage_code_or_journal_key() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = days_export(scratch.path());
+    stuck_window(root, "20261011", "063000_300");
+    let outcome = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap();
+    for raw in [
+        "HKQuantity",
+        "063000_300",
+        "end_before_start",
+        "window",
+        "connection",
+    ] {
+        assert!(!outcome.summary.contains(raw), "{raw}: {}", outcome.summary);
     }
 }
 
@@ -2727,7 +2885,7 @@ fn an_import_adds_one_activity_per_workout_and_again_adds_none() {
     .unwrap();
     let three = run(fresh.path(), &source, "20261012_120002", None);
     assert!(
-        three.summary.contains("2 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because their windows have no facet."),
+        three.summary.contains("2 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because those parts of your journal have no facet."),
         "{}",
         three.summary
     );

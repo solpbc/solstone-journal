@@ -472,7 +472,7 @@ fn the_summary_names_and_counts_and_holds_no_value() {
         None,
         Denver,
     );
-    assert!(summary.contains("HKQuantityTypeIdentifierActiveEnergyBurned: 1"));
+    assert!(summary.contains("active energy burned: 1"));
     assert!(summary.contains("end_before_start: 2"));
     assert!(summary.contains("no facet"));
     assert!(!summary.contains("4817"));

@@ -579,7 +579,7 @@ fn a_tag_the_owner_deleted_after_its_move_stays_out_wherever_oura_moves_it_next(
         assert!(
             outcome
                 .summary
-                .contains("- enhanced_tag: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
+                .contains("- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
             "{back}: {}",
             outcome.summary
         );
@@ -839,9 +839,9 @@ fn a_finished_move_and_one_across_midnight_on_one_oura_day_leave_it_a_deferred_h
         outcome.summary
     );
     assert!(
-        outcome
-            .summary
-            .contains("Oura has since changed 1 entry; the journal keeps it"),
+        outcome.summary.contains(
+            "Oura moved 1 entry to the other side of midnight; your journal keeps the time"
+        ),
         "{}",
         outcome.summary
     );
@@ -1068,7 +1068,7 @@ fn takeovers_inside_the_start_day_print_the_move_and_the_next_read_leaves_one_fi
             assert!(
                 taken.summary.contains(&format!(
                     "- {}, 2026-01-05: changed in Oura since, and the journal hasn't finished moving it to its new time; an import that asks for this day again finishes it",
-                    variant.endpoint
+                    solstone_core_import_sources::apple_health::name_words(variant.endpoint)
                 )),
                 "{label}: {}",
                 taken.summary
@@ -1382,7 +1382,7 @@ fn a_tag_refused_beside_an_owners_delete_is_no_hole_and_its_day_is_claimed() {
     let outcome = finished(root, &second, &ask("20261104_120001", range));
     assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
     assert!(
-        outcome.summary.contains("- enhanced_tag: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
+        outcome.summary.contains("- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
         "{}",
         outcome.summary
     );
@@ -1483,7 +1483,7 @@ fn a_restore_after_the_start_days_files_prints_the_move_until_a_run_writes_that_
     );
     assert!(
         repaired.summary.contains(
-            "- workout, 2026-01-05: changed in Oura since, and the journal hasn't finished moving it"
+            "- workouts, 2026-01-05: changed in Oura since, and the journal hasn't finished moving it"
         ),
         "{}",
         repaired.summary
