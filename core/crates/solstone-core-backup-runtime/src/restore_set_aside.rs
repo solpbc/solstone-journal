@@ -28,7 +28,7 @@ use solstone_core_journal_io::atomic::{AtomicWriteOptions, atomic_replace};
 use solstone_core_journal_io::copy_excludes::{copy_excluded, copy_file_excluded};
 
 /// Names the current attempt's folder across a retry.
-pub(crate) const ATTEMPT_FILE: &str = "health/restore-attempt.json";
+pub(crate) const ATTEMPT_FILE: &str = solstone_core_journal::RESTORE_ATTEMPT_FILE;
 
 /// Room kept free beyond the copies and the restored bytes.
 const FREE_SPACE_MARGIN: u64 = 1_000_000_000;

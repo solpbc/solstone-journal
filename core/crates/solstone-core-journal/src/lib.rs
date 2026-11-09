@@ -26,6 +26,9 @@ pub const TRASH_DIR: &str = ".trash";
 /// then its time, at the journal root. It is hidden the way the trash is.
 pub const BEFORE_RESTORE_PREFIX: &str = ".before-restore-";
 
+/// Names the set-aside folder of a restore that hasn't finished.
+pub const RESTORE_ATTEMPT_FILE: &str = "health/restore-attempt.json";
+
 /// Whether a name at the journal root is one nothing that reads the journal
 /// sees: the trash, or what a restore set aside.
 pub fn is_hidden_root_name(name: &std::ffi::OsStr) -> bool {

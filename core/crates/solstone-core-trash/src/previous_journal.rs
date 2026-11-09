@@ -30,6 +30,9 @@ pub struct Kept {
     pub folder: String,
     pub stamp: String,
     pub bytes: u64,
+    /// The restore that made this hasn't finished: the journal isn't that
+    /// backup yet, and a retry adds to this folder.
+    pub unfinished: bool,
 }
 
 fn stamp_of(name: &str) -> Option<&str> {
@@ -56,8 +59,16 @@ impl Kind for PreviousJournal {
     }
 }
 
+/// The stamp of the restore still in progress, if one is.
+fn unfinished_stamp(journal: &Path) -> Option<String> {
+    let bytes = std::fs::read(journal.join(solstone_core_journal::RESTORE_ATTEMPT_FILE)).ok()?;
+    let attempt: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    attempt.get("stamp")?.as_str().map(str::to_owned)
+}
+
 /// Every journal a restore kept, newest first.
 pub fn kept(journal: &Path) -> std::io::Result<Vec<Kept>> {
+    let unfinished = unfinished_stamp(journal);
     let mut found = Vec::new();
     for entry in std::fs::read_dir(journal)? {
         let entry = entry?;
@@ -72,6 +83,7 @@ pub fn kept(journal: &Path) -> std::io::Result<Vec<Kept>> {
                 folder: name.to_owned(),
                 stamp: stamp.to_owned(),
                 bytes: crate::tree_bytes(&entry.path()),
+                unfinished: unfinished.as_deref() == Some(stamp),
             });
         }
     }
@@ -138,6 +150,20 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].stamp, "1");
         assert_eq!(kept[0].bytes, 5);
+        assert!(!kept[0].unfinished);
+    }
+
+    #[test]
+    fn a_restore_still_in_progress_marks_its_folder() {
+        let root = with_kept("unfinished");
+        fs::create_dir_all(root.path().join("health")).unwrap();
+        fs::write(
+            root.path()
+                .join(solstone_core_journal::RESTORE_ATTEMPT_FILE),
+            br#"{"stamp":"1","snapshot_id":"a"}"#,
+        )
+        .unwrap();
+        assert!(kept(root.path()).unwrap()[0].unfinished);
     }
 
     #[test]

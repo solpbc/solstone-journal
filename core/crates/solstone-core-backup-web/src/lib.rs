@@ -477,7 +477,12 @@ async fn get_previous_journal(deps: BackupWebDeps) -> axum::response::Response {
     })
     .await
     {
-        Ok(Ok(kept)) => response::success(serde_json::json!({ "kept": kept })),
+        Ok(Ok(kept)) => response::success(serde_json::json!({
+            "kept": kept,
+            // iOS's restorer can't report what it would change, so its restore
+            // keeps no previous journal.
+            "keeps_previous": cfg!(not(target_os = "ios")),
+        })),
         Ok(Err(error)) => previous_journal_failed(&error.to_string()),
         Err(error) => previous_journal_failed(&error.to_string()),
     }
