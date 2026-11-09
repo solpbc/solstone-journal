@@ -495,7 +495,7 @@ const SETS_DIR: &str = "sets";
 #[derive(Debug)]
 pub enum SetResult {
     /// In the trash; `erased` when the owner asked it erased now and it was.
-    Moved { item: Item, erased: bool },
+    Moved { item: Box<Item>, erased: bool },
     /// Not moved, and why.
     Refused(TrashError),
 }
@@ -555,11 +555,14 @@ fn run_set(journal: &Path, kinds: &[&dyn Kind], set: &Set) -> Vec<SetResult> {
                                 false
                             }
                         };
-                    SetResult::Moved { item, erased }
+                    SetResult::Moved {
+                        item: Box::new(item),
+                        erased,
+                    }
                 }
                 Err(TrashError::Unfinished(id)) => match read_item(journal, &id) {
                     Ok(Some(item)) => SetResult::Moved {
-                        item,
+                        item: Box::new(item),
                         erased: false,
                     },
                     _ => SetResult::Refused(TrashError::Unfinished(id)),
