@@ -24,15 +24,12 @@
         "status": 200,
         "json": {
           "coverage": null,
-          "latest_day": null,
           "days": 0,
-          "days_label": "0",
           "sources": [],
           "day_grid": [],
           "imports": {
             "new": [],
-            "old": [],
-            "old_sources": []
+            "old": []
           }
         }
       },
@@ -134,9 +131,7 @@
             "start": "20260110",
             "end": "20260111"
           },
-          "latest_day": "20260111",
           "days": 2,
-          "days_label": "2",
           "sources": [
             {
               "source": "apple_health",
@@ -202,8 +197,7 @@
                 "progress": null
               }
             ],
-            "old": [],
-            "old_sources": []
+            "old": []
           }
         }
       },
@@ -251,14 +245,11 @@
                 {
                   "kind": "workout",
                   "name": "running",
-                  "title_is_yours": false,
                   "start": "6:31 AM",
                   "end": "7:20 AM",
                   "by": "Synthetic Watch",
                   "distance": "8.1 km",
-                  "continuing": false,
-                  "entered_by_you": false,
-                  "at": "2026-01-10 06:31:00 -0700"
+                  "continuing": false
                 }
               ],
               "readings": [

@@ -121,11 +121,9 @@ pub(crate) fn imports_section(root: &Path) -> Value {
         .map(|import| new_import_item(root, import))
         .collect::<Vec<_>>();
     let old = read_old_bundles(root);
-    let sources_with_old = crate::old_lines::sources_with_old(&old);
     let old_items = old.iter().map(listing_item).collect::<Vec<_>>();
     json!({
         "new": new_items,
         "old": old_items,
-        "old_sources": sources_with_old,
     })
 }

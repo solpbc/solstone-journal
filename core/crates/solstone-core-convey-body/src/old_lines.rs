@@ -4,7 +4,6 @@
 //! What the Body app says about old imports: the lines on a day page and the
 //! overview's listing of old bundles.
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -96,20 +95,11 @@ fn scope_word(span: &OldSpan) -> &'static str {
 /// One old bundle on the overview: its source, what it spans and what to do.
 pub(crate) fn listing_item(bundle: &OldBundle) -> Value {
     let span = span_label(&bundle.span);
-    let line = match bundle.source {
-        OldSource::DexcomClarity => format!(
-            "{} from {span}, kept but not read here. there's no importer for Dexcom Clarity now, so it stays as it is.",
-            bundle.source.words()
-        ),
-        OldSource::AppleHealth => format!(
-            "{} from {span}, kept but not read here. import again from a new Apple Health export to bring it in.",
-            bundle.source.words()
-        ),
-        OldSource::Oura => format!(
-            "{} from {span}, kept but not read here. import again from your Oura account to bring it in.",
-            bundle.source.words()
-        ),
-    };
+    let line = format!(
+        "{} from {span}, kept but not read here. {}",
+        bundle.source.words(),
+        import_again(bundle.source)
+    );
     json!({
         "id": bundle.id,
         "source": bundle.source.words(),
@@ -118,9 +108,4 @@ pub(crate) fn listing_item(bundle: &OldBundle) -> Value {
         "line": line,
         "importer": bundle.source != OldSource::DexcomClarity,
     })
-}
-
-/// Every source name that has at least one old bundle, in a stable order.
-pub(crate) fn sources_with_old(bundles: &[OldBundle]) -> BTreeSet<&'static str> {
-    bundles.iter().map(|bundle| bundle.source.words()).collect()
 }

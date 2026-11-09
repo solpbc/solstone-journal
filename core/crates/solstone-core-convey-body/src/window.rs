@@ -253,7 +253,34 @@ fn collect_rows(root: &Path, from: DateTime<FixedOffset>, to: DateTime<FixedOffs
         }
     }
     found.sort_by_key(|item| item.start.timestamp_millis());
+    one_row_per_experience(found)
+}
+
+/// An experience has a tile in every window of its span, and each repeats the
+/// whole span: it counts once, as its own row or else its first tile in range.
+fn one_row_per_experience(found: Vec<Found>) -> Vec<Found> {
+    let starts = found
+        .iter()
+        .filter(|item| item.row.kind == RowKind::Experience)
+        .map(|item| (item.source.clone(), item.row.id.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut tiled = BTreeSet::new();
     found
+        .into_iter()
+        .filter(|item| {
+            if item.row.kind != RowKind::ExperienceTile {
+                return true;
+            }
+            let of = item.row.of.clone().unwrap_or_else(|| item.row.id.clone());
+            !starts.contains(&(item.source.clone(), of.clone()))
+                && tiled.insert((item.source.clone(), of))
+        })
+        .collect()
+}
+
+/// A workout's event marks a moment inside a workout already counted.
+fn is_entry(item: &Found) -> bool {
+    item.row.kind != RowKind::Event
 }
 
 fn iso(time: DateTime<FixedOffset>) -> String {
@@ -324,7 +351,7 @@ fn events(rows: &[Found]) -> Vec<Value> {
 
 fn sources(rows: &[Found]) -> Value {
     let mut counts = BTreeMap::<&str, u64>::new();
-    for item in rows {
+    for item in rows.iter().filter(|item| is_entry(item)) {
         *counts.entry(source_words(&item.source)).or_default() += 1;
     }
     let chips = counts
@@ -382,7 +409,7 @@ fn hourly(rows: &[Found], from: DateTime<FixedOffset>, to: DateTime<FixedOffset>
             .expect("fixed offset converts");
         let count = rows
             .iter()
-            .filter(|item| item.start >= start && item.start < end)
+            .filter(|item| is_entry(item) && item.start >= start && item.start < end)
             .count() as u64;
         items.push(json!({
             "start": iso(start),
@@ -405,7 +432,7 @@ pub(crate) fn build_window(
     to: DateTime<FixedOffset>,
 ) -> Value {
     let rows = collect_rows(root, from, to);
-    let entry_total = rows.len() as u64;
+    let entry_total = rows.iter().filter(|item| is_entry(item)).count() as u64;
     let span_minutes = ((to - from).num_seconds() as f64 / 60.0 * 10.0).round() / 10.0;
     json!({
         "from": iso(from),

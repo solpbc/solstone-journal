@@ -3749,24 +3749,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       return;
     }
 
-    const briefRows = bodyWindowParts(payload, 8)
+    const briefRows = bodyWindowParts(payload, 10)
       .map(row => `<li>${escapeHtml(row)}</li>`)
       .join('\n');
+    const briefExtra = (payload.signals || []).length - 10;
+    const briefOverflow = briefExtra > 0
+      ? `<li class="tr-body-panel-more"><a href="/app/body/${day}">+${briefExtra} more in body</a></li>`
+      : '';
     const sources = (payload.sources?.chips || [])
       .map(source => `<span class="tr-signal-chip">${escapeHtml(source.name)} · ${escapeHtml(bodyCountText(source))}</span>`)
-      .join('\n');
-    // Rows already presented as events (workouts, sleep) stay out of the
-    // signals list — compare labels case-insensitively, no hardcoded names.
-    const eventLabels = new Set((payload.events || [])
-      .map(event => String(event.label || '').trim().toLowerCase())
-      .filter(label => label));
-    const signalItems = (payload.signals || [])
-      .filter(signal => !eventLabels.has(String(signal.label || '').trim().toLowerCase()));
-    const signalOverflow = signalItems.length > 10
-      ? `<li class="tr-body-panel-more"><a href="/app/body/${day}">+${signalItems.length - 10} more in body</a></li>`
-      : '';
-    const signals = signalItems.slice(0, 10)
-      .map(signal => `<li>${escapeHtml(signal.label)} · ${escapeHtml(bodyCountText(signal))}</li>`)
       .join('\n');
     const events = (payload.events || [])
       .map(event => `<li>${escapeHtml(event.label)} · ${escapeHtml(event.start_label)}–${escapeHtml(event.end_label)}</li>`)
@@ -3774,11 +3765,10 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     const rhythm = renderBodyRhythm(payload, { rows: true, limit: 24, title: false });
 
     bodyPanelBody.innerHTML = ''
-      + renderBodyPanelSection('brief', `<ul class="tr-body-panel-list">${briefRows || '<li>body data present.</li>'}</ul>`)
+      + renderBodyPanelSection('brief', `<ul class="tr-body-panel-list">${briefRows || '<li>body data present.</li>'}${briefOverflow}</ul>`)
       + renderBodyPanelSection('day rhythm', rhythm)
       + renderBodyPanelSection('events', events ? `<ul class="tr-body-panel-list">${events}</ul>` : '')
       + renderBodyPanelSection('sources', sources ? `<div class="tr-body-chip-row">${sources}</div>` : '')
-      + renderBodyPanelSection('signals', signals ? `<ul class="tr-body-panel-list">${signals}${signalOverflow}</ul>` : '')
       + renderBodyPanelFooter();
     attachBodyWindowButtons(bodyPanelBody);
     openBodyPanelSurface();

@@ -815,3 +815,96 @@ async fn recent_lists_days_with_sources_and_pages_from_the_cursor() {
         StatusCode::BAD_REQUEST
     );
 }
+
+#[tokio::test]
+async fn an_experience_counts_once_however_many_windows_it_runs_through() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    zone(root, "apple_health");
+    let start = "2026-01-10 06:30:00 -0700";
+    let end = "2026-01-10 07:30:00 -0700";
+    let mut tile = workout("w1", start, end);
+    tile.kind = RowKind::ExperienceTile;
+    tile.id = "w1-1".to_owned();
+    tile.of = Some("w1".to_owned());
+    tile.index = Some(1);
+    tile.count = Some(2);
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "060000_3600",
+        &[workout("w1", start, end)],
+    );
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "070000_3600",
+        &[tile.clone()],
+    );
+
+    let (_, whole) = get(
+        root,
+        "/app/body/api/window?from=2026-01-10T06:00:00-07:00&to=2026-01-10T08:00:00-07:00",
+    )
+    .await;
+    assert_eq!(whole["entry_total"], 1, "{whole}");
+    assert_eq!(whole["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(whole["events"].as_array().unwrap().len(), 1);
+    assert_eq!(whole["sources"]["chips"][0]["count"], 1);
+
+    // Only the later tile is in range: the workout still counts once.
+    let (_, later) = get(
+        root,
+        "/app/body/api/window?from=2026-01-10T07:10:00-07:00&to=2026-01-10T07:20:00-07:00",
+    )
+    .await;
+    assert_eq!(later["entry_total"], 1, "{later}");
+
+    let (_, day) = get(root, &format!("/app/body/api/day/{DAY}")).await;
+    assert_eq!(day["entry_total"], 1);
+}
+
+#[tokio::test]
+async fn a_day_shows_the_title_the_owner_gave_an_experience() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    zone(root, "apple_health");
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        r#"{"identity":{"timezone":"America/Denver"}}"#,
+    )
+    .unwrap();
+    let facet = root.join("facets/body");
+    fs::create_dir_all(facet.join("activities")).unwrap();
+    fs::write(facet.join("facet.json"), r#"{"title":"Body"}"#).unwrap();
+    let start = "2026-01-10 06:31:00 -0700";
+    let end = "2026-01-10 07:20:00 -0700";
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "060000_3600",
+        &[workout("w1", start, end)],
+    );
+    let record = json!({
+        "id": "body_0123456789abcdef",
+        "source": "body",
+        "activity": "workout",
+        "account": {"key": "import.apple_health\u{1f}w1", "start": start, "end": end},
+        "title": "Hill repeats",
+        "edits": [{"actor": "owner:update", "fields": ["title"], "note": "", "timestamp": "2026-01-11T00:00:00Z"}],
+    });
+    fs::write(
+        facet.join("activities/20260110.jsonl"),
+        format!("{record}\n"),
+    )
+    .unwrap();
+    let (_, day) = get(root, &format!("/app/body/api/day/{DAY}")).await;
+    assert_eq!(
+        day["sources"][0]["experiences"][0]["name"], "Hill repeats",
+        "{day}"
+    );
+}

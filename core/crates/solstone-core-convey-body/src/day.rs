@@ -138,14 +138,11 @@ fn experience_item(
     json!({
         "kind": kind,
         "name": title.cloned().unwrap_or_else(|| row.label.clone()),
-        "title_is_yours": title.is_some(),
         "start": time_words(row.start.as_deref(), day, zone),
         "end": time_words(row.end.as_deref(), day, zone),
         "by": row.by,
         "distance": distance,
         "continuing": continuing,
-        "entered_by_you": user_entered(row),
-        "at": row.start,
     })
 }
 
@@ -316,7 +313,11 @@ pub(crate) fn build_day(root: &Path, day: &str) -> Result<Value, String> {
     let (by_source, unreadable) = day_rows(root, day);
     let strava = workouts_on(root, day);
     let titles = owner_titles(root, day);
-    let entry_total = by_source.values().map(Vec::len).sum::<usize>() as u64;
+    let entry_total = by_source
+        .values()
+        .flatten()
+        .filter(|row| !matches!(row.kind, RowKind::ExperienceTile | RowKind::Event))
+        .count() as u64;
     let sources = BODY_RECORD_STREAMS
         .iter()
         .filter_map(|stream| {

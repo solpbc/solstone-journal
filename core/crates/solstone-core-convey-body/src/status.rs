@@ -18,7 +18,7 @@ use chrono::{Datelike, NaiveDate};
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 
-use crate::fmt::{count_noun, grouped, month_abbr, parse_day, short_day, short_day_year};
+use crate::fmt::{count_noun, month_abbr, parse_day, short_day, short_day_year};
 use crate::listing::{body_days, body_streams, window_count};
 use crate::query::decoded_query_params;
 use crate::router::unreadable_response;
@@ -144,9 +144,7 @@ pub(crate) fn build_status(root: &Path) -> Result<Value, String> {
     let days = body_days(root)?;
     Ok(json!({
         "coverage": coverage(&days),
-        "latest_day": days.keys().next_back(),
         "days": days.len(),
-        "days_label": grouped(days.len() as u64),
         "sources": source_items(&days),
         "day_grid": day_grid(&days),
         "imports": crate::audit::imports_section(root),
