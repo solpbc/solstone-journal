@@ -569,11 +569,10 @@ async fn status_reader_reports_closed_callosum_connection() {
     drop(write);
     let task = tokio::spawn(async move {
         let mut reader = reader;
-        let _ = await_bounded_read(
-            "supervisor status event",
-            Duration::from_secs(8),
-            receive_status(&mut reader),
-        )
+        // A status frame sent before the close is seen is not the case under test.
+        await_bounded_read("supervisor status event", Duration::from_secs(8), async {
+            while !receive_status(&mut reader).await.is_null() {}
+        })
         .await;
     });
     let panic = task
