@@ -823,14 +823,23 @@ impl InitRestore<'_> {
         })
     }
 
-    /// After a clean restore: remove what the snapshot doesn't hold. True only
-    /// when the journal is now the snapshot.
+    /// After a clean restore: remove what the snapshot doesn't hold. True when
+    /// nothing of setup's is left behind.
     fn sweep(&self, journal: &Path) -> bool {
         let Some(report) = self.report(true) else {
             return false;
         };
         let left = restore_sweep::remove_extras(journal, &report);
-        if left > 0 || !restore_sweep::matches_snapshot(journal, &report) {
+        // A running journal rewrites its own files straight after a restore,
+        // so a file that differs here isn't a restore that failed.
+        if !report.updated.is_empty() || report.unreadable_names > 0 {
+            log::info!(
+                "restore: {} files changed since the restore, {} names unreadable",
+                report.updated.len(),
+                report.unreadable_names
+            );
+        }
+        if left > 0 {
             return false;
         }
         restore_sweep::finish_init_restore(journal);

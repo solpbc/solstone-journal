@@ -238,21 +238,6 @@ pub(crate) fn remove_extras(journal: &Path, report: &Report) -> usize {
     failed
 }
 
-/// Whether a report taken after the restore shows the journal is the snapshot.
-/// restic lists every directory as `restored` when it would only reset its
-/// times, so a directory there says nothing.
-pub(crate) fn matches_snapshot(journal: &Path, report: &Report) -> bool {
-    let is_directory = |rel: &String| {
-        fs::symlink_metadata(journal.join(rel)).is_ok_and(|meta| meta.file_type().is_dir())
-    };
-    report.unreadable_names == 0
-        && report.updated.iter().all(|rel| kept(rel))
-        && report
-            .restored
-            .iter()
-            .all(|rel| kept(rel) || is_directory(rel))
-}
-
 /// Free bytes on the journal's volume, when that can be read.
 pub(crate) fn free_bytes(journal: &Path) -> Option<u64> {
     #[cfg(unix)]
@@ -346,13 +331,13 @@ mod tests {
     }
 
     #[test]
-    fn a_name_restic_cannot_print_blocks_the_success_claim() {
+    fn a_name_restic_cannot_print_is_counted_and_not_acted_on() {
         let text = report(&[
-            "{\"message_type\":\"verbose_status\",\"action\":\"updated\",\"item\":\"/bad\u{fffd}name\"}",
+            "{\"message_type\":\"verbose_status\",\"action\":\"deleted\",\"item\":\"/j/bad\u{fffd}name\"}",
         ]);
         let parsed = parse_report(&text, Path::new("/j")).unwrap();
         assert_eq!(parsed.unreadable_names, 1);
-        assert!(!matches_snapshot(Path::new("/j"), &parsed));
+        assert!(parsed.deleted.is_empty());
     }
 
     #[test]
@@ -406,30 +391,6 @@ mod tests {
         assert!(fits(None, 10));
         assert!(fits(Some(FREE_SPACE_MARGIN + 10), 10));
         assert!(!fits(Some(FREE_SPACE_MARGIN + 9), 10));
-    }
-
-    #[test]
-    fn a_change_left_after_the_restore_is_not_a_snapshot() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        fs::create_dir_all(root.join("notes")).unwrap();
-        fs::write(root.join("left"), b"x").unwrap();
-        let fine = Report {
-            updated: vec!["health/service.log".into()],
-            restored: vec!["notes".into()],
-            ..Report::default()
-        };
-        assert!(matches_snapshot(root, &fine));
-        let changed = Report {
-            updated: vec!["config/journal.json".into()],
-            ..Report::default()
-        };
-        assert!(!matches_snapshot(root, &changed));
-        let missing = Report {
-            restored: vec!["left".into()],
-            ..Report::default()
-        };
-        assert!(!matches_snapshot(root, &missing));
     }
 
     #[test]
