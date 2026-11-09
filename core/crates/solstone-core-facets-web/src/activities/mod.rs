@@ -3159,8 +3159,9 @@ mod tests {
     async fn the_owner_separates_a_body_group_for_good_and_no_one_else_can() {
         let root = body_journal();
         // Anyone but the owner is refused, and nothing is written.
-        let before = solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
-            .unwrap();
+        let before =
+            solstone_core_facets::read_activity_records_strict(root.path(), "body", BODY_DAY)
+                .unwrap();
         let (status, body) = body_call(
             root.path(),
             "record/body_x/separate?facet=body",
