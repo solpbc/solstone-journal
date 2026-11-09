@@ -12313,6 +12313,130 @@ fn search_and_fetch_skip_a_body_record_and_keep_the_next_rows_position() {
     assert!(!text.contains("Qrun body"), "{fetched}");
 }
 
+/// The body record of [`body_record_journal`], with a title its owner wrote.
+fn hold_body_title(journal: &tempfile::TempDir, title: &str, extra: Value) {
+    let path = journal
+        .path()
+        .join("facets/alpha/activities/20260308.jsonl");
+    let text = fs::read_to_string(&path).unwrap();
+    let mut record: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    record["title"] = json!(title);
+    record["edits"] = json!([{"timestamp": "2026-03-09T00:00:00Z", "actor": "owner:update",
+        "fields": ["title"], "note": ""}]);
+    for (key, value) in extra.as_object().unwrap() {
+        record[key] = value.clone();
+    }
+    fs::write(&path, format!("{record}\n")).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+}
+
+#[test]
+fn search_finds_what_the_owner_wrote_on_a_body_record_and_fetch_serves_it_composed() {
+    let journal = body_record_journal(true);
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    hold_body_title(&journal, "Zebrafinch loop", json!({}));
+    let hits = activity_hits_for(&journal, "Zebrafinch");
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert!(hits[0].get("hidden").is_none_or(|hidden| hidden == false));
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": hits[0]["reference"]}),
+    )
+    .unwrap();
+    let text = fetched["text"].as_str().unwrap();
+    assert!(
+        text.contains("Synthetic Watch") && text.contains("\"state\":\"live\""),
+        "{fetched}"
+    );
+    // Never the file's row: its key and recorder stay home.
+    assert!(
+        !text.contains("recorder") && !text.contains("import.apple_health"),
+        "{fetched}"
+    );
+}
+
+#[test]
+fn a_connection_that_may_not_read_the_window_gets_no_body_search_hit() {
+    let journal = body_record_journal(true);
+    hold_body_title(&journal, "Zebrafinch loop", json!({}));
+    // Limited to the record's facet, while its window was refiled to another:
+    // the record's own facet would pass, and the window gate doesn't.
+    let facets_file = journal
+        .path()
+        .join(WATCH_WINDOW)
+        .join("talents/facets.json");
+    let filed = fs::read_to_string(&facets_file).unwrap();
+    fs::write(&facets_file, r#"[{"facet":"beta"}]"#).unwrap();
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    assert!(activity_hits_for(&journal, "Zebrafinch").is_empty());
+    fs::write(&facets_file, filed).unwrap();
+
+    // The window deleted: nothing for any connection.
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    assert_eq!(activity_hits_for(&journal, "Zebrafinch").len(), 1);
+    let window = journal.path().join(WATCH_WINDOW);
+    fs::remove_file(window.join("body.jsonl")).unwrap();
+    fs::write(
+        window.join("tombstone.json"),
+        r#"{"reason":"owner_segment_delete","manifest":["body.jsonl"]}"#,
+    )
+    .unwrap();
+    assert!(activity_hits_for(&journal, "Zebrafinch").is_empty());
+}
+
+#[test]
+fn a_hidden_body_record_says_so_in_search_and_a_body_entry_moves_no_other_entry() {
+    let journal = body_record_journal(true);
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+    hold_body_title(&journal, "Zebrafinch loop", json!({"hidden": true}));
+    let hits = activity_hits_for(&journal, "Zebrafinch");
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert_eq!(hits[0]["hidden"], true);
+
+    // A body record ahead of an ordinary one, and an unheld one before that.
+    let path = journal
+        .path()
+        .join("facets/alpha/activities/20260308.jsonl");
+    let held = fs::read_to_string(&path).unwrap();
+    let bare = json!({"id": "body_bare", "source": "body", "activity": "sleep",
+        "account": {"key": "import.apple_health\u{1f}none", "start": "2026-03-08 01:00:00 -0500",
+            "end": "2026-03-08 02:00:00 -0500"}});
+    let other = json!({"id": "run_080000_300", "title": "Zebrafinch review", "activity": "review",
+        "created_at": 1, "segments": ["080000_300"]});
+    fs::write(&path, format!("{bare}\n{held}{other}\n")).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    let hits = activity_hits_for(&journal, "Zebrafinch");
+    assert_eq!(hits.len(), 2, "{hits:?}");
+    let texts = hits
+        .iter()
+        .map(|hit| {
+            probe(&journal, "fetch", json!({"reference": hit["reference"]})).unwrap()["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert!(texts.iter().any(|text| text.contains("Zebrafinch review")));
+    assert!(texts.iter().any(|text| text.contains("Synthetic Watch")));
+}
+
 #[test]
 fn get_week_empty_sunday() {
     let journal = base_activity_journal();

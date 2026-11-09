@@ -641,3 +641,76 @@ mod tests {
         assert_ne!(rendered(&record), legacy(&record));
     }
 }
+
+#[cfg(test)]
+mod body_entry_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn object(value: Value) -> JsonObject {
+        value.as_object().unwrap().clone()
+    }
+
+    fn body(id: &str, held: &[&str]) -> JsonObject {
+        object(json!({
+            "id": id, "source": "body", "activity": "workout", "title": "Kestrel loop",
+            "description": "Written by me", "details": "With Sam",
+            "edits": [{"timestamp": "t", "actor": "owner:update", "fields": held, "note": ""}],
+            "account": {"key": "import.strava\u{1f}secret-key", "start": "2026-05-10T07:00:00Z",
+                "end": "2026-05-10T08:00:00Z", "recorder": "secret-recorder"},
+        }))
+    }
+
+    const REL: &str = "facets/body/activities/20260510.jsonl";
+
+    #[test]
+    fn a_body_entry_holds_only_the_owners_words_its_kind_and_its_day() {
+        let records = [body("a", &["title"])];
+        let chunks = render(Some(REL), &records).chunks;
+        assert_eq!(chunks.len(), 1);
+        let text = &chunks[0].content;
+        assert!(text.starts_with("### Kestrel loop"), "{text}");
+        assert!(
+            text.contains(BODY_ENTRY_LINE.trim_start_matches('\n')),
+            "{text}"
+        );
+        assert!(text.contains("- Day: 20260510"), "{text}");
+        // What the owner didn't write, and the account, stay out.
+        assert!(
+            !text.contains("Written by me") && !text.contains("With Sam"),
+            "{text}"
+        );
+        assert!(!text.contains("secret"), "{text}");
+        let kept = serde_json::to_string(&chunks[0].source).unwrap();
+        assert!(!kept.contains("secret"), "{kept}");
+    }
+
+    #[test]
+    fn a_body_record_no_one_wrote_on_has_no_entry_and_a_removed_edit_takes_it_away() {
+        let mut removed = body("a", &["title"]);
+        removed["edits"][0]["removed"] = json!("t2");
+        let records = [body("b", &[]), removed];
+        assert!(render(Some(REL), &records).chunks.is_empty());
+    }
+
+    #[test]
+    fn body_entries_follow_every_other_records_and_positions_name_them() {
+        let other = object(json!({"id": "x", "activity": "meeting", "title": "Standup"}));
+        let plan = object(json!({"id": "p", "source": "anticipated", "title": "Plan"}));
+        let records = [
+            body("bare", &[]),
+            body("held", &["title"]),
+            plan,
+            other.clone(),
+        ];
+        let chunks = render(Some(REL), &records).chunks;
+        assert_eq!(chunks.len(), 2);
+        assert!(chunks[0].content.contains("Standup"));
+        assert!(chunks[1].content.contains("Kestrel loop"));
+        assert_eq!(non_body_entries(&records), 1);
+        assert!(body_record_at(&records, 0).is_none());
+        assert_eq!(body_record_at(&records, 1).unwrap()["id"], "held");
+        assert!(body_record_at(&records, 2).is_none());
+    }
+}
