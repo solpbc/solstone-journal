@@ -13,15 +13,20 @@
     console.error = function () { window.__pt_errors.push('console.error: ' + Array.prototype.join.call(arguments, ' ')); return __origConsoleError.apply(console, arguments); };
   }
 </script>
+  <script>
+    // The journal's front door shows the home view, so everything below reads
+    // the address it would have after a redirect, which keeps only the hash.
+    if (window.location.pathname === '/') {
+      window.history.replaceState(window.history.state, '', '/app/home/' + window.location.hash);
+    }
+  </script>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>journal</title>
   <link rel="stylesheet" href="/static/tokens.css">
-  <link rel="stylesheet" href="/static/tokens-dark.css">
+  <link rel="stylesheet" href="/static/tokens-dark.css" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/date-nav.css">
-  <link rel="stylesheet" href="/static/day-grid.css">
-  <link rel="stylesheet" href="/static/drawer.css">
+  <link rel="icon" href="/favicon.ico">
 
   <script src="/static/error-handler.js" defer></script>
   <script src="/static/sunarc.js" defer></script>
@@ -29,7 +34,9 @@
   <script src="/static/convey_copy.js" defer></script>
   <script src="/static/journal_clock.js" defer></script>
   <script src="/static/convey_icons.js" defer></script>
-  <script src="/static/shell_gate.js"></script>
+  <script src="/static/presentation_mode.js" defer></script>
+  <script src="/static/shell_gate.js" defer></script>
+  <script src="/static/status_pane.js" defer></script>
   <script src="/static/diagnostic-console.js" defer></script>
   <script src="/static/websocket.js" defer></script>
   <script src="/static/api.js" defer></script>
@@ -37,19 +44,26 @@
   <script src="/static/journal-web-host.js" defer></script>
   <script src="/static/external-navigation.js" defer></script>
   <script src="/static/report-error.js" defer></script>
-  <script src="/static/vendor/marked/marked.min.js" defer></script>
-  <script src="/static/vendor/dompurify/dompurify.min.js" defer></script>
   <script src="/static/date_format.js" defer></script>
   <script src="/static/mount-workspace.js" defer></script>
-  <script src="/static/date-nav.js" defer></script>
-  <script src="/static/day-grid.js" defer></script>
   <script src="/static/drawer.js" defer></script>
   <script src="/static/gate-drawer.js" defer></script>
   <script src="/static/modal_layer.js" defer></script>
   <script src="/static/shell_boot.js" defer></script>
 </head>
 <body>
-<script src="/static/presentation_mode.js"></script>
+<script>
+  // Presentation mode's class is on the body before the first paint; the rest
+  // of it (the toggle, the stored setting) loads with the other scripts.
+  (function () {
+    try {
+      var p = new URLSearchParams(window.location.search).get('present');
+      if (/^(1|on|true)$/.test(p) || (!/^(0|off|false)$/.test(p) && sessionStorage.getItem('solstone:presentation-mode') === '1')) {
+        document.body.classList.add('presentation-mode');
+      }
+    } catch (_) {}
+  })();
+</script>
 <div id="sunarc" class="sunarc" aria-hidden="true"></div>
 <a href="#main-content" class="skip-link">skip to workspace</a>
 
@@ -94,7 +108,6 @@
     </div>
   </div>
 </section>
-<script src="/static/status_pane.js"></script>
 
 <aside id="diagnostic-console" class="diagnostic-console" inert tabindex="-1" aria-hidden="true" aria-labelledby="diagnostic-console-title">
   <div class="diagnostic-console-content">

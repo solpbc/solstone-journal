@@ -141,6 +141,10 @@ fn main() {
         println!("cargo:rerun-if-changed={}", path.display());
     }
 
+    // The icon catalogues and the source-link script are built into what uses
+    // them and never fetched by a page. The manual test pages are served to
+    // development builds only.
+    let release = env::var("PROFILE").as_deref() == Ok("release");
     let mut assets = Vec::new();
     for path in files {
         let relative = path
@@ -148,6 +152,15 @@ fn main() {
             .expect("static asset is under static root")
             .to_string_lossy()
             .replace('\\', "/");
+        if (relative.starts_with("icons/") && relative.ends_with(".json"))
+            || relative == "source_link_back.js"
+            || relative == "vendor/VENDOR.md"
+        {
+            continue;
+        }
+        if release && relative.starts_with("tests/") {
+            continue;
+        }
         assets.push((format!("/static/{relative}"), path));
     }
     assets.push(("/favicon.ico".to_owned(), favicon));

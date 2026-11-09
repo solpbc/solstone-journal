@@ -285,6 +285,7 @@
     const cards = [renderVitalsHtml(data)];
     if (isGettingStartedVisible()) cards.push(renderGettingStartedHtml());
     if (welcome) {
+      earlyBriefing = null;
       cards.push(renderWelcomeHtml());
       setSurfaceHtml(cards.join(''));
       return;
@@ -1734,9 +1735,20 @@
       });
   }
 
+  // The first briefing read starts beside pulse, so the first page isn't
+  // waiting on one before asking for the other.
+  let earlyBriefing = null;
+
+  function startBriefingEarly() {
+    earlyBriefing = apiJson(BRIEFING_URL);
+    earlyBriefing.catch(function () {});
+  }
+
   async function refreshBriefing() {
     try {
-      const data = await apiJson(BRIEFING_URL);
+      const request = earlyBriefing || apiJson(BRIEFING_URL);
+      earlyBriefing = null;
+      const data = await request;
       renderBriefing(data, lastPulse);
       clearPulseRefreshError('pulse-briefing');
     } catch (error) {
@@ -1912,6 +1924,7 @@
     isFirstPage = true;
     wireInteractions();
     wireRealtime();
+    startBriefingEarly();
     loadPulse();
     readFirstMinutes();
     readAgents();

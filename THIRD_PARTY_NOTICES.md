@@ -176,8 +176,8 @@ beside the library as `vendor/leaflet/LICENSE`.
 
 ## icons and the journal mark (Lucide, Feather, EFF word list)
 
-The journal's pages draw icons from Lucide, served from the journal at
-`/static/icons/`. The journal mark draws its 60 icons from the same set and
+The journal's pages draw icons from Lucide, built into the journal, with the
+license at `/static/icons/LICENSE`. The journal mark draws its 60 icons from the same set and
 its words from the EFF long word list; the mark is compiled into the
 journal.
 

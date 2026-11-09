@@ -76,11 +76,75 @@
     });
   }
 
+  // A script can name the one route it belongs to, so a view with several
+  // pages doesn't load every page's code on each of them.
+  function scriptRunsHere(script) {
+    const prefix = script.getAttribute('data-route-prefix');
+    return !prefix || (window.location.pathname || '').startsWith(prefix);
+  }
+
   async function replayScripts(target) {
     const scripts = Array.from(target.querySelectorAll('script'));
     for (const script of scripts) {
+      if (!scriptRunsHere(script)) {
+        script.remove();
+        continue;
+      }
       await runScript(script);
     }
+  }
+
+  function parseFragment(html) {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    return template.content;
+  }
+
+  // Every script starts downloading now, together. They still run one at a
+  // time, each waiting for the one before it (replayScripts), so a failed
+  // script stops the ones after it exactly as it always has. A preload that
+  // fails is ignored: the script element makes its own request and reports
+  // its own error.
+  function preloadScripts(fragment) {
+    const links = [];
+    for (const script of fragment.querySelectorAll('script[src]')) {
+      if (!scriptRunsHere(script)) continue;
+      const link = document.createElement('link');
+      link.setAttribute('rel', 'preload');
+      link.setAttribute('as', 'script');
+      link.setAttribute('href', script.getAttribute('src'));
+      document.head.appendChild(link);
+      links.push(link);
+    }
+    return links;
+  }
+
+  const STYLESHEET_WAIT_MS = 3000;
+  const loadedStylesheets = new Set();
+
+  // A view's stylesheets are in place before its markup is shown, so it never
+  // paints unstyled. A sheet that fails or hangs doesn't hold the view back;
+  // a stale one is recovered by the listener in api.js.
+  function loadStylesheets(fragment) {
+    const pending = [];
+    for (const source of fragment.querySelectorAll('link[rel="stylesheet"]')) {
+      const href = source.getAttribute('href');
+      if (loadedStylesheets.has(href)) continue;
+      loadedStylesheets.add(href);
+      const link = document.createElement('link');
+      link.setAttribute('rel', 'stylesheet');
+      link.setAttribute('href', href);
+      pending.push(new Promise((resolve) => {
+        link.addEventListener('load', resolve, { once: true });
+        link.addEventListener('error', resolve, { once: true });
+      }));
+      document.head.appendChild(link);
+    }
+    if (!pending.length) return Promise.resolve();
+    return Promise.race([
+      Promise.all(pending),
+      new Promise((resolve) => setTimeout(resolve, STYLESHEET_WAIT_MS)),
+    ]);
   }
 
   async function mountWorkspaceFragment(url, options = {}) {
@@ -120,9 +184,17 @@
         throw error;
       }
       const html = await response.text();
-      target.innerHTML = html;
-      performance.mark('workspace:inserted');
-      await replayScripts(target);
+      const fragment = parseFragment(html);
+      const preloads = preloadScripts(fragment);
+      try {
+        await loadStylesheets(fragment);
+        target.innerHTML = html;
+        target.querySelectorAll('link[rel="stylesheet"]').forEach((link) => link.remove());
+        performance.mark('workspace:inserted');
+        await replayScripts(target);
+      } finally {
+        preloads.forEach((link) => link.remove());
+      }
       performance.mark('view:scripts-loaded');
       document.dispatchEvent(
         new CustomEvent('workspace:mounted', {

@@ -33,7 +33,7 @@
   let lastMessageAt = null;
   let connectionState = 'disconnected';
   let lastCaptureStatus = null;
-  let lastRenderedVariant = null;
+  let lastRenderedStem = null;
   let lastRenderedConnecting = null;
   let disconnectTimerId = null;
   let disconnectCardId = null;
@@ -242,6 +242,31 @@
     throw new Error('STATUS_MAP has no matching row');
   }
 
+  // The animated mark is for a wait long enough to notice. A stream that
+  // connects first never asks for the file at all.
+  const CONNECTING_ANIMATION_DELAY_MS = 1500;
+  let connectingSince = 0;
+  let connectingAnimationTimer = null;
+
+  function connectingAnimationDue(connecting) {
+    if (!connecting) {
+      connectingSince = 0;
+      window.clearTimeout(connectingAnimationTimer);
+      connectingAnimationTimer = null;
+      return false;
+    }
+    if (!connectingSince) connectingSince = Date.now();
+    const remaining = CONNECTING_ANIMATION_DELAY_MS - (Date.now() - connectingSince);
+    if (remaining <= 0) return true;
+    if (connectingAnimationTimer === null) {
+      connectingAnimationTimer = window.setTimeout(() => {
+        connectingAnimationTimer = null;
+        renderStatusMark();
+      }, remaining);
+    }
+    return false;
+  }
+
   function renderStatusMark() {
     if (!statusIcon) {
       statusIcon = document.querySelector('#status-instrument .status-icon');
@@ -255,7 +280,11 @@
       window.appEvents.statusLabel = mark.label;
     }
 
-    if (mark.variant === lastRenderedVariant && mark.connecting === lastRenderedConnecting) {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    const stem = connectingAnimationDue(mark.connecting) && !reduced
+      ? 'mark-connecting-animated'
+      : mark.variant;
+    if (stem === lastRenderedStem && mark.connecting === lastRenderedConnecting) {
       window.updateStatusLabel?.();
       return;
     }
@@ -290,13 +319,11 @@
       };
     }
 
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-    const stem = mark.connecting && !reduced ? 'mark-connecting-animated' : mark.variant;
     img.style.visibility = '';
     img.dataset.stem = stem;
     img.src = STATUS_MARKS + stem + '.svg';
     img.classList.toggle('status-indicator--connecting', mark.connecting);
-    lastRenderedVariant = mark.variant;
+    lastRenderedStem = stem;
     lastRenderedConnecting = mark.connecting;
     window.updateStatusLabel?.();
   }

@@ -24,7 +24,9 @@ serving path.
   template literals, `<template>` elements where they help. Static files are
   compiled into the journal binary as-is and served by axum. Consistency comes from the shared helpers and design
   tokens (`static/tokens.css` and `static/tokens-dark.css`), not from a framework;
-  `shell.html` and `init.html` link `tokens-dark.css` immediately after `tokens.css`.
+  `init.html` links `tokens-dark.css` immediately after `tokens.css`. `shell.html` loads it behind
+  `media="(prefers-color-scheme: dark)"` so it doesn't block a light first paint, and declares
+  `color-scheme` in its own `app.css` to stand in for what that query hides.
 - **`AppServices`** (`static/app.js`) is the shared client runtime: service
   and task registration, notifications, `renderMarkdown` (marked + DOMPurify),
   `escapeHtml`. **`apiJson`/`ApiError`** (`static/api.js`) is the only HTTP
