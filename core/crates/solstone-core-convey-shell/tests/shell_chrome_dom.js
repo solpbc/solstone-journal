@@ -2028,6 +2028,12 @@ asyncCase('a failed view stylesheet does not stop the view', async () => {
   headLinks(h, 'stylesheet')[0].dispatchEvent({ type: 'error' });
   await mounted;
   assert.ok(h.document.getElementById('main-content').querySelector('#view'));
+  assert.strictEqual(headLinks(h, 'stylesheet').length, 0, 'the failed sheet is gone');
+  const retried = h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  await settle();
+  assert.strictEqual(headLinks(h, 'stylesheet').length, 1, 'a retry asks for it again');
+  headLinks(h, 'stylesheet')[0].dispatchEvent({ type: 'load' });
+  await retried;
 });
 
 asyncCase('date view code comes into the cache once, after a view is ready', async () => {
