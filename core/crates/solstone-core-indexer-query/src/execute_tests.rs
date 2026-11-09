@@ -4144,8 +4144,11 @@ fn body_fixture_ordinary() -> serde_json::Value {
 
 fn body_fixture_ordinary_entry() -> String {
     let record = body_fixture_ordinary().as_object().unwrap().clone();
-    solstone_core_format::content::ordinary_entries("facets/body/activities/20260107.jsonl", &[record])
-        .remove(0)
+    solstone_core_format::content::ordinary_entries(
+        "facets/body/activities/20260107.jsonl",
+        &[record],
+    )
+    .remove(0)
 }
 
 fn body_entry_root(name: &str) -> (PathBuf, &'static str) {
@@ -4218,7 +4221,10 @@ fn a_body_entry_comes_back_only_to_a_search_that_asks_for_one() {
 /// before the indexer reached it.
 fn default_positions_after_rewrite(name: &str, lines: &[serde_json::Value]) -> Vec<i64> {
     let (root, file) = body_entry_root(name);
-    let text = lines.iter().map(|line| format!("{line}\n")).collect::<String>();
+    let text = lines
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .collect::<String>();
     write_rel(&root, file, &text);
     let results = search(&root, &request("Kestrel"), reference_date()).unwrap();
     let positions = hit_positions(results.results.iter());
