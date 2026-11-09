@@ -304,6 +304,55 @@
         "verification_failed": "restored media did not match the backup checksum."
       }
     },
+    "restore_gate": {
+      "byo": {
+        "title": "replace your journal with your latest backup?",
+        "match": "your journal goes back to your latest backup.",
+        "action": "replace your journal"
+      },
+      "operated": {
+        "title": "replace your journal with your encrypted backup?",
+        "match": "your journal goes back to the backup you approve in the services portal.",
+        "action": "continue to sign in"
+      },
+      "kept": "what's different here now is kept as a previous journal until you remove it.",
+      "since": "devices you've paired since that backup will need pairing again. anything in it comes back, even if you've removed it since.",
+      "more_summary": "what else this changes",
+      "more": [
+        "the previous journal holds only what this restore changes or removes, as it is now. your journal doesn't read it, and backups leave it out. there's no button to put it back.",
+        "the trash goes back too. what was in it at that backup is back in the trash, and is still erased on its own date. what you've moved to the trash since goes into the previous journal.",
+        "a backup doesn't carry your ChatGPT sign-in or your journal's cache and index folders, so those stay as they are."
+      ],
+      "cancel": "cancel",
+      "ios": {
+        "title_byo": "restore your latest backup over your journal?",
+        "title_operated": "restore your encrypted backup over your journal?",
+        "body": "files from the backup replace the same files here, and what they replace isn't kept. anything the backup doesn't hold stays.",
+        "action_byo": "restore",
+        "action_operated": "continue to sign in"
+      },
+      "unknown": "couldn't check what this restore would do, so it hasn't started. try again."
+    },
+    "previous_journal": {
+      "title": "previous journal kept",
+      "from": "from the restore on {when}",
+      "unfinished_title": "kept from a restore that ran into a problem",
+      "unfinished_note": "{when}. your journal may have changed. anything it overwrote or moved is here as it was.",
+      "remove": "remove",
+      "remove_aria": "remove what was kept on {when}",
+      "help": "what a restore changed or removed, as it was before. your journal doesn't read it, and backups leave it out. removing it moves it to the trash, where you can recover it until its date.",
+      "moved": "moved to the trash. you can recover it there until its date.",
+      "open_trash": "open trash",
+      "failed": "couldn't move that to the trash. try again.",
+      "list_error": "couldn't check for a previous journal. reload the page to try again."
+    },
+    "operation_reason_labels_kept": {
+      "restore_summary_missing": "your journal is set to the backup and its check passed, but the restore's own record of what it did couldn't be read.",
+      "integrity_failed": "the backup failed its integrity check and may be damaged. files here were overwritten from it, but your journal isn't set to the backup. the originals of those files are kept below, and nothing else moved. get help at support.solstone.app.",
+      "integrity_unverified": "the integrity check couldn't run because the backup was busy or timed out. files here were overwritten from it, but your journal isn't set to the backup. the originals of those files are kept below, and nothing else moved. run the restore again once the backup is free.",
+      "restore_io_failed": "the restore stopped partway. any file it overwrote has its original kept below. try again.",
+      "restore_failed": "the restore stopped partway. any file it overwrote has its original kept below. try again."
+    },
     "phase_labels": {
       "cleanup_pending": "backup needs attention",
       "setting_up": "setting up your backup…",
@@ -311,13 +360,23 @@
       "rotating": "making a new recovery key…",
       "tearing_down": "turning off…",
       "done": "done",
-      "degraded": "restored, but not verified",
+      "degraded": "restore finished with a problem",
       "refused": "restore wasn't available",
       "error": "couldn't finish",
       "loading": "loading…",
       "empty": "not set up yet"
     },
     "operation_reason_labels": {
+      "insufficient_free_space": "there isn't enough free space for this restore, so nothing changed. it needs room for the restored files and for copies of what they replace. free up some space, then try again.",
+      "restore_preview_failed": "the restore couldn't list what it would change, so it didn't start and nothing was overwritten. try again in a moment.",
+      "restore_preview_too_large": "there are too many files here for a restore on windows to list, so it didn't start and nothing was overwritten. get help at support.solstone.app.",
+      "restore_copy_failed": "the restore couldn't keep copies of the files it would replace, so it didn't start and nothing was overwritten. try again. if it stops here again, get help at support.solstone.app.",
+      "set_aside_incomplete": "your journal has the backup's files, but some files here couldn't be moved aside, so it isn't an exact match yet. what was already kept stays kept. running the restore again usually finishes this, but it can stop here again.",
+      "restore_summary_missing": "the restore's check passed, but its own record of what it did couldn't be read.",
+      "integrity_failed": "the backup failed its integrity check and may be damaged. files here were overwritten from it, but your journal isn't set to the backup. get help at support.solstone.app.",
+      "integrity_unverified": "the integrity check couldn't run because the backup was busy or timed out. files here were overwritten from it, but your journal isn't set to the backup. run the restore again once the backup is free.",
+      "restore_io_failed": "the restore stopped partway, so some files here may have been overwritten. try again.",
+      "restore_failed": "the restore stopped partway, so some files here may have been overwritten. try again.",
       "backup_paused": "backup is paused. resume it, then try again.",
       "cleanup_pending": "couldn't confirm that the backup task has stopped. other backup actions are waiting.",
       "backup_busy": "another backup task is already running. try again in a moment.",
@@ -336,8 +395,6 @@
       "failed": "the backup action couldn't be finished. check the recovery key and destination, then try again.",
       "incomplete": "the backup action didn't finish. you can try again.",
       "body_rebuild_failed": "your journal was restored, but your body history couldn't be rebuilt from it. the restore wasn't finalized.",
-      "integrity_failed": "your journal was restored to this computer, but the backup copy failed its integrity check and may be damaged.",
-      "integrity_unverified": "your journal was restored to this computer, but the integrity check couldn't run (the backup was busy or timed out), so the backup copy is unverified.",
       "missing_required_field": "fill in the required fields, then try again.",
       "recovery_key_mismatch": "that didn't match your recovery key. re-enter the key from your saved copy.",
       "expired": "the approval took too long. try again.",
@@ -429,6 +486,14 @@
   ]);
   let destinationEditing = false;
   let restoreLane = null;
+  // Open restore confirmation: which lane, and the button to return focus to.
+  let restoreGate = null;
+  // Whether this platform's restore keeps a previous journal. null is unknown.
+  let keepsPrevious = null;
+  let previousJournals = [];
+  let previousMessage = null;
+  let previousRead = 0;
+  let restoreWasRunning = false;
   let hostedRestoreAttempt = {
     stage: 'idle',
     capability: null,
@@ -538,6 +603,9 @@
   const actionLabels = copy.action_labels || {};
   const destinationLabels = (copy.destination && copy.destination.reason_labels) || {};
   const operationLabels = copy.operation_reason_labels || {};
+  const keptReasonLabels = copy.operation_reason_labels_kept || {};
+  const restoreGateCopy = copy.restore_gate || {};
+  const previousCopy = copy.previous_journal || {};
   const managementCopy = copy.management || {};
   const statusLabels = managementCopy.status_labels || {};
   const hostedCopy = copy.hosted || {};
@@ -562,6 +630,7 @@
   }
 
   function showPanel(name) {
+    closeRestoreGate(false);
     for (const item of root.querySelectorAll('[data-backup-panel]')) {
       item.hidden = item.getAttribute('data-backup-panel') !== name;
     }
@@ -640,7 +709,8 @@
   }
 
   function reasonLabel(reason) {
-    return operationLabels[reason] || destinationLabels[reason] || copy.error_intro || '';
+    return (keepsPrevious === true && keptReasonLabels[reason])
+      || operationLabels[reason] || destinationLabels[reason] || copy.error_intro || '';
   }
 
   function backupErrorReasonLine(errorReason) {
@@ -719,7 +789,7 @@
     if (hint) hint.hidden = Boolean(refused);
     if (keyControl) keyControl.hidden = Boolean(refused);
     if (keyReassurance) keyReassurance.hidden = Boolean(refused);
-    primary.hidden = Boolean(refused);
+    primary.hidden = Boolean(refused) || Boolean(restoreGate);
     setButtonDisabled(primary, Boolean(refused) || hostedRestoreAttemptInFlight() || field.value.trim() === '');
     if (attemptCancel) attemptCancel.hidden = !hostedRestoreAttempt.capability || Boolean(refused);
     if (reopen) {
@@ -922,6 +992,9 @@
         setHostedRestoreOutcome((restoreHostedCopy.errors && restoreHostedCopy.errors.auth_failed) || '', 'error');
       } else if (operation.reason_code === 'restore_prepare_expired') {
         setHostedRestoreOutcome(operationLabels.restore_prepare_expired || '', 'error');
+      } else if (operationLabels[operation.reason_code] || keptReasonLabels[operation.reason_code]) {
+        // The banner says it.
+        setHostedRestoreOutcome('', 'neutral');
       } else {
         setHostedRestoreOutcome(restoreHostedCopy.status_retryable || '', 'error');
       }
@@ -1885,8 +1958,180 @@
     }
   }
 
+  function restoreRunning() {
+    const operation = state.operation;
+    return Boolean(operation) && operationActive(operation)
+      && (operation.kind === 'restore' || operation.kind === 'restore_hosted');
+  }
+
+  function previousWhen(stamp) {
+    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(stamp || '');
+    if (!match) return '';
+    const at = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5], +match[6]));
+    const parts = window.JournalClock.parts(at);
+    const day = window.JournalFormat.day(`${parts.year}${parts.month}${parts.day}`);
+    return `${day}, ${window.JournalFormat.time(at)}`.toLowerCase();
+  }
+
+  function previousRow(item, restoring) {
+    const when = previousWhen(item.stamp);
+    const row = document.createElement('div');
+    row.className = 'backup-previous-row';
+    const text = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = item.unfinished ? previousCopy.unfinished_title : previousCopy.title;
+    const note = document.createElement('p');
+    note.textContent = item.unfinished
+      ? previousCopy.unfinished_note.replace('{when}', when)
+      : previousCopy.from.replace('{when}', when);
+    text.append(title, document.createTextNode(` · ${formatBytes(item.bytes)}`), note);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.setAttribute('data-previous-remove', item.stamp);
+    remove.setAttribute('aria-label', previousCopy.remove_aria.replace('{when}', when));
+    remove.textContent = previousCopy.remove;
+    remove.disabled = restoring;
+    row.append(text, remove);
+    return row;
+  }
+
+  function renderPreviousJournal() {
+    const section = root.querySelector('[data-previous-journal]');
+    if (!section) return;
+    const restoring = restoreRunning();
+    const rows = previousJournals.filter(item => !(restoring && item.unfinished));
+    section.querySelector('[data-previous-rows]').replaceChildren(
+      ...rows.map(item => previousRow(item, restoring)),
+    );
+    section.querySelector('[data-previous-help]').hidden = rows.length === 0;
+    const result = section.querySelector('[data-previous-result]');
+    result.replaceChildren();
+    if (previousMessage) {
+      result.textContent = previousMessage.text;
+      if (previousMessage.trashLink) {
+        const link = document.createElement('a');
+        link.href = '/app/settings#trash';
+        link.textContent = previousCopy.open_trash;
+        result.append(' ', link);
+      }
+    }
+    result.hidden = !previousMessage;
+    section.hidden = rows.length === 0 && !previousMessage;
+  }
+
+  async function loadPreviousJournal() {
+    const read = ++previousRead;
+    let payload = null;
+    try {
+      payload = await readJson(
+        await fetch('/app/backup/previous-journal', { headers: { Accept: 'application/json' } }),
+      );
+    } catch (err) {
+      if (window.logError) window.logError(err, { context: 'backup previous journal read failed' });
+    }
+    if (read !== previousRead || !workspaceCurrent()) return;
+    if (payload && typeof payload.keeps_previous === 'boolean' && Array.isArray(payload.kept)) {
+      keepsPrevious = payload.keeps_previous;
+      previousJournals = payload.kept;
+      if (previousMessage && previousMessage.listError) previousMessage = null;
+    } else {
+      keepsPrevious = null;
+      previousJournals = [];
+      previousMessage = { text: previousCopy.list_error, listError: true };
+    }
+    renderPreviousJournal();
+    renderOperation();
+  }
+
+  async function removePreviousJournal(stamp) {
+    try {
+      await postJson('/app/backup/previous-journal/remove', { stamp });
+      previousMessage = { text: previousCopy.moved, trashLink: true };
+    } catch (err) {
+      previousMessage = {
+        text: err && err.reason_code === 'backup_busy' ? reasonLabel('backup_busy') : previousCopy.failed,
+      };
+    }
+    await loadPreviousJournal();
+  }
+
+  function renderRestoreGate() {
+    const gate = root.querySelector('[data-restore-gate]');
+    if (!gate || !restoreGate) return;
+    const lane = restoreGate.lane;
+    const full = keepsPrevious === true;
+    const ios = keepsPrevious === false;
+    const words = restoreGateCopy[lane] || {};
+    const iosCopy = restoreGateCopy.ios || {};
+    const title = gate.querySelector('[data-restore-gate-title]');
+    title.textContent = full ? words.title : ios ? iosCopy[`title_${lane}`] : '';
+    title.hidden = !full && !ios;
+    const lines = full ? [words.match, restoreGateCopy.kept, restoreGateCopy.since]
+      : ios ? [iosCopy.body] : [restoreGateCopy.unknown];
+    gate.querySelector('[data-restore-gate-lines]').replaceChildren(...lines.map(function (line) {
+      const paragraph = document.createElement('p');
+      paragraph.textContent = line;
+      return paragraph;
+    }));
+    const more = gate.querySelector('[data-restore-gate-more]');
+    more.hidden = !full;
+    more.open = false;
+    const confirm = gate.querySelector('[data-action="restore-gate-confirm"]');
+    confirm.hidden = !full && !ios;
+    confirm.textContent = full ? words.action : iosCopy[`action_${lane}`] || '';
+    confirm.classList.toggle('primary', full);
+    confirm.classList.toggle('danger', ios);
+  }
+
+  async function openRestoreGate(lane, opener) {
+    if (restoreGate) return;
+    restoreGate = { lane, opener };
+    // Read now: the encrypted-backup confirm has to start from its own click.
+    await loadPreviousJournal();
+    if (!restoreGate || restoreGate.opener !== opener || !workspaceCurrent()) return;
+    const gate = root.querySelector('[data-restore-gate]');
+    renderRestoreGate();
+    setElementHidden('[data-restore-form-actions]', true);
+    setElementHidden('[data-restore-outer-actions]', true);
+    renderHostedRestoreAttempt();
+    gate.hidden = false;
+    gate.scrollIntoView({ block: 'start' });
+    gate.querySelector('[data-action="restore-gate-cancel"]').focus({ preventScroll: true });
+  }
+
+  function closeRestoreGate(returnFocus) {
+    if (!restoreGate) return;
+    const opener = restoreGate.opener;
+    restoreGate = null;
+    setElementHidden('[data-restore-gate]', true);
+    setElementHidden('[data-restore-form-actions]', false);
+    setElementHidden('[data-restore-outer-actions]', false);
+    renderHostedRestoreAttempt();
+    if (returnFocus && opener) opener.focus();
+  }
+
+  function restoreFormBody(restoreForm) {
+    const body = destinationBody(restoreForm);
+    body.recovery_key = restoreForm.elements.recovery_key.value || '';
+    return body;
+  }
+
+  async function startOwnStorageRestore() {
+    const restoreForm = root.querySelector('[data-restore-form]');
+    try {
+      await startOperation('/app/backup/restore', restoreFormBody(restoreForm));
+      showMessage('[data-restore-status]', labelForPhase('restoring'));
+    } catch (err) {
+      showError('[data-restore-status]', err);
+    }
+  }
+
   function renderOperation() {
     const operation = state.operation;
+    const restoring = restoreRunning();
+    if (restoreWasRunning && !restoring) void loadPreviousJournal();
+    restoreWasRunning = restoring;
+    renderPreviousJournal();
     renderRestoreReport(operation);
     const banner = root.querySelector('[data-operation-banner]');
     if (!banner) return;
@@ -2542,7 +2787,24 @@
           return;
         }
         if (action === 'restore-hosted-unbound-start') {
-          await beginHostedRestoreAttempt();
+          const { field } = hostedRestoreControls();
+          if (field && field.value.trim() !== '') {
+            await openRestoreGate('operated', button);
+          } else {
+            await beginHostedRestoreAttempt();
+          }
+          return;
+        }
+        if (action === 'restore-gate-cancel') {
+          closeRestoreGate(true);
+          return;
+        }
+        if (action === 'restore-gate-confirm') {
+          const lane = restoreGate && restoreGate.lane;
+          closeRestoreGate(true);
+          // Called straight from the click: this reserves the sign-in popup.
+          if (lane === 'operated') await beginHostedRestoreAttempt();
+          else if (lane === 'byo') await startOwnStorageRestore();
           return;
         }
         if (action === 'cancel-hosted-restore-attempt') {
@@ -2748,20 +3010,38 @@
       restoreForm.addEventListener('submit', async function (event) {
         event.preventDefault();
         if (cleanupRequired()) return;
-        const body = destinationBody(restoreForm);
-        body.recovery_key = restoreForm.elements.recovery_key.value || '';
-        try {
-          await startOperation('/app/backup/restore', body);
-          showMessage('[data-restore-status]', labelForPhase('restoring'));
-        } catch (err) {
-          showError('[data-restore-status]', err);
+        const body = restoreFormBody(restoreForm);
+        if (!body.repository || !body.recovery_key.trim() || credentialsFilled(body) !== 'all') {
+          showError('[data-restore-status]', { reason_code: 'missing_required_field' });
+          return;
         }
+        showMessage('[data-restore-status]', '');
+        await openRestoreGate('byo', restoreForm.querySelector('button[type="submit"]'));
       });
     }
 
     const teardownInput = root.querySelector('[data-teardown-input]');
     if (teardownInput) {
       teardownInput.addEventListener('input', updateTeardownConfirmState);
+    }
+  }
+
+  function bindRestoreGateAndPrevious() {
+    const gate = root.querySelector('[data-restore-gate]');
+    if (gate) {
+      gate.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') closeRestoreGate(true);
+      });
+    }
+    const section = root.querySelector('[data-previous-journal]');
+    if (section) {
+      section.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-previous-remove]');
+        if (button && !button.disabled) {
+          button.disabled = true;
+          void removePreviousJournal(button.getAttribute('data-previous-remove'));
+        }
+      });
     }
   }
 
@@ -2815,6 +3095,7 @@
     if (restoreLane !== lane && hostedRestoreAttemptInFlight()) {
       void cancelHostedRestoreAttempt();
     }
+    if (restoreLane !== lane) closeRestoreGate(false);
     restoreLane = lane;
     for (const button of root.querySelectorAll('.backup-restore-lane')) {
       const selected = button.getAttribute('data-restore-lane') === lane;
@@ -2871,7 +3152,9 @@
     bindBackendSwitching();
     bindModeSwitching();
     bindRestoreLaneSwitching();
+    bindRestoreGateAndPrevious();
     wireRealtime();
+    void loadPreviousJournal();
     try {
       await refreshStatus();
     } catch (err) {
