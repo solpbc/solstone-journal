@@ -5,8 +5,9 @@
 
 use std::path::PathBuf;
 
-use solstone_core_body_ingest::{
-    BodyIngestError, OuraConnectOptions, OuraConnectReport, connect_oura as body_connect_oura,
+use crate::BodyIngestError;
+use crate::oura_connect::{
+    OuraConnectOptions, OuraConnectReport, connect_oura as body_connect_oura,
 };
 
 /// Inputs for the owner-present Oura connect operation.

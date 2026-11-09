@@ -212,9 +212,6 @@ fn callback_root_replacement_keeps_original_effects_and_exclusion_on_return_or_u
         mode: u8,
     }
     impl JournalMaintenance for Replace<'_> {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("a restore no longer rebuilds body history")
-        }
         fn full_scan(&self, journal: &Path) -> Result<(), JournalMaintenanceError> {
             assert_busy(self.original);
             fs::rename(self.original, self.moved).unwrap();
@@ -287,9 +284,6 @@ fn callback_root_replacement_keeps_original_effects_and_exclusion_on_return_or_u
 fn late_obligation_preserves_payload_facts_and_stops_active_binding_restore() {
     struct NeverMaintenance;
     impl JournalMaintenance for NeverMaintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("rebuild after unresolved restore obligation");
-        }
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("scan after unresolved restore obligation");
         }

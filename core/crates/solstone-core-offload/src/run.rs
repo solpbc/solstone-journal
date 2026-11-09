@@ -1316,9 +1316,6 @@ mod tests {
     struct Maintenance;
     #[cfg(any(unix, windows))]
     impl JournalMaintenance for Maintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
         }

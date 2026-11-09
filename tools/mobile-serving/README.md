@@ -73,8 +73,8 @@ returns `503`.
 accepts `args`, `every`, `enabled` and optional `max_runtime`. For the saved
 Plaud or audio connection, use
 `/api/journal/recurrences/source/{source}` with the same timing fields and no
-`args`. These routes create no default recurrence. Apple Health and Oura retain
-their existing migration and approval prerequisites.
+`args`. These routes create no default recurrence. Apple Health and Oura have
+no source recurrence.
 
 `POST /api/journal/maintenance/{routine}` submits one admitted maintenance ID,
 such as `backup:prune`, to the same foreground queue. It accepts no command,

@@ -11,10 +11,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::TimeZone as _;
-use solstone_core_body_ingest::BodyIngestError;
-use solstone_core_body_ingest::oura_sync::{
-    HttpResponse, OuraHttp, OuraSyncOptions, hold_oura_lock, sync_with_http,
-};
+use solstone_core_import::BodyIngestError;
+use solstone_core_import::oura_http::{HttpResponse, OuraHttp, hold_oura_lock, refresh, settings};
 
 use super::*;
 use crate::oura_fetch::asked_documents;
@@ -1674,45 +1672,6 @@ fn an_old_sync_holding_its_lock_stops_a_run_that_must_refresh_and_it_carries_on_
     assert_eq!(oura.posts(), 1);
 }
 
-fn approve(root: &Path) {
-    fs::create_dir_all(root.join("imports/_approvals")).unwrap();
-    fs::write(
-        root.join("imports/_approvals/oura_sync_preflight.json"),
-        json!({
-            "schema": "solstone.oura_sync_preflight.v1",
-            "checklist_version": "solstone.oura_sync_preflight.checklist.v2",
-            "journal_root": root.canonicalize().unwrap(),
-            "requires_per_run_confirmation": true,
-            "replication_destinations": {
-                "time_machine": {"decision": "excluded"},
-                "icloud": {"decision": "excluded"},
-                "solbase": {"decision": "excluded"},
-                "hosted_backup": {"decision": "excluded"},
-                "other": {"decision": "excluded"}
-            },
-            "raw_retention": {"decision": "discard"}
-        })
-        .to_string(),
-    )
-    .unwrap();
-}
-
-/// The old sync, saving, as the owner's command runs it.
-fn old_sync(root: &Path, oura: &Oura) -> Result<(), BodyIngestError> {
-    let mut transport = oura.clone();
-    sync_with_http(
-        root,
-        &OuraSyncOptions {
-            save: true,
-            confirm_body_save: true,
-            today: Some(date("2026-02-01")),
-            ..OuraSyncOptions::default()
-        },
-        &mut transport,
-    )
-    .map(|_| ())
-}
-
 fn config_tokens(root: &Path) -> Value {
     let text = fs::read_to_string(root.join("config/journal.json")).unwrap();
     serde_json::from_str::<Value>(&text).unwrap()["oura"]["tokens"].clone()
@@ -1837,50 +1796,20 @@ fn the_new_path_never_reads_the_old_cursor_poisoned_or_not() {
 }
 
 #[test]
-fn the_old_sync_never_reads_the_new_paths_files() {
-    let mut asked = Vec::new();
-    for poisoned in [false, true] {
-        let journal = connected("America/Denver");
-        let root = journal.path();
-        approve(root);
-        if poisoned {
-            fs::create_dir_all(root.join(OURA.run_dir_rel).join("pages")).unwrap();
-            fs::write(root.join(crate::oura_coverage::COVERAGE_REL), "not json").unwrap();
-            fs::write(root.join(OURA.run_dir_rel).join(STATE_FILE), "not json").unwrap();
-            fs::write(
-                root.join(OURA.run_dir_rel).join("pages/index.json"),
-                "not json",
-            )
-            .unwrap();
-        }
-        let oura = Oura::new();
-        old_sync(root, &oura).unwrap();
-        asked.push(oura.gets());
-        if poisoned {
-            assert_eq!(
-                fs::read_to_string(root.join(crate::oura_coverage::COVERAGE_REL)).unwrap(),
-                "not json"
-            );
-        }
-    }
-    assert_eq!(asked[0], asked[1]);
-}
-
-#[test]
 fn a_path_whose_tokens_another_path_refreshed_uses_them_with_no_second_refresh() {
     let journal = connected("America/Denver");
     let root = journal.path().to_path_buf();
-    approve(&root);
     let oura = Oura::new();
     // The new path has loaded its tokens. Before its first request is answered,
-    // the old sync runs, finds them expired and refreshes.
+    // another path finds them expired and refreshes.
     let during = oura.clone();
     let path = root.clone();
     oura.0.borrow_mut().hooks.push((
         0,
         Box::new(move || {
             during.expire("access-0");
-            old_sync(&path, &during).unwrap();
+            let mut current = settings(&path).unwrap();
+            refresh(&mut during.clone(), &mut current, &path, true).unwrap();
         }),
     ));
     let outcome = finished(
@@ -1888,7 +1817,7 @@ fn a_path_whose_tokens_another_path_refreshed_uses_them_with_no_second_refresh()
         &oura,
         &ask("20261104_120000", Some(("2026-01-01", "2026-01-10"))),
     );
-    assert_eq!(oura.posts(), 1, "one refresh, the old sync's");
+    assert_eq!(oura.posts(), 1, "one refresh, the other path's");
     assert!(
         outcome
             .results
@@ -1898,65 +1827,6 @@ fn a_path_whose_tokens_another_path_refreshed_uses_them_with_no_second_refresh()
     let config: Value =
         serde_json::from_slice(&fs::read(root.join("config/journal.json")).unwrap()).unwrap();
     assert_eq!(config["oura"]["tokens"]["refresh_token"], "refresh-1");
-}
-
-#[test]
-fn an_old_sync_that_loaded_first_refreshes_alone_and_the_new_path_then_uses_its_tokens() {
-    let journal = connected("America/Denver");
-    let root = journal.path().to_path_buf();
-    approve(&root);
-    let oura = Oura::new();
-    oura.expire("access-0");
-    // The old sync holds its lock and has loaded its tokens. Before its first
-    // request is answered, the new path runs: it must refresh, and can't.
-    let during = oura.clone();
-    let path = root.clone();
-    let waited = Rc::new(RefCell::new(None));
-    let seen = Rc::clone(&waited);
-    oura.0.borrow_mut().hooks.push((
-        0,
-        Box::new(move || {
-            *seen.borrow_mut() = Some(import(
-                &path,
-                &during,
-                &ask("20261104_120000", Some(("2026-01-01", "2026-01-10"))),
-            ));
-        }),
-    ));
-    old_sync(&root, &oura).unwrap();
-    assert!(matches!(
-        waited.borrow().as_ref(),
-        Some(Err(OuraImportError::Stop(OuraStop::AnotherSync)))
-    ));
-    assert_eq!(oura.posts(), 1, "only the old sync refreshed");
-    // Run again, the new path carries on with the old sync's rotated tokens.
-    finished(
-        &root,
-        &oura,
-        &ask("20261104_120001", Some(("2026-01-01", "2026-01-10"))),
-    );
-    assert_eq!(oura.posts(), 1);
-}
-
-#[test]
-fn a_new_path_refresh_is_what_the_old_sync_loads_next() {
-    let journal = connected("America/Denver");
-    let root = journal.path();
-    approve(root);
-    let oura = Oura::new();
-    oura.expire("access-0");
-    finished(
-        root,
-        &oura,
-        &ask("20261104_120000", Some(("2026-01-01", "2026-01-10"))),
-    );
-    assert_eq!(oura.posts(), 1);
-    // The rotated access token expires too: the old sync refreshes with the
-    // rotated refresh token, which Oura still takes.
-    oura.expire("access-1");
-    old_sync(root, &oura).unwrap();
-    assert_eq!(oura.posts(), 2);
-    assert_eq!(oura.0.borrow().posts[1]["refresh_token"], "refresh-1");
 }
 
 #[test]

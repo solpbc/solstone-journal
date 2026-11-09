@@ -11,9 +11,9 @@ use serde_json::{Map, Value};
 
 pub mod allocate;
 pub mod audio_archive;
+pub mod body_ingest_error;
 pub mod cli_render;
 pub mod connect;
-pub mod consent_gate;
 pub mod contract;
 pub mod creation;
 pub mod dedupe;
@@ -23,6 +23,8 @@ pub mod folder_admit;
 pub mod force_notice;
 pub mod heartbeat;
 pub mod metadata;
+pub mod oura_connect;
+pub mod oura_http;
 pub mod projection;
 pub mod publish;
 pub mod saved_start;
@@ -45,11 +47,8 @@ pub use allocate::{
     bind_import_record_where, existing_import_record, remember_source_hash,
     source_timestamp_for_preview, stored_source_timestamp, stored_source_timestamp_for_hash,
 };
+pub use body_ingest_error::{BodyIngestError, BodyIngestErrorKind};
 pub use connect::{OuraConnectOutcome, OuraConnectRequest, connect_oura};
-pub use consent_gate::{
-    CONSENT_GATE_EXIT_CODE, ConsentGateOutcome, ConsentGateRequest, GateFailure,
-    check_oura_sync_save,
-};
 pub use contract::{
     AudioAuto, ImportPreview, ImportResult, OwnerSource, OwnerSourceMetadata, PreviewRequest,
     SaveRequest, SourceHash, SourceImmutabilityReport, SyncBackendRequest, SyncGuidance,

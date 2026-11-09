@@ -2196,10 +2196,6 @@ mod tests {
     struct UnusedMaintenance;
 
     impl JournalMaintenance for UnusedMaintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("backup maintenance is not reached")
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("backup maintenance is not reached")
         }
@@ -2208,10 +2204,6 @@ mod tests {
     struct SuccessfulMaintenance;
 
     impl JournalMaintenance for SuccessfulMaintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
         }

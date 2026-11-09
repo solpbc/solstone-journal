@@ -306,9 +306,6 @@ impl Clock for FixedClock {
 
 struct Maintenance;
 impl JournalMaintenance for Maintenance {
-    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-        Ok(())
-    }
     fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
         Ok(())
     }

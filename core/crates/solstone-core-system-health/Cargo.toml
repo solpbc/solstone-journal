@@ -30,7 +30,6 @@ solstone-core-segment.workspace = true
 solstone-core-system.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-indexer-store.workspace = true
-solstone-core-body-source = { path = "../solstone-core-body-source" }
 sha2.workspace = true
 
 [[test]]

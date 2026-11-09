@@ -40,9 +40,6 @@ impl HttpTransport for NoWork {
     }
 }
 impl JournalMaintenance for NoWork {
-    fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-        unreachable!()
-    }
     fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
         unreachable!()
     }

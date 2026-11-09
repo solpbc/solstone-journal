@@ -40,13 +40,14 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 getrandom.workspace = true
-solstone-core-body-ingest.workspace = true
+solstone-core-auth-flow.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-facets.workspace = true
 solstone-core-format.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-journal-config.workspace = true
+solstone-core-journal-config-write.workspace = true
 solstone-core-removals.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-processing-record.workspace = true
@@ -54,6 +55,10 @@ solstone-core-segment.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 tempfile = "3.24.0"
+ureq = { workspace = true, features = ["rustls"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
 
 [features]
 full-tests = []

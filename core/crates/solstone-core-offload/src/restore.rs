@@ -316,9 +316,6 @@ mod tests {
         }
     }
     impl JournalMaintenance for Harness {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("held restore does not write journal state")
-        }
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("held restore does not write journal state")
         }
