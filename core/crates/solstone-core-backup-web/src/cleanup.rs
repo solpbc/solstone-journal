@@ -230,6 +230,11 @@ mod tests {
     async fn cleanup_route_keeps_door_and_established_session_gates() {
         let (root, deps) = deps();
         let config_path = root.path().join("config/journal.json");
+        std::fs::write(
+            &config_path,
+            crate::test_support::python_build_journal_bytes("fresh"),
+        )
+        .unwrap();
         let before = std::fs::read(&config_path).unwrap();
         let (_, authorization) = tokio::sync::watch::channel(DeviceDoorAuthorization::from(
             AuthorizedClientsRead::Missing,
