@@ -229,6 +229,7 @@ fn read_json(path: &Path) -> Option<Value> {
 fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
     let dir = journal.join(IMPORTS_DIR).join(id);
     let mut found = BTreeSet::new();
+    let mut legacy = Vec::new();
     let mut add = |day: &str, stream: &str, key: &str| {
         if valid_part(day) && valid_part(stream) && valid_part(key) {
             found.insert(segment_rel(day, stream, key));
@@ -244,6 +245,19 @@ fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
                 str_of(segment, "stream"),
             ) {
                 add(day, stream, key);
+            }
+        }
+    }
+    // A record from before publication records: the files it created, as
+    // `<day>/<stream>/<key>/<file>` or `<day>/<key>/<file>` below the
+    // chronicle.
+    if let Some(record) = read_json(&dir.join("imported.json")) {
+        for file in array(&record, "all_created_files")
+            .iter()
+            .filter_map(Value::as_str)
+        {
+            if let Some(segment) = legacy_created_segment(journal, file) {
+                legacy.push(segment);
             }
         }
     }
@@ -283,6 +297,7 @@ fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
             add(&part.day, &record.settings.stream, &part.segment_key);
         }
     }
+    found.extend(legacy);
     // A legacy record: keys of one day, with no stream.
     if let Some(record) = read_json(&dir.join("segments.json"))
         && let Some(day) = str_of(&record, "day")
@@ -315,6 +330,35 @@ fn legacy_segment(journal: &Path, day: &str, key: &str) -> Option<String> {
         (Some(_), Some(_)) => None,
         (None, _) => journal.join(&direct).is_dir().then_some(direct),
     }
+}
+
+/// The segment a legacy record's created file sits in, if that segment is
+/// there to name.
+fn legacy_created_segment(journal: &Path, file: &str) -> Option<String> {
+    let file = file.strip_prefix("chronicle/").unwrap_or(file);
+    let parts: Vec<&str> = file.split('/').collect();
+    let day = *parts.first()?;
+    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let named = match parts.as_slice() {
+        [day, stream, key, _, ..] if valid_part(stream) && valid_part(key) => {
+            Some(segment_rel(day, stream, key))
+        }
+        _ => None,
+    };
+    let direct = match parts.as_slice() {
+        [day, key, _] if valid_part(key) => Some(segment_rel(
+            day,
+            solstone_core_journal_io::paths::DEFAULT_STREAM,
+            key,
+        )),
+        _ => None,
+    };
+    [named, direct]
+        .into_iter()
+        .flatten()
+        .find(|segment| journal.join(segment).is_dir())
 }
 
 fn array<'v>(value: &'v Value, key: &str) -> &'v [Value] {
@@ -924,6 +968,36 @@ mod tests {
         assert_eq!(failure_key(&error), "importing");
         assert!(root.path().join("imports").join(ID).is_dir());
         crate::metadata::release_attempt(root.path(), ID);
+    }
+
+    #[test]
+    fn a_legacy_record_names_its_segments_through_the_files_it_created() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            &format!("imports/{ID}/imported.json"),
+            serde_json::json!({"all_created_files": [
+                "20260805/import.ics/090000_300/event_transcript.md",
+                "20260805/import.ics/093000_300/event_transcript.md"
+            ], "segments": ["090000_300", "093000_300"], "source_type": "ics"})
+            .to_string()
+            .as_bytes(),
+        );
+        for key in ["090000_300", "093000_300"] {
+            write(
+                root.path(),
+                &format!("chronicle/20260805/import.ics/{key}/event_transcript.md"),
+                b"event",
+            );
+        }
+        let things = import_things(root.path(), ID).unwrap();
+        assert_eq!(
+            things.segments,
+            vec![
+                "chronicle/20260805/import.ics/090000_300".to_owned(),
+                "chronicle/20260805/import.ics/093000_300".to_owned(),
+            ]
+        );
     }
 
     #[test]

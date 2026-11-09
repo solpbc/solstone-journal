@@ -611,8 +611,10 @@ pub fn detach_set(
     };
     publish_set(journal, &set, true)?;
     // Held for the whole run, so a sweep never runs this set beside it.
-    let _running = set_lock(journal, &set.id, LockOptions::default())?;
+    let running = set_lock(journal, &set.id, LockOptions::default())?;
     let results = run_set(journal, kinds, &mut set, false);
+    drop(running);
+    remove_set_lock(journal, &set.id);
     Ok(results.into_iter().map(|(_, result)| result).collect())
 }
 
@@ -788,6 +790,17 @@ fn remove_set(journal: &Path, id: &str) {
     }
 }
 
+/// A set's run lock leaves a sidecar file; once the set is gone and its lock
+/// let go, the sidecar goes too.
+fn remove_set_lock(journal: &Path, id: &str) {
+    if trash_entry(journal, &set_rel(id)).is_ok_and(|path| path.exists()) {
+        return;
+    }
+    if let Ok(path) = trash_entry(journal, &format!("{}.lock", set_rel(id))) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 /// Sets still owed something, oldest first.
 fn waiting_sets(journal: &Path) -> Vec<Set> {
     let Ok(listing) = std::fs::read_dir(trash_root(journal).join(SETS_DIR)) else {
@@ -815,7 +828,16 @@ fn waiting_sets(journal: &Path) -> Vec<Set> {
 /// Finish what of each waiting set is owed, skipping a set a live request is
 /// running now.
 fn sweep_sets(journal: &Path, kinds: &[&dyn Kind], swept: &mut Swept) {
-    for mut set in waiting_sets(journal) {
+    for set in waiting_sets(journal) {
+        let id = set.id.clone();
+        sweep_set(journal, kinds, set, swept);
+        remove_set_lock(journal, &id);
+    }
+}
+
+/// Finish one waiting set, unless a live request holds it.
+fn sweep_set(journal: &Path, kinds: &[&dyn Kind], mut set: Set, swept: &mut Swept) {
+    {
         let Ok(_running) = set_lock(
             journal,
             &set.id,
@@ -824,14 +846,14 @@ fn sweep_sets(journal: &Path, kinds: &[&dyn Kind], swept: &mut Swept) {
                 ..LockOptions::default()
             },
         ) else {
-            continue;
+            return;
         };
         // Read again under the lock: the request may have just finished it.
         let Some(current) = waiting_sets(journal)
             .into_iter()
             .find(|waiting| waiting.id == set.id)
         else {
-            continue;
+            return;
         };
         set = current;
         for (_, result) in run_set(journal, kinds, &mut set, true) {
@@ -1875,6 +1897,11 @@ mod tests {
         drop(running);
         sweep(&root, &[&kind], Utc::now());
         assert_eq!(list(&root).unwrap().len(), 1);
+        // Nothing of the set is left behind, its lock's sidecar included.
+        let sets = std::fs::read_dir(root.join(TRASH_DIR).join(SETS_DIR))
+            .unwrap()
+            .count();
+        assert_eq!(sets, 0);
     }
 
     /// A set the owner asked erased is erased, each thing as its own item.
