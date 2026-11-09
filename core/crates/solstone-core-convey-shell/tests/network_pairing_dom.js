@@ -10,8 +10,8 @@ let cases = 0;
 
 const REQUIRED_COPY_KEYS = [
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'DEVICE_PAIR_CTA', 'MODAL_TITLE', 'PAIR_TYPE_PROMPT',
-  'PAIR_TYPE_PHONE', 'PAIR_TYPE_COMPUTER', 'PAIR_TYPE_TERMINAL', 'PHONE_STEP_1', 'PHONE_STEP_2',
-  'THIS_COMPUTER_APP_FINDS', 'THIS_COMPUTER_STEP_1', 'COMPUTER_STEP_1', 'COMPUTER_STEP_2', 'COMPUTER_LINUX_NOTE', 'TERMINAL_STEP_1', 'TERMINAL_STEP_2',
+  'PAIR_TYPE_PHONE', 'PAIR_TYPE_COMPUTER', 'PHONE_STEP_1', 'PHONE_STEP_2',
+  'THIS_COMPUTER_APP_FINDS', 'THIS_COMPUTER_STEP_1', 'COMPUTER_STEP_1', 'COMPUTER_STEP_2', 'COMPUTER_LINUX_NOTE',
   'PAIR_NETWORK_LINE', 'PAIR_RELAY_LINE', 'DETAILS_DISCLOSURE', 'CA_FP_LABEL', 'CA_FP_NOTE',
   'PAIR_LINK_FIELD_LABEL', 'PAIR_LINK_COPY_LABEL', 'CHECK_PAIRING_CTA', 'PAIR_START_FAIL_BODY',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'CHECK_AGAIN_LABEL',
@@ -355,7 +355,7 @@ function createEnvironment(manifestDir, options = {}) {
   const fingerprint = make('link-pairing-fingerprint', 'code');
   const linkValue = make('link-pairing-link-value', 'code');
   const qr = make('link-pairing-qr');
-  const typeButtons = ['phone', 'computer', 'terminal'].map((type) => {
+  const typeButtons = ['phone', 'computer'].map((type) => {
     const button = make(`link-pairing-type-${type}`, 'button');
     button.dataset.pairingAction = 'type';
     button.dataset.pairingType = type;
@@ -364,7 +364,7 @@ function createEnvironment(manifestDir, options = {}) {
   const typeChooser = make('link-pairing-type-chooser', 'div');
   typeChooser.classList.add('link-pairing-type');
   typeChooser.append(...typeButtons);
-  const typeBlocks = ['phone', 'computer', 'terminal'].map((type) => make(`link-pairing-for-${type}`));
+  const typeBlocks = ['phone', 'computer'].map((type) => make(`link-pairing-for-${type}`));
   typeBlocks[0].appendChild(qr);
   const thisComputerAppFinds = make('link-pairing-this-computer-app-finds', 'p');
   thisComputerAppFinds.setAttribute('data-copy', 'THIS_COMPUTER_APP_FINDS');
@@ -693,10 +693,10 @@ async function main() {
     assert.strictEqual(env.nodes.get('link-pairing-for-phone').hidden, false);
     assert.strictEqual(env.nodes.get('link-pairing-for-computer').hidden, true);
     assert.strictEqual(env.nodes.get('link-pairing-type-phone').getAttribute('aria-pressed'), 'true');
-    env.click(env.nodes.get('link-pairing-type-terminal'));
+    env.click(env.nodes.get('link-pairing-type-computer'));
     assert.strictEqual(env.nodes.get('link-pairing-for-phone').hidden, true);
-    assert.strictEqual(env.nodes.get('link-pairing-for-terminal').hidden, false);
-    assert.strictEqual(env.nodes.get('link-pairing-type-terminal').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(env.nodes.get('link-pairing-for-computer').hidden, false);
+    assert.strictEqual(env.nodes.get('link-pairing-type-computer').getAttribute('aria-pressed'), 'true');
     assert.strictEqual(env.nodes.get('link-pairing-type-phone').getAttribute('aria-pressed'), 'false');
     assert.strictEqual(env.requests.length, 1);
     assert.strictEqual(env.nodes.get('link-pairing-link-value').textContent, 'https://go.example/p#ALPHANUMERIC');
@@ -1404,14 +1404,14 @@ async function main() {
     const slice = networkJsSource.slice(initStart, elementsEnd);
     const idMatches = [...slice.matchAll(/findById\(documentRef,\s*'([^']+)'\)/g)].map((m) => m[1]);
     assert.ok(idMatches.length > 0, 'initPairingCeremony looks up its elements by id');
-    for (const type of ['phone', 'computer', 'terminal']) {
+    for (const type of ['phone', 'computer']) {
       idMatches.push(`link-pairing-type-${type}`, `link-pairing-for-${type}`);
     }
     for (const id of idMatches) {
       assert.ok(workspace.includes(`id="${id}"`), `workspace.html contains id="${id}"`);
     }
     // The block the this-computer view hides on windows holds the linux note and its commands.
-    const linuxBlock = workspace.match(/<div class="link-pairing-linux">([\s\S]*?)<div id="link-pairing-for-terminal"/);
+    const linuxBlock = workspace.match(/<div class="link-pairing-linux">([\s\S]*?)<div id="link-pairing-addresses"/);
     assert.ok(linuxBlock, 'workspace.html wraps the linux commands in .link-pairing-linux');
     assert.ok(linuxBlock[1].includes('data-copy="COMPUTER_LINUX_NOTE"'));
     assert.ok(linuxBlock[1].includes('systemctl --user'));
@@ -1527,9 +1527,9 @@ async function main() {
     assert.strictEqual(env.dialog.querySelector('.link-pairing-type').hidden, false);
     assert.strictEqual(env.nodes.get('link-pairing-type-phone').getAttribute('aria-pressed'), 'true');
 
-    // Select terminal, enter same-machine, close(), open() again: chooser visible and terminal aria-pressed true
-    env.click(env.nodes.get('link-pairing-type-terminal'));
-    assert.strictEqual(env.nodes.get('link-pairing-type-terminal').getAttribute('aria-pressed'), 'true');
+    // Select phone, enter same-machine, close(), open() again: chooser visible and phone aria-pressed true
+    env.click(env.nodes.get('link-pairing-type-phone'));
+    assert.strictEqual(env.nodes.get('link-pairing-type-phone').getAttribute('aria-pressed'), 'true');
     env.fetchQueue.push(response(material({ link_addresses: ['127.0.0.1:7657'] })));
     env.click(env.nodes.get('link-pairing-this-computer'));
     await settle();
@@ -1542,7 +1542,7 @@ async function main() {
     env.click(env.opener);
     await settle();
     assert.strictEqual(env.dialog.querySelector('.link-pairing-type').hidden, false);
-    assert.strictEqual(env.nodes.get('link-pairing-type-terminal').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(env.nodes.get('link-pairing-type-phone').getAttribute('aria-pressed'), 'true');
   });
 
   await testCase('on windows the this-computer view leaves out the linux commands', async () => {

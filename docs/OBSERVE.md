@@ -35,7 +35,7 @@ Linked-device clients send segments to the journal through protocol v3 at [`POST
 |----------|-----------------|------|---------|
 | **solstone-linux** | Screen + audio on Linux | `solstone-linux` | systemd user service / standalone |
 | **solstone-macos** | Screen + audio on macOS | `solstone-macos` | Native menu bar app |
-| **solstone-tmux** | Tmux terminal sessions | `solstone-tmux` | systemd user service / standalone |
+| **solstone app (terminal)** | Tmux terminal sessions | the `tmux` source of `solstone-linux` and `solstone-macos` | part of the app, off until the owner turns it on |
 | **solstone-windows** | Audited protocol-v3 ingest consumer | `solstone-windows` | — |
 
 An authenticated linked device may upload browser JSONL with `source="browser"` through the existing protocol-v3 ingest path; admission is independent of `solstone journal sense`, `solstone journal transcribe`, and `solstone journal describe`; each finalized segment period is one immutable `browser_pages.jsonl`. Allocation, reconciliation, reserved-marker, and segment-listing behavior follow the rules specified below.
@@ -88,8 +88,8 @@ solstone journal sense (coordination)
 ## Journal processing
 
 Screen/audio collection, platform activity detection, and the upload client live
-in the per-platform repositories (`solstone-linux`, `solstone-macos`,
-`solstone-tmux`). The journal processes the resulting records with:
+in the per-platform repositories (`solstone-linux`, `solstone-macos`).
+The journal processes the resulting records with:
 
 - **`solstone journal sense`** dispatches transcription and description jobs.
 - **`solstone journal transcribe`** creates audio transcription and speaker-analysis embeddings. Its exit-code contract is [here](transcribe-failure-and-telemetry.md).
@@ -123,7 +123,7 @@ Each client is a standalone package in its own repository, with its own recordin
 
 - **`solstone-linux`** records screen and audio on Linux; it runs as a systemd user service.
 - **`solstone-macos`** records screen and audio on macOS; it is a native menu-bar app.
-- **`solstone-tmux`** records tmux terminal sessions; it runs as a systemd user service.
+- **The solstone app's terminal source** records tmux terminal sessions, in `solstone-linux` and `solstone-macos`, off until the owner turns it on. Earlier installs of `solstone-tmux` still upload the same format.
 - **`solstone-windows`** is an audited protocol-v3 ingest consumer.
 
 All linked-device segments use the same [protocol-v3 contract](openapi/client-ingest-contract/projection.openapi.json). Device association and the linked-device mTLS identity authorize uploads and reconciliation. Legacy device-record keys do not authorize this path.
