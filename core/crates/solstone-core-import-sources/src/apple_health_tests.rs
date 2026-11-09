@@ -473,7 +473,7 @@ fn the_summary_says_what_moved_what_didnt_and_what_waits() {
     };
     let summary = summary_text(&APPLE, &counts, Some("body"), Denver);
     for line in [
-        "2 records already listed on the activities page moved there, from your Work facet.",
+        "2 records already listed on the activities page moved to this import's facet, from your Work facet.",
         "the rest of what's already listed stayed where it was: 3 records would have moved in all, and you weren't shown any.",
         "2 records joined a workout you'd hidden, so they're hidden too.",
         "1 earlier Strava workout couldn't be updated yet",

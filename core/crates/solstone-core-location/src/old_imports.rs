@@ -374,24 +374,27 @@ fn covers(bundle: &OldBundle, day: &str) -> Option<CoverScope> {
     }
 }
 
-/// Of `days`, the ones an old bundle covers and the new path hasn't reached.
+/// Of `days`, the ones an old bundle covers and the new path hasn't reached,
+/// each saying whether a bundle names that day itself or only its month.
 /// Reads each manifest and listing once however many days are asked about.
 #[must_use]
 pub fn covered_days_among<'d>(
     journal: &Path,
     days: impl Iterator<Item = &'d str>,
-) -> BTreeSet<String> {
+) -> BTreeMap<String, bool> {
     let bundles = read_old_bundles(journal);
     if bundles.is_empty() {
-        return BTreeSet::new();
+        return BTreeMap::new();
     }
     let touched = Touched::new(journal);
-    days.filter(|day| {
-        bundles.iter().any(|bundle| {
-            covers(bundle, day).is_some() && !touched.source_touched(bundle.source, day)
-        })
+    days.filter_map(|day| {
+        let scopes = bundles
+            .iter()
+            .filter(|bundle| !touched.source_touched(bundle.source, day))
+            .filter_map(|bundle| covers(bundle, day))
+            .collect::<Vec<_>>();
+        (!scopes.is_empty()).then(|| (day.to_owned(), scopes.contains(&CoverScope::Day)))
     })
-    .map(str::to_owned)
     .collect()
 }
 

@@ -39,7 +39,7 @@ pub(crate) struct BodyCommand<'a> {
     pub save: bool,
 }
 
-const APPLE_CONFIRM_WORDS: &str = "saving an Apple Health export needs your go-ahead, so nothing was saved. from a terminal, run: solstone journal importer <your export> --confirm-body-save\n";
+const APPLE_CONFIRM_WORDS: &str = "saving an Apple Health export needs your go-ahead, so nothing from it was brought in. from a terminal (on a mac, open admin terminal in the journal app's journal menu), run: solstone journal importer <your export> --confirm-body-save\n";
 const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, and importing it again changes nothing, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
 
 /// Save an Apple Health export.

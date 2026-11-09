@@ -1628,7 +1628,7 @@ pub fn summary_text(
     if counts.listed_moved > 0 {
         let _ = writeln!(
             text,
-            "{} already listed on the activities page moved there, from {}.\n",
+            "{} already listed on the activities page moved to this import's facet, from {}.\n",
             count_of_records(counts.listed_moved),
             facets_words(&counts.listed_moved_from)
         );

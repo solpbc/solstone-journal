@@ -168,13 +168,15 @@
                     "day": "20260110",
                     "count": 1,
                     "intensity": 0.3333333333333333,
-                    "title": "Jan 10, 2026 · Apple Health"
+                    "title": "Jan 10, 2026 · Apple Health",
+                    "earlier": false
                   },
                   {
                     "day": "20260111",
                     "count": 1,
                     "intensity": 0.3333333333333333,
-                    "title": "Jan 11, 2026 · Oura"
+                    "title": "Jan 11, 2026 · Oura",
+                    "earlier": false
                   }
                 ]
               ],

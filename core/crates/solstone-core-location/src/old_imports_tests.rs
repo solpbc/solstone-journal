@@ -97,7 +97,7 @@ fn days_an_old_bundle_covers_leave_out_one_a_new_import_read() {
     let days = ["20260101", "20270101"];
     assert_eq!(
         covered_days_among(root, days.into_iter()),
-        BTreeSet::from(["20260101".to_owned()])
+        BTreeMap::from([("20260101".to_owned(), true)])
     );
     let import = root.join("imports/20260201_120000");
     fs::create_dir_all(&import).unwrap();

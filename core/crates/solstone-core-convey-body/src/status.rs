@@ -70,7 +70,7 @@ fn coverage(days: &BodyDays) -> Value {
     }
 }
 
-fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: bool) -> Value {
+fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: Option<bool>) -> Value {
     let count = sources.map_or(0, BTreeSet::len);
     let title = match sources {
         Some(sources) => {
@@ -81,8 +81,12 @@ fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: bool)
                 .join(" and ");
             format!("{} · {names}", short_day_year(day).unwrap_or_default())
         }
-        None if earlier => format!(
+        None if earlier == Some(true) => format!(
             "{} · held in an earlier import",
+            short_day_year(day).unwrap_or_default()
+        ),
+        None if earlier.is_some() => format!(
+            "{} · in a month an earlier import holds",
             short_day_year(day).unwrap_or_default()
         ),
         None => format!("{} · nothing here", short_day_year(day).unwrap_or_default()),
@@ -92,7 +96,7 @@ fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: bool)
         "count": count,
         "intensity": count as f64 / 3.0,
         "title": title,
-        "earlier": earlier && sources.is_none(),
+        "earlier": earlier.is_some() && sources.is_none(),
     })
 }
 
@@ -122,7 +126,7 @@ fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
             let mut current = start;
             while current <= end {
                 let key = current.format("%Y%m%d").to_string();
-                week.push(grid_cell(&key, days.get(&key), earlier.contains(&key)));
+                week.push(grid_cell(&key, days.get(&key), earlier.get(&key).copied()));
                 if week.len() == 7 {
                     weeks.push(std::mem::take(&mut week));
                 }

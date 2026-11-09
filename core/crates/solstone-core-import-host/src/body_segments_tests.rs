@@ -1020,8 +1020,9 @@ fn another_export_after_a_stop_publishes_the_old_half_day_and_starts_fresh() {
         serde_json::from_slice(&fs::read(root.join(RUN_DIR_REL).join("state.json")).unwrap())
             .unwrap();
     let day = state["pending"]["day"].as_str().unwrap().to_owned();
-    let written = state["totals"]["written"].as_u64().unwrap()
-        + state["pending"]["counts"]["written"].as_u64().unwrap();
+    // Stopped after its first window of that day: the others it meant to write
+    // weren't reached, so they aren't counted.
+    let written = state["totals"]["written"].as_u64().unwrap() + 1;
     let other = export(
         &scratch.path().join("other"),
         &[heart("2026-10-20 06:31:10 -0600", "70")],
@@ -2549,7 +2550,7 @@ fn a_run_nobody_answered_for_moves_nothing_already_filed() {
     );
     assert_eq!(records_in(root, "body", "20261010"), 0);
     assert!(
-        !outcome.summary.contains("moved there"),
+        !outcome.summary.contains("moved to this import"),
         "{}",
         outcome.summary
     );
@@ -2585,7 +2586,7 @@ fn the_owners_answer_moves_the_record_with_its_window_and_says_how_many_from_whe
     assert_eq!(records_in(root, "body", "20261010"), 1);
     assert!(
         outcome.summary.contains(
-            "1 record already listed on the activities page moved there, from your work facet."
+            "1 record already listed on the activities page moved to this import's facet, from your work facet."
         ),
         "{}",
         outcome.summary
@@ -2722,7 +2723,7 @@ fn a_takeovers_moves_and_only_the_windows_it_reached_reach_the_old_imports_summa
     let old = fs::read_to_string(root.join("imports/20261012_130000/summary.md")).unwrap();
     assert!(
         old.contains(
-            "1 record already listed on the activities page moved there, from your work facet."
+            "1 record already listed on the activities page moved to this import's facet, from your work facet."
         ),
         "{old}"
     );

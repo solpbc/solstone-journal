@@ -725,6 +725,39 @@ async fn a_day_only_an_old_import_holds_isnt_called_empty_on_the_overview() {
 }
 
 #[tokio::test]
+async fn a_cell_in_a_month_an_old_import_holds_doesnt_claim_the_day() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    with_python(root);
+    for day in ["20260301", "20260303"] {
+        window(
+            root,
+            day,
+            "import.oura",
+            "000000_3600",
+            &[reading("r1", "2026-03-01 00:05:00 -0700")],
+        );
+    }
+    let (_, overview) = get(root, "/app/body/api/status").await;
+    let cell = overview["day_grid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|year| year["weeks"].as_array().unwrap())
+        .flat_map(|week| week.as_array().unwrap())
+        .find(|cell| cell["day"] == "20260302")
+        .unwrap()
+        .clone();
+    assert!(
+        cell["title"]
+            .as_str()
+            .unwrap()
+            .contains("in a month an earlier import holds"),
+        "{cell}"
+    );
+}
+
+#[tokio::test]
 async fn a_window_counts_what_it_holds_on_the_placed_clock() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();

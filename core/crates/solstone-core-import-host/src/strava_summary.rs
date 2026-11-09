@@ -97,7 +97,7 @@ impl StravaRunSummary {
                 if let Some((count, from)) = &self.listed_moved {
                     let _ = writeln!(
                         text,
-                        "{} already listed on the activities page moved there, from {}.\n",
+                        "{} already listed on the activities page moved to this import's facet, from {}.\n",
                         plural(*count as u64, "workout", "workouts"),
                         solstone_core_import_sources::apple_health::facets_words(from)
                     );
