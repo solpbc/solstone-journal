@@ -1592,16 +1592,19 @@ fn init_outputs() -> Vec<ToolOutput> {
 #[cfg(feature = "full-tests")]
 struct NoPause;
 
+#[cfg(feature = "full-tests")]
 impl crate::PausedRestore for NoPause {
     fn resume(self: Box<Self>, _: &dyn Fn() -> bool) -> Result<(), String> {
         Ok(())
     }
 }
 
+#[cfg(feature = "full-tests")]
 fn no_pause() -> crate::init_restore::Drain {
     Box::new(|| Ok(Box::new(NoPause) as Box<dyn crate::PausedRestore>))
 }
 
+#[cfg(feature = "full-tests")]
 async fn init_api(deps: &crate::BackupWebDeps, op: &str, body: Value) -> (u16, Value) {
     let response = crate::init_restore::api(
         deps.clone(),
@@ -1620,7 +1623,7 @@ async fn init_api(deps: &crate::BackupWebDeps, op: &str, body: Value) -> (u16, V
     )
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "full-tests"))]
 #[tokio::test]
 async fn setup_finds_backups_then_restores_the_chosen_one_on_the_recorded_path() {
     use solstone_core_journal_io::whole_journal_restore::{
@@ -1657,7 +1660,7 @@ async fn setup_finds_backups_then_restores_the_chosen_one_on_the_recorded_path()
     ));
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "full-tests"))]
 #[tokio::test]
 async fn a_wrong_key_at_setup_says_so_and_starts_nothing() {
     let root = crate::test_support::root("healthy");
@@ -1668,6 +1671,7 @@ async fn a_wrong_key_at_setup_says_so_and_starts_nothing() {
     assert_eq!(body["reason_code"], "auth_failed");
 }
 
+#[cfg(feature = "full-tests")]
 #[tokio::test]
 async fn a_hosted_choice_needs_a_held_approval_and_abandon_needs_a_setup_restore() {
     let root = crate::test_support::root("healthy");
@@ -1680,6 +1684,7 @@ async fn a_hosted_choice_needs_a_held_approval_and_abandon_needs_a_setup_restore
     assert!(root.path().join("config/journal.json").exists());
 }
 
+#[cfg(feature = "full-tests")]
 fn restore_outputs() -> Vec<ToolOutput> {
     vec![
         output(0, journal_catalog()),
