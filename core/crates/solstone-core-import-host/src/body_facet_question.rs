@@ -84,7 +84,13 @@ pub(crate) fn ask_body_facet(
         (("record", "records"), "can move up to", NO_MEANS_BODY),
         &|facet| {
             let (count, from) = crate::body_activity::listed_elsewhere(journal, stream, facet);
-            (count > 0).then(|| (count, from.into_iter().collect()))
+            (count > 0).then(|| {
+                let titles = from
+                    .iter()
+                    .map(|facet| crate::strava_convert::facet_title(journal, facet))
+                    .collect();
+                (count, titles)
+            })
         },
         input,
         output,
@@ -115,7 +121,7 @@ fn ask_facet(
             "a yes {} {count} {} already listed on the activities page, from {}.",
             moves_verb,
             if *count == 1 { one } else { many },
-            from.join(", ")
+            solstone_core_import_sources::apple_health::facets_words(from)
         );
     }
     let _ = write!(output, "{text} [y/n] ");

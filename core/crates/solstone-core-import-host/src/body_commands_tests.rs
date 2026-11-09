@@ -77,6 +77,13 @@ fn a_preview_names_what_would_be_read_and_keeps_the_source() {
 }
 
 #[test]
+fn a_preview_carries_the_words_the_page_shows() {
+    let run = preview_apple(true);
+    let preview: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(preview["page_refusal"], APPLE_CONFIRM_WORDS.trim_end());
+}
+
+#[test]
 fn oura_flags_are_refused_each_in_its_own_words() {
     let words = |built: BodyCommand<'_>| oura_range(&built, today()).unwrap_err();
     assert!(

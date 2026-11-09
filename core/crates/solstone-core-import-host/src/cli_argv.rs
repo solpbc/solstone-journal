@@ -2361,7 +2361,11 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
             )
         }
         "--facet" => options.facet = Some(value.to_owned()),
-        "--listed-moves-shown" => options.listed_moves_shown = value.parse().ok(),
+        "--listed-moves-shown" => {
+            options.listed_moves_shown = Some(value.parse().map_err(|_| {
+                format!("argument --listed-moves-shown: invalid int value: '{value}'")
+            })?);
+        }
         "--setting" => options.setting = Some(value.to_owned()),
         "--audio-archive" => options.audio_archive = Some(PathBuf::from(value)),
         "--archive-identity" => {

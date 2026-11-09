@@ -3294,6 +3294,23 @@ mod tests {
     }
 
     #[test]
+    fn the_page_never_queues_an_apple_save_with_its_go_ahead() {
+        for force in [false, true] {
+            let cmd = command(
+                "export.zip",
+                "20261012_120000",
+                &ImportMetadata::new(),
+                force,
+            );
+            assert!(
+                !cmd.iter().any(|arg| arg.starts_with("--confirm")),
+                "{cmd:?}"
+            );
+            assert_eq!(cmd.contains(&"--force".to_owned()), force, "{cmd:?}");
+        }
+    }
+
+    #[test]
     fn criterion_21_start_command_keeps_reference_order_and_request_path() {
         let root = TempDir::new().unwrap();
         let path = root.path().join("imports/ts/item.txt");

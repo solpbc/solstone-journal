@@ -146,11 +146,16 @@ const cases = [
     assert.ok(page.includes('import again from your Oura account'), page);
     assert.ok(!/\bmax\b|average|glucose/.test(page), page);
   }],
-  ['a day with nothing keeps the earlier-import line and calls the month, not the day', async () => {
+  ['a day only an earlier import holds leads with that and never says nothing', async () => {
     const page = await load({ day: '20260315', responses: { '/app/body/api/day/20260315': EMPTY_DAY } });
-    assert.ok(page.includes('nothing for this day'), page);
+    assert.ok(!page.includes('nothing for this day'), page);
     assert.ok(page.includes('March 2026'), page);
+    assert.ok(page.indexOf('March 2026') < page.indexOf('nearby days'), page);
     assert.ok(!page.includes("this day's"), page);
+  }],
+  ['a day nothing holds says so', async () => {
+    const page = await load({ day: '20260316', responses: { '/app/body/api/day/20260316': { ...EMPTY_DAY, day: '20260316', earlier_imports: [] } } });
+    assert.ok(page.includes('nothing for this day'), page);
   }],
 ];
 

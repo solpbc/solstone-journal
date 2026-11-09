@@ -274,19 +274,21 @@ fn has_window_or_tombstone(journal: &Path, day: &str, stream: &str) -> bool {
         })
 }
 
-/// Whether an import of the new path's listing names `day`.
-fn listing_names_day(journal: &Path, id: &str, day: &str) -> bool {
+/// The days an import of the new path's listing names.
+fn listing_days(journal: &Path, id: &str) -> BTreeSet<String> {
     let path = journal.join("imports").join(id).join(TOUCHED_FILE);
     let Ok(text) = fs::read_to_string(path) else {
-        return false;
+        return BTreeSet::new();
     };
-    text.lines().any(|line| {
-        serde_json::from_str::<Value>(line)
-            .ok()
-            .and_then(|line| line.get("day").and_then(Value::as_str).map(str::to_owned))
-            .as_deref()
-            == Some(day)
-    })
+    text.lines()
+        .filter_map(|line| {
+            serde_json::from_str::<Value>(line)
+                .ok()?
+                .get("day")?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .collect()
 }
 
 /// What's needed to say whether the new path has touched a day, for one
@@ -294,6 +296,8 @@ fn listing_names_day(journal: &Path, id: &str, day: &str) -> bool {
 struct Touched<'a> {
     journal: &'a Path,
     imports: std::cell::OnceCell<Vec<NewImport>>,
+    /// The days each import's listing names, read once.
+    listed: std::cell::RefCell<BTreeMap<String, BTreeSet<String>>>,
 }
 
 impl<'a> Touched<'a> {
@@ -301,11 +305,20 @@ impl<'a> Touched<'a> {
         Self {
             journal,
             imports: std::cell::OnceCell::new(),
+            listed: std::cell::RefCell::new(BTreeMap::new()),
         }
     }
 
     fn imports(&self) -> &[NewImport] {
         self.imports.get_or_init(|| read_new_imports(self.journal))
+    }
+
+    fn listing_names_day(&self, id: &str, day: &str) -> bool {
+        self.listed
+            .borrow_mut()
+            .entry(id.to_owned())
+            .or_insert_with(|| listing_days(self.journal, id))
+            .contains(day)
     }
 
     /// Whether the new path has reached this source's day: a window or
@@ -328,7 +341,7 @@ impl<'a> Touched<'a> {
                     .span
                     .iter()
                     .any(|(from, to)| from.as_str() <= day && day <= to.as_str())
-                    || listing_names_day(self.journal, &import.id, day)
+                    || self.listing_names_day(&import.id, day)
             })
     }
 }
@@ -359,6 +372,27 @@ fn covers(bundle: &OldBundle, day: &str) -> Option<CoverScope> {
             months.contains(&month).then_some(CoverScope::Month(month))
         }
     }
+}
+
+/// Of `days`, the ones an old bundle covers and the new path hasn't reached.
+/// Reads each manifest and listing once however many days are asked about.
+#[must_use]
+pub fn covered_days_among<'d>(
+    journal: &Path,
+    days: impl Iterator<Item = &'d str>,
+) -> BTreeSet<String> {
+    let bundles = read_old_bundles(journal);
+    if bundles.is_empty() {
+        return BTreeSet::new();
+    }
+    let touched = Touched::new(journal);
+    days.filter(|day| {
+        bundles.iter().any(|bundle| {
+            covers(bundle, day).is_some() && !touched.source_touched(bundle.source, day)
+        })
+    })
+    .map(str::to_owned)
+    .collect()
 }
 
 /// One line per source for what old bundles say of `day`: a source whose bundle

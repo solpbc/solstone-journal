@@ -70,7 +70,7 @@ fn coverage(days: &BodyDays) -> Value {
     }
 }
 
-fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>) -> Value {
+fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>, earlier: bool) -> Value {
     let count = sources.map_or(0, BTreeSet::len);
     let title = match sources {
         Some(sources) => {
@@ -81,6 +81,10 @@ fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>) -> Value {
                 .join(" and ");
             format!("{} · {names}", short_day_year(day).unwrap_or_default())
         }
+        None if earlier => format!(
+            "{} · held in an earlier import",
+            short_day_year(day).unwrap_or_default()
+        ),
         None => format!("{} · nothing here", short_day_year(day).unwrap_or_default()),
     };
     json!({
@@ -88,16 +92,27 @@ fn grid_cell(day: &str, sources: Option<&BTreeSet<&'static str>>) -> Value {
         "count": count,
         "intensity": count as f64 / 3.0,
         "title": title,
+        "earlier": earlier && sources.is_none(),
     })
 }
 
-fn day_grid(days: &BodyDays) -> Vec<Value> {
+fn day_grid(root: &Path, days: &BodyDays) -> Vec<Value> {
     let (Some(first), Some(last)) = (
         days.keys().next().and_then(|day| parse_day(day)),
         days.keys().next_back().and_then(|day| parse_day(day)),
     ) else {
         return Vec::new();
     };
+    let empty = first
+        .iter_days()
+        .take_while(|day| *day <= last)
+        .map(|day| day.format("%Y%m%d").to_string())
+        .filter(|day| !days.contains_key(day))
+        .collect::<Vec<_>>();
+    let earlier = solstone_core_location::old_imports::covered_days_among(
+        root,
+        empty.iter().map(String::as_str),
+    );
     (first.year()..=last.year())
         .map(|year| {
             let start = first.max(NaiveDate::from_ymd_opt(year, 1, 1).unwrap());
@@ -107,7 +122,7 @@ fn day_grid(days: &BodyDays) -> Vec<Value> {
             let mut current = start;
             while current <= end {
                 let key = current.format("%Y%m%d").to_string();
-                week.push(grid_cell(&key, days.get(&key)));
+                week.push(grid_cell(&key, days.get(&key), earlier.contains(&key)));
                 if week.len() == 7 {
                     weeks.push(std::mem::take(&mut week));
                 }
@@ -146,7 +161,7 @@ pub(crate) fn build_status(root: &Path) -> Result<Value, String> {
         "coverage": coverage(&days),
         "days": days.len(),
         "sources": source_items(&days),
-        "day_grid": day_grid(&days),
+        "day_grid": day_grid(root, &days),
         "imports": crate::audit::imports_section(root),
     }))
 }

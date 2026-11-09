@@ -691,6 +691,40 @@ async fn a_python_era_line_says_the_month_and_never_says_the_day_is_covered() {
 }
 
 #[tokio::test]
+async fn a_day_only_an_old_import_holds_isnt_called_empty_on_the_overview() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    with_native(root);
+    for day in ["20251231", "20260102"] {
+        window(
+            root,
+            day,
+            "import.apple_health",
+            "000000_3600",
+            &[reading("r1", "2026-01-01 00:05:00 -0700")],
+        );
+    }
+    let (_, overview) = get(root, "/app/body/api/status").await;
+    let cell = overview["day_grid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|year| year["weeks"].as_array().unwrap())
+        .flat_map(|week| week.as_array().unwrap())
+        .find(|cell| cell["day"] == "20260101")
+        .unwrap()
+        .clone();
+    assert_eq!(cell["earlier"], true);
+    assert!(
+        cell["title"]
+            .as_str()
+            .unwrap()
+            .contains("held in an earlier import"),
+        "{cell}"
+    );
+}
+
+#[tokio::test]
 async fn a_window_counts_what_it_holds_on_the_placed_clock() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();

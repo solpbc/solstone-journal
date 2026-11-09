@@ -1489,6 +1489,17 @@ fn count_of_records(count: u64) -> String {
     }
 }
 
+/// Facet titles as an owner would say them: "your work facet", "your work and
+/// home facets".
+#[must_use]
+pub fn facets_words(titles: &[String]) -> String {
+    match titles {
+        [] => "another facet".to_owned(),
+        [one] => format!("your {one} facet"),
+        [rest @ .., last] => format!("your {} and {last} facets", rest.join(", ")),
+    }
+}
+
 /// A source's own name for a kind of thing, as an owner would say it.
 #[must_use]
 pub fn name_words(name: &str) -> String {
@@ -1619,7 +1630,7 @@ pub fn summary_text(
             text,
             "{} already listed on the activities page moved there, from {}.\n",
             count_of_records(counts.listed_moved),
-            counts.listed_moved_from.join(", ")
+            facets_words(&counts.listed_moved_from)
         );
     }
     if let Some((shown, count)) = counts.listed_over {
@@ -1628,11 +1639,19 @@ pub fn summary_text(
         } else {
             format!("you were told {shown}")
         };
-        let _ = writeln!(
-            text,
-            "nothing already listed moved: {} would have, and {told}.\n",
-            count_of_records(count as u64)
-        );
+        let _ = if counts.listed_moved > 0 {
+            writeln!(
+                text,
+                "the rest of what's already listed stayed where it was: {} would have moved in all, and {told}.\n",
+                count_of_records(count as u64)
+            )
+        } else {
+            writeln!(
+                text,
+                "nothing already listed moved: {} would have, and {told}.\n",
+                count_of_records(count as u64)
+            )
+        };
     }
     if counts.joined_hidden > 0 {
         let _ = writeln!(

@@ -85,6 +85,7 @@ pub(crate) fn preview_apple(json_output: bool) -> CliRun {
                 "source": "apple_health",
                 "mode": "preview",
                 "reads": APPLE_READS,
+                "page_refusal": APPLE_CONFIRM_WORDS.trim_end(),
             })
         ));
     }

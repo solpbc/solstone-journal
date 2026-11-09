@@ -999,6 +999,9 @@ a.body-day-cell:focus-visible {
           if (cell.count) {
             return `<a class="body-day-cell" href="${bodyDayHref(cell.day)}" style="--heat: ${safeNumber(cell.intensity)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></a>`;
           }
+          if (cell.earlier) {
+            return `<a class="body-day-cell body-day-cell--empty" href="${bodyDayHref(cell.day)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></a>`;
+          }
           return `<span class="body-day-cell body-day-cell--empty" title="${escapeHtml(title)}" aria-hidden="true"></span>`;
         }).join("")).join(""),
         '</div>',
@@ -1090,11 +1093,11 @@ a.body-day-cell:focus-visible {
     loadBodyStatus();
   }
 
-  function renderEmptyDay(bodyDay) {
+  function renderEmptyDay(bodyDay, heldEarlier) {
     const nearest = asObject(bodyDay.nearest);
     return html([
       '<section class="body-card" aria-label="empty day">',
-      '<p class="body-empty">nothing for this day.</p>',
+      heldEarlier ? "" : '<p class="body-empty">nothing for this day.</p>',
       (nearest.prev || nearest.next) ? html([
         '<p>nearby days with data: ',
         nearest.prev ? `<a class="body-link" href="${bodyDayHref(nearest.prev)}">&larr; ${escapeHtml(nearest.prev_label)}</a> ` : "",
@@ -1274,7 +1277,7 @@ a.body-day-cell:focus-visible {
       ? '<p class="body-muted body-earlier">part of this day couldn\'t be read.</p>'
       : "";
     if (!bodyDay.has_data) {
-      return html([header, renderEmptyDay(bodyDay), earlier, unreadable]);
+      return html([header, earlier, renderEmptyDay(bodyDay, Boolean(earlier)), unreadable]);
     }
     return html([
       header,

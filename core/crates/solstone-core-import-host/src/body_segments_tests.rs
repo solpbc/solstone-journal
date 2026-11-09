@@ -2584,9 +2584,9 @@ fn the_owners_answer_moves_the_record_with_its_window_and_says_how_many_from_whe
     );
     assert_eq!(records_in(root, "body", "20261010"), 1);
     assert!(
-        outcome
-            .summary
-            .contains("1 record already listed on the activities page moved there, from work."),
+        outcome.summary.contains(
+            "1 record already listed on the activities page moved there, from your work facet."
+        ),
         "{}",
         outcome.summary
     );
@@ -2616,6 +2616,117 @@ fn more_than_the_owner_was_told_moves_none_and_says_so() {
         "{}",
         outcome.summary
     );
+}
+
+fn add_listed_elsewhere(root: &Path, day: &str, key: &str) {
+    let path = root.join(format!("facets/work/activities/{day}.jsonl"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut text = fs::read_to_string(&path).unwrap_or_default();
+    text.push_str(&format!(
+        "{}\n",
+        json!({"id": format!("body_{key}"), "source": "body", "activity": "workout",
+            "account": {"key": format!("import.apple_health\u{1f}{key}")}})
+    ));
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn a_resumed_run_counts_again_and_moves_no_more_than_the_owner_was_told() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    // Told two, and stopped once the first day's record has moved.
+    let stop = stopping_at("pending", 2);
+    let mut told = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    run_apple_health_segments(root, &told).unwrap_err();
+    assert_eq!(records_in(root, "body", "20261010"), 1);
+    // Something else lands elsewhere while it's stopped, and the re-run is unattended.
+    add_listed_elsewhere(root, "20261001", "later");
+    let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    assert_eq!(
+        records_in(root, "work", "20261011"),
+        1,
+        "{}",
+        outcome.summary
+    );
+    assert!(
+        outcome.summary.contains(
+            "the rest of what's already listed stayed where it was: 3 records would have moved in all, and you were told 2."
+        ),
+        "{}",
+        outcome.summary
+    );
+}
+
+#[test]
+fn a_resumed_run_within_what_the_owner_was_told_finishes_moving() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    let stop = stopping_at("pending", 2);
+    let mut told = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    run_apple_health_segments(root, &told).unwrap_err();
+    let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    assert_eq!(
+        records_in(root, "body", "20261011"),
+        1,
+        "{}",
+        outcome.summary
+    );
+    assert!(
+        outcome.summary.contains("2 records already listed"),
+        "{}",
+        outcome.summary
+    );
+}
+
+#[test]
+fn a_takeovers_moves_and_only_the_windows_it_reached_reach_the_old_imports_summary() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    // Rewrites two windows of the day, then stops after the first.
+    let more = export(
+        &scratch.path().join("2"),
+        &[
+            workout(10),
+            heart("2026-10-10 06:40:10 -0600", "70"),
+            heart("2026-10-10 09:40:10 -0600", "71"),
+        ],
+    );
+    let stop = stopping_at("written", 1);
+    let mut moving = AppleSegmentsRequest::new(&more, "20261012_130000", Some("body"));
+    moving.listed = ListedMoves::Move;
+    moving.stop_at = Some(&stop);
+    run_apple_health_segments(root, &moving).unwrap_err();
+    let other = export(
+        &scratch.path().join("3"),
+        &[heart("2026-10-22 06:31:10 -0600", "70")],
+    );
+    run(root, &other, "20261012_140000", None);
+    let old = fs::read_to_string(root.join("imports/20261012_130000/summary.md")).unwrap();
+    assert!(
+        old.contains(
+            "1 record already listed on the activities page moved there, from your work facet."
+        ),
+        "{old}"
+    );
+    assert!(old.contains("1 part of your journal written"), "{old}");
 }
 
 #[test]

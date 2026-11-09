@@ -250,6 +250,11 @@ fn size_from_preview(run: CliRun) -> Result<Value, PreviewError> {
     let size: Value = serde_json::from_str(&run.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
+    // What the page can't start says so here: a queued run's own words don't
+    // reach the page, only that it failed.
+    if let Some(words) = size.get("page_refusal").and_then(Value::as_str) {
+        return Err(PreviewError::PlanFailed(words.to_owned()));
+    }
     require_size_preview(size)
 }
 
@@ -998,6 +1003,23 @@ pub(crate) async fn prepare_embedded_start(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn a_preview_the_page_cant_start_shows_the_importers_own_words() {
+        const WORDS: &str =
+            "saving an Apple Health export needs your go-ahead, so nothing was saved.";
+        let run = CliRun {
+            stdout: format!(
+                "{}\n",
+                json!({"source": "apple_health", "page_refusal": WORDS})
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        let error = size_from_preview(run).unwrap_err();
+        let body = preview_error_body("import_preview_failed", &error);
+        assert!(body.to_string().contains(WORDS), "{body}");
+    }
     const ID: &str = "20261011_120000";
     fn fixture() -> (tempfile::TempDir, Value) {
         let root = tempfile::tempdir().unwrap();

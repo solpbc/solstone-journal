@@ -189,6 +189,44 @@ fn an_import_refuses_a_facet_that_is_not_enabled_and_writes_nothing() {
 }
 
 #[test]
+fn a_shown_count_that_isnt_a_number_is_refused() {
+    let owned: Vec<String> = ["note.md", "--listed-moves-shown", "many"]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let error = solstone_core_import_host::cli_argv::admit_arguments(&owned).unwrap_err();
+    assert!(error.contains("--listed-moves-shown"), "{error}");
+}
+
+/// What the import page's start queues for an Apple export, a re-import's
+/// `--force` included: the go-ahead refusal comes first.
+#[test]
+fn an_apple_export_queued_from_the_page_is_refused_for_its_go_ahead() {
+    let journal = journal_with_facets();
+    let export = journal.path().join("apple_health_export");
+    fs::create_dir_all(&export).unwrap();
+    fs::write(
+        export.join("export.xml"),
+        "<?xml version=\"1.0\"?>\n<HealthData locale=\"en_US\"></HealthData>\n",
+    )
+    .unwrap();
+    let path = export.to_str().unwrap();
+    for args in [
+        &[path, "20261012_120000"][..],
+        &[path, "20261012_120000", "--force"][..],
+    ] {
+        let run = run_facet_import(journal.path(), args);
+        assert_eq!(run.exit_code, 1, "{args:?}");
+        assert!(
+            run.stderr.contains("needs your go-ahead"),
+            "{args:?}: {}",
+            run.stderr
+        );
+        assert!(!run.stderr.contains("--force"), "{args:?}: {}", run.stderr);
+    }
+}
+
+#[test]
 fn an_apple_export_takes_a_facet_or_none() {
     let journal = journal_with_facets();
     let export = journal.path().join("apple_health_export");

@@ -2242,7 +2242,6 @@ mod tests {
         )
     }
 
-    #[cfg(unix)]
     #[cfg(all(unix, feature = "full-tests"))]
     #[test]
     fn mobile_final_marker_cut_requires_complete_current_obligations() {

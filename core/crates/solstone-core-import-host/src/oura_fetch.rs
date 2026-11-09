@@ -409,20 +409,28 @@ pub(crate) fn endpoint_plan_lines(
     today: NaiveDate,
     zone: Tz,
 ) -> Result<String, String> {
-    let planned = plan(
-        range,
-        &crate::oura_coverage::read_coverage(journal)?,
-        today,
-        zone,
-    )?;
+    let coverage = crate::oura_coverage::read_coverage(journal)?;
     let mut lines = String::from("this would ask Oura for:\n");
-    for (endpoint, endpoint_plan) in &planned.endpoints {
+    for endpoint in ENDPOINTS {
+        let spans = match range {
+            Some(span) => vec![span],
+            None => unheld_spans(&coverage, endpoint, today, zone)?,
+        };
+        let days = spans
+            .iter()
+            .map(|(from, to)| {
+                if from == to {
+                    day_text(*from)
+                } else {
+                    format!("{} to {}", day_text(*from), day_text(*to))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         let _ = writeln!(
             lines,
-            "  {}: {} to {}",
-            endpoint.replace('_', " "),
-            endpoint_plan.from,
-            endpoint_plan.to
+            "  {}: {days}",
+            solstone_core_import_sources::apple_health::name_words(endpoint)
         );
     }
     lines.push_str("nothing was saved. add --save to bring it in.\n");

@@ -408,6 +408,9 @@ struct PendingWindow {
     /// the run it took over got that far.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     written_sha: Option<String>,
+    /// How many entries the file will hold.
+    #[serde(default)]
+    units: u64,
     facet: bool,
     publish: bool,
     /// Under a run that names no facet, the facet a document this window now
@@ -467,6 +470,9 @@ struct RunState {
     /// The owner's answer lets this run move what's filed under another facet.
     #[serde(default)]
     move_listed: bool,
+    /// How many the owner was told could move, when they were told.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    listed_shown: Option<usize>,
     /// More would have moved than the owner was told: how many they were told,
     /// and how many that was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1043,6 +1049,7 @@ impl Run<'_, '_> {
                         key: window.1.clone(),
                         write: decision.contents.is_some(),
                         written_sha: decision.contents.as_deref().map(text_sha),
+                        units: decision.units,
                         facet: decision.facet_changed,
                         publish,
                         taken,
@@ -1494,7 +1501,12 @@ fn close_superseded(journal: &Path, source: &BodySource, state: &RunState, zone:
     {
         return;
     }
-    let summary = summary_text(source, &summary_of(state), state.facet.as_deref(), zone);
+    let summary = summary_text(
+        source,
+        &summary_counts(journal, state),
+        state.facet.as_deref(),
+        zone,
+    );
     let _ = atomic_replace(
         journal
             .join("imports")
@@ -1574,6 +1586,38 @@ fn span_of(state: &RunState, zone: chrono_tz::Tz) -> Option<Vec<[String; 2]>> {
         }
         None => state.export_span.clone().map(|span| vec![span]),
     }
+}
+
+/// A resumed run moves on an earlier answer, so it counts again now its lock is
+/// held: what's moved so far and what could still move, against what the owner
+/// was told. A run told nothing, by a `--facet` on its command line, has
+/// nothing to count against.
+fn recount_listed(journal: &Path, source: &BodySource, state: &mut RunState) {
+    let (true, Some(shown), Some(facet)) = (
+        state.move_listed,
+        state.listed_shown,
+        state.facet.as_deref(),
+    ) else {
+        return;
+    };
+    let (elsewhere, _) =
+        crate::body_activity::listed_elsewhere(journal, source.records().stream, facet);
+    let total = elsewhere + usize::try_from(state.totals.listed_moved).unwrap_or(usize::MAX);
+    if total > shown {
+        state.move_listed = false;
+        state.listed_over = Some((shown, total));
+    }
+}
+
+/// The summary's counts, with facets named by their titles.
+fn summary_counts(journal: &Path, state: &RunState) -> SummaryCounts {
+    let mut counts = summary_of(state);
+    counts.listed_moved_from = counts
+        .listed_moved_from
+        .iter()
+        .map(|facet| crate::strava_convert::facet_title(journal, facet))
+        .collect();
+    counts
 }
 
 fn owner_day(day: &str) -> String {
@@ -1908,6 +1952,10 @@ fn run_phases(
         import_id: run.import_id.clone(),
         facet: request.facet.map(str::to_owned),
         move_listed,
+        listed_shown: match request.listed {
+            ListedMoves::MoveAtMost(shown) => Some(shown),
+            _ => None,
+        },
         listed_over,
         failed,
         holes,
@@ -1915,7 +1963,10 @@ fn run_phases(
         ..RunState::default()
     };
     let mut state = match previous {
-        Read::Trusted(state) if resume => *state,
+        Read::Trusted(mut state) if resume => {
+            recount_listed(journal, source, &mut state);
+            *state
+        }
         Read::Trusted(mut old) if old.phase == Phase::Repair => {
             if old.import_id != run.import_id {
                 close_attempt(journal, &old.import_id);
@@ -1947,6 +1998,14 @@ fn run_phases(
                 // windows it got to and no others.
                 let reached = reached_windows(journal, source, &pending);
                 pending.listing.retain(|(key, ..)| reached.contains(key));
+                for window in pending
+                    .windows
+                    .iter()
+                    .filter(|w| w.write && !reached.contains(&w.key))
+                {
+                    pending.counts.written = pending.counts.written.saturating_sub(1);
+                    pending.counts.entries = pending.counts.entries.saturating_sub(window.units);
+                }
                 pending.moved.retain(|(key, _)| reached.contains(key));
                 let import = journal.join("imports").join(&old.import_id);
                 if import.is_dir() {
@@ -1956,10 +2015,14 @@ fn run_phases(
                     old.totals.add(&pending.counts);
                 }
                 // A record its run didn't get to; the totals are this run's.
-                if !activity_totals(journal, source, &pending.day, run.now(), old.move_listed)
-                    .activities_refused
-                    .is_empty()
-                {
+                let records =
+                    activity_totals(journal, source, &pending.day, run.now(), old.move_listed);
+                old.totals.listed_moved += records.listed_moved;
+                old.totals
+                    .listed_moved_from
+                    .extend(records.listed_moved_from.iter().cloned());
+                old.totals.joined_hidden += records.joined_hidden;
+                if !records.activities_refused.is_empty() {
                     holes.extend(record_holes(journal, source, &pending.day));
                 }
             }
@@ -2139,12 +2202,7 @@ fn run_phases(
     // Finish: the summary, the manifest, and one terminal attempt that lists
     // only the windows still failing, so the import reads as partly failed
     // until they're saved, and any endpoint Oura refused or that failed.
-    let mut counts = summary_of(&state);
-    counts.listed_moved_from = counts
-        .listed_moved_from
-        .iter()
-        .map(|facet| crate::strava_convert::facet_title(journal, facet))
-        .collect();
+    let mut counts = summary_counts(journal, &state);
     counts.earlier_waiting = request.earlier_waiting;
     let mut summary = summary_text(source, &counts, request.facet, zone);
     if let Some(fetched) = &state.fetch {

@@ -99,7 +99,7 @@ impl StravaRunSummary {
                         text,
                         "{} already listed on the activities page moved there, from {}.\n",
                         plural(*count as u64, "workout", "workouts"),
-                        from.join(", ")
+                        solstone_core_import_sources::apple_health::facets_words(from)
                     );
                 }
                 if let Some((shown, count)) = self.listed_over {
