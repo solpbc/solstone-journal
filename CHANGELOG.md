@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. workouts, sleep and readings land on their own days, and show in the body app, in search and to your agents. the import asks once which facet to file them under.
+- agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health or Oura and says where it holds nothing, and `get_transcript` pages through those readings.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -15,6 +17,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the body app now shows what's in your journal: each source you hold, its days, and each day's readings, counts and logged entries. earlier Apple Health, Oura and Dexcom Clarity imports stay on disk and aren't read. the body app lists each one and says how to import it again, where there's still a way to.
+- a damaged earlier Apple Health or Oura import no longer stops a restore from finishing.
+- `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.
 - the dashboard now reconnects to your journal on its own after the connection drops, and stops showing it as connected soon after it goes quiet. a page that waits more than 10 seconds says it's still working, and one that never gets an answer offers to try again instead of waiting forever.
 - your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
 - restoring a journal from a backup now happens while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
@@ -51,6 +56,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+
+### Removed
+
+- the body app's trends page and its highest, lowest and comparison lines are gone. the transcripts day panel's body line shows counts now.
+- an Apple Health import no longer keeps any of your export or takes a date range. it reads the whole export each time, and importing it again changes nothing.
+- the "need a privacy setup" step for Apple Health and Oura is gone.
 
 ## [2.0.73] - 2026-11-09
 
