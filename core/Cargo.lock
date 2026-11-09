@@ -4682,6 +4682,7 @@ dependencies = [
  "axum",
  "chrono",
  "filetime",
+ "flate2",
  "futures-core",
  "futures-util",
  "jsonschema",

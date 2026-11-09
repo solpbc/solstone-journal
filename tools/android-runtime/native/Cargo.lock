@@ -5399,6 +5399,7 @@ version = "2.0.73"
 dependencies = [
  "axum",
  "chrono",
+ "flate2",
  "futures-core",
  "log",
  "ndarray",
