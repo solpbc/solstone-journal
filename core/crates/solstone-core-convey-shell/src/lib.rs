@@ -1509,8 +1509,32 @@ fn router_with_roots(
         .unwrap_or_else(|| solstone_core_backup_web::BackupWebDeps::new(journal_root.clone()));
     let target_use = backup_deps.target_use_owner();
     let setup_host = Arc::new(
-        setup_host::ConveySetupHost::new(backup_deps.clone()).with_packaged_speech(packaged_speech),
+        setup_host::ConveySetupHost::new(backup_deps.clone())
+            .with_packaged_speech(packaged_speech.clone()),
     );
+    let home_setup_reader = packaged_speech.map(|_| {
+        let host = Arc::clone(&setup_host);
+        let reader: solstone_core_home::first_minutes::SetupProgressReader =
+            Arc::new(move |journal| {
+                let downloads = solstone_core_sol_link::http::SetupHost::project_downloads(
+                    host.as_ref(),
+                    journal,
+                )?;
+                solstone_core_sol_link::setup_progress::read_setup_progress_with_downloads(
+                    journal, downloads,
+                )
+            });
+        reader
+    });
+    let home_routes = solstone_core_home_web::routes_with_backup_deps(
+        backup_deps.clone(),
+        solstone_core_home_web::Clock::system(),
+        source_link::reference_is_moment,
+    );
+    let home_routes = match home_setup_reader {
+        Some(reader) => home_routes.layer(Extension(reader)),
+        None => home_routes,
+    };
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -1831,11 +1855,7 @@ fn router_with_roots(
                 .as_ref()
                 .map(|roots| roots.config_directories()),
         ))
-        .merge(solstone_core_home_web::routes_with_backup_deps(
-            backup_deps.clone(),
-            solstone_core_home_web::Clock::system(),
-            source_link::reference_is_moment,
-        ))
+        .merge(home_routes)
         .merge(solstone_core_backup_web::routes_with_deps(backup_deps))
         .route("/app/body/", get(body::shell))
         .route("/app/body/trends", get(body::trends))

@@ -243,6 +243,14 @@ fn project_download(
 /// Setup's download progress together with whether this computer can run local thinking.
 pub fn read_setup_progress(journal: &Path) -> Result<SetupProgress, SetupProgressError> {
     let downloads = read_setup_downloads(journal)?;
+    read_setup_progress_with_downloads(journal, downloads)
+}
+
+/// Keep the shared capability projection when a host supplies its setup evidence.
+pub fn read_setup_progress_with_downloads(
+    journal: &Path,
+    downloads: SetupDownloads,
+) -> Result<SetupProgress, SetupProgressError> {
     let key = solstone_core_local::install::pins::platform_key();
     let capability = if solstone_core_local::embedded::supports_key(&key) {
         if solstone_core_local::embedded::identity_for_key(&key).is_some() {

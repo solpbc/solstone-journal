@@ -452,6 +452,101 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
+    async fn home_and_init_share_the_same_packaged_speech_proof() {
+        use axum::{
+            Extension,
+            body::{Body, to_bytes},
+            http::Request,
+        };
+        use solstone_core_convey_http::identity::AccessBasis;
+        use std::sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tower::ServiceExt;
+
+        struct FixtureSpeech {
+            result: Mutex<Result<(), String>>,
+            reads: AtomicUsize,
+        }
+        impl PackagedSpeechSetup for FixtureSpeech {
+            fn status(&self) -> Result<(), String> {
+                self.reads.fetch_add(1, Ordering::Relaxed);
+                self.result.lock().unwrap().clone()
+            }
+            fn retry(&self) -> Result<(), String> {
+                self.status()
+            }
+        }
+        async fn read(app: axum::Router, uri: &str) -> serde_json::Value {
+            let response = app
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK, "{uri}");
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap()
+        }
+
+        let directory = TempDir::new().unwrap();
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap());
+        let path = root.canonical_path().to_owned();
+        std::fs::create_dir(path.join("config")).unwrap();
+        std::fs::write(path.join("config/journal.json"), serde_json::json!({
+            "setup": {"completed_at": chrono::Utc::now().timestamp_millis(), "thinking_choice": "later"}
+        }).to_string()).unwrap();
+        solstone_core_local::install::status::record_terminal_refusal_if_unchanged(
+            &path,
+            "parakeet",
+            None,
+            0,
+            "fixture_desktop_unavailable",
+            "desktop source is unavailable",
+        )
+        .unwrap();
+        let proof = Arc::new(FixtureSpeech {
+            result: Mutex::new(Ok(())),
+            reads: AtomicUsize::new(0),
+        });
+        let app = crate::router_with_roots(
+            path,
+            None,
+            None,
+            None,
+            Some(solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap()),
+            None,
+            Some(proof.clone()),
+        )
+        .layer(Extension(AccessBasis::Localhost));
+        for (name, result, expected) in [
+            ("verified", Ok(()), "complete"),
+            ("failed", Err("fixture verification failed".into()), "error"),
+            (
+                "unbound",
+                Err("packaged speech has not been configured".into()),
+                "error",
+            ),
+            (
+                "retired",
+                Err("speech processing is stopped".into()),
+                "error",
+            ),
+        ] {
+            *proof.result.lock().unwrap() = result;
+            let init = read(app.clone(), "/init/api/state").await;
+            let home = read(app.clone(), "/app/home/api/first-minutes").await;
+            let init_speech = &init["downloads"]["speech"];
+            let home_speech = &home["setup"]["downloads"]["speech"];
+            assert_eq!(init_speech["state"], expected, "{name}");
+            assert_eq!(
+                home_speech, init_speech,
+                "{name}: Home and init must use the same proof"
+            );
+        }
+        assert_eq!(proof.reads.load(Ordering::Relaxed), 8);
+    }
+
+    #[tokio::test]
     async fn embedded_speech_init_status_and_retry_use_the_app_proof_not_desktop_manifests() {
         use axum::{
             Extension,
