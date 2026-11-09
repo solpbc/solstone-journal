@@ -2030,6 +2030,36 @@ asyncCase('a failed view stylesheet does not stop the view', async () => {
   assert.ok(h.document.getElementById('main-content').querySelector('#view'));
 });
 
+asyncCase('date view code comes into the cache once, after a view is ready', async () => {
+  const timers = [];
+  const h = createHarness({
+    boot: true,
+    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    fetchResponses: { '/app/home/workspace': { status: 200, body: '<section id="view"></section>' } },
+  });
+  const dateCode = () => h.fetchCalls.filter((url) => /\/(date-nav|day-grid)\.(js|css)$/.test(url));
+  const runTimers = () => timers.splice(0).forEach((fn) => fn());
+  const mount = () => h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });
+  await mount();
+  runTimers();
+  assert.deepStrictEqual(dateCode(), [], 'nothing before the view is ready');
+  h.window.createViewReady('home')('error');
+  runTimers();
+  assert.deepStrictEqual(dateCode(), [], 'a view that failed asks for nothing more');
+  await mount();
+  h.window.createViewReady('home')('content');
+  assert.deepStrictEqual(dateCode(), [], 'readiness waits for a quiet moment');
+  runTimers();
+  assert.deepStrictEqual(dateCode(), [
+    '/static/date-nav.css', '/static/date-nav.js', '/static/day-grid.css', '/static/day-grid.js',
+  ]);
+  await mount();
+  h.window.createViewReady('home')('content');
+  runTimers();
+  assert.strictEqual(dateCode().length, 4, 'once for the page');
+  await settle();
+});
+
 const homeScriptTags = (() => {
   const html = fs.readFileSync(path.resolve(crateDir, '..', 'solstone-core-home-web', 'assets', 'workspace.html'), 'utf8');
   return (html.match(/<script\b[^>]*\bsrc=[^>]*><\/script>/g) || []).join('');
