@@ -27,6 +27,24 @@ pub(crate) enum CatalogError {
     Ambiguous,
 }
 
+/// Every journal snapshot in a catalog, newest first.
+pub(crate) fn journal_snapshots(
+    catalog: Option<&Value>,
+) -> Result<Vec<JournalSnapshot>, CatalogError> {
+    let entries = catalog
+        .and_then(Value::as_array)
+        .ok_or(CatalogError::Invalid)?;
+    let mut found = Vec::new();
+    for entry in entries {
+        let object = entry.as_object().ok_or(CatalogError::Invalid)?;
+        if !is_archive(object)? {
+            found.push(journal_snapshot(object)?);
+        }
+    }
+    found.sort_by_key(|snapshot| std::cmp::Reverse(snapshot.time));
+    Ok(found)
+}
+
 pub(crate) fn select_journal_snapshot(
     catalog: Option<&Value>,
 ) -> Result<JournalSnapshot, CatalogError> {

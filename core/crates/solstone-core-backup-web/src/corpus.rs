@@ -1435,6 +1435,7 @@ fn engine_deps(
         verification_submitter: None,
         offload_dispatch_probe: None,
         restore_prepare: crate::restore_prepare::new_shared(),
+        init_hosted_choice: Default::default(),
         restore_host: crate::first_restore::RestoreHost::Desktop,
     }
 }
@@ -1589,6 +1590,96 @@ fn init_outputs() -> Vec<ToolOutput> {
 }
 
 #[cfg(feature = "full-tests")]
+struct NoPause;
+
+impl crate::PausedRestore for NoPause {
+    fn resume(self: Box<Self>, _: &dyn Fn() -> bool) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+fn no_pause() -> crate::init_restore::Drain {
+    Box::new(|| Ok(Box::new(NoPause) as Box<dyn crate::PausedRestore>))
+}
+
+async fn init_api(deps: &crate::BackupWebDeps, op: &str, body: Value) -> (u16, Value) {
+    let response = crate::init_restore::api(
+        deps.clone(),
+        op.to_owned(),
+        axum::body::Bytes::from(serde_json::to_vec(&body).unwrap()),
+        no_pause(),
+    )
+    .await;
+    let status = response.status().as_u16();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn setup_finds_backups_then_restores_the_chosen_one_on_the_recorded_path() {
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, read_whole_journal_restore,
+    };
+    let root = crate::test_support::root("healthy");
+    let runner = Arc::new(
+        solstone_core_backup_runtime::test_support::ArgvResticFixture::new(
+            journal_catalog(),
+            output(0, restore_summary()),
+            output(0, ""),
+        ),
+    );
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, found) = init_api(&deps, "find", restore_body()).await;
+    assert_eq!(status, 200, "{found}");
+    assert_eq!(found["backups"][0]["id"], JOURNAL_SNAPSHOT_ID);
+    assert_eq!(found["backups"][0]["subtree"], "/original");
+
+    let mut body = restore_body();
+    body["snapshot_id"] = json!(JOURNAL_SNAPSHOT_ID);
+    body["subtree"] = json!("/original");
+    let (status, started) = init_api(&deps, "start", body).await;
+    assert_eq!(status, 200, "{started}");
+    assert!(
+        runner
+            .calls()
+            .iter()
+            .any(|argv| argv[0] == "restore" && argv[1].ends_with(":/original"))
+    );
+    assert!(matches!(
+        read_whole_journal_restore(root.path()),
+        WholeJournalRestoreReadiness::Absent
+    ));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_wrong_key_at_setup_says_so_and_starts_nothing() {
+    let root = crate::test_support::root("healthy");
+    let runner = Arc::new(ScriptRunner::with_outputs(vec![output(12, "")]));
+    let (deps, _restic) = prepared(root.path().to_path_buf(), runner.clone());
+    let (status, body) = init_api(&deps, "find", restore_body()).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "auth_failed");
+}
+
+#[tokio::test]
+async fn a_hosted_choice_needs_a_held_approval_and_abandon_needs_a_setup_restore() {
+    let root = crate::test_support::root("healthy");
+    let deps = crate::BackupWebDeps::new(root.path().to_path_buf());
+    let (status, body) = init_api(&deps, "hosted/choose", json!({"snapshot_id": "a"})).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["reason_code"], "invalid_operation_for_state");
+    let (status, _) = init_api(&deps, "abandon", json!({})).await;
+    assert_eq!(status, 409, "nothing to abandon, so nothing is removed");
+    assert!(root.path().join("config/journal.json").exists());
+}
+
 fn restore_outputs() -> Vec<ToolOutput> {
     vec![
         output(0, journal_catalog()),

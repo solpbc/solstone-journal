@@ -42,8 +42,65 @@ pub fn mark_init_restore(journal: &Path) -> io::Result<()> {
     atomic_replace(&path, b"{}", AtomicWriteOptions { mode: Some(0o600) }).map_err(io::Error::other)
 }
 
-pub(crate) fn is_init_restore(journal: &Path) -> bool {
+pub fn is_init_restore(journal: &Path) -> bool {
     journal.join(INIT_RESTORE_FILE).exists()
+}
+
+/// Whether setup has finished here. A restored config says so too, which is
+/// why a retry of a restore already recorded doesn't ask.
+fn setup_finished(journal: &Path) -> bool {
+    fs::read(journal.join("config/journal.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|config| config.get("setup")?.get("completed_at")?.as_f64())
+        .is_some_and(|completed_at| completed_at > 0.0)
+}
+
+/// Whether this restore ends by removing what the snapshot doesn't hold. A
+/// marker a stopped attempt left behind can't reach a journal in use.
+pub(crate) fn sweeps(journal: &Path, retrying: bool) -> bool {
+    is_init_restore(journal) && (retrying || !setup_finished(journal))
+}
+
+/// Remove what a restore during setup left, so the journal sets up as new.
+/// What backups don't carry stays.
+pub fn abandon_init_restore(journal: &Path) -> io::Result<()> {
+    if !is_init_restore(journal) {
+        return Err(io::Error::other("no restore during setup to abandon"));
+    }
+    remove_journal_files(journal, journal)?;
+    use solstone_core_journal_io::whole_journal_restore::{
+        WholeJournalRestoreReadiness, clear_whole_journal_restore, read_whole_journal_restore,
+    };
+    if let WholeJournalRestoreReadiness::Pending(record) = read_whole_journal_restore(journal) {
+        clear_whole_journal_restore(journal, &record)
+            .map_err(|_| io::Error::other("not cleared"))?;
+    }
+    finish_init_restore(journal);
+    Ok(())
+}
+
+fn remove_journal_files(journal: &Path, directory: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        let rel = path
+            .strip_prefix(journal)
+            .map_err(io::Error::other)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        if kept(&rel) || rel == "backup-activity.lock" {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            remove_journal_files(journal, &path)?;
+            // Not empty means it holds something a restore leaves alone.
+            let _ = fs::remove_dir(&path);
+        } else {
+            fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
 }
 
 /// A swept journal is the snapshot: nothing is left for a retry to remove.
@@ -373,6 +430,43 @@ mod tests {
             ..Report::default()
         };
         assert!(!matches_snapshot(root, &missing));
+    }
+
+    #[test]
+    fn a_marker_left_on_a_finished_journal_never_sweeps() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        mark_init_restore(root).unwrap();
+        assert!(sweeps(root, false));
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            br#"{"setup":{"completed_at":5}}"#,
+        )
+        .unwrap();
+        assert!(!sweeps(root, false));
+        assert!(
+            sweeps(root, true),
+            "a recorded retry sees the snapshot's own config"
+        );
+    }
+
+    #[test]
+    fn abandoning_leaves_a_journal_with_only_what_backups_omit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        mark_init_restore(root).unwrap();
+        fs::create_dir_all(root.join("notes/deep")).unwrap();
+        fs::create_dir_all(root.join("cache")).unwrap();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(root.join("notes/deep/a"), b"a").unwrap();
+        fs::write(root.join("cache/model"), b"m").unwrap();
+        fs::write(root.join("config/journal.json"), b"{}").unwrap();
+        abandon_init_restore(root).unwrap();
+        assert!(!root.join("notes").exists());
+        assert!(!root.join("config/journal.json").exists());
+        assert_eq!(fs::read(root.join("cache/model")).unwrap(), b"m");
+        assert!(!is_init_restore(root));
     }
 
     #[test]

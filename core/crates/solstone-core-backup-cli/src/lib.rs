@@ -17,7 +17,6 @@ use solstone_core_backup::{
 use solstone_core_backup_runtime::restore::{
     RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
     RESTORE_REASON_RESTORE_RECORD_FAILED, RESTORE_REASON_RESTORE_SUMMARY_MISSING,
-    RESTORE_REASON_SET_ASIDE_INCOMPLETE,
 };
 use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, ClosedToolError, DestinationChange,
@@ -1239,9 +1238,8 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
         "degraded" => {
             let detail = match reason {
                 Some(
-                    reason @ (RESTORE_REASON_INTEGRITY_UNVERIFIED
-                    | RESTORE_REASON_INTEGRITY_FAILED
-                    | RESTORE_REASON_SET_ASIDE_INCOMPLETE),
+                    reason
+                    @ (RESTORE_REASON_INTEGRITY_UNVERIFIED | RESTORE_REASON_INTEGRITY_FAILED),
                 ) => restore_failure_reason(reason),
                 Some(RESTORE_REASON_RESTORE_SUMMARY_MISSING) => {
                     "restore summary was missing or malformed".to_owned()
@@ -1661,25 +1659,13 @@ fn restore_failure_reason(reason: &str) -> String {
         "restore_summary_missing" => "the restore finished but its summary is missing".into(),
         "integrity_check_io_failed" => "the restored files couldn't be checked".into(),
         "insufficient_free_space" => {
-            "there isn't enough free space for the restored files and copies of what they replace, so nothing changed".into()
-        }
-        "restore_preview_failed" => {
-            "the restore couldn't list what it would change, so it didn't start and nothing was overwritten".into()
-        }
-        "restore_preview_too_large" => {
-            "there are too many files for a restore on windows to list, so it didn't start and nothing was overwritten".into()
-        }
-        "restore_copy_failed" => {
-            "the restore couldn't keep copies of the files it would replace, so it didn't start and nothing was overwritten".into()
-        }
-        "set_aside_incomplete" => {
-            "some files couldn't be moved aside, so your journal isn't an exact match of the backup yet; what was already kept stays kept, and running the restore again usually finishes this but can stop here again".into()
+            "there isn't enough free space for this restore, so nothing changed".into()
         }
         "integrity_unverified" => {
-            "the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup; files were overwritten, and their originals are in the journal's .before-restore folder".into()
+            "the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup".into()
         }
         "integrity_failed" => {
-            "the backup failed its integrity check and may be damaged, so your journal isn't set to the backup; files were overwritten, and their originals are in the journal's .before-restore folder".into()
+            "the backup failed its integrity check and may be damaged, so your journal isn't set to the backup".into()
         }
         "body_rebuild_failed" => "your journal couldn't be rebuilt from the restored files".into(),
         "destination_publish_failed" => {
@@ -3293,7 +3279,7 @@ mod tests {
                 false,
             )
             .stderr,
-            "Error: restore finished with a problem: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup; files were overwritten, and their originals are in the journal's .before-restore folder (reason_code=integrity_unverified).\n"
+            "Error: restore finished with a problem: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; the integrity check couldn't run (the backup was busy or timed out), so your journal isn't set to the backup (reason_code=integrity_unverified).\n"
         );
         assert_eq!(
             restore_result(
@@ -3301,7 +3287,7 @@ mod tests {
                 false
             )
             .stderr,
-            "Error: restore finished with a problem: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; the backup failed its integrity check and may be damaged, so your journal isn't set to the backup; files were overwritten, and their originals are in the journal's .before-restore folder (reason_code=integrity_failed).\n"
+            "Error: restore finished with a problem: files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42; the backup failed its integrity check and may be damaged, so your journal isn't set to the backup (reason_code=integrity_failed).\n"
         );
         let mut ok = outcome("ok", None, Some(42));
         ok.integrity_ok = true;

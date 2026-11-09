@@ -40,7 +40,7 @@ pub mod resolve;
 pub mod restore;
 mod restore_catalog;
 #[cfg(not(target_os = "ios"))]
-mod restore_sweep;
+pub mod restore_sweep;
 pub mod rotation;
 pub mod runner;
 pub mod s3_wipe;

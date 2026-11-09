@@ -15,7 +15,9 @@ use solstone_core_backup::{
 };
 
 use crate::engine::{BackupServices, Clock, RestoreRecorder};
-use crate::restore_catalog::{CatalogError, select_journal_snapshot, snapshot_with_id};
+use crate::restore_catalog::{
+    CatalogError, journal_snapshots, select_journal_snapshot, snapshot_with_id,
+};
 #[cfg(not(target_os = "ios"))]
 use crate::restore_sweep;
 use crate::runner::{ResticResult, reason_for_returncode, run_restic, select_summary};
@@ -690,6 +692,55 @@ pub fn restore_mobile_latest_journal(
     )
 }
 
+/// One backup of a journal an owner can choose to restore.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct JournalBackup {
+    pub id: String,
+    /// RFC 3339, with the offset the backup was taken at.
+    pub time: String,
+    pub subtree: String,
+}
+
+/// The journal backups at a destination, newest first. Reads the catalog only.
+pub fn list_journal_backups(
+    services: &BackupServices<'_>,
+    destination: &Destination,
+    entered_recovery_key: &str,
+) -> Result<Vec<JournalBackup>, &'static str> {
+    let canonical =
+        parse_recovery_key(entered_recovery_key).map_err(|_| RESTORE_REASON_INVALID_KEY)?;
+    let env = backend(destination)?;
+    let restic_path = services
+        .restic_invocation()
+        .map_err(|_| RESTORE_REASON_RESTIC_UNAVAILABLE)?;
+    let listed = run_restic(
+        services.runner,
+        &["snapshots".to_owned()],
+        &destination.repository,
+        &canonical,
+        restic_path,
+        Some(&env),
+        true,
+        None,
+        Some(Duration::from_secs(RESTORE_LIST_TIMEOUT_SECONDS)),
+        &[],
+    )
+    .map_err(|_| RESTORE_REASON_SNAPSHOT_LIST_IO_FAILED)?;
+    if listed.returncode != 0 {
+        return Err(recognized_returncode_reason(listed.returncode)
+            .unwrap_or(RESTORE_REASON_SNAPSHOT_LIST_FAILED));
+    }
+    Ok(journal_snapshots(listed.json.as_ref())
+        .map_err(catalog_reason)?
+        .into_iter()
+        .map(|snapshot| JournalBackup {
+            subtree: crate::restic_tree_path(Path::new(&snapshot.path)),
+            id: snapshot.id,
+            time: snapshot.time.to_rfc3339(),
+        })
+        .collect())
+}
+
 /// What the steps around a restore during setup need to ask restic what it
 /// would do.
 #[cfg(not(target_os = "ios"))]
@@ -975,16 +1026,19 @@ fn restore_journal_with(
     // A restore during setup is the only one that makes the journal the
     // snapshot; any other is the overlay it has always been.
     #[cfg(not(target_os = "ios"))]
-    let init_restore = restore_sweep::is_init_restore(journal).then_some(InitRestore {
-        services,
-        admitted: &admitted,
-        snapshot_id: &snapshot.id,
-        tree_path: &tree_path,
-        target: target_path,
-        destination: &destination,
-        key: &canonical,
-        env: &env,
-    });
+    let init_restore =
+        restore_sweep::sweeps(journal, matches!(phase, RestorePhase::Adopted { .. })).then_some(
+            InitRestore {
+                services,
+                admitted: &admitted,
+                snapshot_id: &snapshot.id,
+                tree_path: &tree_path,
+                target: target_path,
+                destination: &destination,
+                key: &canonical,
+                env: &env,
+            },
+        );
     #[cfg(not(target_os = "ios"))]
     if init_restore
         .as_ref()
