@@ -159,8 +159,9 @@ fn normalize(path: &str) -> String {
 /// Whether a restore leaves this path where it is.
 pub(crate) fn kept(rel: &str) -> bool {
     let first = rel.split('/').next().unwrap_or(rel);
-    solstone_core_journal::is_hidden_root_name(std::ffi::OsStr::new(first))
-        && first != solstone_core_journal::TRASH_DIR
+    let first = std::ffi::OsStr::new(first);
+    solstone_core_journal::is_hidden_root_name(first)
+        && !solstone_core_journal::is_trash_root_name(first)
         || copy_excluded(rel)
         || copy_file_excluded(rel)
         || LIVE_FILES.contains(&rel)
