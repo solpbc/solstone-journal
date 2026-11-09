@@ -364,12 +364,14 @@ fn components(workouts: &[Workout], lines: &[SenseLine]) -> (Vec<Component>, u64
     (parts, no_workout)
 }
 
+type CodeRecord = (BodyRecordPlace, Map<String, Value>);
+
 /// A code record for this account wherever it's filed on these days.
 fn find_code_record(
     journal: &Path,
     days: &BTreeSet<String>,
     key: &str,
-) -> Result<Option<(BodyRecordPlace, Map<String, Value>)>, String> {
+) -> Result<Option<CodeRecord>, String> {
     let Ok(facets) = fs::read_dir(journal.join("facets")) else {
         return Ok(None);
     };
@@ -556,6 +558,10 @@ fn remove_outputs(journal: &Path, line: &SenseLine) -> Result<(), String> {
     let dir = journal.join(&rel);
     let mut files = Vec::new();
     collect_files(&dir, &rel, &mut files);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "system-internal: the journal replacing its own model output about a workout, never an owner's removal"
+    )]
     solstone_core_journal_io::removal::remove_dir_all(journal, &rel)
         .map_err(|error| error.to_string())?;
     for file in files {
@@ -1007,7 +1013,7 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
     };
     let found_any = !parts.is_empty();
     for part in &parts {
-        let Ok(held) = hold_lock(journal.join(STRAVA_LOCK), lock_options.clone()) else {
+        let Ok(held) = hold_lock(journal.join(STRAVA_LOCK), lock_options) else {
             counts.skipped_locked += 1;
             continue;
         };
@@ -1019,12 +1025,14 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
             }
         }
     }
-    if !found_any && counts.waiting == 0 && counts.skipped_locked == 0 {
-        if let Ok(_held) = hold_lock(journal.join(STRAVA_LOCK), lock_options) {
-            if read_epoch(journal) == epoch && fs::create_dir_all(journal.join("imports")).is_ok() {
-                let _ = atomic_replace(journal.join(MARKER), b"", PRIVATE);
-            }
-        }
+    if !found_any
+        && counts.waiting == 0
+        && counts.skipped_locked == 0
+        && let Ok(_held) = hold_lock(journal.join(STRAVA_LOCK), lock_options)
+        && read_epoch(journal) == epoch
+        && fs::create_dir_all(journal.join("imports")).is_ok()
+    {
+        let _ = atomic_replace(journal.join(MARKER), b"", PRIVATE);
     }
     counts
 }

@@ -22,7 +22,7 @@ fn journal() -> TempDir {
     for facet in ["a", "b"] {
         create_facet(root.path(), facet, facet, "", "", "", None).unwrap();
     }
-    append_activity_record(root.path(), "a", "20260101", body_record()).unwrap();
+    let _ = append_activity_record(root.path(), "a", "20260101", body_record()).unwrap();
     root
 }
 
@@ -276,7 +276,7 @@ fn another_record_in_the_same_file_stays_writable() {
         .as_object()
         .unwrap()
         .clone();
-    append_activity_record(root.path(), "a", "20260101", other).unwrap();
+    let _ = append_activity_record(root.path(), "a", "20260101", other).unwrap();
     assert!(
         set_activity_hidden(
             root.path(),
