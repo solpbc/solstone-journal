@@ -44,6 +44,10 @@ const NAMES_THE_TRASH: &[(&str, &str)] = &[
         "the index's resolver refuses it",
     ),
     (
+        "core/crates/solstone-core-backup-cli/src/lib.rs",
+        "tells the owner where a stopped restore's originals are",
+    ),
+    (
         "core/crates/solstone-core-backup-runtime/src/restore_set_aside.rs",
         "a whole-journal restore sets files aside into it",
     ),
