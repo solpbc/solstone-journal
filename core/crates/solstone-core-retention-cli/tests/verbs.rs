@@ -1999,38 +1999,54 @@ fn sweep_help_names_force_and_consent() {
 }
 
 #[test]
-fn remove_segments_moves_to_the_trash_even_beside_a_stopped_older_removal() {
-    let bed = Bed::new("segment-trash-beside-staged");
-    let segment = bed.proven_segment(
+fn remove_segments_moves_to_the_trash_and_refuses_one_mid_removal() {
+    let bed = Bed::new("segment-trash-and-staged");
+    let journal = bed.journal().to_str().unwrap().to_owned();
+    let run = |bed: &Bed, segment: &str| {
+        bed.run(
+            "remove-segments",
+            &["--journal", &journal, "--segment", segment],
+        )
+    };
+    let live = bed.proven_segment(
         "20260701",
         "field.audio",
-        "070000_17",
+        "080000_17",
         "2026-07-01T00:00:00Z",
     );
-    let staged = segment.parent().unwrap().join(".removing_070000_17");
-    fs::create_dir(&staged).unwrap();
-    let trashed = bed.run(
-        "remove-segments",
-        &[
-            "--journal",
-            bed.journal().to_str().unwrap(),
-            "--segment",
-            "20260701/field.audio/070000_17",
-        ],
-    );
+    let trashed = run(&bed, "20260701/field.audio/080000_17");
     assert_eq!(trashed.status.code(), Some(0), "{:?}", receipt(&trashed));
     assert_eq!(receipt(&trashed)["trashed"].as_array().unwrap().len(), 1);
-    assert!(segment.join("tombstone.json").is_file());
-    assert!(
-        staged.is_dir(),
-        "the older stopped removal is left for finish them"
-    );
+    assert!(live.join("tombstone.json").is_file());
     let items = solstone_core_trash::list(bed.journal()).unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(
         items[0].action,
         solstone_core_removals::Action::RetentionTool
     );
+
+    // Already removed: nothing to trash again.
+    let again = run(&bed, "20260701/field.audio/080000_17");
+    assert_eq!(again.status.code(), Some(3));
+    assert_eq!(solstone_core_trash::list(bed.journal()).unwrap().len(), 1);
+
+    // An older removal part-way through keeps its place.
+    let staging = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let staged = staging.parent().unwrap().join(".removing_070000_17");
+    fs::create_dir(&staged).unwrap();
+    let refused = run(&bed, "20260701/field.audio/070000_17");
+    assert_eq!(refused.status.code(), Some(3), "{:?}", receipt(&refused));
+    assert_eq!(receipt(&refused)["refused"].as_array().unwrap().len(), 1);
+    assert!(
+        staging.join("audio.jsonl").exists() || fs::read_dir(&staging).unwrap().next().is_some()
+    );
+    assert!(staged.is_dir());
+    assert_eq!(solstone_core_trash::list(bed.journal()).unwrap().len(), 1);
 }
 
 #[test]
