@@ -12400,6 +12400,57 @@ fn a_connection_that_may_not_read_the_window_gets_no_body_search_hit() {
 }
 
 #[test]
+fn a_body_entry_a_connection_may_not_read_doesnt_stop_search_relaxing_to_what_it_can() {
+    let journal = body_record_journal(true);
+    hold_body_title(&journal, "Zebrafinch loop", json!({}));
+    let path = journal
+        .path()
+        .join("facets/alpha/activities/20260308.jsonl");
+    let held = fs::read_to_string(&path).unwrap();
+    let other = json!({"id": "run_080000_300", "title": "Zebrafinch review", "activity": "review",
+        "created_at": 1, "segments": ["080000_300"]});
+    fs::write(&path, format!("{held}{other}\n")).unwrap();
+    solstone_core_indexer_store::scan::scan_journal(journal.path(), true).unwrap();
+    // The body record's window is filed where this connection can't read it.
+    fs::write(
+        journal
+            .path()
+            .join(WATCH_WINDOW)
+            .join("talents/facets.json"),
+        r#"[{"facet":"beta"}]"#,
+    )
+    .unwrap();
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["facets".to_owned(), "transcripts".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    // Only the refused entry holds both words. Refused inside the query, it
+    // doesn't stop the query relaxing to the record this connection can read.
+    let hits = activity_hits_for(&journal, "Zebrafinch loop");
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    let fetched = probe(
+        &journal,
+        "fetch",
+        json!({"reference": hits[0]["reference"]}),
+    )
+    .unwrap();
+    assert!(
+        fetched["text"]
+            .as_str()
+            .unwrap()
+            .contains("Zebrafinch review"),
+        "{fetched}"
+    );
+}
+
+#[test]
 fn a_body_search_hit_in_a_group_with_a_hidden_member_comes_back_hidden() {
     use solstone_core_format::content::body_records::{
         BodyRow, RowKind, decode_rows, encode_rows, recorder_id,

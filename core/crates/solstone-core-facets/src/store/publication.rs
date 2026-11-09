@@ -135,6 +135,15 @@ mod tests {
         )
         .unwrap();
         super::queue_body_entries_once(root.path());
+        // Only the file holding the owner's words is queued.
+        let queued = std::fs::read_dir(root.path().join("indexer/todo"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| std::fs::read_to_string(entry.path()).unwrap_or_default())
+            .filter(|entry| entry.contains("activities/2026051"))
+            .collect::<Vec<_>>();
+        assert_eq!(queued.len(), 1, "{queued:?}");
+        assert!(queued[0].contains("20260510"), "{queued:?}");
         solstone_core_indexer_store::todo::drain(root.path(), Default::default()).unwrap();
         assert!(searchable(
             root.path(),
