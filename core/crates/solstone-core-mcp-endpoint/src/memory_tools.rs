@@ -61,8 +61,31 @@ fn response_bytes(
     bounded_json(&response, MAX_RESPONSE_BYTES)
 }
 
+/// What an agent is told, so it can retry, change the call or tell the owner.
+fn agent_message(reason: &str) -> &'static str {
+    match reason {
+        "memory_operation_conflict" => {
+            "this operation_id was already used with different content; use a new operation_id to save different content, or send the original content to retry that save"
+        }
+        "memory_save_unavailable" => {
+            "the note could not be saved; try again with the same operation_id and content"
+        }
+        "memory_response_unavailable" => {
+            "the result could not be sent back; try again, and if this was save_memory, keep the same operation_id and content"
+        }
+        "memory_audit_unavailable" => {
+            "the call could not be recorded in the owner's activity log, so nothing was returned; try again"
+        }
+        "memory_recall_budget_exhausted" => {
+            "reading saved notes took too long; try again or narrow the request"
+        }
+        "memory_source_unavailable" => "a saved note could not be read; try again later",
+        _ => "this call could not be completed; try again later",
+    }
+}
+
 fn error_response(request: &JsonRpcRequest, reason: &'static str) -> HttpResponse {
-    let response = JsonRpcResponse::tool_error(request.id.as_ref(), reason);
+    let response = JsonRpcResponse::tool_error(request.id.as_ref(), reason, agent_message(reason));
     HttpResponse::json(
         200,
         "OK",

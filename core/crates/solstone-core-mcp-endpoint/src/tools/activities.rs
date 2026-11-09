@@ -102,7 +102,7 @@ pub(crate) fn validate_list(
     }
 
     if params.day.is_some() && (params.from.is_some() || params.to.is_some()) {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::ActivityDayArguments);
     }
 
     let normalized_day = super::normalize_day(params.day)?;
@@ -127,7 +127,7 @@ pub(crate) fn validate_list(
     };
 
     if to < from {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::ActivityDayArguments);
     }
 
     Ok(ValidatedListActivities {

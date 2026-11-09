@@ -185,7 +185,10 @@ pub fn run_mcp_probe(
     )
     .map(|output| output.value)
     .map_err(|error| match error {
-        DispatchError::InvalidInput => McpProbeError::InvalidInput,
+        DispatchError::InvalidInput
+        | DispatchError::Tool(
+            ToolError::ActivityDayArguments | ToolError::TranscriptTimeArguments,
+        ) => McpProbeError::InvalidInput,
         DispatchError::PermissionDenied(_) => McpProbeError::PermissionDenied,
         DispatchError::Tool(_) => McpProbeError::Unavailable,
     })
@@ -492,7 +495,12 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
             "the reference did not resolve to anything this connection may read"
         }
         DispatchError::Tool(ToolError::AuditUnavailable) => "the audit record could not be written",
-        DispatchError::Tool(ToolError::InvalidInput | ToolError::SourceArguments)
+        DispatchError::Tool(
+            ToolError::InvalidInput
+            | ToolError::SourceArguments
+            | ToolError::ActivityDayArguments
+            | ToolError::TranscriptTimeArguments,
+        )
         | DispatchError::InvalidInput => "the request's arguments were not valid for this tool",
         DispatchError::PermissionDenied(_) => {
             "the request was outside this connection's permission"

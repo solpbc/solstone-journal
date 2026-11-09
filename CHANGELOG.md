@@ -24,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an agent connected to your journal now gets a plain reason when a call is refused, such as a single day sent alongside a date range, so it can correct the call and try again.
 - a terminal segment from a computer with eight or more tmux sessions open is no longer turned away. one that was turned away before goes into your journal on its next try.
 - an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
