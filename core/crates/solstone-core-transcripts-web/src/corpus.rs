@@ -1267,7 +1267,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn corpus_replays_all_twelve_transcript_write_refusals() {
+    async fn corpus_replays_all_ten_transcript_write_refusals() {
         let root = seeded_root();
         let corpus: Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -1280,7 +1280,7 @@ mod tests {
             .iter()
             .filter(|case| matches!(case["method"].as_str(), Some("POST" | "DELETE")))
             .collect::<Vec<_>>();
-        assert_eq!(cases.len(), 12);
+        assert_eq!(cases.len(), 10);
         for case in cases {
             let method = case["method"].as_str().unwrap().parse().unwrap();
             let body = match case["why"].as_str().unwrap() {

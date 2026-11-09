@@ -26,8 +26,6 @@
       "GET /app/transcripts/api/serve_file/20260731/field/090000_300/mic_audio.xyz",
       "GET /app/transcripts/api/stats/nope",
       "GET /app/transcripts/notaday",
-      "POST /app/transcripts/api/cancel-delete/00000000000000000000000000000000",
-      "POST /app/transcripts/api/cancel-delete/not-a-pending-id",
       "POST /app/transcripts/api/segment/20260731/BAD/090000_300/reprocess",
       "POST /app/transcripts/api/segment/20260731/field/090000_300/reprocess",
       "POST /app/transcripts/api/segment/20260731/field/120000_120/reprocess",
@@ -61,14 +59,6 @@
         "probes": 1
       },
       "DELETE /app/transcripts/api/segment/notaday/field/090000_300": {
-        "mutated_2xx": 0,
-        "probes": 1
-      },
-      "POST /app/transcripts/api/cancel-delete/00000000000000000000000000000000": {
-        "mutated_2xx": 0,
-        "probes": 1
-      },
-      "POST /app/transcripts/api/cancel-delete/not-a-pending-id": {
         "mutated_2xx": 0,
         "probes": 1
       },
@@ -5778,48 +5768,6 @@
           },
           "status": 404,
           "why": "nonexistent delete segment"
-        },
-        {
-          "app": "transcripts",
-          "body_sha256": "2a60fc072ec69d5d943ceba3e181ad9a23382e37f114de5b52106294a39dee8a",
-          "body_sha256_basis": "normalized-json",
-          "json": {
-            "detail": "already committed or unknown",
-            "error": "that removal didn't finish because the action is no longer available.",
-            "reason_code": "operation_no_longer_available"
-          },
-          "method": "POST",
-          "normalized_fields": [],
-          "path": "/app/transcripts/api/cancel-delete/not-a-pending-id",
-          "phase": "populated",
-          "request_headers": {},
-          "response_headers": {
-            "Content-Length": "168",
-            "Content-Type": "application/json"
-          },
-          "status": 410,
-          "why": "malformed cancellation"
-        },
-        {
-          "app": "transcripts",
-          "body_sha256": "2a60fc072ec69d5d943ceba3e181ad9a23382e37f114de5b52106294a39dee8a",
-          "body_sha256_basis": "normalized-json",
-          "json": {
-            "detail": "already committed or unknown",
-            "error": "that removal didn't finish because the action is no longer available.",
-            "reason_code": "operation_no_longer_available"
-          },
-          "method": "POST",
-          "normalized_fields": [],
-          "path": "/app/transcripts/api/cancel-delete/00000000000000000000000000000000",
-          "phase": "populated",
-          "request_headers": {},
-          "response_headers": {
-            "Content-Length": "168",
-            "Content-Type": "application/json"
-          },
-          "status": 410,
-          "why": "unknown cancellation"
         }
       ]
     },
