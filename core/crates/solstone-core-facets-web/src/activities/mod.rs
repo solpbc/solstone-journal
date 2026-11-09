@@ -876,6 +876,14 @@ fn internal(detail: String) -> Response {
     )
 }
 fn store_error(error: solstone_core_facets::ActivityRecordStoreError) -> Response {
+    if let solstone_core_facets::ActivityRecordStoreError::BodyRecordMoving { detail } = &error {
+        return http::error(
+            "activity_moving",
+            "this record is being moved. you can edit it once that finishes.",
+            detail.clone(),
+            StatusCode::CONFLICT,
+        );
+    }
     if matches!(
         error,
         solstone_core_facets::ActivityRecordStoreError::Lock(

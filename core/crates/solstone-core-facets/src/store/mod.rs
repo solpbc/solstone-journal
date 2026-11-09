@@ -4,6 +4,7 @@
 mod activities;
 mod activity_records;
 mod awareness;
+mod body_moves;
 mod connections_horizon;
 mod declaration;
 mod detected_entities;
@@ -51,6 +52,10 @@ pub use activity_records::{
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
     record_import_nudge, record_import_offer_declined,
+};
+pub use body_moves::{
+    BodyMoveOutcome, BodyRecordPlace, OpenBodyMove, body_record_key, complete_body_move,
+    move_body_record, open_body_moves,
 };
 pub use connections_horizon::{
     ConnectionsHorizon, read_connections_horizon, refresh_connections_horizon,
