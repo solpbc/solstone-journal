@@ -3,3 +3,5 @@
 
 #[path = "connect.rs"]
 mod connect;
+#[path = "oura_browser_stdio.rs"]
+mod oura_browser_stdio;
