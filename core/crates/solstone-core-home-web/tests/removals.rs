@@ -394,7 +394,10 @@ fn recover_invokes_the_executor_with_the_hardcoded_actor_tokens() {
         "recover --at is RFC 3339: {}",
         tokens[4]
     );
-    assert_eq!(&tokens[5..], ["--did", "owner", "--reason", "owner"]);
+    assert_eq!(
+        &tokens[5..],
+        ["--did", "owner", "--reason", "owner", "--surface", "home"]
+    );
 }
 
 #[test]

@@ -215,14 +215,14 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
     ),
     (
         "core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs",
-        "wipe_speaker_artifacts",
+        "wipe_with",
         "owner_centroid.npz",
         1,
         "derived: removes every entity folder's archive by path shape, under the trust lock and the archive's lock; reads none",
     ),
     (
         "core/crates/solstone-core-speaker-resolve/src/artifact_wipe.rs",
-        "wipe_speaker_artifacts",
+        "wipe_with",
         "voiceprints.npz",
         1,
         "derived: removes every entity folder's archive by path shape, under the trust lock and the archive's lock; reads none",
