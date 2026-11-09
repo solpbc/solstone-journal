@@ -253,7 +253,7 @@ fn command(context: &context::ThinkContext, args: &[&str]) -> CliRun {
 /// no second record appears. On the same day an open import activity and a
 /// capture activity still close, are written and get their talent work.
 #[test]
-fn an_open_strava_activity_closes_with_no_record_while_its_neighbours_are_written() {
+fn a_strava_tile_opens_no_activity_and_its_neighbours_are_written() {
     let (_journal, _roots, context, recorder) = journal(&[("participation", PARTICIPATION)]);
     strava_tile(&context.journal, TILE, Some(&active("work", "exercise")));
     let archive = segment_path(&context.journal, "import.archive", "080000_300");
@@ -291,10 +291,7 @@ fn an_open_strava_activity_closes_with_no_record_while_its_neighbours_are_writte
     }
     let state =
         solstone_core_system::activity_state::activity_state_path(&context.journal, Some(STRAVA));
-    assert!(
-        fs::read_to_string(&state).unwrap().contains("exercise"),
-        "the Strava activity is open"
-    );
+    assert!(!state.exists(), "no activity state follows Strava's tiles");
     let later = context
         .clone()
         .with_event_clock(Arc::new(|| NOW + 2 * 86_400_000));
