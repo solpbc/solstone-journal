@@ -650,6 +650,115 @@ fn a_deleted_workout_is_not_counted_as_waiting() {
     assert_eq!(run(root).waiting, 0);
 }
 
+/// A line folded into its record that couldn't be removed, under a folder with
+/// no declaration, and then the owner deleted the workout.
+fn stuck_then_deleted(root: &Path) {
+    workout(root, Some("z"));
+    add_line(root, "z", DAY, sense(json!({})));
+    add_line(root, "gone", DAY, sense(json!({})));
+    assert_eq!(run(root).lines_left, 1);
+    for key in ["070000_300", "070500_300"] {
+        let dir = tile_dir(root, DAY, key);
+        fs::write(dir.join("tombstone.json"), b"{}").unwrap();
+        fs::remove_file(dir.join("workout.json")).unwrap();
+    }
+}
+
+#[test]
+fn a_stuck_line_whose_workout_is_then_deleted_holds_the_marker_until_it_goes() {
+    let journal = journal(&["z"]);
+    let root = journal.path();
+    stuck_then_deleted(root);
+    let counts = run(root);
+    assert_eq!((counts.waiting, counts.lines_left), (1, 1), "{counts:?}");
+    assert!(!root.join(MARKER).exists());
+    assert_eq!(visible(root, &["z", "gone"]), 1);
+
+    // The folder can be written now: the conversion's last step goes through.
+    solstone_core_facets::create_facet(root, "gone", "gone", "", "", "", None).unwrap();
+    let counts = run(root);
+    assert_eq!((counts.waiting, counts.lines_left), (0, 0), "{counts:?}");
+    assert_eq!(sense_lines_in_file(root, "gone"), 0);
+    assert!(root.join(MARKER).exists());
+    assert_eq!(visible(root, &["z", "gone"]), 1);
+}
+
+#[test]
+fn a_stuck_line_changed_after_its_workout_is_deleted_stays_hidden_and_waits() {
+    let journal = journal(&["z"]);
+    let root = journal.path();
+    stuck_then_deleted(root);
+    solstone_core_facets::create_facet(root, "gone", "gone", "", "", "", None).unwrap();
+    let path = file(root, "gone", DAY);
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.replace("a run", "another run")).unwrap();
+    let counts = run(root);
+    assert_eq!((counts.waiting, counts.lines_left), (1, 1), "{counts:?}");
+    assert_eq!(sense_lines_in_file(root, "gone"), 1);
+    assert!(!root.join(MARKER).exists());
+    assert_eq!(visible(root, &["z", "gone"]), 1);
+}
+
+#[test]
+fn an_import_retries_a_folded_line_whose_workout_is_gone() {
+    let journal = journal(&["z"]);
+    let root = journal.path();
+    stuck_then_deleted(root);
+    solstone_core_facets::create_facet(root, "gone", "gone", "", "", "", None).unwrap();
+    let held = hold_lock(root.join(STRAVA_LOCK), LockOptions::default()).unwrap();
+    let scope = ConversionScope {
+        chosen: None,
+        publishes_tiles: false,
+    };
+    let counts = convert_held(root, &held, scope, now());
+    assert_eq!((counts.waiting, counts.lines_left), (0, 0), "{counts:?}");
+    assert_eq!(sense_lines_in_file(root, "gone"), 0);
+}
+
+#[test]
+fn only_a_record_now_in_the_facet_counts_as_moved() {
+    let journal = journal(&["a", "b"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    run(root);
+    let counted = vec![(WORKOUT.to_string(), "a".to_owned())];
+    assert_eq!(listed_moved_now(root, &counted, "b"), None);
+    assert_eq!(
+        listed_moved_now(root, &counted, "a"),
+        Some((1, vec!["a".to_owned()]))
+    );
+}
+
+#[test]
+fn a_line_no_workout_names_and_no_record_holds_doesnt_hold_the_marker_back() {
+    let journal = journal(&["z"]);
+    let root = journal.path();
+    add_line(root, "z", DAY, sense(json!({})));
+    let counts = run(root);
+    assert_eq!(counts.no_workout, 1, "{counts:?}");
+    assert_eq!(sense_lines_in_file(root, "z"), 1);
+    assert!(root.join(MARKER).exists());
+}
+
+#[test]
+fn no_marker_is_written_while_a_merge_is_running() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    let merging = hold_lock(
+        root.join("health/locks/archive-merge"),
+        LockOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(run(root).converted, 1);
+    assert!(!root.join(MARKER).exists());
+    drop(merging);
+    run(root);
+    assert!(root.join(MARKER).exists());
+}
+
 #[test]
 fn a_finished_pass_says_so_and_the_next_finds_nothing_to_do() {
     let journal = journal(&["a"]);
@@ -791,6 +900,54 @@ fn every_stop_resumes_to_what_an_uninterrupted_run_leaves() {
         assert_eq!(resumed.waiting, 0, "stop {stop}: {resumed:?}");
         assert_eq!(canon(root), expected, "stop {stop}");
     }
+}
+
+fn spanning_fixture(root: &Path) {
+    const FIRST: &str = "2026-01-01T07:00:00+00:00";
+    const SECOND: &str = "2026-01-01T07:10:00+00:00";
+    tile_of(root, DAY, "070000_300", 901, 0, FIRST, 300, Some("a"));
+    tile_of(root, DAY, "071000_300", 902, 0, SECOND, 300, Some("a"));
+    add_line(
+        root,
+        "a",
+        DAY,
+        sense(json!({"segments": ["070000_300", "071000_300"]})),
+    );
+}
+
+#[test]
+fn every_stop_on_a_line_spanning_two_workouts_resumes_and_lists_neither_twice() {
+    let whole = journal(&["a"]);
+    spanning_fixture(whole.path());
+    WRITES_SEEN.set(0);
+    STOP_AFTER.set(None);
+    assert_eq!(run(whole.path()).converted, 1);
+    let total = WRITES_SEEN.get();
+    let expected = canon(whole.path());
+    assert_eq!(visible(whole.path(), &["a"]), 2);
+
+    let mut seen_one = false;
+    for stop in 1..=total {
+        let journal = journal(&["a"]);
+        let root = journal.path();
+        spanning_fixture(root);
+        WRITES_SEEN.set(0);
+        STOP_AFTER.set(Some(stop));
+        let stopped = run(root);
+        STOP_AFTER.set(None);
+        assert_eq!(stopped.waiting, 1, "stop {stop} stopped it");
+        // The shared line stands for both until the first record replaces it.
+        // After that the second workout is listed nowhere until the next pass.
+        let shown = visible(root, &["a"]);
+        assert!((1..=2).contains(&shown), "stop {stop}: {shown}");
+        seen_one |= shown == 1;
+
+        let resumed = run(root);
+        assert_eq!(resumed.waiting, 0, "stop {stop}: {resumed:?}");
+        assert_eq!(canon(root), expected, "stop {stop}");
+        assert_eq!(visible(root, &["a"]), 2, "stop {stop}");
+    }
+    assert!(seen_one);
 }
 
 #[test]

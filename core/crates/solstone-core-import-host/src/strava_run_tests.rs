@@ -294,6 +294,57 @@ fn a_facet_named_on_the_command_line_says_how_many_moved_and_from_where() {
 }
 
 #[test]
+fn the_summary_counts_what_moved_and_not_what_was_going_to() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    // One workout goes back to being a line an earlier reading filed, and its
+    // group is stopped before anything of it is written.
+    const DAY: &str = "20261004";
+    let segments = fs::read_dir(root.join("chronicle").join(DAY).join("import.strava"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let line = json!({"id": "exercise_070000_300", "activity": "exercise", "segments": segments,
+        "created_at": 1, "stream": "import.strava"});
+    fs::write(
+        root.join(format!("facets/work/activities/{DAY}.jsonl")),
+        format!("{line}\n"),
+    )
+    .unwrap();
+    crate::strava_convert::WRITES_SEEN.set(0);
+    crate::strava_convert::STOP_AFTER.set(Some(1));
+    let (run, id) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+    );
+    crate::strava_convert::STOP_AFTER.set(None);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let summary = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
+    assert!(
+        summary
+            .contains("2 workouts already listed on the activities page moved there, from work."),
+        "{summary}"
+    );
+}
+
+#[test]
 fn a_run_moves_what_the_owner_was_shown() {
     let (journal, summary) = moved_with(Some(3));
     assert!(summary.contains("moved there, from work."), "{summary}");

@@ -31,7 +31,7 @@ use solstone_core_import::RegistrySource;
 use solstone_core_ingest_resolve::segment_key_candidates;
 use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::durability::{ArtifactId, DurableObservation, observe_json_durable};
-use solstone_core_journal_io::{AtomicWriteOptions, write_bytes_exclusive};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, write_bytes_exclusive};
 use solstone_core_segment::owner_deleted;
 
 use crate::save::{RenderedImport, SegmentFile};
@@ -41,6 +41,8 @@ const MAX_HEADER_READ_BYTES: usize = 64 * 1024;
 pub const DEFAULT_LIST_CAP: usize = 64 * 1024 * 1024;
 const TILE_SCHEMA: &str = "solstone.import.strava.tile.v1";
 const ZONE_FILE_REL: &str = "imports/.strava-zone.json";
+const CONVERTED_MARKER: &str = "imports/.strava-converted";
+const CONVERSION_EPOCH: &str = "imports/.strava-epoch";
 
 /// Returns true if the byte buffer's first line has a first comma-separated field
 /// of exactly "Activity ID" or "Aktivitäts-ID".
@@ -1015,6 +1017,56 @@ fn tile_from(start: DateTime<Tz>, elapsed_seconds: u64) -> Vec<TileSlice> {
     }
 
     slices
+}
+
+/// How many times a conversion of earlier Strava records has been started or
+/// reopened. Whoever writes the marker checks this hasn't moved since it looked.
+#[must_use]
+pub fn strava_conversion_epoch(journal: &Path) -> u64 {
+    fs::read_to_string(journal.join(CONVERSION_EPOCH))
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// Take away the marker that says no earlier Strava record is left to convert,
+/// and move the epoch.
+///
+/// # Errors
+///
+/// The marker can't be removed or the epoch can't be written.
+pub fn clear_strava_converted_marker(journal: &Path) -> Result<(), String> {
+    let marker = journal.join(CONVERTED_MARKER);
+    match fs::remove_file(&marker) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    if let Some(parent) = marker.parent().filter(|parent| parent.is_dir()) {
+        crate::apple_health_run::sync_folder(parent)?;
+    }
+    let next = strava_conversion_epoch(journal).saturating_add(1);
+    fs::create_dir_all(journal.join("imports")).map_err(|error| error.to_string())?;
+    atomic_replace(
+        journal.join(CONVERSION_EPOCH),
+        next.to_string().as_bytes(),
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Readers stop hiding folded Strava lines once the marker is there, so anything
+/// about to write records from elsewhere takes it away first. A journal without
+/// the marker is left exactly as it is.
+///
+/// # Errors
+///
+/// The marker is there and can't be taken away.
+pub fn reopen_strava_conversion(journal: &Path) -> Result<(), String> {
+    if journal.join(CONVERTED_MARKER).exists() {
+        clear_strava_converted_marker(journal)?;
+    }
+    Ok(())
 }
 
 /// Every day and key an earlier version may have placed a workout's tiles at,

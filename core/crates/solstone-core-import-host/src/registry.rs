@@ -1300,14 +1300,14 @@ fn run_strava_internal(
         .collect::<BTreeSet<_>>();
     // Counted again now the lock is held. A run never moves more than the
     // owner was shown.
-    let would_move = owner_chose
-        .and_then(|facet| crate::strava_convert::listed_moves(journal, &download, facet));
+    let would_move = owner_chose.map_or_else(Vec::new, |facet| {
+        crate::strava_convert::listed_moves_by_workout(journal, &download, facet)
+    });
     let listed_over = dispatch
         .listed_moves_shown
-        .zip(would_move.as_ref().map(|(count, _)| *count))
+        .map(|shown| (shown, would_move.len()))
         .filter(|(shown, count)| count > shown);
     let owner_chose = owner_chose.filter(|_| listed_over.is_none());
-    let listed_moved = would_move.filter(|_| listed_over.is_none());
     let mut conversion = crate::strava_convert::convert_held(
         journal,
         &_source_lock,
@@ -1318,6 +1318,9 @@ fn run_strava_internal(
         chrono::Utc::now(),
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
+    // Counted from where the records are now: a group that waited didn't move.
+    let listed_moved = owner_chose
+        .and_then(|facet| crate::strava_convert::listed_moved_now(journal, &would_move, facet));
     conversion.moves_open = solstone_core_facets::open_body_moves(journal)
         .map_or(1, |open| u64::try_from(open.len()).unwrap_or(u64::MAX));
     let mut list_refiles = |tiles: &[(String, String)]| {

@@ -25,8 +25,11 @@ use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_STREAM, S
 use solstone_core_import::strava_refile::{add_strava_refiles, remove_strava_refiles};
 use solstone_core_import_sources::apple_health::facet_file_text;
 use solstone_core_import_sources::apple_health_run::sync_folder;
+use solstone_core_import_sources::archive::hold_lock_if_no_merge_running;
 use solstone_core_import_sources::body_stream::WindowFile;
-use solstone_core_import_sources::strava::misread_tile_keys;
+use solstone_core_import_sources::strava::{
+    clear_strava_converted_marker, misread_tile_keys, strava_conversion_epoch,
+};
 use solstone_core_journal_io::{
     AtomicWriteOptions, FileLock, LockOptions, atomic_replace, hold_lock,
 };
@@ -42,7 +45,6 @@ use crate::strava_filing::LiveWorkouts;
 
 const STRAVA_LOCK: &str = "imports/.strava";
 const MARKER: &str = "imports/.strava-converted";
-const EPOCH: &str = "imports/.strava-epoch";
 const ACTIVITY_STATE: &str = "awareness/activity_state/import.strava.json";
 const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 /// A component a line of which changes this many times waits for the next pass.
@@ -51,8 +53,8 @@ const ATTEMPTS: usize = 3;
 #[cfg(test)]
 thread_local! {
     /// Stop after this many durable writes, for a test of every stop point.
-    static STOP_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
-    static WRITES_SEEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    pub(crate) static STOP_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    pub(crate) static WRITES_SEEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// Runs once, just before a pass removes its lines.
     static BEFORE_REMOVING: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
     /// Runs once, between a sweep's walk and taking the lock for its first component.
@@ -165,9 +167,19 @@ fn now_text(now: DateTime<Utc>) -> String {
 /// be read. One unreadable file doesn't stop the others.
 fn all_sense_lines(journal: &Path) -> (Vec<SenseLine>, u64) {
     let mut lines = Vec::new();
+    let unreadable = each_day_file(journal, |day, facet, bytes| {
+        lines.extend(sense_lines_in(bytes, day, facet));
+    });
+    lines.sort_by_key(SenseLine::key);
+    (lines, unreadable)
+}
+
+/// Run `visit` over every activity day file with its day and facet, and say how
+/// many files couldn't be read.
+fn each_day_file(journal: &Path, mut visit: impl FnMut(&str, &str, &[u8])) -> u64 {
     let mut unreadable = 0;
     let Ok(facets) = fs::read_dir(journal.join("facets")) else {
-        return (lines, unreadable);
+        return unreadable;
     };
     for facet in facets.flatten() {
         if !facet.path().is_dir() {
@@ -186,13 +198,108 @@ fn all_sense_lines(journal: &Path) -> (Vec<SenseLine>, u64) {
                 continue;
             };
             match fs::read(&path) {
-                Ok(bytes) => lines.extend(sense_lines_in(&bytes, day, &name)),
+                Ok(bytes) => visit(day, &name, &bytes),
                 Err(_) => unreadable += 1,
             }
         }
     }
-    lines.sort_by_key(SenseLine::key);
-    (lines, unreadable)
+    unreadable
+}
+
+/// Every line key a code record says it holds, with the digest the line had
+/// when it was folded in.
+fn folded_digests(journal: &Path) -> BTreeMap<String, String> {
+    const CONVERTED: &[u8] = b"\"converted\"";
+    let mut folded = BTreeMap::new();
+    each_day_file(journal, |_, _, bytes| {
+        for line in bytes.split(|&byte| byte == b'\n') {
+            if !line.windows(CONVERTED.len()).any(|at| at == CONVERTED) {
+                continue;
+            }
+            let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
+                continue;
+            };
+            if !solstone_core_facets::is_body_record(&record) {
+                continue;
+            }
+            let held = record
+                .get("converted")
+                .and_then(|converted| converted.get("lines"))
+                .and_then(Value::as_object);
+            for (key, entry) in held.into_iter().flatten() {
+                let digest = entry.get("sha256").and_then(Value::as_str);
+                folded.insert(key.clone(), digest.unwrap_or_default().to_owned());
+            }
+        }
+    });
+    folded
+}
+
+/// Lines a code record holds that no live workout names any more, because the
+/// workout was deleted after its record was written, each with its digest.
+fn folded_orphans<'a>(
+    journal: &Path,
+    lines: &'a [SenseLine],
+    parts: &[Component],
+) -> Vec<(&'a SenseLine, String)> {
+    let claimed = parts
+        .iter()
+        .flat_map(|part| part.lines.iter().copied())
+        .collect::<BTreeSet<_>>();
+    if claimed.len() == lines.len() {
+        return Vec::new();
+    }
+    let folded = folded_digests(journal);
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| !claimed.contains(at))
+        .filter_map(|(_, line)| {
+            let digest = folded.get(&line.key())?;
+            Some((line, digest.clone()))
+        })
+        .collect()
+}
+
+/// The last step of a conversion, for a line whose workout has gone. Only a
+/// line that still says what was folded in goes; one that's changed stays
+/// hidden and waits.
+fn remove_folded_orphan(journal: &Path, line: &SenseLine, folded: &str) -> Result<(), String> {
+    let Some(current) = reload(journal, std::slice::from_ref(line))?.pop().flatten() else {
+        return Ok(());
+    };
+    if current.digest() != folded {
+        return Err("it has changed since it was folded in".to_owned());
+    }
+    remove_outputs(journal, &current)?;
+    let place = BodyRecordPlace {
+        day: current.day.clone(),
+        facet: current.facet.clone(),
+    };
+    match remove_activity_line_if(journal, &place, &current.id, |record| {
+        record_digest(record) == folded
+    })
+    .map_err(|error| error.to_string())?
+    {
+        LineRemoval::Changed => Err("it changed as it was being removed".to_owned()),
+        _ => Ok(()),
+    }
+}
+
+/// Retry each orphan; `held` is the Strava lock.
+fn remove_folded_orphans(
+    journal: &Path,
+    orphans: &[(&SenseLine, String)],
+    _held: &FileLock,
+    counts: &mut ConversionCounts,
+) {
+    for (line, folded) in orphans {
+        if let Err(error) = remove_folded_orphan(journal, line, folded) {
+            log::warn!("Strava conversion: a folded line couldn't be removed: {error}");
+            counts.waiting += 1;
+            counts.lines_left += 1;
+        }
+    }
 }
 
 fn sense_lines_in(bytes: &[u8], day: &str, facet: &str) -> Vec<SenseLine> {
@@ -531,36 +638,10 @@ fn since_of(id: &str) -> Option<String> {
     Some(format!("{clock}_{length}"))
 }
 
-/// Clear the skip marker and record that a conversion started.
-fn clear_marker(journal: &Path) -> Result<(), String> {
-    match fs::remove_file(journal.join(MARKER)) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.to_string()),
-    }
-    if let Some(parent) = journal.join(MARKER).parent() {
-        sync_folder(parent)?;
-    }
-    bump_epoch(journal)
-}
-
-fn read_epoch(journal: &Path) -> u64 {
-    fs::read_to_string(journal.join(EPOCH))
-        .ok()
-        .and_then(|text| text.trim().parse().ok())
-        .unwrap_or(0)
-}
-
-fn bump_epoch(journal: &Path) -> Result<(), String> {
-    let next = read_epoch(journal).saturating_add(1);
-    fs::create_dir_all(journal.join("imports")).map_err(|error| error.to_string())?;
-    atomic_replace(journal.join(EPOCH), next.to_string().as_bytes(), PRIVATE)
-        .map_err(|error| error.to_string())
-}
-
-/// What a merge does: a merged journal may hold old records again.
+/// What a merge does once it has finished: a pass that began while it ran
+/// mustn't write the marker.
 pub(crate) fn mark_conversion_needed(journal: &Path) -> Result<(), String> {
-    clear_marker(journal)
+    clear_strava_converted_marker(journal)
 }
 
 fn queue_tile(journal: &Path, tile: &(String, String)) {
@@ -785,7 +866,7 @@ fn convert_component(
     held: &FileLock,
     now: &str,
 ) -> Result<(), Unfinished> {
-    clear_marker(journal)?;
+    clear_strava_converted_marker(journal)?;
     let listed = component
         .lines
         .iter()
@@ -935,6 +1016,8 @@ pub(crate) fn convert_held(
         let result = convert_component(journal, &workouts, &lines, part, scope, held, &at);
         tally(&mut counts, result);
     }
+    let orphans = folded_orphans(journal, &lines, &parts);
+    remove_folded_orphans(journal, &orphans, held, &mut counts);
     counts
 }
 
@@ -946,6 +1029,54 @@ pub(crate) fn listed_moves(
     download: &BTreeSet<String>,
     facet: &str,
 ) -> Option<(usize, Vec<String>)> {
+    summed_moves(journal, &listed_moves_by_workout(journal, download, facet))
+}
+
+/// A workout a choice would move, and the facet it's in now.
+pub(crate) type ListedMove = (String, String);
+
+/// Of the workouts counted before a run, the ones whose record is now in
+/// `facet`, summed as [`listed_moves`] sums them. A workout whose group waited
+/// isn't one of them.
+pub(crate) fn listed_moved_now(
+    journal: &Path,
+    counted: &[ListedMove],
+    facet: &str,
+) -> Option<(usize, Vec<String>)> {
+    let workouts = live_workouts(journal)
+        .0
+        .into_iter()
+        .map(|workout| (workout.activity.clone(), workout))
+        .collect::<BTreeMap<_, _>>();
+    let moved = counted
+        .iter()
+        .filter(|(activity, _)| {
+            workouts.get(activity).is_some_and(|workout| {
+                find_code_record(journal, &workout.candidate_days(), &workout.account())
+                    .ok()
+                    .flatten()
+                    .is_some_and(|(place, _)| place.facet == facet)
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    summed_moves(journal, &moved)
+}
+
+fn summed_moves(journal: &Path, moves: &[ListedMove]) -> Option<(usize, Vec<String>)> {
+    let from = moves
+        .iter()
+        .map(|(_, facet)| facet_title(journal, facet))
+        .collect::<BTreeSet<_>>();
+    (!moves.is_empty()).then(|| (moves.len(), from.into_iter().collect()))
+}
+
+/// Each workout [`listed_moves`] counts.
+pub(crate) fn listed_moves_by_workout(
+    journal: &Path,
+    download: &BTreeSet<String>,
+    facet: &str,
+) -> Vec<ListedMove> {
     let (workouts, _) = live_workouts(journal);
     let (lines, _) = all_sense_lines(journal);
     let (parts, _) = components(&workouts, &lines);
@@ -957,8 +1088,7 @@ pub(crate) fn listed_moves(
             }
         }
     }
-    let mut count = 0;
-    let mut from = BTreeSet::new();
+    let mut moves = Vec::new();
     for (at, workout) in workouts.iter().enumerate() {
         if !download.contains(&workout.activity) {
             continue;
@@ -975,11 +1105,10 @@ pub(crate) fn listed_moves(
         if let Some(current) = current
             && current != facet
         {
-            count += 1;
-            from.insert(facet_title(journal, &current));
+            moves.push((workout.activity.clone(), current));
         }
     }
-    (count > 0).then(|| (count, from.into_iter().collect()))
+    moves
 }
 
 fn facet_title(journal: &Path, facet: &str) -> String {
@@ -1140,21 +1269,32 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
         let result = convert_component(journal, &workouts, &lines, part, scope, &held, &at);
         tally(&mut counts, result);
     }
+    let orphans = folded_orphans(journal, &lines, &parts);
+    if !orphans.is_empty() {
+        match hold_lock(journal.join(STRAVA_LOCK), lock_options) {
+            Ok(held) => remove_folded_orphans(journal, &orphans, &held, &mut counts),
+            Err(_) => counts.skipped_locked += 1,
+        }
+    }
     write_marker_if_finished(journal, lock_options);
     counts
 }
 
-/// Say nothing is left to convert, if that's so now. A merge or a conversion
-/// starting meanwhile moves the epoch, and the marker waits for another pass.
+/// Say nothing is left to convert, if that's so now: no line a live workout
+/// names, and no line a code record holds, live or not, because readers stop
+/// hiding those once the marker is there. A merge running or a conversion
+/// starting meanwhile leaves the marker for another pass.
 fn write_marker_if_finished(journal: &Path, lock_options: LockOptions) {
-    let epoch = read_epoch(journal);
+    let epoch = strava_conversion_epoch(journal);
     let (lines, unreadable) = all_sense_lines(journal);
     let (workouts, folders) = live_workouts(journal);
     let (parts, _) = components(&workouts, &lines);
     if unreadable + folders == 0
         && parts.is_empty()
+        && folded_orphans(journal, &lines, &parts).is_empty()
         && let Ok(_held) = hold_lock(journal.join(STRAVA_LOCK), lock_options)
-        && read_epoch(journal) == epoch
+        && let Some(_no_merge) = hold_lock_if_no_merge_running(journal)
+        && strava_conversion_epoch(journal) == epoch
         && fs::create_dir_all(journal.join("imports")).is_ok()
     {
         let _ = atomic_replace(journal.join(MARKER), b"", PRIVATE);
