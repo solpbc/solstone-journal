@@ -310,7 +310,7 @@ fn located(day: &str, segment: &Segment) -> Option<LocatedSegment> {
 
 fn word_for(platform: Platform, device_type: Option<&str>) -> &'static str {
     match (platform, device_type) {
-        (Platform::Watchos, _) => "watch",
+        (Platform::Watchos | Platform::Wearos, _) => "watch",
         (Platform::Ios, Some("tablet")) => "ipad",
         (Platform::Ios, _) => "iphone",
         (Platform::Android, Some("tablet")) => "android tablet",
@@ -1090,6 +1090,49 @@ pub(crate) mod tests {
             &directory(),
             chrono_tz::America::Denver,
         )
+    }
+
+    #[test]
+    fn wear_location_is_a_watch_separate_from_the_phones_location() {
+        let root = tempfile::tempdir().unwrap();
+        let header = r#"{"accuracy":"full","fix_count":1,"gap":false,"kind":"location","platform":"wearos","schema":"solstone.location.segment/1","source":"location","tier":"full"}"#;
+        write(
+            root.path(),
+            "20261001",
+            "phone_watch-audio",
+            "140000_300",
+            &format!(
+                "{header}\n{}\n",
+                fix("2026-10-01T14:00:00-06:00", 40.015, -105.27, 20.0)
+            ),
+        );
+        write(
+            root.path(),
+            "20261001",
+            "pixel_location",
+            "140000_300",
+            &format!(
+                "{}\n{}\n",
+                header.replace("wearos", "android"),
+                fix("2026-10-01T14:00:00-06:00", 40.015, -105.27, 20.0)
+            ),
+        );
+        let day = day_of(root.path());
+        let watch = day
+            .devices
+            .iter()
+            .find(|device| device.platform == Platform::Wearos)
+            .unwrap();
+        assert_eq!(watch.word, "watch");
+        assert_eq!(watch.readings, 1);
+        let phone = day
+            .devices
+            .iter()
+            .find(|device| device.platform == Platform::Android)
+            .unwrap();
+        assert_eq!(phone.word, "android phone");
+        assert_eq!(phone.readings, 1);
+        assert_ne!(watch.key, phone.key);
     }
 
     #[test]
