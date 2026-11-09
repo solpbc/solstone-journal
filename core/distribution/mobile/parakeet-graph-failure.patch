@@ -1,0 +1,46 @@
+--- a/src/ggml_graph.cpp
++++ b/src/ggml_graph.cpp
+@@ -6,6 +6,7 @@
+ #include <atomic>
+ #include <memory>
+ #include <mutex>
++#include <stdexcept>
+ 
+ namespace pk {
+ 
+@@ -119,7 +120,10 @@
+     if (PoolSlot* slot = current_route()) {
+         std::lock_guard<std::mutex> slot_lock(slot->mu);
+         slot->runs.fetch_add(1, std::memory_order_relaxed);
+-        return slot->backend.compute(build, out);
++        if (!slot->backend.compute(build, out)) {
++            throw std::runtime_error("Parakeet graph execution failed");
++        }
++        return true;
+     }
+     std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
+     Backend& be = global_backend_locked();
+@@ -144,7 +148,10 @@
+         Backend& be; bool on; int prev;
+         ~Restore() { if (on) { be.set_n_threads(prev); g_backend_threads = prev; } }
+     } restore{be, scoped, prev_threads};
+-    return be.compute(build, out);
++    if (!be.compute(build, out)) {
++        throw std::runtime_error("Parakeet graph execution failed");
++    }
++    return true;
+ }
+ 
+ } // namespace pk
+--- a/src/ggml_graph.hpp
++++ b/src/ggml_graph.hpp
+@@ -14,7 +14,8 @@
+ // input tensors, write their data, build the computation graph, and return the
+ // output tensor. Then the forward graph for that output is built, executed on
+ // CPU with `n_threads` threads, and `ggml_nelements(output)` f32 values are
+-// copied into `out`. Returns true on success, false on any failure.
++// copied into `out`. Returns true on success; throws std::runtime_error on
++// failure so release-mode callers cannot consume missing or stale output.
+ bool run_graph(size_t mem_bytes, int n_threads,
+                const std::function<ggml_tensor*(ggml_context*)>& build,
+                std::vector<float>& out);

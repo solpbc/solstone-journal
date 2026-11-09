@@ -451,6 +451,11 @@ class Build:
         self.run("parakeet-thread-budget-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
         self.summary["patches"].append({"component": "parakeet", "path": str(patch.relative_to(ROOT)),
                                         "sha256": sha256(patch)})
+        failure = ROOT / "core/distribution/mobile/parakeet-graph-failure.patch"
+        self.run("parakeet-graph-failure-patch", ["git", "apply", "--no-index", failure], source)
+        self.run("parakeet-graph-failure-proof", ["git", "apply", "--no-index", "--check", "--reverse", failure], source)
+        self.summary["patches"].append({"component": "parakeet", "path": str(failure.relative_to(ROOT)),
+                                        "sha256": sha256(failure)})
         if self.args.platform == "android":
             pool = ROOT / "core/distribution/mobile/parakeet-persistent-pool.patch"
             self.run("parakeet-persistent-pool-patch", ["git", "apply", "--no-index", pool], source)
