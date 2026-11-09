@@ -1,6 +1,6 @@
 # Oura API Lane — Design
 
-> OAuth/sync/rebuild shipped in `solstone-core-body-ingest`. File-import save and webhooks are still open. Python paths in this file are dead.
+> Historical. Oura now imports as ordinary journal segments: see [`../BODY_SEGMENTS.md`](../BODY_SEGMENTS.md) and [`../health_imports.md`](../health_imports.md). The cursor, the bundles and the approval file described below are no longer written or read, and Python paths in this file are dead.
 
 
 - **Date:** 2026-07-05 (overnight lane, owner-authorized)
@@ -14,16 +14,7 @@
 > the current runbook. See [`../health_imports.md`](../health_imports.md) for
 > the current boundary.
 
-Status note, 2026-08-09: Oura connect, HTTPS transport, token refresh,
-pagination, backfill, cursor state, normalization, native-bundle publication,
-dedupe replay, and restore rebuild are now Rust-owned in
-`solstone-core-body-ingest` and the body-source/store/rebuild crates. Python's
-`oura.py` is a read-only differential oracle and `body_native.py` is process
-transport. The Python sync registry, OAuth/token code, network client, cursor
-writer, bundle writer, and dedupe writer are gone. The owner commands remain
-`solstone journal importer --connect oura`, `solstone journal importer --sync oura`, and
-`solstone journal importer --sync oura --save --confirm-body-save`. Oura file-import
-save and webhooks remain deferred.
+Status note, 2026-11: Oura connect, HTTPS transport and token refresh are Rust-owned; every sync now lands through the segment writer.
 
 The native sync has aggregate run budgets in addition to its per-response
 limit: 128 MiB of response bodies, 5,000 pages, and 100,000 source items. A

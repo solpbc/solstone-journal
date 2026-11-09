@@ -4,8 +4,8 @@
 //! Ask Oura for a range of days and publish what it answers as body windows, on a
 //! journal you name.
 //!
-//! No shipped command reaches this path yet; distributions don't package
-//! examples. It exists to prove the path on a running journal:
+//! Distributions don't package examples. It runs the same path as the owner
+//! command, on a journal you name:
 //!
 //!     cargo run -p solstone-core-import-host --example oura_body_segments -- \
 //!         <journal> <YYYYMMDD_HHMMSS> [--from YYYY-MM-DD --to YYYY-MM-DD] \
@@ -14,7 +14,7 @@
 //! Without `--pages` it asks Oura itself, with the journal's own tokens. With
 //! `--pages DIR` a folder of recorded responses answers instead: `index.json` and
 //! the pages it names, each a body Oura returned. With no range, each endpoint is
-//! asked from seven days before what it last covered, or for the last 30 days.
+//! asked for what coverage doesn't hold, and its trailing seven days.
 
 use std::path::Path;
 

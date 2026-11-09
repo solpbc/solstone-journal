@@ -3,8 +3,8 @@
 
 //! Publish an Apple Health export as body windows, on a journal you name.
 //!
-//! No shipped command reaches this path yet; distributions don't package
-//! examples. It exists to prove the path on a running journal:
+//! Distributions don't package examples. It runs the same path as the owner
+//! command, on a journal you name:
 //!
 //!     cargo run -p solstone-core-import-host --example apple_body_segments -- \
 //!         <journal> <export> <YYYYMMDD_HHMMSS> [facet]
