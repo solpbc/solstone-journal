@@ -127,6 +127,9 @@ pub(crate) fn parse_report(stdout: &str, target: &Path) -> Option<Report> {
                 if rel.is_empty() {
                     continue;
                 }
+                if !stays_inside(&rel) {
+                    return None;
+                }
                 if rel.contains('\u{fffd}') {
                     report.unreadable_names += 1;
                     continue;
@@ -152,18 +155,35 @@ pub(crate) fn parse_report(stdout: &str, target: &Path) -> Option<Report> {
     summary.then_some(report)
 }
 
+/// A path as restic prints it, in the form these reports compare. Only Windows
+/// has another separator: on Unix a backslash is part of the name.
 fn normalize(path: &str) -> String {
-    path.replace('\\', "/")
+    if cfg!(windows) {
+        let path = path.replace('\\', "/");
+        path.strip_prefix("//?/").unwrap_or(&path).to_owned()
+    } else {
+        path.to_owned()
+    }
 }
 
-/// Whether a restore leaves this path where it is.
-pub(crate) fn kept(rel: &str) -> bool {
+/// A name in a report is the snapshot's, and only ever lands under the journal.
+fn stays_inside(rel: &str) -> bool {
+    rel.split('/').all(|component| component != "..")
+}
+
+/// Whether a backup carries this path at all.
+fn not_backed_up(rel: &str) -> bool {
     let first = rel.split('/').next().unwrap_or(rel);
     let first = std::ffi::OsStr::new(first);
     solstone_core_journal::is_hidden_root_name(first)
         && !solstone_core_journal::is_trash_root_name(first)
         || copy_excluded(rel)
         || copy_file_excluded(rel)
+}
+
+/// Whether the sweep after a restore leaves this path where it is.
+pub(crate) fn kept(rel: &str) -> bool {
+    not_backed_up(rel)
         || LIVE_FILES.contains(&rel)
         || LIVE_PREFIXES.iter().any(|prefix| rel.starts_with(prefix))
 }
@@ -175,7 +195,7 @@ pub(crate) fn files_to_copy(journal: &Path, report: &Report) -> Vec<String> {
         .updated
         .iter()
         .chain(report.restored.iter())
-        .filter(|rel| !kept(rel))
+        .filter(|rel| !not_backed_up(rel))
         .filter(|rel| {
             fs::symlink_metadata(journal.join(rel)).is_ok_and(|meta| !meta.file_type().is_dir())
         })
@@ -218,7 +238,8 @@ fn copy_one(journal: &Path, folder: &str, rel: &str) -> io::Result<()> {
     let Ok(meta) = fs::symlink_metadata(&source) else {
         return Ok(());
     };
-    if meta.file_type().is_dir() {
+    // A pipe or socket holds nothing to keep, and opening a pipe would wait.
+    if !meta.is_file() && !meta.file_type().is_symlink() {
         return Ok(());
     }
     let destination = journal.join(folder).join(rel);
@@ -472,6 +493,61 @@ mod tests {
         let outside =
             report(&[r#"{"message_type":"verbose_status","action":"deleted","item":"/other/b"}"#]);
         assert_eq!(parse_report(&outside, target), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_backslash_is_part_of_a_name_on_unix() {
+        let text =
+            report(&[r#"{"message_type":"verbose_status","action":"updated","item":"/a\\b"}"#]);
+        assert_eq!(
+            parse_report(&text, Path::new("/j")).unwrap().updated,
+            ["a\\b"]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_verbatim_target_still_reads_as_the_journal() {
+        let text = report(&[
+            r#"{"message_type":"verbose_status","action":"deleted","item":"C:\\j\\sub\\b"}"#,
+        ]);
+        let parsed = parse_report(&text, Path::new(r"\\?\C:\j")).unwrap();
+        assert_eq!(parsed.deleted, ["sub/b"]);
+    }
+
+    #[test]
+    fn a_name_that_leaves_the_journal_is_no_report() {
+        let text = report(&[
+            r#"{"message_type":"verbose_status","action":"updated","item":"/../outside"}"#,
+        ]);
+        assert_eq!(parse_report(&text, Path::new("/j")), None);
+    }
+
+    #[test]
+    fn a_log_a_restore_overwrites_is_still_copied_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("backup")).unwrap();
+        fs::write(root.join("backup/teardown-recovery.json"), b"local").unwrap();
+        let plan = Report {
+            updated: vec!["backup/teardown-recovery.json".into()],
+            ..Report::default()
+        };
+        assert_eq!(
+            files_to_copy(root, &plan),
+            ["backup/teardown-recovery.json"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_is_not_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        nix::unistd::mkfifo(&root.join("pipe"), nix::sys::stat::Mode::S_IRWXU).unwrap();
+        copy_originals(root, FOLDER, &["pipe".to_owned()]).unwrap();
+        assert!(!root.join(FOLDER).join("pipe").exists());
     }
 
     #[test]
