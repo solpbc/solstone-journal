@@ -23,8 +23,22 @@ pub fn with_kinds<T>(journal: &Path, act: impl FnOnce(&[&dyn Kind]) -> T) -> T {
 }
 
 /// Finish what a stop interrupted and erase what is due, for every kind.
+///
+/// Erasing an archive leaves its rows in the shared claims database, and those
+/// go here too: a run neither in the journal nor in the trash is gone for good.
 pub fn sweep(journal: &Path, now: DateTime<Utc>) -> Swept {
-    with_kinds(journal, |kinds| {
+    let mut swept = with_kinds(journal, |kinds| {
         solstone_core_trash::sweep(journal, kinds, now)
-    })
+    });
+    match solstone_core_trash::held_paths(journal) {
+        Ok(paths) => {
+            let held = |id: &str| paths.iter().any(|path| *path == format!("imports/{id}"));
+            if let Err(error) = crate::audio_archive::claims::forget_gone_runs(journal, &held) {
+                swept.failed.push(format!("archive claims: {error}"));
+            }
+        }
+        // A trash that can't be read never lets an archive's claims go.
+        Err(error) => swept.failed.push(format!("archive claims: {error}")),
+    }
+    swept
 }

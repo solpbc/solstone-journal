@@ -76,13 +76,18 @@ pub fn import_label(journal: &Path, id: &str) -> Option<String> {
 /// How many original files the import kept: what it was given, kept in its
 /// record, and the originals in its own segments.
 pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
-    let record = journal.join(&things.record);
-    let in_record = read_json(&record.join("import.json"))
-        .and_then(|metadata| {
-            let path = str_of(&metadata, "file_path")?.to_owned();
-            Some(Path::new(&path).starts_with(&record) && Path::new(&path).is_file())
+    let in_record = std::iter::once(&things.record)
+        .chain(&things.companions)
+        .filter(|rel| {
+            let dir = journal.join(rel);
+            read_json(&dir.join("import.json"))
+                .and_then(|metadata| {
+                    let path = journal.join(str_of(&metadata, "file_path")?);
+                    Some(path.starts_with(&dir) && path.is_file())
+                })
+                .unwrap_or(false)
         })
-        .unwrap_or(false);
+        .count();
     let in_segments = things
         .segments
         .iter()
@@ -94,7 +99,7 @@ pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
             })
         })
         .count();
-    usize::from(in_record) + in_segments
+    in_record + in_segments
 }
 
 /// What one import holds, journal-relative: what its trash item moves.
@@ -104,6 +109,9 @@ pub struct ImportThings {
     pub source: String,
     /// Its record: `imports/<id>`.
     pub record: String,
+    /// Records that exist only for it: the hidden selection an archive uploaded
+    /// from the Import page leaves beside its run.
+    pub companions: Vec<String>,
     /// Its whole segments.
     pub segments: Vec<String>,
     /// Its own files in segments another import shares.
@@ -131,6 +139,7 @@ impl ImportThings {
     /// Every path the trash moves, record first.
     pub fn paths(&self) -> Vec<String> {
         let mut paths = vec![self.record.clone()];
+        paths.extend(self.companions.iter().cloned());
         paths.extend(self.segments.iter().cloned());
         paths.extend(self.files.iter().cloned());
         paths
@@ -187,9 +196,15 @@ pub fn import_things(journal: &Path, id: &str) -> Option<ImportThings> {
             }
         }
     }
+    let companions = if source == "audio_archive" {
+        archive_selections(journal, id)
+    } else {
+        Vec::new()
+    };
     let mut things = ImportThings {
         source,
         record,
+        companions,
         ..ImportThings::default()
     };
     for segment in mine {
@@ -208,6 +223,35 @@ pub fn import_things(journal: &Path, id: &str) -> Option<ImportThings> {
         }
     }
     Some(things)
+}
+
+/// The hidden selection records that belong to archive run `id`.
+fn archive_selections(journal: &Path, id: &str) -> Vec<String> {
+    let Ok(listing) = std::fs::read_dir(journal.join(IMPORTS_DIR)) else {
+        return Vec::new();
+    };
+    let mut found: Vec<String> = listing
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_owned();
+            if name == id || !is_import_id(&name) {
+                return None;
+            }
+            let metadata = read_json(&entry.path().join("import.json"))?;
+            if str_of(&metadata, "source_hint") != Some("audio_archive") {
+                return None;
+            }
+            let digest = metadata
+                .get("preview")?
+                .get("size")?
+                .get("archive_identity")?
+                .as_str()?;
+            let run = crate::audio_archive::read_matching_archive_run(journal, digest).ok()??;
+            (run == id).then(|| format!("{IMPORTS_DIR}/{name}"))
+        })
+        .collect();
+    found.sort();
+    found
 }
 
 /// What kind of import `id` is, from its records.
@@ -439,6 +483,30 @@ fn reclaim_for_own_file(journal: &Path, segment: &str, item: &str) -> Result<(),
     std::fs::remove_file(&tombstone).map_err(|error| format!("{segment}: {error}"))
 }
 
+/// An archive still owed processing is owed it again once it's back: the
+/// journal forgets a pending tile whose run has left.
+fn restore_pending_tiles(journal: &Path, item: &Item) {
+    let Unit::Import { source, id } = &item.unit else {
+        return;
+    };
+    if source != "audio_archive" {
+        return;
+    }
+    let pending = crate::audio_archive::ArchiveStore::open(journal, id, false)
+        .and_then(|store| store.pending_tiles(u32::MAX));
+    let result = pending.and_then(|tiles| {
+        tiles.iter().try_for_each(|(day, key)| {
+            crate::audio_archive::claims::register_pending_tile(journal, id, day, key)
+        })
+    });
+    if let Err(error) = result {
+        log::warn!(
+            "trash item {}: pending tiles weren't restored: {error}",
+            item.id
+        );
+    }
+}
+
 /// The trash's kind for imports.
 pub struct Imports<'a> {
     index: &'a dyn IndexNotify,
@@ -636,6 +704,7 @@ impl Kind for Imports<'_> {
                         reclaim_for_own_file(journal, parent, &item.id)?;
                     }
                 }
+                restore_pending_tiles(journal, item);
                 self.index.paths_returned(files)
             }
         }
@@ -998,6 +1067,36 @@ mod tests {
                 "chronicle/20260805/import.ics/093000_300".to_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn an_erased_archive_leaves_nothing_in_the_claims_database() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("imports").join(ID)).unwrap();
+        let conn =
+            rusqlite::Connection::open(crate::audio_archive::claims::claim_db_path(root.path()))
+                .unwrap();
+        conn.execute_batch(
+            "CREATE TABLE audio_archive_run (archive_identity TEXT PRIMARY KEY, import_id TEXT);
+             INSERT INTO audio_archive_run VALUES ('live','20260801_090000'),
+                ('trashed','20260801_100000'),('erased','20260801_110000');",
+        )
+        .unwrap();
+        drop(conn);
+        let held = |id: &str| id == OTHER;
+        let forgotten = crate::audio_archive::claims::forget_gone_runs(root.path(), &held).unwrap();
+        assert_eq!(forgotten, 1);
+        let conn =
+            rusqlite::Connection::open(crate::audio_archive::claims::claim_db_path(root.path()))
+                .unwrap();
+        let left: Vec<String> = conn
+            .prepare("SELECT archive_identity FROM audio_archive_run ORDER BY 1")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(left, vec!["live".to_owned(), "trashed".to_owned()]);
     }
 
     #[test]
