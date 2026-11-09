@@ -33,7 +33,6 @@ solstone-core-offload.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-sol-link = { workspace = true, default-features = false, features = ["host"] }
 solstone-core-system.workspace = true
-solstone-core-trash.workspace = true
 tokio = { workspace = true, features = ["rt", "time"] }
 
 [target.'cfg(unix)'.dependencies]

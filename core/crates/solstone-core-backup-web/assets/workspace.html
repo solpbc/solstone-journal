@@ -32,11 +32,6 @@
   </div>
 
   <p data-backup-loading role="status">loading backup settings…</p>
-  <section class="backup-previous" data-previous-journal hidden>
-    <div data-previous-rows></div>
-    <p class="backup-previous-help" data-previous-help data-copy="previous_journal.help"></p>
-    <p class="backup-previous-help" data-previous-result role="status" hidden></p>
-  </section>
   <div class="backup-panels">
     <article class="backup-panel" data-backup-panel="intro" hidden>
       <div class="backup-panel-main">
@@ -508,28 +503,13 @@
             <textarea name="recovery_key" data-restore-key-input autocomplete="off" spellcheck="false"></textarea>
           </label>
           <p class="backup-status-message" data-restore-status></p>
-          <div class="backup-panel-actions" data-restore-form-actions>
+          <div class="backup-panel-actions">
             <button type="submit" class="primary" data-copy="action_labels.restore"></button>
           </div>
         </form>
       </div>
 
-      <div class="backup-restore-gate" data-restore-gate role="group" aria-labelledby="backup-restore-gate-title" aria-describedby="backup-restore-gate-lines" hidden>
-        <h3 id="backup-restore-gate-title" data-restore-gate-title></h3>
-        <div id="backup-restore-gate-lines" data-restore-gate-lines></div>
-        <details class="backup-disclose" data-restore-gate-more>
-          <summary data-copy="restore_gate.more_summary"></summary>
-          <p data-copy="restore_gate.more.0"></p>
-          <p data-copy="restore_gate.more.1"></p>
-          <p data-copy="restore_gate.more.2"></p>
-        </details>
-        <div class="backup-panel-actions">
-          <button type="button" data-action="restore-gate-confirm"></button>
-          <button type="button" data-action="restore-gate-cancel" data-copy="restore_gate.cancel"></button>
-        </div>
-      </div>
-
-      <div class="backup-panel-actions" data-restore-outer-actions>
+      <div class="backup-panel-actions">
         <button type="button" data-action="cancel-restore" data-copy="action_labels.cancel"></button>
       </div>
     </article>

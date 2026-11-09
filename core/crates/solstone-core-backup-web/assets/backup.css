@@ -163,9 +163,6 @@
 .backup-paused-note[hidden],
 .backup-pause[hidden],
 .backup-switch-gate[hidden],
-.backup-restore-gate[hidden],
-.backup-previous[hidden],
-.backup-previous-help[hidden],
 .backup-status-message[hidden],
 .backup-operation[hidden],
 [data-restore-lane-panel][hidden],
@@ -808,15 +805,3 @@
   padding-top: 1.1rem;
   border-top: 1px solid var(--hairline);
 }
-
-.backup-restore-gate { margin-top: .9rem; padding: .85rem; border: 1px solid var(--warn); border-left: 3px solid var(--warn); border-radius: 8px; background: var(--warn-wash); }
-.backup-restore-gate h3 { margin: 0; font-size: 1rem; }
-.backup-restore-gate p { color: var(--warn-ink); }
-.backup-restore-gate .backup-disclose p { color: var(--ink-soft-paper); }
-.backup-previous { margin: 0 0 1rem; padding: .35rem 1rem .85rem; border: 1px solid var(--hairline); border-radius: 12px; background: var(--panel); }
-.backup-previous-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .55rem 0; border-bottom: 1px solid var(--hairline); }
-.backup-previous-row strong { font-weight: 600; }
-.backup-previous-row p { margin: .1rem 0 0; color: var(--ink-soft-paper); font-size: .9rem; line-height: 1.4; }
-.backup-previous-row button { flex: none; min-height: 44px; padding: 0 .9rem; border: 1px solid var(--hairline); border-radius: 6px; font: inherit; background: var(--panel); }
-.backup-previous-help { margin: .6rem 0 0; color: var(--ink-soft-paper); font-size: .9rem; line-height: 1.45; }
-.backup-previous-help a { color: var(--orange-text-aa); text-decoration: underline; }

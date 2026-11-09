@@ -2752,7 +2752,7 @@ button:focus:not(:focus-visible) {
     <!-- Trash Section: what waits before it's erased, the setting, and the removal history -->
     <section class="settings-section" id="section-trash" role="tabpanel" aria-labelledby="tab-trash">
       <h2 id="trashHeading">trash</h2>
-      <p class="settings-section-desc">segments and memories you delete, and previous journals you remove, wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
+      <p class="settings-section-desc">segments and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
       <div class="log-panel trash-panel">
         <div class="trash-bar" id="trashBar" tabindex="-1" hidden>
           <div class="trash-bar-group" id="trashBarIdle">
@@ -6803,7 +6803,6 @@ const REMOVAL_KIND = {
   facet_file: ['file from a facet', 'files from a facet'],
   speakers: ['what your journal keeps about voices', 'what your journal keeps about voices'],
   backup: ['backup copies', 'backup copies'],
-  previous_journal: ['previous journal', 'previous journals'],
 };
 const REMOVAL_KIND_FALLBACK = ['something else', 'other things'];
 const REMOVAL_NAMELESS = new Set(['entity', 'facet', 'facet_file', 'detected_entities']);
@@ -6819,7 +6818,6 @@ const REMOVAL_ACTION = {
   voice_only_release: 'removed because "leave out other voices" was on',
   backup_off: 'deleted when you turned off backup',
   finish_stopped: 'finished deleting',
-  previous_journal_remove: 'moved to the trash',
 };
 const REMOVAL_ACTION_FALLBACK = 'removed';
 const REMOVAL_ACTION_NAMES_PLACE = { backup_off: 'backup' };
@@ -6883,8 +6881,6 @@ function removalHow(entry) {
     if (entry.event === 'erased' && entry.surface === 'policy' && entry.policy === 'trash') {
       return REMOVAL_COPY.erasedOnItsDate;
     }
-    // "in backup" would read as though it is in the owner's backup.
-    if (entry.event === 'trashed' && entry.unit && entry.unit.kind === 'previous_journal') return happened;
     const where = REMOVAL_SURFACE[removalSurfaceKey(entry)];
     return where ? `${happened} ${where}` : happened;
   }
@@ -7044,16 +7040,7 @@ const TRASH_COPY = {
   agentOne: 'anything an agent already read stays with it.',
   agentMany: 'anything an agent already read stays with them.',
 };
-const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved', previous_journal: 'previous journal' };
-const TRASH_PREVIOUS_NOTE = "recovering it returns it to the backup page and doesn't change your journal.";
-
-// The day a kept journal was set aside, on the journal's clock, from its id.
-function trashPreviousDay(id) {
-  const match = /^previous-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(id || '');
-  if (!match) return null;
-  const parts = window.JournalClock.parts(new Date(Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5], +match[6])));
-  return `${parts.year}${parts.month}${parts.day}`;
-}
+const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved' };
 
 let trashItems = [];
 let trashConfirmed = null;
@@ -7063,7 +7050,6 @@ function trashWord(items, count) {
   const kinds = new Set(items.map(item => item.kind));
   const pair = kinds.size === 1 && kinds.has('segment') ? ['segment', 'segments']
     : kinds.size === 1 && kinds.has('memory') ? ['memory', 'memories']
-    : kinds.size === 1 && kinds.has('previous_journal') ? ['previous journal', 'previous journals']
     : ['thing', 'things'];
   return pair[count === 1 ? 0 : 1];
 }
@@ -7102,18 +7088,16 @@ function trashRow(item) {
   const body = removalEl('span', 'trash-row-body');
   const what = removalEl('span', 'removal-line');
   what.append(removalEl('span', 'removal-what', TRASH_KIND_LABEL[item.kind] || TRASH_KIND_LABEL.segment));
-  const previousDay = item.kind === 'previous_journal' ? trashPreviousDay(item.id) : null;
-  const qualifiers = [previousDay ? removalDay(previousDay) : item.day && removalDay(item.day), removalSegmentTime(item.segment)];
+  const qualifiers = [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
   if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
   qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
   const when = removalEl('span', 'removal-how');
   const date = trashEraseDate(item.erase_at, new Date());
   when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
-  const size = item.kind === 'segment' || item.kind === 'previous_journal' ? trashSize(item.bytes) : '';
+  const size = item.kind === 'segment' ? trashSize(item.bytes) : '';
   if (size) when.append(document.createTextNode(` · ${size}`));
   body.append(what, when);
-  if (item.kind === 'previous_journal') body.append(removalEl('span', 'trash-returned', TRASH_PREVIOUS_NOTE));
-  else if (item.replaces) body.append(removalEl('span', 'trash-returned', TRASH_COPY.returned));
+  if (item.replaces) body.append(removalEl('span', 'trash-returned', TRASH_COPY.returned));
   row.append(box, body);
   return row;
 }
@@ -7208,10 +7192,7 @@ function trashConfirmCopy(act, items) {
       : trashFill(TRASH_COPY.confirmMany, { n, things: trashWord(items, n) });
     paragraphs.push(one ? TRASH_COPY.bodyOne : TRASH_COPY.bodyMany);
   }
-  // Nothing was made from a previous journal.
-  if (!items.every(item => item.kind === 'previous_journal')) {
-    paragraphs.push(one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany);
-  }
+  paragraphs.push(one ? TRASH_COPY.staysOne : TRASH_COPY.staysMany);
   if (memory) paragraphs.push(one ? TRASH_COPY.agentOne : TRASH_COPY.agentMany);
   return { title, paragraphs };
 }

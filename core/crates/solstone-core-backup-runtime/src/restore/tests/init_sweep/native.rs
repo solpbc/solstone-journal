@@ -1,23 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The whole restore against real restic. Needs `SOLSTONE_NATIVE_RESTIC`.
+//! A restore during setup against real restic. Needs `SOLSTONE_NATIVE_RESTIC`.
 
 use super::*;
 use crate::runner::run_restic;
 use std::cell::Cell;
 use std::path::PathBuf;
-
-fn folder(root: &Path) -> PathBuf {
-    let mut found = fs::read_dir(root)
-        .unwrap()
-        .flatten()
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with(FOLDER_GLOB))
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    assert_eq!(found.len(), 1, "{found:?}");
-    found.pop().unwrap()
-}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Stop {
@@ -104,6 +93,7 @@ impl Fixture {
         let root = journal.path();
         let stored = solstone_core_backup::generate_and_store_keys(root).unwrap();
         let key = parse_recovery_key(&stored.recovery_key).unwrap();
+        restore_sweep::mark_init_restore(root).unwrap();
         let repository = tempfile::tempdir().unwrap();
         let mut destination = destination();
         destination.repository = repository.path().join("r").to_string_lossy().into_owned();
@@ -204,19 +194,8 @@ impl Fixture {
     }
 
     fn restore(&self, runner: &Restic) -> RestoreOutcome {
-        let clock = TestClock;
-        let maintenance = Maintenance;
-        let services = BackupServices {
-            restic: Some(self.binary.as_path().into()),
-            ..services(runner, &clock, &maintenance)
-        };
-        restore_journal(
-            self.journal.path(),
-            &services,
-            &Recorder::new(),
-            self.destination.clone(),
-            &self.key,
-        )
+        let drained = Cell::new(0);
+        self.restore_mobile(runner, &drained)
     }
 
     fn assert_is_the_snapshot(&self) {
@@ -250,79 +229,45 @@ impl Fixture {
         );
         assert!(!root.join(".trash/since").exists());
     }
-
-    fn assert_nothing_was_lost(&self) {
-        let root = self.journal.path();
-        let aside = folder(root);
-        assert_eq!(read(&aside, "notes/changed.md"), "edited since");
-        assert_eq!(read(&aside, "notes/newer.md"), "written since");
-        assert_eq!(
-            read(&aside, "notes/deep/er/newest.md"),
-            "written since, deeper"
-        );
-        assert_eq!(read(&aside, "config/removals/newer.json"), "newer entry");
-        assert_eq!(
-            read(&aside, "chronicle/20260101/s/090000_300/tombstone.json"),
-            "{}"
-        );
-        assert_eq!(
-            read(&aside, "entities/cache/entity.json"),
-            "changed owner cache"
-        );
-        assert_eq!(
-            read(&aside, ".trash/since/item.json"),
-            "trashed since the backup"
-        );
-        assert!(!aside.join("notes/same.md").exists(), "unchanged stays out");
-        assert!(
-            !aside.join("cache").exists(),
-            "what a restore leaves alone stays out"
-        );
-    }
 }
 
-#[test]
-#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
-fn the_journal_becomes_the_snapshot_and_nothing_is_lost() {
-    let fixture = Fixture::lived_in();
-    let outcome = fixture.restore(&Restic::stopping(Stop::Never));
+fn is_ok(outcome: &RestoreOutcome) {
     assert_eq!(
         (outcome.status.as_str(), outcome.reason_code.as_deref()),
         ("ok", None)
     );
-    fixture.assert_is_the_snapshot();
-    fixture.assert_nothing_was_lost();
-    assert!(
-        !fixture
-            .journal
-            .path()
-            .join(restore_set_aside::ATTEMPT_FILE)
-            .exists()
-    );
 }
 
 #[test]
 #[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
-fn a_stop_anywhere_ends_the_same_and_keeps_the_true_original() {
+fn a_restore_during_setup_makes_the_journal_the_snapshot() {
+    let fixture = Fixture::lived_in();
+    is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
+    fixture.assert_is_the_snapshot();
+    assert!(!restore_sweep::is_init_restore(fixture.journal.path()));
+}
+
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn a_stop_anywhere_ends_the_same() {
     for stop in [
         Stop::BeforeRestore,
         Stop::AfterRestore,
         Stop::ReportAfterRestore,
     ] {
         let fixture = Fixture::lived_in();
-        fixture.restore(&Restic::stopping(stop));
-        // Whatever happened, the first copy of the changed file is the original.
-        assert_eq!(
-            read(&folder(fixture.journal.path()), "notes/changed.md"),
-            "edited since"
-        );
-        let outcome = fixture.restore(&Restic::stopping(Stop::Never));
-        assert_eq!(
-            (outcome.status.as_str(), outcome.reason_code.as_deref()),
-            ("ok", None)
-        );
+        let stopped = fixture.restore(&Restic::stopping(stop));
+        assert_eq!(stopped.status, "error");
+        assert!(matches!(
+            read_whole_journal_restore(fixture.journal.path()),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
+        is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
         fixture.assert_is_the_snapshot();
-        fixture.assert_nothing_was_lost();
+        assert!(matches!(
+            read_whole_journal_restore(fixture.journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ));
     }
 }
 
@@ -332,54 +277,23 @@ fn a_failed_restore_or_check_removes_nothing() {
     for stop in [Stop::RestoreFails, Stop::CheckFails] {
         let fixture = Fixture::lived_in();
         let outcome = fixture.restore(&Restic::stopping(stop));
-        assert_ne!(outcome.status, "ok");
+        assert_eq!(outcome.status, "error");
         let root = fixture.journal.path();
         assert_eq!(read(root, "notes/newer.md"), "written since");
-        assert_eq!(read(root, "config/removals/newer.json"), "newer entry");
+        assert!(matches!(
+            read_whole_journal_restore(root),
+            WholeJournalRestoreReadiness::Pending(_)
+        ));
     }
 }
 
 #[test]
 #[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
-fn a_report_that_fails_after_the_restore_never_reads_as_success() {
-    let fixture = Fixture::lived_in();
-    let outcome = fixture.restore(&Restic::stopping(Stop::ReportAfterRestore));
-    assert_eq!(outcome.status, "degraded");
-    assert_eq!(
-        outcome.reason_code.as_deref(),
-        Some(RESTORE_REASON_SET_ASIDE_INCOMPLETE)
-    );
-    assert_eq!(
-        read(fixture.journal.path(), "notes/newer.md"),
-        "written since"
-    );
-}
-
-#[test]
-#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
-fn on_mobile_a_failed_restore_keeps_its_obligation_and_the_retry_finishes() {
+fn without_the_marker_a_restore_stays_an_overlay() {
     let fixture = Fixture::lived_in();
     let root = fixture.journal.path();
-    let drained = Cell::new(0);
-    let failed = fixture.restore_mobile(&Restic::stopping(Stop::RestoreFails), &drained);
-    assert_eq!(failed.status, "error");
-    assert_eq!(drained.get(), 1, "the copies are made after the drain");
-    assert!(matches!(
-        read_whole_journal_restore(root),
-        WholeJournalRestoreReadiness::Pending(_)
-    ));
-    assert_eq!(read(&folder(root), "notes/changed.md"), "edited since");
+    restore_sweep::finish_init_restore(root);
+    is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
+    assert_eq!(read(root, "notes/changed.md"), "as backed up");
     assert_eq!(read(root, "notes/newer.md"), "written since");
-
-    let retried = fixture.restore_mobile(&Restic::stopping(Stop::Never), &drained);
-    assert_eq!(
-        (retried.status.as_str(), retried.reason_code.as_deref()),
-        ("ok", None)
-    );
-    assert!(matches!(
-        read_whole_journal_restore(root),
-        WholeJournalRestoreReadiness::Absent
-    ));
-    fixture.assert_is_the_snapshot();
-    fixture.assert_nothing_was_lost();
 }

@@ -292,7 +292,6 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
     let cleanup_deps = deps.clone();
     #[cfg(windows)]
     let cleanup_operations = deps.operations.clone();
-    let previous_journal = deps.clone();
     let handoff = deps;
     let router = Router::new()
         .route("/app/backup/", get(assets::shell))
@@ -302,17 +301,6 @@ pub fn routes_with_deps(deps: BackupWebDeps) -> Router {
         .route(
             "/app/backup/status",
             get(move || get_status(status.clone())),
-        )
-        .route(
-            "/app/backup/previous-journal",
-            get({
-                let deps = previous_journal.clone();
-                move || get_previous_journal(deps.clone())
-            }),
-        )
-        .route(
-            "/app/backup/previous-journal/remove",
-            post(move |body| remove_previous_journal(previous_journal.clone(), body)),
         )
         .route(
             "/app/backup/offload/status",
@@ -468,64 +456,6 @@ async fn get_status(deps: BackupWebDeps) -> axum::response::Response {
         move || status_response(&deps),
     )
     .await
-}
-
-/// What whole-journal restores kept, which stays until the owner removes it.
-async fn get_previous_journal(deps: BackupWebDeps) -> axum::response::Response {
-    match tokio::task::spawn_blocking(move || {
-        solstone_core_trash::previous_journal::kept(&deps.journal_root)
-    })
-    .await
-    {
-        Ok(Ok(kept)) => response::success(serde_json::json!({
-            "kept": kept,
-            // iOS's restorer can't report what it would change, so its restore
-            // keeps no previous journal.
-            "keeps_previous": cfg!(not(target_os = "ios")),
-        })),
-        Ok(Err(error)) => previous_journal_failed(&error.to_string()),
-        Err(error) => previous_journal_failed(&error.to_string()),
-    }
-}
-
-/// Move a kept journal to the trash, as one thing.
-async fn remove_previous_journal(deps: BackupWebDeps, body: Bytes) -> axum::response::Response {
-    if operation::is_busy(&deps.operations) {
-        return operation::busy_response();
-    }
-    let payload = match validation::object(&body, response::missing) {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
-    let stamp = match validation::required_string(&payload, "stamp") {
-        Ok(value) => value,
-        Err(error) => return error,
-    };
-    let root = deps.journal_root.clone();
-    match tokio::task::spawn_blocking(move || {
-        solstone_core_trash::previous_journal::remove(
-            &root,
-            &stamp,
-            solstone_core_removals::Surface::Web {
-                page: solstone_core_removals::Page::Backup,
-            },
-        )
-    })
-    .await
-    {
-        Ok(Ok(item)) => response::success(serde_json::json!({ "id": item.id })),
-        Ok(Err(error)) => previous_journal_failed(&error.to_string()),
-        Err(error) => previous_journal_failed(&error.to_string()),
-    }
-}
-
-fn previous_journal_failed(detail: &str) -> axum::response::Response {
-    response::error(
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "your previous journal couldn't be changed. try again.",
-        "previous_journal_failed",
-        detail,
-    )
 }
 
 async fn get_offload(deps: BackupWebDeps) -> axum::response::Response {

@@ -18,7 +18,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
-- restoring your whole journal now makes it match the backup, removal history and trash included. the backup page asks before it starts, and what's different in your journal at that moment is kept as a previous journal until you remove it. for a journal on iphone or ipad, a restore still lays the backup over your journal, and what it replaces isn't kept.
 - a segment you deleted now comes back if a device sends it again or an archive you merge in holds it. before, your journal refused it.
 - the activities page now says what became of a workout's or a night's record when part or all of it is gone or can't be read: removed by you, removed, part of it removed, can't be read right now, or no longer in your journal. "part of it removed" now shows when you delete a later part of a night or a workout too, not only its start.
 - search now finds a title, description or details you wrote on a workout, a night's sleep or a mindfulness session listed with your activities. agents you've connected find them only when they can read it.

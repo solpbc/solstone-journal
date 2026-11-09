@@ -7,8 +7,8 @@
 //! Two source checks over every production Rust file (test modules and test
 //! files are skipped):
 //!
-//! 1. **Only the listed files name the trash folder or a restore's set-aside
-//!    folder** (`TRASH_DIR`, `BEFORE_RESTORE_PREFIX`, or either as a literal). Code that wants what is in the trash goes through
+//! 1. **Only the listed files name the trash folder** (`TRASH_DIR` or a
+//!    `".trash"` literal). Code that wants what is in the trash goes through
 //!    `solstone-core-trash`.
 //! 2. **A walk of the journal root skips the trash.** A directory listing whose
 //!    argument is the journal root itself (`journal`, `journal_root`,
@@ -44,38 +44,16 @@ const NAMES_THE_TRASH: &[(&str, &str)] = &[
         "the index's resolver refuses it",
     ),
     (
-        "core/crates/solstone-core-backup-cli/src/lib.rs",
-        "tells the owner where a stopped restore's originals are",
-    ),
-    (
-        "core/crates/solstone-core-backup-runtime/src/restore_set_aside.rs",
-        "a whole-journal restore sets files aside into it",
-    ),
-    (
-        "core/crates/solstone-core-trash/src/previous_journal.rs",
-        "what a restore set aside, as one trash item",
-    ),
-    (
-        "core/crates/solstone-core-journal-io/src/copy_excludes.rs",
-        "a previous journal and the trash's lock stay out of backups",
-    ),
-    (
         "core/crates/solstone-core-repository-contracts/src/contracts/journal_trash_hidden.rs",
         "this guard",
     ),
 ];
 
 /// Files that list the journal root and already skip the trash, and how.
-const ROOT_WALKS: &[(&str, &str)] = &[
-    (
-        "core/crates/solstone-core-segment/src/chronicle_migration.rs",
-        "keeps only eight-digit day names",
-    ),
-    (
-        "core/crates/solstone-core-trash/src/previous_journal.rs",
-        "keeps only the names a restore sets aside into",
-    ),
-];
+const ROOT_WALKS: &[(&str, &str)] = &[(
+    "core/crates/solstone-core-segment/src/chronicle_migration.rs",
+    "keeps only eight-digit day names",
+)];
 
 /// Calls that list a directory.
 const LISTINGS: &[&str] = &[
@@ -131,11 +109,6 @@ fn production_sources(root: &Path) -> Vec<PathBuf> {
 }
 
 /// Whether an item or expression carries `#[cfg(test)]` (or a `cfg` naming test).
-/// Whether a literal names the trash, or the folder a restore sets aside into.
-fn names_hidden_literal(literal: &str) -> bool {
-    literal.contains(".trash") || literal.contains(".before-restore")
-}
-
 fn is_test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attr| {
         (attr.path().is_ident("cfg") || attr.path().is_ident("test"))
@@ -157,13 +130,11 @@ impl Scan {
     fn tokens(&mut self, tokens: proc_macro2::TokenStream) {
         for token in tokens {
             match token {
-                proc_macro2::TokenTree::Ident(ident)
-                    if ident == "TRASH_DIR" || ident == "BEFORE_RESTORE_PREFIX" =>
-                {
+                proc_macro2::TokenTree::Ident(ident) if ident == "TRASH_DIR" => {
                     self.names_trash.push(ident.span().start().line);
                 }
                 proc_macro2::TokenTree::Literal(literal)
-                    if names_hidden_literal(&literal.to_string()) =>
+                    if literal.to_string().contains(".trash") =>
                 {
                     self.names_trash.push(literal.span().start().line);
                 }
@@ -233,13 +204,13 @@ impl<'ast> Visit<'ast> for Scan {
     }
 
     fn visit_ident(&mut self, ident: &'ast proc_macro2::Ident) {
-        if ident == "TRASH_DIR" || ident == "BEFORE_RESTORE_PREFIX" {
+        if ident == "TRASH_DIR" {
             self.names_trash.push(ident.span().start().line);
         }
     }
 
     fn visit_lit_str(&mut self, literal: &'ast syn::LitStr) {
-        if names_hidden_literal(&literal.value()) {
+        if literal.value().contains(".trash") {
             self.names_trash.push(literal.span().start().line);
         }
     }
@@ -276,8 +247,6 @@ fn nothing_outside_the_trash_names_or_walks_into_it() {
         };
         if !source.contains("TRASH_DIR")
             && !source.contains(".trash")
-            && !source.contains("BEFORE_RESTORE_PREFIX")
-            && !source.contains(".before-restore")
             && !LISTINGS.iter().any(|name| source.contains(name))
             && !source.contains("WalkDir")
         {

@@ -256,14 +256,8 @@ pub(crate) fn sweep_trash(journal_root: &Path) {
         .spawn(move || {
             let index = RetentionIndex::new(&journal_root);
             let recordings = Recordings::new(&index);
-            let swept = solstone_core_trash::sweep(
-                &journal_root,
-                &[
-                    &recordings,
-                    &solstone_core_trash::previous_journal::PreviousJournal,
-                ],
-                chrono::Utc::now(),
-            );
+            let swept =
+                solstone_core_trash::sweep(&journal_root, &[&recordings], chrono::Utc::now());
             for failure in &swept.failed {
                 log::warn!("trash: {failure}");
             }

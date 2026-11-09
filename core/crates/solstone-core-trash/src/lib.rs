@@ -34,8 +34,6 @@
 //! nothing writes into it but this crate and a whole-journal restore. A root
 //! walk skips it through [`is_trash_root_name`].
 
-pub mod previous_journal;
-
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -239,24 +237,11 @@ pub fn detach(
     surface: Surface,
     paths: Vec<String>,
 ) -> Result<Item, TrashError> {
-    detach_as(journal, kind, unit, action, surface, paths, None)
-}
-
-/// [`detach`], under an id of the kind's choosing when it names one.
-pub(crate) fn detach_as(
-    journal: &Path,
-    kind: &dyn Kind,
-    unit: Unit,
-    action: Action,
-    surface: Surface,
-    paths: Vec<String>,
-    id: Option<String>,
-) -> Result<Item, TrashError> {
     let now = Utc::now();
     let erase_at = now + Duration::days(i64::from(erase_after_days(journal)));
     let mut item = Item {
         schema: SCHEMA,
-        id: id.unwrap_or_else(|| item_id(now)),
+        id: item_id(now),
         state: State::Detaching,
         unit,
         action,
@@ -698,7 +683,6 @@ fn describe(unit: &Unit) -> &'static str {
     match unit {
         Unit::Memory { .. } => "memory",
         Unit::Segment { .. } => "recording",
-        Unit::PreviousJournal => "previous journal",
         _ => "thing",
     }
 }
