@@ -1117,8 +1117,6 @@ pub fn append_edit(
     record
 }
 
-/// Only the owner writes a body record. To anyone else it reads as no record,
-/// as it does to every default reader.
 fn refuse_while_moving(
     root: &Path,
     facet: &str,
@@ -1137,6 +1135,8 @@ fn refuse_while_moving(
     )
 }
 
+/// Only the owner writes a body record. To anyone else it reads as no record,
+/// as it does to every default reader.
 fn actor_may_write(record: &ActivityRecord, actor: &str) -> bool {
     !is_body_record(record) || actor.starts_with("owner:")
 }

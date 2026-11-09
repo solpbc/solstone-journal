@@ -17,6 +17,7 @@ mod oura_fetch;
 #[cfg(feature = "in-process-pdf")]
 pub mod pdf_in_process;
 pub mod registry;
+mod strava_decision;
 mod strava_filing;
 mod strava_names;
 mod strava_summary;
