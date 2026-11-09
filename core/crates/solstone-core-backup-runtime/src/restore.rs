@@ -1269,6 +1269,12 @@ fn restore_journal_with(
             ),
         );
     }
+    // iOS restores through its linked restorer, which reports no dry run, so
+    // nothing is swept there: a clean restore during setup just ends it.
+    #[cfg(target_os = "ios")]
+    if integrity_ok && crate::restore_sweep::is_init_restore(journal) {
+        crate::restore_sweep::finish_init_restore(journal);
+    }
     if admitted.revalidate_for_target().is_err() {
         return admission_failed();
     }
