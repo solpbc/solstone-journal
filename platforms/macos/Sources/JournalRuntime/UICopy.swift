@@ -5,6 +5,7 @@ public enum UICopy {
     public static let JOURNAL_SPAWN_BLOCKED_PORTS = "journal ports are still in use"
     public static let JOURNAL_DRIVE_CANNOT_RUN = "your journal can't run on this drive because the drive can't save files the way your journal needs. use a mac-formatted drive for your journal."
     public static let JOURNAL_SPAWN_PORT_CHECK_FAILED = "couldn't verify journal ports are free"
+    public static let JOURNAL_SPAWN_PORT_HELD_ELSEWHERE = "your journal can't start because another app is using the connection it needs on this mac. on a shared mac, this is usually another account's journal."
     public static let JOURNAL_SPAWN_BLOCKED_LEGACY_SERVICE = "something else is set up to run your journal"
     public static let JOURNAL_SPAWN_SERVICE_CHECK_FAILED = "couldn't tell if something else is running your journal"
     public static let JOURNAL_READINESS_TIMEOUT = "journal didn't become ready in time"

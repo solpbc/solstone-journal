@@ -510,7 +510,7 @@ struct SupervisedJournalRunnerTests {
 
         try await runner.start(runtime: fixture.runtime, journalRoot: fixture.realJournalRoot, port: 5015, receiptContext: makeReceiptFixture().context)
         spawner.exit(spawn: 0, status: 9)
-        try await waitForStatusCount(statuses, count: 1)
+        try await waitForStatus(statuses) { if case .stopped = $0 { return true } else { return false } }
 
         #expect(spawner.spawnRequests().count == 1)
         guard case .stopped(let diagnostic) = statuses.snapshot().last else {
@@ -518,6 +518,71 @@ struct SupervisedJournalRunnerTests {
             return
         }
         #expect(diagnostic.outputExcerpt == UICopy.JOURNAL_SPAWN_SERVICE_CHECK_FAILED)
+    }
+
+    @Test func slowGateBlocksStillStopAfterTheLimitAndShowStartingMeanwhile() async throws {
+        let fixture = try RunnerFixture()
+        defer { fixture.clear() }
+        let statuses = RunnerStatusRecorder()
+        let spawner = RecordingProcessSpawner(pids: [4242])
+        let clock = AdvancingRunnerClock()
+        let blockage = SingleSupervisorGateBlockage.legacyServiceVerificationFailed(
+            JournalDiagnostic(commandLabel: "legacy journal service", outputExcerpt: "legacy service could not be inspected")
+        )
+        // Each blocked check takes 40 s, as a launchctl timeout would: five
+        // failures never fall inside one minute.
+        let runner = SupervisedJournalRunner(
+            clock: clock,
+            statusSink: { statuses.append($0) },
+            gate: ScriptedRunnerGate([.success], then: .blocked(blockage), blockedCost: .seconds(40), clock: clock),
+            containmentEvidenceReader: FixedStartTimeReader(startTimes: [1_000]),
+            processSpawner: spawner,
+            pidExists: { _ in false }
+        )
+
+        try await runner.start(runtime: fixture.runtime, journalRoot: fixture.realJournalRoot, port: 5015, receiptContext: makeReceiptFixture().context)
+        spawner.exit(spawn: 0, status: 9)
+        try await waitForStatus(statuses) { if case .stopped = $0 { return true } else { return false } }
+
+        let snapshot = statuses.snapshot()
+        #expect(snapshot.filter { $0 == .restarting(generation: nil) }.count == 4)
+        guard case .stopped(let diagnostic) = snapshot.last else {
+            Issue.record("expected a terminal stop")
+            return
+        }
+        #expect(diagnostic.outputExcerpt == UICopy.JOURNAL_SPAWN_SERVICE_CHECK_FAILED)
+        #expect(spawner.spawnRequests().count == 1)
+    }
+
+    @Test func restartDuringAnAutomaticRelaunchIsNotStoppedByIt() async throws {
+        let fixture = try RunnerFixture()
+        defer { fixture.clear() }
+        let statuses = RunnerStatusRecorder()
+        let spawner = RecordingProcessSpawner(pids: [4242, 4243])
+        let gate = HoldingRunnerGate()
+        let runner = SupervisedJournalRunner(
+            clock: NoopRunnerClock(),
+            statusSink: { statuses.append($0) },
+            gate: gate,
+            containmentEvidenceReader: FixedStartTimeReader(startTimes: [1_000, 2_000]),
+            processSpawner: spawner,
+            pidExists: { _ in false }
+        )
+
+        try await runner.start(runtime: fixture.runtime, journalRoot: fixture.realJournalRoot, port: 5015, receiptContext: makeReceiptFixture().context)
+        spawner.exit(spawn: 0, status: 9)
+        // The automatic relaunch is now inside its (slow) gate.
+        try await gate.waitForHeldCall()
+        try await runner.restart()
+        #expect(spawner.spawnRequests().count == 2)
+        let restarted = try #require(await runner.currentIdentity())
+        await gate.releaseHeldCall()
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(await runner.currentIdentity() == restarted)
+        #expect(await runner.terminalReason() == nil)
+        #expect(!statuses.snapshot().contains { if case .stopped = $0 { return true } else { return false } })
+        #expect(spawner.spawnRequests().count == 2)
     }
 
     @Test func unresolvedContainmentSignalsOnlyVerifiedMembersAndNeverReachesRelaunchGate() async throws {
@@ -817,6 +882,15 @@ private func waitForNoActiveChild(_ runner: SupervisedJournalRunner) async throw
     Issue.record("timed out waiting for child exit")
 }
 
+private func waitForStatus(_ recorder: RunnerStatusRecorder, where match: (JournalRuntimeStatus) -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+    while ContinuousClock.now < deadline {
+        if recorder.snapshot().contains(where: match) { return }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    Issue.record("timed out waiting for runtime status")
+}
+
 private func waitForStatusCount(_ recorder: RunnerStatusRecorder, count: Int) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(1))
     while ContinuousClock.now < deadline {
@@ -938,14 +1012,58 @@ private final class RecordingRunnerGate: SingleSupervisorGating, @unchecked Send
 private actor ScriptedRunnerGate: SingleSupervisorGating {
     private var script: [SingleSupervisorGateResult]
     private let fallback: SingleSupervisorGateResult
+    private let blockedCost: Duration
+    private let clock: (any MonotonicClock)?
 
-    init(_ script: [SingleSupervisorGateResult], then fallback: SingleSupervisorGateResult = .success) {
+    init(
+        _ script: [SingleSupervisorGateResult],
+        then fallback: SingleSupervisorGateResult = .success,
+        blockedCost: Duration = .zero,
+        clock: (any MonotonicClock)? = nil
+    ) {
         self.script = script
         self.fallback = fallback
+        self.blockedCost = blockedCost
+        self.clock = clock
     }
 
     func prepareForSpawn(journalRoot: URL) async -> SingleSupervisorGateResult {
-        script.isEmpty ? fallback : script.removeFirst()
+        let result = script.isEmpty ? fallback : script.removeFirst()
+        if case .blocked = result, let clock {
+            await clock.sleep(for: blockedCost)
+        }
+        return result
+    }
+}
+
+/// Passes the first call, holds the second (an automatic relaunch) until
+/// released, and passes every call after it.
+private actor HoldingRunnerGate: SingleSupervisorGating {
+    private var calls = 0
+    private var held: CheckedContinuation<Void, Never>?
+
+    func prepareForSpawn(journalRoot: URL) async -> SingleSupervisorGateResult {
+        calls += 1
+        if calls == 2 {
+            await withCheckedContinuation { held = $0 }
+        }
+        return .success
+    }
+
+    func waitForHeldCall() async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while held == nil {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("the relaunch never reached the gate")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func releaseHeldCall() {
+        held?.resume()
+        held = nil
     }
 }
 

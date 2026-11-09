@@ -15,6 +15,8 @@ struct LegacyJournalServiceRetirerTests {
         try fixture.writeSameRootPlist()
         let runner = FakeSubprocessRunner()
         runner.enqueue("print", .success(stdout: Data(loadedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
+        runner.enqueue("kill", .success())
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
         runner.enqueue("bootout", .success())
         runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
         let retirer = LegacyJournalServiceRetirer(
@@ -28,7 +30,7 @@ struct LegacyJournalServiceRetirerTests {
 
         #expect(result == .success(.provenMatchLoaded))
         #expect(!FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.map(\.arguments.first) == ["print", "bootout", "print"])
+        #expect(runner.invocations.map(\.arguments.first) == ["print", "kill", "print", "bootout", "print"])
     }
 
     @Test func noServiceRequiresNotFoundMarkerNotExitCodeAlone() async throws {
@@ -235,7 +237,7 @@ struct LegacyJournalServiceRetirerTests {
         defer { fixture.clear() }
         try fixture.writePlist(replacing: [
             "<key>StandardErrorPath</key>\n\t<string>/Users/jer/journal/health/service.log</string>":
-                "<key>StandardErrorPath</key>\n\t<string>/Users/jer/journal/health/other.log</string>"
+                "<key>StandardErrorPath</key>\n\t<string>/Users/jer/other-journal/health/service.log</string>"
         ])
         let runner = FakeSubprocessRunner()
         runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
@@ -331,6 +333,8 @@ struct LegacyJournalServiceRetirerTests {
         try fixture.writeSameRootPlist()
         let runner = FakeSubprocessRunner()
         runner.enqueue("print", .success(stdout: Data(loadedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
+        runner.enqueue("kill", .success())
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
         runner.enqueue("bootout", .success(stderr: Data("bootout failed\n".utf8), exitCode: 5))
         let retirer = LegacyJournalServiceRetirer(
             runner: runner,
@@ -346,7 +350,7 @@ struct LegacyJournalServiceRetirerTests {
             return
         }
         #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.map(\.arguments.first) == ["print", "bootout"])
+        #expect(runner.invocations.map(\.arguments.first) == ["print", "kill", "print", "bootout", "print"])
     }
 
     @Test func bootoutTimeoutBlocksWithoutUnlink() async throws {
@@ -355,6 +359,8 @@ struct LegacyJournalServiceRetirerTests {
         try fixture.writeSameRootPlist()
         let runner = FakeSubprocessRunner()
         runner.enqueue("print", .success(stdout: Data(loadedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
+        runner.enqueue("kill", .success())
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
         runner.enqueue("bootout", .success(delay: .milliseconds(1)))
         let retirer = LegacyJournalServiceRetirer(
             runner: runner,
@@ -371,7 +377,7 @@ struct LegacyJournalServiceRetirerTests {
             return
         }
         #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.map(\.arguments.first) == ["print", "bootout"])
+        #expect(runner.invocations.map(\.arguments.first) == ["print", "kill", "print", "bootout", "print"])
     }
 
     @Test func absencePollTimeoutBlocksWithoutUnlink() async throws {
@@ -381,6 +387,8 @@ struct LegacyJournalServiceRetirerTests {
         let runner = FakeSubprocessRunner()
         let loaded = Data(loadedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)
         runner.enqueue("print", .success(stdout: loaded))
+        runner.enqueue("kill", .success())
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
         runner.enqueue("bootout", .success())
         runner.enqueue("print", .success(stdout: loaded))
         runner.enqueue("print", .success(stdout: loaded))
@@ -400,7 +408,7 @@ struct LegacyJournalServiceRetirerTests {
             return
         }
         #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.map(\.arguments.first) == ["print", "bootout", "print", "print"])
+        #expect(runner.invocations.map(\.arguments.first) == ["print", "kill", "print", "bootout", "print", "print"])
     }
 
     @Test func unlinkFailureBlocksAfterProofWithoutRemovingPlist() async throws {
@@ -448,7 +456,7 @@ struct LegacyJournalServiceRetirerTests {
             return
         }
         #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.map(\.arguments.first) == ["print", "bootout"])
+        #expect(runner.invocations.map(\.arguments.first).last == "bootout")
     }
 
     @Test func canonicalLoadedSameRootServiceBootsOutPollsAbsentAndUnlinks() async throws {
@@ -461,6 +469,8 @@ struct LegacyJournalServiceRetirerTests {
         try fixture.writeCustomPlist(programArguments: argv, standardOutPath: logPath, standardErrorPath: logPath)
         let runner = FakeSubprocessRunner()
         runner.enqueue("print", .success(stdout: Data(canonicalLoadedLaunchctlOutput(plistPath: fixture.plistURL.path, programArguments: argv).utf8)))
+        runner.enqueue("kill", .success())
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
         runner.enqueue("bootout", .success())
         runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
         let retirer = LegacyJournalServiceRetirer(
@@ -474,7 +484,7 @@ struct LegacyJournalServiceRetirerTests {
 
         #expect(result == .success(.provenMatchLoaded))
         #expect(!FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.map(\.arguments.first) == ["print", "bootout", "print"])
+        #expect(runner.invocations.map(\.arguments.first) == ["print", "kill", "print", "bootout", "print"])
     }
 
     @Test func canonicalNotLoadedSameRootPlistIsUnlinked() async throws {
@@ -539,12 +549,14 @@ struct LegacyJournalServiceRetirerTests {
         let runner = FakeSubprocessRunner()
         let loaded = Data(canonicalLoadedLaunchctlOutput(plistPath: fixture.plistURL.path, programArguments: argv).utf8)
         runner.enqueue("print", .success(stdout: loaded))
-        runner.enqueue("bootout", .success())
-        // bootout returns at once and the job stays loaded while it shuts down.
-        // launchd allows it 20 seconds before killing it: polled every 250 ms.
-        for _ in 0..<80 {
+        runner.enqueue("kill", .success())
+        // The journal takes 12 s to shut down after SIGTERM (polled every 250 ms),
+        // then sits stopped: KeepAlive does not restart a clean exit.
+        for _ in 0..<48 {
             runner.enqueue("print", .success(stdout: loaded))
         }
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path, programArguments: argv).utf8)))
+        runner.enqueue("bootout", .success())
         runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
         let retirer = LegacyJournalServiceRetirer(
             runner: runner,
@@ -557,7 +569,61 @@ struct LegacyJournalServiceRetirerTests {
 
         #expect(result == .success(.provenMatchLoaded))
         #expect(!FileManager.default.fileExists(atPath: fixture.plistURL.path))
-        #expect(runner.invocations.filter { $0.arguments.first == "bootout" }.count == 1)
+        let order = runner.invocations.compactMap(\.arguments.first)
+        #expect(order.first == "print" && order.dropFirst().first == "kill")
+        #expect(order.filter { $0 == "bootout" }.count == 1)
+        // bootout comes only once the journal's own shutdown has finished.
+        #expect(order.firstIndex(of: "bootout") == order.count - 2)
+        let kill = try #require(runner.invocations.first { $0.arguments.first == "kill" })
+        #expect(kill.arguments == ["kill", "SIGTERM", "gui/501/org.solpbc.solstone"])
+    }
+
+    @Test func runningServiceThatIgnoresTermIsStillUnloaded() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        try fixture.writeSameRootPlist()
+        let runner = FakeSubprocessRunner()
+        let loaded = Data(loadedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)
+        runner.enqueue("print", .success(stdout: loaded))
+        runner.enqueue("kill", .success())
+        for _ in 0..<200 {
+            runner.enqueue("print", .success(stdout: loaded))
+        }
+        let retirer = LegacyJournalServiceRetirer(
+            runner: runner,
+            clock: NoopLegacyClock(),
+            plistURL: fixture.plistURL,
+            uid: 501,
+            absenceTimeout: .seconds(1),
+            gracefulStopTimeout: .seconds(1)
+        )
+        runner.enqueue("bootout", .success())
+
+        _ = await retirer.retireLegacyService(journalRoot: fixture.sameRoot)
+
+        #expect(runner.invocations.contains { $0.arguments.first == "bootout" })
+    }
+
+    @Test func failedTermStillUnloadsTheService() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        try fixture.writeSameRootPlist()
+        let runner = FakeSubprocessRunner()
+        runner.enqueue("print", .success(stdout: Data(loadedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
+        runner.enqueue("kill", .success(stderr: Data("kill failed\n".utf8), exitCode: 3))
+        runner.enqueue("bootout", .success())
+        runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
+        let retirer = LegacyJournalServiceRetirer(
+            runner: runner,
+            clock: NoopLegacyClock(),
+            plistURL: fixture.plistURL,
+            uid: 501
+        )
+
+        let result = await retirer.retireLegacyService(journalRoot: fixture.sameRoot)
+
+        #expect(result == .success(.provenMatchLoaded))
+        #expect(runner.invocations.map(\.arguments.first) == ["print", "kill", "bootout", "print"])
     }
 
     @Test func installedServiceReachedThroughALinkIsTheSameJournal() async throws {
@@ -635,6 +701,82 @@ struct LegacyJournalServiceRetirerTests {
         #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
     }
 
+    /// Command lines and journal markers earlier service installs wrote; each
+    /// names this journal, so each is retired.
+    @Test(arguments: InstalledShape.retired)
+    func everyInstalledShapeForThisJournalIsRetired(shape: InstalledShape) async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        let journalRoot = fixture.root.appendingPathComponent("journal", isDirectory: true)
+        try FileManager.default.createDirectory(at: journalRoot, withIntermediateDirectories: true)
+        try fixture.writeDictionary(shape.plist(root: fixture.root, journal: journalRoot.path))
+        let runner = FakeSubprocessRunner()
+        runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
+        let retirer = LegacyJournalServiceRetirer(runner: runner, clock: NoopLegacyClock(), plistURL: fixture.plistURL, uid: 501)
+
+        let result = await retirer.retireLegacyService(journalRoot: journalRoot)
+
+        #expect(result == .success(.provenMatchUnloaded), "\(shape)")
+        #expect(!FileManager.default.fileExists(atPath: fixture.plistURL.path))
+    }
+
+    @Test(arguments: InstalledShape.malformed)
+    func unrecognisedShapeBlocksWithoutMutation(shape: InstalledShape) async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        let journalRoot = fixture.root.appendingPathComponent("journal", isDirectory: true)
+        try fixture.writeDictionary(shape.plist(root: fixture.root, journal: journalRoot.path))
+        let runner = FakeSubprocessRunner()
+        runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
+        let retirer = LegacyJournalServiceRetirer(runner: runner, clock: NoopLegacyClock(), plistURL: fixture.plistURL, uid: 501)
+
+        let result = await retirer.retireLegacyService(journalRoot: journalRoot)
+
+        guard case .blocked(.malformed, _) = result else {
+            Issue.record("expected malformed for \(shape), got \(result)")
+            return
+        }
+        #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
+    }
+
+    @Test func overrideNamingAnotherJournalBlocksWithoutMutation() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        let journalRoot = fixture.root.appendingPathComponent("journal", isDirectory: true)
+        try fixture.writeDictionary([
+            "Label": "org.solpbc.solstone",
+            "ProgramArguments": [fixture.root.appendingPathComponent("bin/journal").path, "supervisor", "5015"],
+            "EnvironmentVariables": ["_SOLSTONE_JOURNAL_OVERRIDE": fixture.root.appendingPathComponent("other").path],
+        ])
+        let runner = FakeSubprocessRunner()
+        runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
+        let retirer = LegacyJournalServiceRetirer(runner: runner, clock: NoopLegacyClock(), plistURL: fixture.plistURL, uid: 501)
+
+        let result = await retirer.retireLegacyService(journalRoot: journalRoot)
+
+        guard case .blocked(.differentRoot, _) = result else {
+            Issue.record("expected different-root block, got \(result)")
+            return
+        }
+        #expect(FileManager.default.fileExists(atPath: fixture.plistURL.path))
+    }
+
+    @Test func bootoutRefusedBecauseTheJobIsAlreadyGoneStillRetires() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        try fixture.writeSameRootPlist()
+        let runner = FakeSubprocessRunner()
+        runner.enqueue("print", .success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path).utf8)))
+        runner.enqueue("bootout", .success(stderr: Data("Boot-out failed: 3: No such process\n".utf8), exitCode: 3))
+        runner.enqueue("print", .success(stderr: Data(notFoundLaunchctlError.utf8), exitCode: 113))
+        let retirer = LegacyJournalServiceRetirer(runner: runner, clock: NoopLegacyClock(), plistURL: fixture.plistURL, uid: 501)
+
+        let result = await retirer.retireLegacyService(journalRoot: fixture.sameRoot)
+
+        #expect(result == .success(.provenMatchLoaded))
+        #expect(!FileManager.default.fileExists(atPath: fixture.plistURL.path))
+    }
+
     @Test func basenameOnlySolstoneBlocksWithoutMutation() async throws {
         let fixture = try ServiceFixture()
         defer { fixture.clear() }
@@ -686,6 +828,26 @@ gui/501/org.solpbc.solstone = {
 """
 }
 
+/// A loaded job that is not running: no pid line.
+private func stoppedLaunchctlOutput(
+    plistPath: String,
+    programArguments: [String] = ["/Users/jer/.local/bin/journal", "start", "5015"]
+) -> String {
+    let argsText = programArguments.map { "        \($0)" }.joined(separator: "\n")
+    return """
+gui/501/org.solpbc.solstone = {
+    path = \(plistPath)
+    state = not running
+    program = \(programArguments[0])
+    arguments = {
+\(argsText)
+    }
+    last exit code = 0
+}
+
+"""
+}
+
 private func canonicalLoadedLaunchctlOutput(
     plistPath: String,
     programArguments: [String],
@@ -704,6 +866,56 @@ gui/501/org.solpbc.solstone = {
 }
 
 """
+}
+
+struct InstalledShape: CustomStringConvertible, Sendable {
+    let name: String
+    let launcher: String
+    let arguments: [String]
+    let logs: (out: String, err: String)?
+    let override: Bool
+    let token: Bool
+
+    var description: String { name }
+
+    func plist(root: URL, journal: String) -> [String: Any] {
+        var dict: [String: Any] = [
+            "Label": "org.solpbc.solstone",
+            "ProgramArguments": [root.appendingPathComponent("bin/\(launcher)").path] + arguments,
+            "RunAtLoad": true,
+            "KeepAlive": ["SuccessfulExit": false],
+        ]
+        var environment: [String: String] = ["HOME": "/Users/jer", "PATH": "/usr/bin:/bin"]
+        if override { environment["_SOLSTONE_JOURNAL_OVERRIDE"] = journal }
+        if token { environment["SOLSTONE_INSTALLATION_JOURNAL_TOKEN"] = journal.utf8.map { String(format: "%02x", $0) }.joined() }
+        dict["EnvironmentVariables"] = environment
+        if let logs {
+            dict["StandardOutPath"] = logs.out.replacingOccurrences(of: "<J>", with: journal)
+            dict["StandardErrorPath"] = logs.err.replacingOccurrences(of: "<J>", with: journal)
+        }
+        return dict
+    }
+
+    static let retired: [InstalledShape] = [
+        .init(name: "journal start, one service log", launcher: "journal", arguments: ["start", "5015"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+        .init(name: "journal supervisor on another port", launcher: "journal", arguments: ["supervisor", "6123"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+        .init(name: "journal supervisor, split launchd logs", launcher: "journal", arguments: ["supervisor", "5015"], logs: ("<J>/health/launchd-stdout.log", "<J>/health/launchd-stderr.log"), override: false, token: false),
+        .init(name: "bare supervisor named by override", launcher: "journal", arguments: ["supervisor"], logs: ("<J>/health/launchd-stdout.log", "<J>/health/launchd-stderr.log"), override: true, token: false),
+        .init(name: "sol supervisor named by override, no logs", launcher: "sol", arguments: ["supervisor", "5015"], logs: nil, override: true, token: false),
+        .init(name: "journal journal start", launcher: "journal", arguments: ["journal", "start", "5015"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+        .init(name: "solstone journal start, token, another port", launcher: "solstone", arguments: ["journal", "start", "6123"], logs: nil, override: false, token: true),
+        .init(name: "solstone journal supervisor, token", launcher: "solstone", arguments: ["journal", "supervisor", "5015"], logs: nil, override: false, token: true),
+    ]
+
+    static let malformed: [InstalledShape] = [
+        .init(name: "no journal named anywhere", launcher: "journal", arguments: ["supervisor", "5015"], logs: nil, override: false, token: false),
+        .init(name: "logs outside a health folder", launcher: "journal", arguments: ["start", "5015"], logs: ("<J>/service.log", "<J>/service.log"), override: false, token: false),
+        .init(name: "only one log path", launcher: "journal", arguments: ["start", "5015"], logs: ("<J>/health/service.log", ""), override: false, token: false),
+        .init(name: "port that is not a number", launcher: "journal", arguments: ["start", "50x5"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+        .init(name: "trailing argument", launcher: "journal", arguments: ["start", "5015", "extra"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+        .init(name: "unknown verb", launcher: "journal", arguments: ["serve", "5015"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+        .init(name: "unknown launcher", launcher: "python3", arguments: ["start", "5015"], logs: ("<J>/health/service.log", "<J>/health/service.log"), override: false, token: false),
+    ]
 }
 
 private struct ServiceFixture {
@@ -774,6 +986,11 @@ private struct ServiceFixture {
             "KeepAlive": ["SuccessfulExit": false],
             "SoftResourceLimits": ["NumberOfFiles": 4096],
         ]
+        let data = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
+        try data.write(to: plistURL)
+    }
+
+    func writeDictionary(_ dict: [String: Any]) throws {
         let data = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
         try data.write(to: plistURL)
     }
