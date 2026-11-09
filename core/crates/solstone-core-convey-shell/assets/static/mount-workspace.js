@@ -25,12 +25,12 @@
   // has nothing extra to wait for. Where it's cached already, this costs no
   // request. A failure here is ignored: the view makes its own request and
   // reports its own error.
-  const DATE_VIEW_CODE = [
-    '/static/date-nav.css',
-    '/static/date-nav.js',
-    '/static/day-grid.css',
-    '/static/day-grid.js',
-  ];
+  const DATE_VIEW_CODE = ['date-nav.css', 'date-nav.js', 'day-grid.css', 'day-grid.js'];
+  // Beside this script's own address: a file can't name its own hashed tree.
+  const OWN_DIRECTORY = (() => {
+    const src = document.currentScript && document.currentScript.src;
+    return src ? src.slice(0, src.lastIndexOf('/') + 1) : '/static/';
+  })();
   const PREFETCH_WAIT_MS = 2000;
   let prefetchScheduled = false;
 
@@ -38,8 +38,8 @@
     if (prefetchScheduled) return;
     prefetchScheduled = true;
     const start = () => {
-      for (const url of DATE_VIEW_CODE) {
-        fetch(url, { credentials: 'same-origin', priority: 'low' })
+      for (const name of DATE_VIEW_CODE) {
+        fetch(OWN_DIRECTORY + name, { credentials: 'same-origin', priority: 'low' })
           .then((response) => response.arrayBuffer())
           .catch(() => {});
       }
