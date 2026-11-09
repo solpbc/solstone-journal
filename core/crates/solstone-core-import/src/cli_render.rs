@@ -281,9 +281,13 @@ pub fn source_archive_merge_complete(
 
 /// What the owner reads about body data that came in on another time zone.
 pub fn body_zones_differ(source: &str, hours: u64) -> String {
-    let unit = if hours == 1 { "hour" } else { "hours" };
+    let (unit, were) = if hours == 1 {
+        ("hour", "it was")
+    } else {
+        ("hours", "they were")
+    };
     format!(
-        "{hours} {unit} of {source} may show at the wrong time: they were saved on a different time zone from the one this journal holds for {source}.\n"
+        "{hours} {unit} of {source} may show at the wrong time: {were} saved in a different time zone from the one this journal holds for {source}.\n"
     )
 }
 

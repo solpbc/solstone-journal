@@ -20,8 +20,9 @@ pub(super) fn publish_saved(journal_root: &Path, saved: &Path) {
     }
 }
 
-/// Marks that [`queue_body_entries_once`] has run for this journal.
-const BODY_ENTRIES_QUEUED: &str = "imports/.body-entries-queued";
+/// Marks that [`queue_body_entries_once`] has run for this journal. It lives
+/// with the index it speaks for, so a journal export never carries it.
+const BODY_ENTRIES_QUEUED: &str = "indexer/body-entries-queued";
 
 /// Queue, once, every activity day file holding a body record the owner has
 /// written on, so words written before those records had search entries are

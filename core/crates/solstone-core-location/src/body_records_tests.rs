@@ -132,6 +132,20 @@ fn a_live_account_composes_from_its_window() {
 }
 
 #[test]
+fn a_record_reads_the_copy_the_importer_still_writes_to_when_a_merge_left_two() {
+    let journal = journal();
+    let root = journal.path();
+    let mut older = night();
+    older.by = Some("Older Copy".to_owned());
+    window(root, DAY, "220000_3600", &[older]);
+    window(root, DAY, "220000_3601", &[night()]);
+    record(root, json!({}));
+    let found = composed(root);
+    assert_eq!(found[0].window.as_deref(), Some("220000_3601"));
+    assert_eq!(found[0].account, Account::Live(Box::new(night())));
+}
+
+#[test]
 fn a_deleted_later_piece_marks_a_live_account_part_removed_as_a_deleted_start_does() {
     let journal = journal();
     let root = journal.path();

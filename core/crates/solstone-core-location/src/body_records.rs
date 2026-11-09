@@ -19,7 +19,7 @@ use chrono_tz::Tz;
 use serde_json::{Map, Value};
 use solstone_core_facets::{activity_field_held, is_body_record, update_activity_record_with};
 use solstone_core_format::content::body_records::{
-    BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, parse_source_time, user_entered,
+    BODY_RECORDS_FILE, BodyRow, RowKind, copy_rank, decode_rows, parse_source_time, user_entered,
 };
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE, strava_rows};
 
@@ -549,7 +549,11 @@ impl Windows {
                         (!name.starts_with('.')).then_some((name, start, end))
                     })
                     .collect::<Vec<_>>();
-                names.sort();
+                // A record reads the copy the importer still writes to, when an
+                // archive merge left two.
+                names.sort_by(|left, right| {
+                    (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0))
+                });
                 (
                     names,
                     solstone_core_journal_config::placed_zone(journal, source_of(&stored.stream)),
