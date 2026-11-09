@@ -16,8 +16,40 @@
       }
       mount.ready = true;
       performance.mark('view:ready', { detail: { view, state } });
+      if (state !== 'error') prefetchDateViewCode();
     };
   };
+
+  // The views with a date picker name this code themselves. Bringing it into
+  // the browser's cache once the page is quiet means the first of those views
+  // has nothing extra to wait for. Where it's cached already, this costs no
+  // request. A failure here is ignored: the view makes its own request and
+  // reports its own error.
+  const DATE_VIEW_CODE = [
+    '/static/date-nav.css',
+    '/static/date-nav.js',
+    '/static/day-grid.css',
+    '/static/day-grid.js',
+  ];
+  const PREFETCH_WAIT_MS = 2000;
+  let prefetchScheduled = false;
+
+  function prefetchDateViewCode() {
+    if (prefetchScheduled) return;
+    prefetchScheduled = true;
+    const start = () => {
+      for (const url of DATE_VIEW_CODE) {
+        fetch(url, { credentials: 'same-origin', priority: 'low' })
+          .then((response) => response.arrayBuffer())
+          .catch(() => {});
+      }
+    };
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(start, { timeout: PREFETCH_WAIT_MS });
+    } else {
+      setTimeout(start, PREFETCH_WAIT_MS);
+    }
+  }
 
   function getTarget(options) {
     if (options && options.target) return options.target;
