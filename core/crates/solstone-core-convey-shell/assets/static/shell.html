@@ -36,19 +36,75 @@
       window.addEventListener('pageswap', expectAbort);
       window.addEventListener('pagereveal', expectAbort);
     })();
-    // The shell's own state (which views this journal serves, its clock, the
-    // pins) is read now, beside the shell's files rather than after them;
-    // shell_boot.js takes this answer, or asks again itself if it failed.
+    // Everything the first view needs starts here, beside the shell's files
+    // rather than after them: the shell's own state, the view's fragment, its
+    // code and its first reads. shell.js takes each answer by its exact
+    // address, or asks again itself if an answer isn't a plain success. The
+    // table is generated with the journal from each view's fragment.
+    window.__SOL_ENTRY_TABLE__ = {/*entry-table*/};
     (function () {
-      try {
-        var controller = typeof AbortController === 'function' ? new AbortController() : null;
-        var response = fetch('/api/shell', {
-          credentials: 'same-origin',
-          signal: controller ? controller.signal : undefined
-        });
-        response.catch(function () {});
-        window.__solShellEarly = { response: response, controller: controller };
-      } catch (_) {}
+      var early = { view: null, claimed: false, reads: Object.create(null), stats: {} };
+      window.__solEarly = early;
+      function ask(path, expect) {
+        try {
+          var controller = typeof AbortController === 'function' ? new AbortController() : null;
+          var href = new URL(path, window.location.href).href;
+          var response = fetch(href, {
+            credentials: 'same-origin',
+            signal: controller ? controller.signal : undefined
+          });
+          response.catch(function () {});
+          early.reads[href] = { response: response, controller: controller, startedAt: Date.now(), expect: expect };
+        } catch (_) {}
+      }
+      function preload(href, as) {
+        var link = document.createElement('link');
+        link.rel = 'preload';
+        link.as = as;
+        link.href = href;
+        document.head.appendChild(link);
+      }
+      // The values a route's `{day}` takes from this path, or null when the
+      // route isn't this path.
+      function routeDay(route, path) {
+        var want = route.split('/');
+        var have = path.split('/');
+        if (want.length !== have.length) return null;
+        var day = '';
+        for (var i = 0; i < want.length; i++) {
+          if (want[i] === '{day}') {
+            if (!/^\d{8}$/.test(have[i])) return null;
+            day = have[i];
+          } else if (want[i] !== have[i]) {
+            return null;
+          }
+        }
+        return { day: day };
+      }
+      ask('/api/shell', 'json');
+      ask('/api/streams/labels', 'json');
+      var path = window.location.pathname;
+      var table = window.__SOL_ENTRY_TABLE__ || {};
+      var views = table.views || {};
+      var name = (/^\/app\/([^/]+)/.exec(path) || [])[1];
+      if (!name || !Object.prototype.hasOwnProperty.call(views, name)) return;
+      var entry = views[name];
+      early.view = name;
+      ask(entry.fragment, 'html');
+      entry.scripts.forEach(function (script) {
+        if (!script.routePrefix || path.indexOf(script.routePrefix) === 0) preload(script.src, 'script');
+      });
+      entry.styles.forEach(function (href) { preload(href, 'style'); });
+      // A query or a hash can change what the view reads, so those pages ask
+      // for themselves.
+      if (window.location.search || window.location.hash) return;
+      if (entry.openDay && routeDay(entry.openDay.route, path)) ask(entry.openDay.url, 'json');
+      entry.reads.some(function (row) {
+        var match = routeDay(row.route, path);
+        if (!match) return false;
+        row.urls.forEach(function (url) { ask(url.replace('{day}', match.day), 'json'); });
+        return true;
+      });
     })();
   </script>
   <meta charset="utf-8"/>

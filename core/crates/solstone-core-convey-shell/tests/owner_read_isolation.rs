@@ -190,9 +190,10 @@ fn owner_read_role_classification_table_exhaustiveness() {
             "/app/speakers/api/discovery/identify/operations/{operation_id}",
             RouteClassification::Moved(OwnerReadRole::SpeakersIdentifyOperation),
         ),
-        // Transcripts (12 live GET paths in transcripts-web lib.rs:85-110)
+        // Transcripts (13 live GET paths in transcripts-web lib.rs:85-110)
+        ("/app/transcripts/", RouteClassification::NoQualifyingWork),
         (
-            "/app/transcripts/",
+            "/app/transcripts/api/open-day",
             RouteClassification::Moved(OwnerReadRole::TranscriptsRoot),
         ),
         (
@@ -452,7 +453,7 @@ fn owner_read_role_classification_table_exhaustiveness() {
         ),
     ];
 
-    assert_eq!(table.len(), 100, "Must classify all 100 live GET routes");
+    assert_eq!(table.len(), 101, "Must classify all 101 live GET routes");
 
     let mut distinct_paths = BTreeSet::new();
     for (path, _) in table {
@@ -518,8 +519,8 @@ fn owner_read_role_classification_table_exhaustiveness() {
         .collect();
     assert_eq!(
         no_qualifying.len(),
-        34,
-        "NoQualifyingWork must have exactly 34 routes"
+        35,
+        "NoQualifyingWork must have exactly 35 routes"
     );
 }
 

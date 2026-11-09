@@ -109,6 +109,7 @@ fn router_with_dependencies(
         .route("/app/transcripts/", get(shell::root))
         .route("/app/transcripts/workspace", get(shell::workspace))
         .route("/app/transcripts/{day}", get(shell::day))
+        .route("/app/transcripts/api/open-day", get(shell::open_day))
         .route("/app/transcripts/api/index", get(calendar::index))
         .route("/app/transcripts/api/stats/{month}", get(calendar::stats))
         .route("/app/transcripts/api/ranges/{day}", get(day::ranges))
