@@ -2188,3 +2188,129 @@ fn a_strava_line_a_code_record_holds_isnt_listed() {
     write(&holding);
     assert_eq!(titles(), 0, "a line a record holds isn't");
 }
+
+const OLD_DAY: &str = "20260102";
+
+fn old_bundles_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/body_old_bundles")
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap().flatten() {
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+fn with_old_native(journal: &Path) {
+    let name = "body-01M70HDTD9N4P15X06CRDG2DWZ";
+    copy_tree(
+        &old_bundles_dir().join("native").join(name),
+        &journal.join("imports").join(name),
+    );
+}
+
+fn with_old_python(journal: &Path) {
+    copy_tree(
+        &old_bundles_dir().join("python_era/20260304_080000"),
+        &journal.join("imports/20260304_080000"),
+    );
+}
+
+#[test]
+fn a_day_only_an_old_bundle_covers_is_noted_for_a_whole_journal_connection() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    with_old_native(root);
+    // The day has no folder of its own: the note still reaches the listing.
+    assert!(!root.join("chronicle").join(OLD_DAY).exists());
+    let list = call(root, "list_transcripts", json!({"day": OLD_DAY}));
+    assert_eq!(list["transcripts"], json!([]));
+    let note = list["earlier_imports_note"].as_str().expect("the note");
+    assert!(note.contains("Apple Health"), "{note}");
+    assert!(note.contains("this day"), "{note}");
+}
+
+#[test]
+fn a_limited_connection_gets_no_note() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::Facets { ids: vec![HEALTH.to_owned()] });
+    with_old_native(root);
+    let list = call(root, "list_transcripts", json!({"day": OLD_DAY}));
+    assert!(list.get("earlier_imports_note").is_none(), "{list}");
+}
+
+#[test]
+fn a_connection_without_transcripts_gets_no_note() {
+    let journal = journal();
+    let root = journal.path();
+    PermissionStore::open(root)
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    with_old_native(root);
+    // list_transcripts itself is off without Transcripts, so nothing is said at all.
+    assert!(run_mcp_probe(root, CONNECTION, "list_transcripts", &json!({"day": OLD_DAY})).is_err());
+}
+
+#[test]
+fn a_python_era_import_says_month_and_goes_once_the_day_is_touched() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    with_old_python(root);
+    let list = call(root, "list_transcripts", json!({"day": "20260311"}));
+    let note = list["earlier_imports_note"].as_str().expect("the note");
+    assert!(note.contains("month of March 2026"), "{note}");
+
+    // A new-path import that covers the day retires it, even with no rows there.
+    let import = root.join("imports/20260401_000000");
+    fs::create_dir_all(&import).unwrap();
+    fs::write(
+        import.join("manifest.json"),
+        json!({"source_type": "apple_health", "span": [["20260301", "20260331"]]}).to_string(),
+    )
+    .unwrap();
+    fs::write(import.join("body-touched.jsonl"), "").unwrap();
+    let list = call(root, "list_transcripts", json!({"day": "20260311"}));
+    assert!(list.get("earlier_imports_note").is_none(), "{list}");
+}
+
+#[test]
+fn a_named_source_gets_the_note_in_gaps_note_before_nothing_readable() {
+    let journal = journal();
+    let root = journal.path();
+    grant(root, ReadScope::WholeJournal);
+    with_old_native(root);
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": OLD_DAY, "source": LABEL}),
+    );
+    assert_eq!(list["transcripts"], json!([]));
+    assert!(
+        list["gaps_note"].as_str().unwrap_or_default().contains("Apple Health"),
+        "{list}"
+    );
+
+    grant(root, ReadScope::Facets { ids: vec![HEALTH.to_owned()] });
+    let list = call(
+        root,
+        "list_transcripts",
+        json!({"day": OLD_DAY, "source": LABEL}),
+    );
+    assert!(list.get("gaps_note").is_none(), "{list}");
+}

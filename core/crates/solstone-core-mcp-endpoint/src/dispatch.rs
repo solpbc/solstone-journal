@@ -2964,6 +2964,11 @@ fn list_transcripts(
     let other_sources = request.day.as_deref().map_or_else(Vec::new, |day| {
         crate::body_source::other_sources(journal_root, snapshot, day)
     });
+    if let Some(note) = request.day.as_deref().and_then(|day| {
+        crate::body_source::listing_earlier_import_note(journal_root, snapshot, day)
+    }) {
+        response_val["earlier_imports_note"] = json!(note);
+    }
     if !omitted_workouts.is_empty() {
         response_val["omitted_workouts"] = json!(omitted_workouts.len());
         response_val["workouts_note"] = json!(LIST_TRANSCRIPTS_WORKOUTS);
