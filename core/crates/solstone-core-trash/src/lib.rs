@@ -394,6 +394,18 @@ pub fn unfinished(journal: &Path) -> Result<usize, TrashError> {
         .count())
 }
 
+/// The journal-relative paths of everything that could still come back out of
+/// the trash: every item but one already being erased.
+pub fn held_paths(journal: &Path) -> Result<Vec<String>, TrashError> {
+    let mut paths: Vec<String> = all_items(journal)?
+        .into_iter()
+        .filter(|item| item.state != State::Erasing)
+        .flat_map(|item| item.paths)
+        .collect();
+    paths.sort();
+    Ok(paths)
+}
+
 /// One item by id, whatever its state.
 pub fn item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
     read_item(journal, id)
@@ -432,10 +444,181 @@ pub struct Swept {
     pub failed: Vec<String>,
 }
 
+/// One thing of a set the owner chose together.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Chosen {
+    pub unit: Unit,
+    /// Its journal-relative paths, as its kind lists them.
+    pub paths: Vec<String>,
+}
+
+/// A set the owner chose together and confirmed once, kept until every thing
+/// in it has moved, so a stop part-way through finishes at the next sweep.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct Set {
+    schema: u32,
+    id: String,
+    action: Action,
+    #[serde(flatten)]
+    surface: Surface,
+    /// Erase each now, as well as moving it.
+    erase: bool,
+    chosen: Vec<Chosen>,
+}
+
+/// Where sets wait, inside the trash.
+const SETS_DIR: &str = "sets";
+
+/// What became of one thing of a set.
+#[derive(Debug)]
+pub enum SetResult {
+    /// In the trash; `erased` when the owner asked it erased now and it was.
+    Moved { item: Item, erased: bool },
+    /// Not moved, and why.
+    Refused(TrashError),
+}
+
+/// Move a set of things to the trash under one owner act, each as its own
+/// item. One that is refused never stops the rest. The set is written down
+/// first and kept until the last thing moves, so a stop part-way through is
+/// finished by [`sweep`]: the owner confirmed the whole set.
+pub fn detach_set(
+    journal: &Path,
+    kinds: &[&dyn Kind],
+    chosen: Vec<Chosen>,
+    action: Action,
+    surface: Surface,
+    erase: bool,
+) -> Result<Vec<SetResult>, TrashError> {
+    let set = Set {
+        schema: SCHEMA,
+        id: item_id(Utc::now()),
+        action,
+        surface,
+        erase,
+        chosen,
+    };
+    publish_set(journal, &set)?;
+    let results = run_set(journal, kinds, &set);
+    remove_set(journal, &set.id);
+    Ok(results)
+}
+
+fn run_set(journal: &Path, kinds: &[&dyn Kind], set: &Set) -> Vec<SetResult> {
+    set.chosen
+        .iter()
+        .map(|chosen| {
+            let kind = match kind_for(kinds, &chosen.unit) {
+                Ok(kind) => kind,
+                Err(error) => return SetResult::Refused(error),
+            };
+            match detach(
+                journal,
+                kind,
+                chosen.unit.clone(),
+                set.action,
+                set.surface,
+                chosen.paths.clone(),
+            ) {
+                Ok(item) => {
+                    let erased = set.erase
+                        && match erase(journal, &item.id, set.action, set.surface) {
+                            Ok(()) => true,
+                            Err(error) => {
+                                log::warn!(
+                                    "trash item {}: erase now was refused: {error}",
+                                    item.id
+                                );
+                                false
+                            }
+                        };
+                    SetResult::Moved { item, erased }
+                }
+                Err(TrashError::Unfinished(id)) => match read_item(journal, &id) {
+                    Ok(Some(item)) => SetResult::Moved {
+                        item,
+                        erased: false,
+                    },
+                    _ => SetResult::Refused(TrashError::Unfinished(id)),
+                },
+                Err(error) => SetResult::Refused(error),
+            }
+        })
+        .collect()
+}
+
+fn set_rel(id: &str) -> String {
+    format!("{SETS_DIR}/{id}.json")
+}
+
+fn publish_set(journal: &Path, set: &Set) -> Result<(), TrashError> {
+    ensure_trash(journal)?;
+    solstone_core_journal_io::paths::create_directory_with_mode(
+        &trash_root(journal).join(SETS_DIR),
+        0o700,
+    )?;
+    let bytes =
+        serde_json::to_vec_pretty(set).map_err(|error| TrashError::Io(error.to_string()))?;
+    write_bytes_exclusive(
+        &trash_entry(journal, &set_rel(&set.id))?,
+        &bytes,
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| TrashError::Io(error.to_string()))
+}
+
+fn remove_set(journal: &Path, id: &str) {
+    let removed =
+        trash_entry(journal, &set_rel(id)).and_then(|path| match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(TrashError::Io(error.to_string())),
+        });
+    if let Err(error) = removed {
+        log::warn!("trash set {id}: its record was left: {error}");
+    }
+}
+
+/// Sets a stop interrupted, oldest first.
+fn waiting_sets(journal: &Path) -> Vec<Set> {
+    let Ok(listing) = std::fs::read_dir(trash_root(journal).join(SETS_DIR)) else {
+        return Vec::new();
+    };
+    let mut sets: Vec<Set> = listing
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry
+                .file_name()
+                .to_str()?
+                .strip_suffix(".json")?
+                .to_owned();
+            if !valid_id(&name) {
+                return None;
+            }
+            let bytes = std::fs::read(trash_entry(journal, &set_rel(&name)).ok()?).ok()?;
+            serde_json::from_slice::<Set>(&bytes).ok()
+        })
+        .collect();
+    sets.sort_by(|left, right| left.id.cmp(&right.id));
+    sets
+}
+
 /// Finish every step a stop interrupted, then erase what is due by `now`.
 /// Runs at start and on the maintenance schedule.
 pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
     let mut swept = Swept::default();
+    // A set the owner confirmed whole: move what of it is still in place.
+    // What is gone already (moved before the stop) is refused as missing.
+    for set in waiting_sets(journal) {
+        for result in run_set(journal, kinds, &set) {
+            match result {
+                SetResult::Moved { .. } => swept.resumed += 1,
+                SetResult::Refused(TrashError::Missing(_)) => {}
+                SetResult::Refused(error) => swept.failed.push(format!("set {}: {error}", set.id)),
+            }
+        }
+        remove_set(journal, &set.id);
+    }
     let items = match all_items(journal) {
         Ok(items) => items,
         Err(error) => {
@@ -683,6 +866,8 @@ fn describe(unit: &Unit) -> &'static str {
     match unit {
         Unit::Memory { .. } => "memory",
         Unit::Segment { .. } => "recording",
+        Unit::Import { .. } => "import",
+        Unit::Workout { .. } => "workout",
         _ => "thing",
     }
 }

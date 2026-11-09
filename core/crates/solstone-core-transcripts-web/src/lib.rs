@@ -136,6 +136,10 @@ fn router_with_dependencies(
             get(segment::segment_content).delete(delete::delete_segment),
         )
         .route(
+            "/app/transcripts/api/segments/delete",
+            axum::routing::post(delete::delete_segments),
+        )
+        .route(
             "/app/transcripts/api/strava/workout/{activity_id}",
             get(strava_delete::preview_workout).delete(strava_delete::delete_workout),
         )

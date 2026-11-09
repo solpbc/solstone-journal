@@ -563,6 +563,8 @@ pub struct Reconciler {
     names: String,
     /// Whether places have been worked out since this process started.
     places_current: bool,
+    /// What the trash held when places were last worked out.
+    trash: String,
     /// The day's body documents, which share this pass.
     pub(crate) body: crate::body_day::BodyDays,
 }
@@ -630,9 +632,13 @@ impl Reconciler {
             }
             self.seen.insert(day, token);
         }
-        if report.written + report.removed > 0 || !self.places_current {
+        let trash = trash_state(journal);
+        if report.written + report.removed > 0 || !self.places_current || trash != self.trash {
             match recompute_places(journal) {
-                Ok(()) => self.places_current = true,
+                Ok(()) => {
+                    self.places_current = true;
+                    self.trash = trash;
+                }
                 Err(error) => report.failures.push(format!("places: {error}")),
             }
         }
@@ -656,11 +662,39 @@ pub fn all_stays(journal: &Path) -> Vec<StayRecord> {
 }
 
 /// Work out the places again from every day's recorded stays.
+///
+/// A place the owner touched whose stays are all gone stays dormant while one
+/// of its days may still bring them back: something of that day is in the
+/// trash, or the day hasn't been rebuilt since its recordings last changed
+/// (a recovery between the read of the stays and this pass).
 pub fn recompute_places(journal: &Path) -> std::io::Result<()> {
     let stays = all_stays(journal);
+    let trashed = solstone_core_trash::held_paths(journal);
     PlaceStore::update(journal, |store| {
-        crate::places::recompute(store, &stays);
+        let held = |day: &str| {
+            let in_trash = match &trashed {
+                Ok(paths) => {
+                    let prefix = format!("chronicle/{day}/");
+                    paths.iter().any(|path| path.starts_with(&prefix))
+                }
+                // A trash that can't be read never lets an owner's name go.
+                Err(_) => true,
+            };
+            in_trash
+                || read_build_record(journal, day)
+                    .is_none_or(|record| record.source != build_token(journal, day))
+        };
+        crate::places::recompute_holding(store, &stays, &held);
     })
+}
+
+/// What the trash holds, so the places pass runs again when it changes: an
+/// erase moves no day's marker, and is what lets a dormant place go.
+fn trash_state(journal: &Path) -> String {
+    match solstone_core_trash::held_paths(journal) {
+        Ok(paths) => paths.join("\n"),
+        Err(error) => format!("unreadable: {error}"),
+    }
 }
 
 #[cfg(test)]
@@ -812,6 +846,8 @@ mod tests {
                 name: Some("$source_packet".to_owned()),
                 alias: None,
                 hidden: false,
+                days: Vec::new(),
+                dormant: false,
             }],
         };
         assert_eq!(

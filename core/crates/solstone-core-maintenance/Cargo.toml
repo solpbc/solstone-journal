@@ -27,6 +27,7 @@ solstone-core-journal-config.workspace = true
 solstone-core-offload.workspace = true
 solstone-core-retention.workspace = true
 solstone-core-trash.workspace = true
+solstone-core-import.workspace = true
 solstone-core-indexer-store.workspace = true
 solstone-core-speaker-resolve.workspace = true
 solstone-core-system.workspace = true

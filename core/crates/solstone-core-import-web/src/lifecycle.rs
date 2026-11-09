@@ -20,9 +20,8 @@ use chrono::Utc;
 use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use solstone_core_import::{
-    ImportError, ImportMetadata, ManifestMatch, SourceHash, allocate_import_id,
-    find_manifest_by_hash_where, hash_source, read_import_metadata, relocate_import,
-    validate_timestamp, write_import_metadata,
+    ImportError, ImportMetadata, SourceHash, allocate_import_id, hash_source, read_import_metadata,
+    relocate_import, validate_timestamp, write_import_metadata,
 };
 use solstone_core_journal_io::{
     AtomicWriteOptions, atomic_replace, contained_path, create_directory_with_mode, install_file,
@@ -343,39 +342,6 @@ fn exchange_task_id(
     }
 }
 
-fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
-    find_manifest_by_hash_where(root, hash, |found| !is_failed_original_import(root, found))
-        .ok()
-        .and_then(|scan| scan.found)
-        .is_some()
-}
-
-/// A failed image or document import does not make its bytes "already imported".
-///
-/// Its manifest is written before publication, so a failure leaves it behind.
-/// A retry claims the segment that already holds the same original and
-/// finishes publishing it, so it adds no second copy. The import is read by its
-/// directory, because a started import can be relocated without its manifest's
-/// `import_id` changing.
-fn is_failed_original_import(root: &Path, found: &ManifestMatch) -> bool {
-    if !matches!(
-        found.manifest.get("source_type").and_then(Value::as_str),
-        Some("image" | "document")
-    ) {
-        return false;
-    }
-    let Some(directory) = found
-        .path
-        .parent()
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-    else {
-        return false;
-    };
-    solstone_core_import::project_import_result(root, directory).status
-        == solstone_core_import::ProjectionStatus::Failed
-}
-
 fn import_is_running_or_successful(
     root: &Path,
     timestamp: &str,
@@ -490,6 +456,8 @@ fn staged_by_client_item(root: &Path, client_item_id: &str) -> Option<ImportMeta
         })
 }
 
+/// A save of these bytes that hasn't started yet, so a retried upload reuses
+/// it. One that has run is never replayed: the same content again is new data.
 fn staged_by_source_hash(root: &Path, source_hash: &SourceHash) -> Option<ImportMetadata> {
     std::fs::read_dir(root.join("imports"))
         .ok()?
@@ -497,9 +465,18 @@ fn staged_by_source_hash(root: &Path, source_hash: &SourceHash) -> Option<Import
         .filter_map(|entry| entry.file_name().into_string().ok())
         .find_map(|timestamp| {
             let metadata = read_import_metadata(root, &timestamp).ok()?;
-            (metadata.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()))
-                .then_some(metadata)
+            (metadata.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str())
+                && !import_has_run(root, &timestamp))
+            .then_some(metadata)
         })
+}
+
+/// Whether an import record has started or finished a run.
+fn import_has_run(root: &Path, timestamp: &str) -> bool {
+    !matches!(
+        solstone_core_import::project_import_result(root, timestamp).status,
+        solstone_core_import::ProjectionStatus::Pending
+    )
 }
 
 fn stage_bytes(
@@ -923,14 +900,9 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             Some(ImportErrorKind::ClientItemConflict),
         );
     }
-    // Importing the same Strava download again is how a deleted import is brought
-    // back, and it re-places only what is missing, so it is never refused as a repeat.
-    if !strava_card && manifest_exists(&state.root, &source_hash) {
-        return invalid_state(
-            "content already imported",
-            Some(ImportErrorKind::AlreadyImported),
-        );
-    }
+    // The same content again is new data: an import is never refused for
+    // matching one already made. Only a save of these bytes not yet started is
+    // replayed, so a retried upload doesn't stage twice.
     if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
         return json_response(
             StatusCode::OK,
@@ -1094,12 +1066,6 @@ pub(crate) async fn save_path(State(state): State<AppState>, Json(data): Json<Va
             Some(ImportErrorKind::ClientItemConflict),
         );
     }
-    if manifest_exists(&state.root, &source_hash) {
-        return invalid_state(
-            "content already imported",
-            Some(ImportErrorKind::AlreadyImported),
-        );
-    }
     if let Some(existing) = staged_by_source_hash(&state.root, &source_hash) {
         return json_response(
             StatusCode::OK,
@@ -1185,14 +1151,6 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
     }
     if import_is_running_or_successful(&state.root, timestamp, &metadata) {
         return invalid_state("import already started or processed", None);
-    }
-    if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE)
-        && metadata
-            .get("source_hash")
-            .and_then(Value::as_str)
-            .is_some_and(|hash| manifest_exists(&state.root, &SourceHash::new(hash.to_owned())))
-    {
-        return invalid_state("content already imported", None);
     }
     let mut changed = Map::new();
     for key in [
@@ -1912,19 +1870,8 @@ where
             ));
         }
     };
-    if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE)
-        && metadata
-            .get("source_hash")
-            .and_then(Value::as_str)
-            .is_some_and(|hash| manifest_exists(root, &SourceHash::new(hash.to_owned())))
-    {
-        return invalid_state(
-            "content already imported; will not start",
-            Some(ImportErrorKind::AlreadyImported),
-        );
-    }
-    // A save of the same bytes replays the staged row, so a source that records no manifest
-    // (generic text) would otherwise import a second time. Only `force` re-imports on purpose.
+    // This import record has run already: running it again would re-place what
+    // it made. The same content saved again is a new import, never this one.
     match solstone_core_import::project_import_result(root, &original_timestamp).status {
         solstone_core_import::ProjectionStatus::Running => {
             return invalid_state("import already started or processed", None);
@@ -2433,8 +2380,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        BusError, ExitEvent, SAVE_TMP_DIR, StartSeams, TaskIdOp, command, exit_event,
-        manifest_exists, run_start, source_for, start_with,
+        BusError, ExitEvent, SAVE_TMP_DIR, StartSeams, TaskIdOp, command, exit_event, run_start,
+        source_for, start_with,
     };
     use crate::multipart;
 
@@ -3456,7 +3403,7 @@ mod tests {
     #[test]
     fn an_exited_import_that_recorded_its_own_success_is_announced_completed() {
         let root = TempDir::new().unwrap();
-        recorded_import(root.path(), "done", "text", Outcome::Succeeded);
+        recorded_import(root.path(), "done", "text");
         let projection = solstone_core_import::project_import_result(root.path(), "done");
         let Some(ExitEvent::Completed(completed)) = exit_event("done", &projection) else {
             panic!("a recorded success is announced as completed");
@@ -3466,13 +3413,7 @@ mod tests {
         assert!(completed.generation.is_some());
     }
 
-    enum Outcome {
-        Succeeded,
-        Failed,
-        Unconfirmed,
-    }
-
-    fn recorded_import(root: &std::path::Path, dir: &str, source_type: &str, outcome: Outcome) {
+    fn recorded_import(root: &std::path::Path, dir: &str, source_type: &str) {
         staged(
             root,
             dir,
@@ -3500,78 +3441,19 @@ mod tests {
         .unwrap();
         let now = super::now_ms() as u64;
         let attempt = solstone_core_import::admit_running_attempt(root, dir, now, None).unwrap();
-        let (reason, expected) = match outcome {
-            Outcome::Succeeded => {
-                solstone_core_import::record_completed_attempt(
-                    root,
-                    dir,
-                    attempt.generation,
-                    now + 1,
-                    None,
-                    None,
-                )
-                .unwrap();
-                assert_eq!(
-                    solstone_core_import::project_import_result(root, dir).status,
-                    solstone_core_import::ProjectionStatus::Success
-                );
-                return;
-            }
-            Outcome::Failed => (
-                solstone_core_import::IMPORT_FAILED_REASON,
-                solstone_core_import::ProjectionStatus::Failed,
-            ),
-            Outcome::Unconfirmed => (
-                solstone_core_import::IMPORT_UNCONFIRMED_REASON,
-                solstone_core_import::ProjectionStatus::Unconfirmed,
-            ),
-        };
-        solstone_core_import::record_unconfirmed_attempt(
+        solstone_core_import::record_completed_attempt(
             root,
             dir,
             attempt.generation,
             now + 1,
-            Some(reason.to_owned()),
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(
             solstone_core_import::project_import_result(root, dir).status,
-            expected
+            solstone_core_import::ProjectionStatus::Success
         );
-    }
-
-    #[test]
-    fn a_failed_original_import_does_not_hold_its_bytes() {
-        let hash = SourceHash::new("same-bytes".to_owned());
-
-        for source_type in ["image", "document"] {
-            let root = TempDir::new().unwrap();
-            recorded_import(root.path(), "failed", source_type, Outcome::Failed);
-            assert!(!manifest_exists(root.path(), &hash), "{source_type}");
-
-            for outcome in [Outcome::Unconfirmed, Outcome::Succeeded] {
-                let root = TempDir::new().unwrap();
-                recorded_import(root.path(), "held", source_type, outcome);
-                assert!(manifest_exists(root.path(), &hash), "{source_type}");
-            }
-        }
-
-        let root = TempDir::new().unwrap();
-        recorded_import(root.path(), "failed", "text", Outcome::Failed);
-        assert!(manifest_exists(root.path(), &hash));
-    }
-
-    #[test]
-    fn a_successful_import_holds_its_bytes_beside_a_failed_one_in_either_order() {
-        let hash = SourceHash::new("same-bytes".to_owned());
-        for source_type in ["image", "document"] {
-            for (failed, succeeded) in [("a", "b"), ("b", "a")] {
-                let root = TempDir::new().unwrap();
-                recorded_import(root.path(), failed, source_type, Outcome::Failed);
-                recorded_import(root.path(), succeeded, source_type, Outcome::Succeeded);
-                assert!(manifest_exists(root.path(), &hash), "{source_type}");
-            }
-        }
     }
 
     #[test]
@@ -3818,7 +3700,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn criterion_27_meta_and_start_refuse_manifest_duplicate() {
+    async fn content_matching_a_finished_import_is_taken_as_new() {
         let root = TempDir::new().unwrap();
         let path = root.path().join("imports/ts/item.txt");
         staged(
@@ -3853,7 +3735,7 @@ mod tests {
             .await
             .unwrap();
         let (_, meta) = response_json(meta).await;
-        assert_eq!(meta["reason_code"], "invalid_operation_for_state");
+        assert_ne!(meta["reason_code"], "invalid_operation_for_state", "{meta}");
         let start = start_with(
             root.path(),
             &json!({"path":path,"timestamp":"ts"}),
@@ -3864,7 +3746,10 @@ mod tests {
             None,
         );
         let (_, start) = response_json(start).await;
-        assert_eq!(start["reason_code"], "invalid_operation_for_state");
+        assert_ne!(
+            start["reason_code"], "invalid_operation_for_state",
+            "{start}"
+        );
     }
 
     #[tokio::test]
@@ -4106,22 +3991,6 @@ mod tests {
                 .unwrap();
             let (status, json) = response_json(resp).await;
             assert_eq!(status, StatusCode::OK, "{item}: {json}");
-            // A finished Strava run records a manifest with the download's hash; the
-            // same download is still taken, because importing it again is how a
-            // deleted import comes back.
-            let download = root.path().join("download.zip");
-            std::fs::write(&download, &zip).unwrap();
-            let hash = hash_source(&download).unwrap();
-            std::fs::remove_file(&download).unwrap();
-            let manifest_dir = root.path().join("imports").join("20260801_000000");
-            std::fs::create_dir_all(&manifest_dir).unwrap();
-            std::fs::write(
-                manifest_dir.join("manifest.json"),
-                serde_json::json!({"source_hash": hash.as_str(), "source_type": "strava"})
-                    .to_string(),
-            )
-            .unwrap();
-            assert!(manifest_exists(root.path(), &hash));
         }
     }
 
@@ -5710,11 +5579,9 @@ mod tests {
             .oneshot(multipart_save(body_ai, b))
             .await
             .unwrap();
+        // Content that matches a finished import is new data, never refused.
         let (s_ai, b_ai) = response_json(resp_ai).await;
-        assert_eq!(s_ai, StatusCode::BAD_REQUEST);
-        assert_eq!(b_ai["reason_code"], "invalid_operation_for_state");
-        assert_eq!(b_ai["kind"], "already_imported");
-        assert_eq!(b_ai["detail"], "content already imported");
+        assert_eq!(s_ai, StatusCode::OK, "{b_ai}");
 
         // 2. save_path (/app/import/api/save-path):
         let root_sp = TempDir::new().unwrap();
@@ -5793,9 +5660,6 @@ mod tests {
             .await
             .unwrap();
         let (s_spai, b_spai) = response_json(resp_spai).await;
-        assert_eq!(s_spai, StatusCode::BAD_REQUEST);
-        assert_eq!(b_spai["reason_code"], "invalid_operation_for_state");
-        assert_eq!(b_spai["kind"], "already_imported");
-        assert_eq!(b_spai["detail"], "content already imported");
+        assert_eq!(s_spai, StatusCode::OK, "{b_spai}");
     }
 }

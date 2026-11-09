@@ -48,17 +48,9 @@ pub struct Target {
 pub struct RemovedPath(String);
 
 impl RemovedPath {
-    /// Record a path as removed. ⛔ Callers must have confirmed it is absent.
-    ///
-    /// ⚠ Unused in production until the door module lands, and deliberately so:
-    /// this wave ships the type that makes a removal claim provable, not the code
-    /// that makes one. Without this allow, `-D warnings` reds the workspace clippy
-    /// gate for every crate in it.
-    #[allow(
-        dead_code,
-        reason = "the only production caller is the door module, added in a later wave"
-    )]
-    pub(crate) fn confirmed(path: String) -> Self {
+    /// Record a path as removed. ⛔ Callers must have confirmed it is absent:
+    /// the door, and a trash kind for what its detach just moved.
+    pub fn confirmed(path: String) -> Self {
         Self(path)
     }
 

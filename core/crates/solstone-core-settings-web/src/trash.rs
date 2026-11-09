@@ -8,9 +8,7 @@ use std::path::{Path, PathBuf};
 use axum::body::Bytes;
 use axum::response::Response;
 use serde_json::{Value, json};
-use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_removals::{Action, Page, Surface, Unit};
-use solstone_core_retention::recording_trash::Recordings;
 use solstone_core_retention::tombstone::TOMBSTONE_NAME;
 use solstone_core_trash::{Item, TrashError};
 
@@ -67,6 +65,7 @@ fn view(journal_root: &Path, item: &Item) -> Value {
             Some(stream.clone()),
             segment.clone(),
         ),
+        (Unit::Import { source, id }, _) => return import_view(journal_root, item, source, id),
         _ => ("other", String::new(), None, String::new()),
     };
     json!({
@@ -75,6 +74,31 @@ fn view(journal_root: &Path, item: &Item) -> Value {
         "day": day,
         "stream": stream,
         "segment": segment,
+        "trashed_at": item.trashed_at,
+        "erase_at": item.erase_at,
+        "bytes": item.bytes,
+        "surface": item.surface,
+        "replaces": replaces(journal_root, item),
+    })
+}
+
+/// An import as the page shows it: its source, its import, and how much of
+/// the journal it took with it.
+fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Value {
+    let segments: Vec<(String, String, String)> = item
+        .paths
+        .iter()
+        .filter_map(|path| solstone_core_retention::layout::parse_segment_rel(path))
+        .collect();
+    let days: std::collections::BTreeSet<&str> =
+        segments.iter().map(|(day, _, _)| day.as_str()).collect();
+    json!({
+        "id": item.id,
+        "kind": "import",
+        "source": source,
+        "import_id": id,
+        "segments": segments.len(),
+        "days": [days.first(), days.last()],
         "trashed_at": item.trashed_at,
         "erase_at": item.erase_at,
         "bytes": item.bytes,
@@ -138,9 +162,9 @@ pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
     };
     let surface = page_surface(selection.page.as_deref());
     run(journal_root, selection.ids, move |root, id| {
-        let index = RetentionIndex::new(root);
-        let recordings = Recordings::new(&index);
-        solstone_core_trash::attach(root, &[&recordings], id, Action::Recover, surface).map(|_| ())
+        solstone_core_import::trash_kinds::with_kinds(root, |kinds| {
+            solstone_core_trash::attach(root, kinds, id, Action::Recover, surface).map(|_| ())
+        })
     })
     .await
 }

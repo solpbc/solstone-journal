@@ -22,6 +22,7 @@ pub mod events;
 pub mod folder_admit;
 pub mod force_notice;
 pub mod heartbeat;
+pub mod import_trash;
 pub mod metadata;
 pub mod projection;
 pub mod publish;
@@ -38,6 +39,7 @@ pub mod sync_state;
 pub mod text;
 pub mod thinking;
 pub mod timestamp;
+pub mod trash_kinds;
 pub mod work_stop;
 
 pub use allocate::{

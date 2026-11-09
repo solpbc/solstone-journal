@@ -12,7 +12,13 @@
 //! - a stay joins the place whose centre is within [`PLACE_RADIUS_M`]; places
 //!   keep at least twice that apart, so there is never more than one;
 //! - a place's centre is recomputed from the stays that survive, and a place
-//!   with none left is gone, with whatever the owner called it.
+//!   with none left is gone, with whatever the owner called it;
+//! - except while those stays may come back: a place the owner named, called
+//!   home or work, or hid, whose stays are gone while one of its days has
+//!   something in the trash (or has not been rebuilt yet), is kept dormant.
+//!   It is not shown, and its stays rejoin it by distance when they are
+//!   recovered, so its id and the owner's words come back with them. Once
+//!   nothing of its days is held, it is gone.
 //!
 //! The owner may name a place, call it "home" or "work", or hide it from the
 //! map. Nothing asks them to. Those choices live in
@@ -112,9 +118,22 @@ pub struct Place {
     pub alias: Option<Alias>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// The dates of the stays it rests on, kept so a place whose stays are
+    /// all in the trash knows which days could bring them back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub days: Vec<String>,
+    /// Its stays are gone for now (see the module notes): kept, not shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dormant: bool,
 }
 
 impl Place {
+    /// Whether the owner gave it any words or hid it: what a recovered stay
+    /// would otherwise lose.
+    pub fn owner_touched(&self) -> bool {
+        self.name.is_some() || self.alias.is_some() || self.hidden
+    }
+
     /// What the owner calls it, if anything: their name, else their alias.
     pub fn owner_name(&self) -> Option<String> {
         self.name
@@ -259,6 +278,16 @@ impl PlaceStore {
 /// Recompute the places from every surviving stay. Returns the stays each
 /// place rests on, by place id.
 pub fn recompute(store: &mut PlaceStore, stays: &[StayRecord]) -> BTreeMap<String, Vec<usize>> {
+    recompute_holding(store, stays, &|_| false)
+}
+
+/// [`recompute`], keeping dormant an owner-touched place whose stays are all
+/// gone while `held` says one of its days may still bring them back.
+pub fn recompute_holding(
+    store: &mut PlaceStore,
+    stays: &[StayRecord],
+    held: &dyn Fn(&str) -> bool,
+) -> BTreeMap<String, Vec<usize>> {
     let eligible: Vec<usize> = (0..stays.len())
         .filter(|&index| stays[index].eligible())
         .collect();
@@ -337,16 +366,38 @@ pub fn recompute(store: &mut PlaceStore, stays: &[StayRecord]) -> BTreeMap<Strin
             name: None,
             alias: None,
             hidden: false,
+            days: Vec::new(),
+            dormant: false,
         });
         members.insert(id, group);
     }
+    // A place with no stays left is gone, unless the owner touched it and one
+    // of its days may still bring its stays back: then it waits, dormant.
+    store
+        .places
+        .retain_mut(|place| match members.get(&place.id) {
+            Some(group) => {
+                let days: BTreeSet<&str> = group
+                    .iter()
+                    .map(|&index| stays[index].day.as_str())
+                    .collect();
+                place.days = days.into_iter().map(str::to_owned).collect();
+                place.dormant = false;
+                true
+            }
+            None => {
+                place.dormant =
+                    place.owner_touched() && place.days.iter().any(|day| held(day.as_str()));
+                place.dormant
+            }
+        });
     // Centres follow the surviving stays, unless the move would leave one of
     // them out of reach or bring the place within reach of another, so a
-    // place never walks away from the stays it rests on. A place with none
-    // left is gone.
-    store.places.retain(|place| members.contains_key(&place.id));
+    // place never walks away from the stays it rests on.
     for index in 0..store.places.len() {
-        let group = &members[&store.places[index].id];
+        let Some(group) = members.get(&store.places[index].id) else {
+            continue;
+        };
         let (latitude, longitude) = mean(stays, group);
         let strands = group.iter().any(|&member| {
             distance_m(
@@ -464,6 +515,8 @@ mod tests {
                 name: Some("old".to_owned()),
                 alias: None,
                 hidden: false,
+                days: Vec::new(),
+                dormant: false,
             }],
         };
         store.write(journal.path()).unwrap();
