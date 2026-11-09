@@ -7,6 +7,9 @@
 //! snapshot doesn't hold is setup's own files. restic's dry-run report names
 //! them after a clean restore and check, and this removes them. What backups
 //! don't carry stays where it is. Every step can run again.
+//!
+//! iOS restores through its linked restorer, which gives no dry-run report,
+//! so there only the marker, the setup check and starting over apply.
 
 use std::fs;
 use std::io;
@@ -18,6 +21,7 @@ use solstone_core_journal_io::copy_excludes::INIT_RESTORE_FILE;
 use solstone_core_journal_io::copy_excludes::{copy_excluded, copy_file_excluded};
 
 /// Room kept free beyond the restored bytes.
+#[cfg(not(target_os = "ios"))]
 const FREE_SPACE_MARGIN: u64 = 1_000_000_000;
 
 /// Files a running journal holds or needs in place, beyond what backups omit.
@@ -58,6 +62,7 @@ pub fn setup_finished(journal: &Path) -> bool {
 
 /// Whether this restore ends by removing what the snapshot doesn't hold. A
 /// marker a stopped attempt left behind can't reach a journal in use.
+#[cfg(not(target_os = "ios"))]
 pub(crate) fn sweeps(journal: &Path, retrying: bool) -> bool {
     is_init_restore(journal) && (retrying || !setup_finished(journal))
 }
@@ -113,6 +118,7 @@ pub(crate) fn finish_init_restore(journal: &Path) {
 }
 
 /// What restic says a restore would do, journal-relative.
+#[cfg(not(target_os = "ios"))]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Report {
     pub updated: Vec<String>,
@@ -125,6 +131,7 @@ pub(crate) struct Report {
 
 /// Parse a `restic restore --dry-run --json -v -v` report. `None` unless the
 /// whole report is there: an empty list must never read as nothing to do.
+#[cfg(not(target_os = "ios"))]
 pub(crate) fn parse_report(stdout: &str, target: &Path) -> Option<Report> {
     let target = normalize(&target.display().to_string());
     let target = target.trim_end_matches('/');
@@ -179,6 +186,7 @@ pub(crate) fn parse_report(stdout: &str, target: &Path) -> Option<Report> {
 
 /// A path as restic prints it, in the form these reports compare. Only Windows
 /// has another separator: on Unix a backslash is part of the name.
+#[cfg(not(target_os = "ios"))]
 fn normalize(path: &str) -> String {
     if cfg!(windows) {
         let path = path.replace('\\', "/");
@@ -189,6 +197,7 @@ fn normalize(path: &str) -> String {
 }
 
 /// A name in a report is the snapshot's, and only ever lands under the journal.
+#[cfg(not(target_os = "ios"))]
 fn stays_inside(rel: &str) -> bool {
     rel.split('/').all(|component| component != "..")
 }
@@ -207,12 +216,14 @@ pub(crate) fn kept(rel: &str) -> bool {
 
 /// Whether the restored bytes fit, with the margin. Free space that can't be
 /// read doesn't refuse: nothing else about the restore depends on it.
+#[cfg(not(target_os = "ios"))]
 pub(crate) fn fits(free: Option<u64>, restoring: u64) -> bool {
     free.is_none_or(|free| free >= restoring.saturating_add(FREE_SPACE_MARGIN))
 }
 
 /// Remove what the snapshot doesn't hold, then the directories that leaves
 /// empty. Returns how many files stayed behind.
+#[cfg(not(target_os = "ios"))]
 pub(crate) fn remove_extras(journal: &Path, report: &Report) -> usize {
     let mut failed = 0;
     let mut directories = Vec::new();
@@ -239,6 +250,7 @@ pub(crate) fn remove_extras(journal: &Path, report: &Report) -> usize {
 }
 
 /// Free bytes on the journal's volume, when that can be read.
+#[cfg(not(target_os = "ios"))]
 pub(crate) fn free_bytes(journal: &Path) -> Option<u64> {
     #[cfg(unix)]
     {

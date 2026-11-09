@@ -39,7 +39,6 @@ pub mod repo;
 pub mod resolve;
 pub mod restore;
 mod restore_catalog;
-#[cfg(not(target_os = "ios"))]
 pub mod restore_sweep;
 pub mod rotation;
 pub mod runner;
