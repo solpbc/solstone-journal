@@ -2377,7 +2377,7 @@ async function prepareImportPreview(kind, payload, setting, button) {
   if (!size || !Number.isInteger(size.recordings) || !Number.isInteger(size.days) || !data.preview_token) {
     throw new Error('could not read the import size');
   }
-  const ready = size.recordings > 0 || Boolean(size.other_units?.[1]);
+  const ready = size.recordings > 0 || Boolean(size.other_units?.[1]) || Boolean(size.listed_moves?.count);
   importPreviews[kind] = { key, token: data.preview_token, ready };
   const panel = document.getElementById(`${kind}SizePreview`);
   if (panel) {
@@ -2385,7 +2385,7 @@ async function prepareImportPreview(kind, payload, setting, button) {
     if (size.other_units) panel.textContent += ` · ${size.other_units[1]} ${size.other_units[0]}`;
     if (size.skipped) panel.textContent += ` · ${size.skipped} skipped`;
     if (size.listed_moves) {
-      panel.textContent += ` · ${size.listed_moves.count} ${size.listed_moves.count === 1 ? 'workout' : 'workouts'} already listed with your activities would move here from ${size.listed_moves.from.join(', ')}`;
+      panel.textContent += ` · ${size.listed_moves.count} ${size.listed_moves.count === 1 ? 'workout' : 'workouts'} already listed with your activities would move to this import's facet from ${size.listed_moves.from.join(', ')}`;
     }
     if (data.force_notice) panel.textContent += ` · ${data.force_notice}`;
     if (!ready) panel.textContent += ' · nothing to import';

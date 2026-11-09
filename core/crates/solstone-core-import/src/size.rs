@@ -69,7 +69,7 @@ impl ImportSize {
             }
             if let Some((count, from)) = &self.listed_moves {
                 result.push_str(&format!(
-                    "{} {} already listed with your activities would move here from {}\n",
+                    "{} {} already listed with your activities would move to this import's facet from {}\n",
                     count,
                     if *count == 1 { "workout" } else { "workouts" },
                     from.join(", ")
@@ -88,7 +88,8 @@ impl ImportSize {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(rendered.trim_end()) {
             return !(value["schema"] == "solstone.import.size.v1"
                 && value["recordings"] == 0
-                && value["other_units"].is_null());
+                && value["other_units"].is_null()
+                && value["listed_moves"].is_null());
         }
         let mut lines = rendered.lines();
         !(lines.next() == Some("0 recordings across 0 days")

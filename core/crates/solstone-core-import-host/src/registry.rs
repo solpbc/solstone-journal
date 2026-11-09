@@ -1298,7 +1298,7 @@ fn run_strava_internal(
         .keys()
         .map(ToString::to_string)
         .collect::<BTreeSet<_>>();
-    let conversion = crate::strava_convert::convert_held(
+    let mut conversion = crate::strava_convert::convert_held(
         journal,
         &_source_lock,
         crate::strava_convert::ConversionScope {
@@ -1308,6 +1308,8 @@ fn run_strava_internal(
         chrono::Utc::now(),
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
+    conversion.moves_open = solstone_core_facets::open_body_moves(journal)
+        .map_or(1, |open| u64::try_from(open.len()).unwrap_or(u64::MAX));
     let mut list_refiles = |tiles: &[(String, String)]| {
         solstone_core_import::strava_refile::add_strava_refiles(journal, tiles, &_source_lock)
     };

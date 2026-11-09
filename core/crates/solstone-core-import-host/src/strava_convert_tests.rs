@@ -739,3 +739,221 @@ fn a_misplaced_workout_placed_again_moves_its_record_with_its_title_and_hide() {
     assert_eq!(moved[0]["title"], "Run");
     assert_eq!(moved[0]["hidden"], true);
 }
+
+fn code_record(root: &Path, facet: &str, day: &str) -> Value {
+    lines(root, facet, day)
+        .into_iter()
+        .find(|record| record["source"] == "body")
+        .unwrap()
+}
+
+fn remove_edit(root: &Path, facet: &str, record: &Value, position: usize) -> Value {
+    let edit = &record["edits"][position];
+    let updated = solstone_core_facets::remove_activity_edit(
+        root,
+        facet,
+        DAY,
+        record["id"].as_str().unwrap(),
+        position,
+        edit["timestamp"].as_str().unwrap(),
+        edit["actor"].as_str().unwrap(),
+        "2026-12-01T00:00:00Z",
+    )
+    .unwrap()
+    .unwrap();
+    Value::Object(updated)
+}
+
+#[test]
+fn removing_a_carried_edit_empties_the_field_and_undo_lands_on_what_precedence_gives() {
+    let journal = journal(&["a", "b"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(
+        root,
+        "a",
+        DAY,
+        sense(
+            json!({"title": "Primary", "edits": [title_edit("2026-01-02T00:00:00Z", "Primary")]}),
+        ),
+    );
+    add_line(
+        root,
+        "b",
+        DAY,
+        sense(json!({"title": "Later", "edits": [title_edit("2026-05-01T00:00:00Z", "Later")]})),
+    );
+    run(root);
+    let record = code_record(root, "a", DAY);
+    assert_eq!(record["title"], "Primary");
+    let primary_at = record["edits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|edit| edit["set"]["title"] == "Primary")
+        .unwrap();
+    let undone = remove_edit(root, "a", &record, primary_at);
+    assert_eq!(undone["title"], "Later", "the other line's value shows");
+    let later_at = undone["edits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|edit| edit["set"]["title"] == "Later")
+        .unwrap();
+    let emptied = remove_edit(root, "a", &undone, later_at);
+    // No value of the owner's is left; the title falls back as for any record.
+    assert!(
+        !solstone_core_format::content::activity_field_held(emptied.as_object().unwrap(), "title"),
+        "{emptied}"
+    );
+    assert_ne!(emptied["title"], "Later");
+    assert_ne!(emptied["title"], "Primary");
+}
+
+#[test]
+fn the_owners_own_title_added_and_removed_lands_back_on_the_primarys() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(
+        root,
+        "a",
+        DAY,
+        sense(
+            json!({"title": "Primary", "edits": [title_edit("2026-01-02T00:00:00Z", "Primary")]}),
+        ),
+    );
+    run(root);
+    let id = code_record(root, "a", DAY)["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut patch = serde_json::Map::new();
+    patch.insert("title".to_owned(), json!("Mine"));
+    let mine = solstone_core_facets::update_activity_record(
+        root,
+        "a",
+        DAY,
+        &id,
+        &patch,
+        "owner:update",
+        "",
+        "2026-11-20T00:00:00Z",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(mine["title"], "Mine");
+    let record = code_record(root, "a", DAY);
+    let at = record["edits"].as_array().unwrap().len() - 1;
+    let back = remove_edit(root, "a", &record, at);
+    assert_eq!(back["title"], "Primary");
+}
+
+#[test]
+fn a_facet_the_owner_chose_stopped_after_the_record_stays_there_at_the_next_start() {
+    let journal = journal(&["a", "chosen"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    let held = hold_lock(root.join(STRAVA_LOCK), LockOptions::default()).unwrap();
+    let download = BTreeSet::from([WORKOUT.to_string()]);
+    WRITES_SEEN.set(0);
+    STOP_AFTER.set(Some(2));
+    let stopped = convert_held(
+        root,
+        &held,
+        ConversionScope {
+            chosen: Some((&download, "chosen")),
+            publishes_tiles: false,
+        },
+        now(),
+    );
+    STOP_AFTER.set(None);
+    drop(held);
+    assert_eq!(stopped.waiting, 1);
+    assert_eq!(lines(root, "chosen", DAY).len(), 1);
+
+    assert_eq!(run(root).converted, 1);
+    assert_eq!(lines(root, "chosen", DAY).len(), 1);
+    assert!(lines(root, "a", DAY).is_empty());
+    assert_eq!(facet_of(root, DAY, "070000_300").as_deref(), Some("chosen"));
+}
+
+#[test]
+fn a_stop_before_any_record_leaves_only_what_was_there() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    WRITES_SEEN.set(0);
+    STOP_AFTER.set(Some(1));
+    assert_eq!(run(root).waiting, 1);
+    STOP_AFTER.set(None);
+    let records = lines(root, "a", DAY);
+    assert_eq!(records.len(), 1);
+    assert!(records[0].get("stream").is_some(), "only the old line");
+    assert_eq!(
+        read_strava_converted(root).unwrap().len(),
+        1,
+        "listed first"
+    );
+}
+
+#[test]
+fn a_conversion_clears_a_marker_so_a_start_after_its_stop_finishes_it() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    fs::write(root.join(MARKER), b"").unwrap();
+    let held = hold_lock(root.join(STRAVA_LOCK), LockOptions::default()).unwrap();
+    WRITES_SEEN.set(0);
+    STOP_AFTER.set(Some(2));
+    let _ = convert_held(
+        root,
+        &held,
+        ConversionScope {
+            chosen: None,
+            publishes_tiles: false,
+        },
+        now(),
+    );
+    STOP_AFTER.set(None);
+    drop(held);
+    assert!(!root.join(MARKER).exists());
+    assert_eq!(run(root).converted, 1);
+    assert_eq!(lines(root, "a", DAY).len(), 1);
+}
+
+#[test]
+fn a_move_that_cant_finish_is_counted_and_finished_at_the_next_start() {
+    let journal = journal(&["a", "b"]);
+    let root = journal.path();
+    let key = "import.apple_health\u{1f}w1";
+    add_line(
+        root,
+        "a",
+        DAY,
+        json!({"id": "body_x", "source": "body", "activity": "workout",
+            "account": {"key": key, "start": "x", "end": "y", "recorder": "r"}}),
+    );
+    let copy = lines(root, "a", DAY).remove(0);
+    fs::write(
+        root.join("imports/.body-moves.jsonl"),
+        format!(
+            "{}\n",
+            json!({"move": "m1", "key": key, "record": "body_x",
+                "from": {"day": DAY, "facet": "a"}, "to": {"day": "20260102", "facet": "b"},
+                "copy": copy})
+        ),
+    )
+    .unwrap();
+    let blocked = file(root, "b", "20260102");
+    fs::create_dir_all(&blocked).unwrap();
+    assert_eq!(run(root).moves_open, 1);
+    assert_eq!(lines(root, "a", DAY).len(), 1, "the source stays");
+    fs::remove_dir(&blocked).unwrap();
+    assert_eq!(run(root).moves_open, 0);
+    assert_eq!(lines(root, "b", "20260102").len(), 1);
+    assert!(lines(root, "a", DAY).is_empty());
+}

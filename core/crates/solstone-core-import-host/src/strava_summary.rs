@@ -170,12 +170,10 @@ impl StravaRunSummary {
                 "not every workout could be listed with your activities this time. importing again tries once more.\n"
             );
         }
-        let waiting = self.conversion.waiting + self.conversion.skipped_locked;
-        if waiting > 0 {
+        if self.conversion.waiting + self.conversion.skipped_locked > 0 {
             let _ = writeln!(
                 text,
-                "{} from before couldn't be updated yet. your journal tries again the next time it starts.\n",
-                plural(waiting, "earlier workout", "earlier workouts"),
+                "some earlier workouts couldn't be updated yet. your journal tries again the next time it starts.\n"
             );
         }
         if self.conversion.moves_open > 0 {
@@ -479,12 +477,12 @@ mod tests {
         waiting.conversion.moves_open = 1;
         let text = waiting.text();
         assert!(
-            text.contains("2 earlier workouts from before couldn't be updated yet"),
+            text.contains("some earlier workouts couldn't be updated yet"),
             "{text}"
         );
         assert!(text.contains("1 record is still being moved"), "{text}");
         let none = summary(Some("body"), FacetBasis::Chosen).text();
-        assert!(!none.contains("from before"), "{none}");
+        assert!(!none.contains("earlier workouts"), "{none}");
         assert!(!none.contains("being moved"), "{none}");
     }
 }

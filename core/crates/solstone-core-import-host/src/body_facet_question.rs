@@ -15,17 +15,17 @@ use solstone_core_journal_config_write::record_body_facet;
 
 use crate::cli_argv::ImportFacet;
 
-const NO_MEANS: &str = "if you say no, what this adds isn't listed with your activities, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
+const NO_MEANS: &str = "if you say no, your new body data isn't listed with your activities, no people or things come from it, and agents limited to some facets won't see it. search and the body app still show it.";
 
 fn question(ask: &BodyFacetAsk) -> Option<String> {
     match ask {
         BodyFacetAsk::Chosen(_) | BodyFacetAsk::Declined => None,
         BodyFacetAsk::AskExisting(facet) => Some(format!(
-            "file what this adds under the facet you named {facet}?"
+            "file your body data under the facet you named {facet}?"
         )),
-        BodyFacetAsk::AskMakeBody => Some("make a body facet for what this adds?".to_owned()),
+        BodyFacetAsk::AskMakeBody => Some("make a body facet for your body data?".to_owned()),
         BodyFacetAsk::AskUnmute => {
-            Some("your body facet is muted. turn it back on for what this adds?".to_owned())
+            Some("your body facet is muted. turn it back on for your body data?".to_owned())
         }
     }
 }

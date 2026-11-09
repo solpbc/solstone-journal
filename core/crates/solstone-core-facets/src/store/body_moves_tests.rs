@@ -292,3 +292,35 @@ fn another_record_in_the_same_file_stays_writable() {
         .is_some()
     );
 }
+
+#[test]
+fn two_open_moves_finish_each_once() {
+    let root = journal();
+    let other = json!({"id": "body_other", "source": "body", "activity": "workout",
+        "account": {"key": "import.apple_health\u{1f}w", "start": "a", "end": "b", "recorder": "r"}})
+    .as_object()
+    .unwrap()
+    .clone();
+    let _ = append_activity_record(root.path(), "a", "20260101", other).unwrap();
+    let (from, to) = (place("20260101", "a"), place("20260102", "b"));
+    assert_eq!(
+        move_body_record(root.path(), ID, &from, &to).unwrap(),
+        BodyMoveOutcome::Moved
+    );
+    assert_eq!(
+        move_body_record(root.path(), "body_other", &from, &to).unwrap(),
+        BodyMoveOutcome::Moved
+    );
+    assert_eq!(rows(root.path(), "b", "20260102").len(), 2);
+    assert!(rows(root.path(), "a", "20260101").is_empty());
+}
+
+#[test]
+fn a_stop_after_the_intent_appends_the_intents_copy() {
+    let root = journal();
+    let (from, to) = (place("20260101", "a"), place("20260102", "b"));
+    let open = started(root.path(), &from, &to);
+    assert!(rows(root.path(), "b", "20260102").is_empty());
+    complete_body_move(root.path(), &open).unwrap();
+    assert_eq!(rows(root.path(), "b", "20260102").len(), 1);
+}
