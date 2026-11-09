@@ -28,7 +28,6 @@ use solstone_core_format::obsidian::{
 };
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 use solstone_core_sol_link::ledger::AuthorizationLedger;
-use solstone_core_sol_link::{ClientLabelState, PairingIdentity};
 
 use crate::router::{IngestState, refusal};
 use crate::validation::{validate_access, validate_protocol};
@@ -503,14 +502,9 @@ fn listed_vaults(journal: &Path, cid: &str) -> Result<Vec<Value>, String> {
 }
 
 fn device_label(ledger: &mut AuthorizationLedger, cid: &str) -> Option<String> {
-    let fields = ledger.get_pairing_identity_fields(cid).ok().flatten()?;
-    match fields.projection() {
-        PairingIdentity::Available {
-            client_label: ClientLabelState::Valid(label),
-            ..
-        } => Some(label.to_owned()),
-        _ => None,
-    }
+    let entry = ledger.get(cid)?;
+    let label = entry.display_label();
+    (!label.is_empty()).then(|| label.to_owned())
 }
 
 #[cfg(test)]

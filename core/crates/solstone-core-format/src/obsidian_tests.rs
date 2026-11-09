@@ -122,6 +122,45 @@ fn removed_text_is_counted_and_never_quoted() {
 }
 
 #[test]
+fn a_sentence_written_anew_reads_whole_rather_than_as_scattered_words() {
+    let edit = render_edit(
+        "The river rose past the old levee by dawn.\n",
+        "Zanthrophyl surged past the levee at noon.\n",
+    )
+    .unwrap();
+    assert!(
+        edit.contains("Zanthrophyl surged past the levee at noon."),
+        "{edit}"
+    );
+    assert!(!edit.contains(" … "), "{edit}");
+    assert!(!edit.contains("river"), "{edit}");
+}
+
+#[test]
+fn a_small_insert_in_a_long_paragraph_keeps_only_the_new_words() {
+    let old =
+        "First sentence stays exactly as written here. Second sentence also stays as it was.\n";
+    let new = "First sentence stays exactly as written here today. Second sentence also stays as it was.\n";
+    let edit = render_edit(old, new).unwrap();
+    assert!(edit.contains("today"), "{edit}");
+    assert!(!edit.contains("First sentence"), "{edit}");
+    assert!(!edit.contains("Second sentence"), "{edit}");
+}
+
+#[test]
+fn two_adjacent_rewritten_sentences_read_as_one_run() {
+    let edit = render_edit(
+        "Old one here. Old two here.\n",
+        "Brand new first. Brand new second.\n",
+    )
+    .unwrap();
+    assert!(
+        edit.contains("Brand new first. Brand new second."),
+        "{edit}"
+    );
+}
+
+#[test]
 fn identical_text_and_line_ending_changes_are_no_edit() {
     assert_eq!(render_edit("same\n", "same\n"), None);
     assert_eq!(render_edit("a\r\nb\r\n", "a\nb\n"), None);

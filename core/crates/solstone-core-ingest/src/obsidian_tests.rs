@@ -322,3 +322,24 @@ fn a_resend_rewrites_no_note_state() {
     let prepared = prepare(journal.path(), upload).unwrap();
     assert!(prepared.notes.is_empty());
 }
+
+#[test]
+fn the_vault_list_names_a_device_by_the_label_it_paired_with() {
+    let journal = tempfile::tempdir().unwrap();
+    apply(
+        journal.path(),
+        "sha256:other",
+        vec![changed("a.md", "09:00:00", "text\n")],
+    );
+    let path = journal.path().join("link/authorized_clients.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        serde_json::json!([{"fingerprint":"sha256:other","device_label":"studio-rig",
+            "paired_at":"2026-04-19T00:00:00Z","instance_id":"i"}])
+        .to_string(),
+    )
+    .unwrap();
+    let listed = listed_vaults(journal.path(), "sha256:me").unwrap();
+    assert_eq!(listed[0]["device"], "studio-rig");
+}

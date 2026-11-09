@@ -486,24 +486,93 @@ fn tokens(text: &str) -> Vec<&str> {
     result
 }
 
-/// The runs of text inserted between `old` and `new`, and how many words left.
+/// The text inserted between `old` and `new`, and how many words left.
+///
+/// A sentence mostly written anew is kept whole, so a rewrite reads as the
+/// sentence it is rather than as scattered words around the few it kept.
+/// Otherwise only the inserted runs are kept, in order.
 fn word_changes(old: &str, new: &str) -> (Vec<String>, usize) {
     let old_tokens = tokens(old);
     let new_tokens = tokens(new);
-    let mut runs = Vec::new();
+    let mut inserted = vec![false; new_tokens.len()];
     let mut removed = 0;
     for hunk in hunks(&old_tokens, &new_tokens) {
         removed += old_tokens[hunk.old.clone()]
             .iter()
             .filter(|token| !token.trim().is_empty())
             .count();
-        let run = new_tokens[hunk.new.clone()].concat();
-        let run = run.trim();
-        if !run.is_empty() {
-            runs.push(run.to_owned());
+        inserted[hunk.new.clone()].fill(true);
+    }
+    let is_word = |index: usize| !new_tokens[index].trim().is_empty();
+    let mut runs: Vec<String> = Vec::new();
+    let mut last_end = None;
+    let mut start = 0;
+    while start < new_tokens.len() {
+        let mut end = start;
+        while end < new_tokens.len() && !ends_sentence(new_tokens[end]) {
+            end += 1;
         }
+        let end = (end + 1).min(new_tokens.len());
+        let words = (start..end).filter(|&index| is_word(index)).count();
+        let written = (start..end)
+            .filter(|&index| is_word(index) && inserted[index])
+            .count();
+        if written > 0 && written * 2 > words {
+            push_run(&mut runs, &mut last_end, start, end, &new_tokens);
+        } else if written > 0 {
+            let mut index = start;
+            while index < end {
+                if !inserted[index] {
+                    index += 1;
+                    continue;
+                }
+                let run_start = index;
+                while index < end && inserted[index] {
+                    index += 1;
+                }
+                if (run_start..index).any(is_word) {
+                    push_run(&mut runs, &mut last_end, run_start, index, &new_tokens);
+                }
+            }
+        }
+        start = end;
     }
     (runs, removed)
+}
+
+/// Whether a sentence stops with this token: its closing punctuation, or a
+/// line break.
+fn ends_sentence(token: &str) -> bool {
+    token.contains('\n') || token.ends_with(['.', '!', '?'])
+}
+
+/// Add the tokens in `start..end`, joining a run that follows straight on from
+/// the last so only a real gap reads as one.
+fn push_run(
+    runs: &mut Vec<String>,
+    last_end: &mut Option<usize>,
+    start: usize,
+    end: usize,
+    tokens: &[&str],
+) {
+    let text = tokens[start..end].concat();
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    let follows = (*last_end).is_some_and(|last| {
+        tokens[last..start]
+            .iter()
+            .all(|token| token.trim().is_empty())
+    });
+    match runs.last_mut() {
+        Some(previous) if follows => {
+            previous.push(' ');
+            previous.push_str(text);
+        }
+        _ => runs.push(text.to_owned()),
+    }
+    *last_end = Some(end);
 }
 
 /// A rename known to the journal.
