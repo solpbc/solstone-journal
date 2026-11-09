@@ -108,14 +108,18 @@ struct Selection {
     page: Option<String>,
 }
 
-fn parse(body: &Bytes) -> Result<Selection, Response> {
+fn parse(body: &Bytes) -> Option<Selection> {
     if body.iter().all(u8::is_ascii_whitespace) {
-        return Ok(Selection {
+        return Some(Selection {
             ids: Vec::new(),
             page: None,
         });
     }
-    serde_json::from_slice(body).map_err(|_| invalid_config_value("the selection couldn't be read"))
+    serde_json::from_slice(body).ok()
+}
+
+fn unreadable_selection() -> Response {
+    invalid_config_value("the selection couldn't be read")
 }
 
 fn page_surface(page: Option<&str>) -> Surface {
@@ -129,9 +133,8 @@ fn page_surface(page: Option<&str>) -> Surface {
 
 /// Put each selected item back where it was.
 pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
-    let selection = match parse(&body) {
-        Ok(selection) => selection,
-        Err(response) => return response,
+    let Some(selection) = parse(&body) else {
+        return unreadable_selection();
     };
     let surface = page_surface(selection.page.as_deref());
     run(journal_root, selection.ids, move |root, id| {
@@ -144,9 +147,8 @@ pub async fn recover(journal_root: PathBuf, body: Bytes) -> Response {
 
 /// Erase each selected item now.
 pub async fn erase(journal_root: PathBuf, body: Bytes) -> Response {
-    let selection = match parse(&body) {
-        Ok(selection) => selection,
-        Err(response) => return response,
+    let Some(selection) = parse(&body) else {
+        return unreadable_selection();
     };
     run(journal_root, selection.ids, |root, id| {
         solstone_core_trash::erase(root, id, Action::Erase, page_surface(None))

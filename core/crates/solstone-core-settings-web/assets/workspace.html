@@ -6978,7 +6978,6 @@ function renderRemovalHistory(history) {
     return;
   }
   header.hidden = false;
-  if (window.JournalClock) window.JournalClock.placeNote(header, { inside: true });
   const groups = removalGroups(entries);
   let shown = 0;
   let lastDay = null;
@@ -7081,7 +7080,6 @@ const TRASH_COPY = {
 const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved' };
 
 let trashItems = [];
-let trashDays = null;
 let trashConfirmed = null;
 const trashSelected = new Set();
 
@@ -7155,6 +7153,8 @@ function renderTrash(payload) {
   list.replaceChildren();
   const items = payload && Array.isArray(payload.items) ? payload.items : null;
   trashItems = items || [];
+  // Once for the section, the removal history below included.
+  if (window.JournalClock) window.JournalClock.placeNote(document.getElementById('trashHeading'), { inside: true });
   // A failure is never the empty line: that would say nothing is waiting.
   if (!items) {
     trashSelected.clear();
@@ -7165,13 +7165,12 @@ function renderTrash(payload) {
   const listed = new Set(items.map(item => item.id));
   [...trashSelected].forEach(id => { if (!listed.has(id)) trashSelected.delete(id); });
   paintTrashBar();
-  if (window.JournalClock) window.JournalClock.placeNote(document.getElementById('trashHeading'), { inside: true });
   if (items.length === 0) list.append(removalEl('div', 'log-empty', TRASH_COPY.empty));
   items.forEach(item => list.append(trashRow(item)));
   const input = document.getElementById('trashEraseAfterDays');
   if (Number.isInteger(payload.erase_after_days)) {
-    trashDays = payload.erase_after_days;
-    if (document.activeElement !== input) input.value = String(trashDays);
+    input.__lastKnownValue = String(payload.erase_after_days);
+    if (document.activeElement !== input) input.value = input.__lastKnownValue;
     input.disabled = false;
   }
   return true;
@@ -7277,8 +7276,6 @@ function saveTrashDays(input) {
     showFieldStatus(input, 'error', TRASH_COPY.range);
     return;
   }
-  if (days === trashDays) return;
-  trashDays = days;
   saveField(input, 'trash', 'erase_after_days', days);
 }
 
@@ -7294,6 +7291,8 @@ function setupTrash() {
     trashItems.forEach(item => trashSelected.add(item.id));
     document.querySelectorAll('#trashList input[type="checkbox"]').forEach(box => { box.checked = true; });
     paintTrashBar();
+    // The strip just swapped away the control that had focus.
+    byId('trashRecoverBtn').focus();
   });
   byId('trashRecoverBtn').addEventListener('click', () => runTrashAct('recover', trashChosen()));
   byId('trashEraseBtn').addEventListener('click', (event) => openTrashConfirm('erase', trashChosen(), event.currentTarget));

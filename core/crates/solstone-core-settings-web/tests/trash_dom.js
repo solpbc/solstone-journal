@@ -88,6 +88,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(byId.trashList.children[0].textContent, C.empty);
   assert.strictEqual(byId.trashBar.hidden, true);
   assert.strictEqual(byId.trashEraseAfterDays.value, '7');
+  assert.strictEqual(byId.trashEraseAfterDays.__lastKnownValue, '7');
   assert.strictEqual(byId.trashEraseAfterDays.disabled, false);
 
   // Rows: a segment names its stream and size, a memory does neither.
@@ -115,6 +116,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(byId.trashBarSome.hidden, false);
   assert.strictEqual(byId.trashBarIdle.hidden, true);
   assert.ok(byId.trashCount.textContent.includes('2'));
+  assert.strictEqual(document.activeElement, byId.trashRecoverBtn, 'select all moves focus to the reversible act');
 
   // Recover has no confirm, and sends the selected ids.
   answers['api/trash/recover'] = { done: ['a', 'b'], failed: [] };
@@ -188,6 +190,9 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   input.value = '30';
   api.saveTrashDays(input);
   assert.deepStrictEqual(saves[0], { section: 'trash', key: 'erase_after_days', value: 30 });
+  // The same number saves again: a failed save can be retried.
+  api.saveTrashDays(input);
+  assert.strictEqual(saves.length, 2);
 
   // History rows read by event; a timer erase reads as its own line.
   const hist = {};
