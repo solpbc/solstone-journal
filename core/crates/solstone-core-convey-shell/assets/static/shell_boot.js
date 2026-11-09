@@ -273,10 +273,18 @@
   // The shell's state as the rest of the shell reads it: the app definitions
   // that ship in this bundle, for the apps this journal serves (named by
   // `/api/shell`), with the per-request part beside them.
+  // A name this bundle has no definition for means the journal is now another
+  // build than this page: the page reloads once (the same rule as a stale
+  // asset), and meanwhile shows the apps it does know.
+  const SHELL_BUILD_RELOAD_STAMP_KEY = 'solstone.shellBuildReloadAt';
+
   function shellFrom(state) {
     const registry = window.SOL_SHELL_REGISTRY || {};
     const definitions = new Map((registry.apps || []).map((app) => [app.name, app]));
     const names = Array.isArray(state && state.app_names) ? state.app_names : [];
+    if (names.some((name) => !definitions.has(name)) && typeof window.reloadOnce === 'function') {
+      window.reloadOnce(SHELL_BUILD_RELOAD_STAMP_KEY);
+    }
     return Object.assign({}, state, {
       apps: names.map((name) => definitions.get(name)).filter(Boolean),
       settings: registry.settings || {}

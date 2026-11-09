@@ -1266,6 +1266,23 @@ for (const [label, response] of [
   });
 }
 
+asyncCase('a served app this bundle has no definition for reloads the page once', async () => {
+  const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
+  const reloads = [];
+  harness.window.reloadOnce = (key) => { reloads.push(key); return true; };
+  const aborted = [];
+  harness.window.__solShellEarly = earlyShell(Promise.resolve(jsonResponse({
+    app_names: ['home', 'a-view-from-a-newer-build', 'more'],
+    clock: null,
+    pinned: [],
+    version: '9.9.9',
+  })), aborted);
+  await harness.boot();
+  assert.deepStrictEqual(reloads, ['solstone.shellBuildReloadAt']);
+  const ready = harness.readyCalls[harness.readyCalls.length - 1];
+  assert.deepStrictEqual(ready.apps.map((app) => app.name), ['home', 'more']);
+});
+
 asyncCase('an early /api/shell answer that never comes is given up at the read bound', async () => {
   const timers = [];
   const harness = createHarness({
