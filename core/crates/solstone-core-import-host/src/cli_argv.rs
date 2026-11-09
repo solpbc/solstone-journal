@@ -378,11 +378,7 @@ impl Dispatch<'_> {
 }
 
 fn embedded_body_refused() -> CliRun {
-    failure(
-        "",
-        "Apple Health import, Oura sync, and Oura connect stay on the desktop importer.\n",
-        1,
-    )
+    failure("", &format!("{}\n", cli_render::EMBEDDED_BODY_REFUSAL), 1)
 }
 
 /// Shape one embedded preview so it cannot save, admit, or publish.

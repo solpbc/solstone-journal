@@ -9,6 +9,10 @@ use serde::Serialize;
 
 use crate::{ImportPreview, ImportResult, RegistrySource};
 
+/// What the phone says of an import that stays on the desktop importer.
+pub const EMBEDDED_BODY_REFUSAL: &str =
+    "Apple Health import, Oura sync, and Oura connect stay on the desktop importer.";
+
 /// Observable result of a library-hosted journal importer invocation.
 #[derive(Debug, Eq, PartialEq)]
 pub struct CliRun {
