@@ -640,7 +640,7 @@ function aboutCalls(page) {
 }
 
 // A probe asks the same question on several connections at once.
-const FANOUT = 4;
+const FANOUT = 6;
 
 function probeRounds(page) {
   return aboutCalls(page).length / FANOUT;

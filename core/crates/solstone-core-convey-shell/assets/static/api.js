@@ -457,7 +457,8 @@
         const discard = () => {
           release();
           try {
-            response.body?.cancel?.();
+            // A body already ended by an abort refuses the cancel; that's fine.
+            response.body?.cancel?.()?.catch?.(() => {});
           } catch (_) {}
         };
         return { response, readText, discard };
@@ -557,7 +558,7 @@
       },
       cancel(reason) {
         discard();
-        return reader.cancel(reason);
+        return reader.cancel(reason).catch(() => {});
       }
     });
     const wrapped = new Response(body, {
