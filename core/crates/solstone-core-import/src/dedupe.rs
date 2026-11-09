@@ -428,6 +428,30 @@ pub fn find_manifest_by_hash_where(
     })
 }
 
+/// Whether an import of content with this hash is in the journal now: its
+/// manifest says so, or, for a run that stopped before writing one, its own
+/// record does. What a sync ledger marked imported is checked against this.
+pub fn import_of_source_exists(journal_root: &Path, source_hash: &SourceHash) -> bool {
+    if find_manifest_by_hash(journal_root, source_hash)
+        .ok()
+        .and_then(|scan| scan.found)
+        .is_some()
+    {
+        return true;
+    }
+    let Ok(listing) = fs::read_dir(journal_root.join("imports")) else {
+        return false;
+    };
+    listing.flatten().any(|entry| {
+        fs::read(entry.path().join("import.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|record| {
+                record.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str())
+            })
+    })
+}
+
 pub(crate) fn build_import_inventory(import_dir: &Path) -> Result<Value, ImportError> {
     let files = directory_files(import_dir)?;
     let mut total_bytes = 0_u64;

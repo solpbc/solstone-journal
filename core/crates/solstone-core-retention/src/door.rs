@@ -565,6 +565,39 @@ impl SegmentHold {
         })
     }
 
+    /// Hold the journal for a thing of many segments (an import) without
+    /// locking each: the caller locks each one as it moves
+    /// ([`SegmentHold::lock_one`]), so a thing of thousands of segments never
+    /// holds thousands of locks at once.
+    pub fn acquire_lease(journal: &Path, targets: &[Target]) -> Result<Self, String> {
+        let admitted = admit_whole_segment_activity(journal)?;
+        let guard = WholeSegmentActivity::admitted(&admitted);
+        for target in targets {
+            guard.target(target)?;
+        }
+        let admission = hold_daily_location_admission(guard.journal())
+            .map_err(|_| "couldn't hold your journal for this; try again".to_owned())?;
+        Ok(Self {
+            admitted,
+            _admission: admission,
+            _locks: Vec::new(),
+            targets: targets.to_vec(),
+        })
+    }
+
+    /// Lock one segment under this hold, for the length of its move.
+    pub fn lock_one(&self, target: &Target) -> Result<solstone_core_journal_io::FileLock, String> {
+        let guard = WholeSegmentActivity::admitted(&self.admitted);
+        guard.target(target)?;
+        let live = segment_rel(target);
+        if let Some(parent) = guard.journal().join(&live).parent() {
+            solstone_core_journal_io::paths::ensure_directory(parent)
+                .map_err(|error| owner_reason(&error))?;
+        }
+        hold_lock(guard.journal().join(&live), LockOptions::default())
+            .map_err(|_| "another process is working on this segment".to_owned())
+    }
+
     /// Whether the segments may move now: the lease still stands and nothing
     /// else is part-way through the journal.
     pub fn check(&self) -> Result<(), String> {

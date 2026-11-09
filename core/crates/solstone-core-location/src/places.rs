@@ -377,11 +377,16 @@ pub fn recompute_holding(
         .places
         .retain_mut(|place| match members.get(&place.id) {
             Some(group) => {
-                let days: BTreeSet<&str> = group
+                // Its days are where its stays are now, and any earlier day
+                // of it that could still bring stays back: a place whose
+                // recordings go to the trash a day at a time keeps every day
+                // it may need.
+                let mut days: BTreeSet<String> = group
                     .iter()
-                    .map(|&index| stays[index].day.as_str())
+                    .map(|&index| stays[index].day.clone())
                     .collect();
-                place.days = days.into_iter().map(str::to_owned).collect();
+                days.extend(place.days.iter().filter(|day| held(day.as_str())).cloned());
+                place.days = days.into_iter().collect();
                 place.dormant = false;
                 true
             }
@@ -629,6 +634,31 @@ mod tests {
         assert_eq!(store.places[0].id, id);
         assert!(!store.places[0].dormant);
         assert_eq!(members[&id].len(), 2);
+        assert_eq!(
+            store.places[0].owner_name().as_deref(),
+            Some("the climbing gym")
+        );
+    }
+
+    #[test]
+    fn a_named_place_trashed_a_day_at_a_time_keeps_every_day_it_may_need() {
+        let mut store = PlaceStore::default();
+        let d1 = stay("20261001", 0.0, 25.0);
+        let d2 = stay("20261002", 0.0, 25.0);
+        recompute(&mut store, &[d1.clone(), d2.clone()]);
+        let id = store.places[0].id.clone();
+        store.places[0].name = Some("the climbing gym".to_owned());
+        // Day one's recording goes to the trash, then day two's.
+        recompute_holding(&mut store, std::slice::from_ref(&d2), &|day| {
+            day == "20261001"
+        });
+        recompute_holding(&mut store, &[], &|_| true);
+        assert!(store.places[0].dormant);
+        // Day two's is erased; day one's is recovered.
+        recompute_holding(&mut store, &[], &|day| day == "20261001");
+        assert_eq!(store.places.len(), 1);
+        recompute_holding(&mut store, &[d1], &|_| false);
+        assert_eq!(store.places[0].id, id);
         assert_eq!(
             store.places[0].owner_name().as_deref(),
             Some("the climbing gym")

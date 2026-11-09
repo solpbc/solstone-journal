@@ -43,13 +43,25 @@ const IMPORTS_DIR: &str = "imports";
 /// is keyed on.
 pub const STILL_IMPORTING: &str = "this import is still running; try again when it's done";
 
-/// Whether an import of `source` deletes as a whole here. A journal archive
-/// merge isn't one thing (each thing it brought in is its own); Strava,
-/// Apple Health and Oura imports move with the body pages' lane.
+/// Whether an import of `source` deletes as a whole here: the kinds whose
+/// records and segments this module knows. Anything else (a journal archive
+/// merge, which isn't one thing; Strava, Apple Health and Oura, which move with
+/// the body pages; a kind this build doesn't name) doesn't.
 pub fn deletes_here(source: &str) -> bool {
-    !matches!(
+    matches!(
         source,
-        "journal_archive" | "strava" | "apple_health" | "oura"
+        "document"
+            | "image"
+            | "text"
+            | "audio"
+            | "audio_archive"
+            | "plaud"
+            | "ics"
+            | "chatgpt"
+            | "claude"
+            | "gemini"
+            | "obsidian"
+            | "kindle"
     )
 }
 
@@ -109,6 +121,20 @@ pub struct ImportThings {
     /// Segments it lists that another import still in the journal also
     /// lists, and that it keeps nothing of its own in: they stay.
     pub shared: Vec<String>,
+}
+
+impl ImportThings {
+    /// What it names but doesn't take: the segments it shares, and those it
+    /// takes only its own files from.
+    pub fn refs(&self) -> Vec<String> {
+        let mut refs: BTreeSet<String> = self.shared.iter().cloned().collect();
+        refs.extend(
+            self.files
+                .iter()
+                .filter_map(|file| file.rsplit_once('/').map(|(parent, _)| parent.to_owned())),
+        );
+        refs.into_iter().collect()
+    }
 }
 
 impl ImportThings {
@@ -280,16 +306,13 @@ fn listed_segments(journal: &Path, id: &str, source: &str) -> BTreeSet<String> {
     found
 }
 
-/// Where a legacy record's segment is: the direct layout, else the one
-/// import stream that holds it.
+/// Where a legacy record's segment is: the one import stream that holds it,
+/// else the direct layout.
 fn legacy_segment(journal: &Path, day: &str, key: &str) -> Option<String> {
     if !valid_part(day) || !valid_part(key) {
         return None;
     }
     let direct = segment_rel(day, solstone_core_journal_io::paths::DEFAULT_STREAM, key);
-    if journal.join(&direct).is_dir() {
-        return Some(direct);
-    }
     let mut found = std::fs::read_dir(journal.join("chronicle").join(day))
         .ok()?
         .flatten()
@@ -297,8 +320,11 @@ fn legacy_segment(journal: &Path, day: &str, key: &str) -> Option<String> {
         .filter(|stream| stream.starts_with("import."))
         .map(|stream| segment_rel(day, &stream, key))
         .filter(|path| journal.join(path).is_dir());
-    let first = found.next()?;
-    found.next().is_none().then_some(first)
+    match (found.next(), found.next()) {
+        (Some(only), None) => Some(only),
+        (Some(_), Some(_)) => None,
+        (None, _) => journal.join(&direct).is_dir().then_some(direct),
+    }
 }
 
 fn array<'v>(value: &'v Value, key: &str) -> &'v [Value] {
@@ -360,6 +386,25 @@ fn own_files(journal: &Path, segment: &str, id: &str) -> Vec<String> {
     own
 }
 
+/// A file of this import came back into a segment whose other contents were
+/// removed meanwhile, and no other item holds them: the removal's tombstone
+/// gives way, so the import's own file is seen again.
+fn reclaim_for_own_file(journal: &Path, segment: &str, item: &str) -> Result<(), String> {
+    let tombstone = journal
+        .join(segment)
+        .join(solstone_core_retention::tombstone::TOMBSTONE_NAME);
+    if !tombstone.is_file() {
+        return Ok(());
+    }
+    let held =
+        solstone_core_trash::holders(journal, segment, item).map_err(|error| error.to_string())?;
+    if !held.is_empty() {
+        return Ok(());
+    }
+    // System internal: a removal's marker giving way to what came back.
+    std::fs::remove_file(&tombstone).map_err(|error| format!("{segment}: {error}"))
+}
+
 /// The trash's kind for imports.
 pub struct Imports<'a> {
     index: &'a dyn IndexNotify,
@@ -404,29 +449,43 @@ fn import_id_of(item: &Item) -> Option<&str> {
     }
 }
 
+/// The segment a path is, or that a file of it sits in.
+fn target_of_path(path: &str) -> Option<Target> {
+    parse_segment_rel(path)
+        .or_else(|| {
+            let (parent, _) = path.rsplit_once('/')?;
+            parse_segment_rel(parent)
+        })
+        .map(|(day, stream, dir)| Target { day, stream, dir })
+}
+
 /// The segments an item touches: each whole one, and each a file of it sits in.
 fn targets_of(item: &Item) -> Vec<Target> {
     let mut targets: Vec<Target> = item
         .paths
         .iter()
-        .filter_map(|path| {
-            parse_segment_rel(path).or_else(|| {
-                let (parent, _) = path.rsplit_once('/')?;
-                parse_segment_rel(parent)
-            })
-        })
-        .map(|(day, stream, dir)| Target { day, stream, dir })
+        .filter_map(|path| target_of_path(path))
         .collect();
     targets.sort_by(|a, b| (&a.day, &a.stream, &a.dir).cmp(&(&b.day, &b.stream, &b.dir)));
     targets.dedup();
     targets
 }
 
-/// The import's segments held, and its run not going on.
+/// Why an import can't come back yet: a segment it shares is in the trash with
+/// another import.
+pub const SHARED_IN_TRASH: &str =
+    "part of this import is in the trash with another import; recover that one first";
+
+/// The import's segments held, its run not going on, and, when it comes back,
+/// nothing it shares held by another item in the trash.
 struct ImportHold {
     segments: SegmentHold,
+    /// The one segment lock held now: the segment moving.
+    moving: std::cell::RefCell<Option<solstone_core_journal_io::FileLock>>,
     journal: std::path::PathBuf,
     id: String,
+    /// The item and what it shares, when it is coming back rather than going.
+    returning: Option<(String, Vec<String>)>,
 }
 
 impl Hold for ImportHold {
@@ -434,7 +493,26 @@ impl Hold for ImportHold {
         if attempt_holder(&self.journal, &self.id) == AttemptHolder::Held {
             return Err(STILL_IMPORTING.to_owned());
         }
+        if let Some((item, refs)) = &self.returning {
+            for path in refs {
+                let held = solstone_core_trash::holders(&self.journal, path, item)
+                    .map_err(|error| error.to_string())?;
+                if !held.is_empty() {
+                    return Err(SHARED_IN_TRASH.to_owned());
+                }
+            }
+        }
         self.segments.check()
+    }
+
+    fn moving(&self, path: &str) -> Result<(), String> {
+        // Let go of the last segment before taking the next.
+        self.moving.borrow_mut().take();
+        self.check()?;
+        if let Some(target) = target_of_path(path) {
+            *self.moving.borrow_mut() = Some(self.segments.lock_one(&target)?);
+        }
+        Ok(())
     }
 }
 
@@ -445,11 +523,30 @@ impl Kind for Imports<'_> {
 
     fn hold<'h>(&'h self, journal: &Path, item: &Item) -> Result<Box<dyn Hold + 'h>, String> {
         let id = import_id_of(item).ok_or_else(|| "this isn't an import".to_owned())?;
+        let returning = (item.state != solstone_core_trash::State::Detaching)
+            .then(|| (item.id.clone(), item.refs.clone()));
         Ok(Box::new(ImportHold {
-            segments: SegmentHold::acquire_many(journal, &targets_of(item))?,
+            segments: SegmentHold::acquire_lease(journal, &targets_of(item))?,
+            moving: std::cell::RefCell::new(None),
             journal: journal.to_path_buf(),
             id: id.to_owned(),
+            returning,
         }))
+    }
+
+    fn current_paths(&self, journal: &Path, unit: &Unit) -> Option<Vec<String>> {
+        let Unit::Import { id, .. } = unit else {
+            return None;
+        };
+        // Gone from the journal: nothing of it to move now.
+        Some(import_things(journal, id).map_or_else(Vec::new, |things| things.paths()))
+    }
+
+    fn refs(&self, journal: &Path, unit: &Unit) -> Vec<String> {
+        let Unit::Import { id, .. } = unit else {
+            return Vec::new();
+        };
+        import_things(journal, id).map_or_else(Vec::new, |things| things.refs())
     }
 
     fn present(&self, journal: &Path, path: &str) -> bool {
@@ -497,7 +594,16 @@ impl Kind for Imports<'_> {
                     files.iter().cloned().map(RemovedPath::confirmed).collect();
                 self.index.paths_removed(&removed).map(|_| ())
             }
-            Change::Attached => self.index.paths_returned(files),
+            Change::Attached => {
+                for path in &item.paths {
+                    if parse_segment_rel(path).is_none()
+                        && let Some((parent, _)) = path.rsplit_once('/')
+                    {
+                        reclaim_for_own_file(journal, parent, &item.id)?;
+                    }
+                }
+                self.index.paths_returned(files)
+            }
         }
         .map_err(|error| format!("search was not updated: {}", error.reason))?;
         let days: BTreeSet<String> = targets_of(item)
@@ -743,6 +849,78 @@ mod tests {
         );
         assert_eq!(solstone_core_trash::list(root.path()).unwrap().len(), 2);
         assert!(!root.path().join("imports").join(OTHER).exists());
+        // The segment both shared went with the last of them: nothing of
+        // either is left to read.
+        let shared = "chronicle/20260802/import.ics/090000_300";
+        assert!(!live_segment(root.path(), shared));
+        assert_eq!(
+            solstone_core_trash::holders(root.path(), shared, "")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    fn recover(root: &Path, id: &str) -> Result<Item, TrashError> {
+        crate::trash_kinds::with_kinds(root, |kinds| {
+            solstone_core_trash::attach(root, kinds, id, Action::Recover, surface())
+        })
+    }
+
+    fn trash_other(root: &Path) -> Item {
+        Imports::new(&NoIndex)
+            .trash(root, OTHER, Action::ImportDelete, surface())
+            .unwrap()
+    }
+
+    #[test]
+    fn an_import_whose_shared_segment_went_with_another_waits_for_it() {
+        let root = journal();
+        let first = trash(root.path());
+        let second = trash_other(root.path());
+        // The first one's own file sits in a segment the second one took.
+        let error = recover(root.path(), &first.id).unwrap_err();
+        assert!(matches!(&error, TrashError::Held(reason) if reason == SHARED_IN_TRASH));
+        recover(root.path(), &second.id).unwrap();
+        recover(root.path(), &first.id).unwrap();
+        let shared = root.path().join("chronicle/20260802/import.ics/090000_300");
+        for file in [
+            format!("calendar_{ID}.jsonl"),
+            format!("calendar_{OTHER}.jsonl"),
+            "event_transcript.md".to_owned(),
+        ] {
+            assert!(shared.join(&file).is_file(), "{file}");
+        }
+        assert!(live_segment(
+            root.path(),
+            "chronicle/20260802/import.ics/090000_300"
+        ));
+        assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_import_comes_back_into_a_shared_segment_another_erased() {
+        let root = journal();
+        let first = trash(root.path());
+        let second = trash_other(root.path());
+        solstone_core_trash::erase(root.path(), &second.id, Action::Erase, surface()).unwrap();
+        recover(root.path(), &first.id).unwrap();
+        // Its own file is back and seen; what only the other held is gone.
+        let shared = "chronicle/20260802/import.ics/090000_300";
+        assert!(live_segment(root.path(), shared));
+        assert!(
+            root.path()
+                .join(shared)
+                .join(format!("calendar_{ID}.jsonl"))
+                .is_file()
+        );
+        assert!(
+            !root
+                .path()
+                .join(shared)
+                .join(format!("calendar_{OTHER}.jsonl"))
+                .exists()
+        );
     }
 
     #[test]
