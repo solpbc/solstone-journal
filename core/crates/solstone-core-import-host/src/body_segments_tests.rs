@@ -2553,6 +2553,18 @@ fn a_run_nobody_answered_for_moves_nothing_already_filed() {
         "{}",
         outcome.summary
     );
+    let stream = root.join("chronicle/20261010").join(STREAM);
+    for entry in fs::read_dir(&stream).unwrap().flatten() {
+        let facets = entry.path().join("talents/facets.json");
+        if facets.is_file() {
+            assert_eq!(
+                fs::read_to_string(&facets).unwrap(),
+                facet_file_text("work"),
+                "{}",
+                entry.path().display()
+            );
+        }
+    }
 }
 
 #[test]
