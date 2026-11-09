@@ -43,7 +43,7 @@ pub(crate) struct BodyCommand<'a> {
 const WHERE_TO_RUN: &str = if cfg!(target_os = "macos") {
     "in the journal app's journal menu, choose open admin terminal, and run"
 } else {
-    "from a terminal, run"
+    "from a terminal on the computer your journal runs on, run"
 };
 
 fn apple_confirm_words() -> String {

@@ -429,11 +429,7 @@ pub(crate) fn endpoint_plan_lines(
             .collect::<Vec<_>>()
             .join(", ");
         let name = solstone_core_import_sources::apple_health::name_words(endpoint);
-        let _ = if days.is_empty() {
-            writeln!(lines, "  {name}: nothing to ask for")
-        } else {
-            writeln!(lines, "  {name}: {days}")
-        };
+        let _ = writeln!(lines, "  {name}: {days}");
     }
     lines.push_str("nothing was saved. add --save to bring it in.\n");
     Ok(lines)
