@@ -24,35 +24,32 @@ pub(crate) fn body_streams() -> [(&'static str, &'static str); 3] {
 
 /// `HHMMSS_<length>`, as window folders are named.
 fn is_window_name(name: &str) -> bool {
-    name.split_once('_')
-        .is_some_and(|(clock, rest)| {
-            clock.len() == 6
-                && clock.bytes().all(|byte| byte.is_ascii_digit())
-                && !rest.is_empty()
-        })
+    name.split_once('_').is_some_and(|(clock, rest)| {
+        clock.len() == 6 && clock.bytes().all(|byte| byte.is_ascii_digit()) && !rest.is_empty()
+    })
 }
 
 /// The window folders a stream holds on a day, by name. A deleted window keeps
 /// a tombstone folder, so it's left out by name where a caller needs that.
 pub(crate) fn window_names(root: &Path, day: &str, stream: &str) -> Vec<String> {
-    let dir = root.join("chronicle").join(day).join(stream);
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    entries
+    window_entries(root, day, stream).collect()
+}
+
+fn window_entries(root: &Path, day: &str, stream: &str) -> impl Iterator<Item = String> {
+    fs::read_dir(root.join("chronicle").join(day).join(stream))
+        .into_iter()
+        .flatten()
         .flatten()
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             is_window_name(&name).then_some(name)
         })
-        .collect()
 }
 
+/// Stops at the first live window, so a dense day costs one look.
 fn holds_a_live_window(root: &Path, day: &str, stream: &str) -> bool {
-    window_names(root, day, stream)
-        .iter()
-        .any(|name| !is_deleted(root, day, stream, name))
+    window_entries(root, day, stream).any(|name| !is_deleted(root, day, stream, &name))
 }
 
 pub(crate) fn is_deleted(root: &Path, day: &str, stream: &str, name: &str) -> bool {

@@ -19,14 +19,21 @@ pub(crate) const DAY: &str = "20260110";
 
 pub(crate) async fn get(root: &Path, path: &str) -> (StatusCode, Value) {
     let response = api_router(root)
-        .oneshot(Request::get(path).body(Body::empty()).expect("request builds"))
+        .oneshot(
+            Request::get(path)
+                .body(Body::empty())
+                .expect("request builds"),
+        )
         .await
         .expect("router responds");
     let status = response.status();
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body reads");
-    (status, serde_json::from_slice(&body).expect("response JSON parses"))
+    (
+        status,
+        serde_json::from_slice(&body).expect("response JSON parses"),
+    )
 }
 
 fn zone(root: &Path, source: &str) {
@@ -84,7 +91,8 @@ pub(crate) fn workout(id: &str, start: &str, end: &str) -> BodyRow {
     row.experience = Some("workout".to_owned());
     row.start = Some(start.to_owned());
     row.end = Some(end.to_owned());
-    row.values.insert("distance".to_owned(), "8123.4 m".to_owned());
+    row.values
+        .insert("distance".to_owned(), "8123.4 m".to_owned());
     row
 }
 
@@ -119,7 +127,11 @@ pub(crate) fn window(root: &Path, day: &str, stream: &str, key: &str, rows: &[Bo
 }
 
 fn strava_tile(root: &Path, day: &str, key: &str) {
-    let dir = root.join("chronicle").join(day).join("import.strava").join(key);
+    let dir = root
+        .join("chronicle")
+        .join(day)
+        .join("import.strava")
+        .join(key);
     fs::create_dir_all(&dir).unwrap();
     fs::write(
         dir.join("workout.json"),
@@ -136,7 +148,9 @@ fn strava_tile(root: &Path, day: &str, key: &str) {
 }
 
 fn old_fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/body_old_bundles").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/body_old_bundles")
+        .join(name)
 }
 
 const NATIVE_ID: &str = "body-01M70HDTD9N4P15X06CRDG2DWZ";
@@ -154,7 +168,10 @@ fn copy_tree(from: &Path, to: &Path) {
 }
 
 fn with_native(root: &Path) {
-    copy_tree(&old_fixture("native").join(NATIVE_ID), &root.join("imports").join(NATIVE_ID));
+    copy_tree(
+        &old_fixture("native").join(NATIVE_ID),
+        &root.join("imports").join(NATIVE_ID),
+    );
 }
 
 fn with_python(root: &Path) {
@@ -218,7 +235,11 @@ async fn a_new_journal_reads_as_empty_on_every_route() {
 async fn the_routes_with_no_trends_serve_404_and_day_validation_holds() {
     let temporary = tempfile::tempdir().unwrap();
     let response = api_router(temporary.path())
-        .oneshot(Request::get("/app/body/api/trends").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get("/app/body/api/trends")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -228,17 +249,41 @@ async fn the_routes_with_no_trends_serve_404_and_day_validation_holds() {
 async fn the_overview_holds_each_source_its_days_and_every_import() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
-    window(root, "20260110", "import.apple_health", "090000_3600", &[reading("r1", "2026-01-10 09:05:00 -0700")]);
-    window(root, "20260112", "import.apple_health", "090000_3600", &[reading("r2", "2026-01-12 09:05:00 -0700")]);
-    window(root, "20260111", "import.oura", "000000_86400", &[dated("d1", "20260111")]);
+    window(
+        root,
+        "20260110",
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r1", "2026-01-10 09:05:00 -0700")],
+    );
+    window(
+        root,
+        "20260112",
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r2", "2026-01-12 09:05:00 -0700")],
+    );
+    window(
+        root,
+        "20260111",
+        "import.oura",
+        "000000_86400",
+        &[dated("d1", "20260111")],
+    );
     strava_tile(root, "20260111", "070000_300");
 
     let (status, overview) = get(root, "/app/body/api/status").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(overview["coverage"], json!({"start": "20260110", "end": "20260112"}));
+    assert_eq!(
+        overview["coverage"],
+        json!({"start": "20260110", "end": "20260112"})
+    );
     let sources = overview["sources"].as_array().unwrap();
     assert_eq!(
-        sources.iter().map(|item| item["name"].as_str().unwrap()).collect::<Vec<_>>(),
+        sources
+            .iter()
+            .map(|item| item["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
         ["Apple Health", "Oura", "Strava"]
     );
     assert_eq!(sources[0]["first_day"], "20260110");
@@ -247,7 +292,11 @@ async fn the_overview_holds_each_source_its_days_and_every_import() {
     assert_eq!(sources[0]["days_label"], "2 days");
     assert_eq!(sources[1]["days"], 1);
     assert_eq!(overview["days"], 3);
-    assert!(overview["day_grid"].as_array().is_some_and(|grid| !grid.is_empty()));
+    assert!(
+        overview["day_grid"]
+            .as_array()
+            .is_some_and(|grid| !grid.is_empty())
+    );
 
     let (_, index) = get(root, "/app/body/api/index").await;
     assert_eq!(index["coverage"], overview["coverage"]);
@@ -260,11 +309,27 @@ async fn the_overview_holds_each_source_its_days_and_every_import() {
 async fn the_overview_index_and_stats_read_no_window() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
-    window(root, DAY, "import.apple_health", "090000_3600", &[reading("r1", "2026-01-10 09:05:00 -0700")]);
-    window(root, "20260111", "import.oura", "000000_86400", &[dated("d1", "20260111")]);
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r1", "2026-01-10 09:05:00 -0700")],
+    );
+    window(
+        root,
+        "20260111",
+        "import.oura",
+        "000000_86400",
+        &[dated("d1", "20260111")],
+    );
     // Garbage in the window files: an overview that read them would still fail only by
     // returning less, so the count of reads is the instrument.
-    fs::write(root.join("chronicle/20260110/import.apple_health/090000_3600/body.jsonl"), [0xff_u8]).unwrap();
+    fs::write(
+        root.join("chronicle/20260110/import.apple_health/090000_3600/body.jsonl"),
+        [0xff_u8],
+    )
+    .unwrap();
 
     window_read_probe::reset();
     for path in [
@@ -275,19 +340,35 @@ async fn the_overview_index_and_stats_read_no_window() {
     ] {
         assert_eq!(get(root, path).await.0, StatusCode::OK, "{path}");
     }
-    assert_eq!(window_read_probe::reads(), 0, "these routes opened a window");
+    assert_eq!(
+        window_read_probe::reads(),
+        0,
+        "these routes opened a window"
+    );
 
     get(root, &format!("/app/body/api/day/{DAY}")).await;
-    assert!(window_read_probe::reads() > 0, "the probe counts a day's reads");
+    assert!(
+        window_read_probe::reads() > 0,
+        "the probe counts a day's reads"
+    );
 }
 
 #[tokio::test]
 async fn a_deleted_window_isnt_held_and_a_day_is_gone_when_all_are_deleted() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
-    let live = window(root, DAY, "import.apple_health", "090000_3600", &[reading("r1", "2026-01-10 09:05:00 -0700")]);
+    let live = window(
+        root,
+        DAY,
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r1", "2026-01-10 09:05:00 -0700")],
+    );
     fs::write(live.join("tombstone.json"), "{}").unwrap();
-    assert_eq!(get(root, "/app/body/api/index").await.1["coverage"], Value::Null);
+    assert_eq!(
+        get(root, "/app/body/api/index").await.1["coverage"],
+        Value::Null
+    );
 }
 
 #[tokio::test]
@@ -301,9 +382,18 @@ async fn a_day_lists_experiences_readings_counts_logged_and_documents_and_comput
         "import.apple_health",
         "060000_3600",
         &[
-            workout("w1", "2026-01-10 06:31:00 -0700", "2026-01-10 07:20:00 -0700"),
+            workout(
+                "w1",
+                "2026-01-10 06:31:00 -0700",
+                "2026-01-10 07:20:00 -0700",
+            ),
             reading("r1", "2026-01-10 06:35:00 -0700"),
-            steps("s1", "2026-01-10 06:40:00 -0700", "2026-01-10 06:45:00 -0700", "1200"),
+            steps(
+                "s1",
+                "2026-01-10 06:40:00 -0700",
+                "2026-01-10 06:45:00 -0700",
+                "1200",
+            ),
             logged("l1", "2026-01-10 06:50:00 -0700"),
         ],
     );
@@ -314,10 +404,21 @@ async fn a_day_lists_experiences_readings_counts_logged_and_documents_and_comput
         "210000_3600",
         &[
             reading("r2", "2026-01-10 21:10:00 -0700"),
-            steps("s2", "2026-01-10 21:15:00 -0700", "2026-01-10 21:20:00 -0700", "2000.5"),
+            steps(
+                "s2",
+                "2026-01-10 21:15:00 -0700",
+                "2026-01-10 21:20:00 -0700",
+                "2000.5",
+            ),
         ],
     );
-    window(root, DAY, "import.oura", "000000_86400", &[dated("d1", DAY)]);
+    window(
+        root,
+        DAY,
+        "import.oura",
+        "000000_86400",
+        &[dated("d1", DAY)],
+    );
     strava_tile(root, DAY, "070000_300");
 
     let (status, day) = get(root, &format!("/app/body/api/day/{DAY}")).await;
@@ -342,11 +443,24 @@ async fn a_day_lists_experiences_readings_counts_logged_and_documents_and_comput
     assert_eq!(count_item["total"], "3,200.5");
     assert_eq!(apple["logged"][0]["name"], "headache");
     assert_eq!(apple["logged"][0]["who"], "you, in Synthetic Watch");
-    assert_eq!(day["sources"][1]["documents"], json!([{"name": "readiness", "value": null}]));
+    assert_eq!(
+        day["sources"][1]["documents"],
+        json!([{"name": "readiness", "value": null}])
+    );
     assert_eq!(day["strava"][0]["strava_activity_id"], "9001");
 
     let text = day.to_string();
-    for retired in ["min", "max", "average", "avg", "comparison", "glucose", "range_label", "trends", "summary"] {
+    for retired in [
+        "min",
+        "max",
+        "average",
+        "avg",
+        "comparison",
+        "glucose",
+        "range_label",
+        "trends",
+        "summary",
+    ] {
         assert!(!text.contains(&format!("\"{retired}\"")), "{retired}");
     }
     assert!(!text.contains("distance_unit"), "{text}");
@@ -357,8 +471,20 @@ async fn a_day_lists_experiences_readings_counts_logged_and_documents_and_comput
 async fn a_row_two_windows_share_is_read_once_and_a_moved_row_isnt_counted() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
-    window(root, DAY, "import.apple_health", "090000_3600", &[reading("r1", "2026-01-10 09:05:00 -0700")]);
-    window(root, DAY, "import.apple_health", "090000_3601", &[reading("r1", "2026-01-10 09:05:00 -0700")]);
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r1", "2026-01-10 09:05:00 -0700")],
+    );
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "090000_3601",
+        &[reading("r1", "2026-01-10 09:05:00 -0700")],
+    );
     let mut moved = reading("r2", "2026-01-10 09:30:00 -0700");
     moved.kind = RowKind::Moved;
     window(root, DAY, "import.apple_health", "100000_3600", &[moved]);
@@ -373,7 +499,13 @@ async fn an_unreadable_window_is_said_and_the_rest_of_the_day_still_reads() {
     let root = temporary.path();
     let bad = window(root, DAY, "import.apple_health", "090000_3600", &[]);
     fs::write(bad.join("body.jsonl"), "not json\n").unwrap();
-    window(root, DAY, "import.apple_health", "100000_3600", &[reading("r1", "2026-01-10 10:05:00 -0700")]);
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "100000_3600",
+        &[reading("r1", "2026-01-10 10:05:00 -0700")],
+    );
     let (_, day) = get(root, &format!("/app/body/api/day/{DAY}")).await;
     assert_eq!(day["unreadable_windows"], 1);
     assert_eq!(day["sources"][0]["readings"][0]["count"], 1);
@@ -383,8 +515,20 @@ async fn an_unreadable_window_is_said_and_the_rest_of_the_day_still_reads() {
 async fn an_empty_day_keeps_its_nearest_days() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
-    window(root, "20260109", "import.apple_health", "090000_3600", &[reading("r1", "2026-01-09 09:05:00 -0700")]);
-    window(root, "20260112", "import.apple_health", "090000_3600", &[reading("r2", "2026-01-12 09:05:00 -0700")]);
+    window(
+        root,
+        "20260109",
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r1", "2026-01-09 09:05:00 -0700")],
+    );
+    window(
+        root,
+        "20260112",
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r2", "2026-01-12 09:05:00 -0700")],
+    );
     let (_, day) = get(root, &format!("/app/body/api/day/{DAY}")).await;
     assert_eq!(day["has_data"], false);
     assert_eq!(day["nearest"]["prev"], "20260109");
@@ -409,7 +553,11 @@ async fn a_finished_import_shows_its_summary_and_running_or_stopped_shows_how_fa
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     let finished = new_import_with(root, "20260110_120000", "apple_health", Some("completed"));
-    fs::write(finished.join("summary.md"), "# Apple Health import\n\nwhat happened\n").unwrap();
+    fs::write(
+        finished.join("summary.md"),
+        "# Apple Health import\n\nwhat happened\n",
+    )
+    .unwrap();
 
     let stopped = new_import_with(root, "20260111_120000", "oura", Some("unconfirmed"));
     fs::write(
@@ -419,7 +567,11 @@ async fn a_finished_import_shows_its_summary_and_running_or_stopped_shows_how_fa
     .unwrap();
 
     let early = new_import_with(root, "20260112_120000", "apple_health", Some("unconfirmed"));
-    fs::write(early.join("body-progress.json"), r#"{"phase":"scan","rows_scanned":1500}"#).unwrap();
+    fs::write(
+        early.join("body-progress.json"),
+        r#"{"phase":"scan","rows_scanned":1500}"#,
+    )
+    .unwrap();
 
     let running = new_import_with(root, "20260113_120000", "oura", None);
     fs::remove_file(running.join("manifest.json")).unwrap();
@@ -447,7 +599,10 @@ async fn a_finished_import_shows_its_summary_and_running_or_stopped_shows_how_fa
     assert_eq!(halted["progress"], "stopped partway: 3 of 120 days done.");
 
     let scanning = by_id("20260112_120000");
-    assert_eq!(scanning["progress"], "stopped partway: 1,500 entries read so far.");
+    assert_eq!(
+        scanning["progress"],
+        "stopped partway: 1,500 entries read so far."
+    );
 
     let going = by_id("20260113_120000");
     assert_eq!(going["state"], "running");
@@ -463,7 +618,11 @@ async fn old_bundles_are_listed_by_source_and_span_and_say_how_to_import_again()
     with_python(root);
     let dexcom = root.join("imports/20240101_090000");
     fs::create_dir_all(dexcom.join("normalized")).unwrap();
-    fs::write(dexcom.join("manifest.json"), r#"{"source_type":"dexcom_clarity"}"#).unwrap();
+    fs::write(
+        dexcom.join("manifest.json"),
+        r#"{"source_type":"dexcom_clarity"}"#,
+    )
+    .unwrap();
     fs::write(dexcom.join("normalized/2024-01.jsonl"), "").unwrap();
 
     let (_, overview) = get(root, "/app/body/api/status").await;
@@ -476,7 +635,12 @@ async fn old_bundles_are_listed_by_source_and_span_and_say_how_to_import_again()
     };
     let native = by_source("Apple Health", "days");
     assert_eq!(native["span"], "Jan 1, 2026 to Jan 2, 2026, 2 days");
-    assert!(native["line"].as_str().unwrap().contains("import again from a new Apple Health export"));
+    assert!(
+        native["line"]
+            .as_str()
+            .unwrap()
+            .contains("import again from a new Apple Health export")
+    );
     let python = by_source("Apple Health", "months");
     assert_eq!(python["span"], "March 2026 (by month)");
     let dexcom = by_source("Dexcom Clarity", "months");
@@ -495,8 +659,19 @@ async fn a_day_page_says_an_old_import_holds_the_day_until_the_day_is_touched() 
     let earlier = day["earlier_imports"].as_array().unwrap();
     assert_eq!(earlier.len(), 1);
     assert_eq!(earlier[0]["scope"], "day");
-    assert!(earlier[0]["line"].as_str().unwrap().contains("this day's body data"));
-    window(root, "20260101", "import.apple_health", "000000_3600", &[reading("r1", "2026-01-01 00:05:00 -0700")]);
+    assert!(
+        earlier[0]["line"]
+            .as_str()
+            .unwrap()
+            .contains("this day's body data")
+    );
+    window(
+        root,
+        "20260101",
+        "import.apple_health",
+        "000000_3600",
+        &[reading("r1", "2026-01-01 00:05:00 -0700")],
+    );
     let (_, day) = get(root, "/app/body/api/day/20260101").await;
     assert_eq!(day["earlier_imports"], json!([]));
 }
@@ -520,8 +695,23 @@ async fn a_window_counts_what_it_holds_on_the_placed_clock() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
     zone(root, "apple_health");
-    window(root, DAY, "import.apple_health", "090000_3600", &[reading("r1", "2026-01-10 09:05:00 -0700"), reading("r2", "2026-01-10 09:45:00 -0700")]);
-    window(root, DAY, "import.apple_health", "220000_3600", &[reading("r3", "2026-01-10 22:05:00 -0700")]);
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "090000_3600",
+        &[
+            reading("r1", "2026-01-10 09:05:00 -0700"),
+            reading("r2", "2026-01-10 09:45:00 -0700"),
+        ],
+    );
+    window(
+        root,
+        DAY,
+        "import.apple_health",
+        "220000_3600",
+        &[reading("r3", "2026-01-10 22:05:00 -0700")],
+    );
     let (status, payload) = get(
         root,
         "/app/body/api/window?from=2026-01-10T09:00:00-07:00&to=2026-01-10T10:00:00-07:00",
@@ -535,7 +725,14 @@ async fn a_window_counts_what_it_holds_on_the_placed_clock() {
     assert_eq!(payload["rows"].as_array().unwrap().len(), 2);
     assert_eq!(payload["rows"][0]["value"], "61");
     let text = payload.to_string();
-    for retired in ["\"min\"", "\"max\"", "range_label\":\"6", "delta_label", "heart_rate", "glucose"] {
+    for retired in [
+        "\"min\"",
+        "\"max\"",
+        "range_label\":\"6",
+        "delta_label",
+        "heart_rate",
+        "glucose",
+    ] {
         assert!(!text.contains(retired), "{retired}");
     }
     let hourly = payload["hourly"].as_array().unwrap();
@@ -587,8 +784,20 @@ async fn a_window_refuses_bad_bounds_as_it_always_has() {
 async fn recent_lists_days_with_sources_and_pages_from_the_cursor() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path();
-    window(root, "20260105", "import.apple_health", "090000_3600", &[reading("a", "2026-01-05 09:05:00 -0700")]);
-    window(root, "20260106", "import.oura", "000000_86400", &[dated("b", "20260106")]);
+    window(
+        root,
+        "20260105",
+        "import.apple_health",
+        "090000_3600",
+        &[reading("a", "2026-01-05 09:05:00 -0700")],
+    );
+    window(
+        root,
+        "20260106",
+        "import.oura",
+        "000000_86400",
+        &[dated("b", "20260106")],
+    );
     let (status, recent) = get(root, "/app/body/api/recent?before=20260110&limit=1").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(recent["days"][0]["day"], "20260106");
@@ -600,7 +809,9 @@ async fn recent_lists_days_with_sources_and_pages_from_the_cursor() {
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        get(root, "/app/body/api/recent?before=20260110&limit=0").await.0,
+        get(root, "/app/body/api/recent?before=20260110&limit=0")
+            .await
+            .0,
         StatusCode::BAD_REQUEST
     );
 }

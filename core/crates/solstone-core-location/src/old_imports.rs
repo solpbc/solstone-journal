@@ -264,10 +264,14 @@ fn read_new_span(manifest: &serde_json::Map<String, Value>) -> Vec<(String, Stri
 /// directory entry only, no window opened.
 fn has_window_or_tombstone(journal: &Path, day: &str, stream: &str) -> bool {
     let dir = journal.join("chronicle").join(day).join(stream);
-    fs::read_dir(dir).into_iter().flatten().flatten().any(|entry| {
-        !entry.file_name().to_string_lossy().starts_with('.')
-            && entry.file_type().is_ok_and(|kind| kind.is_dir())
-    })
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            !entry.file_name().to_string_lossy().starts_with('.')
+                && entry.file_type().is_ok_and(|kind| kind.is_dir())
+        })
 }
 
 /// Whether an import of the new path's listing names `day`.
@@ -316,13 +320,16 @@ impl<'a> Touched<'a> {
         if has_window_or_tombstone(self.journal, day, stream) {
             return true;
         }
-        self.imports().iter().filter(|import| import.source == source).any(|import| {
-            import
-                .span
-                .iter()
-                .any(|(from, to)| from.as_str() <= day && day <= to.as_str())
-                || listing_names_day(self.journal, &import.id, day)
-        })
+        self.imports()
+            .iter()
+            .filter(|import| import.source == source)
+            .any(|import| {
+                import
+                    .span
+                    .iter()
+                    .any(|(from, to)| from.as_str() <= day && day <= to.as_str())
+                    || listing_names_day(self.journal, &import.id, day)
+            })
     }
 }
 
@@ -367,7 +374,9 @@ pub fn covers_on_day(journal: &Path, day: &str, only: Option<OldSource>) -> Vec<
         let Some(scope) = covers(&bundle, day) else {
             continue;
         };
-        let slot = by_source.entry(bundle.source).or_insert_with(|| scope.clone());
+        let slot = by_source
+            .entry(bundle.source)
+            .or_insert_with(|| scope.clone());
         if scope == CoverScope::Day {
             *slot = CoverScope::Day;
         }

@@ -2192,8 +2192,7 @@ fn a_strava_line_a_code_record_holds_isnt_listed() {
 const OLD_DAY: &str = "20260102";
 
 fn old_bundles_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/body_old_bundles")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/body_old_bundles")
 }
 
 fn copy_tree(from: &Path, to: &Path) {
@@ -2242,7 +2241,12 @@ fn a_day_only_an_old_bundle_covers_is_noted_for_a_whole_journal_connection() {
 fn a_limited_connection_gets_no_note() {
     let journal = journal();
     let root = journal.path();
-    grant(root, ReadScope::Facets { ids: vec![HEALTH.to_owned()] });
+    grant(
+        root,
+        ReadScope::Facets {
+            ids: vec![HEALTH.to_owned()],
+        },
+    );
     with_old_native(root);
     let list = call(root, "list_transcripts", json!({"day": OLD_DAY}));
     assert!(list.get("earlier_imports_note").is_none(), "{list}");
@@ -2263,7 +2267,15 @@ fn a_connection_without_transcripts_gets_no_note() {
         .unwrap();
     with_old_native(root);
     // list_transcripts itself is off without Transcripts, so nothing is said at all.
-    assert!(run_mcp_probe(root, CONNECTION, "list_transcripts", &json!({"day": OLD_DAY})).is_err());
+    assert!(
+        run_mcp_probe(
+            root,
+            CONNECTION,
+            "list_transcripts",
+            &json!({"day": OLD_DAY})
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -2302,11 +2314,19 @@ fn a_named_source_gets_the_note_in_gaps_note_before_nothing_readable() {
     );
     assert_eq!(list["transcripts"], json!([]));
     assert!(
-        list["gaps_note"].as_str().unwrap_or_default().contains("Apple Health"),
+        list["gaps_note"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Apple Health"),
         "{list}"
     );
 
-    grant(root, ReadScope::Facets { ids: vec![HEALTH.to_owned()] });
+    grant(
+        root,
+        ReadScope::Facets {
+            ids: vec![HEALTH.to_owned()],
+        },
+    );
     let list = call(
         root,
         "list_transcripts",

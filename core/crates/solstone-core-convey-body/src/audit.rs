@@ -14,7 +14,9 @@ use serde_json::{Value, json};
 use solstone_core_import::metadata::{
     AttemptHolder, AttemptRead, AttemptState, attempt_holder, read_attempt_facts, read_provenance,
 };
-use solstone_core_location::old_imports::{NewImport, PROGRESS_FILE, read_new_imports, read_old_bundles};
+use solstone_core_location::old_imports::{
+    NewImport, PROGRESS_FILE, read_new_imports, read_old_bundles,
+};
 
 use crate::fmt::{clock, count_noun, month_abbr};
 use crate::old_lines::listing_item;
@@ -36,7 +38,12 @@ fn import_state(root: &Path, import: &NewImport) -> &'static str {
         },
         // An import with no attempt on record has only its summary to go by.
         _ => {
-            if root.join("imports").join(&import.id).join("summary.md").is_file() {
+            if root
+                .join("imports")
+                .join(&import.id)
+                .join("summary.md")
+                .is_file()
+            {
                 "finished"
             } else {
                 "stopped"
@@ -48,7 +55,11 @@ fn import_state(root: &Path, import: &NewImport) -> &'static str {
 /// How far a running or stopped import got, from `body-progress.json`, in the
 /// owner's words. Never names a stage or a window.
 pub(crate) fn progress_line(progress: &Value, running: bool) -> String {
-    let lead = if running { "still running" } else { "stopped partway" };
+    let lead = if running {
+        "still running"
+    } else {
+        "stopped partway"
+    };
     let days_done = progress.get("days_done").and_then(Value::as_u64);
     let days_total = progress.get("days_total").and_then(Value::as_u64);
     let rows_scanned = progress.get("rows_scanned").and_then(Value::as_u64);
@@ -57,7 +68,10 @@ pub(crate) fn progress_line(progress: &Value, running: bool) -> String {
             format!("{lead}: {done} of {total} days done.")
         }
         (_, _, Some(rows)) if rows > 0 => {
-            format!("{lead}: {} read so far.", count_noun(rows, "entry", "entries"))
+            format!(
+                "{lead}: {} read so far.",
+                count_noun(rows, "entry", "entries")
+            )
         }
         _ => format!("{lead}, with nothing saved yet."),
     }
@@ -81,14 +95,13 @@ fn new_import_item(root: &Path, import: &NewImport) -> Value {
     let summary = (state == "finished")
         .then(|| fs::read_to_string(dir.join("summary.md")).ok())
         .flatten();
-    let progress = (state != "finished")
-        .then(|| {
-            let progress = fs::read(dir.join(PROGRESS_FILE))
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                .unwrap_or(Value::Null);
-            progress_line(&progress, state == "running")
-        });
+    let progress = (state != "finished").then(|| {
+        let progress = fs::read(dir.join(PROGRESS_FILE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .unwrap_or(Value::Null);
+        progress_line(&progress, state == "running")
+    });
     json!({
         "id": import.id,
         "source": import.source.words(),

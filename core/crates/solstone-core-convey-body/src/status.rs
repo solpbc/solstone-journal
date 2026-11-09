@@ -180,12 +180,7 @@ fn invalid_limit_response(detail: &str) -> Response {
     .into_response()
 }
 
-fn recent_days(
-    root: &Path,
-    days: &BodyDays,
-    before: &str,
-    limit: usize,
-) -> Result<Value, String> {
+fn recent_days(root: &Path, days: &BodyDays, before: &str, limit: usize) -> Result<Value, String> {
     let mut chosen = days
         .iter()
         .rev()

@@ -8,7 +8,9 @@ use serde_json::json;
 use super::*;
 
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/body_old_bundles").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/body_old_bundles")
+        .join(name)
 }
 
 fn copy(from: &Path, to: &Path) {
@@ -26,7 +28,10 @@ fn copy(from: &Path, to: &Path) {
 const NATIVE: &str = "body-01M70HDTD9N4P15X06CRDG2DWZ";
 
 fn with_native(root: &Path) {
-    copy(&fixture("native").join(NATIVE), &root.join("imports").join(NATIVE));
+    copy(
+        &fixture("native").join(NATIVE),
+        &root.join("imports").join(NATIVE),
+    );
 }
 
 fn with_python(root: &Path) {
@@ -39,13 +44,23 @@ fn with_python(root: &Path) {
 fn with_python_named(root: &Path, id: &str, family: &str, months: &[&str]) {
     let dir = root.join("imports").join(id);
     fs::create_dir_all(dir.join("normalized")).unwrap();
-    fs::write(dir.join("manifest.json"), json!({"source_type": family}).to_string()).unwrap();
+    fs::write(
+        dir.join("manifest.json"),
+        json!({"source_type": family}).to_string(),
+    )
+    .unwrap();
     for month in months {
         fs::write(dir.join("normalized").join(format!("{month}.jsonl")), "").unwrap();
     }
 }
 
-fn new_import(root: &Path, id: &str, family: &str, span: Option<serde_json::Value>, listed: &[&str]) {
+fn new_import(
+    root: &Path,
+    id: &str,
+    family: &str,
+    span: Option<serde_json::Value>,
+    listed: &[&str],
+) {
     let dir = root.join("imports").join(id);
     fs::create_dir_all(&dir).unwrap();
     let mut manifest = json!({"source_type": family, "entry_count": 1});
@@ -95,7 +110,11 @@ fn a_new_path_import_alone_is_not_an_old_bundle_and_says_nothing() {
     assert!(read_old_bundles(root.path()).is_empty());
 
     fs::remove_file(import.join(PROGRESS_FILE)).unwrap();
-    assert_eq!(read_old_bundles(root.path()).len(), 1, "no new-path files: an old bundle");
+    assert_eq!(
+        read_old_bundles(root.path()).len(),
+        1,
+        "no new-path files: an old bundle"
+    );
 }
 
 #[test]
@@ -115,7 +134,10 @@ fn a_native_bundle_lists_days_and_a_python_era_one_months_reading_only_names() {
     with_python(root.path());
     let bundles = read_old_bundles(root.path());
     assert_eq!(bundles.len(), 2);
-    let python = bundles.iter().find(|bundle| bundle.id == "20260304_080000").unwrap();
+    let python = bundles
+        .iter()
+        .find(|bundle| bundle.id == "20260304_080000")
+        .unwrap();
     assert_eq!(python.source, OldSource::AppleHealth);
     assert_eq!(
         python.span,
@@ -131,7 +153,8 @@ fn a_native_bundle_lists_days_and_a_python_era_one_months_reading_only_names() {
 
     // A month file's rows are never opened: garbage there changes nothing.
     fs::write(
-        root.path().join("imports/20260304_080000/normalized/2026-03.jsonl"),
+        root.path()
+            .join("imports/20260304_080000/normalized/2026-03.jsonl"),
         [0xff_u8, 0xfe],
     )
     .unwrap();
@@ -142,7 +165,12 @@ fn a_native_bundle_lists_days_and_a_python_era_one_months_reading_only_names() {
 fn an_oura_api_bundle_counts_as_oura_and_dexcom_clarity_is_listed_with_no_importer() {
     let root = tempfile::tempdir().unwrap();
     with_python_named(root.path(), "20251101_000000", "oura_api", &["2025-11"]);
-    with_python_named(root.path(), "20251101_000001", "dexcom_clarity", &["2025-11"]);
+    with_python_named(
+        root.path(),
+        "20251101_000001",
+        "dexcom_clarity",
+        &["2025-11"],
+    );
     let bundles = read_old_bundles(root.path());
     assert_eq!(bundles[0].source, OldSource::Oura);
     assert_eq!(bundles[1].source, OldSource::DexcomClarity);
@@ -166,7 +194,10 @@ fn a_python_era_bundle_says_the_month_and_never_calls_a_day_covered_by_name() {
     let covers = covers_at(root.path(), "20260311");
     assert_eq!(
         covers,
-        vec![(OldSource::AppleHealth, CoverScope::Month("2026-03".to_owned()))]
+        vec![(
+            OldSource::AppleHealth,
+            CoverScope::Month("2026-03".to_owned())
+        )]
     );
     assert_eq!(month_words("2026-03"), Some("March 2026".to_owned()));
     assert!(covers_at(root.path(), "20260401").is_empty());
@@ -177,7 +208,12 @@ fn a_day_reimported_loses_its_line_and_keeps_it_lost_after_a_delete() {
     let root = tempfile::tempdir().unwrap();
     with_native(root.path());
     assert_eq!(covers_at(root.path(), "20260101").len(), 1);
-    let window_dir = window(root.path(), "20260101", "import.apple_health", "090000_3600");
+    let window_dir = window(
+        root.path(),
+        "20260101",
+        "import.apple_health",
+        "090000_3600",
+    );
     assert!(covers_at(root.path(), "20260101").is_empty());
     // Deleted by the owner: a tombstone stays where the window was.
     fs::remove_dir_all(&window_dir).unwrap();
@@ -187,7 +223,13 @@ fn a_day_reimported_loses_its_line_and_keeps_it_lost_after_a_delete() {
     // No tombstone either, but the day is in the import's own listing.
     fs::remove_dir_all(window_dir.parent().unwrap()).unwrap();
     assert_eq!(covers_at(root.path(), "20260101").len(), 1);
-    new_import(root.path(), "20260201_000000", "apple_health", None, &["20260101"]);
+    new_import(
+        root.path(),
+        "20260201_000000",
+        "apple_health",
+        None,
+        &["20260101"],
+    );
     assert!(covers_at(root.path(), "20260101").is_empty());
 }
 
@@ -274,8 +316,16 @@ fn a_new_import_reads_its_source_from_its_manifest_or_its_record_and_a_stopped_o
     let stopped = root.path().join("imports/20260201_000000");
     fs::create_dir_all(&stopped).unwrap();
     fs::write(stopped.join(PROGRESS_FILE), "{}").unwrap();
-    fs::write(stopped.join(IMPORT_RECORD), json!({"source_hint": "apple_health"}).to_string()).unwrap();
-    fs::write(stopped.join(TOUCHED_FILE), json!({"day": "20260102", "windows": []}).to_string()).unwrap();
+    fs::write(
+        stopped.join(IMPORT_RECORD),
+        json!({"source_hint": "apple_health"}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        stopped.join(TOUCHED_FILE),
+        json!({"day": "20260102", "windows": []}).to_string(),
+    )
+    .unwrap();
     assert_eq!(read_new_imports(root.path()).len(), 1);
     assert!(covers_at(root.path(), "20260102").is_empty());
     assert_eq!(covers_at(root.path(), "20260101").len(), 1);

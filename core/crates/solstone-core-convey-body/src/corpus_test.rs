@@ -17,7 +17,10 @@ const FIXED: &[(&str, &str)] = &[
     ("/app/body/api/index", "/app/body/api/index"),
     ("/app/body/api/stats/<month>", "/app/body/api/stats/202601"),
     ("/app/body/api/status", "/app/body/api/status"),
-    ("/app/body/api/recent", "/app/body/api/recent?before=20260120"),
+    (
+        "/app/body/api/recent",
+        "/app/body/api/recent?before=20260120",
+    ),
     ("/app/body/api/day/<day>", "/app/body/api/day/20260110"),
     (
         "/app/body/api/window",
@@ -28,15 +31,28 @@ const FIXED: &[(&str, &str)] = &[
 fn seed_journal(root: &Path) {
     let imports = root.join("imports");
     fs::create_dir_all(&imports).unwrap();
-    fs::write(imports.join(".apple_health-zone.json"), r#"{"zone":"America/Denver"}"#).unwrap();
+    fs::write(
+        imports.join(".apple_health-zone.json"),
+        r#"{"zone":"America/Denver"}"#,
+    )
+    .unwrap();
     window(
         root,
         "20260110",
         "import.apple_health",
         "060000_3600",
         &[
-            workout("w1", "2026-01-10 06:31:00 -0700", "2026-01-10 07:20:00 -0700"),
-            steps("s1", "2026-01-10 06:40:00 -0700", "2026-01-10 06:45:00 -0700", "1200"),
+            workout(
+                "w1",
+                "2026-01-10 06:31:00 -0700",
+                "2026-01-10 07:20:00 -0700",
+            ),
+            steps(
+                "s1",
+                "2026-01-10 06:40:00 -0700",
+                "2026-01-10 06:45:00 -0700",
+                "1200",
+            ),
         ],
     );
     window(
@@ -46,12 +62,22 @@ fn seed_journal(root: &Path) {
         "090000_3600",
         &[reading("r1", "2026-01-10 09:05:00 -0700")],
     );
-    window(root, "20260111", "import.oura", "000000_86400", &[dated("d1", "20260111")]);
+    window(
+        root,
+        "20260111",
+        "import.oura",
+        "000000_86400",
+        &[dated("d1", "20260111")],
+    );
     let done = imports.join("20260112_120000");
     fs::create_dir_all(&done).unwrap();
     fs::write(done.join("body-touched.jsonl"), "").unwrap();
     fs::write(done.join("body-progress.json"), "{}").unwrap();
-    fs::write(done.join("manifest.json"), r#"{"source_type":"apple_health"}"#).unwrap();
+    fs::write(
+        done.join("manifest.json"),
+        r#"{"source_type":"apple_health"}"#,
+    )
+    .unwrap();
     fs::write(done.join("summary.md"), "# Apple Health import\n").unwrap();
 }
 
@@ -90,8 +116,17 @@ async fn the_recorded_corpus_matches_every_route() {
     let expected: Value = serde_json::from_str(CORPUS).expect("corpus parses");
     let actual = current().await;
     for phase in ["first_run", "fixed"] {
-        for (index, case) in expected["cases"][phase].as_array().unwrap().iter().enumerate() {
-            assert_eq!(actual["cases"][phase][index], *case, "{phase} {}", case["path"]);
+        for (index, case) in expected["cases"][phase]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(
+                actual["cases"][phase][index], *case,
+                "{phase} {}",
+                case["path"]
+            );
         }
     }
     assert_eq!(actual["schema"], expected["schema"]);

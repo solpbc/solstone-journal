@@ -162,7 +162,10 @@ fn row_span(
             let date = NaiveDate::parse_from_str(window_day, "%Y%m%d").ok()?;
             let midnight = date.and_hms_opt(0, 0, 0)?;
             let start = match zone {
-                Some(zone) => zone.from_local_datetime(&midnight).earliest()?.fixed_offset(),
+                Some(zone) => zone
+                    .from_local_datetime(&midnight)
+                    .earliest()?
+                    .fixed_offset(),
                 None => DateTime::from_naive_utc_and_offset(
                     midnight,
                     FixedOffset::east_opt(0).expect("UTC offset exists"),
@@ -204,11 +207,7 @@ fn candidate_days(from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec
         .collect()
 }
 
-fn collect_rows(
-    root: &Path,
-    from: DateTime<FixedOffset>,
-    to: DateTime<FixedOffset>,
-) -> Vec<Found> {
+fn collect_rows(root: &Path, from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Vec<Found> {
     let mut found = Vec::new();
     for (stream, source) in body_streams() {
         let zone = solstone_core_journal_config::placed_zone(root, source);
@@ -239,7 +238,9 @@ fn collect_rows(
             }
             for (_, rows) in one_copy_per_row(windows) {
                 for row in rows {
-                    if let Some(span) = row_span(&row, &day, zone).filter(|span| overlaps(*span, from, to)) {
+                    if let Some(span) =
+                        row_span(&row, &day, zone).filter(|span| overlaps(*span, from, to))
+                    {
                         found.push(Found {
                             source: source.to_owned(),
                             start: span.0,
@@ -279,7 +280,8 @@ fn signals(rows: &[Found]) -> Vec<Value> {
     }
     let mut items = counts.into_iter().collect::<Vec<_>>();
     items.sort_by(|((left, ..), a), ((right, ..), b)| {
-        b.cmp(a).then_with(|| left.to_lowercase().cmp(&right.to_lowercase()))
+        b.cmp(a)
+            .then_with(|| left.to_lowercase().cmp(&right.to_lowercase()))
     });
     items
         .into_iter()
@@ -303,7 +305,10 @@ fn events(rows: &[Found]) -> Vec<Value> {
         if !seen.insert((item.source.clone(), key)) {
             continue;
         }
-        let kind = row.experience.clone().unwrap_or_else(|| "experience".to_owned());
+        let kind = row
+            .experience
+            .clone()
+            .unwrap_or_else(|| "experience".to_owned());
         events.push(json!({
             "kind": kind,
             "label": row.label,

@@ -1051,7 +1051,10 @@ fn body_commands_print_what_the_body_payloads_say() {
         )],
     );
     assert_eq!(status.exit, 0, "{}", status.stderr);
-    assert_eq!(status.stdout, "imports: 3\ndays: 3\ncoverage: 20260110 to 20260112\n");
+    assert_eq!(
+        status.stdout,
+        "imports: 3\ndays: 3\ncoverage: 20260110 to 20260112\n"
+    );
 
     let day = run(
         &["body", "day"],
@@ -1062,11 +1065,19 @@ fn body_commands_print_what_the_body_payloads_say() {
                 "sources": [{"name": "Apple Health"}, {"name": "Oura"}]}),
         )],
     );
-    assert_eq!(day.stdout, "day: 20260110\nentries: 4\nsources: Apple Health, Oura\n");
+    assert_eq!(
+        day.stdout,
+        "day: 20260110\nentries: 4\nsources: Apple Health, Oura\n"
+    );
 
     let window = run(
         &["body", "window"],
-        &["--from", "2026-01-10T09:00:00Z", "--to", "2026-01-10T10:00:00Z"],
+        &[
+            "--from",
+            "2026-01-10T09:00:00Z",
+            "--to",
+            "2026-01-10T10:00:00Z",
+        ],
         vec![(
             "/app/body/api/window",
             json!({"from": "a", "to": "b", "entry_total": 2,

@@ -18,7 +18,9 @@ fn import_again(source: OldSource) -> &'static str {
     match source {
         OldSource::AppleHealth => "import again from a new Apple Health export to bring it in.",
         OldSource::Oura => "import again from your Oura account to bring it in.",
-        OldSource::DexcomClarity => "there's no importer for Dexcom Clarity now, so it stays as it is.",
+        OldSource::DexcomClarity => {
+            "there's no importer for Dexcom Clarity now, so it stays as it is."
+        }
     }
 }
 

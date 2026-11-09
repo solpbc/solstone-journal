@@ -20,29 +20,13 @@ pub(crate) fn read_window_text(path: &Path) -> std::io::Result<String> {
     std::fs::read_to_string(path)
 }
 
-#[cfg(test)]
-pub(crate) mod window_read_probe {
-    use std::cell::Cell;
-
-    thread_local!(static COUNT: Cell<u64> = const { Cell::new(0) });
-
-    pub(crate) fn record() {
-        COUNT.with(|count| count.set(count.get() + 1));
-    }
-
-    /// The window-file reads this thread has made since the last reset.
-    pub(crate) fn reads() -> u64 {
-        COUNT.with(Cell::get)
-    }
-
-    pub(crate) fn reset() {
-        COUNT.with(|count| count.set(0));
-    }
-}
-
 /// A stream's rows on a day, each row once, with how many windows couldn't be
 /// read. A window deleted or holding only moved rows has none.
-pub(crate) fn stream_rows(root: &Path, day: &str, stream: &str) -> (Vec<(String, Vec<BodyRow>)>, u64) {
+pub(crate) fn stream_rows(
+    root: &Path,
+    day: &str,
+    stream: &str,
+) -> (Vec<(String, Vec<BodyRow>)>, u64) {
     let mut windows = Vec::new();
     let mut unreadable = 0;
     for name in window_names(root, day, stream) {
@@ -81,4 +65,24 @@ pub(crate) fn day_rows(root: &Path, day: &str) -> (BTreeMap<String, Vec<BodyRow>
         }
     }
     (by_source, unreadable)
+}
+
+#[cfg(test)]
+pub(crate) mod window_read_probe {
+    use std::cell::Cell;
+
+    thread_local!(static COUNT: Cell<u64> = const { Cell::new(0) });
+
+    pub(crate) fn record() {
+        COUNT.with(|count| count.set(count.get() + 1));
+    }
+
+    /// The window-file reads this thread has made since the last reset.
+    pub(crate) fn reads() -> u64 {
+        COUNT.with(Cell::get)
+    }
+
+    pub(crate) fn reset() {
+        COUNT.with(|count| count.set(0));
+    }
 }

@@ -22,9 +22,7 @@ use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
 };
-use solstone_core_location::old_imports::{
-    CoverScope, OldSource, covers_on_day, month_words,
-};
+use solstone_core_location::old_imports::{CoverScope, OldSource, covers_on_day, month_words};
 use solstone_core_transcripts::segment_clock;
 
 use crate::dispatch::{
@@ -68,7 +66,10 @@ fn earlier_import_note(
     only: Option<OldSource>,
 ) -> Option<String> {
     if !snapshot.categories.contains(&AdmittedCategory::Transcripts)
-        || !matches!(snapshot.scope, solstone_core_indexer_query::ConnectionScope::WholeJournal)
+        || !matches!(
+            snapshot.scope,
+            solstone_core_indexer_query::ConnectionScope::WholeJournal
+        )
     {
         return None;
     }
@@ -590,8 +591,9 @@ pub(crate) fn list_source(
         .iter()
         .find(|stream| labels.get(**stream).is_some_and(|label| label == source));
     let Some(stream) = stream else {
-        return Ok(Prepared::new(json!({ "transcripts": [] }), 0, Vec::new())
-            .when_empty(NOTHING_READABLE));
+        return Ok(
+            Prepared::new(json!({ "transcripts": [] }), 0, Vec::new()).when_empty(NOTHING_READABLE)
+        );
     };
     // The source this listing names, so its note speaks only of that source.
     let source_kind = match *stream {
@@ -599,8 +601,8 @@ pub(crate) fn list_source(
         "import.oura" => Some(OldSource::Oura),
         _ => None,
     };
-    let earlier = source_kind
-        .and_then(|only| earlier_import_note(journal_root, snapshot, day, Some(only)));
+    let earlier =
+        source_kind.and_then(|only| earlier_import_note(journal_root, snapshot, day, Some(only)));
     let windows = readable_windows(journal_root, snapshot, day, stream)?;
     if windows.is_empty() {
         let mut response = json!({ "transcripts": [] });

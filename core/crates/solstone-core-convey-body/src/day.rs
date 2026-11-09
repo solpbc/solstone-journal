@@ -108,7 +108,8 @@ impl Tally {
     }
 
     fn time_labels(&self, zone: Option<Tz>) -> (Option<String>, Option<String>) {
-        let label = |time: Option<DateTime<FixedOffset>>| time.map(|time| clock(on_clock(time, zone)));
+        let label =
+            |time: Option<DateTime<FixedOffset>>| time.map(|time| clock(on_clock(time, zone)));
         (label(self.first), label(self.last))
     }
 }
@@ -130,7 +131,10 @@ fn experience_item(
     continuing: bool,
 ) -> Value {
     let kind = row.experience.as_deref().unwrap_or("experience");
-    let distance = row.values.get(LINE_VALUE).and_then(|value| line_distance(value));
+    let distance = row
+        .values
+        .get(LINE_VALUE)
+        .and_then(|value| line_distance(value));
     json!({
         "kind": kind,
         "name": title.cloned().unwrap_or_else(|| row.label.clone()),

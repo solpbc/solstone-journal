@@ -103,9 +103,5 @@ pub(crate) fn grouped(value: u64) -> String {
 
 /// "1 reading", "3 readings".
 pub(crate) fn count_noun(count: u64, one: &str, many: &str) -> String {
-    format!(
-        "{} {}",
-        grouped(count),
-        if count == 1 { one } else { many }
-    )
+    format!("{} {}", grouped(count), if count == 1 { one } else { many })
 }
