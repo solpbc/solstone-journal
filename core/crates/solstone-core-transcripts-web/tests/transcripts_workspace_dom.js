@@ -1187,7 +1187,9 @@ test('body context counts what a segment holds and never states a value', async 
   };
   const env = await createEnvironment(undefined, 'analyzed', false, null, { bodyWindow });
   getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
-  await env.releasePendingSegmentGets();
+  await env.releasePendingSegmentGets('analyzed', {
+    chunks: [{ type: 'audio', time: '11:45', text: 'hello', timestamp: 0 }],
+  });
   const transcript = env.doc.querySelector('#tr-tabpanel-transcript').innerHTML;
   assert.ok(transcript.includes('heart rate · 3 readings'), transcript);
   assert.ok(transcript.includes('step count · 2 entries'), transcript);
