@@ -4382,9 +4382,9 @@ async function runImportSetRefusalsStaySelected() {
   cases += 1;
 }
 
-// The release takes the same content again as a new import, so neither the
-// duplicate notice nor the error message says a file was already imported.
-function runAlreadyImportedCopyIsGone() {
+// A file an import still in the journal brought in is refused, and the page
+// says so; the duplicate notice is only ever for one still on its way in.
+function runAlreadyImportedCopyNamesOnlyALiveImport() {
   const context = makeContext({ console });
   for (const name of ['duplicateNoticeText', 'importErrorMessage']) vm.runInContext(functionSource(workspace, name), context);
   const staged = vm.runInContext("duplicateNoticeText({ state: 'staged', import_id: 'x' })", context);
@@ -4393,7 +4393,9 @@ function runAlreadyImportedCopyIsGone() {
   assert.notStrictEqual(vm.runInContext("duplicateNoticeText({}, true)", context), staged);
   const generic = vm.runInContext("importErrorMessage({ reason_code: 'invalid_operation_for_state', detail: 'something else' })", context);
   for (const detail of ['content already imported', 'content already imported; will not start']) {
-    assert.strictEqual(vm.runInContext(`importErrorMessage({ reason_code: 'invalid_operation_for_state', detail: ${JSON.stringify(detail)} })`, context), generic);
+    const message = vm.runInContext(`importErrorMessage({ reason_code: 'invalid_operation_for_state', detail: ${JSON.stringify(detail)} })`, context);
+    assert.notStrictEqual(message, generic, detail);
+    assert.match(message, /already imported/, detail);
   }
   cases += 1;
 }
@@ -4480,7 +4482,7 @@ Promise.resolve()
   .then(runImportSetDialogListsFiveThenMore)
   .then(runImportSelectMode)
   .then(runImportSetRefusalsStaySelected)
-  .then(runAlreadyImportedCopyIsGone)
+  .then(runAlreadyImportedCopyNamesOnlyALiveImport)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {
     console.error(error.stack || error);

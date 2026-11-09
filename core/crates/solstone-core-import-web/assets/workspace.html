@@ -789,6 +789,9 @@
 function importErrorMessage(data, fallback) {
   if (data?.reason_code === 'invalid_operation_for_state') {
     switch (data.detail) {
+      case 'content already imported':
+      case 'content already imported; will not start':
+        return "you've already imported this file.";
       case 'import already started or processed':
         return 'this import has already started. check its progress in your imports.';
       default:
