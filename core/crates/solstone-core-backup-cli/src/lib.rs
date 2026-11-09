@@ -16,7 +16,8 @@ use solstone_core_backup::{
 };
 use solstone_core_backup_runtime::restore::{
     RESTORE_REASON_INTEGRITY_FAILED, RESTORE_REASON_INTEGRITY_UNVERIFIED,
-    RESTORE_REASON_RESTORE_RECORD_FAILED, RESTORE_REASON_RESTORE_SUMMARY_MISSING,
+    RESTORE_REASON_JOURNAL_ALREADY_SET_UP, RESTORE_REASON_RESTORE_RECORD_FAILED,
+    RESTORE_REASON_RESTORE_SUMMARY_MISSING,
 };
 use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, ClosedToolError, DestinationChange,
@@ -24,7 +25,7 @@ use solstone_core_backup_runtime::{
     PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome, RestoreRecorder, RotationResult,
     SystemToolRunner, ToolRunner, UnreadableSources, UreqHttpTransport, edit_destination, prepare,
     publish_restore_outcome, resolve_operational_tools, resolve_restic_member, resolve_tools,
-    restore_journal, rotate_recovery_key, run_prune, validate_destination,
+    rotate_recovery_key, run_prune, validate_destination,
 };
 use solstone_core_offload::cli_run::{OwnedOffloadCliRun, run_cli_offload};
 use solstone_core_offload::{
@@ -1265,6 +1266,11 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
                 "restore completed, but recording the result failed: {counters} (reason_code=restore_record_failed)."
             ))
         }
+        // Nothing started, so there is nothing to count.
+        _ if reason == Some(RESTORE_REASON_JOURNAL_ALREADY_SET_UP) => runtime_error(format!(
+            "restore failed: {}.",
+            restore_failure_reason("journal_already_set_up")
+        )),
         _ => match (reason, result.recording_failure.as_deref()) {
             (Some(reason), Some(recording_failure)) => runtime_error(format!(
                 "restore failed: {}; {counters}. Recording the result also failed: {}.",
