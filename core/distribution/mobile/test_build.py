@@ -81,6 +81,36 @@ class BuildControls(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "source revision"):
                 mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})
 
+    def test_residency_diagnostic_is_identity_bound_without_changing_inference_policy(self):
+        wrapper = mobile.ROOT / "tools/mobile-qwen-engine"
+        pin = json.loads(mobile.INPUTS.read_text())["inputs"]["llama"]
+        patches = [{"path": "fixture.patch", "sha256": "3" * 64}]
+        normal, normal_id = mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {})
+        diagnostic, diagnostic_id = mobile.qwen_runtime_binding(
+            "ios", pin, "4" * 64, patches, wrapper, {}, metal_no_residency=True)
+        self.assertEqual(normal["policy"], diagnostic["policy"])
+        self.assertNotIn("diagnostics", normal)
+        self.assertEqual(diagnostic["diagnostics"], {"metal_no_residency": True})
+        self.assertNotEqual(normal_id, diagnostic_id)
+        with self.assertRaisesRegex(ValueError, "requires iOS"):
+            mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {},
+                                        metal_no_residency=True)
+
+    def test_residency_diagnostic_refuses_other_build_scopes_before_creating_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for platform, components, full_run in (
+                    ("android", ["llama"], False), ("ios", ["llama", "parakeet"], False),
+                    ("ios", ["parakeet"], False), ("ios", ["llama"], True)):
+                with self.subTest(platform=platform, components=components, full_run=full_run):
+                    args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                              jobs=1, platform=platform, components=components,
+                                              full_run=full_run, qwen_metal_no_residency=True)
+                    with self.assertRaisesRegex(ValueError, "requires --platform ios --components llama"):
+                        mobile.Build(args)
+                    self.assertFalse(args.work_dir.exists())
+                    self.assertFalse(args.cache_dir.exists())
+
     def test_default_sources_can_supply_patches_before_their_engine_build(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

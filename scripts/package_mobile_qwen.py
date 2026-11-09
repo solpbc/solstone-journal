@@ -85,9 +85,16 @@ def validate_record(record, platform):
     patched = binding.get("patched_source_sha256", "")
     if len(patched) != 64 or any(char not in "0123456789abcdef" for char in patched):
         raise ValueError("Qwen package has no patched-source identity")
+    diagnostics = binding.get("diagnostics", {})
+    metal_no_residency = (diagnostics == {"metal_no_residency": True}
+                          and diagnostics["metal_no_residency"] is True)
+    if diagnostics and (not metal_no_residency or platform != "ios"):
+        raise ValueError("unsupported Qwen package diagnostic")
     patch_paths = ["core/distribution/mobile/llama-embedded-lifecycle.patch"]
     if platform == "android":
         patch_paths.append("core/distribution/mobile/llama-android-dotprod-repack.patch")
+    if metal_no_residency:
+        patch_paths.append("core/distribution/mobile/llama-metal-residency-diagnostic.patch")
     patches = [{"path": name, "sha256": mobile_native_build.sha256(ROOT / name)} for name in patch_paths]
     build_inputs = dict(binding.get("build_inputs", {}))
     build_inputs.update({
@@ -98,6 +105,7 @@ def validate_record(record, platform):
     })
     expected, identity = mobile_native_build.qwen_runtime_binding(
         platform, pins["llama"], patched, patches, ROOT / "tools/mobile-qwen-engine", build_inputs,
+        metal_no_residency=metal_no_residency,
     )
     if (record.get("schema") != "solstone.mobile-qwen-package.v1"
             or record.get("signed") is not False

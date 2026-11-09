@@ -69,7 +69,10 @@ def require_android_qwen_geometry(text):
     return {"page_bytes": page, "relro_end": relro[0][0] + relro[0][1]}
 
 
-def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, build_inputs):
+def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, build_inputs,
+                         *, metal_no_residency=False):
+    if metal_no_residency and platform_name != "ios":
+        raise ValueError("the Qwen Metal residency diagnostic requires iOS")
     cmake = (wrapper / "CMakeLists.txt").read_text()
     revision = re.findall(r'JOURNAL_MOBILE_QWEN_SOURCE_REVISION="([0-9a-f]{40})"', cmake)
     if not revision or set(revision) != {pin["revision"]}:
@@ -87,6 +90,8 @@ def qwen_runtime_binding(platform_name, pin, patched_tree, patches, wrapper, bui
                           "context_shift": False, "web_ui": False,
                           "bind_address": "127.0.0.1", "requested_port": 0,
                           "backend": "metal" if platform_name == "ios" else "cpu"}}
+    if metal_no_residency:
+        binding["diagnostics"] = {"metal_no_residency": True}
     digest = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return binding, "sha256:" + digest
 
@@ -212,6 +217,10 @@ def cargo_binaries(logs, target):
 class Build:
     def __init__(self, args):
         self.args = args
+        self.qwen_metal_no_residency = getattr(args, "qwen_metal_no_residency", False)
+        if self.qwen_metal_no_residency and (args.platform != "ios" or args.full_run
+                                             or args.components != ["llama"]):
+            raise ValueError("the Qwen Metal residency diagnostic requires --platform ios --components llama")
         self.work = args.work_dir.resolve()
         # A fresh destination rules out stale sources, objects and success receipts.
         self.work.mkdir(parents=True, exist_ok=False)
@@ -477,6 +486,12 @@ class Build:
         self.run("llama-embedded-proof", ["git", "apply", "--no-index", "--check", "--reverse", patch], source)
         self.summary["patches"].append({"component": "llama", "path": str(patch.relative_to(ROOT)), "sha256": sha256(patch)})
         self.patch_llama(source)
+        if self.qwen_metal_no_residency:
+            diagnostic = ROOT / "core/distribution/mobile/llama-metal-residency-diagnostic.patch"
+            self.run("llama-metal-residency-patch", ["git", "apply", "--no-index", diagnostic], source)
+            self.run("llama-metal-residency-proof", ["git", "apply", "--no-index", "--check", "--reverse", diagnostic], source)
+            self.summary["patches"].append({"component": "llama", "path": str(diagnostic.relative_to(ROOT)),
+                                            "sha256": sha256(diagnostic)})
         patched_tree = tree_digest(source)
         self.summary["inputs"]["llama-patched-source"] = {"tree_sha256": patched_tree}
         wrapper = ROOT / "tools/mobile-qwen-engine"
@@ -485,11 +500,13 @@ class Build:
             {"driver_sha256": self.summary["driver_sha256"], "inputs_sha256": self.summary["inputs_sha256"],
              "openssl": self.pins["openssl"], "common_cmake_flags": self.common,
              "compiler_version": self.output([self.cxx, "--version"]).splitlines()[0],
-             "support_driver_sha256": sha256(ROOT / "scripts/android_cross_build.py")})
+             "support_driver_sha256": sha256(ROOT / "scripts/android_cross_build.py")},
+            metal_no_residency=self.qwen_metal_no_residency)
         self.summary["inputs"]["mobile-qwen-runtime"] = {"identity": identity, **binding}
         openssl = self.openssl()
         flags = [f"-DJOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR={source}",
                  f"-DJOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY={identity}",
+                 f"-DJOURNAL_MOBILE_QWEN_METAL_NO_RESIDENCY={'ON' if self.qwen_metal_no_residency else 'OFF'}",
                  "-DLLAMA_OPENSSL=ON", "-DLLAMA_BUILD_NUMBER=11960", "-DLLAMA_BUILD_COMMIT=8642541",
                  f"-DOPENSSL_ROOT_DIR={openssl}", f"-DOPENSSL_INCLUDE_DIR={openssl}/include",
                  f"-DOPENSSL_CRYPTO_LIBRARY={openssl}/lib/libcrypto.a",
@@ -805,6 +822,8 @@ def main():
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=6)
     parser.add_argument("--components", nargs="+", choices=COMPONENTS, help="subset diagnostics; never a full-stack pass")
+    parser.add_argument("--qwen-metal-no-residency", action="store_true",
+                        help="private diagnostic; requires --platform ios --components llama")
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be positive")

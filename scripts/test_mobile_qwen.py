@@ -25,6 +25,52 @@ def qwen_elf(*, relro_size=16384):
     return bytes(data)
 
 
+class BindingTests(unittest.TestCase):
+    def record(self, diagnostic):
+        mobile = qwen.mobile_native_build
+        pins = json.loads((qwen.ROOT / "core/distribution/mobile/inputs.json").read_text())["inputs"]
+        names = ["core/distribution/mobile/llama-embedded-lifecycle.patch"]
+        if diagnostic:
+            names.append("core/distribution/mobile/llama-metal-residency-diagnostic.patch")
+        patches = [{"path": name, "sha256": mobile.sha256(qwen.ROOT / name)} for name in names]
+        inputs = {"driver_sha256": mobile.sha256(qwen.ROOT / "scripts/mobile_native_build.py"),
+                  "inputs_sha256": mobile.sha256(qwen.ROOT / "core/distribution/mobile/inputs.json"),
+                  "support_driver_sha256": mobile.sha256(qwen.ROOT / "scripts/android_cross_build.py"),
+                  "openssl": pins["openssl"]}
+        binding, identity = mobile.qwen_runtime_binding(
+            "ios", pins["llama"], "4" * 64, patches, qwen.ROOT / "tools/mobile-qwen-engine",
+            inputs, metal_no_residency=diagnostic)
+        return {"schema": "solstone.mobile-qwen-package.v1", "signed": False,
+                "image": qwen.IMAGES["ios"], "binding": binding,
+                "runtime_identity": identity, "exports": sorted(mobile.QWEN_EXPORTS)}
+
+    def test_admission_requires_the_diagnostic_marker_patch_and_identity_to_agree(self):
+        for diagnostic in (False, True):
+            qwen.validate_record(self.record(diagnostic), "ios")
+        record = self.record(True)
+        record["binding"].pop("diagnostics")
+        with self.assertRaisesRegex(ValueError, "maintained source"):
+            qwen.validate_record(record, "ios")
+        record = self.record(True)
+        record["binding"]["patches"] = self.record(False)["binding"]["patches"]
+        with self.assertRaisesRegex(ValueError, "maintained source"):
+            qwen.validate_record(record, "ios")
+        record = self.record(True)
+        record["runtime_identity"] = self.record(False)["runtime_identity"]
+        with self.assertRaisesRegex(ValueError, "maintained source"):
+            qwen.validate_record(record, "ios")
+
+    def test_admission_refuses_unknown_non_boolean_or_android_diagnostics(self):
+        for diagnostics in ({"metal_no_residency": 1}, {"metal_no_residency": False},
+                            {"other": True}):
+            record = self.record(True)
+            record["binding"]["diagnostics"] = diagnostics
+            with self.assertRaisesRegex(ValueError, "unsupported.*diagnostic"):
+                qwen.validate_record(record, "ios")
+        with self.assertRaisesRegex(ValueError, "unsupported.*diagnostic"):
+            qwen.validate_record(self.record(True), "android")
+
+
 class ResourceTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
