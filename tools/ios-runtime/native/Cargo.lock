@@ -5148,6 +5148,7 @@ dependencies = [
  "solstone-core-distribution",
  "solstone-core-indexer-store",
  "solstone-core-installed-payload",
+ "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
@@ -5184,6 +5185,7 @@ dependencies = [
  "solstone-core-retention",
  "solstone-core-sol-link",
  "solstone-core-system",
+ "solstone-core-trash",
  "tokio",
 ]
 
