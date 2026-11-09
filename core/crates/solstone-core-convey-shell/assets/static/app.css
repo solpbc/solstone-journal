@@ -1915,3 +1915,9 @@ a.ev-meta {
     min-width: 44px;
   }
 }
+
+/* The error box holds a sentence an owner reads whole, often a long one. */
+#errorMessage {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
