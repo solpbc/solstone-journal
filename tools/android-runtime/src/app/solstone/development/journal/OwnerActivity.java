@@ -22,7 +22,10 @@ import java.util.concurrent.*;
 
 /** Ordinary foreground owner controls around the existing Journal router. */
 public final class OwnerActivity extends ServingActivity {
-    WebView web;
+    volatile WebView web;
+    final Object pageLock = new Object();
+    final ArrayList<android.app.AlertDialog> pageDialogs = new ArrayList<>();
+    boolean pageLost;
     String boundAddress="";
     String runState="starting",reason="";
     boolean restarting;
@@ -34,7 +37,8 @@ public final class OwnerActivity extends ServingActivity {
     float previousBrightness;
     final Runnable dimAfterIdle=()->{
         WindowInsets insets=display.getRootWindowInsets();
-        if (web.onCheckIsTextEditor() || insets != null && insets.isVisible(WindowInsets.Type.ime())) {
+        WebView current=web;
+        if ((current != null && current.onCheckIsTextEditor()) || (insets != null && insets.isVisible(WindowInsets.Type.ime()))) {
             resetDimTimer();return;
         }
         setDimmed(true);
@@ -177,85 +181,7 @@ public final class OwnerActivity extends ServingActivity {
         barActions=new LinearLayout(this);
         bar.addView(status,new LinearLayout.LayoutParams(0,LinearLayout.LayoutParams.WRAP_CONTENT,1));
         bar.addView(barActions); layout.addView(bar);
-        web=new WebView(this);
-        WebSettings settings=web.getSettings(); settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setSafeBrowsingEnabled(false); settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        settings.setSupportMultipleWindows(false);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
-        try(InputStream input=getAssets().open("journal-web-host.json")) {
-            JSONObject contract=new JSONObject(new String(OwnerTransport.readBounded(input,4096),StandardCharsets.UTF_8));
-            settings.setUserAgentString(settings.getUserAgentString()+" "+contract.getString("user_agent_product"));
-        } catch(Exception error) { throw new IllegalStateException("journal web contract unavailable",error); }
-        web.addJavascriptInterface(new Bridge(),"JournalOwner");
-        web.setDownloadListener((url,agent,disposition,mime,length)->downloads.receive(url,disposition,mime));
-        web.setWebChromeClient(new WebChromeClient() {
-            public boolean onConsoleMessage(ConsoleMessage message) { return true; }
-            public boolean onJsAlert(WebView view,String url,String message,JsResult result) {
-                new android.app.AlertDialog.Builder(OwnerActivity.this).setMessage(message)
-                    .setPositiveButton(android.R.string.ok,(dialog,which)->result.confirm())
-                    .setOnCancelListener(dialog->result.cancel()).show();
-                return true;
-            }
-            public boolean onJsConfirm(WebView view,String url,String message,JsResult result) {
-                new android.app.AlertDialog.Builder(OwnerActivity.this).setMessage(message)
-                    .setPositiveButton(android.R.string.ok,(dialog,which)->result.confirm())
-                    .setNegativeButton(android.R.string.cancel,(dialog,which)->result.cancel())
-                    .setOnCancelListener(dialog->result.cancel()).show();
-                return true;
-            }
-            public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params) {
-                finishChooser(null);
-                pendingChooser=callback;
-                StringBuilder accept=new StringBuilder();
-                String[] types=params == null ? null : params.getAcceptTypes();
-                if (types != null) {
-                    for (int index=0; index<types.length; index++) {
-                        if (index > 0) accept.append(',');
-                        if (types[index] != null) accept.append(types[index]);
-                    }
-                }
-                Intent intent=new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType(OwnerAccept.mime(accept.toString()));
-                try { startActivityForResult(intent,41); }
-                catch(ActivityNotFoundException error) { finishChooser(null); }
-                return true;
-            }
-        });
-        web.setWebViewClient(new WebViewClient() {
-            public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon) {
-                dashboardReady=false; setDimmed(false); resetDimTimer();
-            }
-            public void onPageFinished(WebView view,String url) {
-                String current=view.getUrl();
-                dashboardReady=current != null && current.startsWith(OwnerOrigin.ORIGIN+"/app/");
-                renderBar();
-            }
-            public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
-                try { OwnerOrigin.admit(request.getUrl().toString()); return !request.isForMainFrame(); }
-                catch(Exception external) {
-                    if (request.isForMainFrame() && request.hasGesture()) openExternal(request.getUrl().toString());
-                    // The existing native-host consent contract navigates after an async response.
-                    else if (request.isForMainFrame()) openExternal(request.getUrl().toString());
-                    return true;
-                }
-            }
-            public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request) {
-                try { return resource(request); }
-                catch(Exception error) {
-                    if (request.isForMainFrame()) ui.post(()->pageError("couldn't open this page · open home or health to try again"));
-                    return refused();
-                }
-            }
-            public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error) {
-                if (request.isForMainFrame()) pageError("couldn't open this page · open home or health to try again");
-            }
-            public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response) {
-                if (request.isForMainFrame()) pageError("this page is unavailable · check health before trying again");
-            }
-        });
-        layout.addView(web,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,0,1));
+        createWebView();
         display=new FrameLayout(this);
         display.addView(layout,new FrameLayout.LayoutParams(-1,-1));
         quietScreen=new Button(this);
@@ -279,6 +205,153 @@ public final class OwnerActivity extends ServingActivity {
         };
         connectivity.registerNetworkCallback(new NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),networkCallback);
     }
+    boolean currentPage(WebView page) { return page != null && page == web && !destroyed; }
+    void createWebView() {
+        final WebView page=new WebView(this);
+        synchronized(pageLock) { web=page; }
+        WebSettings settings=page.getSettings(); settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
+        settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        settings.setSafeBrowsingEnabled(false); settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        settings.setSupportMultipleWindows(false);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(page,false);
+        try(InputStream input=getAssets().open("journal-web-host.json")) {
+            JSONObject contract=new JSONObject(new String(OwnerTransport.readBounded(input,4096),StandardCharsets.UTF_8));
+            settings.setUserAgentString(settings.getUserAgentString()+" "+contract.getString("user_agent_product"));
+        } catch(Exception error) { throw new IllegalStateException("journal web contract unavailable",error); }
+        page.addJavascriptInterface(new Bridge(page),"JournalOwner");
+        page.setDownloadListener((url,agent,disposition,mime,length)->{
+            if (currentPage(page)) downloads.receive(url,disposition,mime);
+        });
+        page.setWebChromeClient(new WebChromeClient() {
+            public boolean onConsoleMessage(ConsoleMessage message) { return true; }
+            public boolean onJsAlert(WebView view,String url,String message,JsResult result) {
+                if (!currentPage(view)) { result.cancel();return true; }
+                showPageDialog(new android.app.AlertDialog.Builder(OwnerActivity.this).setMessage(message)
+                    .setPositiveButton(android.R.string.ok,(dialog,which)->{ if(currentPage(view)) result.confirm();else result.cancel(); })
+                    .setOnCancelListener(dialog->result.cancel()).create());
+                return true;
+            }
+            public boolean onJsConfirm(WebView view,String url,String message,JsResult result) {
+                if (!currentPage(view)) { result.cancel();return true; }
+                showPageDialog(new android.app.AlertDialog.Builder(OwnerActivity.this).setMessage(message)
+                    .setPositiveButton(android.R.string.ok,(dialog,which)->{ if(currentPage(view)) result.confirm();else result.cancel(); })
+                    .setNegativeButton(android.R.string.cancel,(dialog,which)->result.cancel())
+                    .setOnCancelListener(dialog->result.cancel()).create());
+                return true;
+            }
+            public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params) {
+                if (!currentPage(view)) { callback.onReceiveValue(null);return true; }
+                finishChooser(null);
+                pendingChooser=callback;
+                StringBuilder accept=new StringBuilder();
+                String[] types=params == null ? null : params.getAcceptTypes();
+                if (types != null) {
+                    for (int index=0; index<types.length; index++) {
+                        if (index > 0) accept.append(',');
+                        if (types[index] != null) accept.append(types[index]);
+                    }
+                }
+                Intent intent=new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType(OwnerAccept.mime(accept.toString()));
+                try { startActivityForResult(intent,41); }
+                catch(ActivityNotFoundException error) { finishChooser(null); }
+                return true;
+            }
+        });
+        page.setWebViewClient(new WebViewClient() {
+            public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon) {
+                if (!currentPage(view)) return;
+                dashboardReady=false; setDimmed(false); resetDimTimer();
+            }
+            public void onPageFinished(WebView view,String url) {
+                if (!currentPage(view)) return;
+                String current=view.getUrl();
+                dashboardReady=current != null && current.startsWith(OwnerOrigin.ORIGIN+"/app/");
+                renderBar();
+            }
+            public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
+                if (!currentPage(view)) return true;
+                try { OwnerOrigin.admit(request.getUrl().toString()); return !request.isForMainFrame(); }
+                catch(Exception external) {
+                    if (request.isForMainFrame() && request.hasGesture()) openExternal(request.getUrl().toString());
+                    // The existing native-host consent contract navigates after an async response.
+                    else if (request.isForMainFrame()) openExternal(request.getUrl().toString());
+                    return true;
+                }
+            }
+            public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request) {
+                try { return resource(view,request); }
+                catch(Exception error) {
+                    if (request.isForMainFrame()) ui.post(()->{
+                        if (currentPage(view)) pageError("couldn't open this page · open home or health to try again");
+                    });
+                    return refused();
+                }
+            }
+            public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error) {
+                if (currentPage(view) && request.isForMainFrame()) pageError("couldn't open this page · open home or health to try again");
+            }
+            public boolean onRenderProcessGone(WebView view,RenderProcessGoneDetail detail) {
+                retireWebView(view,true);
+                return true;
+            }
+            public void onReceivedHttpError(WebView view,WebResourceRequest request,WebResourceResponse response) {
+                if (currentPage(view) && request.isForMainFrame()) pageError("this page is unavailable · check health before trying again");
+            }
+        });
+        layout.addView(page,new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,0,1));
+        if (!resumed) page.onPause();
+    }
+    void showPageDialog(android.app.AlertDialog dialog) {
+        pageDialogs.add(dialog);
+        dialog.setOnDismissListener(ignored->pageDialogs.remove(dialog));
+        dialog.show();
+    }
+    void cancelPageDialogs() {
+        for(android.app.AlertDialog dialog:new ArrayList<>(pageDialogs)) dialog.cancel();
+        pageDialogs.clear();
+    }
+    void retireWebView(WebView page,boolean lost) {
+        if (page == null) return;
+        synchronized(pageLock) {
+            if (page != web) return;
+            web=null;
+            if (lost) { pageLost=true;lifecycle("owner_page_renderer_gone"); }
+            revokePage();
+        }
+        dashboardReady=false;
+        ui.removeCallbacks(dimAfterIdle);
+        finishChooser(null);
+        cancelPageDialogs();
+        setDimmed(false);
+        page.removeJavascriptInterface("JournalOwner");
+        ViewParent parent=page.getParent();
+        if (parent instanceof ViewGroup) ((ViewGroup)parent).removeView(page);
+        page.destroy();
+        if (lost) renderBar();
+    }
+    void reopenPage() {
+        if (destroyed || ownerStopped || !runtimeUp || !"running".equals(runState)
+                || worker == null || readyConnection != connectionGeneration.get()) return;
+        closePage();
+        try {
+            if (web == null) createWebView();
+            synchronized(pageLock) {
+                transport=new OwnerTransport(this);
+                pageToken=UUID.randomUUID().toString();
+                pageLost=false;
+            }
+            renderBar();
+            web.loadUrl(OwnerOrigin.ORIGIN+"/");
+            lifecycle("owner_page_reopen_requested");
+        } catch(RuntimeException error) {
+            lifecycle("owner_page_reopen_failed");
+            pageLost=true;
+            retireWebView(web,false);
+            renderBar();
+        }
+    }
     void pageError(String message) { reason=message; renderBar(); }
     void action(String label,Runnable callback,boolean primary) {
         Button button=primary ? new Button(this) : new Button(this,null,android.R.attr.borderlessButtonStyle);
@@ -296,7 +369,7 @@ public final class OwnerActivity extends ServingActivity {
         String text;
         boolean centered="stopped".equals(runState) || "failed".equals(runState);
         layout.setGravity(centered ? Gravity.CENTER_VERTICAL : Gravity.TOP);
-        web.setVisibility(centered || ownerStopped ? View.GONE : View.VISIBLE);
+        if (web != null) web.setVisibility(centered || ownerStopped ? View.GONE : View.VISIBLE);
         switch(runState) {
             case "running":
                 text="your journal is running";
@@ -306,6 +379,7 @@ public final class OwnerActivity extends ServingActivity {
                     text="wifi changed · restart so your devices can reach it";
                     action("restart",()->stopJournal(true),false);
                 }
+                if (pageLost) action("reopen page",this::reopenPage,false);
                 if (canDim()) action("dim",()->setDimmed(true),false);
                 stopAction();
                 break;
@@ -334,6 +408,7 @@ public final class OwnerActivity extends ServingActivity {
                 action("check again",()->stopJournal(false),false);break;
             default: text="starting your journal…";stopAction();
         }
+        if (pageLost && !ownerStopped) text+="\nthe page closed unexpectedly. reopen it to continue. check any interrupted action before trying again.";
         if (!reason.isEmpty()) text+="\n"+reason;
         if (stopChoiceUnsaved) text+="\ncouldn't save stop · keep this app open";
         status.setText(text);
@@ -341,7 +416,7 @@ public final class OwnerActivity extends ServingActivity {
     }
     boolean canDim() {
         String wifi=wifiAddress();
-        return resumed && hasWindowFocus() && !destroyed && !ownerStopped && dashboardReady
+        return web != null && resumed && hasWindowFocus() && !destroyed && !ownerStopped && dashboardReady
             && "running".equals(runState) && reason.isEmpty() && !"127.0.0.1".equals(wifi)
             && boundAddress.equals(wifi+":7657");
     }
@@ -359,12 +434,14 @@ public final class OwnerActivity extends ServingActivity {
         if (value) {
             previousBrightness=attributes.screenBrightness;
             attributes.screenBrightness=0.05f;
-            ((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
-                .hideSoftInputFromWindow(web.getWindowToken(),0);
-            web.onPause();
+            if (web != null) {
+                ((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
+                    .hideSoftInputFromWindow(web.getWindowToken(),0);
+                web.onPause();
+            }
         } else {
             attributes.screenBrightness=previousBrightness;
-            web.onResume();
+            if (web != null) web.onResume();
         }
         getWindow().setAttributes(attributes);
         layout.setVisibility(value ? View.INVISIBLE : View.VISIBLE);
@@ -408,8 +485,8 @@ public final class OwnerActivity extends ServingActivity {
             finally { checking.set(false); }
         });
     }
-    protected void onResume() { super.onResume(); resumed=true;web.onResume(); setupBrowser.resume(); if(status != null) { renderBar();refreshStatus(); } }
-    protected void onPause() { resumed=false;setDimmed(false);web.onPause();updateDisplay();setupBrowser.pause(); super.onPause(); }
+    protected void onResume() { super.onResume(); resumed=true;if(web != null) web.onResume(); setupBrowser.resume(); if(status != null) { renderBar();refreshStatus(); } }
+    protected void onPause() { resumed=false;setDimmed(false);if(web != null) web.onPause();updateDisplay();setupBrowser.pause(); super.onPause(); }
     void openExternal(String value) {
         try {
             java.net.URI uri=java.net.URI.create(value);
@@ -467,20 +544,26 @@ public final class OwnerActivity extends ServingActivity {
         for(StreamPump pump:pumps.values()) pump.cancellation.cancel();
         pumps.clear();
     }
-    void closePage() {
+    // Serialize document admission with retirement: a late intercepted response
+    // from the old view cannot restore page authority after renderer loss.
+    void revokePage() {
         pageToken="";
         retireDocument();
-        finishChooser(null);
         if (transport != null) { transport.close(); transport=null; }
+    }
+    void closePage() {
+        synchronized(pageLock) { revokePage(); }
+        dashboardReady=false;
+        finishChooser(null);
+        cancelPageDialogs();
         if (web != null) { web.stopLoading(); web.loadUrl("about:blank"); }
     }
     void runtimeReady() {
         ui.post(()->{
             if (destroyed || ownerStopped || readyConnection != connectionGeneration.get()) return;
-            closePage();
-            transport=new OwnerTransport(this); pageToken=UUID.randomUUID().toString();
-            runState="running";reason="";renderBar();
-            web.loadUrl(OwnerOrigin.ORIGIN+"/");
+            runState="running";reason="";
+            if (pageLost) { closePage();renderBar(); }
+            else reopenPage();
         });
     }
     void connectionLost(WorkerConnection lost) {
@@ -568,7 +651,8 @@ public final class OwnerActivity extends ServingActivity {
         return new WebResourceResponse("text/plain","UTF-8",503,"Unavailable",Collections.emptyMap(),
             new ByteArrayInputStream("journal controls unavailable".getBytes(StandardCharsets.UTF_8)));
     }
-    WebResourceResponse resource(WebResourceRequest request) throws Exception {
+    WebResourceResponse resource(WebView page,WebResourceRequest request) throws Exception {
+        if (!currentPage(page)) return refused();
         String url=request.getUrl().toString(); String path=OwnerOrigin.path(url);
         if (!"GET".equals(request.getMethod()) && !"HEAD".equals(request.getMethod())) return refused();
         if ("/__android/owner-downloads.js".equals(path)) return new WebResourceResponse("application/javascript","UTF-8",getAssets().open("owner-downloads.js"));
@@ -605,10 +689,13 @@ public final class OwnerActivity extends ServingActivity {
             String html=new String(bytes,StandardCharsets.UTF_8);
             // A new document must not receive a prior page's reply or folder result.
             String token=UUID.randomUUID().toString();
-            pageToken=token;
-            retireDocument();
-            current.close();
-            transport=new OwnerTransport(this);
+            synchronized(pageLock) {
+                if (!currentPage(page) || ownerStopped || transport != current || !current.current()) return refused();
+                pageToken=token;
+                retireDocument();
+                current.close();
+                transport=new OwnerTransport(this);
+            }
             String injection="<script>window.__journalOwnerToken="+JSONObject.quote(token)+";history.replaceState(null,'',"+JSONObject.quote(stream.url)+");</script><script src=\"/__android/owner.js\"></script><script src=\"/__android/owner-downloads.js\"></script>";
             int head=html.indexOf("<head>");
             if (head < 0) throw new IOException("journal page has no head");
@@ -625,17 +712,20 @@ public final class OwnerActivity extends ServingActivity {
         return new WebResourceResponse(mime,"UTF-8",stream.status,"Journal",responseHeaders,body);
     }
     final class Bridge {
+        final WebView page;
+        Bridge(WebView page) { this.page=page; }
+        boolean current() { return currentPage(page) && !ownerStopped; }
         @JavascriptInterface public String beginDownload(String token,String name,String mime,long bytes) {
-            return downloads.beginBlob(token,name,mime,bytes);
+            return current() ? downloads.beginBlob(token,name,mime,bytes) : "";
         }
         @JavascriptInterface public boolean downloadChunk(String token,String id,String bytes) {
-            return downloads.blobChunk(token,id,bytes);
+            return current() && downloads.blobChunk(token,id,bytes);
         }
         @JavascriptInterface public void endDownload(String token,String id,boolean success) {
-            downloads.endBlob(token,id,success);
+            if (current()) downloads.endBlob(token,id,success);
         }
         @JavascriptInterface public void cancel(String token,String id) {
-            if (token == null || id == null || !token.equals(pageToken) || id.length() >= 64) return;
+            if (!current() || token == null || id == null || !token.equals(pageToken) || id.length() >= 64) return;
             String key=token+":"+id;
             OwnerTransport.Cancellation cancellation=fetches.remove(key);
             if (cancellation != null) cancellation.cancel();
@@ -644,11 +734,11 @@ public final class OwnerActivity extends ServingActivity {
             if (pump != null) pump.cancellation.cancel();
         }
         @JavascriptInterface public void fetch(String encoded) {
-            if (encoded.length() > 384*1024) return;
+            if (!current() || encoded == null || encoded.length() > 384*1024) return;
             try {
                 JSONObject request=new JSONObject(encoded);
                 final String token=request.getString("token"), id=request.getString("id");
-                if (!token.equals(pageToken) || token.isEmpty() || id.length() >= 64) return;
+                if (!current() || !token.equals(pageToken) || token.isEmpty() || id.length() >= 64) return;
                 final OwnerTransport current=transport;
                 if (current == null) return;
                 final OwnerTransport.Cancellation cancellation=current.new Cancellation();
@@ -668,24 +758,25 @@ public final class OwnerActivity extends ServingActivity {
                     fetches.remove(key,cancellation);
                     final JSONObject reply=result;
                     ui.post(()->{
-                        if (destroyed || !token.equals(pageToken) || cancellation.cancelled) return;
-                        web.evaluateJavascript("window.__journalOwnerReply("+JSONObject.quote(token)+","+JSONObject.quote(id)+","+reply+")",null);
+                        if (!current() || !token.equals(pageToken) || cancellation.cancelled) return;
+                        page.evaluateJavascript("window.__journalOwnerReply("+JSONObject.quote(token)+","+JSONObject.quote(id)+","+reply+")",null);
                     });
                 }); } catch(RejectedExecutionException error) {
                     fetches.remove(key,cancellation);
                     ui.post(()->{
-                        if (!destroyed && token.equals(pageToken)) web.evaluateJavascript("window.__journalOwnerReply("+
+                        if (current() && token.equals(pageToken)) page.evaluateJavascript("window.__journalOwnerReply("+
                             JSONObject.quote(token)+","+JSONObject.quote(id)+",{\"error\":\"journal controls busy; check health before retrying\"})",null);
                     });
                 }
             } catch(Exception error) { /* No unbounded queue or diagnostic body recording. */ }
         }
         @JavascriptInterface public String openStream(String encoded) {
+            if (!current()) return "{\"ok\":false,\"error\":\"journal request cancelled\"}";
             if (encoded == null || encoded.length() > 384*1024) return "{\"ok\":false,\"error\":\"journal request too large\"}";
             try {
                 JSONObject request=new JSONObject(encoded);
                 final String token=request.getString("token"), id=request.getString("id");
-                if (!token.equals(pageToken) || token.isEmpty() || id.length() >= 64) return "{\"ok\":false,\"error\":\"journal request cancelled\"}";
+                if (!current() || !token.equals(pageToken) || token.isEmpty() || id.length() >= 64) return "{\"ok\":false,\"error\":\"journal request cancelled\"}";
                 final OwnerTransport current=transport;
                 if (current == null) return "{\"ok\":false,\"error\":\"journal response unavailable; check the result before trying again\"}";
                 final OwnerTransport.Cancellation cancellation=current.new Cancellation();
@@ -733,7 +824,7 @@ public final class OwnerActivity extends ServingActivity {
             }
         }
         @JavascriptInterface public String writeChunk(String token,String id,String chunk) {
-            if (token == null || !token.equals(pageToken) || id == null) return "{\"error\":\"journal request cancelled\"}";
+            if (!current() || token == null || !token.equals(pageToken) || id == null) return "{\"error\":\"journal request cancelled\"}";
             StreamPump pump=pumps.get(token+":"+id);
             if (pump == null || pump.cancellation.cancelled) return "{\"error\":\"aborted; check the result before retrying\"}";
             try {
@@ -745,7 +836,7 @@ public final class OwnerActivity extends ServingActivity {
             }
         }
         @JavascriptInterface public String finishStream(String token,String id) {
-            if (token == null || !token.equals(pageToken) || id == null) return "{\"error\":\"journal request cancelled\"}";
+            if (!current() || token == null || !token.equals(pageToken) || id == null) return "{\"error\":\"journal request cancelled\"}";
             String key=token+":"+id;
             StreamPump pump=pumps.get(key);
             if (pump == null) return "{\"error\":\"journal response unavailable; check the result before trying again\"}";
@@ -766,7 +857,7 @@ public final class OwnerActivity extends ServingActivity {
                 OwnerTransport selected = transport;
                 final FolderOperation operation;
                 synchronized (folderPicker) {
-                    if (token == null || !token.equals(pageToken)) return;
+                    if (!current() || token == null || !token.equals(pageToken)) return;
                     if (selected == null || !selected.current() || folderOperation != null
                             || folderPicker.present(token,pageToken,folderGeneration) == null) {
                         refuseFolder(token,id);return;
@@ -779,6 +870,7 @@ public final class OwnerActivity extends ServingActivity {
             } catch (JSONException malformed) { /* No authority or operation was accepted. */ }
         }
         @JavascriptInterface public void cancelFolder(String token,String id) {
+            if (!current()) return;
             FolderOperation operation;
             synchronized (folderPicker) {
                 operation=folderOperation;
@@ -802,7 +894,7 @@ public final class OwnerActivity extends ServingActivity {
                 OwnerTransport selected=transport;
                 final FolderOperation operation;
                 synchronized (folderPicker) {
-                    if (token == null || !token.equals(pageToken)) return;
+                    if (!current() || token == null || !token.equals(pageToken)) return;
                     if (selected == null || !selected.current() || folderOperation != null
                             || folderPicker.present(token,pageToken,folderGeneration) == null) { refuseFolder(token,id);return; }
                     operation=new FolderOperation(token,folderGeneration,id,source,reference,selected,action,expected);
@@ -873,7 +965,8 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     void notice(String message) {
-        ui.post(()->{ if (web != null && !destroyed) web.evaluateJavascript("alert("+JSONObject.quote(message)+")",null); });
+        final WebView page=web; final String token=pageToken;
+        ui.post(()->{ if (currentPage(page) && !token.isEmpty() && token.equals(pageToken)) page.evaluateJavascript("alert("+JSONObject.quote(message)+")",null); });
     }
     final class FolderOperation {
         final String token,id,source,reference;
@@ -1086,16 +1179,17 @@ public final class OwnerActivity extends ServingActivity {
         }
     }
     protected void onDestroy() {
+        destroyed=true;
         resumed=false;setDimmed(false);ui.removeCallbacks(dimAfterIdle);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         storageRecovery.changed();
         setupBrowser.close();
         if (connectivity != null && networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
-        closePage(); requests.shutdownNow(); uploads.shutdownNow(); web.removeJavascriptInterface("JournalOwner"); web.destroy();
+        closePage(); retireWebView(web,false); requests.shutdownNow(); uploads.shutdownNow();
         super.onDestroy();
     }
     public void onBackPressed() {
         if (dimmed) { setDimmed(false);return; }
-        if (web.canGoBack()) web.goBack(); else super.onBackPressed();
+        if (web != null && web.canGoBack()) web.goBack(); else super.onBackPressed();
     }
 }
