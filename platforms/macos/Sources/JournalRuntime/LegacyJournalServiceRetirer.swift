@@ -100,6 +100,23 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         }
     }
 
+    /// Whether launchd's job for this service is the live supervisor of
+    /// `journalRoot`: its plist has a service install's shape and names this
+    /// journal, and the job's pid is `supervisorPID`. A journal run any other
+    /// way (setup's own, a foreground start, another journal's service) is not.
+    public func runsLiveSupervisor(journalRoot: URL, supervisorPID: pid_t) async -> Bool {
+        guard fileManager.fileExists(atPath: plistURL.path),
+              let plist = readServicePlist(),
+              plist.hasLegacyJournalShape,
+              plist.rootMatch(journalRoot: journalRoot) == .same,
+              case .loaded(let job) = await loadLaunchdJob(),
+              job.pid == supervisorPID,
+              job.agrees(with: plist, plistURL: plistURL) else {
+            return false
+        }
+        return true
+    }
+
     public func retireLegacyService(journalRoot: URL) async -> LegacyJournalServiceRetirementResult {
         let plan = await retirementPlan(journalRoot: journalRoot)
         switch plan {
@@ -395,6 +412,13 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         let value = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
         return value.isEmpty ? nil : String(value)
     }
+}
+
+/// Whether the journal running at `journalRoot` is kept by a Terminal-installed
+/// service for that journal, rather than by anything the app should leave alone.
+public func terminalServiceRunsJournal(journalRoot: URL) async -> Bool {
+    guard let pid = liveReadySupervisorPID(journalRoot: journalRoot) else { return false }
+    return await LegacyJournalServiceRetirer().runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: pid)
 }
 
 private enum RootMatch {
