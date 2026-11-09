@@ -66,6 +66,23 @@ fn a_changed_line_adds_whats_new_and_never_brings_back_what_the_owner_removed() 
     let after = fold(without, &[&changed], &changed.key());
     assert!(after.get("title").is_none(), "{after:?}");
     assert_eq!(after["description"], json!("New"));
+
+    // Another change doesn't either, and an edit made since is a new one.
+    let again = line(
+        "a",
+        json!({"id": "s", "title": "Old", "rewritten": 2, "edits": [
+            edit(at, "owner:update", &["title"], json!({"title": "Old"}))]}),
+    );
+    let third = fold(after.clone(), &[&again], &again.key());
+    assert!(third.get("title").is_none(), "{third:?}");
+    let renamed = line(
+        "a",
+        json!({"id": "s", "title": "Newer", "edits": [
+            edit(at, "owner:update", &["title"], json!({"title": "Old"})),
+            edit(LATER, "owner:update", &["title"], json!({"title": "Newer"}))]}),
+    );
+    let fourth = fold(after, &[&renamed], &renamed.key());
+    assert_eq!(fourth["title"], json!("Newer"));
 }
 
 #[test]

@@ -34,6 +34,30 @@ fn ask(root: &Path, answer: &str) -> (ImportFacet, String) {
 }
 
 #[test]
+fn a_yes_says_how_many_it_was_shown_and_a_no_answer_shows_none() {
+    let journal = tempfile::tempdir().unwrap();
+    let root = journal.path();
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(root.join("config/journal.json"), "{}").unwrap();
+    let mut output = Vec::new();
+    let (_, shown) = ask_strava_facet(
+        root,
+        &root.join("no-download.csv"),
+        &mut b"y\n".as_slice(),
+        &mut output,
+    );
+    assert_eq!(shown, Some(0));
+    let mut output = Vec::new();
+    let (_, shown) = ask_strava_facet(
+        root,
+        &root.join("no-download.csv"),
+        &mut b"".as_slice(),
+        &mut output,
+    );
+    assert_eq!(shown, None);
+}
+
+#[test]
 fn a_yes_makes_the_facet_remembers_it_and_files_this_import_under_it() {
     let journal = journal(&["work"]);
     let root = journal.path();
