@@ -3,7 +3,7 @@
 
 //! An Oura run that asks Oura itself, against a stand-in for Oura's API held in
 //! memory: its range, its coverage, each endpoint's result, the run's stops, kill
-//! and resume, and the old sync beside it.
+//! and resume.
 
 #![allow(clippy::disallowed_methods)]
 

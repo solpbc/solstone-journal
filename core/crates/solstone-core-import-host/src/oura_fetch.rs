@@ -10,9 +10,9 @@
 //! the page after the last one the index names.
 //!
 //! The transport, its retries on 429 and 5xx, the reading of a 403 and the token
-//! refresh are the old sync's own (`solstone-core-import`'s `oura_http`).
+//! refresh are `solstone-core-import`'s `oura_http`.
 //! Tokens are the journal's. They are read from config when the fetch starts, and
-//! a 401 is answered by taking the old sync's lock, reading them again, and either
+//! a 401 is answered by taking the token lock, reading them again, and either
 //! using a refresh the other path just made or making the one refresh this run
 //! may make. A 401 after that ends the run.
 //!
@@ -46,14 +46,14 @@ use crate::oura_coverage::{Claim, Coverage};
 
 /// Sent with every request: Oura refuses requests without one.
 pub const USER_AGENT: &str = concat!("solstone-journal/", env!("CARGO_PKG_VERSION"));
-/// The old sync's lock, held here only around a token refresh. It is a sidecar
-/// beside the old sync's cursor, whose bytes this path never reads.
+/// The token lock, held here only around a token refresh. It is a sidecar beside
+/// the cursor an earlier sync left, whose bytes this path never reads.
 const OLD_SYNC_LOCK: &str = "imports/oura.json";
-/// How long a refresh waits for an old sync to finish: the old lock's own default.
+/// How long a refresh waits for the token lock: the lock's own default.
 pub const OLD_LOCK_TIMEOUT: Duration = solstone_core_journal_io::DEFAULT_LOCK_TIMEOUT;
 const HEARTRATE: &str = "heartrate";
 /// Oura documents no longest range for date endpoints; a year at a time is what
-/// the old sync asks.
+/// the earlier sync asked.
 const DATE_CHUNK_DAYS: u64 = 364;
 /// Oura refuses a heartrate span whose dates are more than 30 apart.
 const HEARTRATE_CHUNK_DAYS: u64 = 30;
@@ -97,7 +97,7 @@ pub enum OuraStop {
     Authorization,
     /// Oura says the account's membership isn't active.
     Membership,
-    /// The old sync holds its lock past the wait.
+    /// Something holds the token lock past the wait.
     AnotherSync,
 }
 
@@ -771,7 +771,7 @@ impl<'j> Tokens<'j> {
         })
     }
 
-    /// One request, through the old sync's retries. That function refreshes on a
+    /// One request, through `oura_http`'s retries. That function refreshes on a
     /// 401 by itself, without the lock and without reading config again, so it is
     /// never let to: asked not to persist, it says a refresh is needed instead, and
     /// this answers that under the lock. After this run's refresh, it hands back a

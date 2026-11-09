@@ -188,7 +188,7 @@ pub struct OuraImportRequest<'a> {
     /// Oura, or something answering as it.
     pub transport: &'a mut dyn OuraHttp,
     pub auth: OuraAuth,
-    /// How long a refresh waits for the old sync's lock.
+    /// How long a refresh waits for the token lock.
     pub old_lock_timeout: Duration,
     /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
     pub spill_bytes: usize,
@@ -1760,7 +1760,7 @@ pub fn run_oura_segments(
 /// Ask Oura for a range of days, with the journal's own tokens or through any
 /// transport that answers as Oura does, and publish what it answers as body
 /// windows, on the writer Apple's exports use. Runs under Oura's own lock, and
-/// takes the old sync's lock only around a token refresh. A run that stopped
+/// takes the token lock only around a token refresh. A run that stopped
 /// carries on when asked again with the same range, or with none.
 pub fn import_oura(
     journal: &Path,

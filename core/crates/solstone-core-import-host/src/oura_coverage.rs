@@ -14,7 +14,7 @@
 //! touches as soon as the run state holds it; removing a claim twice changes
 //! nothing, so a resumed run may do it again. What a run fetched whole is added
 //! once, when its last day is done. Both happen in the writer, under the run's
-//! lock; nothing else writes this file. Nothing here reads the old sync cursor,
+//! lock; nothing else writes this file. Nothing here reads the cursor an earlier sync left,
 //! `imports/oura.json`.
 
 use std::collections::{BTreeMap, BTreeSet};
