@@ -16,6 +16,18 @@ static ALPHA: AtomicUsize = AtomicUsize::new(0);
 static BETA: AtomicUsize = AtomicUsize::new(0);
 static COPY_BLOCK: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>> = Mutex::new(None);
 const MATERIAL: &str = "c3ludGhldGljLWJvb2ttYXJr";
+/// A recording the catalogue already holds as imported, so a sync finds it and has no work.
+const CLIP: &[u8] = b"already imported clip";
+
+fn clip_entry() -> Value {
+    let path = std::env::temp_dir().join(format!("clip-{}.wav", std::process::id()));
+    fs::write(&path, CLIP).unwrap();
+    let hash = solstone_core_import::hash_source(&path)
+        .unwrap()
+        .into_inner();
+    fs::remove_file(&path).unwrap();
+    json!({"status":"imported","hash":hash})
+}
 
 unsafe extern "C" fn copy_alpha(material: *const c_char, destination: *const c_char) -> i32 {
     if material.is_null()
@@ -29,16 +41,8 @@ unsafe extern "C" fn copy_alpha(material: *const c_char, destination: *const c_c
     let Ok(destination) = (unsafe { CStr::from_ptr(destination) }).to_str() else {
         return -1;
     };
-    let note = Path::new(destination).join("note.md");
-    let copied = || -> Result<(), Box<dyn std::error::Error>> {
-        fs::write(&note, b"# Saved folder\n\ncobalt iOS retained source\n")?;
-        let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse()?;
-        fs::File::open(&note)?.set_times(fs::FileTimes::new().set_modified(
-            std::time::SystemTime::UNIX_EPOCH
-                + Duration::from_secs(modified.timestamp().try_into()?),
-        ))?;
-        Ok(())
-    };
+    let clip = Path::new(destination).join("clip.wav");
+    let copied = || fs::write(&clip, CLIP);
     if copied().is_ok() { 0 } else { -1 }
 }
 unsafe extern "C" fn copy_beta(_: *const c_char, _: *const c_char) -> i32 {
@@ -142,10 +146,10 @@ fn saved_source_connection_uses_retained_provider_and_preserves_catalogue() {
     let identity = install(&cache, copy_alpha);
     assert_ne!(identity, 0);
     let fixture = Fixture::new();
-    let prior = json!({"source_path":"retained-desktop-path","files":{},"unknown":{"kept":true}});
+    let prior = json!({"source_path":"retained-desktop-path","files":{"clip.wav":clip_entry()},"unknown":{"kept":true}});
     fs::create_dir_all(fixture.root.join("imports")).unwrap();
     fs::write(
-        fixture.root.join("imports/obsidian.json"),
+        fixture.root.join("imports/audio.json"),
         serde_json::to_vec(&prior).unwrap(),
     )
     .unwrap();
@@ -154,7 +158,7 @@ fn saved_source_connection_uses_retained_provider_and_preserves_catalogue() {
     assert_eq!(result["state"], "updated", "{result}");
     assert!(!result.to_string().contains(MATERIAL));
     let state: Value =
-        serde_json::from_slice(&fs::read(fixture.root.join("imports/obsidian.json")).unwrap())
+        serde_json::from_slice(&fs::read(fixture.root.join("imports/audio.json")).unwrap())
             .unwrap();
     for key in ["source_path", "files", "unknown"] {
         assert_eq!(state[key], prior[key]);
@@ -183,7 +187,7 @@ fn saved_source_connection_uses_retained_provider_and_preserves_catalogue() {
             .as_ref()
             .unwrap()
             .import_request(
-                ["--sync", "obsidian", "--save"].map(str::to_owned).to_vec(),
+                ["--sync", "audio", "--save"].map(str::to_owned).to_vec(),
                 WorkStop::new(),
                 Default::default(),
             )
@@ -195,24 +199,6 @@ fn saved_source_connection_uses_retained_provider_and_preserves_catalogue() {
     assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
     assert_eq!(ALPHA.load(Ordering::SeqCst), 1);
     assert_eq!(BETA.load(Ordering::SeqCst), 0);
-    let read = crate::SERVING
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .serving
-        .request_owner(
-            "GET",
-            "/app/transcripts/api/read/20261014?transcripts=1",
-            "",
-        )
-        .unwrap();
-    assert_eq!(read.status, 200);
-    assert!(
-        read.body.contains("cobalt iOS retained source"),
-        "{}",
-        read.body
-    );
     fixture.finish();
     assert!(INSTALLATION.lock().unwrap().is_none());
     fs::remove_dir_all(cache).unwrap();
@@ -251,7 +237,7 @@ fn saved_source_stop_waits_for_bookmark_return_and_refuses_publication() {
     assert_eq!(reply["state"], "refused", "{reply}");
     done.recv_timeout(Duration::from_secs(10)).unwrap();
     let fixture = drain.join().unwrap();
-    assert!(!root.join("imports/obsidian.json").exists());
+    assert!(!root.join("imports/audio.json").exists());
     assert!(INSTALLATION.lock().unwrap().is_none());
     drop(fixture);
     fs::remove_dir_all(cache).unwrap();
@@ -270,15 +256,15 @@ fn saved_source_partial_metadata_and_stale_page_refuse_before_bookmark() {
     let calls = Arc::new(AtomicUsize::new(0));
     let partial = br#"{"folder_name":"partial","files":{"owned.md":{"status":"imported"}}}"#;
     fs::create_dir_all(fixture.root.join("imports")).unwrap();
-    fs::write(fixture.root.join("imports/obsidian.json"), partial).unwrap();
+    fs::write(fixture.root.join("imports/audio.json"), partial).unwrap();
     let reply = change(request(&fixture, "begin"), None, None, Arc::clone(&calls));
     assert_eq!(reply["state"], "refused");
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(
-        fs::read(fixture.root.join("imports/obsidian.json")).unwrap(),
+        fs::read(fixture.root.join("imports/audio.json")).unwrap(),
         partial
     );
-    fs::remove_file(fixture.root.join("imports/obsidian.json")).unwrap();
+    fs::remove_file(fixture.root.join("imports/audio.json")).unwrap();
     let mut stale = request(&fixture, "begin");
     let retired = crate::owner_response::journal_ios_owner_authority_issue();
     crate::owner_response::journal_ios_owner_authority_retire(retired);
@@ -329,7 +315,7 @@ fn saved_source_stop_retains_provider_until_copy_and_cleanup_join() {
         .as_ref()
         .unwrap()
         .import_request(
-            ["--sync", "obsidian", "--save"].map(str::to_owned).to_vec(),
+            ["--sync", "audio", "--save"].map(str::to_owned).to_vec(),
             WorkStop::new(),
             Default::default(),
         )

@@ -15,7 +15,6 @@
     "rule": "detect_file_importer iterates the registry in insertion order and returns the FIRST importer whose detect() matches",
     "detection_order": [
       "ics",
-      "obsidian",
       "claude",
       "chatgpt",
       "gemini",
@@ -63,10 +62,6 @@
       "solstone.think.importers.ics"
     ],
     [
-      "obsidian",
-      "solstone.think.importers.obsidian"
-    ],
-    [
       "claude",
       "solstone.think.importers.claude_chat"
     ],
@@ -112,14 +107,6 @@
         "*.zip"
       ],
       "description": "Import events from ICS calendar files or a Google Calendar export ZIP"
-    },
-    {
-      "name": "obsidian",
-      "display_name": "Obsidian / Logseq Vault",
-      "file_patterns": [
-        "*.md"
-      ],
-      "description": "Import notes from an Obsidian or Logseq vault"
     },
     {
       "name": "claude",
@@ -211,17 +198,12 @@
       "solstone.think.importers.plaud"
     ],
     [
-      "obsidian",
-      "solstone.think.importers.obsidian"
-    ],
-    [
       "audio",
       "solstone.think.importers.audio"
     ]
   ],
   "syncable_backends_instantiated": [
     "plaud",
-    "obsidian",
     "audio"
   ],
   "native_sync_backends": [

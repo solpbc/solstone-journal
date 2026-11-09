@@ -19,6 +19,8 @@ const RETIRED_ENTRIES: &[&str] = &[
     "maintenance:timeline:rollup",
     "maintenance:timeline:rollup-day",
     "maintenance:timeline:rollup-master",
+    "owner:source:obsidian",
+    "sync:obsidian",
 ];
 
 /// A routine's relationship to its generated schedule entry.
@@ -483,6 +485,57 @@ mod tests {
             raw["maintenance:operator:custom"]["cmd"],
             json!(["operator", "custom"])
         );
+    }
+
+    #[test]
+    fn sync_removes_the_retired_notes_folder_entries_in_any_form_and_keeps_their_siblings() {
+        let forms = [
+            (
+                json!({"cmd": ["solstone", "journal", "importer", "--sync", "obsidian", "--save"], "every": "hourly", "enabled": true}),
+                json!({"cmd": ["journal", "importer", "--sync", "obsidian", "--save", "--path", "/retained/vault"], "every": "hourly"}),
+            ),
+            (
+                json!({"cmd": ["solstone", "journal", "importer", "--sync=obsidian"], "every": "daily", "enabled": false}),
+                json!({"cmd": ["journal", "importer", "--sync", "obsidian"], "every": "weekly", "enabled": false}),
+            ),
+            (json!(false), json!("not an entry")),
+        ];
+        for (sync_entry, owner_entry) in forms {
+            let root = tempfile::tempdir().expect("temporary journal");
+            let config = root.path().join("config/schedules.json");
+            let plaud = json!({"cmd": ["solstone", "journal", "importer", "--sync", "plaud", "--save"], "every": "hourly", "enabled": false});
+            let audio = json!({"cmd": ["journal", "importer", "--sync", "audio", "--save"], "every": "daily", "enabled": false});
+            write_config(
+                &config,
+                &json!({
+                    "daily_time": "00:15",
+                    "weekly_time": "03:15",
+                    "sync:obsidian": sync_entry,
+                    "owner:source:obsidian": owner_entry,
+                    "sync:plaud": plaud,
+                    "owner:source:audio": audio,
+                }),
+            );
+
+            let summary = sync(&config, &[]).expect("sync");
+            assert_eq!(
+                summary.removed,
+                vec![
+                    "owner:source:obsidian".to_owned(),
+                    "sync:obsidian".to_owned(),
+                ]
+            );
+            let raw: Value =
+                serde_json::from_slice(&fs::read(&config).expect("config")).expect("json");
+            assert!(raw.get("sync:obsidian").is_none(), "{raw}");
+            assert!(raw.get("owner:source:obsidian").is_none(), "{raw}");
+            assert_eq!(raw["sync:plaud"], plaud, "{raw}");
+            assert_eq!(raw["owner:source:audio"], audio, "{raw}");
+            assert_eq!(raw["daily_time"], "00:15");
+
+            let again = sync(&config, &[]).expect("second sync");
+            assert!(again.removed.is_empty());
+        }
     }
 
     #[test]

@@ -14,7 +14,6 @@ use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, create_direct
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BackendName {
     Plaud,
-    Obsidian,
     Audio,
     Oura,
 }
@@ -24,7 +23,6 @@ impl BackendName {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Plaud => "plaud",
-            Self::Obsidian => "obsidian",
             Self::Audio => "audio",
             Self::Oura => "oura",
         }
@@ -32,12 +30,8 @@ impl BackendName {
 }
 
 /// The fixture-defined backend presentation order.
-pub const SYNC_BACKEND_INVENTORY: [BackendName; 4] = [
-    BackendName::Plaud,
-    BackendName::Obsidian,
-    BackendName::Audio,
-    BackendName::Oura,
-];
+pub const SYNC_BACKEND_INVENTORY: [BackendName; 3] =
+    [BackendName::Plaud, BackendName::Audio, BackendName::Oura];
 
 /// A loss-preserving sync-state JSON document.
 ///
@@ -332,7 +326,6 @@ fn validate_known_numbers(
 ) -> Result<(), SyncStateReadClass> {
     let fields: &[&str] = match backend {
         BackendName::Plaud => &["filesize"],
-        BackendName::Obsidian => &["edit_count", "segments"],
         BackendName::Audio => &["filesize", "duration"],
         BackendName::Oura => &[],
     };
@@ -666,7 +659,7 @@ fn permit_ready_connection(state: &SyncState) -> Result<RefreshPermit, RefreshRe
 
 fn folder_backend(backend: BackendName) -> Result<(), FolderIdentityError> {
     match backend {
-        BackendName::Obsidian | BackendName::Audio => Ok(()),
+        BackendName::Audio => Ok(()),
         BackendName::Plaud | BackendName::Oura => Err(FolderIdentityError::BackendRefused),
     }
 }
@@ -839,10 +832,10 @@ mod tests {
 
     const SECRET: &str = "SECRET-BOOKMARK-VALUE";
 
-    fn obsidian_with_files() -> SyncState {
-        let mut state = SyncState::empty(BackendName::Obsidian);
+    fn audio_with_files() -> SyncState {
+        let mut state = SyncState::empty(BackendName::Audio);
         state.files_mut().insert(
-            "notes/a.md".to_owned(),
+            "clips/a.wav".to_owned(),
             serde_json::json!({"status": "imported", "content_hash": "abc"}),
         );
         state
@@ -867,15 +860,15 @@ mod tests {
         let displaced = parent.path().join("original");
         fs::create_dir(&path).unwrap();
         let root = solstone_core_journal_io::JournalRoot::open(&path).unwrap();
-        let state = obsidian_with_files();
+        let state = audio_with_files();
         write_sync_state_bound(&root, &state, &crate::WorkStop::new()).unwrap();
-        let original = fs::read(state_path(&path, BackendName::Obsidian)).unwrap();
+        let original = fs::read(state_path(&path, BackendName::Audio)).unwrap();
         fs::rename(&path, &displaced).unwrap();
         fs::create_dir_all(path.join("imports")).unwrap();
-        let twin = state_path(&path, BackendName::Obsidian);
+        let twin = state_path(&path, BackendName::Audio);
         fs::write(&twin, b"replacement state sentinel").unwrap();
         assert!(matches!(
-            read_sync_state_bound(&root, BackendName::Obsidian),
+            read_sync_state_bound(&root, BackendName::Audio),
             SyncStateRead::Unreadable {
                 class: SyncStateReadClass::Io
             }
@@ -883,7 +876,7 @@ mod tests {
         assert!(write_sync_state_bound(&root, &state, &crate::WorkStop::new()).is_err());
         assert_eq!(fs::read(&twin).unwrap(), b"replacement state sentinel");
         assert_eq!(
-            fs::read(state_path(&displaced, BackendName::Obsidian)).unwrap(),
+            fs::read(state_path(&displaced, BackendName::Audio)).unwrap(),
             original
         );
     }
@@ -900,10 +893,10 @@ mod tests {
             br#"{"files":{},"access_material":"outside-grant"}"#,
         )
         .unwrap();
-        std::os::unix::fs::symlink(&outside, state_path(&path, BackendName::Obsidian)).unwrap();
+        std::os::unix::fs::symlink(&outside, state_path(&path, BackendName::Audio)).unwrap();
         let root = solstone_core_journal_io::JournalRoot::open(&path).unwrap();
         assert!(matches!(
-            read_sync_state_bound(&root, BackendName::Obsidian),
+            read_sync_state_bound(&root, BackendName::Audio),
             SyncStateRead::Unreadable {
                 class: SyncStateReadClass::Io
             }
@@ -919,11 +912,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let sibling = root.path().join("sibling.txt");
         fs::write(&sibling, b"keep").unwrap();
-        let mut state = obsidian_with_files();
-        let original = state.files_mut().get("notes/a.md").cloned().unwrap();
-        let identity = begin_folder(&mut state, "Notes", false, Some(SECRET)).unwrap();
+        let mut state = audio_with_files();
+        let original = state.files_mut().get("clips/a.wav").cloned().unwrap();
+        let identity = begin_folder(&mut state, "Clips", false, Some(SECRET)).unwrap();
         assert_eq!(identity.len(), 32);
-        assert_eq!(state.files_mut().get("notes/a.md"), Some(&original));
+        assert_eq!(state.files_mut().get("clips/a.wav"), Some(&original));
         assert!(state.root().get(RETAINED_CATALOGS).is_none());
         assert!(state.root().get(ACCESS_MATERIAL).is_none());
         assert_eq!(
@@ -932,25 +925,25 @@ mod tests {
         );
         assert_eq!(state.root().get("legacy"), Some(&Value::from(1_u64)));
         assert_eq!(fs::read(&sibling).unwrap(), b"keep");
-        let again = begin_folder(&mut state, "Notes", false, None).unwrap_err();
+        let again = begin_folder(&mut state, "Clips", false, None).unwrap_err();
         assert_eq!(again, FolderIdentityError::IdentityPresent);
-        assert_eq!(state.files_mut().get("notes/a.md"), Some(&original));
+        assert_eq!(state.files_mut().get("clips/a.wav"), Some(&original));
         assert!(state.root().get(RETAINED_CATALOGS).is_none());
     }
 
     #[test]
     fn reauthorize_keeps_identity_and_replace_parks_the_catalogue() {
         let root = tempfile::tempdir().unwrap();
-        let admitted = root.path().join("imports").join("admitted-note.txt");
+        let admitted = root.path().join("imports").join("admitted-clip.bin");
         fs::create_dir_all(admitted.parent().unwrap()).unwrap();
         fs::write(&admitted, b"admitted").unwrap();
-        let mut state = obsidian_with_files();
-        let identity = begin_folder(&mut state, "Notes", true, Some(SECRET)).unwrap();
+        let mut state = audio_with_files();
+        let identity = begin_folder(&mut state, "Clips", true, Some(SECRET)).unwrap();
         let active = serde_json::json!({"status": "imported"});
         state
             .files_mut()
-            .insert("notes/a.md".to_owned(), active.clone());
-        reauthorize(&mut state, "Notes", false, Some(SECRET)).unwrap();
+            .insert("clips/a.wav".to_owned(), active.clone());
+        reauthorize(&mut state, "Clips", false, Some(SECRET)).unwrap();
         assert_eq!(valid_identity(&state), Some(identity.as_str()));
         assert!(state.root().get(ACCESS_MATERIAL).is_none());
         assert_eq!(state.files_mut().len(), 1);
@@ -967,7 +960,7 @@ mod tests {
         assert_eq!(
             retained(&state, &identity)
                 .and_then(Value::as_object)
-                .and_then(|files| files.get("notes/a.md")),
+                .and_then(|files| files.get("clips/a.wav")),
             Some(&active)
         );
         assert_eq!(fs::read(&admitted).unwrap(), b"admitted");
@@ -975,23 +968,23 @@ mod tests {
 
     #[test]
     fn second_park_does_not_overwrite_the_first_retained_object() {
-        let mut state = obsidian_with_files();
-        let original = state.files_mut().get("notes/a.md").cloned().unwrap();
-        begin_folder(&mut state, "Notes", false, None).unwrap();
+        let mut state = audio_with_files();
+        let original = state.files_mut().get("clips/a.wav").cloned().unwrap();
+        begin_folder(&mut state, "Clips", false, None).unwrap();
         assert!(state.root().get(RETAINED_CATALOGS).is_none());
-        assert_eq!(state.files_mut().get("notes/a.md"), Some(&original));
+        assert_eq!(state.files_mut().get("clips/a.wav"), Some(&original));
         state.root_mut().remove(SOURCE_IDENTITY);
         state.files_mut().insert(
-            "other.md".to_owned(),
+            "other.wav".to_owned(),
             serde_json::json!({"status": "imported", "content_hash": "zzz"}),
         );
-        begin_folder(&mut state, "Notes", false, None).unwrap();
+        begin_folder(&mut state, "Clips", false, None).unwrap();
         assert!(state.root().get(RETAINED_CATALOGS).is_none());
-        assert_eq!(state.files_mut().get("notes/a.md"), Some(&original));
+        assert_eq!(state.files_mut().get("clips/a.wav"), Some(&original));
         assert_eq!(
             state
                 .files_mut()
-                .get("other.md")
+                .get("other.wav")
                 .and_then(|row| row.get("content_hash"))
                 .and_then(Value::as_str),
             Some("zzz")
@@ -1001,7 +994,7 @@ mod tests {
         let active = serde_json::json!({"status": "imported", "content_hash": "live"});
         state
             .files_mut()
-            .insert("notes/a.md".to_owned(), active.clone());
+            .insert("clips/a.wav".to_owned(), active.clone());
         let sentinel = serde_json::json!({"sentinel": true});
         state
             .root_mut()
@@ -1018,7 +1011,7 @@ mod tests {
         assert_eq!(
             retained(&state, &format!("{identity}~2"))
                 .and_then(Value::as_object)
-                .and_then(|files| files.get("notes/a.md")),
+                .and_then(|files| files.get("clips/a.wav")),
             Some(&active)
         );
         assert!(state.files_mut().is_empty());
@@ -1034,7 +1027,7 @@ mod tests {
                 .insert("custom".to_owned(), Value::String("stay".to_owned()));
             let before = state.clone();
             assert_eq!(
-                begin_folder(&mut state, "Notes", true, Some(SECRET)).unwrap_err(),
+                begin_folder(&mut state, "Clips", true, Some(SECRET)).unwrap_err(),
                 FolderIdentityError::BackendRefused
             );
             assert_eq!(state, before);
@@ -1045,7 +1038,7 @@ mod tests {
         assert_eq!(bad_name, FolderIdentityError::BadFolderName);
         assert!(!bad_name.to_string().contains(SECRET));
         assert_eq!(
-            begin_folder(&mut state, "Notes", true, Some("")).unwrap_err(),
+            begin_folder(&mut state, "Clips", true, Some("")).unwrap_err(),
             FolderIdentityError::MaterialRequired
         );
         assert_eq!(state, before);
@@ -1055,7 +1048,7 @@ mod tests {
         );
         let present = state.clone();
         assert_eq!(
-            begin_folder(&mut state, "Notes", false, None).unwrap_err(),
+            begin_folder(&mut state, "Clips", false, None).unwrap_err(),
             FolderIdentityError::IdentityPresent
         );
         assert_eq!(state, present);
@@ -1063,7 +1056,7 @@ mod tests {
 
     #[test]
     fn public_connection_status_preserves_legacy_catalogues_and_refuses_partial_grants() {
-        let mut legacy = obsidian_with_files();
+        let mut legacy = audio_with_files();
         legacy.root_mut().insert(
             "source_path".into(),
             Value::String("retained-desktop-path".into()),
@@ -1072,7 +1065,7 @@ mod tests {
             .root_mut()
             .insert("unknown".into(), serde_json::json!({"kept":true}));
         legacy.files_mut().insert(
-            "notes/prior.md".into(),
+            "clips/prior.wav".into(),
             serde_json::json!({"status":"imported","extra":7}),
         );
         let before = legacy.clone();
@@ -1092,7 +1085,7 @@ mod tests {
             assert!(public_connection_status(&partial).is_err(), "{key}");
             assert_eq!(partial, unchanged);
         }
-        let identity = begin_folder(&mut legacy, "Notes", true, Some(SECRET)).unwrap();
+        let identity = begin_folder(&mut legacy, "Clips", true, Some(SECRET)).unwrap();
         let connected = public_connection_status(&legacy).unwrap().unwrap();
         assert_eq!(connected.source_identity, identity);
         for key in ["files", "source_path", "unknown"] {
@@ -1110,7 +1103,7 @@ mod tests {
                 .access_state,
             AccessState::Lost
         );
-        reauthorize(&mut legacy, "Notes", false, None).unwrap();
+        reauthorize(&mut legacy, "Clips", false, None).unwrap();
         assert_eq!(
             public_connection_status(&legacy)
                 .unwrap()
@@ -1123,10 +1116,10 @@ mod tests {
 
     #[test]
     fn public_connection_hides_material_and_refresh_keeps_files() {
-        let mut state = obsidian_with_files();
-        let identity = begin_folder(&mut state, "Notes", true, Some(SECRET)).unwrap();
+        let mut state = audio_with_files();
+        let identity = begin_folder(&mut state, "Clips", true, Some(SECRET)).unwrap();
         state.files_mut().insert(
-            "notes/a.md".to_owned(),
+            "clips/a.wav".to_owned(),
             serde_json::json!({"status": "imported"}),
         );
         let public = public_connection(&state).unwrap();
@@ -1147,15 +1140,15 @@ mod tests {
         );
         let permit = permit_remembered_refresh(&state, "page", "page").unwrap();
         assert_eq!(permit.source_identity, identity);
-        assert_eq!(permit.folder_name, "Notes");
+        assert_eq!(permit.folder_name, "Clips");
         assert!(!format!("{permit:?}").contains(SECRET));
         let runtime = permit_runtime_refresh(&state).unwrap();
         assert_eq!(runtime.source_identity, identity);
-        assert_eq!(runtime.folder_name, "Notes");
+        assert_eq!(runtime.folder_name, "Clips");
         assert!(!format!("{runtime:?}").contains(SECRET));
         assert_eq!(state, before);
 
-        reauthorize(&mut state, "Notes", false, None).unwrap();
+        reauthorize(&mut state, "Clips", false, None).unwrap();
         assert_eq!(
             permit_remembered_refresh(&state, "page", "page").unwrap_err(),
             RefreshRefusal::NotRemembered
@@ -1164,7 +1157,7 @@ mod tests {
             permit_runtime_refresh(&state).unwrap_err(),
             RefreshRefusal::NotRemembered
         );
-        reauthorize(&mut state, "Notes", true, Some(SECRET)).unwrap();
+        reauthorize(&mut state, "Clips", true, Some(SECRET)).unwrap();
         mark_access_lost(&mut state).unwrap();
         assert_eq!(state.files_mut().len(), 1);
         assert_eq!(valid_identity(&state), Some(identity.as_str()));

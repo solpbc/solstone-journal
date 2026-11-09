@@ -761,7 +761,7 @@ public final class OwnerActivity extends ServingActivity {
             try {
                 JSONObject fields = new JSONObject(encoded);
                 String source = fields.getString("source"), reference = fields.getString("client_item_id");
-                if (!("obsidian".equals(source) || "gemini".equals(source) || "document".equals(source) || "audio_archive".equals(source))
+                if (!("gemini".equals(source) || "document".equals(source) || "audio_archive".equals(source))
                         || id == null || id.length() > 128 || reference.isEmpty() || reference.length() > 128) return;
                 OwnerTransport selected = transport;
                 final FolderOperation operation;
@@ -795,7 +795,7 @@ public final class OwnerActivity extends ServingActivity {
                 JSONObject fields=new JSONObject(encoded);
                 String source=fields.getString("source"),action=fields.getString("action"),reference=fields.getString("client_item_id");
                 String expected=fields.optString("expected_identity","");
-                if (!("obsidian".equals(source) || "audio".equals(source))
+                if (!"audio".equals(source)
                         || !("begin".equals(action) || "reauthorize".equals(action) || "replace".equals(action) || "forget".equals(action))
                         || reference.isEmpty() || reference.length() > 128
                         || (!"begin".equals(action) && expected.isEmpty())) { refuseFolder(token,id);return; }

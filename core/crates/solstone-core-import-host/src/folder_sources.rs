@@ -23,7 +23,6 @@ use solstone_core_import::{
 };
 use solstone_core_import_sources::document::{self, DocumentPreviewRequest};
 use solstone_core_import_sources::gemini;
-use solstone_core_import_sources::obsidian;
 use solstone_core_import_sources::{NullPdfWorker, SkipReason};
 
 use crate::audio_archive::{AudioArchiveDispatchOptions, read_manifest_members, run_audio_archive};
@@ -74,148 +73,127 @@ fn file_stamp(path: &Path) -> (u64, Option<SystemTime>) {
 }
 
 #[test]
-fn obsidian_notes_keep_bytes_and_a_changed_twin_is_a_new_snapshot() {
-    let vault = tempfile::tempdir().unwrap();
-    fs::create_dir(vault.path().join(".obsidian")).unwrap();
-    fs::write(vault.path().join("keep.md"), b"keep note\n").unwrap();
-    fs::write(vault.path().join("edit.md"), b"edit note\n").unwrap();
-    let notes = obsidian::collect_notes(vault.path()).unwrap();
-    assert_eq!(notes.len(), 2);
-    let keep = notes
-        .iter()
-        .find(|note| note.source_path.ends_with("keep.md"))
-        .unwrap();
-    assert_eq!(keep.content, "keep note\n");
-    assert_eq!(obsidian::collect_notes(vault.path()).unwrap().len(), 2);
-
+fn a_same_size_twin_folder_hashes_alike_and_fingerprints_apart() {
+    let original = tempfile::tempdir().unwrap();
+    fs::write(original.path().join("keep.md"), b"keep note\n").unwrap();
+    fs::write(original.path().join("edit.md"), b"edit note\n").unwrap();
     let twin = tempfile::tempdir().unwrap();
-    fs::create_dir(twin.path().join(".obsidian")).unwrap();
     fs::write(twin.path().join("keep.md"), b"KEEP NOTE\n").unwrap();
     fs::write(twin.path().join("edit.md"), b"EDIT NOTE\n").unwrap();
     assert_eq!(
-        hash_source(vault.path()).unwrap(),
+        hash_source(original.path()).unwrap(),
         hash_source(twin.path()).unwrap()
     );
     assert_ne!(
-        solstone_core_import::snapshot::fingerprint(vault.path()).unwrap(),
+        solstone_core_import::snapshot::fingerprint(original.path()).unwrap(),
         solstone_core_import::snapshot::fingerprint(twin.path()).unwrap()
     );
-    let twin_keep = obsidian::collect_notes(twin.path())
-        .unwrap()
-        .into_iter()
-        .find(|note| note.source_path.ends_with("keep.md"))
-        .unwrap();
-    assert_eq!(twin_keep.content, "KEEP NOTE\n");
 }
 
 #[test]
-fn obsidian_sync_observes_a_change_without_duplicating_keys() {
+fn retired_notes_folder_forms_refuse_and_name_the_next_step() {
     let journal = tempfile::tempdir().unwrap();
     let vault = tempfile::tempdir().unwrap();
     fs::create_dir(vault.path().join(".obsidian")).unwrap();
-    fs::write(vault.path().join("keep.md"), b"keep note\n").unwrap();
-    fs::write(vault.path().join("edit.md"), b"edit note\n").unwrap();
-    let mut created = SyncState::empty(BackendName::Obsidian);
-    let identity = begin_folder(&mut created, "Vault", true, Some("grant-material")).unwrap();
-    write_sync_state(journal.path(), &created).unwrap();
+    fs::write(vault.path().join("note.md"), b"a note\n").unwrap();
+    let vault_path = vault.path().display().to_string();
+    let refusal = format!(
+        "{}\n",
+        solstone_core_import::cli_render::NOTES_FOLDER_IMPORT_RETIRED
+    );
+    assert!(refusal.contains("solstone app"), "{refusal}");
+    for args in [
+        vec!["--sync".to_owned(), "obsidian".to_owned()],
+        vec!["--sync=obsidian".to_owned(), "--save".to_owned()],
+        vec![
+            "--sync".to_owned(),
+            "obsidian".to_owned(),
+            "--save".to_owned(),
+            "--path".to_owned(),
+            vault_path.clone(),
+        ],
+        vec![
+            "--source".to_owned(),
+            "obsidian".to_owned(),
+            vault_path.clone(),
+        ],
+        vec![
+            "--source=obsidian".to_owned(),
+            "--dry-run".to_owned(),
+            vault_path.clone(),
+        ],
+    ] {
+        let grammar = crate::cli_argv::grammar_outcome_before_preflight(&args).expect("refused");
+        assert_eq!(grammar.exit_code, 1, "{args:?}");
+        assert_eq!(grammar.stderr, refusal, "{args:?}");
+        let preview = call::preview(&args, journal.path(), &idle_seams(journal.path()));
+        assert_eq!(preview.exit_code, 1, "{args:?}");
+        assert_eq!(preview.stderr, refusal, "{args:?}");
+        let (run, id) = call::start(
+            args.clone(),
+            journal.path().to_path_buf(),
+            idle_seams(journal.path()),
+            solstone_core_import::WorkStop::new(),
+        )
+        .unwrap()
+        .join();
+        assert_eq!(run.exit_code, 1, "{args:?}");
+        assert_eq!(run.stderr, refusal, "{args:?}");
+        assert!(id.is_none());
+    }
+    assert!(!journal.path().join("chronicle").exists());
+    assert!(!journal.path().join("imports/obsidian.json").exists());
+}
 
-    let args = vec![
-        "--sync".to_owned(),
-        "obsidian".to_owned(),
-        "--path".to_owned(),
-        vault.path().display().to_string(),
-    ];
-    let preview = call::preview(&args, journal.path(), &idle_seams(journal.path()));
-    assert_eq!(preview.exit_code, 0, "{}", preview.stderr);
-    let started = call::start(
-        args.clone(),
+#[test]
+fn a_dropped_folder_of_notes_fails_as_unrecognised() {
+    let journal = tempfile::tempdir().unwrap();
+    for marker in [Some(".obsidian"), Some("logseq"), None] {
+        let folder = tempfile::tempdir().unwrap();
+        if let Some(marker) = marker {
+            fs::create_dir(folder.path().join(marker)).unwrap();
+        }
+        for name in ["one.md", "two.md", "three.md"] {
+            fs::write(folder.path().join(name), b"a note\n").unwrap();
+        }
+        let args = vec![
+            "--timestamp".to_owned(),
+            "20260616_120000".to_owned(),
+            folder.path().display().to_string(),
+        ];
+        let run = call::preview(&args, journal.path(), &idle_seams(journal.path()));
+        assert_eq!(run.exit_code, 1, "{marker:?}: {}", run.stdout);
+        assert_eq!(
+            run.stderr,
+            "could not tell what kind of export this is; name it with --source, for example --source chatgpt\n",
+            "{marker:?}"
+        );
+    }
+    assert!(!journal.path().join("chronicle").exists());
+}
+
+#[test]
+fn a_single_markdown_file_still_imports_as_text() {
+    let journal = tempfile::tempdir().unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let note = folder.path().join("idea.md");
+    fs::write(&note, b"a single note about the harbour\n").unwrap();
+    let (run, id) = call::start(
+        vec![note.display().to_string(), "20260616_120000".to_owned()],
         journal.path().to_path_buf(),
         idle_seams(journal.path()),
         solstone_core_import::WorkStop::new(),
     )
-    .unwrap();
-    let (started, _) = started.join();
-    assert_eq!(started.exit_code, 0, "{}", started.stderr);
-
-    let first = load(journal.path(), BackendName::Obsidian);
-    assert_eq!(files_of(&first).len(), 2);
-    let keep_hash = files_of(&first)["keep.md"]["content_hash"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let edit_hash = files_of(&first)["edit.md"]["content_hash"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-
-    fs::write(vault.path().join("edit.md"), b"edit note!\n").unwrap();
-    let again = call::preview(&args, journal.path(), &idle_seams(journal.path()));
-    assert_eq!(again.exit_code, 0, "{}", again.stderr);
-    let second = load(journal.path(), BackendName::Obsidian);
-    assert_eq!(files_of(&second).len(), 2);
-    assert_eq!(
-        files_of(&second)["keep.md"]["content_hash"].as_str(),
-        Some(keep_hash.as_str())
+    .unwrap()
+    .join();
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert!(
+        run.stdout.contains("Generic text import complete"),
+        "{}",
+        run.stdout
     );
-    assert_ne!(
-        files_of(&second)["edit.md"]["content_hash"].as_str(),
-        Some(edit_hash.as_str())
-    );
-
-    let mut kept = second.clone();
-    reauthorize(&mut kept, "Vault", true, Some("grant-material-2")).unwrap();
-    assert_eq!(
-        kept.root()
-            .get("source_identity")
-            .and_then(serde_json::Value::as_str),
-        Some(identity.as_str())
-    );
-    assert_eq!(files_of(&kept).len(), 2);
-    assert_eq!(
-        files_of(&kept)["keep.md"]["content_hash"].as_str(),
-        Some(keep_hash.as_str())
-    );
-    let replaced = replace_folder(&mut kept, "Vault", false, None).unwrap();
-    assert_ne!(replaced, identity);
-    assert!(files_of(&kept).is_empty());
-}
-
-#[test]
-fn obsidian_force_reads_the_new_note_and_leaves_the_admitted_bytes() {
-    let journal = tempfile::tempdir().unwrap();
-    let vault = tempfile::tempdir().unwrap();
-    fs::create_dir(vault.path().join(".obsidian")).unwrap();
-    fs::write(vault.path().join("note.md"), b"original-bytes").unwrap();
-    // This is a prior imported snapshot, independent of the host's directory
-    // admission backend. The operation under test is force-sync of the source.
-    let admitted_note = journal
-        .path()
-        .join("imports")
-        .join("20260616_120000")
-        .join("tree")
-        .join("note.md");
-    fs::create_dir_all(admitted_note.parent().unwrap()).unwrap();
-    fs::write(&admitted_note, b"original-bytes").unwrap();
-    let original = fs::read(&admitted_note).unwrap();
-    fs::write(vault.path().join("note.md"), b"changed-bytes!").unwrap();
-    let args = vec![
-        "--sync".to_owned(),
-        "obsidian".to_owned(),
-        "--path".to_owned(),
-        vault.path().display().to_string(),
-        "--force".to_owned(),
-    ];
-    let preview = call::preview(&args, journal.path(), &idle_seams(journal.path()));
-    assert_eq!(preview.exit_code, 0, "{}", preview.stderr);
-    let state = load(journal.path(), BackendName::Obsidian);
-    let expected = hash_source(&vault.path().join("note.md"))
-        .unwrap()
-        .into_inner();
-    assert_eq!(
-        files_of(&state)["note.md"]["content_hash"].as_str(),
-        Some(expected.as_str())
-    );
-    assert_eq!(fs::read(admitted_note).unwrap(), original);
+    assert!(id.is_some());
+    assert!(fs::read_dir(journal.path().join("chronicle/20260616/import.text")).is_ok());
 }
 
 #[test]

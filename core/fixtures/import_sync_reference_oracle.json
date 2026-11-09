@@ -12,10 +12,6 @@
         "solstone.think.importers.plaud"
       ],
       [
-        "obsidian",
-        "solstone.think.importers.obsidian"
-      ],
-      [
         "audio",
         "solstone.think.importers.audio"
       ]
@@ -24,10 +20,6 @@
       {
         "name": "plaud",
         "sync_signature": "(journal_root: pathlib._local.Path, *, dry_run: bool = True) -> dict[str, typing.Any]"
-      },
-      {
-        "name": "obsidian",
-        "sync_signature": "(journal_root: pathlib._local.Path, *, dry_run: bool = True, source_path: pathlib._local.Path | None = None, force: bool = False) -> dict[str, typing.Any]"
       },
       {
         "name": "audio",

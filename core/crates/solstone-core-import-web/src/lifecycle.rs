@@ -675,9 +675,7 @@ pub fn register_admitted_folder(
 ) -> Result<Value, solstone_core_import::FolderAdmitError> {
     use solstone_core_import::FolderAdmitError;
     // These are the supported picked-folder routes. Body setup remains held.
-    if !matches!(source, "obsidian" | "gemini" | "document" | "audio_archive")
-        || client_item_id.is_empty()
-    {
+    if !matches!(source, "gemini" | "document" | "audio_archive") || client_item_id.is_empty() {
         return Err(FolderAdmitError::Denied);
     }
     let path = root

@@ -18,7 +18,7 @@ function functionSource(source, name) {
   throw new Error('unterminated source function');
 }
 
-function harness(crateDir, source = 'obsidian') {
+function harness(crateDir, source = 'audio') {
   const script = fs.readFileSync(path.join(crateDir, 'assets/source_connections.js'), 'utf8');
   const storage = new Map();
   const calls = [];
@@ -94,8 +94,8 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     await h.run('refresh(row)');
     assert.ok(h.fields['data-source-read-status'].textContent || h.fields['data-source-status'].textContent, 'a failed source read is visible');
     const connection = { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' };
-    h.context.fetch = (url, options) => url === '/api/journal/sources/obsidian'
-      ? Promise.resolve({ ok: true, json: async () => ({ source: 'obsidian', connection }) })
+    h.context.fetch = (url, options) => url === '/api/journal/sources/audio'
+      ? Promise.resolve({ ok: true, json: async () => ({ source: 'audio', connection }) })
       : currentFetch(url, options);
     await h.run('refresh(row)');
     assert.equal(h.fields['data-source-read-status'].textContent, '', 'a current successful read clears its error');
@@ -103,8 +103,8 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     assert.equal(h.buttons['data-source-sync'].disabled, false);
     assert.ok(h.calls.every(call => !call.options?.method), 'status recovery never writes or starts a sync');
     for (const next of [{ ...connection, access_state: 'lost' }, { ...connection, remembered: false, access_state: 'absent' }, null]) {
-      h.context.fetch = (url, options) => url === '/api/journal/sources/obsidian'
-        ? Promise.resolve({ ok: true, json: async () => ({ source: 'obsidian', connection: next }) })
+      h.context.fetch = (url, options) => url === '/api/journal/sources/audio'
+        ? Promise.resolve({ ok: true, json: async () => ({ source: 'audio', connection: next }) })
         : currentFetch(url, options);
       await h.run('refresh(row)');
       assert.equal(h.fields['data-source-read-status'].textContent, '');
@@ -123,17 +123,17 @@ module.exports = async function sourceConnectionContracts(crateDir) {
         h.calls.push({ url, options });
         if (url.includes('/sync/')) {
           if (state === 'unreadable') throw new Error('unavailable');
-          return { ok: true, json: async () => ({ source: 'obsidian', request_id: 'pending-id', reference: 'pending-reference', state, terminal: false }) };
+          return { ok: true, json: async () => ({ source: 'audio', request_id: 'pending-id', reference: 'pending-reference', state, terminal: false }) };
         }
         return { ok: true, json: async () => url.includes('/recurrences/')
-          ? { source: 'obsidian', enabled: false, entries: [], blocked_names: [] }
-          : { source: 'obsidian', connection: { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' } } };
+          ? { source: 'audio', enabled: false, entries: [], blocked_names: [] }
+          : { source: 'audio', connection: { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' } } };
       };
       await h.run('refresh(row)');
       assert.equal(h.fields['data-source-read-status'].textContent, '');
       assert.ok(h.fields['data-source-status'].textContent, 'sync state or uncertainty remains visible');
       assert.ok(h.fields['data-source-change-status'].textContent, 'an unconfirmed folder change remains visible');
-      assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.request_id, 'pending-id');
+      assert.equal(JSON.parse(h.storage.get('journal-source-operation:audio')).sync.request_id, 'pending-id');
       assert.equal(h.buttons['data-source-sync'].disabled, state !== 'unknown', 'only the existing explicit unknown-result policy permits a new owner action');
       assert.ok(h.calls.every(call => !call.options?.method), 'recovery only observes the retained operation');
     }
@@ -147,8 +147,8 @@ module.exports = async function sourceConnectionContracts(crateDir) {
       h.context.fetch = () => new Promise(resolve => replies.push(resolve));
       const older = h.run('refresh(row)');
       const newer = h.run('refresh(row)');
-      const ready = { ok: true, json: async () => ({ source: 'obsidian', connection: { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' } }) };
-      const schedule = { ok: true, json: async () => ({ source: 'obsidian', enabled: false, entries: [], blocked_names: [] }) };
+      const ready = { ok: true, json: async () => ({ source: 'audio', connection: { source_identity: 'current', folder_name: 'notes', remembered: true, access_state: 'ready' } }) };
+      const schedule = { ok: true, json: async () => ({ source: 'audio', enabled: false, entries: [], blocked_names: [] }) };
       replies[2](olderReady ? { ok: false } : ready);
       replies[3](schedule);
       await newer;
@@ -168,11 +168,11 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     h.context.window.JournalOwnerSources = { change: async (...value) => {
       args = value;
       assert.equal(value[4](), true, 'matching reference is retained before native permission work');
-      assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).change, 'connection-reference');
+      assert.equal(JSON.parse(h.storage.get('journal-source-operation:audio')).change, 'connection-reference');
       return { state: 'updated', permissions: 'unchanged' };
     } };
     await h.run("change(row,'begin',row.node.querySelector('[data-source-refresh]'))");
-    assert.deepEqual(args.slice(0, 4), ['obsidian', 'begin', null, 'connection-reference']);
+    assert.deepEqual(args.slice(0, 4), ['audio', 'begin', null, 'connection-reference']);
     assert.ok(h.calls.every(call => !call.options?.method), 'folder connection changes do not mutate recurrence or start a sync');
     assert.match(h.fields['data-source-status'].textContent, /connection updated/);
     assert.equal(h.buttons['data-source-refresh'].focused, true);
@@ -203,12 +203,12 @@ module.exports = async function sourceConnectionContracts(crateDir) {
       h.calls.push({ url, options });
       if (options?.method === 'PUT') put = JSON.parse(options.body);
       return { ok: true, json: async () => url.includes('/recurrences/')
-        ? { source: 'obsidian', enabled: true, entries: [{ name: 'sync:obsidian', active: true, entry: { every: '3m', max_runtime: '9m', extra: 42 } }], blocked_names: ['owner:source:obsidian'] }
-        : { source: 'obsidian', connection: null } };
+        ? { source: 'audio', enabled: true, entries: [{ name: 'sync:audio', active: true, entry: { every: '3m', max_runtime: '9m', extra: 42 } }], blocked_names: ['owner:source:audio'] }
+        : { source: 'audio', connection: null } };
     };
     await h.run('refresh(row)');
     assert.equal(h.select.value, '3m', 'custom maintained cadence is reflected without a new default');
-    assert.match(h.fields['data-source-conflicts'].textContent, /owner:source:obsidian/);
+    assert.match(h.fields['data-source-conflicts'].textContent, /owner:source:audio/);
     h.select.value = '1h';
     await h.run("schedule(row,'PUT')");
     assert.deepEqual(put, { every: '1h', enabled: true }, 'card leaves runtime, argv and custom fields to the shared mutation authority');
@@ -217,7 +217,7 @@ module.exports = async function sourceConnectionContracts(crateDir) {
   }
   {
     const h = harness(crateDir);
-    h.run("row.schedule={enabled:true,entries:[{name:'sync:obsidian',active:true,entry:{every:'1h'}},{name:'owner:source:obsidian',active:true,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
+    h.run("row.schedule={enabled:true,entries:[{name:'sync:audio',active:true,entry:{every:'1h'}},{name:'owner:source:audio',active:true,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
     assert.equal(h.select.value, '', 'mixed active aliases require an explicit cadence choice');
     await h.run("schedule(row,'PUT')");
     assert.equal(h.calls.length, 0, 'Save cannot silently normalize mixed cadences');
@@ -232,12 +232,12 @@ module.exports = async function sourceConnectionContracts(crateDir) {
   {
     const h = harness(crateDir);
     for (const active of [true, false]) {
-      h.run(`row.schedule={enabled:${active},entries:[{name:'sync:obsidian',active:${active},entry:{every:'3m'}},{name:'owner:source:obsidian',active:${active},entry:{every:'3m'}}],blocked_names:[]};showSchedule(row)`);
+      h.run(`row.schedule={enabled:${active},entries:[{name:'sync:audio',active:${active},entry:{every:'3m'}},{name:'owner:source:audio',active:${active},entry:{every:'3m'}}],blocked_names:[]};showSchedule(row)`);
       assert.equal(h.select.value, '3m', 'one unique maintained cadence is reflected');
     }
-    h.run("row.schedule={enabled:false,entries:[{name:'sync:obsidian',active:false,entry:{every:'1h'}},{name:'owner:source:obsidian',active:false,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
+    h.run("row.schedule={enabled:false,entries:[{name:'sync:audio',active:false,entry:{every:'1h'}},{name:'owner:source:audio',active:false,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
     assert.equal(h.select.value, '', 'mixed disabled aliases also have no single cadence');
-    h.run("row.schedule={enabled:true,entries:[{name:'sync:obsidian',active:true,entry:{every:'3m'}},{name:'owner:source:obsidian',active:false,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
+    h.run("row.schedule={enabled:true,entries:[{name:'sync:audio',active:true,entry:{every:'3m'}},{name:'owner:source:audio',active:false,entry:{every:'15m'}}],blocked_names:[]};showSchedule(row)");
     assert.equal(h.select.value, '3m', 'a disabled duplicate does not override the active cadence');
     cases++;
   }
@@ -245,10 +245,10 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     const h = harness(crateDir);
     await h.run('sync(row)');
     assert.equal(h.calls.filter(call => call.options?.method === 'POST').length, 1);
-    assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.reference, 'accepted-sync');
+    assert.equal(JSON.parse(h.storage.get('journal-source-operation:audio')).sync.reference, 'accepted-sync');
     assert.match(h.fields['data-source-status'].textContent, /is running/);
     assert.equal(h.buttons['data-source-sync'].disabled, true);
-    h.context.fetch = async () => ({ ok: true, json: async () => ({ source: 'obsidian', request_id: 'connection-reference', reference: 'accepted-sync', state: 'finished', terminal: true, exit_status: 'ok' }) });
+    h.context.fetch = async () => ({ ok: true, json: async () => ({ source: 'audio', request_id: 'connection-reference', reference: 'accepted-sync', state: 'finished', terminal: true, exit_status: 'ok' }) });
     await h.run('checkSync(row)');
     assert.match(h.fields['data-source-status'].textContent, /media processing may continue/);
     assert.equal(h.run('row.syncPending'), false);
@@ -263,8 +263,8 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     assert.equal(h.calls.filter(call => call.options?.method === 'POST').length, 1, 'return/reload recovery never replays an unknown sync');
     assert.equal(h.run('row.syncPending'), true);
     assert.equal(h.buttons['data-source-sync'].disabled, true);
-    assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.request_id, 'connection-reference');
-    h.context.fetch = async () => ({ ok: true, json: async () => ({ source: 'obsidian', request_id: 'connection-reference', reference: 'accepted-sync', state: 'finished', terminal: true, exit_status: 'ok' }) });
+    assert.equal(JSON.parse(h.storage.get('journal-source-operation:audio')).sync.request_id, 'connection-reference');
+    h.context.fetch = async () => ({ ok: true, json: async () => ({ source: 'audio', request_id: 'connection-reference', reference: 'accepted-sync', state: 'finished', terminal: true, exit_status: 'ok' }) });
     await h.run('checkSync(row)');
     assert.equal(h.run('row.syncPending'), false, 'the persisted request id recovers acceptance even when the POST reply was lost');
     cases++;
@@ -276,9 +276,9 @@ module.exports = async function sourceConnectionContracts(crateDir) {
     h.context.fetch = () => new Promise(resolve => { reply = resolve; });
     const earlier = h.run('checkSync(row)');
     h.run("retained(row.source,{sync:{request_id:'new-id',reference:'new-sync'}}); row.syncPending=true;");
-    reply({ ok: true, json: async () => ({ source: 'obsidian', request_id: 'old-id', reference: 'old-sync', state: 'finished', terminal: true, exit_status: 'ok' }) });
+    reply({ ok: true, json: async () => ({ source: 'audio', request_id: 'old-id', reference: 'old-sync', state: 'finished', terminal: true, exit_status: 'ok' }) });
     await earlier;
-    assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.reference, 'new-sync', 'an old terminal read cannot retire a newer accepted reference');
+    assert.equal(JSON.parse(h.storage.get('journal-source-operation:audio')).sync.reference, 'new-sync', 'an old terminal read cannot retire a newer accepted reference');
     assert.equal(h.run('row.syncPending'), true);
     assert.ok(!h.fields['data-source-status'].textContent.includes('finished'));
     cases++;
@@ -294,12 +294,12 @@ module.exports = async function sourceConnectionContracts(crateDir) {
   {
     const h = harness(crateDir);
     h.run("retained(row.source,{sync:{request_id:'prior-id'}})");
-    h.context.fetch = async () => ({ok:true,json:async()=>({source:'obsidian',request_id:'prior-id',reference:'derived-prior-ref',state:'unknown',terminal:false})});
+    h.context.fetch = async () => ({ok:true,json:async()=>({source:'audio',request_id:'prior-id',reference:'derived-prior-ref',state:'unknown',terminal:false})});
     await h.run('checkSync(row)');
     assert.equal(h.run('row.syncPending'),false,'unknown permits a deliberate new owner action without pretending the old action was absent');
-    assert.equal(JSON.parse(h.storage.get('journal-source-operation:obsidian')).sync.request_id,'prior-id','unknown keeps its request id for further status reads');
+    assert.equal(JSON.parse(h.storage.get('journal-source-operation:audio')).sync.request_id,'prior-id','unknown keeps its request id for further status reads');
     assert.match(h.fields['data-source-status'].textContent,/could not confirm/);
-    h.context.fetch=async()=>({ok:true,json:async()=>({source:'obsidian',request_id:'prior-id',reference:'derived-prior-ref',state:'unknown',terminal:true,exit_status:'ok'})});
+    h.context.fetch=async()=>({ok:true,json:async()=>({source:'audio',request_id:'prior-id',reference:'derived-prior-ref',state:'unknown',terminal:true,exit_status:'ok'})});
     await h.run('checkSync(row)');
     assert.equal(h.run('row.syncPending'),true,'a malformed terminal claim never retires the current request');
     assert.ok(!h.fields['data-source-status'].textContent.includes('finished'));
@@ -308,7 +308,7 @@ module.exports = async function sourceConnectionContracts(crateDir) {
   {
     const h = harness(crateDir);
     h.context.fetch=async()=>({ok:true,redirected:true,url:'https://journal.invalid/init',json:async()=>{throw new Error('setup HTML must not be parsed as status');}});
-    await assert.rejects(h.run("read('/api/journal/sources/obsidian')"));
+    await assert.rejects(h.run("read('/api/journal/sources/audio')"));
     assert.deepEqual(h.calls,[{navigation:'/init'}],'the common owner restore/setup gate uses the ordinary setup route');
     cases++;
   }

@@ -183,7 +183,7 @@ module.exports = async function savedStartCases(crateDir) {
   const folder = () => {
     const data = saved();
     Object.assign(data.import_json, { file_path: '/journal/imports/20261029_120000/tree',
-      file_size: null, folder_snapshot: 'a'.repeat(64), source_hint: 'obsidian', setting: null });
+      file_size: null, folder_snapshot: 'a'.repeat(64), source_hint: 'gemini', setting: null });
     return data;
   };
   {

@@ -112,7 +112,6 @@ unsafe fn change(
             .map_err(|_| ())?;
     let callback = permission.ok_or(())?;
     let backend = match request["source"].as_str() {
-        Some("obsidian") => BackendName::Obsidian,
         Some("audio") => BackendName::Audio,
         _ => return Err(()),
     };
@@ -242,21 +241,10 @@ unsafe fn change(
     };
     let mut permission_state = "unchanged";
     if let Some(old) = old_material.filter(|old| old != material) {
-        let other = if backend == BackendName::Obsidian {
-            BackendName::Audio
+        permission_state = if grant.call(2, &old) == 0 {
+            "released"
         } else {
-            BackendName::Obsidian
-        };
-        permission_state = match existing(&root, other) {
-            Ok((_, Some(other))) if other == old => "retained_for_another_source",
-            Ok(_) => {
-                if grant.call(2, &old) == 0 {
-                    "released"
-                } else {
-                    "unknown"
-                }
-            }
-            Err(_) => "unknown",
+            "unknown"
         };
     }
     // Original preparation, source guard and app grant serialization remain

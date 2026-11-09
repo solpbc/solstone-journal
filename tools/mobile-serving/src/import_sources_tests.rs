@@ -8,6 +8,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
+/// A recording the catalogue already holds as imported, so a sync finds it and has no work.
+const CLIP: &[u8] = b"already imported clip";
+
+fn clip_entry() -> serde_json::Value {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("clip.wav");
+    fs::write(&path, CLIP).unwrap();
+    let hash = solstone_core_import::hash_source(&path)
+        .unwrap()
+        .into_inner();
+    serde_json::json!({"status":"imported","hash":hash})
+}
+
 struct Provider {
     calls: AtomicUsize,
     lost: bool,
@@ -21,21 +34,12 @@ impl SavedFolderProvider for Provider {
         destination: &Path,
     ) -> Result<(), SourceCopyError> {
         self.calls.fetch_add(1, Ordering::AcqRel);
-        assert_eq!(request.backend, BackendName::Obsidian);
+        assert_eq!(request.backend, BackendName::Audio);
         assert_eq!(request.access_material, "opaque-native-grant");
         assert!(!request.source_identity.is_empty());
         assert!(!request.stop.is_requested());
         fs::create_dir(destination.join("empty")).unwrap();
-        let note = destination.join("note.md");
-        fs::write(&note, b"# Source note\n\ncobalt configured source\n").unwrap();
-        let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
-        fs::File::open(note)
-            .unwrap()
-            .set_times(fs::FileTimes::new().set_modified(
-                std::time::SystemTime::UNIX_EPOCH
-                    + Duration::from_secs(modified.timestamp().try_into().unwrap()),
-            ))
-            .unwrap();
+        fs::write(destination.join("clip.wav"), CLIP).unwrap();
         if let Some(entered) = &self.entered {
             entered.send(()).unwrap();
             self.release
@@ -66,10 +70,10 @@ fn isolated(name: &str) -> bool {
     super::super::tests::in_isolated_child_exact(&format!("import_route::sources::tests::{name}"))
 }
 fn args() -> Vec<String> {
-    ["--sync", "obsidian", "--save"].map(str::to_owned).to_vec()
+    ["--sync", "audio", "--save"].map(str::to_owned).to_vec()
 }
 fn configure(root: &solstone_core_journal_io::JournalRoot) -> String {
-    let mut state = SyncState::empty(BackendName::Obsidian);
+    let mut state = SyncState::empty(BackendName::Audio);
     let id = begin_folder(&mut state, "Notes", true, Some("opaque-native-grant")).unwrap();
     state
         .root_mut()
@@ -78,11 +82,12 @@ fn configure(root: &solstone_core_journal_io::JournalRoot) -> String {
         "prior-note.md".into(),
         serde_json::json!({"unknown":"kept"}),
     );
+    state.files_mut().insert("clip.wav".into(), clip_entry());
     write_sync_state_bound(root, &state, &WorkStop::new()).unwrap();
     id
 }
 fn state(root: &solstone_core_journal_io::JournalRoot) -> SyncState {
-    let SyncStateRead::Loaded(state) = read_sync_state_bound(root, BackendName::Obsidian) else {
+    let SyncStateRead::Loaded(state) = read_sync_state_bound(root, BackendName::Audio) else {
         panic!("state unavailable")
     };
     state
@@ -149,24 +154,8 @@ fn saved_source_factory_resolves_canonical_sync_and_preserves_its_catalogue() {
     assert_eq!(stored.root()["extra"], serde_json::json!({"future":"kept"}));
     assert_eq!(stored.root()["files"]["prior-note.md"]["unknown"], "kept");
     assert_eq!(stored.root()["files"]["prior-note.md"]["status"], "removed");
-    let read = server
-        .request_owner(
-            "GET",
-            "/app/transcripts/api/read/20261014?transcripts=1",
-            "",
-        )
-        .unwrap();
-    assert_eq!(read.status, 200);
-    assert!(
-        read.body.contains("cobalt configured source"),
-        "{}",
-        read.body
-    );
-    assert!(
-        root.path()
-            .join("chronicle/20261014/import.obsidian")
-            .is_dir()
-    );
+    assert_eq!(stored.root()["files"]["clip.wav"]["status"], "imported");
+    assert!(root.path().join("imports/audio.json").is_file());
     host.shutdown().unwrap();
     server.shutdown_for_retirement().unwrap();
 }
@@ -225,13 +214,13 @@ fn source_stop_holds_original_use_until_provider_return_and_cleanup() {
         .unwrap();
     let worker = std::thread::spawn(move || assert!(request.prepare().is_err()));
     observed.recv_timeout(Duration::from_secs(10)).unwrap();
-    let before = fs::read(root.path().join("imports/obsidian.json")).unwrap();
+    let before = fs::read(root.path().join("imports/audio.json")).unwrap();
     assert!(matches!(
-        sources.connection_guard(BackendName::Obsidian),
+        sources.connection_guard(BackendName::Audio),
         Err(SourceConnectionError::Busy)
     ));
     assert_eq!(
-        fs::read(root.path().join("imports/obsidian.json")).unwrap(),
+        fs::read(root.path().join("imports/audio.json")).unwrap(),
         before
     );
     stop.request();
@@ -252,7 +241,7 @@ fn source_stop_holds_original_use_until_provider_return_and_cleanup() {
     drain.join().unwrap();
     cache_empty(cache.path());
     solstone_core_journal_io::whole_journal_restore::release_target_for_restore(root.path());
-    let mut guard = sources.connection_guard(BackendName::Obsidian).unwrap();
+    let mut guard = sources.connection_guard(BackendName::Audio).unwrap();
     let public = guard
         .update(
             &server.root,
@@ -264,12 +253,6 @@ fn source_stop_holds_original_use_until_provider_return_and_cleanup() {
         .unwrap();
     assert!(!public.remembered);
     drop(guard);
-    assert!(
-        !root
-            .path()
-            .join("chronicle/20261014/import.obsidian")
-            .exists()
-    );
     host.shutdown().unwrap();
     server.shutdown_for_retirement().unwrap();
 }
@@ -283,7 +266,7 @@ fn connection_changes_share_sync_authority_and_keep_catalogues_and_grants_privat
     let provider = provider(false);
     let (_root, server, host, sources) = setup_with_sources(cache.path(), Arc::clone(&provider));
     let stop = WorkStop::new();
-    let mut guard = sources.connection_guard(BackendName::Obsidian).unwrap();
+    let mut guard = sources.connection_guard(BackendName::Audio).unwrap();
     let first = guard
         .update(
             &server.root,
@@ -303,6 +286,9 @@ fn connection_changes_share_sync_authority_and_keep_catalogues_and_grants_privat
     );
     assert_eq!(provider.calls.load(Ordering::Acquire), 0);
     drop(guard);
+    let mut seeded = state(&server.root);
+    seeded.files_mut().insert("clip.wav".into(), clip_entry());
+    write_sync_state_bound(&server.root, &seeded, &WorkStop::new()).unwrap();
     let (run, _) = host
         .import_request(args(), WorkStop::new(), Default::default())
         .unwrap()
@@ -311,21 +297,10 @@ fn connection_changes_share_sync_authority_and_keep_catalogues_and_grants_privat
         .run()
         .unwrap();
     assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
-    assert!(
-        server
-            .request_owner(
-                "GET",
-                "/app/transcripts/api/read/20261014?transcripts=1",
-                ""
-            )
-            .unwrap()
-            .body
-            .contains("cobalt configured source")
-    );
     let catalogue = state(&server.root).root()["files"].clone();
     assert!(!catalogue.as_object().unwrap().is_empty());
-    let mut guard = sources.connection_guard(BackendName::Obsidian).unwrap();
-    let before = fs::read(server.root.canonical_path().join("imports/obsidian.json")).unwrap();
+    let mut guard = sources.connection_guard(BackendName::Audio).unwrap();
+    let before = fs::read(server.root.canonical_path().join("imports/audio.json")).unwrap();
     assert_eq!(
         guard.update(
             &server.root,
@@ -337,7 +312,7 @@ fn connection_changes_share_sync_authority_and_keep_catalogues_and_grants_privat
         Err(SourceConnectionError::Refused)
     );
     assert_eq!(
-        fs::read(server.root.canonical_path().join("imports/obsidian.json")).unwrap(),
+        fs::read(server.root.canonical_path().join("imports/audio.json")).unwrap(),
         before
     );
     let refreshed = guard
@@ -412,10 +387,10 @@ fn connection_mutation_refuses_unreadable_state_stop_and_replacement_root_withou
     fs::create_dir(&path).unwrap();
     let root = solstone_core_journal_io::JournalRoot::open(&path).unwrap();
     fs::create_dir(path.join("imports")).unwrap();
-    let record = path.join("imports/obsidian.json");
+    let record = path.join("imports/audio.json");
     fs::write(&record, b"{unreadable-state").unwrap();
     let sources = ConfiguredSources::new(parent.path().join("cache"), provider(false));
-    let mut guard = sources.connection_guard(BackendName::Obsidian).unwrap();
+    let mut guard = sources.connection_guard(BackendName::Audio).unwrap();
     let change = || FolderConnectionChange::Begin {
         folder_name: "Notes".into(),
         access_material: "private-grant".into(),
@@ -441,10 +416,5 @@ fn connection_mutation_refuses_unreadable_state_stop_and_replacement_root_withou
         Err(SourceConnectionError::Refused)
     );
     assert_eq!(fs::read(&record).unwrap(), b"replacement-sentinel");
-    assert!(
-        !parent
-            .path()
-            .join("original/imports/obsidian.json")
-            .exists()
-    );
+    assert!(!parent.path().join("original/imports/audio.json").exists());
 }

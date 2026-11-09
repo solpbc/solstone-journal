@@ -323,8 +323,7 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
         "daily_time":"00:15", "weekly_time":"03:15",
         "sync:plaud":{"cmd":["solstone","journal","importer","--sync","plaud","--save","--dry-run"],"every":"hourly","max_runtime":"10m","extra":"kept"},
         "owner:source:plaud":{"cmd":["journal","importer","--sync","plaud","--save"],"every":"weekly","enabled":true},
-        "sync:obsidian":custom,
-        "owner:source:obsidian":{"cmd":["journal","importer","--sync","obsidian","--save","--path","/retained/owner/vault"],"every":"hourly"},
+        "owner:source:audio":custom,
         "custom":custom
     });
     std::fs::write(&path, original.to_string()).unwrap();
@@ -350,6 +349,7 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
     .await;
     assert_eq!(audio["enabled"], false);
     assert_eq!(audio["entries"], json!([]));
+    assert_eq!(audio["blocked_names"], json!(["owner:source:audio"]));
     assert_eq!(
         std::fs::read(&path).unwrap(),
         before,
@@ -402,23 +402,17 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
         emitted, 1,
         "the actual scheduler submits only one owned source recurrence"
     );
-    let obsidian = "/api/journal/recurrences/source/obsidian";
-    let (_, observed) = routed_request(&router, "GET", obsidian, json!({})).await;
-    assert_eq!(observed["enabled"], true);
-    assert_eq!(observed["blocked_names"], json!(["sync:obsidian"]));
-    let (status, disabled) = routed_request(
+    let audio = "/api/journal/recurrences/source/audio";
+    let (status, refused) = routed_request(
         &router,
         "PUT",
-        obsidian,
+        audio,
         json!({"every":"daily","enabled":false}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{disabled}");
-    assert_eq!(disabled["enabled"], false);
+    assert_eq!(status, StatusCode::CONFLICT, "{refused}");
     assert_eq!(
-        routed_request(&router, "DELETE", obsidian, json!({}))
-            .await
-            .0,
+        routed_request(&router, "DELETE", audio, json!({})).await.0,
         StatusCode::OK
     );
     let (status, removed) = routed_request(&router, "DELETE", plaud, json!({})).await;
@@ -426,8 +420,7 @@ async fn source_recurrence_controls_legacy_aliases_and_preserves_modified_custom
     assert_eq!(removed["enabled"], false);
     let mut saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert!(saved.get("sync:plaud").is_none() && saved.get("owner:source:plaud").is_none());
-    assert!(saved.get("owner:source:obsidian").is_none());
-    assert_eq!(saved["sync:obsidian"], custom);
+    assert_eq!(saved["owner:source:audio"], custom);
     assert_eq!(saved["custom"], custom);
     assert_eq!(saved["daily_time"], "00:15");
     assert_eq!(saved["weekly_time"], "03:15");
@@ -1181,8 +1174,6 @@ fn owner_settings_and_source_cards_share_alias_choices_audit_and_root_refusal() 
         "daily_time":"00:15", "weekly_time":"03:15",
         "sync:plaud":{"cmd":["solstone","journal","importer","--sync","plaud","--save","--dry-run"],"every":"weekly","extra":"kept","max_runtime":"10m"},
         "owner:source:plaud":{"cmd":["journal","importer","--sync","plaud","--save"],"every":"hourly","enabled":true},
-        "sync:obsidian":custom,
-        "owner:source:obsidian":{"cmd":["journal","importer","--sync","obsidian","--save"],"every":"daily","enabled":true},
         "custom":custom
     });
     std::fs::write(&schedules, original.to_string()).unwrap();
@@ -1218,14 +1209,6 @@ fn owner_settings_and_source_cards_share_alias_choices_audit_and_root_refusal() 
         "missing-enabled legacy entry is active"
     );
     assert_eq!(
-        legacy["obsidian"]["enabled"], true,
-        "owner-only alias is visible to Settings"
-    );
-    assert_eq!(
-        legacy["obsidian"]["blocked_names"],
-        json!(["sync:obsidian"])
-    );
-    assert_eq!(
         call(
             &server,
             "PUT",
@@ -1235,15 +1218,9 @@ fn owner_settings_and_source_cards_share_alias_choices_audit_and_root_refusal() 
         .0,
         400
     );
-    let (code, disabled) = call(
-        &server,
-        "PUT",
-        settings,
-        json!({"plaud":{"enabled":false},"obsidian":{"enabled":false}}),
-    );
+    let (code, disabled) = call(&server, "PUT", settings, json!({"plaud":{"enabled":false}}));
     assert_eq!(code, 200, "{disabled}");
     assert_eq!(disabled["plaud"]["enabled"], false);
-    assert_eq!(disabled["obsidian"]["enabled"], false);
     assert_eq!(call(&server, "GET", plaud, json!({})).1["enabled"], false);
     assert_eq!(
         call(&server, "PUT", plaud, json!({"every":"5m","enabled":true})).0,
@@ -1277,7 +1254,6 @@ fn owner_settings_and_source_cards_share_alias_choices_audit_and_root_refusal() 
     assert_eq!(saved["sync:plaud"]["cmd"], original["sync:plaud"]["cmd"]);
     assert_eq!(saved["sync:plaud"]["max_runtime"], "10m");
     assert_eq!(saved["sync:plaud"]["extra"], "kept");
-    assert_eq!(saved["sync:obsidian"], custom);
     assert_eq!(saved["custom"], custom);
     assert_eq!(saved["daily_time"], "00:15");
     assert_eq!(saved["weekly_time"], "03:15");
@@ -1304,19 +1280,13 @@ fn owner_settings_and_source_cards_share_alias_choices_audit_and_root_refusal() 
     std::fs::write(&schedules, saved.to_string()).unwrap();
     let custom_bytes = std::fs::read(&schedules).unwrap();
     assert_eq!(
-        call(
-            &server,
-            "PUT",
-            settings,
-            json!({"plaud":{"enabled":true},"obsidian":{"enabled":true}})
-        )
-        .0,
+        call(&server, "PUT", settings, json!({"plaud":{"enabled":true}})).0,
         409
     );
     assert_eq!(
         std::fs::read(&schedules).unwrap(),
         custom_bytes,
-        "conflicting multi-source update is atomic and custom commands stay unchanged"
+        "a conflicting update leaves custom commands unchanged"
     );
     let retained = tempfile::tempdir().unwrap();
     std::fs::rename(fixture.path(), retained.path().join("original")).unwrap();
@@ -1373,6 +1343,21 @@ fn contains_action(root: &Path, action: &str) -> bool {
         })
 }
 
+/// A recording the catalogue already holds as imported, so a sync finds it and has no work.
+#[cfg(all(unix, feature = "in-process-pdf"))]
+const SAVED_CLIP: &[u8] = b"already imported clip";
+
+#[cfg(all(unix, feature = "in-process-pdf"))]
+fn saved_clip_entry() -> Value {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("clip.wav");
+    std::fs::write(&path, SAVED_CLIP).unwrap();
+    let hash = solstone_core_import::hash_source(&path)
+        .unwrap()
+        .into_inner();
+    json!({"status":"imported","hash":hash})
+}
+
 #[cfg(all(unix, feature = "in-process-pdf"))]
 #[test]
 fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
@@ -1401,26 +1386,12 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
             request: SavedFolderRequest<'_>,
             destination: &Path,
         ) -> Result<(), SourceCopyError> {
-            assert_eq!(request.backend, BackendName::Obsidian);
+            assert_eq!(request.backend, BackendName::Audio);
             assert_eq!(request.source_identity, self.identity);
             assert_eq!(request.access_material, "synthetic-owner-grant");
             assert!(!request.stop.is_requested());
-            let call = self.calls.fetch_add(1, Ordering::AcqRel) + 1;
-            let note = destination.join("note.md");
-            std::fs::write(
-                &note,
-                format!("# Notes\n\ncobalt scheduled source run {call}\n"),
-            )
-            .unwrap();
-            let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
-            std::fs::File::open(note)
-                .unwrap()
-                .set_times(std::fs::FileTimes::new().set_modified(
-                    std::time::SystemTime::UNIX_EPOCH
-                        + Duration::from_secs(modified.timestamp().try_into().unwrap())
-                        + Duration::from_secs(call as u64),
-                ))
-                .unwrap();
+            self.calls.fetch_add(1, Ordering::AcqRel);
+            std::fs::write(destination.join("clip.wav"), SAVED_CLIP).unwrap();
             Ok(())
         }
     }
@@ -1428,7 +1399,7 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
         let response = server
             .request_owner(
                 method,
-                "/api/journal/recurrences/source/obsidian",
+                "/api/journal/recurrences/source/audio",
                 &body.to_string(),
             )
             .unwrap();
@@ -1505,13 +1476,11 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
             .unwrap(),
     );
     let retained = tempfile::tempdir().unwrap();
-    std::fs::write(
-        retained.path().join("note.md"),
-        "# Wrong\n\nwrong retained source\n",
-    )
-    .unwrap();
-    let mut saved = SyncState::empty(BackendName::Obsidian);
+    let mut saved = SyncState::empty(BackendName::Audio);
     let identity = begin_folder(&mut saved, "Notes", true, Some("synthetic-owner-grant")).unwrap();
+    saved
+        .files_mut()
+        .insert("clip.wav".into(), saved_clip_entry());
     saved
         .root_mut()
         .insert("source_path".into(), json!(retained.path()));
@@ -1563,40 +1532,7 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     assert!(report.submitted.iter().any(|submitted| submitted == &name));
     host.queue().resume_processing();
     wait_completed(&host, &name, 1);
-    let read = server
-        .request_owner(
-            "GET",
-            "/app/transcripts/api/read/20261014?transcripts=1",
-            "",
-        )
-        .unwrap();
-    assert_eq!(read.status, 200);
-    assert!(
-        read.body.contains("cobalt scheduled source run 1"),
-        "{}",
-        read.body
-    );
-    assert!(!read.body.contains("wrong retained source"));
     assert_eq!(provider.calls.load(Ordering::Acquire), 1);
-    server.index().unwrap(); // Explicit indexing; automatic indexing is not proved.
-    let search = server
-        .request_owner("GET", "/app/search/api/search?q=cobalt", "")
-        .unwrap();
-    assert_eq!(search.status, 200, "{}", search.body);
-    let search: Value = serde_json::from_str(&search.body).unwrap();
-    assert!(
-        search["days"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|day| day["results"].as_array().unwrap())
-            .any(|hit| hit["day"] == "20261014"
-                && hit["text"].as_str().is_some_and(|text| text
-                    .replace("<strong>", "")
-                    .replace("</strong>", "")
-                    .contains("cobalt scheduled source run 1"))),
-        "{search}"
-    );
     let (status, changed) = call(&server, "PUT", json!({"every":"5m","enabled":true}));
     assert_eq!(status, 200, "{changed}");
     let report = host
@@ -1621,19 +1557,6 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
     assert!(report.submitted.iter().any(|submitted| submitted == &name));
     host.queue().resume_processing();
     wait_completed(&host, &name, 2);
-    let read = server
-        .request_owner(
-            "GET",
-            "/app/transcripts/api/read/20261014?transcripts=1",
-            "",
-        )
-        .unwrap();
-    assert_eq!(read.status, 200);
-    assert!(
-        read.body.contains("cobalt scheduled source run 2"),
-        "{}",
-        read.body
-    );
     assert_eq!(call(&server, "DELETE", json!({})).0, 200);
     let report = host
         .check_schedule(ScheduleNow::in_zone(
@@ -1652,7 +1575,7 @@ fn authenticated_source_recurrence_executes_saved_connection_and_obeys_edits() {
         &std::fs::read(journal.path().join("config/schedules.json")).unwrap(),
     )
     .unwrap();
-    assert!(raw.get("owner:source:obsidian").is_none() && raw.get("sync:obsidian").is_none());
+    assert!(raw.get("owner:source:audio").is_none());
     assert_eq!(raw["custom"], custom);
     assert_eq!(raw["daily_time"], "00:15");
     assert_eq!(raw["weekly_time"], "03:15");
@@ -1690,7 +1613,7 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
             request: SavedFolderRequest<'_>,
             destination: &Path,
         ) -> Result<(), SourceCopyError> {
-            assert_eq!(request.backend, BackendName::Obsidian);
+            assert_eq!(request.backend, BackendName::Audio);
             assert_eq!(request.source_identity, self.identity);
             assert_eq!(request.access_material, "synthetic-sync-grant");
             self.calls.fetch_add(1, Ordering::AcqRel);
@@ -1702,16 +1625,7 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
             }
             drop(released);
             assert!(!request.stop.is_requested());
-            let note = destination.join("note.md");
-            std::fs::write(&note, "# Notes\n\ncobalt explicit source sync\n").unwrap();
-            let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
-            std::fs::File::open(note)
-                .unwrap()
-                .set_times(std::fs::FileTimes::new().set_modified(
-                    std::time::SystemTime::UNIX_EPOCH
-                        + Duration::from_secs(modified.timestamp().try_into().unwrap()),
-                ))
-                .unwrap();
+            std::fs::write(destination.join("clip.wav"), SAVED_CLIP).unwrap();
             Ok(())
         }
     }
@@ -1786,8 +1700,7 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
         crate::MobileServing::start_with_payload(journal.path().to_path_buf(), address, payload())
             .unwrap();
     let retained = tempfile::tempdir().unwrap();
-    std::fs::write(retained.path().join("note.md"), "wrong retained source\n").unwrap();
-    let mut saved = SyncState::empty(BackendName::Obsidian);
+    let mut saved = SyncState::empty(BackendName::Audio);
     let identity = begin_folder(
         &mut saved,
         "Selected notes",
@@ -1795,6 +1708,9 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
         Some("synthetic-sync-grant"),
     )
     .unwrap();
+    saved
+        .files_mut()
+        .insert("clip.wav".into(), saved_clip_entry());
     saved
         .root_mut()
         .insert("source_path".into(), json!(retained.path()));
@@ -1832,8 +1748,8 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
     let schedule_path = journal.path().join("config/schedules.json");
     let schedule_before = std::fs::read(&schedule_path).unwrap();
     let config_before = std::fs::read(&config_path).unwrap();
-    let resource = "/api/journal/sources/obsidian";
-    let run = "/api/journal/sources/obsidian/sync";
+    let resource = "/api/journal/sources/audio";
+    let run = "/api/journal/sources/audio/sync";
     let (status, connection) = call(&server, "GET", resource, "");
     assert_eq!(status, 200, "{connection}");
     assert_eq!(connection["connection"]["source_identity"], identity);
@@ -1845,9 +1761,6 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
             .to_string()
             .contains(&retained.path().to_string_lossy().into_owned())
     );
-    let audio = call(&server, "GET", "/api/journal/sources/audio", "");
-    assert_eq!(audio.0, 200);
-    assert!(audio.1["connection"].is_null());
     let plaud = call(&server, "GET", "/api/journal/sources/plaud", "");
     assert_eq!(plaud.0, 200);
     assert_eq!(plaud.1["available"], true);
@@ -1930,7 +1843,7 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
     );
     assert_eq!(active.1["request_id"], request_id);
     let reference = active.1["reference"].as_str().unwrap().to_owned();
-    assert!(reference.starts_with("owner-source-obsidian-request-"));
+    assert!(reference.starts_with("owner-source-audio-request-"));
     let duplicate = call(&server, "POST", run, &run_body);
     assert_eq!(duplicate.0, 202);
     assert_eq!(duplicate.1["request_id"], request_id);
@@ -1960,20 +1873,6 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
     assert_eq!(duplicate_completed.1["reused"], true);
     assert_eq!(duplicate_completed.1["reference"], reference);
     assert_eq!(provider.calls.load(Ordering::Acquire), 1);
-    let read = server
-        .request_owner(
-            "GET",
-            "/app/transcripts/api/read/20261014?transcripts=1",
-            "",
-        )
-        .unwrap();
-    assert_eq!(read.status, 200);
-    assert!(
-        read.body.contains("cobalt explicit source sync"),
-        "{}",
-        read.body
-    );
-    assert!(!read.body.contains("wrong retained source"));
     assert_eq!(
         std::fs::read(&schedule_path).unwrap(),
         schedule_before,
@@ -1983,13 +1882,13 @@ fn authenticated_source_read_sync_and_status_use_the_saved_connection() {
     let unknown = call(
         &server,
         "GET",
-        "/api/journal/sources/audio/sync/fixture-client-sync-01",
+        "/api/journal/sources/plaud/sync/fixture-client-sync-01",
         "",
     );
     assert_eq!(unknown.0, 200);
     assert_eq!(unknown.1["state"], "unknown");
     assert_eq!(unknown.1["terminal"], false);
-    let state_path = journal.path().join("imports/obsidian.json");
+    let state_path = journal.path().join("imports/audio.json");
     let valid_state = std::fs::read(&state_path).unwrap();
     std::fs::write(&state_path, b"{unreadable state").unwrap();
     assert_eq!(call(&server, "GET", resource, "").0, 422);

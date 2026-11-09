@@ -5314,7 +5314,6 @@ dependencies = [
  "image",
  "nix 0.30.1",
  "pulldown-cmark",
- "regex",
  "rusqlite",
  "serde",
  "serde_json",

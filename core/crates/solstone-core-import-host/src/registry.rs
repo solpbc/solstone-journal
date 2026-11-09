@@ -82,7 +82,6 @@ pub(crate) fn run_with_seams(
     let mut selected = None;
     let cli = match dispatch.source {
         RegistrySource::Ics
-        | RegistrySource::Obsidian
         | RegistrySource::Claude
         | RegistrySource::Chatgpt
         | RegistrySource::Gemini => run_save(dispatch, journal, &mut selected),

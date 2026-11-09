@@ -2624,23 +2624,6 @@ button:focus:not(:focus-visible) {
         </p>
       </div>
 
-      <div id="obsidianSyncCard">
-        <h3 class="settings-subsection-title">Obsidian vault</h3>
-        <p class="settings-subsection-desc">
-          automatically sync new and updated notes from your vault.
-        </p>
-
-        <div class="settings-field" id="obsidianSyncField">
-          <label for="field-obsidian-sync-enabled">hourly sync</label>
-          <div style="display: flex; align-items: center; gap: 1em;">
-            <label class="toggle-switch toggle-positive">
-              <input type="checkbox" id="field-obsidian-sync-enabled">
-              <span class="slider"></span>
-            </label>
-            <span style="color: var(--ink-soft); font-size: 0.9em;">check for changes every hour</span>
-          </div>
-        </div>
-      </div>
       </form>
     </section>
 
@@ -4637,10 +4620,8 @@ function renderRefreshLoadState(message, serverMessage) {
 
 
 function setSyncControlsDisabled(disabled) {
-  ['field-plaud-sync-enabled', 'field-obsidian-sync-enabled'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = disabled;
-  });
+  const el = document.getElementById('field-plaud-sync-enabled');
+  if (el) el.disabled = disabled;
 }
 
 let storageControlsDisabled = false;
@@ -5046,11 +5027,6 @@ function populateSync(data) {
     field.style.opacity = '0.5';
     note.style.display = 'block';
   }
-
-  // Obsidian sync card
-  const obsidian = data.obsidian || {};
-  const obsidianToggle = document.getElementById('field-obsidian-sync-enabled');
-  obsidianToggle.checked = obsidian.enabled || false;
 }
 
 document.getElementById('field-plaud-sync-enabled').addEventListener('change', async function() {
@@ -5064,24 +5040,6 @@ document.getElementById('field-plaud-sync-enabled').addEventListener('change', a
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaud: { enabled } }),
-      }],
-      onSuccess: () => showFieldStatus(this, 'saved'),
-    });
-  } catch (_) {
-  }
-});
-
-document.getElementById('field-obsidian-sync-enabled').addEventListener('change', async function() {
-  const enabled = this.checked;
-  const errorHost = prepareFieldErrorHost(this);
-  try {
-    await window.saveControl({
-      el: this,
-      errorHost,
-      fetchArgs: ['api/sync', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ obsidian: { enabled } }),
       }],
       onSuccess: () => showFieldStatus(this, 'saved'),
     });

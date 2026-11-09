@@ -3814,7 +3814,7 @@ async function runNativeFolderSelectionAndReturnRead() {
       sessionStorage: { getItem: key => storage.get(key), setItem: (key,value) => storage.set(key,value) },
       loadImports: async () => {},
       window: { createViewReady: () => () => {}, JournalOwnerFolders: { choose(source,reference,phase) {
-        assert.strictEqual(source,'obsidian'); assert.strictEqual(reference,'selected-reference');
+        assert.strictEqual(source,'gemini'); assert.strictEqual(reference,'selected-reference');
         selected=phase; return new Promise(done => { resolve=done; });
       } } },
       fetch: async url => {
@@ -3823,9 +3823,9 @@ async function runNativeFolderSelectionAndReturnRead() {
         throw new Error('unexpected request');
       },
     });
-    vm.runInContext("let guidedFolderBusy=false; let currentGuideSource='obsidian'; let currentGuidedSaved={path:'prior'};",context);
+    vm.runInContext("let guidedFolderBusy=false; let currentGuideSource='gemini'; let currentGuidedSaved={path:'prior'};",context);
     for (const name of ['folderSelectionKey','folderSelection','folderControls','chooseGuidedFolder','reconcileGuidedFolder']) vm.runInContext(functionSource(script,name),context);
-    const pending=vm.runInContext("chooseGuidedFolder({name:'obsidian'})",context);
+    const pending=vm.runInContext("chooseGuidedFolder({name:'gemini'})",context);
     assert.strictEqual(start.disabled,true);
     assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'prior');
     if (scenario === 'cancel') {
@@ -3866,10 +3866,10 @@ async function runNativeFolderSelectionAndReturnRead() {
         calls.push(url);
         return {ok:true,json:async () => url.includes('/list?')
           ? {imports:[{timestamp:'20261026_123456',client_item_id:'selected-reference'}]}
-          : {import_json:{file_path:'original/admitted/tree',client_item_id:'selected-reference',source_hint:'obsidian',original_filename:'picked notes'}}};
+          : {import_json:{file_path:'original/admitted/tree',client_item_id:'selected-reference',source_hint:'gemini',original_filename:'picked notes'}}};
       };
       vm.runInContext('currentGuidedSaved=null',context);
-      await vm.runInContext("reconcileGuidedFolder({name:'obsidian'})",context);
+      await vm.runInContext("reconcileGuidedFolder({name:'gemini'})",context);
       assert.strictEqual(vm.runInContext('currentGuidedSaved.path',context),'original/admitted/tree','a return read restores only the recorded source');
       assert.strictEqual(calls.length,2,'return recovery reads list and detail without saving again');
     } else if (scenario === 'registration_failed') {
@@ -3957,7 +3957,7 @@ async function runArchiveRunReferenceHonorsLaterNavigation() {
   context.navigateTo=async view=>navigated.push(view);
   vm.runInContext(functionSource(workspace,'reconcileImportState'),context);
   const pending=vm.runInContext("reconcileImportState('20261014_090000')",context);
-  context.window.location.hash='#guide/obsidian';
+  context.window.location.hash='#guide/gemini';
   release({archive_run_id:'20261027_043425'});
   assert.equal(await pending,'20261027_043425');
   assert.deepEqual(navigated,[],'a late alias read cannot pull the owner off a newer view');

@@ -4460,14 +4460,9 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "81015692a6a45b67",
+      "digest": "e12bf0f5457a373e",
       "method": "PUT",
       "normalized": {
-        "obsidian": {
-          "available": true,
-          "configured": false,
-          "enabled": false
-        },
         "plaud": {
           "available": false,
           "configured": true,
@@ -9368,14 +9363,9 @@
       },
       "config_keys_added": [],
       "config_keys_removed": [],
-      "digest": "81015692a6a45b67",
+      "digest": "e12bf0f5457a373e",
       "method": "PUT",
       "normalized": {
-        "obsidian": {
-          "available": true,
-          "configured": false,
-          "enabled": false
-        },
         "plaud": {
           "available": false,
           "configured": true,
@@ -11270,13 +11260,8 @@
       },
       "GET api/sync": {
         "content_type": "application/json",
-        "digest": "5a7e60b39dabd8c0",
+        "digest": "e5a2826e19bb8b26",
         "normalized": {
-          "obsidian": {
-            "available": true,
-            "configured": false,
-            "enabled": false
-          },
           "plaud": {
             "available": false,
             "configured": false,
@@ -12441,13 +12426,8 @@
       },
       "GET api/sync": {
         "content_type": "application/json",
-        "digest": "5a7e60b39dabd8c0",
+        "digest": "e5a2826e19bb8b26",
         "normalized": {
-          "obsidian": {
-            "available": true,
-            "configured": false,
-            "enabled": false
-          },
           "plaud": {
             "available": false,
             "configured": false,
@@ -15493,13 +15473,8 @@
       },
       "GET api/sync": {
         "content_type": "application/json",
-        "digest": "5a7e60b39dabd8c0",
+        "digest": "e5a2826e19bb8b26",
         "normalized": {
-          "obsidian": {
-            "available": true,
-            "configured": false,
-            "enabled": false
-          },
           "plaud": {
             "available": false,
             "configured": false,
@@ -16757,13 +16732,8 @@
       },
       "GET api/sync": {
         "content_type": "application/json",
-        "digest": "5a7e60b39dabd8c0",
+        "digest": "e5a2826e19bb8b26",
         "normalized": {
-          "obsidian": {
-            "available": true,
-            "configured": false,
-            "enabled": false
-          },
           "plaud": {
             "available": false,
             "configured": false,
@@ -17941,13 +17911,8 @@
       },
       "GET api/sync": {
         "content_type": "application/json",
-        "digest": "1233cc98ff1c2057",
+        "digest": "f05a1d9dc2e7d6a2",
         "normalized": {
-          "obsidian": {
-            "available": true,
-            "configured": false,
-            "enabled": false
-          },
           "plaud": {
             "available": true,
             "configured": false,

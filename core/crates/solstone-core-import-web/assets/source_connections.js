@@ -3,7 +3,7 @@
 (() => {
   'use strict';
   window.ImportSourceConnections?.dispose();
-  const sources = { plaud: 'Plaud', obsidian: 'Obsidian', audio: 'audio folder' };
+  const sources = { plaud: 'Plaud', audio: 'audio folder' };
   const rows = new Map();
   let root = null;
   let disposed = false;

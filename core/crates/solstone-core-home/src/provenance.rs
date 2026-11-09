@@ -1218,6 +1218,14 @@ mod tests {
     }
 
     #[test]
+    fn a_previously_imported_note_keeps_its_notes_label() {
+        let part = ProvenancePart::Import {
+            source: "obsidian".to_owned(),
+        };
+        assert_eq!(provenance_label(&part, None), "notes · imported");
+    }
+
+    #[test]
     fn import_stream_is_import_part() {
         let root = make_journal();
         write_stream(root.path(), "import.oura", "import", None, None, None);

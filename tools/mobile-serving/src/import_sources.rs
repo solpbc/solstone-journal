@@ -151,7 +151,6 @@ pub trait SavedFolderProvider: Send + Sync {
 pub struct ConfiguredSources {
     cache: PathBuf,
     provider: Arc<dyn SavedFolderProvider>,
-    obsidian: Arc<Mutex<()>>,
     audio: Arc<Mutex<()>>,
     plaud: Arc<Mutex<()>>,
 }
@@ -161,7 +160,6 @@ impl ConfiguredSources {
         Self {
             cache,
             provider,
-            obsidian: Arc::new(Mutex::new(())),
             audio: Arc::new(Mutex::new(())),
             plaud: Arc::new(Mutex::new(())),
         }
@@ -175,7 +173,6 @@ impl ConfiguredSources {
         backend: BackendName,
     ) -> Result<SourceConnectionGuard, SourceConnectionError> {
         let lock = match backend {
-            BackendName::Obsidian => &self.obsidian,
             BackendName::Audio => &self.audio,
             BackendName::Plaud | BackendName::Oura => return Err(SourceConnectionError::Refused),
         };
@@ -190,7 +187,6 @@ impl ConfiguredSources {
 
     fn acquire(&self, source: &str) -> Result<OwnedMutexGuard<()>, String> {
         let lock = match source {
-            "obsidian" => &self.obsidian,
             "audio" => &self.audio,
             "plaud" => &self.plaud,
             _ => return Err(unavailable()),
@@ -211,15 +207,11 @@ impl ConfiguredSources {
         }
         let active = self.acquire(source)?;
         let mut temporary = None;
-        if class.explicit_path.is_none() && matches!(source, "obsidian" | "audio") {
+        if class.explicit_path.is_none() && source == "audio" {
             if context.stop().is_requested() {
                 return Err(unavailable());
             }
-            let backend = if source == "obsidian" {
-                BackendName::Obsidian
-            } else {
-                BackendName::Audio
-            };
+            let backend = BackendName::Audio;
             let SyncStateRead::Loaded(mut state) = read_sync_state_bound(context.root(), backend)
             else {
                 return Err(unavailable());

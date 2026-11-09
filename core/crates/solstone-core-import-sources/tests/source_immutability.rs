@@ -23,7 +23,7 @@ use solstone_core_import::{
 use solstone_core_import_sources::image::{
     DescriptionOutcome, ImageImportError, ProgressUpdate, WireClient, import_image,
 };
-use solstone_core_import_sources::{chatgpt, claude, gemini, ics, obsidian};
+use solstone_core_import_sources::{chatgpt, claude, gemini, ics};
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError};
 use support::TempTree;
@@ -466,13 +466,7 @@ impl PublicationOperations for ImagePublication {
 fn implemented_source_reads_leave_the_owner_source_unchanged() {
     let tree = TempTree::new();
     let archive = tree.path().join("source-immutable/calendar.zip");
-    let vault = tree.path().join("source-immutable/vault");
-    fs::create_dir_all(&vault).unwrap();
     write_calendar_archive(&archive);
-    fs::create_dir(vault.join(".obsidian")).unwrap();
-    fs::write(vault.join(".obsidian/app.json"), "{}").unwrap();
-    fs::write(vault.join("2024-01-02.md"), "# Daily\n[[Source Topic]]\n").unwrap();
-    fs::write(vault.join("Reference.md"), "# Reference\n").unwrap();
     let before_metadata = metadata_snapshot(tree.path());
 
     let report = observe_source_immutability(tree.path(), |_| {
@@ -480,11 +474,6 @@ fn implemented_source_reads_leave_the_owner_source_unchanged() {
         let events = ics::parse_events(&archive, &Utc).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(ics::preview(&archive, &Utc).unwrap().item_count, 1);
-
-        assert!(obsidian::detect(&vault));
-        let notes = obsidian::collect_notes(&vault).unwrap();
-        assert_eq!(notes.len(), 2);
-        assert_eq!(obsidian::preview(&vault, &Utc).unwrap().item_count, 2);
     })
     .unwrap();
 

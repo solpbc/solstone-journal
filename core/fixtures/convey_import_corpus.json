@@ -448,7 +448,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "9a5ca3819f9c5a1be12dcae2a633c229f90f66fa558f56e128b0c3a939c079e7",
+        "body_sha256": "7068beecca7439cf50b3b0eee51252cae7d18869732bc390d2182a53daa32bc5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -496,17 +496,6 @@
               "input_type": "file",
               "name": "gemini",
               "upload_prompt": "upload your Google Takeout .zip file"
-            },
-            {
-              "accept": "",
-              "description": "import notes from Obsidian, Logseq, or any markdown vault",
-              "display_name": "notes",
-              "has_guide": true,
-              "icon": "file-text",
-              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" /> </svg>",
-              "input_type": "path_input",
-              "name": "obsidian",
-              "upload_prompt": "paste the full path to your vault folder"
             },
             {
               "accept": ".zip",
@@ -1185,7 +1174,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 12
+          "total": 11
         },
         "method": "GET",
         "normalized_fields": [],
@@ -1488,7 +1477,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "9a5ca3819f9c5a1be12dcae2a633c229f90f66fa558f56e128b0c3a939c079e7",
+        "body_sha256": "7068beecca7439cf50b3b0eee51252cae7d18869732bc390d2182a53daa32bc5",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -1536,17 +1525,6 @@
               "input_type": "file",
               "name": "gemini",
               "upload_prompt": "upload your Google Takeout .zip file"
-            },
-            {
-              "accept": "",
-              "description": "import notes from Obsidian, Logseq, or any markdown vault",
-              "display_name": "notes",
-              "has_guide": true,
-              "icon": "file-text",
-              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> <path d=\"M10 9H8\" /> <path d=\"M16 13H8\" /> <path d=\"M16 17H8\" /> </svg>",
-              "input_type": "path_input",
-              "name": "obsidian",
-              "upload_prompt": "paste the full path to your vault folder"
             },
             {
               "accept": ".zip",
@@ -2225,7 +2203,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 12
+          "total": 11
         },
         "method": "GET",
         "normalized_fields": [],

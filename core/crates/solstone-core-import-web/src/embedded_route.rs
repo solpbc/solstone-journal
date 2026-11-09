@@ -1096,7 +1096,7 @@ mod tests {
         crate::register_admitted_folder(
             &root,
             &folder,
-            "obsidian",
+            "gemini",
             "notes",
             "folder-row",
             &stamp,

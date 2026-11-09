@@ -24,7 +24,6 @@ const IMPLEMENTED_SOURCE_MODULES: &[&str] = &[
     "gemini",   //
     "ics",      //
     "image",    //
-    "obsidian", //
 ];
 
 // The retired name of the archive source. It must not reappear under either spelling.

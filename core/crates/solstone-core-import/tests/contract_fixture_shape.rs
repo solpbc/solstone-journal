@@ -12,7 +12,6 @@ const W9_SURFACE: &str = concat!(
     include_str!("../src/contract.rs"),
     include_str!("../src/sync_state.rs"),
     include_str!("../src/sync_plaud.rs"),
-    include_str!("../src/sync_obsidian.rs"),
     include_str!("../src/sync_audio.rs"),
     include_str!("../src/connect.rs"),
     include_str!("../src/consent_gate.rs"),
@@ -35,8 +34,6 @@ const SYNC_SEAM_FIELDS: &[(&str, &[&str])] = &[
         &["scanner", "probe", "manifests", "clock", "state_writer"],
     ),
     ("AudioSaveSeams", &["preview", "pipeline"]),
-    ("ObsidianPreviewSeams", &["candidates", "scanner", "clock"]),
-    ("ObsidianSaveSeams", &["preview", "writer"]),
 ];
 
 #[test]

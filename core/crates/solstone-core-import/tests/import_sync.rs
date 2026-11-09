@@ -3,7 +3,5 @@
 
 #[path = "sync_audio.rs"]
 mod sync_audio;
-#[path = "sync_obsidian.rs"]
-mod sync_obsidian;
 #[path = "sync_plaud.rs"]
 mod sync_plaud;

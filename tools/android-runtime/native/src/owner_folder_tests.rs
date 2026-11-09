@@ -153,7 +153,7 @@ impl Fixture {
     }
 
     pub(crate) fn request(&self) -> Value {
-        json!({"source":"obsidian","client_item_id":"native-folder-owner",
+        json!({"source":"gemini","client_item_id":"native-folder-owner",
             "timestamp":"20261014_090000","folder_name":"picked notes",
             "page_authority":self.page,"admission_generation":self.generation})
     }
@@ -199,6 +199,8 @@ struct Provider {
     destination: Option<PathBuf>,
 }
 
+const GEMINI_ACTIVITY: &[u8] = br#"[{"header":"Gemini Apps","title":"Prompted cobalt retained provider note","time":"2026-10-14T09:00:00.000Z","subtitles":[{"value":"cobalt retained provider note"}],"safeHtmlItem":[{"html":"<p>answer</p>"}]}]"#;
+
 unsafe extern "C" fn provider(context: *mut c_void, destination: *const c_char) -> bool {
     PROVIDER_CALLS.fetch_add(1, Ordering::SeqCst);
     let state = unsafe { &mut *context.cast::<Provider>() };
@@ -209,13 +211,9 @@ unsafe extern "C" fn provider(context: *mut c_void, destination: *const c_char) 
     let destination = Path::new(unsafe { CStr::from_ptr(destination) }.to_str().unwrap());
     state.destination = Some(destination.to_path_buf());
     fs::create_dir(destination.join("empty")).unwrap();
-    fs::write(
-        destination.join("note.md"),
-        b"# Picked notes\n\ncobalt retained provider note\n",
-    )
-    .unwrap();
+    fs::write(destination.join("MyActivity.json"), GEMINI_ACTIVITY).unwrap();
     let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
-    fs::File::open(destination.join("note.md"))
+    fs::File::open(destination.join("MyActivity.json"))
         .unwrap()
         .set_times(fs::FileTimes::new().set_modified(
             std::time::SystemTime::UNIX_EPOCH
@@ -294,8 +292,15 @@ fn private_cache_alias_saves_original_bytes_and_retires_temporary_copy() {
     assert_eq!(result["state"], "saved", "{result}");
     let id = result["import_id"].as_str().unwrap();
     assert_eq!(
-        fs::read(fixture.root.join("imports").join(id).join("tree/note.md")).unwrap(),
-        b"# Picked notes\n\ncobalt retained provider note\n"
+        fs::read(
+            fixture
+                .root
+                .join("imports")
+                .join(id)
+                .join("tree/MyActivity.json")
+        )
+        .unwrap(),
+        GEMINI_ACTIVITY
     );
     no_temporary_copy(&cache);
     fixture.stop();
@@ -427,12 +432,12 @@ fn native_folder_save_preview_start_and_read_use_the_original_service_owner() {
     let id = result["import_id"].as_str().unwrap();
     let directory = fixture.root.join("imports").join(id);
     assert_eq!(
-        fs::read(directory.join("tree/note.md")).unwrap(),
-        b"# Picked notes\n\ncobalt retained provider note\n"
+        fs::read(directory.join("tree/MyActivity.json")).unwrap(),
+        GEMINI_ACTIVITY
     );
     assert!(directory.join("tree/empty").is_dir());
     let metadata = solstone_core_import::read_import_metadata(&fixture.root, id).unwrap();
-    assert_eq!(metadata["source_hint"], "obsidian");
+    assert_eq!(metadata["source_hint"], "gemini");
     assert_eq!(metadata["timestamp_detection_method"], "path_fallback");
     assert_eq!(metadata["client_item_id"], "native-folder-owner");
     assert!(solstone_core_import::get_attempt_facts(&metadata).is_none());
@@ -499,15 +504,15 @@ fn native_folder_save_preview_start_and_read_use_the_original_service_owner() {
             .any(|hit| hit["day"] == "20261014"
                 && hit["path"]
                     .as_str()
-                    .is_some_and(|path| path.starts_with("20261014/import.obsidian/"))
+                    .is_some_and(|path| path.starts_with("20261014/import.gemini/"))
                 && hit["text"].as_str().is_some_and(
                     |text| text.contains("cobalt") && text.contains("retained provider note")
                 )),
         "{search}"
     );
     assert_eq!(
-        fs::read(directory.join("tree/note.md")).unwrap(),
-        b"# Picked notes\n\ncobalt retained provider note\n"
+        fs::read(directory.join("tree/MyActivity.json")).unwrap(),
+        GEMINI_ACTIVITY
     );
     fixture.stop();
     fixture.stopped();
@@ -537,8 +542,8 @@ fn failed_registration_reports_actual_saved_custody_without_undoing_originals() 
     assert!(validate_timestamp(id).is_ok());
     let directory = fixture.root.join("imports").join(id);
     assert_eq!(
-        fs::read(directory.join("tree/note.md")).unwrap(),
-        b"# Picked notes\n\ncobalt retained provider note\n"
+        fs::read(directory.join("tree/MyActivity.json")).unwrap(),
+        GEMINI_ACTIVITY
     );
     assert!(directory.join("tree/empty").is_dir());
     assert!(directory.join("folder-custody.json").is_file());

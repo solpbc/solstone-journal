@@ -100,7 +100,6 @@ fn failed_claim(_: RegistrySource, _: &Path) -> Result<bool, ()> {
 fn boundary_claim(source: RegistrySource, path: &Path) -> Result<bool, ()> {
     Ok(match source {
         RegistrySource::Document => top_level_pdf(path),
-        RegistrySource::Obsidian => has_obsidian_marker(path),
         _ => false,
     })
 }
@@ -118,32 +117,6 @@ fn top_level_pdf(path: &Path) -> bool {
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
         })
     })
-}
-fn has_obsidian_marker(path: &Path) -> bool {
-    path.join("logseq").is_dir() || visible_markdown_count(path) >= 3
-}
-fn visible_markdown_count(path: &Path) -> usize {
-    fs::read_dir(path)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            !path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with('.'))
-        })
-        .map(|path| {
-            if path.is_dir() {
-                visible_markdown_count(&path)
-            } else {
-                usize::from(
-                    path.extension()
-                        .is_some_and(|extension| extension.eq_ignore_ascii_case("md")),
-                )
-            }
-        })
-        .sum()
 }
 fn deterministic(_: &Path, _: Option<&str>) -> Option<DetectedTimestamp> {
     Some(answer())
@@ -412,7 +385,6 @@ fn registry_exports_keep_the_supplied_fallback_across_later_resolution() {
     let export = tree.file("export.zip");
     for source in [
         "ics",
-        "obsidian",
         "claude",
         "chatgpt",
         "gemini",
@@ -678,7 +650,7 @@ fn ac12c_unexpected_model_failure_is_named_refusal() {
 #[test]
 fn ac16_corpus_directory_and_extension_boundaries() {
     // corpus bare::{UPPER.PDF,dir_pdf_in_subdir,dir_vault_3md_hidden,dir_vault_3md_nested,dir_vault_logseq,dir_only_images}
-    // These faithful predicate stand-ins certify resolver dispatch/order only; source-body certification waits for document/obsidian ports.
+    // These faithful predicate stand-ins certify resolver dispatch/order only; source-body certification waits for the document port.
     let tree = Tree::new();
     let upper = tree.file("UPPER.PDF");
     let mut upper_seam = seams();
@@ -706,14 +678,6 @@ fn ac16_corpus_directory_and_extension_boundaries() {
     let images = tree.0.join("dir_only_images");
     fs::create_dir_all(&images).unwrap();
     fs::write(images.join("image.png"), b"image").unwrap();
-    for path in [&sub_pdf, &hidden, &images] {
-        let mut seam = seams();
-        seam.claims = boundary_claim;
-        assert!(matches!(
-            solstone_core_import::detect::resolve_import(&opt(path), &mut seam),
-            Err(ResolutionError::UnclaimedDirectory)
-        ));
-    }
     let nested = tree.0.join("dir_vault_3md_nested");
     fs::create_dir_all(nested.join("notes")).unwrap();
     for index in 0..3 {
@@ -725,15 +689,12 @@ fn ac16_corpus_directory_and_extension_boundaries() {
     }
     let logseq = tree.0.join("dir_vault_logseq");
     fs::create_dir_all(logseq.join("logseq")).unwrap();
-    for path in [&nested, &logseq] {
+    for path in [&sub_pdf, &hidden, &images, &nested, &logseq] {
         let mut seam = seams();
         seam.claims = boundary_claim;
         assert!(matches!(
             solstone_core_import::detect::resolve_import(&opt(path), &mut seam),
-            Ok(ResolutionOutcome::Resolved {
-                source: ResolvedSource::Registry(RegistrySource::Obsidian),
-                ..
-            })
+            Err(ResolutionError::UnclaimedDirectory)
         ));
     }
 }

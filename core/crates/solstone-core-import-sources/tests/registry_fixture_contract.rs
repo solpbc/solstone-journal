@@ -59,7 +59,7 @@ fn registry_and_auxiliary_grammar_match_the_frozen_fixture_contract() {
             .as_array()
             .unwrap(),
     );
-    assert_eq!(syncable_names, ["plaud", "obsidian", "audio"]);
+    assert_eq!(syncable_names, ["plaud", "audio"]);
     assert_eq!(syncable_names, syncable_backends);
 
     let native_sync_backends = strings(grammar["native_sync_backends"].as_array().unwrap());

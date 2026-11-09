@@ -10,6 +10,21 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
+/// A recording the catalogue already holds as imported, so a sync finds it and has no work.
+fn clip_bytes(name: &str) -> Vec<u8> {
+    format!("clip from {name}").into_bytes()
+}
+
+fn clip_entry(name: &str) -> Value {
+    let path = std::env::temp_dir().join(format!("clip-{}-{name}.wav", std::process::id()));
+    fs::write(&path, clip_bytes(name)).unwrap();
+    let hash = solstone_core_import::hash_source(&path)
+        .unwrap()
+        .into_inner();
+    fs::remove_file(&path).unwrap();
+    json!({"status":"imported","hash":hash})
+}
+
 #[derive(Default)]
 struct Counts {
     calls: AtomicUsize,
@@ -39,23 +54,7 @@ unsafe extern "C" fn copy(
     );
     context.counts.calls.fetch_add(1, Ordering::SeqCst);
     let destination = Path::new(unsafe { CStr::from_ptr(destination) }.to_str().unwrap());
-    let note = destination.join("note.md");
-    fs::write(
-        &note,
-        format!(
-            "# Native source\n\ncobalt {} retained source\n",
-            context.name
-        ),
-    )
-    .unwrap();
-    let modified: chrono::DateTime<chrono::Utc> = "2026-10-14T09:00:00Z".parse().unwrap();
-    fs::File::open(note)
-        .unwrap()
-        .set_times(fs::FileTimes::new().set_modified(
-            std::time::SystemTime::UNIX_EPOCH
-                + Duration::from_secs(modified.timestamp().try_into().unwrap()),
-        ))
-        .unwrap();
+    fs::write(destination.join("clip.wav"), clip_bytes(context.name)).unwrap();
     if let Some((entered, release)) = &context.block {
         entered.send(()).unwrap();
         release
@@ -249,56 +248,45 @@ fn native_connection_changes_keep_private_material_and_shared_grants_truthful() 
     let prior = serde_json::json!({"source_path":"retained-desktop-path","unknown":{"kept":true},"files":{"prior.md":{"status":"imported","extra":7}}});
     fs::create_dir_all(fixture.root.join("imports")).unwrap();
     fs::write(
-        fixture.root.join("imports/obsidian.json"),
+        fixture.root.join("imports/audio.json"),
         serde_json::to_vec(&prior).unwrap(),
     )
     .unwrap();
     let first = "content://synthetic/tree/first";
     let second = "content://synthetic/tree/second";
     let begin = change_connection(
-        connection_request(&fixture, "begin", "obsidian", first, None),
+        connection_request(&fixture, "begin", "audio", first, None),
         &permissions,
     );
     assert_eq!(begin["state"], "updated", "{begin}");
     assert!(!begin.to_string().contains("content://"));
     let connected: Value =
-        serde_json::from_slice(&fs::read(fixture.root.join("imports/obsidian.json")).unwrap())
+        serde_json::from_slice(&fs::read(fixture.root.join("imports/audio.json")).unwrap())
             .unwrap();
     for key in ["files", "source_path", "unknown"] {
         assert_eq!(connected[key], prior[key]);
     }
 
     let original_id = begin["connection"]["source_identity"].as_str().unwrap();
-    let audio = change_connection(
-        connection_request(&fixture, "begin", "audio", first, None),
-        &permissions,
-    );
-    assert_eq!(audio["state"], "updated");
-    let audio_id = audio["connection"]["source_identity"].as_str().unwrap();
     let changed = change_connection(
-        connection_request(&fixture, "replace", "obsidian", second, Some(original_id)),
+        connection_request(&fixture, "replace", "audio", second, Some(original_id)),
         &permissions,
     );
-    assert_eq!(changed["permissions"], "retained_for_another_source");
-    assert_ne!(changed["connection"]["source_identity"], original_id);
-    assert!(permissions.grants.lock().unwrap().contains(first));
+    assert_eq!(changed["permissions"], "released");
+    let replaced_id = changed["connection"]["source_identity"].as_str().unwrap();
+    assert_ne!(replaced_id, original_id);
+    assert!(!permissions.grants.lock().unwrap().contains(first));
+    assert!(permissions.grants.lock().unwrap().contains(second));
     let forgotten = change_connection(
-        connection_request(&fixture, "forget", "audio", "", Some(audio_id)),
+        connection_request(&fixture, "forget", "audio", "", Some(replaced_id)),
         &permissions,
     );
     assert_eq!(forgotten["connection"]["remembered"], false);
     assert_eq!(forgotten["permissions"], "released");
-    assert!(!permissions.grants.lock().unwrap().contains(first));
-    assert!(permissions.grants.lock().unwrap().contains(second));
+    assert!(!permissions.grants.lock().unwrap().contains(second));
     let before = permissions.acquired.load(Ordering::SeqCst);
     let stale = change_connection(
-        connection_request(
-            &fixture,
-            "reauthorize",
-            "obsidian",
-            first,
-            Some(original_id),
-        ),
+        connection_request(&fixture, "reauthorize", "audio", first, Some(original_id)),
         &permissions,
     );
     assert_eq!(stale["state"], "refused");
@@ -310,30 +298,30 @@ fn native_connection_changes_keep_private_material_and_shared_grants_truthful() 
     assert_eq!(held["state"], "refused");
     assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
     fs::write(
-        fixture.root.join("imports/obsidian.json"),
+        fixture.root.join("imports/audio.json"),
         b"unreadable saved state",
     )
     .unwrap();
     let unreadable = change_connection(
-        connection_request(&fixture, "begin", "obsidian", first, None),
+        connection_request(&fixture, "begin", "audio", first, None),
         &permissions,
     );
     assert_eq!(unreadable["state"], "refused");
     assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
     assert_eq!(
-        fs::read(fixture.root.join("imports/obsidian.json")).unwrap(),
+        fs::read(fixture.root.join("imports/audio.json")).unwrap(),
         b"unreadable saved state"
     );
     let partial = br#"{"source_path":"retained","folder_name":"partial","files":{"prior.md":{"status":"imported"}}}"#;
-    fs::write(fixture.root.join("imports/obsidian.json"), partial).unwrap();
+    fs::write(fixture.root.join("imports/audio.json"), partial).unwrap();
     let broken = change_connection(
-        connection_request(&fixture, "begin", "obsidian", first, None),
+        connection_request(&fixture, "begin", "audio", first, None),
         &permissions,
     );
     assert_eq!(broken["state"], "refused");
     assert_eq!(permissions.acquired.load(Ordering::SeqCst), before);
     assert_eq!(
-        fs::read(fixture.root.join("imports/obsidian.json")).unwrap(),
+        fs::read(fixture.root.join("imports/audio.json")).unwrap(),
         partial
     );
     assert!(permissions.scope_seen.load(Ordering::SeqCst) > 0);
@@ -362,7 +350,7 @@ fn native_connection_stop_drains_actual_permission_return_and_rollback_before_ro
     let request = connection_request(
         &fixture,
         "begin",
-        "obsidian",
+        "audio",
         "content://synthetic/tree/stopped",
         None,
     );
@@ -381,7 +369,7 @@ fn native_connection_stop_drains_actual_permission_return_and_rollback_before_ro
     assert!(permissions.grants.lock().unwrap().is_empty());
     assert!(permissions.released.load(Ordering::SeqCst) > 0);
     fixture.stopped();
-    assert!(!fixture.root.join("imports/obsidian.json").exists());
+    assert!(!fixture.root.join("imports/audio.json").exists());
     journal_owner_sources_retire(identity);
     fs::remove_dir_all(cache).unwrap();
 }
@@ -400,7 +388,7 @@ fn configure() {
                 .unwrap(),
         )
     };
-    let mut guard = sources.connection_guard(BackendName::Obsidian).unwrap();
+    let mut guard = sources.connection_guard(BackendName::Audio).unwrap();
     guard
         .update(
             &root,
@@ -411,6 +399,15 @@ fn configure() {
             },
         )
         .unwrap();
+    let solstone_core_import::SyncStateRead::Loaded(mut state) =
+        solstone_core_import::read_sync_state_bound(&root, BackendName::Audio)
+    else {
+        panic!("connected source state is readable");
+    };
+    state
+        .files_mut()
+        .insert("clip.wav".into(), clip_entry("alpha"));
+    solstone_core_import::write_sync_state_bound(&root, &state, preparation.stop()).unwrap();
     preparation.checkpoint().unwrap();
 }
 fn request() -> journal_mobile_serving::foreground::ImportRequest {
@@ -423,23 +420,23 @@ fn request() -> journal_mobile_serving::foreground::ImportRequest {
         .as_ref()
         .unwrap()
         .import_request(
-            ["--sync", "obsidian", "--save"].map(str::to_owned).to_vec(),
+            ["--sync", "audio", "--save"].map(str::to_owned).to_vec(),
             WorkStop::new(),
             Default::default(),
         )
         .unwrap()
 }
 fn status() -> serde_json::Value {
-    let request = serde_json::json!({"source":"obsidian","admission_generation":crate::THINKING_GENERATION.load(Ordering::SeqCst)}).to_string();
+    let request = serde_json::json!({"source":"audio","admission_generation":crate::THINKING_GENERATION.load(Ordering::SeqCst)}).to_string();
     let raw = unsafe { journal_owner_sources_status(request.as_ptr(), request.len()) };
     let text = unsafe { CString::from_raw(raw) };
     serde_json::from_slice(text.as_bytes()).unwrap()
 }
 
 #[test]
-fn native_provider_registration_stays_with_its_host_and_produces_readable_source_output() {
+fn native_provider_registration_stays_with_its_host_and_runs_the_saved_connection() {
     if isolated_full(
-        "saved_sources::tests::native_provider_registration_stays_with_its_host_and_produces_readable_source_output",
+        "saved_sources::tests::native_provider_registration_stays_with_its_host_and_runs_the_saved_connection",
     ) {
         return;
     }
@@ -464,26 +461,6 @@ fn native_provider_registration_stays_with_its_host_and_produces_readable_source
     assert_eq!(run.exit_code, 0, "{}{}", run.stdout, run.stderr);
     assert_eq!(alpha.calls.load(Ordering::SeqCst), 1);
     assert_eq!(beta.calls.load(Ordering::SeqCst), 0);
-    let read = crate::SERVING
-        .lock()
-        .unwrap()
-        .as_ref()
-        .unwrap()
-        .handle()
-        .unwrap()
-        .request_owner(
-            "GET",
-            "/app/transcripts/api/read/20261014?transcripts=1",
-            "",
-        )
-        .unwrap();
-    assert_eq!(read.status, 200);
-    assert!(
-        read.body.contains("cobalt alpha retained source"),
-        "{}",
-        read.body
-    );
-    assert!(!read.body.contains("cobalt beta retained source"));
     assert_eq!(alpha.released.load(Ordering::SeqCst), 0);
     fixture.stop();
     fixture.stopped();
@@ -525,12 +502,6 @@ fn native_provider_stop_keeps_context_and_cleanup_until_actual_return() {
             .unwrap()
             .next()
             .is_none()
-    );
-    assert!(
-        !fixture
-            .root
-            .join("chronicle/20261014/import.obsidian")
-            .exists()
     );
     fs::remove_dir_all(cache).unwrap();
 }

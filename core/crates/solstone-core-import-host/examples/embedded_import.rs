@@ -25,7 +25,7 @@
 //! returns. This call cannot kill that frame.
 //!
 //! Call `classify_arguments` before preview. Its sync backend and `--path`
-//! say whether Obsidian or audio omitted a path; this example does not read
+//! say whether audio omitted a path; this example does not read
 //! saved source settings. A held Body entry stays on the desktop importer.
 //! A stored Oura sync that already carries `--confirm-body-save` or
 //! `--scheduled` keeps the existing handwritten approval. `connect_oura` is

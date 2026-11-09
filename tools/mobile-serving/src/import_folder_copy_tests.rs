@@ -136,7 +136,7 @@ fn successful_registration_and_stop_after_custody_preserve_committed_effects() {
         Ok(())
     }, |bound, folder| {
         stop.request();
-        let metadata = serde_json::json!({"source":"obsidian", "file_path":format!("imports/{}/tree",folder.import_id.as_str()), "source_hash":folder.legacy_hash});
+        let metadata = serde_json::json!({"source":"gemini", "file_path":format!("imports/{}/tree",folder.import_id.as_str()), "source_hash":folder.legacy_hash});
         folder.write_metadata_bound(bound, metadata.as_object().unwrap()).map(|()| bound.canonical_path().join("imports").join(folder.import_id.as_str()).join("import.json")).map_err(|error| error.to_string())
     }).unwrap();
     let FolderCopyResult::Registered { folder, value } = outcome else {
@@ -145,7 +145,7 @@ fn successful_registration_and_stop_after_custody_preserve_committed_effects() {
     assert!(value.is_file());
     assert_eq!(
         read_import_metadata(root.path(), folder.import_id.as_str()).unwrap()["source"],
-        "obsidian"
+        "gemini"
     );
     assert_eq!(
         fs::read(

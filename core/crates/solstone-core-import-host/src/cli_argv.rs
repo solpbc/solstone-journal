@@ -22,15 +22,10 @@ use solstone_core_import::detect::{
     ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
     ResolvedSource, resolve_import,
 };
-use solstone_core_import::publish::{PublicationInput, PublicationStatus, publish};
 use solstone_core_import::sync_audio::{
     AudioCandidate, AudioPreviewSeams, AudioProbe, AudioSaveSeams, AudioSyncRequest,
     DirectoryScanner, FilesystemAudioStateWriter, ManifestLookup, sync_audio_preview,
     sync_audio_save,
-};
-use solstone_core_import::sync_obsidian::{
-    ObsidianHomeCandidates, ObsidianNote, ObsidianPreviewSeams, ObsidianSaveSeams, ObsidianScanner,
-    ObsidianSyncRequest, ObsidianWriter, sync_obsidian_preview, sync_obsidian_save,
 };
 use solstone_core_import::sync_plaud::{
     FilesystemPlaudStateWriter, ImportPipeline, PipelineAuto, PipelineImportRequest,
@@ -38,7 +33,6 @@ use solstone_core_import::sync_plaud::{
     PlaudManifestLookup, PlaudPreviewSeams, PlaudSaveSeams, PlaudSyncRequest, SyncClock,
     sanitize_filename, sync_plaud_preview, sync_plaud_save,
 };
-use solstone_core_import_sources::{obsidian, save};
 
 use crate::audio::{AudioImportRequest, import_audio};
 use crate::audio_publication::finish_audio_attempt;
@@ -260,6 +254,7 @@ pub fn force_day_notice_with(
 pub fn grammar_outcome_before_preflight(args: &[String]) -> Option<CliRun> {
     match parse_arguments(args) {
         Ok(ParsedCommand::Help) => Some(success(cli_render::HELP.to_owned())),
+        Ok(ParsedCommand::RetiredNotesFolder) => Some(notes_folder_retired()),
         Ok(_) => None,
         Err(arguments) => Some(argparse_error(arguments)),
     }
@@ -301,6 +296,9 @@ fn run_after_parse(
     journal_path: &Path,
     preflight: impl FnOnce() -> Result<(), SupervisorRefusal>,
 ) -> CliOutcome {
+    if matches!(parsed, ParsedCommand::RetiredNotesFolder) {
+        return rendered(notes_folder_retired());
+    }
     if let Err(refusal) = preflight() {
         return rendered(refusal_run(refusal));
     }
@@ -457,13 +455,13 @@ pub enum BodyAdmission {
 /// Parsed shape of one importer invocation.
 ///
 /// Built by the same grammar as execution. It does not open a journal, probe
-/// the supervisor, read source bytes, or load saved Obsidian or audio settings.
+/// the supervisor, read source bytes, or load saved audio settings.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArgumentClass {
     /// Backend of `--sync`. `None` for every other command.
     pub sync_source: Option<String>,
-    /// `--path` when the command names one. Obsidian and audio sync treat
-    /// `None` as the caller's saved source settings.
+    /// `--path` when the command names one. Audio sync treats `None` as the
+    /// caller's saved source settings.
     pub explicit_path: Option<PathBuf>,
     /// Held ordinary Body entry, stored gated Oura, or neither.
     pub body: BodyAdmission,
@@ -471,7 +469,7 @@ pub struct ArgumentClass {
 
 /// Classify `args` with the importer grammar.
 ///
-/// The class is how a caller decides a saved Obsidian or audio path, and how
+/// The class is how a caller decides a saved audio path, and how
 /// it separates a held Body entry from stored gated Oura, without scanning
 /// flags itself. Acceptance matches [`admit_arguments`]. An import with no
 /// media path is rejected with the same requirement execution reports.
@@ -577,6 +575,7 @@ fn dispatch_parsed(
             }
             rendered(run_connect(&backend, journal_path))
         }
+        ParsedCommand::RetiredNotesFolder => rendered(notes_folder_retired()),
         ParsedCommand::Sync { backend, options } => {
             if dispatch.embedded() && backend == "oura" && !oura_sync_is_stored(&options) {
                 return rendered(embedded_body_refused());
@@ -604,6 +603,14 @@ fn dispatch_parsed(
         )),
         ParsedCommand::Import(options) => run_import(options, journal_path, dispatch),
     }
+}
+
+fn notes_folder_retired() -> CliRun {
+    failure(
+        "",
+        &format!("{}\n", cli_render::NOTES_FOLDER_IMPORT_RETIRED),
+        1,
+    )
 }
 
 fn refusal_run(refusal: SupervisorRefusal) -> CliRun {
@@ -658,13 +665,10 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
             }
         }
         "plaud" => run_plaud_sync(journal_path, options),
-        "obsidian" => run_obsidian_sync(journal_path, options),
         "audio" => run_audio_sync(journal_path, options),
         _ => failure(
             "",
-            &format!(
-                "Unknown sync backend: {backend}\nAvailable backends: plaud, obsidian, audio, oura\n"
-            ),
+            &format!("Unknown sync backend: {backend}\nAvailable backends: plaud, audio, oura\n"),
             1,
         ),
     }
@@ -1594,53 +1598,6 @@ fn run_audio_sync(journal_path: &Path, options: &Options) -> CliRun {
     }
 }
 
-fn run_obsidian_sync(journal_path: &Path, options: &Options) -> CliRun {
-    let source_path = options.path.clone();
-    let candidates = HomeObsidianCandidates::from_environment();
-    let scanner = FilesystemObsidianScanner;
-    let clock = SystemSyncClock;
-    let preview = ObsidianPreviewSeams {
-        candidates: &candidates,
-        scanner: &scanner,
-        clock: &clock,
-    };
-    if !options.save {
-        let request = ObsidianSyncRequest::<SyncPreviewRequest>::new(
-            journal_path.to_path_buf(),
-            source_path.clone(),
-            options.force,
-        );
-        let mut seams = preview;
-        return match sync_obsidian_preview(&request, &mut seams) {
-            Ok(outcome) => success(cli_render::obsidian_sync_preview(
-                source_path.as_deref(),
-                state_file_count(&outcome.state),
-                outcome.errors.len(),
-            )),
-            Err(error) => failure("", &format!("{error}\n"), 1),
-        };
-    }
-    let request = ObsidianSyncRequest::<SyncSaveRequest>::new(
-        journal_path.to_path_buf(),
-        source_path,
-        options.force,
-    );
-    let mut writer = JournalObsidianWriter { journal_path };
-    let mut seams = ObsidianSaveSeams {
-        preview,
-        writer: &mut writer,
-    };
-    match sync_obsidian_save(&request, &mut seams) {
-        Ok(outcome) => sync_saved(
-            "Obsidian",
-            outcome.imported,
-            &outcome.errors,
-            outcome.stopped,
-        ),
-        Err(error) => failure("", &format!("{error}\n"), 1),
-    }
-}
-
 fn run_plaud_sync(journal_path: &Path, options: &Options) -> CliRun {
     let mut catalogue = PlaudApi::new();
     let mut download = PlaudApi::new();
@@ -1906,116 +1863,6 @@ impl ManifestLookup for FilesystemManifestLookup<'_> {
         .ok()
         .and_then(|scan| scan.found)
         .is_some()
-    }
-}
-
-/// The vault folders a sync looks in when it has no path and no vault of its own yet.
-struct HomeObsidianCandidates {
-    paths: Vec<PathBuf>,
-}
-
-impl HomeObsidianCandidates {
-    fn from_environment() -> Self {
-        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-            .filter(|home| !home.is_empty())
-            .map(PathBuf::from);
-        Self {
-            paths: home
-                .map(|home| {
-                    vec![
-                        home.join("Documents").join("Obsidian"),
-                        home.join("Obsidian"),
-                    ]
-                })
-                .unwrap_or_default(),
-        }
-    }
-}
-
-impl ObsidianHomeCandidates for HomeObsidianCandidates {
-    fn candidates(&self) -> &[PathBuf] {
-        &self.paths
-    }
-}
-
-/// Sync reads a vault the way a vault import does, so both skip the same folders.
-struct FilesystemObsidianScanner;
-
-impl ObsidianScanner for FilesystemObsidianScanner {
-    fn is_directory(&self, path: &Path) -> bool {
-        path.is_dir()
-    }
-
-    fn notes(&self, vault: &Path) -> Result<Vec<ObsidianNote>, String> {
-        obsidian::collect_notes(vault)
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .map(|note| {
-                let path = vault.join(&note.source_path);
-                Ok(ObsidianNote {
-                    relative_path: note.source_path.to_string_lossy().into_owned(),
-                    filename: path
-                        .file_name()
-                        .and_then(|value| value.to_str())
-                        .ok_or_else(|| format!("note filename is not UTF-8: {}", path.display()))?
-                        .to_owned(),
-                    title: note.title,
-                    modified_at: note.modified.timestamp_micros() as f64 / 1_000_000.0,
-                    content_hash: solstone_core_import::hash_source(&path)
-                        .map_err(|error| error.to_string())?
-                        .into_inner(),
-                })
-            })
-            .collect()
-    }
-}
-
-/// Sync writes each changed note as it stands now, at the moment the file last changed.
-struct JournalObsidianWriter<'a> {
-    journal_path: &'a Path,
-}
-
-impl ObsidianWriter for JournalObsidianWriter<'_> {
-    fn import_note(&mut self, vault: &Path, note: &ObsidianNote) -> Result<u64, String> {
-        let entry = obsidian::read_note(vault, &vault.join(&note.relative_path))
-            .map_err(|error| error.to_string())?;
-        let zone = solstone_core_journal_config::owner_zone(self.journal_path);
-        let rendered = obsidian::render_notes(vec![entry], &zone);
-        let written = save::write_rendered(self.journal_path, None, &rendered);
-        if let Some(error) = written.error {
-            return Err(error.to_string());
-        }
-        let segments = written
-            .created
-            .iter()
-            .map(|file| file.created_segment())
-            .collect::<Vec<_>>();
-        if segments.is_empty() {
-            return Ok(0);
-        }
-        let files = written
-            .created
-            .iter()
-            .map(|file| file.path.clone())
-            .collect::<Vec<_>>();
-        let record = publish(PublicationInput {
-            journal: self.journal_path,
-            import_dir: None,
-            import_id: "sync:obsidian",
-            importer: "obsidian",
-            revision: None,
-            segments: &segments,
-            files_created: &files,
-            index_only: &[],
-            may_write_record: None,
-        })
-        .map_err(|error| error.to_string())?;
-        if record.status != PublicationStatus::Success {
-            return Err(
-                "saved to your journal, but it could not confirm the note is ready to search; run it again".to_owned(),
-            );
-        }
-        Ok(u64::try_from(segments.len()).expect("segment count fits u64"))
     }
 }
 
@@ -2308,6 +2155,8 @@ enum ParsedCommand {
         backend: String,
         options: Options,
     },
+    /// A form that used to bring a folder of notes in. It only refuses.
+    RetiredNotesFolder,
     AudioArchive(crate::audio_archive::AudioArchiveDispatchOptions),
     AudioArchiveStatus {
         run_id: String,
@@ -2321,6 +2170,9 @@ enum ParsedCommand {
     },
     Import(Options),
 }
+
+/// The argument value of the retired notes-folder import and sync.
+const RETIRED_NOTES_SOURCE: &str = "obsidian";
 
 fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
     let mut options = Options::default();
@@ -2372,6 +2224,11 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
             options.timestamp = Some(timestamp.clone());
             return Err(format!("unrecognized arguments: {}", extras.join(" ")));
         }
+    }
+    if options.sync.as_deref() == Some(RETIRED_NOTES_SOURCE)
+        || options.source.as_deref() == Some(RETIRED_NOTES_SOURCE)
+    {
+        return Ok(ParsedCommand::RetiredNotesFolder);
     }
     if options.archive_identity.is_some() && options.audio_archive.is_none() {
         return Err("--archive-identity is only valid with --audio-archive".to_owned());

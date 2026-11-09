@@ -26,7 +26,6 @@ pub async fn get(journal_root: PathBuf) -> Response {
         .unwrap_or_default();
     json_response(json!({
         "plaud": status(schedules.get("sync:plaud"), source_sync_plaud_available(&config)),
-        "obsidian": status(schedules.get("sync:obsidian"), true),
     }))
 }
 
@@ -114,21 +113,19 @@ pub fn parse_sync_update(body: Bytes) -> Result<Vec<(&'static str, bool)>, Box<R
         return Err(Box::new(missing_request_body()));
     }
     let mut changes = Vec::new();
-    for service in ["plaud", "obsidian"] {
-        if let Some(value) = request.get(service) {
-            let Some(value) = value.as_object() else {
-                return Err(Box::new(invalid_config_value(format!(
-                    "{service} must be an object"
-                ))));
+    if let Some(value) = request.get("plaud") {
+        let Some(value) = value.as_object() else {
+            return Err(Box::new(invalid_config_value(
+                "plaud must be an object".to_owned(),
+            )));
+        };
+        if let Some(enabled) = value.get("enabled") {
+            let Some(enabled) = enabled.as_bool() else {
+                return Err(Box::new(invalid_config_value(
+                    "plaud.enabled must be a boolean".to_owned(),
+                )));
             };
-            if let Some(enabled) = value.get("enabled") {
-                let Some(enabled) = enabled.as_bool() else {
-                    return Err(Box::new(invalid_config_value(format!(
-                        "{service}.enabled must be a boolean"
-                    ))));
-                };
-                changes.push((service, enabled));
-            }
+            changes.push(("plaud", enabled));
         }
     }
     Ok(changes)

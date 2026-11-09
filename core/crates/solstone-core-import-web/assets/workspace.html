@@ -1689,7 +1689,7 @@ async function loadGuidedFlow(sourceName) {
   }
   const uploadStepNumber = guideStepNumber;
   const configureStepNumber = uploadStepNumber + 1;
-  const folderPicker = window.JournalOwnerFolders && ['obsidian', 'audio_archive', 'gemini', 'document'].includes(source.name)
+  const folderPicker = window.JournalOwnerFolders && ['audio_archive', 'gemini', 'document'].includes(source.name)
     ? '<button id="guidedFolderBtn" class="import-secondary-btn" type="button">choose folder</button><p id="guidedFolderStatus" role="status" aria-live="polite"></p>' : '';
 
   guideSteps.innerHTML = `
@@ -2291,7 +2291,7 @@ async function saveGuidedPath(source) {
   const revision = previewRevisions.guided;
   const pathInput = document.getElementById('guidedPathInput');
   if (!pathInput || !pathInput.value.trim()) {
-    throw new Error('Please enter the path to your vault folder.');
+    throw new Error('Please enter the path to your folder.');
   }
 
   const guidedSettingInput = document.getElementById('guidedSettingInput');

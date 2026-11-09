@@ -33,12 +33,6 @@ pub const IMPORTERS: &[ImporterRow] = &[
         description: "Import events from ICS calendar files or a Google Calendar export ZIP",
     },
     ImporterRow {
-        name: "obsidian",
-        display_name: "Obsidian / Logseq Vault",
-        file_patterns: &["*.md"],
-        description: "Import notes from an Obsidian or Logseq vault",
-    },
-    ImporterRow {
         name: "claude",
         display_name: "Claude Chat History",
         file_patterns: &["*.zip", "*.dms"],
@@ -94,7 +88,10 @@ pub const IMPORTERS: &[ImporterRow] = &[
     },
 ];
 
-pub const BACKENDS: &[&str] = &["plaud", "obsidian", "audio", "oura"];
+pub const BACKENDS: &[&str] = &["plaud", "audio", "oura"];
+
+/// What a retired notes-folder form tells the owner instead of importing.
+pub const NOTES_FOLDER_IMPORT_RETIRED: &str = "importing a folder of notes is gone; an Obsidian vault comes into your journal when you turn it on in the solstone app on the computer where the vault lives";
 
 pub const HELP: &str = concat!(
     "usage: solstone journal importer [-h] [--timestamp TIMESTAMP] [--facet FACET] [--no-facet]\n",
@@ -118,7 +115,7 @@ pub const HELP: &str = concat!(
     "  --no-facet            File these Strava workouts under no facet, whatever the remembered\n",
     "                        default is\n",
     "  --setting SETTING\n",
-    "  --source SOURCE       Required for classified formats (ics, vault, chat export, image, PDF)\n",
+    "  --source SOURCE       Required for classified formats (ics, chat export, image, PDF)\n",
     "  --force               Force re-import; body sources create a separate import\n",
     "  --auto [AUTO]         Adopt the detected timestamp; AUTO is guidance, not the file path\n",
     "  --dry-run             Show what would be imported without writing to the journal\n",
@@ -213,13 +210,6 @@ pub fn audio_sync_preview(source: &Path, files: usize, errors: usize) -> String 
         "Audio sync preview complete: source={} files={files} errors={errors}\n",
         source.display()
     )
-}
-
-pub fn obsidian_sync_preview(source: Option<&Path>, files: usize, errors: usize) -> String {
-    let source = source
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "configured vault".to_owned());
-    format!("Obsidian sync preview complete: source={source} files={files} errors={errors}\n")
 }
 
 /// The outcome of a sync that saved: how many items reached the journal, and how many failed.
