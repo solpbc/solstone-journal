@@ -86,7 +86,7 @@
     .restore-lane { display: flex; gap: .55rem; align-items: flex-start; min-height: 44px; padding: .6rem .7rem; border: 1px solid var(--hairline-2); border-radius: 8px; cursor: pointer; }
     .restore-lane:has(input:checked) { border-color: var(--ink); }
     .restore-lane input { min-height: 0; min-width: 0; width: 1.05rem; height: 1.05rem; margin: .15rem 0 0; flex: none; }
-    #restore-list .restore-lane { align-items: center; padding-block: .25rem; }
+    #restore-list .restore-lane { box-sizing: border-box; align-items: center; padding-block: .25rem; }
     #restore-heading:focus, #restore-choose-heading:focus { outline: none; }
     #restore-choose-heading { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; margin: 1rem 0 .4rem; }
     .restore-lane small { display: block; color: var(--ink-soft); }

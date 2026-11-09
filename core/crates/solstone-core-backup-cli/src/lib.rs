@@ -1268,7 +1268,7 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
         }
         // Nothing started, so there is nothing to count.
         _ if reason == Some(RESTORE_REASON_JOURNAL_ALREADY_SET_UP) => runtime_error(format!(
-            "restore failed: {}.",
+            "restore couldn't start: {}.",
             restore_failure_reason("journal_already_set_up")
         )),
         _ => match (reason, result.recording_failure.as_deref()) {
