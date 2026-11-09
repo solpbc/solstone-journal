@@ -339,3 +339,177 @@ fn crate_reason(error: &TrashError) -> String {
         _ => "your journal couldn't move it to the trash.".to_owned(),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
+mod tests {
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Method, Request, StatusCode};
+    use serde_json::{Value, json};
+    use std::fs;
+    use std::path::Path;
+    use tempfile::TempDir;
+    use tower::ServiceExt;
+
+    const ID: &str = "20260801_090000";
+    const SEGMENT: &str = "chronicle/20260801/import.document/090000_0";
+
+    fn write(root: &Path, rel: &str, bytes: &[u8]) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn journal() -> TempDir {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        write(
+            root.path(),
+            &format!("imports/{ID}/import.json"),
+            json!({"import_id": ID, "original_filename": "report.pdf", "source_hint": "document"})
+                .to_string()
+                .as_bytes(),
+        );
+        write(
+            root.path(),
+            &format!("imports/{ID}/content_manifest.jsonl"),
+            json!({"id": "1", "segments": [{"day": "20260801", "key": "090000_0"}]})
+                .to_string()
+                .as_bytes(),
+        );
+        write(
+            root.path(),
+            &format!("imports/{ID}/manifest.json"),
+            br#"{"source_type": "document"}"#,
+        );
+        write(root.path(), &format!("{SEGMENT}/original.pdf"), b"%PDF");
+        write(
+            root.path(),
+            &format!("{SEGMENT}/document_transcript.md"),
+            b"text",
+        );
+        root
+    }
+
+    async fn call(root: &Path, method: Method, uri: &str, body: Value) -> (StatusCode, Value) {
+        let response = crate::routes(root.to_path_buf())
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_preview_says_what_the_import_holds() {
+        let root = journal();
+        let (status, preview) = call(
+            root.path(),
+            Method::GET,
+            &format!("/app/import/api/imports/{ID}/delete"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{preview}");
+        assert_eq!(preview["source"], "document");
+        assert_eq!(preview["segments"], 1);
+        assert_eq!(preview["originals"], 1);
+        assert_eq!(preview["days"], json!(["20260801", "20260801"]));
+        assert_eq!(preview["deletes_here"], true);
+    }
+
+    #[tokio::test]
+    async fn a_delete_moves_the_whole_import_to_the_trash_with_its_file_name() {
+        let root = journal();
+        let (status, body) = call(
+            root.path(),
+            Method::DELETE,
+            &format!("/app/import/api/imports/{ID}"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(body["trash"]["id"].is_string());
+        assert!(!root.path().join("imports").join(ID).exists());
+        assert!(!root.path().join(SEGMENT).join("original.pdf").exists());
+        let items = solstone_core_trash::list(root.path()).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label.as_deref(), Some("report.pdf"));
+        // Gone from the page, so a second delete finds nothing.
+        let (again, _) = call(
+            root.path(),
+            Method::DELETE,
+            &format!("/app/import/api/imports/{ID}"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(again, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn erase_now_leaves_nothing_in_the_trash() {
+        let root = journal();
+        let (status, body) = call(
+            root.path(),
+            Method::DELETE,
+            &format!("/app/import/api/imports/{ID}"),
+            json!({"erase": true}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["erased"], true);
+        assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_set_reports_each_import_and_keys_what_it_refused() {
+        let root = journal();
+        let (status, body) = call(
+            root.path(),
+            Method::POST,
+            "/app/import/api/imports/delete",
+            json!({"ids": [ID, "20260802_090000"]}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["done"].as_array().unwrap().len(), 1);
+        assert_eq!(body["done"][0]["id"], ID);
+        assert_eq!(body["failed"][0]["id"], "20260802_090000");
+        assert_eq!(body["failed"][0]["key"], "other");
+    }
+
+    #[tokio::test]
+    async fn a_strava_import_deletes_on_its_own_page_for_now() {
+        let root = journal();
+        write(
+            root.path(),
+            &format!("imports/{ID}/manifest.json"),
+            br#"{"source_type": "strava"}"#,
+        );
+        let (status, body) = call(
+            root.path(),
+            Method::DELETE,
+            &format!("/app/import/api/imports/{ID}"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body["reason_code"], "import_delete_elsewhere");
+        assert!(root.path().join("imports").join(ID).is_dir());
+    }
+}
