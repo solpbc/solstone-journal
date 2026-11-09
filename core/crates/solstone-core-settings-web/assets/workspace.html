@@ -2172,6 +2172,7 @@ button:focus:not(:focus-visible) {
 .trash-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
 .trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em .5em .85em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
 .trash-bar[hidden], .trash-bar-group[hidden], .trash-result[hidden] { display: none; }
+.trash-bar:focus, .trash-result:focus { outline: none; }
 .trash-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em .75em; }
 .trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
 .trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
@@ -2795,7 +2796,7 @@ button:focus:not(:focus-visible) {
 
       <div id="removalHistory" class="removals-block">
         <h3 class="settings-subsection-title">removal history</h3>
-        <p class="settings-subsection-desc">a line each time something leaves your journal or your backup, comes back from the trash or is erased: what it was, when, and where. this history never keeps what was in it.</p>
+        <p class="settings-subsection-desc">a line when you remove something, and again if it comes back from the trash or is erased: what it was, when, and where. this history never keeps what was in it.</p>
         <div class="log-panel removals-panel">
           <div class="log-header" id="removalHistoryHeader" hidden>newest first</div>
           <div class="log-entries" id="removalHistoryList" aria-live="polite"><div class="log-empty">loading…</div></div>
