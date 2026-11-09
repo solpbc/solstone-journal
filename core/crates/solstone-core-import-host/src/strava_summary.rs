@@ -27,6 +27,11 @@ pub(crate) struct StravaRunSummary {
     pub records: RecordCounts,
     pub names: StravaNamesOutcome,
     pub conversion: crate::strava_convert::ConversionCounts,
+    /// Workouts already listed that the owner's facet moved, and from where.
+    pub listed_moved: Option<(usize, Vec<String>)>,
+    /// `(shown, would move)` when more would have moved than the owner saw,
+    /// and so none did.
+    pub listed_over: Option<(usize, usize)>,
 }
 
 fn plural(count: u64, one: &str, many: &str) -> String {
@@ -89,6 +94,21 @@ impl StravaRunSummary {
         match (self.shown_facet(), self.facet.basis) {
             (Some(facet), FacetBasis::Chosen) => {
                 let _ = writeln!(text, "you chose the {facet} facet for this import.\n");
+                if let Some((count, from)) = &self.listed_moved {
+                    let _ = writeln!(
+                        text,
+                        "{} already listed on the activities page moved there, from {}.\n",
+                        plural(*count as u64, "workout", "workouts"),
+                        from.join(", ")
+                    );
+                }
+                if let Some((shown, count)) = self.listed_over {
+                    let _ = writeln!(
+                        text,
+                        "nothing already listed moved: {} would have, and you saw {shown}. import again to see the new count.\n",
+                        plural(count as u64, "workout", "workouts"),
+                    );
+                }
             }
             (Some(facet), _) => {
                 let _ = writeln!(
@@ -317,6 +337,8 @@ mod tests {
     fn summary(facet: Option<&str>, basis: FacetBasis) -> StravaRunSummary {
         StravaRunSummary {
             conversion: Default::default(),
+            listed_moved: None,
+            listed_over: None,
             new_workouts: 2,
             updated_workouts: 1,
             replaced_workouts: 0,

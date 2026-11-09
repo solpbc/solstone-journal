@@ -1298,6 +1298,16 @@ fn run_strava_internal(
         .keys()
         .map(ToString::to_string)
         .collect::<BTreeSet<_>>();
+    // Counted again now the lock is held. A run never moves more than the
+    // owner was shown.
+    let would_move = owner_chose
+        .and_then(|facet| crate::strava_convert::listed_moves(journal, &download, facet));
+    let listed_over = dispatch
+        .listed_moves_shown
+        .zip(would_move.as_ref().map(|(count, _)| *count))
+        .filter(|(shown, count)| count > shown);
+    let owner_chose = owner_chose.filter(|_| listed_over.is_none());
+    let listed_moved = would_move.filter(|_| listed_over.is_none());
     let mut conversion = crate::strava_convert::convert_held(
         journal,
         &_source_lock,
@@ -1489,6 +1499,8 @@ fn run_strava_internal(
 
     let run_summary = crate::strava_summary::StravaRunSummary {
         conversion,
+        listed_moved,
+        listed_over,
         new_workouts: corrected_counts.new_workouts as u64,
         updated_workouts: corrected_counts.present_updated as u64,
         replaced_workouts: corrected_counts.replaced_workouts as u64,
@@ -1751,6 +1763,7 @@ mod tests {
             owner_timestamp: Some(timestamp.to_owned()),
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         }
     }
 
@@ -2096,6 +2109,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         }
     }
 
@@ -2866,6 +2880,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         };
         let req = cli_producer_request(root, &dispatch, 1);
         assert_eq!(req.heartbeat_interval, None);
@@ -3246,6 +3261,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         };
 
         // Run 1
@@ -3404,6 +3420,7 @@ mod tests {
             owner_timestamp: None,
             fallback_timestamp: None,
             facet: Default::default(),
+            listed_moves_shown: None,
         }
     }
 

@@ -709,7 +709,8 @@ impl QueryConnection {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.entries = entries;
         // A new query reads the journal as it is now.
-        state.ordinary.clear();
+        state.files.clear();
+        state.may_fold = None;
     }
 }
 
@@ -821,7 +822,19 @@ pub type BodyEntryAdmission = std::sync::Arc<dyn Fn(&str, i64) -> bool + Send + 
 #[derive(Default)]
 pub(crate) struct BodyEntryState {
     entries: BodyEntries,
-    ordinary: BTreeMap<String, Option<Vec<String>>>,
+    files: BTreeMap<String, Option<DayFileView>>,
+    /// Whether a Strava conversion could have left a folded line, asked once.
+    may_fold: Option<bool>,
+}
+
+/// What a query needs from one activity day file.
+struct DayFileView {
+    /// What the file's other records say in the index, by position.
+    ordinary: Vec<String>,
+    /// What a record another now stands for says in the index.
+    superseded: BTreeSet<String>,
+    /// The entry positions of body records that show from another file.
+    moved: BTreeSet<usize>,
 }
 
 /// What this session's queries do with a body record's entry.
@@ -836,14 +849,42 @@ pub(crate) enum BodyEntries {
     Admitted(BodyEntryAdmission),
 }
 
-/// What a day file's other records say in the index, by position. `None` when
-/// the file can't be read: it can vouch for nothing.
-fn ordinary_entries_of(journal: &Path, path: &str) -> Option<Vec<String>> {
+/// `None` when the file can't be read: it can vouch for nothing.
+fn day_file_view(journal: &Path, path: &str) -> Option<DayFileView> {
+    use solstone_core_format::content::{body_record_at, is_body_record, is_retired_plan};
     let text = std::fs::read_to_string(journal.join(path)).ok()?;
     let records = solstone_core_format::content::parse_jsonl_objects(&text);
-    Some(solstone_core_format::content::ordinary_entries(
-        path, &records,
-    ))
+    let ordinary = solstone_core_format::content::ordinary_entries(path, &records);
+    let (facet, day) = activity_day_of(path)?;
+    let gone = solstone_core_facets::superseded_record_ids(journal, facet, day, &records);
+    let is_gone = |record: &serde_json::Map<String, serde_json::Value>| {
+        record
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| gone.contains(id))
+    };
+    let superseded = records
+        .iter()
+        .filter(|record| !is_retired_plan(record) && !is_body_record(record))
+        .zip(&ordinary)
+        .filter(|(record, _)| is_gone(record))
+        .map(|(_, entry)| entry.clone())
+        .collect();
+    let moved = (0..records.len() + ordinary.len())
+        .filter(|position| body_record_at(&records, *position).is_some_and(&is_gone))
+        .collect();
+    Some(DayFileView {
+        ordinary,
+        superseded,
+        moved,
+    })
+}
+
+/// The facet and day of `facets/<facet>/activities/<day>.jsonl`.
+fn activity_day_of(path: &str) -> Option<(&str, &str)> {
+    let rest = path.strip_prefix("facets/")?;
+    let (facet, rest) = rest.split_once("/activities/")?;
+    Some((facet, rest.strip_suffix(".jsonl")?))
 }
 
 fn register_body_entry_admission(
@@ -858,11 +899,29 @@ fn register_body_entry_admission(
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
         move |context| {
             let content = context.get_raw(2).as_str().unwrap_or_default();
-            // Every body record's entry has this line. Any other row is done.
-            if !content.contains(solstone_core_format::content::BODY_ENTRY_LINE) {
-                return Ok(true);
-            }
             let path = context.get_raw(0).as_str().unwrap_or_default();
+            // Every body record's entry has this line. Any other row is done,
+            // unless a conversion in flight has folded its record into another.
+            if !content.contains(solstone_core_format::content::BODY_ENTRY_LINE) {
+                let Some(journal) = journal.as_deref() else {
+                    return Ok(true);
+                };
+                let mut state = state
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !*state.may_fold.get_or_insert_with(|| {
+                    solstone_core_facets::strava_lines_may_be_folded(journal)
+                }) {
+                    return Ok(true);
+                }
+                let shown = state
+                    .files
+                    .entry(path.to_owned())
+                    .or_insert_with(|| day_file_view(journal, path))
+                    .as_ref()
+                    .is_none_or(|view| !view.superseded.contains(content.trim()));
+                return Ok(shown);
+            }
             let idx = match context.get_raw(1) {
                 rusqlite::types::ValueRef::Integer(idx) => idx,
                 rusqlite::types::ValueRef::Text(text) => {
@@ -881,13 +940,22 @@ fn register_body_entry_admission(
             // this. The index can lag the file, so anything else goes through
             // the gate, an ordinary record included until it's reindexed.
             if let Some(journal) = journal.as_deref() {
-                let vouched = state
-                    .ordinary
+                let view = state
+                    .files
                     .entry(path.to_owned())
-                    .or_insert_with(|| ordinary_entries_of(journal, path))
-                    .as_ref()
-                    .zip(usize::try_from(idx).ok())
-                    .and_then(|(ordinary, position)| ordinary.get(position))
+                    .or_insert_with(|| day_file_view(journal, path))
+                    .as_ref();
+                let position = usize::try_from(idx).ok();
+                // An open move shows from one side only.
+                if view
+                    .zip(position)
+                    .is_some_and(|(view, position)| view.moved.contains(&position))
+                {
+                    return Ok(false);
+                }
+                let vouched = view
+                    .zip(position)
+                    .and_then(|(view, position)| view.ordinary.get(position))
                     .is_some_and(|entry| entry == content.trim());
                 if vouched {
                     return Ok(true);

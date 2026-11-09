@@ -83,9 +83,38 @@ fn tile_of(
 
 /// The usual workout: two tiles, both filed under `facet`.
 fn workout(root: &Path, facet: Option<&str>) {
+    // Two pieces of one activity.
     const START: &str = "2026-01-01T07:00:00+00:00";
     tile(root, DAY, "070000_300", WORKOUT, 0, START, facet);
     tile(root, DAY, "070500_300", WORKOUT, 1, START, facet);
+}
+
+/// How many records an owner sees for the day, in these facets: every reader's
+/// rule, whichever kind of record shows.
+fn visible(root: &Path, facets: &[&str]) -> usize {
+    facets
+        .iter()
+        .map(|facet| {
+            let rows = lines(root, facet, DAY);
+            let rows = rows
+                .iter()
+                .filter_map(Value::as_object)
+                .cloned()
+                .collect::<Vec<_>>();
+            let gone = solstone_core_facets::superseded_record_ids(root, facet, DAY, &rows);
+            rows.iter()
+                .filter(|row| !row.get("hidden").is_some_and(activity_value_truthy))
+                .filter(|row| !gone.contains(row["id"].as_str().unwrap_or_default()))
+                .count()
+        })
+        .sum()
+}
+
+fn sense_lines_in_file(root: &Path, facet: &str) -> usize {
+    lines(root, facet, DAY)
+        .iter()
+        .filter(|row| row.get("stream").is_some())
+        .count()
 }
 
 fn file(root: &Path, facet: &str, day: &str) -> PathBuf {
@@ -431,7 +460,7 @@ fn a_held_strava_lock_is_skipped_and_writes_no_marker() {
 }
 
 #[test]
-fn an_earlier_code_record_moves_once_to_where_it_was_visible_and_stays() {
+fn an_earlier_code_record_keeps_its_facet_and_stays_visible_when_lines_fold_in() {
     let journal = journal(&["a", "b"]);
     let root = journal.path();
     workout(root, Some("a"));
@@ -451,18 +480,168 @@ fn an_earlier_code_record_moves_once_to_where_it_was_visible_and_stays() {
     );
     add_line(root, "b", DAY, sense(json!({})));
     assert_eq!(run(root).converted, 1);
-    assert!(lines(root, "a", DAY).is_empty());
-    let records = lines(root, "b", DAY);
+    assert!(lines(root, "b", DAY).is_empty());
+    let records = lines(root, "a", DAY);
     assert_eq!(records.len(), 1);
-    assert_eq!(facet_of(root, DAY, "070000_300").as_deref(), Some("b"));
+    assert_eq!(facet_of(root, DAY, "070000_300").as_deref(), Some("a"));
+    // The owner's only listing doesn't vanish because a duplicate was hidden.
+    assert_eq!(records[0]["hidden"], json!(false));
 
-    // A later return, from a restored line in the first facet, leaves it there.
-    add_line(root, "a", DAY, sense(json!({})));
+    // A later return, from a restored line in another facet, leaves it there.
+    add_line(root, "b", DAY, sense(json!({})));
     mark_conversion_needed(root).unwrap();
     assert_eq!(run(root).converted, 1);
-    assert!(lines(root, "a", DAY).is_empty());
-    assert_eq!(lines(root, "b", DAY).len(), 1);
+    assert!(lines(root, "b", DAY).is_empty());
+    assert_eq!(lines(root, "a", DAY).len(), 1);
+    assert_eq!(facet_of(root, DAY, "070000_300").as_deref(), Some("a"));
+}
+
+#[test]
+fn every_line_hidden_and_a_visible_earlier_record_stays_visible() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    let key = account_key(STRAVA_STREAM, &WORKOUT.to_string());
+    add_line(
+        root,
+        "a",
+        DAY,
+        json!({"id": record_id(&key), "source": "body", "activity": "workout",
+            "account": {"key": key, "start": "x", "end": "y", "recorder": "r"}}),
+    );
+    add_line(
+        root,
+        "a",
+        DAY,
+        sense(json!({"hidden": true, "edits": [hide_edit("2026-01-03T00:00:00Z")]})),
+    );
+    run(root);
+    assert_eq!(lines(root, "a", DAY)[0]["hidden"], json!(false));
+}
+
+#[test]
+fn a_hidden_earlier_record_with_every_line_hidden_stays_hidden() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    let key = account_key(STRAVA_STREAM, &WORKOUT.to_string());
+    add_line(
+        root,
+        "a",
+        DAY,
+        json!({"id": record_id(&key), "source": "body", "activity": "workout", "hidden": true,
+            "account": {"key": key, "start": "x", "end": "y", "recorder": "r"}}),
+    );
+    add_line(
+        root,
+        "a",
+        DAY,
+        sense(json!({"hidden": true, "edits": [hide_edit("2026-01-03T00:00:00Z")]})),
+    );
+    run(root);
+    assert_eq!(lines(root, "a", DAY)[0]["hidden"], json!(true));
+}
+
+#[test]
+fn one_line_that_wont_go_leaves_the_rest_removed_and_is_counted() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    // A folder with no declaration: the store refuses to change its files.
+    add_line(root, "gone", DAY, sense(json!({})));
+    let counts = run(root);
+    assert_eq!((counts.waiting, counts.lines_left), (1, 1), "{counts:?}");
+    assert_eq!(sense_lines_in_file(root, "a"), 0);
+    assert_eq!(sense_lines_in_file(root, "gone"), 1);
+    assert_eq!(visible(root, &["a", "gone"]), 1);
+    assert!(!root.join(MARKER).exists());
+}
+
+#[test]
+fn a_workout_deleted_after_the_walk_gains_no_file_and_nothing_is_folded() {
+    let journal = journal(&["a", "b"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "b", DAY, sense(json!({})));
+    fn delete_both(root: &Path) {
+        for key in ["070000_300", "070500_300"] {
+            let dir = tile_dir(root, DAY, key);
+            fs::write(dir.join("tombstone.json"), b"{}").unwrap();
+            fs::remove_file(dir.join("talents/facets.json")).unwrap();
+        }
+    }
+    BEFORE_LOCK.set(Some(delete_both));
+    let counts = run(root);
+    assert_eq!((counts.converted, counts.waiting), (0, 1), "{counts:?}");
+    for key in ["070000_300", "070500_300"] {
+        assert!(
+            !tile_dir(root, DAY, key)
+                .join("talents/facets.json")
+                .exists()
+        );
+    }
+    assert_eq!(sense_lines_in_file(root, "b"), 1);
+    assert!(lines(root, "b", DAY).len() == 1 && lines(root, "a", DAY).is_empty());
+}
+
+#[test]
+fn a_tile_deleted_after_the_walk_is_left_alone_and_the_rest_files() {
+    let journal = journal(&["a", "b"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "b", DAY, sense(json!({})));
+    fn delete_one(root: &Path) {
+        let dir = tile_dir(root, DAY, "070500_300");
+        fs::write(dir.join("tombstone.json"), b"{}").unwrap();
+        fs::remove_file(dir.join("talents/facets.json")).unwrap();
+    }
+    BEFORE_LOCK.set(Some(delete_one));
+    assert_eq!(run(root).converted, 1);
+    assert!(
+        !tile_dir(root, DAY, "070500_300")
+            .join("talents/facets.json")
+            .exists()
+    );
     assert_eq!(facet_of(root, DAY, "070000_300").as_deref(), Some("b"));
+}
+
+#[test]
+fn an_unreadable_workout_waits_counted_and_writes_no_marker() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    fs::write(
+        tile_dir(root, DAY, "070500_300").join("workout.json"),
+        b"not json",
+    )
+    .unwrap();
+    let counts = run(root);
+    assert_eq!(counts.waiting, 1, "{counts:?}");
+    assert!(!root.join(MARKER).exists());
+}
+
+#[test]
+fn a_deleted_workout_is_not_counted_as_waiting() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    fs::write(
+        tile_dir(root, DAY, "070500_300").join("tombstone.json"),
+        b"{}",
+    )
+    .unwrap();
+    assert_eq!(run(root).waiting, 0);
+}
+
+#[test]
+fn a_finished_pass_says_so_and_the_next_finds_nothing_to_do() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    assert_eq!(run(root).converted, 1);
+    assert!(root.join(MARKER).exists());
 }
 
 #[test]
@@ -552,6 +731,7 @@ fn a_sweep_queues_tiles_it_moves_and_leaves_the_refile_list_empty() {
 /// A workout in two facets with a title and a hide, the shape every stop must
 /// resume to the same end.
 fn stop_fixture(root: &Path) {
+    // One line hidden and one not, so the workout starts listed once.
     workout(root, Some("a"));
     add_line(
         root,
@@ -587,12 +767,8 @@ fn every_stop_resumes_to_what_an_uninterrupted_run_leaves() {
         let stopped = run(root);
         STOP_AFTER.set(None);
         assert_eq!(stopped.waiting, 1, "stop {stop} stopped it");
-        // Whatever stopped, no owner field is only somewhere they can't see.
-        let visible = lines(root, "a", DAY)
-            .into_iter()
-            .chain(lines(root, "b", DAY))
-            .collect::<Vec<_>>();
-        assert!(!visible.is_empty(), "stop {stop}");
+        // Whatever stopped, the workout is listed exactly once.
+        assert_eq!(visible(root, &["a", "b"]), 1, "stop {stop}");
 
         // After the last write nothing is left to find, so a resume may do nothing.
         let resumed = run(root);

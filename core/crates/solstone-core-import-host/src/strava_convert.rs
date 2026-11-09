@@ -14,11 +14,11 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, FixedOffset, Utc};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_facets::{
-    BodyMoveOutcome, BodyRecordPlace, LineRemoval, StravaConvertedLine, append_strava_converted,
-    complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
-    require_declared_facet, write_body_record_with,
+    BodyMoveOutcome, BodyRecordPlace, LineRemoval, StravaConvertedLine, activity_value_truthy,
+    append_strava_converted, complete_body_move, move_body_record, open_body_moves,
+    remove_activity_line_if, require_declared_facet, write_body_record_with,
 };
 use solstone_core_format::content::body_records::{BodyRow, RowKind, parse_source_time};
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_STREAM, STRAVA_TILE_FILE};
@@ -32,9 +32,12 @@ use solstone_core_journal_io::{
 };
 
 use crate::body_activity::{
-    account_key, day_windows, record_for, record_id, strava_cut, window_facet, window_rows,
+    TOMBSTONE, account_key, day_windows, record_for, record_id, strava_cut, window_facet,
+    window_rows,
 };
-use crate::strava_decision::{SenseLine, choose_primary, decide, owner_hide, record_digest};
+use crate::strava_decision::{
+    RECORD_VISIBLE, SenseLine, choose_primary, decide, owner_hide, record_digest,
+};
 use crate::strava_filing::LiveWorkouts;
 
 const STRAVA_LOCK: &str = "imports/.strava";
@@ -52,6 +55,8 @@ thread_local! {
     static WRITES_SEEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// Runs once, just before a pass removes its lines.
     static BEFORE_REMOVING: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
+    /// Runs once, between a sweep's walk and taking the lock for its first component.
+    static BEFORE_LOCK: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
 }
 
 #[cfg(test)]
@@ -82,6 +87,23 @@ pub(crate) struct ConversionCounts {
     pub no_workout: u64,
     /// Moves that couldn't be finished.
     pub moves_open: u64,
+    /// Lines already folded into a code record that couldn't be removed.
+    pub lines_left: u64,
+}
+
+/// Why a component didn't finish, and how many of its lines are left over.
+struct Unfinished {
+    reason: String,
+    lines_left: u64,
+}
+
+impl From<String> for Unfinished {
+    fn from(reason: String) -> Self {
+        Self {
+            reason,
+            lines_left: 0,
+        }
+    }
 }
 
 /// A workout's tile, and the facet it's filed under.
@@ -196,11 +218,17 @@ fn sense_lines_in(bytes: &[u8], day: &str, facet: &str) -> Vec<SenseLine> {
         .collect()
 }
 
-/// Every workout with a live tile, with the keys it can go by.
-fn live_workouts(journal: &Path) -> Vec<Workout> {
+/// Every workout with a live tile, with the keys it can go by, and how many
+/// folders couldn't be read. A deleted tile isn't one of those.
+fn live_workouts(journal: &Path) -> (Vec<Workout>, u64) {
     let mut workouts: BTreeMap<String, Workout> = BTreeMap::new();
-    let Ok(days) = fs::read_dir(journal.join("chronicle")) else {
-        return Vec::new();
+    let mut unreadable = 0;
+    let days = match fs::read_dir(journal.join("chronicle")) {
+        Ok(days) => days,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return (Vec::new(), 0);
+        }
+        Err(_) => return (Vec::new(), 1),
     };
     let mut days = days
         .flatten()
@@ -208,7 +236,18 @@ fn live_workouts(journal: &Path) -> Vec<Workout> {
         .collect::<Vec<_>>();
     days.sort();
     for day in days {
-        for window in day_windows(journal, &day, STRAVA_STREAM).unwrap_or_default() {
+        let Some(windows) = day_windows(journal, &day, STRAVA_STREAM) else {
+            if journal
+                .join("chronicle")
+                .join(&day)
+                .join(STRAVA_STREAM)
+                .exists()
+            {
+                unreadable += 1;
+            }
+            continue;
+        };
+        for window in windows {
             let Some(key) = window
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
@@ -218,6 +257,9 @@ fn live_workouts(journal: &Path) -> Vec<Workout> {
             let Some(row) = window_rows(&window, WindowFile::StravaTile)
                 .and_then(|rows| rows.into_iter().next())
             else {
+                if !window.join(TOMBSTONE).exists() && window.join(STRAVA_TILE_FILE).exists() {
+                    unreadable += 1;
+                }
                 continue;
             };
             let activity = row.of.clone().unwrap_or_else(|| row.id.clone());
@@ -242,7 +284,7 @@ fn live_workouts(journal: &Path) -> Vec<Workout> {
         }
     }
     let zone = solstone_core_journal_config::placed_zone(journal, STRAVA_SOURCE);
-    workouts
+    let workouts = workouts
         .into_values()
         .map(|mut workout| {
             let span = workout
@@ -261,7 +303,30 @@ fn live_workouts(journal: &Path) -> Vec<Workout> {
             }
             workout
         })
-        .collect()
+        .collect();
+    (workouts, unreadable)
+}
+
+/// Read a component's workouts again, now its lock is held: a delete may have
+/// come since the walk read them. False when a workout has no tile left, which
+/// leaves the whole component for the next pass to work out afresh.
+fn refresh_workouts(journal: &Path, workouts: &mut [Workout], component: &Component) -> bool {
+    for at in &component.workouts {
+        let workout = &mut workouts[*at];
+        workout.tiles.retain_mut(|tile| {
+            let window = journal
+                .join("chronicle")
+                .join(&tile.day)
+                .join(STRAVA_STREAM)
+                .join(&tile.key);
+            tile.facet = window_facet(&window);
+            window_rows(&window, WindowFile::StravaTile).is_some()
+        });
+        if workout.tiles.is_empty() {
+            return false;
+        }
+    }
+    true
 }
 
 fn add_misplaced(
@@ -664,7 +729,12 @@ fn write_workout(
             facet,
         },
         (Some((place, _)), None) if decided => place.clone(),
-        _ => BodyRecordPlace {
+        // A code record the owner could already see keeps its facet.
+        (Some((place, _)), None) => BodyRecordPlace {
+            day: first.day.clone(),
+            facet: place.facet.clone(),
+        },
+        (None, None) => BodyRecordPlace {
             day: first.day.clone(),
             facet: target_facet(journal, workout, named)
                 .ok_or("no declared facet to file this workout under")?,
@@ -688,7 +758,17 @@ fn write_workout(
     let arrived = now.get(..10).unwrap_or("").replace('-', "");
     let fresh = record_for(STRAVA_STREAM, &key, &workout.row, &arrived);
     write_body_record_with(journal, &place, &record_id(&key), |current| {
-        decide(current.unwrap_or(fresh), named, spanned, &primary, now)
+        let base = match current {
+            Some(mut record) => {
+                let visible = !record.get("hidden").is_some_and(activity_value_truthy);
+                if visible && !record.contains_key("converted") {
+                    record.insert("converted".to_owned(), json!({RECORD_VISIBLE: true}));
+                }
+                record
+            }
+            None => fresh,
+        };
+        decide(base, named, spanned, &primary, now)
     })
     .map_err(|error| error.to_string())?;
     Ok(place)
@@ -704,7 +784,7 @@ fn convert_component(
     scope: ConversionScope<'_>,
     held: &FileLock,
     now: &str,
-) -> Result<(), String> {
+) -> Result<(), Unfinished> {
     clear_marker(journal)?;
     let listed = component
         .lines
@@ -717,6 +797,7 @@ fn convert_component(
         .collect::<Vec<_>>();
     append_strava_converted(journal, &listed).map_err(|error| error.to_string())?;
     stop_point()?;
+    let mut lines_left = 0;
 
     let wanted = component
         .lines
@@ -770,9 +851,16 @@ fn convert_component(
             move_tiles(journal, &tiles, &place.facet, held, scope)?;
             stop_point()?;
         }
+        lines_left = 0;
         for found in current.iter().flatten() {
-            remove_outputs(journal, found)?;
-            digests.push((found.clone(), found.digest()));
+            // One that won't go doesn't hold the others back.
+            match remove_outputs(journal, found) {
+                Ok(()) => digests.push((found.clone(), found.digest())),
+                Err(error) => {
+                    log::warn!("Strava conversion: outputs couldn't be removed: {error}");
+                    lines_left += 1;
+                }
+            }
         }
         remove_activity_state(journal)?;
         stop_point()?;
@@ -786,18 +874,46 @@ fn convert_component(
                 day: line.day.clone(),
                 facet: line.facet.clone(),
             };
-            let removal = remove_activity_line_if(journal, &place, &line.id, |record| {
+            match remove_activity_line_if(journal, &place, &line.id, |record| {
                 record_digest(record) == digest
-            })
-            .map_err(|error| error.to_string())?;
-            changed |= removal == LineRemoval::Changed;
+            }) {
+                Ok(LineRemoval::Changed) => changed = true,
+                Ok(_) => {}
+                Err(error) => {
+                    log::warn!("Strava conversion: a folded line couldn't be removed: {error}");
+                    lines_left += 1;
+                }
+            }
             stop_point()?;
         }
         if !changed {
+            if lines_left > 0 {
+                return Err(Unfinished {
+                    reason: "not every folded line could be removed".to_owned(),
+                    lines_left,
+                });
+            }
             return Ok(());
         }
     }
-    Err("a record kept changing while it was being updated".to_owned())
+    Err(Unfinished {
+        reason: "a record kept changing while it was being updated".to_owned(),
+        lines_left,
+    })
+}
+
+fn tally(counts: &mut ConversionCounts, result: Result<(), Unfinished>) {
+    match result {
+        Ok(()) => counts.converted += 1,
+        Err(unfinished) => {
+            log::warn!(
+                "Strava conversion: a workout's records couldn't be updated: {}",
+                unfinished.reason
+            );
+            counts.waiting += 1;
+            counts.lines_left += unfinished.lines_left;
+        }
+    }
 }
 
 /// Convert every component in the journal while `held` is held the whole time:
@@ -810,19 +926,14 @@ pub(crate) fn convert_held(
 ) -> ConversionCounts {
     let mut counts = ConversionCounts::default();
     let (lines, unreadable) = all_sense_lines(journal);
-    counts.waiting += unreadable;
-    let workouts = live_workouts(journal);
+    let (workouts, folders) = live_workouts(journal);
+    counts.waiting += unreadable + folders;
     let (parts, no_workout) = components(&workouts, &lines);
     counts.no_workout = no_workout;
     let at = now_text(now);
     for part in &parts {
-        match convert_component(journal, &workouts, &lines, part, scope, held, &at) {
-            Ok(()) => counts.converted += 1,
-            Err(error) => {
-                log::warn!("Strava conversion: a workout's records couldn't be updated: {error}");
-                counts.waiting += 1;
-            }
-        }
+        let result = convert_component(journal, &workouts, &lines, part, scope, held, &at);
+        tally(&mut counts, result);
     }
     counts
 }
@@ -835,7 +946,7 @@ pub(crate) fn listed_moves(
     download: &BTreeSet<String>,
     facet: &str,
 ) -> Option<(usize, Vec<String>)> {
-    let workouts = live_workouts(journal);
+    let (workouts, _) = live_workouts(journal);
     let (lines, _) = all_sense_lines(journal);
     let (parts, _) = components(&workouts, &lines);
     let mut named: BTreeMap<usize, Vec<&SenseLine>> = BTreeMap::new();
@@ -907,6 +1018,7 @@ pub(crate) fn relocate_with_days(
 ) -> BTreeSet<String> {
     let mut held_back = BTreeSet::new();
     let workouts = live_workouts(journal)
+        .0
         .into_iter()
         .map(|workout| (workout.activity.clone(), workout))
         .collect::<BTreeMap<_, _>>();
@@ -997,10 +1109,9 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
     if journal.join(MARKER).exists() {
         return counts;
     }
-    let epoch = read_epoch(journal);
     let (lines, unreadable) = all_sense_lines(journal);
-    counts.waiting += unreadable;
-    let workouts = live_workouts(journal);
+    let (mut workouts, folders) = live_workouts(journal);
+    counts.waiting += unreadable + folders;
     let (parts, no_workout) = components(&workouts, &lines);
     counts.no_workout = no_workout;
     let at = now_text(now);
@@ -1013,29 +1124,43 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
         mode: Some(0o600),
         ..LockOptions::default()
     };
-    let found_any = !parts.is_empty();
     for part in &parts {
+        #[cfg(test)]
+        if let Some(hook) = BEFORE_LOCK.take() {
+            hook(journal);
+        }
         let Ok(held) = hold_lock(journal.join(STRAVA_LOCK), lock_options) else {
             counts.skipped_locked += 1;
             continue;
         };
-        match convert_component(journal, &workouts, &lines, part, scope, &held, &at) {
-            Ok(()) => counts.converted += 1,
-            Err(error) => {
-                log::warn!("Strava conversion: a workout's records couldn't be updated: {error}");
-                counts.waiting += 1;
-            }
+        if !refresh_workouts(journal, &mut workouts, part) {
+            counts.waiting += 1;
+            continue;
         }
+        let result = convert_component(journal, &workouts, &lines, part, scope, &held, &at);
+        tally(&mut counts, result);
     }
-    if !found_any
-        && counts.waiting == 0
+    if counts.waiting == 0 && counts.skipped_locked == 0 {
+        write_marker_if_finished(journal, lock_options);
+    }
+    counts
+}
+
+/// Say nothing is left to convert, if that's so now. A merge or a conversion
+/// starting meanwhile moves the epoch, and the marker waits for another pass.
+fn write_marker_if_finished(journal: &Path, lock_options: LockOptions) {
+    let epoch = read_epoch(journal);
+    let (lines, unreadable) = all_sense_lines(journal);
+    let (workouts, folders) = live_workouts(journal);
+    let (parts, _) = components(&workouts, &lines);
+    if unreadable + folders == 0
+        && parts.is_empty()
         && let Ok(_held) = hold_lock(journal.join(STRAVA_LOCK), lock_options)
         && read_epoch(journal) == epoch
         && fs::create_dir_all(journal.join("imports")).is_ok()
     {
         let _ = atomic_replace(journal.join(MARKER), b"", PRIVATE);
     }
-    counts
 }
 
 #[cfg(test)]

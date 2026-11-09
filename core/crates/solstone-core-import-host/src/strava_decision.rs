@@ -22,6 +22,9 @@ const DECISION: &str = "decision";
 const HIDDEN: &str = "hidden";
 const EDITS: &str = "edits";
 const CONVERTED: &str = "converted";
+/// On `converted`: the record was one the owner could see before its first
+/// decision, so it counts as visible in the hide rule.
+pub(crate) const RECORD_VISIBLE: &str = "record_visible";
 
 type Record = Map<String, Value>;
 
@@ -156,9 +159,17 @@ fn carried_entries(line: &SenseLine) -> Vec<Record> {
         .collect()
 }
 
-/// The owner or command-line hide a line stands on, `(timestamp, actor)`, when
-/// that's why it's hidden. A line hidden any other way counts as visible.
-pub(crate) fn owner_hide(line: &SenseLine) -> Option<(String, String)> {
+/// An owner or command-line hide.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct OwnerHide {
+    pub timestamp: String,
+    pub actor: String,
+    pub note: String,
+}
+
+/// The owner or command-line hide a line stands on, when that's why it's
+/// hidden. A line hidden any other way counts as visible.
+pub(crate) fn owner_hide(line: &SenseLine) -> Option<OwnerHide> {
     let hidden = line.record.get(HIDDEN).is_some_and(|value| {
         value.as_bool().unwrap_or(false) || value.as_str().is_some_and(|text| !text.is_empty())
     });
@@ -171,19 +182,57 @@ pub(crate) fn owner_hide(line: &SenseLine) -> Option<(String, String)> {
         .enumerate()
         .filter(|(_, edit)| edit_names(edit, HIDDEN))
         .max_by_key(|(at, edit)| (text(edit, "timestamp").to_owned(), *at))?;
-    owner_edit(edit).then(|| {
-        (
-            text(edit, "timestamp").to_owned(),
-            text(edit, "actor").to_owned(),
-        )
+    owner_edit(edit).then(|| OwnerHide {
+        timestamp: text(edit, "timestamp").to_owned(),
+        actor: text(edit, "actor").to_owned(),
+        note: text(edit, "note").to_owned(),
     })
+}
+
+/// What's left of a changed line's entries once everything the owner removed
+/// from this line's earlier entries is taken out: a change can add what's new,
+/// and an edit the owner removed stays removed.
+fn without_removed(new: Vec<Record>, removed: &[Record]) -> Vec<Record> {
+    new.into_iter()
+        .filter_map(|mut entry| {
+            let same_edit = |gone: &&Record| {
+                text(gone, "timestamp") == text(&entry, "timestamp")
+                    && text(gone, "actor") == text(&entry, "actor")
+            };
+            let taken = removed
+                .iter()
+                .filter(same_edit)
+                .flat_map(|gone| {
+                    CARRIED_FIELDS
+                        .into_iter()
+                        .filter(|field| edit_names(gone, field))
+                })
+                .collect::<Vec<_>>();
+            let kept = entry
+                .get("fields")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|field| !field.as_str().is_some_and(|name| taken.contains(&name)))
+                .cloned()
+                .collect::<Vec<_>>();
+            if kept.is_empty() {
+                return None;
+            }
+            entry.insert("fields".to_owned(), Value::Array(kept));
+            if let Some(Value::Object(set)) = entry.get_mut("set") {
+                set.retain(|field, _| !taken.contains(&field.as_str()));
+            }
+            Some(entry)
+        })
+        .collect()
 }
 
 /// What the decision keeps about one line.
 struct LineEntry {
     digest: String,
     hidden: bool,
-    hide: Option<(String, String)>,
+    hide: Option<OwnerHide>,
     fields: Map<String, Value>,
 }
 
@@ -196,12 +245,14 @@ impl LineEntry {
                 .unwrap_or_default()
                 .to_owned(),
             hidden: value.get(HIDDEN).and_then(Value::as_bool).unwrap_or(false),
-            hide: value.get("hide").and_then(Value::as_object).map(|hide| {
-                (
-                    text(hide, "timestamp").to_owned(),
-                    text(hide, "actor").to_owned(),
-                )
-            }),
+            hide: value
+                .get("hide")
+                .and_then(Value::as_object)
+                .map(|hide| OwnerHide {
+                    timestamp: text(hide, "timestamp").to_owned(),
+                    actor: text(hide, "actor").to_owned(),
+                    note: text(hide, "note").to_owned(),
+                }),
             fields: value
                 .get("fields")
                 .and_then(Value::as_object)
@@ -213,8 +264,9 @@ impl LineEntry {
     fn to_value(&self) -> Value {
         let mut value =
             json!({"sha256": self.digest, "hidden": self.hidden, "fields": self.fields});
-        if let Some((timestamp, actor)) = &self.hide {
-            value["hide"] = json!({"timestamp": timestamp, "actor": actor});
+        if let Some(hide) = &self.hide {
+            value["hide"] =
+                json!({"timestamp": hide.timestamp, "actor": hide.actor, "note": hide.note});
         }
         value
     }
@@ -279,6 +331,11 @@ pub(crate) fn decide(
         .and_then(Value::as_str)
         .unwrap_or(now)
         .to_owned();
+    // A code record that was already listed before any line was folded in.
+    let record_visible = stored
+        .get(RECORD_VISIBLE)
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let mut entries = stored
         .get("lines")
         .and_then(Value::as_object)
@@ -316,8 +373,15 @@ pub(crate) fn decide(
         {
             continue;
         }
+        let removed = carried
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .filter(|edit| edit_removed(edit))
+            .cloned()
+            .collect::<Vec<_>>();
         let new = if carries_fields(line) {
-            carried_entries(line)
+            without_removed(carried_entries(line), &removed)
         } else {
             Vec::new()
         };
@@ -345,10 +409,11 @@ pub(crate) fn decide(
                 fields,
             },
         );
-        if new.is_empty() {
+        let kept = removed.into_iter().chain(new).collect::<Vec<_>>();
+        if kept.is_empty() {
             carried.remove(&key);
         } else {
-            carried.insert(key, new);
+            carried.insert(key, kept);
         }
     }
 
@@ -411,29 +476,27 @@ pub(crate) fn decide(
                 && entry
                     .hide
                     .as_ref()
-                    .is_none_or(|(timestamp, _)| *timestamp <= decided_at)
+                    .is_none_or(|hide| hide.timestamp <= decided_at)
         };
-        let all_hidden = !entries.is_empty() && entries.values().all(counted);
+        let all_hidden = !record_visible && !entries.is_empty() && entries.values().all(counted);
         let deciding = entries
             .iter()
             .filter(|(_, entry)| counted(entry))
-            .filter_map(|(key, entry)| {
-                entry
-                    .hide
-                    .as_ref()
-                    .map(|(timestamp, actor)| (timestamp.clone(), key.clone(), actor.clone()))
+            .filter_map(|(key, entry)| entry.hide.clone().map(|hide| (hide, key.clone())))
+            .max_by(|(left, left_key), (right, right_key)| {
+                (&left.timestamp, left_key).cmp(&(&right.timestamp, right_key))
             })
-            .max();
+            .map(|(hide, _)| hide);
         base.insert(HIDDEN.to_owned(), Value::Bool(all_hidden));
-        let (timestamp, actor) = match deciding {
-            Some((timestamp, _, actor)) if all_hidden => (timestamp, actor),
-            _ => (decided_at.clone(), "convert".to_owned()),
+        let (timestamp, actor, note) = match deciding {
+            Some(hide) if all_hidden => (hide.timestamp, hide.actor, hide.note),
+            _ => (decided_at.clone(), "convert".to_owned(), String::new()),
         };
         Some(json!({
             "timestamp": timestamp,
             "actor": actor,
             "fields": [HIDDEN],
-            "note": "",
+            "note": note,
             "carried": DECISION,
         }))
     };
@@ -447,17 +510,18 @@ pub(crate) fn decide(
     if !rebuilt.is_empty() {
         base.insert(EDITS.to_owned(), Value::Array(rebuilt));
     }
-    base.insert(
-        CONVERTED.to_owned(),
-        json!({
-            "primary": primary,
-            "decided_at": decided_at,
-            "lines": entries
-                .iter()
-                .map(|(key, entry)| (key.clone(), entry.to_value()))
-                .collect::<Map<_, _>>(),
-        }),
-    );
+    let mut converted = json!({
+        "primary": primary,
+        "decided_at": decided_at,
+        "lines": entries
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.to_value()))
+            .collect::<Map<_, _>>(),
+    });
+    if record_visible {
+        converted[RECORD_VISIBLE] = Value::Bool(true);
+    }
+    base.insert(CONVERTED.to_owned(), converted);
     base
 }
 

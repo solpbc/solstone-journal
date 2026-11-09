@@ -203,7 +203,7 @@ fn a_stop_after_the_append_finishes_with_one_copy_keeping_later_target_edits() {
         Ok((rows, ()))
     })
     .unwrap();
-    append_line(root.path(), &json!({"appended": open.id})).unwrap();
+    append_line(root.path(), &json!({"placed": open.id, "appended": true})).unwrap();
     set_activity_hidden(
         root.path(),
         "b",

@@ -2126,3 +2126,31 @@ fn a_strava_phone_run_twice_the_watchs_stands_alone() {
     record_in(root, STRAVA, DAY, &phone);
     assert_eq!(day_groups(root), [vec!["body_7004"], vec!["body_wr"]]);
 }
+
+#[test]
+fn an_open_move_shows_a_record_from_one_side_only() {
+    let journal = self::journal();
+    let root = journal.path();
+    window(root, DAY, "220000_3600", &[night()]);
+    record(root, json!({}));
+    let stored = stored_body_records(root, "body", DAY).unwrap();
+    assert_eq!(stored.len(), 1);
+    let raw = fs::read_to_string(root.join(format!("facets/body/activities/{DAY}.jsonl"))).unwrap();
+    let row: serde_json::Value = serde_json::from_str(raw.lines().next().unwrap()).unwrap();
+    let intent = json!({"move": "m", "key": row["account"]["key"], "record": row["id"],
+        "from": {"day": "20261001", "facet": "other"},
+        "to": {"day": DAY, "facet": "body"}, "copy": row});
+    fs::write(
+        root.join("imports/.body-moves.jsonl"),
+        format!("{intent}\n"),
+    )
+    .unwrap();
+    assert!(stored_body_records(root, "body", DAY).unwrap().is_empty());
+    let placed = json!({"placed": "m", "appended": true});
+    fs::write(
+        root.join("imports/.body-moves.jsonl"),
+        format!("{intent}\n{placed}\n"),
+    )
+    .unwrap();
+    assert_eq!(stored_body_records(root, "body", DAY).unwrap().len(), 1);
+}

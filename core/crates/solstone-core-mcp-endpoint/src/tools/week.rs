@@ -127,10 +127,16 @@ fn project_sunday(
         for (_, dir, _) in &facets {
             let rows = solstone_core_facets::read_activity_records_strict(journal, dir, &day_str)
                 .map_err(|_| ToolError::FileUnreadable)?;
+            let superseded =
+                solstone_core_facets::superseded_record_ids(journal, dir, &day_str, &rows);
             for row in rows {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
                     || solstone_core_facets::is_retired_plan(&row)
                     || solstone_core_facets::is_body_record(&row)
+                    || row
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| superseded.contains(id))
                 {
                     continue;
                 }
@@ -223,9 +229,15 @@ fn project_sunday(
                 .and_then(|faces| faces.get(&day_str))
                 .map_or(&[][..], Vec::as_slice);
 
+            let superseded =
+                solstone_core_facets::superseded_record_ids(journal, f_dir, &day_str, &rows);
             for (row, rec_id) in rows.into_iter().zip(line_identities) {
                 if row.get("hidden").and_then(Value::as_bool).unwrap_or(false)
                     || solstone_core_facets::is_retired_plan(&row)
+                    || row
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|id| superseded.contains(id))
                 {
                     continue;
                 }
@@ -880,6 +892,36 @@ mod tests {
         assert_eq!(value["memories"].as_array().unwrap().len(), 3);
         // Two of the three rows share a day, so they come from two days, not three.
         assert_eq!(value["intro"], "your week, a memory from each of 2 days.");
+    }
+
+    #[test]
+    fn a_strava_line_a_code_record_holds_isnt_a_row_or_a_recurring_week() {
+        let root = journal("solstone-week-folded-");
+        whole(root.path());
+        write_raw(
+            root.path(),
+            "facets/work/facet.json",
+            &json!({"id": "123e4567-e89b-42d3-a456-426614174000", "title": "Work", "description": "Work"}).to_string(),
+        );
+        let line = |id: &str| {
+            json!({"id": id, "activity": "exercise", "title": "Morning Run", "created_at": 100,
+                "stream": "import.strava", "segments": ["090000_300"]})
+        };
+        let code = |day: &str, id: &str| {
+            json!({"id": format!("body_{id}"), "source": "body", "activity": "workout",
+                "account": {"key": format!("import.strava\u{1f}{id}")},
+                "converted": {"primary": "p", "decided_at": "t",
+                    "lines": {format!("{day}|work|{id}"): {"sha256": "x", "hidden": false, "fields": {}}}}})
+        };
+        let solo = line("run_week");
+        write_raw(
+            root.path(),
+            "facets/work/activities/20260308.jsonl",
+            &format!("{solo}\n{}\n", code("20260308", "run_week")),
+        );
+        let value = probe(root.path(), json!({"week": "20260308"})).unwrap();
+        assert_eq!(value["activities"], json!([]));
+        assert_eq!(value["activities_total"], 0);
     }
 
     #[test]

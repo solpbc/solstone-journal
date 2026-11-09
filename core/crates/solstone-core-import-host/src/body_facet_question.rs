@@ -56,15 +56,16 @@ pub(crate) fn ask_strava_facet(
     media: &Path,
     input: &mut dyn BufRead,
     output: &mut dyn Write,
-) -> ImportFacet {
+) -> (ImportFacet, Option<usize>) {
     let Ok((ask, _)) = body_facet_ask(journal) else {
-        return ImportFacet::Unattended;
+        return (ImportFacet::Unattended, None);
     };
     let Some(text) = question(&ask) else {
-        return ImportFacet::Unattended;
+        return (ImportFacet::Unattended, None);
     };
     let moves =
         crate::strava_convert::listed_moves(journal, &download_ids(media), would_file_under(&ask));
+    let shown = moves.as_ref().map_or(0, |(count, _)| *count);
     let _ = writeln!(output, "{NO_MEANS}");
     if let Some((count, from)) = &moves {
         let _ = writeln!(
@@ -78,28 +79,30 @@ pub(crate) fn ask_strava_facet(
     let _ = output.flush();
     let mut answer = String::new();
     if input.read_line(&mut answer).is_err() {
-        return ImportFacet::Unattended;
+        return (ImportFacet::Unattended, None);
     }
     let yes = match answer.trim().to_ascii_lowercase().as_str() {
         "y" | "yes" => true,
         "n" | "no" => false,
-        _ => return ImportFacet::Unattended,
+        _ => return (ImportFacet::Unattended, None),
     };
     let choice = match apply_body_facet_answer(journal, &ask, yes) {
         Ok(Some(choice)) => choice,
-        Ok(None) => return ImportFacet::Unattended,
+        Ok(None) => return (ImportFacet::Unattended, None),
         Err(error) => {
             let _ = writeln!(output, "your answer couldn't be saved: {error}");
-            return ImportFacet::Unattended;
+            return (ImportFacet::Unattended, None);
         }
     };
     if let Err(error) = record_body_facet(journal, &choice) {
         let _ = writeln!(output, "your answer couldn't be saved: {error}");
-        return ImportFacet::Unattended;
+        return (ImportFacet::Unattended, None);
     }
     match choice {
-        solstone_core_journal_config::BodyFacetChoice::Facet(facet) => ImportFacet::Facet(facet),
-        solstone_core_journal_config::BodyFacetChoice::None => ImportFacet::Unattended,
+        solstone_core_journal_config::BodyFacetChoice::Facet(facet) => {
+            (ImportFacet::Facet(facet), Some(shown))
+        }
+        solstone_core_journal_config::BodyFacetChoice::None => (ImportFacet::Unattended, None),
     }
 }
 

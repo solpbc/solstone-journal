@@ -9,6 +9,9 @@
 //! refuses to change it, so finishing a move is always the same two steps, add
 //! the intent's copy if the target lacks the key, then remove the source. The
 //! target stays writable. Whatever finds an open intent next finishes it.
+//!
+//! One log line, `placed`, says the target holds the record. Before it a reader
+//! is shown the source and after it the target, so an open move shows one side.
 
 use std::collections::BTreeMap;
 use std::io;
@@ -44,6 +47,8 @@ pub struct OpenBodyMove {
     pub copy: ActivityRecord,
     /// Whether this move's own append reached the target.
     pub appended: bool,
+    /// Whether the target is known to hold the record.
+    pub placed: bool,
 }
 
 /// What asking to move a record did.
@@ -107,10 +112,14 @@ pub fn open_body_moves(root: &Path) -> io::Result<Vec<OpenBodyMove>> {
         };
         if let Some(done) = entry.get("done").and_then(Value::as_str) {
             moves.remove(done);
-        } else if let Some(appended) = entry.get("appended").and_then(Value::as_str) {
-            if let Some(open) = moves.get_mut(appended) {
+        } else if let Some(placed) = entry.get("placed").and_then(Value::as_str) {
+            if let Some(open) = moves.get_mut(placed) {
                 let open: &mut OpenBodyMove = open;
-                open.appended = true;
+                open.placed = true;
+                open.appended = entry
+                    .get("appended")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
             }
         } else if let Some(parsed) = parse_move(&entry) {
             order.push(parsed.id.clone());
@@ -129,6 +138,7 @@ fn parse_move(entry: &Map<String, Value>) -> Option<OpenBodyMove> {
         to: place_of(entry.get("to"))?,
         copy: entry.get("copy")?.as_object()?.clone(),
         appended: false,
+        placed: false,
     })
 }
 
@@ -241,6 +251,7 @@ pub fn move_body_record(
                 to: to.clone(),
                 copy,
                 appended: false,
+                placed: false,
             };
             append_line(
                 root,
@@ -355,9 +366,10 @@ fn complete_held(root: &Path, open: &OpenBodyMove) -> Result<(), ActivityRecordS
             }
         },
     )?;
-    if appended {
-        append_line(root, &json!({"appended": open.id}))?;
-    }
+    append_line(
+        root,
+        &json!({"placed": open.id, "appended": appended || open.appended}),
+    )?;
     let removed = locked_modify_day_records(
         root,
         &open.from.facet,

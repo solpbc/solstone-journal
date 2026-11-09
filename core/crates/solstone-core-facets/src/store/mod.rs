@@ -23,6 +23,7 @@ mod observations;
 mod paths;
 mod publication;
 mod strava_converted;
+mod superseded;
 pub use publication::queue_body_entries_once;
 mod recent_names;
 pub(crate) mod reference_scan;
@@ -158,6 +159,7 @@ pub use seeding::{
     SeedEntityOutcome, seed_entities,
 };
 pub use strava_converted::{StravaConvertedLine, append_strava_converted, read_strava_converted};
+pub use superseded::{strava_lines_may_be_folded, superseded_record_ids};
 pub use write::{
     DEFAULT_FACET, create_facet, delete_facet, delete_facet_entity_link, ensure_default_facet,
     retitle_facet, save_facet_entity_link, set_facet_entity_link_detached, set_facet_muted,

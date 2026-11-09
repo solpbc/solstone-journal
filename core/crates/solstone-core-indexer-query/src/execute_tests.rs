@@ -4204,6 +4204,116 @@ fn hit_positions<'a>(hits: impl Iterator<Item = &'a crate::SearchHit>) -> Vec<i6
     positions
 }
 
+const KESTREL_FILE: &str = "facets/body/activities/20260107.jsonl";
+
+fn kestrel_sense_line() -> serde_json::Value {
+    serde_json::json!({"id": "exercise_1", "activity": "exercise", "title": "Kestrel Ride",
+        "stream": "import.strava", "segments": ["070000_300"], "created_at": 1})
+}
+
+/// A search for a Strava line in the index, its file as `extra` lines leave it.
+fn sense_line_hits(name: &str, extra: &[serde_json::Value], marker: bool) -> Vec<i64> {
+    let (root, connection) = seeded_root(name);
+    let line = kestrel_sense_line();
+    let entry = solstone_core_format::content::ordinary_entries(
+        KESTREL_FILE,
+        &[line.as_object().unwrap().clone()],
+    )
+    .remove(0);
+    let mut text = format!("{line}\n");
+    for other in extra {
+        text.push_str(&format!("{other}\n"));
+    }
+    write_rel(&root, KESTREL_FILE, &text);
+    if marker {
+        write_rel(&root, "imports/.strava-converted", "");
+    }
+    insert(
+        &connection,
+        &entry,
+        KESTREL_FILE,
+        "20260107",
+        "body",
+        "activity",
+        "",
+        0,
+    );
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'transcript', 'test', 1, 0)",
+            [KESTREL_FILE],
+        )
+        .ok();
+    drop(connection);
+    let mut asked = request("Kestrel");
+    asked.body_owner_words = true;
+    let results = search(&root, &asked, reference_date()).unwrap();
+    let positions = hit_positions(results.results.iter());
+    fs::remove_dir_all(root).unwrap();
+    positions
+}
+
+fn kestrel_code_record(key: &str) -> serde_json::Value {
+    serde_json::json!({"id": "body_code", "source": "body", "activity": "workout",
+        "account": {"key": "import.strava\u{1f}1"},
+        "converted": {"primary": key, "decided_at": "t",
+            "lines": {key: {"sha256": "x", "hidden": false, "fields": {}}}}})
+}
+
+#[test]
+fn a_strava_line_a_code_record_holds_comes_back_to_no_search() {
+    assert_eq!(sense_line_hits("sense-open", &[], false), [0]);
+    let other = kestrel_code_record("20260107|body|exercise_2");
+    assert_eq!(sense_line_hits("sense-other", &[other], false), [0]);
+    let held = kestrel_code_record("20260107|body|exercise_1");
+    assert_eq!(
+        sense_line_hits("sense-held", &[held.clone()], false),
+        [] as [i64; 0]
+    );
+    // Nothing left to convert: the search doesn't look.
+    assert_eq!(sense_line_hits("sense-marker", &[held], true), [0]);
+}
+
+#[test]
+fn a_body_entry_shows_from_one_side_of_an_open_move() {
+    let (root, file) = body_entry_root("body-entry-move");
+    let text = fs::read_to_string(root.join(file)).unwrap();
+    let keyed = text.replace(
+        r#""id":"body_held""#,
+        r#""account":{"key":"k"},"id":"body_held""#,
+    );
+    assert_ne!(keyed, text);
+    write_rel(&root, file, &keyed);
+    let log = |placed: bool| {
+        let intent = serde_json::json!({"move": "m", "key": "k", "record": "body_held",
+            "from": {"day": "20260101", "facet": "other"},
+            "to": {"day": "20260107", "facet": "body"}, "copy": {"id": "body_held"}});
+        let done = serde_json::json!({"placed": "m", "appended": true});
+        if placed {
+            format!("{intent}\n{done}\n")
+        } else {
+            format!("{intent}\n")
+        }
+    };
+    let mut opened = request("Kestrel");
+    opened.body_owner_words = true;
+    write_rel(&root, "imports/.body-moves.jsonl", &log(false));
+    let waiting = search(&root, &opened, reference_date()).unwrap();
+    assert_eq!(
+        hit_positions(waiting.results.iter()),
+        [0],
+        "the target waits"
+    );
+    write_rel(&root, "imports/.body-moves.jsonl", &log(true));
+    let placed = search(&root, &opened, reference_date()).unwrap();
+    assert_eq!(
+        hit_positions(placed.results.iter()),
+        [0, 1],
+        "the target shows"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn a_body_entry_comes_back_only_to_a_search_that_asks_for_one() {
     let (root, _) = body_entry_root("body-entry-owner");

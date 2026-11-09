@@ -30,7 +30,7 @@ fn ask(root: &Path, answer: &str) -> (ImportFacet, String) {
         &mut answer.as_bytes(),
         &mut output,
     );
-    (facet, String::from_utf8(output).unwrap())
+    (facet.0, String::from_utf8(output).unwrap())
 }
 
 #[test]

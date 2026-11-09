@@ -127,6 +127,36 @@ fn import(
     import_stopping(root, csv, timestamp, facet, model, false)
 }
 
+/// [`import`], saying how many listed workouts the owner was shown would move.
+fn import_shown(
+    root: &Path,
+    csv: &Path,
+    timestamp: &str,
+    facet: ImportFacet,
+    model: &Model,
+    shown: Option<usize>,
+) -> (CliRun, String) {
+    let dispatch = RegistryDispatch {
+        source: RegistrySource::Strava,
+        media: csv.to_path_buf(),
+        timestamp: timestamp.to_owned(),
+        dry_run: false,
+        json: false,
+        force: false,
+        owner_timestamp: None,
+        fallback_timestamp: None,
+        facet,
+        listed_moves_shown: shown,
+    };
+    let hook = StravaRunHook {
+        names_model: Some(model),
+        ..StravaRunHook::default()
+    };
+    let mut selected = None;
+    let run = run_strava_hooked(dispatch, root, &mut selected, Some(&hook));
+    (run, selected.unwrap_or_default())
+}
+
 /// [`import`], stopped just before the import is marked complete when `stop`.
 fn import_stopping(
     root: &Path,
@@ -146,6 +176,7 @@ fn import_stopping(
         owner_timestamp: None,
         fallback_timestamp: None,
         facet,
+        listed_moves_shown: None,
     };
     let hook = StravaRunHook {
         names_model: Some(model),
@@ -219,6 +250,71 @@ fn snapshot(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     }
     files.sort();
     files
+}
+
+/// A download listed under `work`, then imported again under `body`.
+fn moved_with(shown: Option<usize>) -> (tempfile::TempDir, String) {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "easy with Sam");
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let (run, id) = import_shown(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+        shown,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let summary = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
+    (journal, summary)
+}
+
+#[test]
+fn a_facet_named_on_the_command_line_says_how_many_moved_and_from_where() {
+    let (journal, summary) = moved_with(None);
+    assert!(
+        summary
+            .contains("3 workouts already listed on the activities page moved there, from work."),
+        "{summary}"
+    );
+    assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
+}
+
+#[test]
+fn a_run_moves_what_the_owner_was_shown() {
+    let (journal, summary) = moved_with(Some(3));
+    assert!(summary.contains("moved there, from work."), "{summary}");
+    assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
+}
+
+#[test]
+fn more_to_move_than_the_owner_saw_moves_none_and_says_so() {
+    let (journal, summary) = moved_with(Some(2));
+    assert!(
+        summary.contains("nothing already listed moved: 3 workouts would have, and you saw 2."),
+        "{summary}"
+    );
+    assert!(!summary.contains("moved there"), "{summary}");
+    let root = journal.path();
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
 }
 
 #[test]

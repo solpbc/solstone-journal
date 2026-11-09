@@ -32,6 +32,7 @@ use solstone_core_format::content::body_records::{
 };
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_TILE_FILE, strava_rows};
 use solstone_core_import_sources::body_stream::{BodySource, RecordSource, STRAVA, WindowFile};
+use solstone_core_import_sources::strava::misread_tile_keys;
 
 pub(crate) const TOMBSTONE: &str = "tombstone.json";
 /// Separates the stream from the row id in an account key: neither holds it.
@@ -281,6 +282,13 @@ impl Sensed {
             let zone = solstone_core_journal_config::placed_zone(journal, STRAVA_SOURCE);
             for (on, key) in strava_cut(start, end, zone) {
                 keys.entry(on).or_default().insert(key);
+            }
+            // A record an earlier version filed at a key it misplaced counts too.
+            if let Some(zone) = zone {
+                let elapsed = u64::try_from((end - start).num_seconds()).unwrap_or(1);
+                for (on, key) in misread_tile_keys(start, elapsed, zone) {
+                    keys.entry(on).or_default().insert(key);
+                }
             }
             for on in covered_days(day, end, zone) {
                 let tiles = self

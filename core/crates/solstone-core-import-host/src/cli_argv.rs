@@ -65,6 +65,9 @@ pub struct RegistryDispatch {
     pub fallback_timestamp: Option<String>,
     /// The facet a Strava import files its workouts under.
     pub facet: ImportFacet,
+    /// How many already-listed workouts the owner was shown would move, when
+    /// they were shown a count before the run. It moves no more than that.
+    pub listed_moves_shown: Option<usize>,
 }
 
 /// The facet one Strava import files its workouts under.
@@ -845,6 +848,8 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             timestamp,
             ..
         } => {
+            let (facet, listed_moves_shown) =
+                asked_import_facet(&options, source, media, journal_path);
             let registry_dispatch = RegistryDispatch {
                 media: PathBuf::from(media),
                 source,
@@ -854,7 +859,8 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
                 force: options.force,
                 owner_timestamp: options.timestamp.clone(),
                 fallback_timestamp: options.fallback_timestamp.clone(),
-                facet: asked_import_facet(&options, source, media, journal_path),
+                facet,
+                listed_moves_shown,
             };
             match dispatch.seams() {
                 None => CliOutcome::Registry(registry_dispatch),
@@ -892,7 +898,7 @@ fn asked_import_facet(
     source: RegistrySource,
     media: &str,
     journal: &Path,
-) -> ImportFacet {
+) -> (ImportFacet, Option<usize>) {
     let given = import_facet(options);
     if given != ImportFacet::Unattended
         || source != RegistrySource::Strava
@@ -902,7 +908,7 @@ fn asked_import_facet(
         || !std::io::stdin().is_terminal()
         || !std::io::stdout().is_terminal()
     {
-        return given;
+        return (given, options.listed_moves_shown);
     }
     crate::body_facet_question::ask_strava_facet(
         journal,
@@ -2145,6 +2151,7 @@ struct Options {
     path: Option<PathBuf>,
     facet: Option<String>,
     no_facet: bool,
+    listed_moves_shown: Option<usize>,
     setting: Option<String>,
     auto: Option<Option<String>>,
     window_days: Option<u64>,
@@ -2368,6 +2375,7 @@ fn takes_value(argument: &str) -> bool {
             | "--snapshot-digest"
             | "--timestamp"
             | "--facet"
+            | "--listed-moves-shown"
             | "--setting"
             | "--source"
             | "--sync"
@@ -2409,6 +2417,7 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
             )
         }
         "--facet" => options.facet = Some(value.to_owned()),
+        "--listed-moves-shown" => options.listed_moves_shown = value.parse().ok(),
         "--setting" => options.setting = Some(value.to_owned()),
         "--audio-archive" => options.audio_archive = Some(PathBuf::from(value)),
         "--archive-identity" => {

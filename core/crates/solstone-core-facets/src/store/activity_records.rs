@@ -539,12 +539,18 @@ pub fn load_activity_records(
     day: &str,
     include_hidden: bool,
 ) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
-    let rows = read_rows(&day_path(root, facet, day)?)?;
-    Ok(rows
+    let rows = read_rows(&day_path(root, facet, day)?)?
         .into_iter()
         .map(normalize)
+        .collect::<Vec<_>>();
+    let superseded = super::superseded::superseded_record_ids(root, facet, day, &rows);
+    Ok(rows
+        .into_iter()
         .filter(|row| {
-            !is_retired_plan(row) && !is_body_record(row) && (include_hidden || !hidden(row))
+            !is_retired_plan(row)
+                && !is_body_record(row)
+                && (include_hidden || !hidden(row))
+                && !superseded.contains(id(row))
         })
         .collect())
 }
@@ -561,10 +567,15 @@ pub fn load_activity_records_readable(
     day: &str,
     include_hidden: bool,
 ) -> Result<Vec<ActivityRecord>, ActivityRecordStoreError> {
-    Ok(read_activity_records_readable(root, facet, day)?
+    let rows = read_activity_records_readable(root, facet, day)?;
+    let superseded = super::superseded::superseded_record_ids(root, facet, day, &rows);
+    Ok(rows
         .into_iter()
         .filter(|row| {
-            !is_retired_plan(row) && !is_body_record(row) && (include_hidden || !hidden(row))
+            !is_retired_plan(row)
+                && !is_body_record(row)
+                && (include_hidden || !hidden(row))
+                && !superseded.contains(id(row))
         })
         .collect())
 }

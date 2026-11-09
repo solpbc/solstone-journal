@@ -37,6 +37,69 @@ fn fold(base: Record, lines: &[&SenseLine], primary: &str) -> Record {
     decide(base, lines, &|_| true, primary, NOW)
 }
 
+#[test]
+fn a_changed_line_adds_whats_new_and_never_brings_back_what_the_owner_removed() {
+    let at = "2026-01-02T00:00:00Z";
+    let first = line(
+        "a",
+        json!({"id": "s", "title": "Old", "edits": [
+            edit(at, "owner:update", &["title"], json!({"title": "Old"}))]}),
+    );
+    let mut record = fold(base(), &[&first], &first.key());
+    assert_eq!(record["title"], json!("Old"));
+    // The owner removes the carried edit.
+    let edits = record.get_mut("edits").unwrap().as_array_mut().unwrap();
+    edits[0].as_object_mut().unwrap().insert(
+        solstone_core_format::content::EDIT_REMOVED.to_owned(),
+        json!(LATER),
+    );
+    let without = fold(record.clone(), &[&first], &first.key());
+    assert!(without.get("title").is_none());
+
+    // The line changes without the owner touching it: the store rewrote it.
+    let changed = line(
+        "a",
+        json!({"id": "s", "title": "Old", "rewritten": true, "edits": [
+            edit(at, "owner:update", &["title"], json!({"title": "Old"})),
+            edit(LATER, "owner:update", &["description"], json!({"description": "New"}))]}),
+    );
+    let after = fold(without, &[&changed], &changed.key());
+    assert!(after.get("title").is_none(), "{after:?}");
+    assert_eq!(after["description"], json!("New"));
+}
+
+#[test]
+fn the_hide_note_the_owner_wrote_is_carried() {
+    let hidden = line(
+        "a",
+        json!({"id": "s", "hidden": true, "edits": [hide("2026-01-02T00:00:00Z", "owner:hide")]}),
+    );
+    let record = fold(base(), &[&hidden], &hidden.key());
+    let decision = record["edits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|edit| edit["carried"] == json!("decision"))
+        .unwrap();
+    assert_eq!(decision["note"], json!("muted"));
+    assert_eq!(record["hidden"], json!(true));
+}
+
+#[test]
+fn a_record_that_was_visible_counts_as_visible_at_every_later_decision() {
+    let hidden = line(
+        "a",
+        json!({"id": "s", "hidden": true, "edits": [hide("2026-01-02T00:00:00Z", "owner:hide")]}),
+    );
+    let mut seeded = base();
+    seeded.insert(CONVERTED.to_owned(), json!({RECORD_VISIBLE: true}));
+    let record = fold(seeded, &[&hidden], &hidden.key());
+    assert_eq!(record["hidden"], json!(false));
+    assert_eq!(record[CONVERTED][RECORD_VISIBLE], json!(true));
+    let again = fold(record, &[&hidden], &hidden.key());
+    assert_eq!(again["hidden"], json!(false));
+}
+
 fn key(facet: &str) -> String {
     format!("20260101|{facet}|exercise_070000_300")
 }

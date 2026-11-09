@@ -1339,6 +1339,13 @@ pub(crate) fn command(
         if let Some(token) = metadata["preview"]["token"].as_str() {
             cmd.extend(["--preview-token".to_owned(), token.to_owned()]);
         }
+        // What the card showed the owner would move: the run moves no more.
+        if metadata.contains_key(solstone_core_import::BODY_FACET_METADATA) {
+            let shown = metadata["preview"]["size"]["listed_moves"]["count"]
+                .as_u64()
+                .unwrap_or(0);
+            cmd.extend(["--listed-moves-shown".to_owned(), shown.to_string()]);
+        }
     }
     cmd
 }
