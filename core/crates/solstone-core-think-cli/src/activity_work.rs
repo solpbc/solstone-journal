@@ -1310,6 +1310,27 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_record_that_became_a_code_record_settles_and_a_bad_list_line_costs_only_itself() {
+        let root = tempfile::tempdir().unwrap();
+        let (context, _, _) = retained_fixture(root.path());
+        let day = "20261016";
+        std::fs::remove_file(root.path().join("facets/home/activities/20261016.jsonl")).unwrap();
+        assert!(rebuild_receipts(&context, day).is_err());
+
+        std::fs::create_dir_all(root.path().join("imports")).unwrap();
+        std::fs::write(
+            root.path().join("imports/.strava-converted.jsonl"),
+            concat!(
+                "{\"day\":\"20261015\",\"facet\":\"home\",\"id\":\"other\"}\n",
+                "{\"torn\n",
+                "{\"day\":\"20261016\",\"facet\":\"home\",\"id\":\"writing_090000_300\"}\n",
+            ),
+        )
+        .unwrap();
+        assert_eq!(rebuild_receipts(&context, day).unwrap().len(), 1);
+    }
+
     fn retained_fixture(root: &Path) -> (ThinkContext, PathBuf, PathBuf) {
         let day = "20261016";
         let segment = root.join("chronicle").join(day).join("notes/090000_300");

@@ -170,6 +170,21 @@ impl StravaRunSummary {
                 "not every workout could be listed with your activities this time. importing again tries once more.\n"
             );
         }
+        let waiting = self.conversion.waiting + self.conversion.skipped_locked;
+        if waiting > 0 {
+            let _ = writeln!(
+                text,
+                "{} from before couldn't be updated yet. your journal tries again the next time it starts.\n",
+                plural(waiting, "earlier workout", "earlier workouts"),
+            );
+        }
+        if self.conversion.moves_open > 0 {
+            let _ = writeln!(
+                text,
+                "{} still being moved, and can be edited once that finishes.\n",
+                plural(self.conversion.moves_open, "record is", "records are"),
+            );
+        }
     }
 
     fn names_section(&self, text: &mut String) {
@@ -454,5 +469,22 @@ mod tests {
         assert!(!not_added.contains(store_line));
         assert_eq!(not_added[0], plain[0]);
         assert_eq!(not_added.len(), plain.len());
+    }
+
+    #[test]
+    fn workouts_still_waiting_are_counted_with_no_names_in_the_words() {
+        let mut waiting = summary(Some("body"), FacetBasis::Chosen);
+        waiting.conversion.waiting = 1;
+        waiting.conversion.skipped_locked = 1;
+        waiting.conversion.moves_open = 1;
+        let text = waiting.text();
+        assert!(
+            text.contains("2 earlier workouts from before couldn't be updated yet"),
+            "{text}"
+        );
+        assert!(text.contains("1 record is still being moved"), "{text}");
+        let none = summary(Some("body"), FacetBasis::Chosen).text();
+        assert!(!none.contains("from before"), "{none}");
+        assert!(!none.contains("being moved"), "{none}");
     }
 }
