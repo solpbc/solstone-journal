@@ -1396,6 +1396,8 @@
     }
 
     restoreEl('restore-door').addEventListener('click', showRestoreView);
+    // Journal.app's first run links here to open this view directly.
+    if (window.location.hash === '#restore') showRestoreView();
     document.querySelectorAll('input[name="restore-lane"]').forEach(radio => radio.addEventListener('change', () => setRestoreLane(radio.value)));
     restoreEl('restore-backend').addEventListener('change', syncRestoreBackend);
     restoreEl('restore-own').addEventListener('submit', findOwnStorage);

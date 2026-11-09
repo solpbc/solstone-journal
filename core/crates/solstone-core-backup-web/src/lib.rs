@@ -1332,6 +1332,14 @@ async fn teardown_route(deps: BackupWebDeps) -> axum::response::Response {
 }
 
 fn restore_pending_response(deps: &BackupWebDeps) -> Option<axum::response::Response> {
+    if solstone_core_backup_runtime::restore_sweep::setup_finished(&deps.journal_root) {
+        return Some(response::error(
+            axum::http::StatusCode::CONFLICT,
+            "restore couldn't start.",
+            solstone_core_backup_runtime::restore::RESTORE_REASON_JOURNAL_ALREADY_SET_UP,
+            "",
+        ));
+    }
     solstone_core_backup_runtime::restore::restore_pending_rotation_refusal(&deps.journal_root).map(
         |reason| {
             response::error(

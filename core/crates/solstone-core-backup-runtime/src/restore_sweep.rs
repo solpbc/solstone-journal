@@ -48,7 +48,7 @@ pub fn is_init_restore(journal: &Path) -> bool {
 
 /// Whether setup has finished here. A restored config says so too, which is
 /// why a retry of a restore already recorded doesn't ask.
-fn setup_finished(journal: &Path) -> bool {
+pub fn setup_finished(journal: &Path) -> bool {
     fs::read(journal.join("config/journal.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())

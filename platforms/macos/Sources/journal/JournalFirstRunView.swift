@@ -368,6 +368,14 @@ struct JournalFirstRunView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
 
+                        if model.setupState?.mark.state != .locked {
+                            Button(JournalFirstRunCopy.restoreFromBackup) {
+                                model.openRestoreInBrowser()
+                            }
+                            .buttonStyle(.link)
+                            .disabled(locked)
+                        }
+
                         if let failure = model.markFailure, !failure.isEmpty {
                             SetupErrorText(failure)
                                 .fixedSize(horizontal: false, vertical: true)

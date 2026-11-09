@@ -1167,7 +1167,13 @@ fn restore_command(
     restore_from_payload(
         &payload,
         |destination, recovery_key| {
-            restore_journal(journal, services, recorder, destination, recovery_key)
+            solstone_core_backup_runtime::restore::restore_during_setup(
+                journal,
+                services,
+                recorder,
+                destination,
+                recovery_key,
+            )
         },
         json_output,
     )
@@ -1658,6 +1664,9 @@ fn restore_failure_reason(reason: &str) -> String {
         "restore_failed" => "the restore didn't complete".into(),
         "restore_summary_missing" => "the restore finished but its summary is missing".into(),
         "integrity_check_io_failed" => "the restored files couldn't be checked".into(),
+        "journal_already_set_up" => {
+            "your journal is already set up, so it can't be restored over. to use a backup, start a new journal and choose restore during setup".into()
+        }
         "insufficient_free_space" => {
             "there isn't enough free space for this restore, so nothing changed".into()
         }

@@ -8,6 +8,7 @@ enum JournalFirstRunCopy {
     static let locationField = "location"
     static let chooseLocation = "choose"
     static let continueButton = "continue"
+    static let restoreFromBackup = "restore from a backup"
     static let setupTitle = "setting up your journal"
     static let setupSubtitle = "this can take a minute."
     static let finishInBrowserTitle = "finish setting up in your browser"

@@ -48,6 +48,8 @@ pub const RESTORE_REASON_RECOVERY_CONFIRMATION_PUBLISH_FAILED: &str =
     "recovery_confirmation_publish_failed";
 pub const RESTORE_REASON_FULL_SCAN_FAILED: &str = "full_scan_failed";
 pub const RESTORE_REASON_RESTORE_RECORD_FAILED: &str = "restore_record_failed";
+/// A journal in use can't be restored over: a restore is a choice during setup.
+pub const RESTORE_REASON_JOURNAL_ALREADY_SET_UP: &str = "journal_already_set_up";
 /// The restored files won't fit.
 pub const RESTORE_REASON_INSUFFICIENT_FREE_SPACE: &str = "insufficient_free_space";
 pub const RESTORE_REASON_RECOVERY_KEY_REVOCATION_PENDING: &str = "recovery_key_revocation_pending";
@@ -692,6 +694,36 @@ pub fn restore_mobile_latest_journal(
     )
 }
 
+/// A command-line restore during setup, on the recorded path like the setup
+/// page's. A finished journal refuses inside.
+#[cfg(not(target_os = "ios"))]
+pub fn restore_during_setup(
+    journal: &Path,
+    services: &BackupServices<'_>,
+    recorder: &dyn RestoreRecorder,
+    destination: Destination,
+    entered_recovery_key: &str,
+) -> RestoreOutcome {
+    if !restore_sweep::setup_finished(journal)
+        && let Err(error) = restore_sweep::mark_init_restore(journal)
+    {
+        log::warn!("restore: the setup restore marker was not written: {error}");
+        return unrecorded_outcome(error_draft(RESTORE_REASON_RESTORE_IO_FAILED));
+    }
+    match solstone_core_journal_io::JournalRoot::open(journal) {
+        Ok(root) => restore_mobile_latest_journal(
+            Arc::new(root),
+            services,
+            recorder,
+            destination,
+            entered_recovery_key,
+            MobileRestoreIdentity::Byo,
+            &mut || Ok(()),
+        ),
+        Err(_) => unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED)),
+    }
+}
+
 /// One backup of a journal an owner can choose to restore.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
 pub struct JournalBackup {
@@ -861,6 +893,10 @@ fn restore_journal_with(
         Ok(phase) => phase,
         Err(outcome) => return outcome,
     };
+    #[cfg(not(target_os = "ios"))]
+    if !matches!(phase, RestorePhase::Adopted { .. }) && restore_sweep::setup_finished(journal) {
+        return unrecorded_outcome(error_draft(RESTORE_REASON_JOURNAL_ALREADY_SET_UP));
+    }
     if let Some(reason) = pre_copy_refusal(journal, matches!(phase, RestorePhase::Adopted { .. })) {
         return unrecorded_outcome(error_draft(reason));
     }

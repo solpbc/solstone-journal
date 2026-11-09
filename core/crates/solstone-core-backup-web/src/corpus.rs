@@ -750,8 +750,7 @@ fn journal_builder_writes_every_phase_or_leaves_unestablished_absent() {
             "f3068f71269517465d408f9c80e53f3726f1b1c477e416408efad70c360f40a2",
         ),
     ] {
-        let root = crate::test_support::root(phase);
-        let written = fs::read(root.path().join("config/journal.json")).unwrap();
+        let written = crate::test_support::python_build_journal_bytes(phase);
         assert_eq!(
             format!("{:x}", Sha256::digest(&written)),
             expected_digest,
