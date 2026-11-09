@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDate;
 use rusqlite::functions::FunctionFlags;
@@ -87,18 +88,26 @@ pub fn search_connection(
     search_connection_admitting(journal, boundary, request, reference_date, None)
 }
 
-/// Connection search that returns the possible-name rows `admission` admits.
+/// Connection search that returns the possible-name rows `admission` admits
+/// and the body records' entries `body_entries` admits.
 ///
-/// `admission` runs inside the query, before a row can match, relax the query,
-/// rank, count or anchor a continuation, so a row it refuses leaves no trace.
+/// Both run inside the query, before a row can match, relax the query, rank,
+/// count or anchor a continuation, so a row refused leaves no trace.
 pub fn search_connection_with_possible_names(
     journal: &Path,
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
     reference_date: NaiveDate,
     admission: PossibleNameAdmission,
+    body_entries: BodyEntryAdmission,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
-    search_connection_admitting(journal, boundary, request, reference_date, Some(admission))
+    search_connection_admitting(
+        journal,
+        boundary,
+        request,
+        reference_date,
+        Some((admission, body_entries)),
+    )
 }
 
 fn search_connection_admitting(
@@ -106,7 +115,7 @@ fn search_connection_admitting(
     boundary: &ConnectionBoundary,
     request: &ConnectionSearchRequest,
     reference_date: NaiveDate,
-    admission: Option<PossibleNameAdmission>,
+    admission: Option<(PossibleNameAdmission, BodyEntryAdmission)>,
 ) -> Result<ConnectionSearchResponse, IndexAccessError> {
     let compilation = compile_query(&request.query, reference_date);
     let no_tokenizable_term = matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm);
@@ -120,8 +129,9 @@ fn search_connection_admitting(
         }
         Err(error) => return Err(error),
     };
-    if let Some(admission) = admission {
+    if let Some((admission, body_entries)) = admission {
         connection.admit_possible_names(admission)?;
+        connection.set_body_entries(BodyEntries::Admitted(body_entries));
     }
     // A query with no searchable word still lists a bounded day range, as an
     // empty query does; without a day bound it finds nothing.
@@ -191,6 +201,7 @@ fn owner_request_for_connection(request: &ConnectionSearchRequest) -> SearchRequ
         relax: request.relax,
         counts: false,
         order: Order::Recency,
+        body_owner_words: false,
     }
 }
 
@@ -331,6 +342,11 @@ fn resolve_plan(
     reference_date: NaiveDate,
     compilation: crate::QueryCompilation,
 ) -> Result<(SqlPlan, bool), IndexAccessError> {
+    connection.set_body_entries(if request.body_owner_words {
+        BodyEntries::All
+    } else {
+        BodyEntries::None
+    });
     resolve_plan_with_boundary(connection, request, reference_date, compilation, None)
 }
 
@@ -402,6 +418,7 @@ pub(crate) fn plan_from_outcome_with_boundary(
     };
     plan.where_clause = visible_rows(&plan.where_clause);
     plan.where_clause.push_str(POSSIBLE_NAME_ROWS_ADMITTED);
+    plan.where_clause.push_str(BODY_ENTRY_ROWS_ADMITTED);
     if let Some(boundary) = boundary {
         append_connection_prefilter(&mut plan, boundary);
     }
@@ -657,6 +674,9 @@ impl OwnerIndex {
 pub(crate) struct QueryConnection {
     connection: Connection,
     path: PathBuf,
+    /// What this session's queries do with a body record's entry. The SQL
+    /// function reads it, so a long-lived session can change it per request.
+    body_entries: Arc<Mutex<BodyEntries>>,
     #[cfg(any(test, feature = "test-hooks"))]
     aggregate_calls: usize,
     #[cfg(any(test, feature = "test-hooks"))]
@@ -680,6 +700,13 @@ impl QueryConnection {
     ) -> Result<(), IndexAccessError> {
         register_possible_name_admission(&self.connection, Some(admission))
             .map_err(|error| self.classify(error))
+    }
+
+    fn set_body_entries(&self, entries: BodyEntries) {
+        match self.body_entries.lock() {
+            Ok(mut held) => *held = entries,
+            Err(poisoned) => *poisoned.into_inner() = entries,
+        }
     }
 }
 
@@ -771,6 +798,96 @@ fn register_possible_name_admission(
             };
             let content = context.get_raw(2).as_str().unwrap_or_default();
             Ok(admission(path, idx, content))
+        },
+    )
+}
+
+/// A query plan returns a body record's entry only as the session's setting
+/// says. The path test comes first, and the function looks at a row's own
+/// words before opening any file, so no other row pays for it.
+const BODY_ENTRY_ROWS_ADMITTED: &str = " AND (chunks.path NOT LIKE 'facets/%/activities/%.jsonl' \
+     OR solstone_body_entry_admitted(chunks.path, chunks.idx, chunks.content))";
+const BODY_ENTRY_ADMISSION_FUNCTION: &str = "solstone_body_entry_admitted";
+
+/// Decides whether one body record's entry may be returned: its stored path
+/// and position.
+pub type BodyEntryAdmission = std::sync::Arc<dyn Fn(&str, i64) -> bool + Send + Sync>;
+
+/// What this session's queries do with a body record's entry.
+#[derive(Clone, Default)]
+pub(crate) enum BodyEntries {
+    /// Nothing asked for them: a talent's search, or any new caller.
+    #[default]
+    None,
+    /// The owner's own surfaces.
+    All,
+    /// A connection: each one as its composed record reads for it.
+    Admitted(BodyEntryAdmission),
+}
+
+/// Whether an entry at this position is a body record's. A file that can't be
+/// read says yes, so a row nothing can vouch for still goes through the gate.
+fn is_body_entry(journal: &Path, path: &str, idx: i64) -> bool {
+    let Ok(text) = std::fs::read_to_string(journal.join(path)) else {
+        return true;
+    };
+    let records = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
+        .filter_map(|value| match value {
+            serde_json::Value::Object(record) => Some(record),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    usize::try_from(idx)
+        .ok()
+        .is_some_and(|idx| solstone_core_format::content::body_record_at(&records, idx).is_some())
+}
+
+fn register_body_entry_admission(
+    connection: &Connection,
+    journal: Option<PathBuf>,
+    entries: Arc<Mutex<BodyEntries>>,
+) -> rusqlite::Result<()> {
+    connection.create_scalar_function(
+        BODY_ENTRY_ADMISSION_FUNCTION,
+        3,
+        // Not deterministic: it reads the journal as it is now.
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DIRECTONLY,
+        move |context| {
+            let content = context.get_raw(2).as_str().unwrap_or_default();
+            // Every body record's entry has this line. Any other row is done.
+            if !content.contains(solstone_core_format::content::BODY_ENTRY_LINE) {
+                return Ok(true);
+            }
+            let path = context.get_raw(0).as_str().unwrap_or_default();
+            let idx = match context.get_raw(1) {
+                rusqlite::types::ValueRef::Integer(idx) => idx,
+                rusqlite::types::ValueRef::Text(text) => {
+                    match std::str::from_utf8(text).ok().and_then(|t| t.parse().ok()) {
+                        Some(idx) => idx,
+                        None => return Ok(false),
+                    }
+                }
+                _ => return Ok(false),
+            };
+            // An ordinary record's words can hold the line too: its position
+            // says which it is.
+            if journal
+                .as_deref()
+                .is_some_and(|journal| !is_body_entry(journal, path, idx))
+            {
+                return Ok(true);
+            }
+            let entries = entries.lock().map_or_else(
+                |poisoned| poisoned.into_inner().clone(),
+                |held| held.clone(),
+            );
+            Ok(match entries {
+                BodyEntries::None => false,
+                BodyEntries::All => true,
+                BodyEntries::Admitted(admission) => admission(path, idx),
+            })
         },
     )
 }
@@ -1294,11 +1411,19 @@ impl QueryConnection {
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_possible_name_admission(&connection, None)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
+        let body_entries = Arc::new(Mutex::new(BodyEntries::default()));
+        register_body_entry_admission(
+            &connection,
+            path.parent().and_then(Path::parent).map(Path::to_path_buf),
+            Arc::clone(&body_entries),
+        )
+        .map_err(|error| classify_sql_error(path.clone(), error))?;
         register_today_anywhere(&connection)
             .map_err(|error| classify_sql_error(path.clone(), error))?;
         Ok(Self {
             connection,
             path,
+            body_entries,
             #[cfg(any(test, feature = "test-hooks"))]
             aggregate_calls: 0,
             #[cfg(any(test, feature = "test-hooks"))]

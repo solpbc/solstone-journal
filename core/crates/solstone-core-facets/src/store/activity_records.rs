@@ -522,7 +522,10 @@ pub fn is_retired_plan(record: &ActivityRecord) -> bool {
     record.get("source").and_then(Value::as_str) == Some("anticipated")
 }
 
-pub use solstone_core_format::content::{BODY_RECORD_SOURCE, is_body_record};
+pub use solstone_core_format::content::{
+    BODY_RECORD_SOURCE, EDIT_REMOVED, activity_field_held, edit_removed, is_body_record,
+};
+use solstone_core_format::content::{edit_names, owner_edit};
 
 pub fn load_activity_records(
     root: &Path,
@@ -1164,27 +1167,11 @@ fn hidden(record: &ActivityRecord) -> bool {
     record.get("hidden").is_some_and(activity_value_truthy)
 }
 
-/// Whether `field` is the owner's: some edit that has not been removed, made
-/// by the owner or from the command line, names it. While it is held no
-/// talent writes it.
-pub fn activity_field_held(record: &ActivityRecord, field: &str) -> bool {
-    record
-        .get("edits")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_object)
-        .any(|edit| owner_edit(edit) && !edit_removed(edit) && edit_names(edit, field))
-}
-
 /// What a recorded edit set, per field.
 pub const EDIT_SET: &str = "set";
 /// What each field an edit set held just before. A field that was absent is
 /// absent here too.
 pub const EDIT_BEFORE: &str = "before";
-/// When a removed edit was removed.
-pub const EDIT_REMOVED: &str = "removed";
-
 /// The actor of an edit recording who the owner said spoke some of the
 /// activity's lines.
 pub const OWNER_LINES_ACTOR: &str = "owner:lines";
@@ -1201,25 +1188,6 @@ fn records_values(actor: &str) -> bool {
 
 fn lines_edit(edit: &Map<String, Value>) -> bool {
     edit.get("actor").and_then(Value::as_str) == Some(OWNER_LINES_ACTOR)
-}
-
-fn owner_edit(edit: &Map<String, Value>) -> bool {
-    let actor = edit
-        .get("actor")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    actor.starts_with("owner:") || actor.starts_with("cli:")
-}
-
-/// Whether an edit has been removed.
-pub fn edit_removed(edit: &Map<String, Value>) -> bool {
-    edit.contains_key(EDIT_REMOVED)
-}
-
-fn edit_names(edit: &Map<String, Value>, field: &str) -> bool {
-    edit.get("fields")
-        .and_then(Value::as_array)
-        .is_some_and(|fields| fields.iter().any(|name| name.as_str() == Some(field)))
 }
 
 fn edit_recorded(edit: &Map<String, Value>) -> bool {

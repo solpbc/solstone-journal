@@ -19,10 +19,86 @@ pub const BODY_RECORD_SOURCE: &str = "body";
 
 /// A body record refers to an account in a body window and copies none of it.
 /// It is read only by composing it with that window, for a connection allowed
-/// to read it, so no reader takes the file's row as it stands: it isn't
-/// indexed, chunked, thought about or counted, and an entry's position skips it.
+/// to read it, so no reader takes the file's row as it stands: it isn't thought
+/// about or counted. The one thing indexed is what the owner wrote on it (see
+/// [`body_record_indexed`]), and those entries come after every other record's.
 pub fn is_body_record(record: &JsonObject) -> bool {
     record.get("source").and_then(Value::as_str) == Some(BODY_RECORD_SOURCE)
+}
+
+/// When a removed edit was removed.
+pub const EDIT_REMOVED: &str = "removed";
+
+/// Whether an edit was the owner's, or made from the command line.
+pub fn owner_edit(edit: &JsonObject) -> bool {
+    let actor = edit
+        .get("actor")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    actor.starts_with("owner:") || actor.starts_with("cli:")
+}
+
+/// Whether an edit has been removed.
+pub fn edit_removed(edit: &JsonObject) -> bool {
+    edit.contains_key(EDIT_REMOVED)
+}
+
+/// Whether an edit names `field`.
+pub fn edit_names(edit: &JsonObject, field: &str) -> bool {
+    edit.get("fields")
+        .and_then(Value::as_array)
+        .is_some_and(|fields| fields.iter().any(|name| name.as_str() == Some(field)))
+}
+
+/// Whether `field` is the owner's: some edit that has not been removed, made
+/// by the owner or from the command line, names it. While it is held no
+/// talent writes it.
+pub fn activity_field_held(record: &JsonObject, field: &str) -> bool {
+    record
+        .get("edits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .any(|edit| owner_edit(edit) && !edit_removed(edit) && edit_names(edit, field))
+}
+
+/// The fields of a body record that are the owner's words, when held.
+const BODY_WORD_FIELDS: [&str; 3] = ["title", "description", "details"];
+
+/// The line that marks an entry as a body record's: only a body record's entry
+/// has it, so a reader can tell one without opening the file.
+pub const BODY_ENTRY_LINE: &str = "\n- Kind: ";
+
+/// Whether a body record has an entry: the owner holds its title, description
+/// or details. The entry holds those words, its kind and its day, and nothing
+/// from the source's account.
+pub fn body_record_indexed(record: &JsonObject) -> bool {
+    is_body_record(record)
+        && BODY_WORD_FIELDS
+            .iter()
+            .any(|field| activity_field_held(record, field))
+}
+
+/// How many entries a day file's other records take, so that a position past
+/// them is a body record's. Every reader of a position counts with this.
+#[must_use]
+pub fn non_body_entries(records: &[JsonObject]) -> usize {
+    records
+        .iter()
+        .filter(|record| !is_retired_plan(record) && !is_body_record(record))
+        .count()
+}
+
+/// The body record at an entry position, when the position is past the file's
+/// other records.
+#[must_use]
+pub fn body_record_at(records: &[JsonObject], position: usize) -> Option<&JsonObject> {
+    let body = position.checked_sub(non_body_entries(records))?;
+    records
+        .iter()
+        .filter(|record| body_record_indexed(record))
+        .nth(body)
 }
 
 /// Thinking's reading of a Strava workout: an activity record naming Strava's
@@ -113,6 +189,10 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
         let text = with_stored_details(lines.join("\n"), record);
         chunks.push(recorded_chunk(text, occurrence, &normalized));
     }
+    // After every other record's, so no other entry's position moves.
+    for record in records.iter().filter(|record| body_record_indexed(record)) {
+        chunks.push(body_chunk(rel, record));
+    }
     ProducedChunks {
         chunks,
         agent_override: Some("activity".to_string()),
@@ -120,6 +200,59 @@ pub(super) fn render(rel: Option<&str>, records: &[JsonObject]) -> ProducedChunk
         error: None,
         warnings: Vec::new(),
     }
+}
+
+/// A body record's entry: the owner's own words, its kind and its day.
+fn body_chunk(rel: Option<&str>, record: &JsonObject) -> super::IndexChunk {
+    let held = |field: &str| {
+        activity_field_held(record, field)
+            .then(|| stripped_truthy_display(record, field))
+            .flatten()
+    };
+    let kind = activity_type(record).unwrap_or_default();
+    let mut lines = vec![format!(
+        "### {}",
+        held("title").unwrap_or_else(|| titleize(&kind))
+    )];
+    lines.push(format!("- Kind: {kind}"));
+    if let Some(day) = rel.and_then(day_of_rel) {
+        lines.push(format!("- Day: {day}"));
+    }
+    if let Some(description) = held("description") {
+        lines.push(format!("- Description: {description}"));
+    }
+    if let Some(details) = held("details") {
+        lines.push(format!("- Details: {details}"));
+    }
+    if json_truthy(record.get("hidden")) {
+        lines.push("- Hidden: yes".to_string());
+    }
+    let occurrence = record
+        .get("account")
+        .and_then(|account| account.get("start"))
+        .and_then(Value::as_str)
+        .and_then(super::body_records::parse_source_time)
+        .map_or(0, |start| start.timestamp_millis());
+    // What search keeps beside the entry names the record, and nothing of the
+    // source's account.
+    let mut source = JsonObject::new();
+    for key in ["id", "source", "activity"] {
+        if let Some(value) = record.get(key) {
+            source.insert(key.to_string(), value.clone());
+        }
+    }
+    source.insert(
+        "hidden".to_string(),
+        Value::Bool(json_truthy(record.get("hidden"))),
+    );
+    recorded_chunk(lines.join("\n"), occurrence, &source)
+}
+
+fn day_of_rel(rel: &str) -> Option<&str> {
+    rel.rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".jsonl"))
+        .filter(|value| value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 /// The byte limits an indexed entry is read back under, smallest first: the

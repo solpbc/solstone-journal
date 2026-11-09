@@ -123,6 +123,59 @@ fn readable_windows(
 /// same test `readable_windows` makes, and the Transcripts category, which that
 /// tool requires before it runs. No window to name, its directory gone with
 /// no tombstone say, is no window to read: only the owner sees that account.
+/// The facet folder and day of an activity day file's path.
+pub(crate) fn activity_file_place(path: &str) -> Option<(String, String)> {
+    let mut parts = path.split('/');
+    if parts.next()? != "facets" {
+        return None;
+    }
+    let facet = parts.next()?;
+    if parts.next()? != "activities" {
+        return None;
+    }
+    let day = parts.next()?.strip_suffix(".jsonl")?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((facet.to_owned(), day.to_owned()))
+}
+
+/// The composed record behind a body record's search entry, as this connection
+/// may read it. `None` when it may not: no Transcripts, no grant on its window,
+/// or a window that's gone.
+pub(crate) fn body_entry_face(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    path: &str,
+    idx: i64,
+) -> Option<solstone_core_location::body_records::Face> {
+    let (facet, day) = activity_file_place(path)?;
+    let text = std::fs::read_to_string(journal_root.join(path)).ok()?;
+    let records = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
+        .filter_map(|value| match value {
+            serde_json::Value::Object(record) => Some(record),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let position = usize::try_from(idx).ok()?;
+    let record = solstone_core_format::content::body_record_at(&records, position)?;
+    crate::dispatch::body_face_for(journal_root, snapshot, &facet, &day, record).ok()
+}
+
+/// Admits a body record's search entry for this connection, inside the query.
+pub(crate) fn body_entry_admission(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+) -> solstone_core_indexer_query::BodyEntryAdmission {
+    let journal = journal_root.to_path_buf();
+    let snapshot = snapshot.clone();
+    std::sync::Arc::new(move |path: &str, idx: i64| {
+        body_entry_face(&journal, &snapshot, path, idx).is_some()
+    })
+}
+
 pub(crate) fn window_gate<'a>(
     journal_root: &'a Path,
     snapshot: &'a ConnectionReadSnapshot,

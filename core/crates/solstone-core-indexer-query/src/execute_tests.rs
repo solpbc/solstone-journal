@@ -3487,6 +3487,7 @@ fn group_offset_populates_when_present_and_none_when_absent() {
         relax: false,
         counts: false,
         order: Order::Relevance,
+        body_owner_words: false,
     };
     let response = owner_index
         .search(&request, NaiveDate::from_ymd_opt(2026, 1, 1).unwrap())
@@ -3718,6 +3719,7 @@ fn possible_name_rows_return_only_through_an_admission_that_runs_inside_the_quer
         },
         reference_date(),
         std::sync::Arc::clone(&admission),
+        std::sync::Arc::new(|_: &str, _: i64| false),
     )
     .unwrap();
     assert_eq!(
@@ -3746,6 +3748,7 @@ fn possible_name_rows_return_only_through_an_admission_that_runs_inside_the_quer
         },
         reference_date(),
         admission,
+        std::sync::Arc::new(|_: &str, _: i64| false),
     )
     .unwrap();
     assert_eq!(
@@ -4127,4 +4130,146 @@ fn search_recovers_by_itself_after_a_real_failure() {
     assert!(!answer.results.is_empty());
     assert_eq!(answer.degraded, None, "the build finished");
     fs::remove_dir_all(&root).unwrap();
+}
+
+/// A day file holding an ordinary record, a body record with no owner words
+/// and one with them, and the index rows for it: the ordinary record's entry at
+/// position 0, whose words happen to hold a body entry's line, and the body
+/// record's after it.
+fn body_entry_root(name: &str) -> (PathBuf, &'static str) {
+    const FILE: &str = "facets/body/activities/20260107.jsonl";
+    let (root, connection) = seeded_root(name);
+    let held = serde_json::json!({
+        "id": "body_held", "source": "body", "activity": "workout", "title": "Kestrel Zebra",
+        "edits": [{"timestamp": "2026-01-08T00:00:00Z", "actor": "owner:update",
+            "fields": ["title"], "note": ""}],
+    });
+    let bare = serde_json::json!({"id": "body_bare", "source": "body", "activity": "sleep"});
+    let other = serde_json::json!({"id": "a1", "activity": "meeting", "title": "Kestrel"});
+    write_rel(&root, FILE, &format!("{bare}\n{held}\n{other}\n"));
+    insert(
+        &connection,
+        "### Kestrel\n- Kind: of note in a description",
+        FILE,
+        "20260107",
+        "body",
+        "activity",
+        "",
+        0,
+    );
+    insert(
+        &connection,
+        "### Kestrel Zebra\n- Kind: workout\n- Day: 20260107",
+        FILE,
+        "20260107",
+        "body",
+        "activity",
+        "",
+        1,
+    );
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'transcripts', 'segment_assigned', 1, 0)",
+            [FILE],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, ?, 1, 0, NULL, 0)",
+            [FILE],
+        )
+        .unwrap();
+    drop(connection);
+    (root, FILE)
+}
+
+fn hit_positions<'a>(hits: impl Iterator<Item = &'a crate::SearchHit>) -> Vec<i64> {
+    let mut positions = hits.map(|hit| hit.metadata.idx).collect::<Vec<_>>();
+    positions.sort_unstable();
+    positions
+}
+
+#[test]
+fn a_body_entry_comes_back_only_to_a_search_that_asks_for_one() {
+    let (root, _) = body_entry_root("body-entry-owner");
+    // The default is closed: a talent's search, or any new caller, gets none.
+    let closed = search(&root, &request("Kestrel"), reference_date()).unwrap();
+    assert_eq!(hit_positions(closed.results.iter()), [0]);
+    let mut opened = request("Kestrel");
+    opened.body_owner_words = true;
+    let open = search(&root, &opened, reference_date()).unwrap();
+    assert_eq!(hit_positions(open.results.iter()), [0, 1]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_session_answers_each_request_by_that_requests_own_setting() {
+    let (root, _) = body_entry_root("body-entry-session");
+    let mut index = crate::open_owner_index(&root, OwnerBoundary).unwrap();
+    let mut opened = request("Kestrel");
+    opened.body_owner_words = true;
+    let open = index.search(&opened, reference_date()).unwrap();
+    assert_eq!(hit_positions(open.results.iter()), [0, 1]);
+    let closed = index.search(&request("Kestrel"), reference_date()).unwrap();
+    assert_eq!(hit_positions(closed.results.iter()), [0]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_connection_gets_a_body_entry_only_as_its_admission_says_and_a_refused_one_leaves_no_trace() {
+    let (root, file) = body_entry_root("body-entry-connection");
+    let boundary = connection_boundary(&["transcripts"], ConnectionScope::WholeJournal);
+    // A connection search with no admission returns none.
+    let plain = connection_search(&root, &boundary, "Kestrel");
+    assert_eq!(
+        plain
+            .results
+            .iter()
+            .map(|hit| hit.metadata.idx)
+            .collect::<Vec<_>>(),
+        [0]
+    );
+
+    let admitted = |answer: bool, query: &str, relax: bool| {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = std::sync::Arc::clone(&seen);
+        let body: crate::BodyEntryAdmission = std::sync::Arc::new(move |path: &str, idx: i64| {
+            recorded.lock().unwrap().push((path.to_owned(), idx));
+            answer
+        });
+        let response = crate::search_connection_with_possible_names(
+            &root,
+            &boundary,
+            &ConnectionSearchRequest {
+                query: query.to_string(),
+                limit: 50,
+                relax,
+                ..ConnectionSearchRequest::default()
+            },
+            reference_date(),
+            std::sync::Arc::new(|_: &str, _: i64, _: &str| false),
+            body,
+        )
+        .unwrap();
+        (response, seen)
+    };
+    let (allowed, seen) = admitted(true, "Kestrel", false);
+    assert_eq!(allowed.results.len(), 2);
+    // Only the body record's entry is asked about: the ordinary record's words
+    // holding the same line don't make it one.
+    assert_eq!(*seen.lock().unwrap(), [(file.to_owned(), 1)]);
+
+    // Every word matches only the refused entry, so the query relaxes to the
+    // ordinary record's, as if the entry were not there.
+    let (relaxed, _) = admitted(false, "Kestrel Zebra", true);
+    assert!(relaxed.relaxed, "a refused entry doesn't stop a relax");
+    assert_eq!(
+        relaxed
+            .results
+            .iter()
+            .map(|hit| hit.metadata.idx)
+            .collect::<Vec<_>>(),
+        [0]
+    );
+    fs::remove_dir_all(root).unwrap();
 }

@@ -3,7 +3,11 @@
 
 mod action_logs;
 mod activities;
-pub use activities::{BODY_RECORD_SOURCE, is_body_record, is_retired_plan, is_strava_reading};
+pub use activities::{
+    BODY_ENTRY_LINE, BODY_RECORD_SOURCE, EDIT_REMOVED, activity_field_held, body_record_at,
+    body_record_indexed, edit_names, edit_removed, is_body_record, is_retired_plan,
+    is_strava_reading, non_body_entries, owner_edit,
+};
 mod ai_chat;
 mod audio;
 pub mod body_records;

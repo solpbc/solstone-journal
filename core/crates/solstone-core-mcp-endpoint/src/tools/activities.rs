@@ -1120,7 +1120,13 @@ pub(crate) fn execute_get_sources(
     if let Some(body) =
         crate::activity_admit::body_record_by_identity(&file_text, &activity_ref.record_identity)
     {
-        let face = crate::dispatch::body_face_for(journal_root, snapshot, &activity_ref, &body)?;
+        let face = crate::dispatch::body_face_for(
+            journal_root,
+            snapshot,
+            &activity_ref.facet_dir,
+            &activity_ref.day,
+            &body,
+        )?;
         let item = solstone_core_location::body_records::face_json(&face);
         let units = item
             .get("accounts")

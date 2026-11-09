@@ -60,6 +60,7 @@ pub fn routes_with_embedded(journal_root: PathBuf, route: Arc<ImportRouteSlot>) 
 
 fn router(journal_root: PathBuf, route: Option<Arc<ImportRouteSlot>>) -> Router {
     lifecycle::sweep_abandoned_strava_uploads(&journal_root);
+    solstone_core_facets::queue_body_entries_once(&journal_root);
     Router::new()
         .route("/app/import/", get(assets::shell))
         .route("/app/import/workspace", get(assets::workspace))

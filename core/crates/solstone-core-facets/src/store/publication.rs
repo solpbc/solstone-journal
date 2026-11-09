@@ -20,6 +20,51 @@ pub(super) fn publish_saved(journal_root: &Path, saved: &Path) {
     }
 }
 
+/// Marks that [`queue_body_entries_once`] has run for this journal.
+const BODY_ENTRIES_QUEUED: &str = "imports/.body-entries-queued";
+
+/// Queue, once, every activity day file holding a body record the owner has
+/// written on, so words written before those records had search entries are
+/// found. Best effort: a run that fails part way leaves no marker, and the next
+/// start does it again. The marker is written last.
+pub fn queue_body_entries_once(journal_root: &Path) {
+    let marker = journal_root.join(BODY_ENTRIES_QUEUED);
+    if marker.exists() {
+        return;
+    }
+    let Ok(facets) = std::fs::read_dir(journal_root.join("facets")) else {
+        return;
+    };
+    for facet in facets.flatten() {
+        let Ok(days) = std::fs::read_dir(facet.path().join("activities")) else {
+            continue;
+        };
+        for day in days.flatten() {
+            let path = day.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                return;
+            };
+            let holds_words = text.lines().any(|line| {
+                matches!(
+                    serde_json::from_str::<serde_json::Value>(line.trim()),
+                    Ok(serde_json::Value::Object(record))
+                        if solstone_core_format::content::body_record_indexed(&record)
+                )
+            });
+            if holds_words {
+                publish_saved(journal_root, &path);
+            }
+        }
+    }
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(marker, b"");
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
@@ -63,6 +108,61 @@ mod tests {
             root.path(),
             "facets/work/activities/20260510.jsonl",
             "Kestrel review"
+        ));
+    }
+
+    fn body_line(id: &str, edits: Value) -> String {
+        json!({"id": id, "source": "body", "activity": "workout", "title": "Kestrel loop",
+            "details": "", "hidden": false, "edits": edits,
+            "account": {"key": format!("import.strava\u{1f}{id}"),
+                "start": "2026-05-10T07:00:00Z", "end": "2026-05-10T08:00:00Z"}})
+        .to_string()
+    }
+
+    #[test]
+    fn words_written_before_body_entries_existed_are_queued_once_and_only_those() {
+        let root = tempfile::tempdir().unwrap();
+        create_facet(root.path(), "body", "Body", "", "", "", None).unwrap();
+        let dir = root.path().join("facets/body/activities");
+        std::fs::create_dir_all(&dir).unwrap();
+        let held = json!([{"timestamp": "2026-05-11T00:00:00Z", "actor": "owner:update",
+            "fields": ["title"], "note": ""}]);
+        std::fs::write(dir.join("20260510.jsonl"), body_line("held", held) + "\n").unwrap();
+        std::fs::write(
+            dir.join("20260511.jsonl"),
+            body_line("unheld", json!([])) + "\n",
+        )
+        .unwrap();
+        super::queue_body_entries_once(root.path());
+        solstone_core_indexer_store::todo::drain(root.path(), Default::default()).unwrap();
+        assert!(searchable(
+            root.path(),
+            "facets/body/activities/20260510.jsonl",
+            "Kestrel loop"
+        ));
+        assert!(!searchable(
+            root.path(),
+            "facets/body/activities/20260511.jsonl",
+            "Kestrel loop"
+        ));
+        assert!(root.path().join(super::BODY_ENTRIES_QUEUED).exists());
+
+        // A second start walks nothing: a file now queued would be indexed.
+        std::fs::write(
+            dir.join("20260512.jsonl"),
+            body_line(
+                "later",
+                json!([{"timestamp": "2026-05-12T00:00:00Z", "actor": "owner:update",
+                    "fields": ["title"], "note": ""}]),
+            ) + "\n",
+        )
+        .unwrap();
+        super::queue_body_entries_once(root.path());
+        solstone_core_indexer_store::todo::drain(root.path(), Default::default()).unwrap();
+        assert!(!searchable(
+            root.path(),
+            "facets/body/activities/20260512.jsonl",
+            "Kestrel loop"
         ));
     }
 

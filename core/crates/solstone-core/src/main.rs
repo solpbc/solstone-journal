@@ -6589,7 +6589,7 @@ fn print_indexer_mutation_error(
 
 fn run_indexer_search(options: IndexerSearchOptions) -> ExitCode {
     let json = options.query.json;
-    let request = match search_request(
+    let mut request = match search_request(
         &options.query,
         options.limit,
         options.offset,
@@ -6599,6 +6599,8 @@ fn run_indexer_search(options: IndexerSearchOptions) -> ExitCode {
         Ok(request) => request,
         Err(()) => return print_usage_error(),
     };
+    // The owner's own command line reads what the owner wrote on a body record.
+    request.body_owner_words = true;
     let journal = match resolve_indexer_journal_path(options.query.journal_override) {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),

@@ -102,7 +102,11 @@ pub(crate) fn admit_activity(
         let Some(target_id) = record_identity else {
             return Ok(ActivityAdmit::Withheld { cursor_proof: None });
         };
-        let Some(pair) = record_by_identity(&text, target_id) else {
+        // A body record's entry is served only composed, by the caller.
+        let found = record_by_identity(&text, target_id).or_else(|| {
+            body_record_by_identity(&text, target_id).map(|body| (body, target_id.to_owned()))
+        });
+        let Some(pair) = found else {
             return Ok(ActivityAdmit::Withheld {
                 cursor_proof: Some(proof),
             });
@@ -180,17 +184,23 @@ pub(crate) fn compute_record_identity(record: &Map<String, Value>, trimmed_line:
 fn kept_record_and_identity(text: &str, idx: i64) -> Option<(Map<String, Value>, String)> {
     let index = usize::try_from(idx).ok()?;
     let mut kept = Vec::new();
+    let mut body = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
         match serde_json::from_str::<Value>(trimmed) {
-            // Retired plans and body records are not indexed, so entry positions
-            // skip them too.
-            Ok(Value::Object(record))
-                if solstone_core_facets::is_retired_plan(&record)
-                    || solstone_core_facets::is_body_record(&record) => {}
+            // Retired plans are not indexed, so entry positions skip them too.
+            Ok(Value::Object(record)) if solstone_core_facets::is_retired_plan(&record) => {}
+            // A body record's entry, when it has one, comes after every other
+            // record's, so no other entry's position moves.
+            Ok(Value::Object(record)) if solstone_core_facets::is_body_record(&record) => {
+                if solstone_core_format::content::body_record_indexed(&record) {
+                    let identity = compute_record_identity(&record, trimmed);
+                    body.push((record, identity));
+                }
+            }
             Ok(Value::Object(record)) => {
                 let identity = compute_record_identity(&record, trimmed);
                 kept.push((record, identity));
@@ -198,6 +208,7 @@ fn kept_record_and_identity(text: &str, idx: i64) -> Option<(Map<String, Value>,
             _ => return None,
         }
     }
+    kept.extend(body);
     kept.into_iter().nth(index)
 }
 
