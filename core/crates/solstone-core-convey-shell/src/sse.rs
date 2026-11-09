@@ -154,19 +154,98 @@ impl Stream for LiveEvents {
     }
 }
 
+/// How often the stream says it is alive with a named event a page can see.
+/// A comment line keeps intermediaries open but never reaches the page.
+pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+/// How long the browser waits before reconnecting a dropped stream itself.
+pub const RECONNECT_DELAY: Duration = Duration::from_secs(2);
+
+/// The live events, opened by one `hello` naming this build and carrying the
+/// browser's reconnect delay, with a named heartbeat at a steady interval. The heartbeat frame also carries the plain comment line older
+/// readers and intermediaries rely on. Ends when the live events end.
+struct Heartbeating<S> {
+    hello: Option<Event>,
+    inner: S,
+    tick: tokio::time::Interval,
+    done: bool,
+}
+
+impl<S> Heartbeating<S> {
+    fn new(inner: S, build: &str, period: Duration) -> Self {
+        let mut tick = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let hello = Event::default()
+            .event("hello")
+            .retry(RECONNECT_DELAY)
+            .json_data(json!({ "server_build": build }))
+            .expect("JSON hello");
+        Self {
+            hello: Some(hello),
+            inner,
+            tick,
+            done: false,
+        }
+    }
+}
+
+fn heartbeat_event() -> Event {
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0);
+    Event::default()
+        .comment("heartbeat")
+        .event("heartbeat")
+        .json_data(json!({ "at": at }))
+        .expect("JSON heartbeat")
+}
+
+impl<S> Stream for Heartbeating<S>
+where
+    S: Stream<Item = Result<Event, Infallible>> + Unpin,
+{
+    type Item = Result<Event, Infallible>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.done {
+            return Poll::Ready(None);
+        }
+        if let Some(hello) = self.hello.take() {
+            return Poll::Ready(Some(Ok(hello)));
+        }
+        // The tick first: it is ready at most once a period, so a busy
+        // stream still beats, and the live events are never starved.
+        if self.tick.poll_tick(cx).is_ready() {
+            return Poll::Ready(Some(Ok(heartbeat_event())));
+        }
+        match Pin::new(&mut self.inner).poll_next(cx) {
+            Poll::Ready(None) => {
+                self.done = true;
+                Poll::Ready(None)
+            }
+            other => other,
+        }
+    }
+}
+
 pub async fn events(
     journal_root: PathBuf,
     capture: Option<Arc<BrainStartupCapture>>,
 ) -> axum::response::Response {
     let connection =
         CallosumSocketConnection::new(journal_root.join("health/callosum.sock"), Map::new());
-    let mut response = Sse::new(LiveEvents::new(connection, capture, Some(journal_root)))
-        .keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(15))
-                .text("heartbeat"),
-        )
-        .into_response();
+    let live = LiveEvents::new(connection, capture, Some(journal_root));
+    let mut response = Sse::new(Heartbeating::new(
+        live,
+        crate::assets::server_build(),
+        HEARTBEAT_INTERVAL,
+    ))
+    .keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("heartbeat"),
+    )
+    .into_response();
     response.headers_mut().insert(
         axum::http::header::CACHE_CONTROL,
         axum::http::HeaderValue::from_static("no-cache"),
@@ -190,6 +269,89 @@ mod tests {
         fn next_attempt(&mut self) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
             Box::pin(async { false })
         }
+    }
+
+    fn quiet_live_events() -> impl Stream<Item = Result<Event, Infallible>> + Unpin {
+        futures_util::stream::pending()
+    }
+
+    async fn read_wire(
+        body: &mut (impl futures_core::Stream<Item = Result<axum::body::Bytes, axum::Error>> + Unpin),
+        until: &str,
+    ) -> String {
+        let mut wire = String::new();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !wire.contains(until) {
+                let chunk = body.next().await.expect("stream open").unwrap();
+                wire.push_str(std::str::from_utf8(&chunk).unwrap());
+            }
+        })
+        .await
+        .expect("frame arrives");
+        wire
+    }
+
+    #[tokio::test]
+    async fn stream_opens_with_its_build_and_reconnect_delay() {
+        let stream = Heartbeating::new(quiet_live_events(), "0123456789abcdef", HEARTBEAT_INTERVAL);
+        let response = Sse::new(stream).into_response();
+        let mut body = response.into_body().into_data_stream();
+        let wire = read_wire(&mut body, "\n\n").await;
+        assert!(wire.starts_with("event: hello\n"), "{wire}");
+        assert!(wire.contains("retry: 2000\n"), "{wire}");
+        assert!(wire.contains("data: {\"server_build\":\"0123456789abcdef\"}\n"), "{wire}");
+        assert!(!wire.contains("id:"), "{wire}");
+    }
+
+    #[tokio::test]
+    async fn quiet_stream_sends_a_named_heartbeat_beside_the_comment() {
+        let stream = Heartbeating::new(quiet_live_events(), "build", Duration::from_millis(30));
+        let response = Sse::new(stream).into_response();
+        let mut body = response.into_body().into_data_stream();
+        let wire = read_wire(&mut body, "\"at\":").await;
+        assert!(wire.contains(": heartbeat\n"), "{wire}");
+        assert!(wire.contains("event: heartbeat\n"), "{wire}");
+        assert!(wire.contains("data: {\"at\":"), "{wire}");
+    }
+
+    #[tokio::test]
+    async fn heartbeats_keep_coming_while_events_flow_and_stop_with_the_stream() {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Result<Event, Infallible>>();
+        let live = tokio_stream_from(receiver);
+        let mut stream = Heartbeating::new(live, "build", Duration::from_millis(20));
+        let hello = stream.next().await.unwrap().unwrap();
+        let _ = hello;
+        let mut beats = 0;
+        let mut envelopes = 0;
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(200);
+        while tokio::time::Instant::now() < deadline {
+            sender.send(Ok(Event::default().data("{}"))).unwrap();
+            match tokio::time::timeout(Duration::from_millis(50), stream.next()).await {
+                Ok(Some(Ok(event))) => {
+                    if format!("{event:?}").contains("heartbeat") {
+                        beats += 1;
+                    } else {
+                        envelopes += 1;
+                    }
+                }
+                _ => break,
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(envelopes > 0);
+        assert!(beats > 0, "a busy stream still sends heartbeats");
+        drop(sender);
+        let rest = tokio::time::timeout(Duration::from_secs(1), async {
+            while let Some(_event) = stream.next().await {}
+        })
+        .await;
+        assert!(rest.is_ok(), "the stream ends when the live events end");
+    }
+
+    fn tokio_stream_from(
+        mut receiver: tokio::sync::mpsc::UnboundedReceiver<Result<Event, Infallible>>,
+    ) -> impl Stream<Item = Result<Event, Infallible>> + Unpin {
+        Box::pin(futures_util::stream::poll_fn(move |cx| receiver.poll_recv(cx)))
     }
 
     #[tokio::test]

@@ -34,12 +34,15 @@
     }
   }
 
+  // Options apiJson reads itself, never passed on to fetch.
+  const REQUEST_OPTION_KEYS = new Set(['headers', 'noAuthRedirect', 'scope', 'bounds', 'retry']);
+
   function normalizeRequestOptions(opts) {
     const source = opts || {};
     const fetchOptions = { credentials: 'same-origin' };
 
     Object.keys(source).forEach(key => {
-      if (key === 'headers' || key === 'noAuthRedirect') return;
+      if (REQUEST_OPTION_KEYS.has(key)) return;
       fetchOptions[key] = source[key];
     });
 
@@ -49,7 +52,10 @@
 
     return {
       fetchOptions,
-      noAuthRedirect: !!source.noAuthRedirect
+      noAuthRedirect: !!source.noAuthRedirect,
+      scope: source.scope === 'shell' ? 'shell' : 'view',
+      bounds: source.bounds,
+      retry: source.retry
     };
   }
 
@@ -282,11 +288,351 @@
     }, true);
   }
 
+  // Every read has two clocks, and neither is a limit on the whole read: the
+  // time to its first byte, and how long its body may go with no new bytes.
+  // A slow read that keeps arriving is never cut off. Each bound sits well
+  // above the slowest honest read measured on a large journal, so a bound
+  // only ends a read that has stopped.
+  //
+  // The routes below answer a request that arrives mid-run from the server's
+  // next run, so their wait can reach two runs. Their first-byte bound is at
+  // least twice the slowest run measured (about 21 s, cold).
+  const READ_BOUNDS = Object.freeze({ firstByteMs: 30000, stallMs: 20000 });
+  const COALESCED_READ_BOUNDS = Object.freeze({ firstByteMs: 60000, stallMs: 20000 });
+  const COALESCED_PATHS = new Set([
+    '/app/speakers/api/index',
+    '/app/health/api/state',
+    '/app/health/api/media-backlog',
+    '/app/search/api/search',
+    '/app/transcripts/api/index'
+  ]);
+  const COALESCED_PREFIXES = ['/app/transcripts/api/stats/'];
+
+  function readBoundsFor(url) {
+    let path = '';
+    try {
+      path = new URL(url, window.location.href).pathname;
+    } catch (_) {
+      return READ_BOUNDS;
+    }
+    if (COALESCED_PATHS.has(path) || COALESCED_PREFIXES.some(prefix => path.startsWith(prefix))) {
+      return COALESCED_READ_BOUNDS;
+    }
+    return READ_BOUNDS;
+  }
+
+  // A read that passed its bound. Named like the browser's own timeout, so
+  // the error state treats it as a dropped connection, not a server message.
+  class ReadDeadlineError extends Error {
+    constructor(kind, ms, url) {
+      super(`no ${kind === 'stall' ? 'new bytes' : 'answer'} within ${ms} ms`);
+      this.name = 'TimeoutError';
+      this.deadline = kind;
+      this.boundMs = ms;
+      this.url = url;
+    }
+  }
+
+  // Only a read is retried, only when the answer never came or a gateway in
+  // between (the relay, a phone's proxy) said so, and only twice. A read that
+  // passed its bound is not retried: the server is probably still working on
+  // it, and asking again would start a second run.
+  const RETRY_DELAYS_MS = [1000, 3000];
+  const GATEWAY_STATUSES = new Set([502, 503, 504]);
+
+  function isGatewayFailure(response) {
+    return GATEWAY_STATUSES.has(response?.status) && !isLoopbackRefusal(response);
+  }
+
+  function isTransportFailure(error) {
+    return error instanceof TypeError;
+  }
+
+  function waitFor(ms, signals) {
+    return new Promise((resolve, reject) => {
+      const live = signals.filter(Boolean);
+      const stop = () => {
+        clearTimeout(timer);
+        live.forEach(signal => signal.removeEventListener('abort', stop));
+        reject(new DOMException('aborted', 'AbortError'));
+      };
+      const timer = setTimeout(() => {
+        live.forEach(signal => signal.removeEventListener('abort', stop));
+        resolve();
+      }, ms);
+      if (live.some(signal => signal.aborted)) {
+        stop();
+        return;
+      }
+      live.forEach(signal => signal.addEventListener('abort', stop, { once: true }));
+    });
+  }
+
+  function jittered(ms) {
+    return Math.round(ms * (0.7 + Math.random() * 0.6));
+  }
+
+  // One attempt of one request, under both clocks. Resolves with the
+  // response once its headers are in; `readText()` then reads the body under
+  // the stall clock. Any signal in `signals` aborts it.
+  function boundedAttempt(url, fetchOptions, bounds, signals) {
+    const controller = new AbortController();
+    let failure = null;
+    let timer = null;
+    const live = signals.filter(Boolean);
+    const onAbort = () => controller.abort();
+    live.forEach(signal => {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const release = () => {
+      clearTimeout(timer);
+      live.forEach(signal => signal.removeEventListener('abort', onAbort));
+    };
+    const arm = (kind, ms) => {
+      clearTimeout(timer);
+      if (!ms) return;
+      timer = setTimeout(() => {
+        failure = new ReadDeadlineError(kind, ms, url);
+        controller.abort();
+      }, ms);
+    };
+
+    arm('first-byte', bounds?.firstByteMs);
+    return rawFetch()(url, { ...fetchOptions, signal: controller.signal }).then(
+      (response) => {
+        arm('stall', bounds?.stallMs);
+        const readText = async () => {
+          try {
+            const reader = response.body && typeof response.body.getReader === 'function'
+              ? response.body.getReader()
+              : null;
+            if (!reader) {
+              return await response.text();
+            }
+            const decoder = new TextDecoder();
+            let text = '';
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              arm('stall', bounds?.stallMs);
+              text += decoder.decode(value, { stream: true });
+            }
+            return text + decoder.decode();
+          } catch (error) {
+            throw failure || error;
+          } finally {
+            release();
+          }
+        };
+        const discard = () => {
+          release();
+          try {
+            response.body?.cancel?.();
+          } catch (_) {}
+        };
+        return { response, readText, discard };
+      },
+      (error) => {
+        release();
+        throw failure || error;
+      }
+    );
+  }
+
+  // A request under the read bounds, retried as above when it is a read.
+  // `signals` abort it; the caller decides what an abort means.
+  async function boundedRequest(url, fetchOptions, options = {}) {
+    const method = String(fetchOptions?.method || 'GET').toUpperCase();
+    const bounds = options.bounds === undefined ? readBoundsFor(url) : options.bounds;
+    const retriable = method === 'GET' && options.retry !== false;
+    const signals = (options.signals || []).filter(Boolean);
+    for (let attempt = 0; ; attempt += 1) {
+      let result;
+      try {
+        result = await boundedAttempt(url, fetchOptions, bounds, signals);
+      } catch (error) {
+        if (retriable && attempt < RETRY_DELAYS_MS.length && isTransportFailure(error)
+            && !signals.some(signal => signal.aborted)) {
+          await waitFor(jittered(RETRY_DELAYS_MS[attempt]), signals);
+          continue;
+        }
+        throw error;
+      }
+      if (retriable && attempt < RETRY_DELAYS_MS.length && isGatewayFailure(result.response)) {
+        result.discard();
+        await waitFor(jittered(RETRY_DELAYS_MS[attempt]), signals);
+        continue;
+      }
+      return result;
+    }
+  }
+
+  // Views also read with plain `fetch`. Those reads get the same two clocks,
+  // with no retry and nothing else changed: a same-origin GET or HEAD only,
+  // never the live stream, never a write.
+  const nativeFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+  const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
+  function rawFetch() {
+    return window.fetch === boundedFetch || !window.fetch ? nativeFetch : window.fetch;
+  }
+
+  function boundedFetchApplies(input, init) {
+    const method = String(init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') return false;
+    if (init?.keepalive) return false;
+    let url;
+    try {
+      url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+    } catch (_) {
+      return false;
+    }
+    return url.origin === window.location.origin && !url.pathname.startsWith('/sse/');
+  }
+
+  // A response whose body is read through the stall clock. The fields a
+  // caller reads from a fetched response stay as fetch gave them.
+  function streamedResponse(attempt) {
+    const { response, discard } = attempt;
+    if (!response.body || NULL_BODY_STATUSES.has(response.status) || typeof ReadableStream !== 'function') {
+      return response;
+    }
+    const reader = response.body.getReader();
+    const stalled = attempt.stalled;
+    const body = new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            attempt.finish();
+            controller.close();
+            return;
+          }
+          attempt.progress();
+          controller.enqueue(value);
+        } catch (error) {
+          attempt.finish();
+          controller.error(stalled() || error);
+        }
+      },
+      cancel(reason) {
+        discard();
+        return reader.cancel(reason);
+      }
+    });
+    const wrapped = new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+    for (const field of ['url', 'redirected', 'type']) {
+      Object.defineProperty(wrapped, field, { value: response[field] });
+    }
+    return wrapped;
+  }
+
+  function boundedFetch(input, init) {
+    const fetchImpl = nativeFetch;
+    if (!fetchImpl || !boundedFetchApplies(input, init)) {
+      return fetchImpl ? fetchImpl(input, init) : Promise.reject(new TypeError('fetch unavailable'));
+    }
+    const url = input instanceof Request ? input.url : String(input);
+    const bounds = readBoundsFor(url);
+    const controller = new AbortController();
+    const callerSignal = init?.signal || (input instanceof Request ? input.signal : null);
+    let failure = null;
+    let timer = null;
+    const onAbort = () => controller.abort(callerSignal.reason);
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort(callerSignal.reason);
+      else callerSignal.addEventListener('abort', onAbort, { once: true });
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', onAbort);
+    };
+    const arm = (kind, ms) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        failure = new ReadDeadlineError(kind, ms, url);
+        controller.abort();
+      }, ms);
+    };
+    arm('first-byte', bounds.firstByteMs);
+    return fetchImpl(input, { ...(init || {}), signal: controller.signal }).then(
+      (response) => {
+        arm('stall', bounds.stallMs);
+        return streamedResponse({
+          response,
+          discard: finish,
+          finish,
+          progress: () => arm('stall', bounds.stallMs),
+          stalled: () => failure
+        });
+      },
+      (error) => {
+        finish();
+        throw failure || error;
+      }
+    );
+  }
+
+  if (nativeFetch) {
+    window.fetch = boundedFetch;
+  }
+
+  // Each view mount is a generation. A read a view starts belongs to the
+  // generation it started in; when the next mount begins, the read is
+  // aborted and its answer is never delivered, so an older view can't draw
+  // onto a newer one or put its error state there. Reads the shell itself
+  // makes pass `scope: 'shell'` and outlive mounts.
+  let viewGeneration = new AbortController();
+
+  function beginViewGeneration() {
+    viewGeneration.abort();
+    viewGeneration = new AbortController();
+  }
+
+  const NEVER = new Promise(() => {});
+
   async function apiJson(url, opts) {
-    const { fetchOptions, noAuthRedirect } = normalizeRequestOptions(opts);
-    const response = await fetch(url, fetchOptions);
+    const { fetchOptions, noAuthRedirect, scope, bounds, retry } = normalizeRequestOptions(opts);
+    const method = String(fetchOptions.method || 'GET').toUpperCase();
+    const generation = method === 'GET' && scope !== 'shell' ? viewGeneration.signal : null;
+    const callerSignal = fetchOptions.signal || null;
+    delete fetchOptions.signal;
+    // Writes take no deadline: abandoning one would leave its outcome unknown.
+    const requestBounds = bounds !== undefined ? bounds : (method === 'GET' ? undefined : null);
+    let request;
+    try {
+      request = await boundedRequest(url, fetchOptions, {
+        bounds: requestBounds,
+        retry,
+        signals: [callerSignal, generation]
+      });
+    } catch (error) {
+      if (generation?.aborted && !callerSignal?.aborted) return NEVER;
+      if (error instanceof ReadDeadlineError) {
+        pushApiErrorToConsole(new ApiError({
+          status: 0,
+          statusText: '',
+          serverMessage: error.message,
+          url,
+          cause: 'deadline',
+          timestamp: Date.now()
+        }), url, fetchOptions);
+      }
+      throw error;
+    }
+    if (generation?.aborted && !callerSignal?.aborted) {
+      request.discard();
+      return NEVER;
+    }
+    const { response } = request;
 
     if (isLoopbackRefusal(response)) {
+      request.discard();
       const apiError = new ApiError({
         status: response.status,
         statusText: response.statusText,
@@ -303,6 +649,7 @@
     }
 
     if ((response.status === 401 || response.status === 403) && !noAuthRedirect) {
+      request.discard();
       const correlationId = response?.headers?.get('X-Solstone-Request-Id') || '';
       const timestamp = Date.now();
       window.location.href = '/';
@@ -321,6 +668,7 @@
     // The session gate answers every app route with a redirect to /init until
     // setup finishes; fetch follows it and gets the setup page, not JSON.
     if (response.redirected && isSetupUrl(response.url)) {
+      request.discard();
       const apiError = new ApiError({
         status: response.status,
         statusText: response.statusText,
@@ -335,7 +683,24 @@
       throw apiError;
     }
 
-    const text = await response.text();
+    let text;
+    try {
+      text = await request.readText();
+    } catch (error) {
+      if (generation?.aborted && !callerSignal?.aborted) return NEVER;
+      if (error instanceof ReadDeadlineError) {
+        pushApiErrorToConsole(new ApiError({
+          status: response.status,
+          statusText: response.statusText,
+          serverMessage: error.message,
+          url,
+          cause: 'deadline',
+          timestamp: Date.now()
+        }), url, fetchOptions);
+      }
+      throw error;
+    }
+    if (generation?.aborted && !callerSignal?.aborted) return NEVER;
 
     if (!response.ok) {
       let payload = null;
@@ -436,9 +801,14 @@
   }
 
   window.ApiError = ApiError;
+  window.ReadDeadlineError = ReadDeadlineError;
+  window.boundedRequest = boundedRequest;
+  window.beginViewGeneration = beginViewGeneration;
+  window.READ_BOUNDS = { read: READ_BOUNDS, coalesced: COALESCED_READ_BOUNDS };
   window.apiJson = apiJson;
   window.isLoopbackRefusal = isLoopbackRefusal;
   window.recoverFromLoopbackRefusal = recoverFromLoopbackRefusal;
   window.recoverFromStaleAsset = recoverFromStaleAsset;
+  window.reloadOnce = reloadOnce;
   window.saveControl = saveControl;
 })();

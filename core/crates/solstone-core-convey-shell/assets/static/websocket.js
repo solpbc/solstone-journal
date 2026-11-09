@@ -368,7 +368,7 @@
 	      buttons: [
 	        {
 	          label: 'Reconnect now',
-	          onClick: () => connect(),
+	          onClick: () => reconnectNow(),
 	          dismiss: false
 	        },
 	        {
@@ -384,14 +384,190 @@
 	    });
 	  }
 
-	  function connect() {
-	    if (eventSource) {
-	      eventSource.close();
-	    }
-	    updateStatusIcon('connecting');
-	    eventSource = new EventSource('/sse/events');
+  // The stream sends a named heartbeat every few seconds, so silence means
+  // something. After SUSPECT_SILENCE_MS with no event the page asks the
+  // journal a trivial question: an answer means the stream alone is dead and
+  // is opened again; a refusal means the sign-in is gone; no answer means the
+  // link is down, and the question is asked again on a backoff. Whatever else
+  // is pending, "connected" is never shown after HARD_SILENCE_MS of silence.
+  const SUSPECT_SILENCE_MS = 15000;
+  const HARD_SILENCE_MS = 40000;
+  const WATCH_INTERVAL_MS = 2500;
+  // A page coming back to the foreground has its buffered events delivered
+  // first; give them a moment before reading the silence as a failure.
+  const RETURN_GRACE_MS = 3000;
+  const PROBE_URL = '/api/system/about';
+  const PROBE_BOUNDS = { firstByteMs: 10000, stallMs: 10000 };
+  const PROBE_DELAYS_MS = [1000, 2000, 4000, 8000, 15000];
+  let lastEventAt = 0;
+  let busConnected = false;
+  let watchTimer = null;
+  let probing = false;
+  let probeAttempt = 0;
+  let probeTimer = null;
+  let visibleSince = 0;
+  let serverBuild = null;
+  let buildChanged = false;
+  let marksPrefetched = false;
+
+  function heardFromStream() {
+    lastEventAt = Date.now();
+    probeAttempt = 0;
+    window.clearTimeout(probeTimer);
+    probeTimer = null;
+  }
+
+  // The marks a lost link can show are fetched while the link is still up,
+  // so the page has them when it needs them.
+  function prefetchStatusMarks() {
+    if (marksPrefetched) return;
+    marksPrefetched = true;
+    const start = () => {
+      for (const stem of ['mark-offline', 'mark-connecting', 'mark-connecting-animated']) {
+        fetch(STATUS_MARKS + stem + '.svg', { credentials: 'same-origin', priority: 'low' })
+          .then((response) => response.arrayBuffer())
+          .catch(() => {});
+      }
+    };
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(start, { timeout: 2000 });
+    } else {
+      setTimeout(start, 2000);
+    }
+  }
+
+  function linkLost() {
+    connectedAt = null;
+    lastMessageAt = null;
+    updateStatusIcon('disconnected');
+    if (firstDisconnectAt === null) {
+      firstDisconnectAt = Date.now();
+      disconnectSecondPhase = false;
+    }
+    reconnectAttempts.push(Date.now());
+    reconnectAttempts = reconnectAttempts.slice(-5);
+
+    if (!disconnectTimerId && disconnectCardId === null) {
+      disconnectTimerId = setTimeout(() => {
+        disconnectTimerId = null;
+        const id = window.AppServices?.notifications?.show({
+          app: 'system',
+          icon: 'triangle-alert',
+          title: 'connection lost',
+          message: 'reconnecting. some features may be delayed',
+          dismissible: false
+        });
+        if (id != null) {
+          disconnectCardId = id;
+        }
+      }, DISCONNECT_FIRST_PHASE_MS);
+    }
+
+    if (!disconnectSecondPhaseTimerId) {
+      disconnectSecondPhaseTimerId = setTimeout(() => {
+        disconnectSecondPhaseTimerId = null;
+        enterDisconnectSecondPhase();
+      }, DISCONNECT_SECOND_PHASE_MS);
+    }
+    enterDisconnectSecondPhase();
+  }
+
+  function scheduleProbe() {
+    const base = PROBE_DELAYS_MS[Math.min(probeAttempt, PROBE_DELAYS_MS.length - 1)];
+    probeAttempt += 1;
+    window.clearTimeout(probeTimer);
+    probeTimer = window.setTimeout(() => {
+      probeTimer = null;
+      probe();
+    }, Math.round(base * (0.7 + Math.random() * 0.6)));
+  }
+
+  async function probe() {
+    if (probing) return;
+    probing = true;
+    let request = null;
+    try {
+      request = window.boundedRequest
+        ? await window.boundedRequest(PROBE_URL, { credentials: 'same-origin', cache: 'no-store' },
+          { bounds: PROBE_BOUNDS, retry: false })
+        : { response: await fetch(PROBE_URL, { credentials: 'same-origin', cache: 'no-store' }), discard() {} };
+    } catch (_) {
+      request = null;
+    } finally {
+      probing = false;
+    }
+    window.appEvents.probeCount += 1;
+    const response = request?.response;
+    request?.discard();
+    if (!response) {
+      // No answer: the link is down. Ask again later.
+      if (connectionState !== 'disconnected') linkLost();
+      scheduleProbe();
+      return;
+    }
+    if (window.isLoopbackRefusal?.(response)) {
+      window.recoverFromLoopbackRefusal?.();
+      return;
+    }
+    if (response.status === 401 || response.status === 403) {
+      // The sign-in is gone; a new stream would be refused the same way.
+      window.location.href = '/';
+      return;
+    }
+    if (response.redirected && /^\/init(\/|$)/.test(new URL(response.url).pathname)) {
+      window.location.href = response.url;
+      return;
+    }
+    if (!response.ok) {
+      if (connectionState !== 'disconnected') linkLost();
+      scheduleProbe();
+      return;
+    }
+    // The journal answers, so the stream alone is dead: open a new one.
+    connect();
+  }
+
+  function watchStream() {
+    if (!eventSource || document.hidden) return;
+    const now = Date.now();
+    const silence = now - lastEventAt;
+    if (silence > HARD_SILENCE_MS && connectionState === 'connected') {
+      linkLost();
+    }
+    if (probing || probeTimer !== null) return;
+    if (now - visibleSince < RETURN_GRACE_MS) return;
+    if (eventSource.readyState === 2 || silence > SUSPECT_SILENCE_MS) {
+      // The first question goes at once; a stream that keeps failing after
+      // the journal answered is asked about on the backoff, never in a loop.
+      if (probeAttempt === 0) {
+        probeAttempt = 1;
+        probe();
+      } else {
+        scheduleProbe();
+      }
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) visibleSince = Date.now();
+  });
+
+  function connect() {
+    if (eventSource) {
+      eventSource.close();
+    }
+    window.clearTimeout(probeTimer);
+    probeTimer = null;
+    busConnected = false;
+    lastEventAt = Date.now();
+    updateStatusIcon('connecting');
+    eventSource = new EventSource('/sse/events');
+    if (watchTimer === null) {
+      watchTimer = window.setInterval(watchStream, WATCH_INTERVAL_MS);
+    }
 
     eventSource.onopen = () => {
+      lastEventAt = Date.now();
       updateStatusIcon('connecting');
     };
 
@@ -399,18 +575,19 @@
       if (connectionState === 'connected') return;
       connectedAt = Date.now();
       updateStatusIcon('connected');
+      prefetchStatusMarks();
 
-	      if (disconnectTimerId) {
-	        clearTimeout(disconnectTimerId);
-	        disconnectTimerId = null;
-	      }
-	      if (disconnectSecondPhaseTimerId) {
-	        clearTimeout(disconnectSecondPhaseTimerId);
-	        disconnectSecondPhaseTimerId = null;
-	      }
-	      firstDisconnectAt = null;
-	      disconnectSecondPhase = false;
-	      reconnectAttempts = [];
+      if (disconnectTimerId) {
+        clearTimeout(disconnectTimerId);
+        disconnectTimerId = null;
+      }
+      if (disconnectSecondPhaseTimerId) {
+        clearTimeout(disconnectSecondPhaseTimerId);
+        disconnectSecondPhaseTimerId = null;
+      }
+      firstDisconnectAt = null;
+      disconnectSecondPhase = false;
+      reconnectAttempts = [];
 
       if (disconnectCardId !== null) {
         window.AppServices?.notifications?.dismiss(disconnectCardId);
@@ -430,7 +607,34 @@
       console.debug('[SSE] Connected to /sse/events');
     }
 
+    // The journal names its build when the stream opens. A page that sees
+    // the name change was loaded from an older build; its next mount loads
+    // the whole page instead (mount-workspace.js).
+    eventSource.addEventListener('hello', event => {
+      heardFromStream();
+      let hello;
+      try {
+        hello = JSON.parse(event.data);
+      } catch (err) {
+        notifyParseError(err, event.data);
+        return;
+      }
+      const build = typeof hello?.server_build === 'string' ? hello.server_build : null;
+      if (!build) return;
+      if (serverBuild === null) {
+        serverBuild = build;
+      } else if (build !== serverBuild) {
+        buildChanged = true;
+      }
+    });
+
+    eventSource.addEventListener('heartbeat', () => {
+      heardFromStream();
+      if (busConnected && connectionState !== 'connected') connected();
+    });
+
     eventSource.addEventListener('continuity', event => {
+      heardFromStream();
       let continuity;
       try {
         continuity = JSON.parse(event.data);
@@ -439,53 +643,24 @@
         return;
       }
       if (continuity.state === 'connected') {
+        busConnected = true;
         connected();
       } else {
+        busConnected = false;
         connectedAt = null;
         lastMessageAt = null;
         updateStatusIcon(continuity.state === 'connecting' ? 'connecting' : 'disconnected');
       }
     });
 
-	    eventSource.onerror = err => {
-	      connectedAt = null;
-          lastMessageAt = null;
-	      updateStatusIcon('disconnected');
-	      if (firstDisconnectAt === null) {
-	        firstDisconnectAt = Date.now();
-	        disconnectSecondPhase = false;
-	      }
-	      reconnectAttempts.push(Date.now());
-	      reconnectAttempts = reconnectAttempts.slice(-5);
-
-	      if (!disconnectTimerId && disconnectCardId === null) {
-	        disconnectTimerId = setTimeout(() => {
-	          disconnectTimerId = null;
-	          const id = window.AppServices?.notifications?.show({
-            app: 'system',
-            icon: 'triangle-alert',
-            title: 'connection lost',
-            message: 'reconnecting. some features may be delayed',
-            dismissible: false
-          });
-	          if (id != null) {
-	            disconnectCardId = id;
-	          }
-	        }, DISCONNECT_FIRST_PHASE_MS);
-	      }
-
-	      if (!disconnectSecondPhaseTimerId) {
-	        disconnectSecondPhaseTimerId = setTimeout(() => {
-	          disconnectSecondPhaseTimerId = null;
-	          enterDisconnectSecondPhase();
-	        }, DISCONNECT_SECOND_PHASE_MS);
-	      }
-	      enterDisconnectSecondPhase();
-
-	      console.error('[SSE] Error:', err);
-	    };
+    eventSource.onerror = err => {
+      busConnected = false;
+      linkLost();
+      console.error('[SSE] Error:', err);
+    };
 
     eventSource.onmessage = event => {
+      heardFromStream();
 
       let msg;
       try {
@@ -498,6 +673,7 @@
 
       // A fresh envelope also resumes delivery after a recoverable bus gap.
       // It does not restore any app's discarded status snapshot.
+      busConnected = true;
       connected();
       lastMessageAt = Date.now();
       const tract = msg.tract;
@@ -508,10 +684,24 @@
     };
   }
 
+  function reconnectNow() {
+    probeAttempt = 0;
+    probe();
+  }
+
   window.renderStatusMark = renderStatusMark;
 
   window.appEvents = {
     statusLabel: 'connecting',
+    probeCount: 0,
+
+    buildChanged() {
+      return buildChanged;
+    },
+
+    serverBuild() {
+      return serverBuild;
+    },
 
     setCaptureStatus(status) {
       lastCaptureStatus = status ?? null;
