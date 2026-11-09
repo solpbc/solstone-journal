@@ -5905,6 +5905,7 @@ dependencies = [
  "solstone-core-import-sources",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-pdf",
  "solstone-core-processing-record",
