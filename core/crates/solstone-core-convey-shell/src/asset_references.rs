@@ -70,7 +70,10 @@ const UNREWRITTEN_DOCUMENTS: &[(&str, &str)] = &[(
 
 /// Served files no page references, each with why it stays.
 const KEPT_UNREFERENCED: &[(&str, &str)] = &[
-    ("/init", "the setup page, reached by navigation and the session gate"),
+    (
+        "/init",
+        "the setup page, reached by navigation and the session gate",
+    ),
     ("/static/shell.html", "served by every view route"),
     (
         "/static/icons/LICENSE",
@@ -314,7 +317,10 @@ fn every_view_declares_the_shared_code_it_uses() {
             .chain([html])
             .collect();
         for (uses, declares) in NEEDS {
-            if !uses.iter().any(|name| code.iter().any(|text| text.contains(name))) {
+            if !uses
+                .iter()
+                .any(|name| code.iter().any(|text| text.contains(name)))
+            {
                 continue;
             }
             declaring += 1;

@@ -159,9 +159,7 @@ mod tests {
         // route serves this crate's own asset rather than something generated.
         assert_eq!(
             body,
-            crate::assets::served_from_source(include_bytes!(
-                "../assets/entities/workspace.html"
-            ))
+            crate::assets::served_from_source(include_bytes!("../assets/entities/workspace.html"))
         );
     }
 
