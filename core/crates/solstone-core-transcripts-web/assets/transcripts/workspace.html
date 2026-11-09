@@ -3614,22 +3614,12 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     return seg?.stream === 'import.apple_health';
   }
 
+  // The panel states counts, never a value: what the window holds, by kind.
   function bodyWindowParts(payload, limit = 4) {
     if (!payload || !payload.has_data) return [];
-    const parts = [];
-    if (payload.heart_rate?.count && payload.heart_rate?.label) {
-      parts.push('HR ' + payload.heart_rate.label);
-    }
-    if (payload.glucose?.count && (payload.glucose?.range_label || payload.glucose?.delta_label)) {
-      parts.push('glucose ' + (payload.glucose.range_label || payload.glucose.delta_label));
-    }
-    if (payload.steps?.label) {
-      parts.push(payload.steps.label);
-    }
-    if ((payload.workouts || []).length > 0) {
-      const count = payload.workouts.length;
-      parts.push(count + ' workout' + (count === 1 ? '' : 's'));
-    }
+    const parts = (payload.signals || [])
+      .filter(signal => signal.label && signal.count_label)
+      .map(signal => `${signal.label} · ${signal.count_label}`);
     return parts.slice(0, limit);
   }
 
@@ -3779,7 +3769,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       .map(signal => `<li>${escapeHtml(signal.label)} · ${escapeHtml(bodyCountText(signal))}</li>`)
       .join('\n');
     const events = (payload.events || [])
-      .map(event => `<li>${escapeHtml(event.label)} · ${escapeHtml(event.start_label)}–${escapeHtml(event.end_label)} · ${escapeHtml(event.overlap_label)}</li>`)
+      .map(event => `<li>${escapeHtml(event.label)} · ${escapeHtml(event.start_label)}–${escapeHtml(event.end_label)}</li>`)
       .join('\n');
     const rhythm = renderBodyRhythm(payload, { rows: true, limit: 24, title: false });
 
@@ -4139,7 +4129,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       block.setAttribute('tabindex', '0');
       const title = `${event.label} · ${event.start_label}–${event.end_label}`;
       block.setAttribute('aria-label', title);
-      block.title = `${title} · ${event.overlap_label}`;
+      block.title = title;
       const open = () => openBodyWindowFromIso(event.start, event.end, 'body context', title);
       block.addEventListener('click', open);
       block.addEventListener('keydown', e => {

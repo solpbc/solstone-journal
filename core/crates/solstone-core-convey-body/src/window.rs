@@ -308,6 +308,8 @@ fn events(rows: &[Found]) -> Vec<Value> {
             "kind": kind,
             "label": row.label,
             "source": source_words(&item.source),
+            "start": iso(item.start),
+            "end": iso(item.end),
             "start_label": clock(item.start.naive_local()),
             "end_label": clock(item.end.naive_local()),
         }));

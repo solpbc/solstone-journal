@@ -1038,3 +1038,43 @@ fn journal_text_echoed_by_commands_that_change_the_journal_is_literal() {
     }
     assert!(live.is_empty(), "{live:#?}");
 }
+
+#[test]
+fn body_commands_print_what_the_body_payloads_say() {
+    let status = run(
+        &["body", "status"],
+        &[],
+        vec![(
+            "/app/body/api/status",
+            json!({"coverage": {"start": "20260110", "end": "20260112"}, "days": 3,
+                "imports": {"new": [{}, {}], "old": [{}]}}),
+        )],
+    );
+    assert_eq!(status.exit, 0, "{}", status.stderr);
+    assert_eq!(status.stdout, "imports: 3\ndays: 3\ncoverage: 20260110 to 20260112\n");
+
+    let day = run(
+        &["body", "day"],
+        &["20260110"],
+        vec![(
+            "/app/body/api/day/20260110",
+            json!({"day": "20260110", "entry_total": 4,
+                "sources": [{"name": "Apple Health"}, {"name": "Oura"}]}),
+        )],
+    );
+    assert_eq!(day.stdout, "day: 20260110\nentries: 4\nsources: Apple Health, Oura\n");
+
+    let window = run(
+        &["body", "window"],
+        &["--from", "2026-01-10T09:00:00Z", "--to", "2026-01-10T10:00:00Z"],
+        vec![(
+            "/app/body/api/window",
+            json!({"from": "a", "to": "b", "entry_total": 2,
+                "signals": [{"label": "heart rate", "count_label": "2 readings"}]}),
+        )],
+    );
+    assert_eq!(
+        window.stdout,
+        "window: a to b\nentries: 2\nheart rate: 2 readings\n"
+    );
+}

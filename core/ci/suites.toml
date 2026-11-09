@@ -2738,6 +2738,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::body_workspace_dom"
+package = "solstone-core-convey-shell"
+target = "body_workspace_dom"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::entities_workspace_dom"
 package = "solstone-core-convey-shell"
 target = "entities_workspace_dom"
