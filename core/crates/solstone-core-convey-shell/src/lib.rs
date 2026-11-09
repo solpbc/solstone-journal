@@ -1464,7 +1464,6 @@ fn router_with_roots(
     backup_deps: Option<solstone_core_backup_web::BackupWebDeps>,
     import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
 ) -> Router {
-    solstone_core_convey_body::warm_trends(journal_root.clone());
     let include_agents = agents_routes.is_some();
     let shell = Arc::new(if include_agents {
         shell_payload_with_agents(true)
@@ -2283,24 +2282,6 @@ mod tests {
     }
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
-
-    #[tokio::test]
-    async fn router_invokes_trends_warm_once() {
-        let root = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
-        let probe = solstone_core_convey_body::TrendsWarmProbe::new();
-        let app = router(root.path().to_path_buf());
-        assert_eq!(probe.count(), 1);
-        let response = app
-            .oneshot(
-                Request::get("/favicon.ico")
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("router responds");
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(probe.count(), 1);
-    }
 
     #[tokio::test]
     async fn converted_transcripts_and_search_routes_are_real_and_unserved_paths_are_404() {

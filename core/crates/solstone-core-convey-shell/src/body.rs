@@ -11,8 +11,9 @@ pub async fn shell() -> Response {
     asset_response("/static/shell.html")
 }
 
+/// Daily values went with the Trends page; a bookmark lands on the overview.
 pub async fn trends() -> Response {
-    shell().await
+    axum::response::Redirect::permanent("/app/body/").into_response()
 }
 
 pub async fn shell_for_day(Path(day): Path<String>) -> Response {
@@ -100,8 +101,7 @@ mod tests {
         assert_eq!(root.0, StatusCode::OK);
         assert_eq!(root.2, crate::assets::served_bytes("/static/shell.html"));
         let trends = get(app.clone(), "/app/body/trends").await;
-        assert_eq!(trends.0, StatusCode::OK);
-        assert_eq!(trends.2, root.2);
+        assert_eq!(trends.0, StatusCode::PERMANENT_REDIRECT);
         let workspace = get(app.clone(), "/app/body/workspace").await;
         assert_eq!(workspace.0, StatusCode::OK);
         for path in ["/app/body/notaday", "/app/body/20260231"] {
@@ -150,7 +150,6 @@ mod tests {
         assert_eq!(get(app.clone(), "/app/body/").await.0, StatusCode::OK);
         for path in [
             "/app/body/",
-            "/app/body/trends",
             "/app/body/20260801",
             "/app/body/workspace",
             "/app/body/background",
