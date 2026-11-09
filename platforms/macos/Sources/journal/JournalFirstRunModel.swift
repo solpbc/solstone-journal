@@ -65,6 +65,7 @@ final class JournalFirstRunModel {
     @ObservationIgnored private weak var windowModel: JournalWindowModel?
     @ObservationIgnored private let supervisorIsLive: @MainActor (URL) -> Bool
     @ObservationIgnored private let externalSupervisorIsLive: @Sendable (URL) -> Bool
+    @ObservationIgnored private let terminalServiceRunsJournal: @Sendable (URL) async -> Bool
     @ObservationIgnored private let loadSetupCopy: @Sendable () async -> JournalSetupCopy?
     @ObservationIgnored private let localSetupCapability: @Sendable () -> Bool
     @ObservationIgnored private let stepAsideAfterHandoff: @MainActor () -> Void
@@ -183,6 +184,9 @@ final class JournalFirstRunModel {
         externalSupervisorIsLive: @escaping @Sendable (URL) -> Bool = {
             liveSupervisorMatchesReadyFiles(journalRoot: $0)
         },
+        terminalServiceRunsJournal: @escaping @Sendable (URL) async -> Bool = {
+            await JournalRuntime.terminalServiceRunsJournal(journalRoot: $0)
+        },
         loadSetupCopy: @escaping @Sendable () async -> JournalSetupCopy? = {
             do {
                 return try await JournalSetupCopyLoader().load()
@@ -220,6 +224,7 @@ final class JournalFirstRunModel {
         self.windowModel = windowModel
         self.supervisorIsLive = supervisorIsLive
         self.externalSupervisorIsLive = externalSupervisorIsLive
+        self.terminalServiceRunsJournal = terminalServiceRunsJournal
         self.loadSetupCopy = loadSetupCopy
         self.localSetupCapability = localSetupCapability
         self.peer = peer
@@ -1240,7 +1245,7 @@ final class JournalFirstRunModel {
         if config.journalRoot?.standardizedFileURL.path != root.path {
             config.journalRoot = root
         }
-        let live = supervisorIsLive(root) || externalSupervisorIsLive(root)
+        let live = await journalIsKept(root)
         if !live {
             guard await startSupervisor(root) else {
                 errorMessage = supervisorFailureMessage()
@@ -1329,7 +1334,7 @@ final class JournalFirstRunModel {
             return
         }
         assignRoot(root)
-        let live = supervisorIsLive(root) || externalSupervisorIsLive(root)
+        let live = await journalIsKept(root)
         if !live {
             guard await startSupervisor(root) else {
                 errorMessage = supervisorFailureMessage()
@@ -1434,7 +1439,7 @@ final class JournalFirstRunModel {
                 if actionOpen { _ = endUserAction(captured) }
                 return
             }
-            let live = supervisorIsLive(root) || externalSupervisorIsLive(root)
+            let live = await journalIsKept(root)
             if !live {
                 guard await startSupervisor(root) else {
                     let ok = stillCurrent(captured)
@@ -1773,10 +1778,19 @@ final class JournalFirstRunModel {
     }
 
     private func ensureSupervisor(_ root: URL) async -> Bool {
-        if supervisorIsLive(root) || externalSupervisorIsLive(root) {
+        if await journalIsKept(root) {
             return true
         }
         return await startSupervisor(root)
+    }
+
+    /// Whether something the app should leave alone is running this journal: the
+    /// app's own supervisor, or another live one. A Terminal-installed service
+    /// for this journal is not left alone: starting the journal takes it over.
+    private func journalIsKept(_ root: URL) async -> Bool {
+        if supervisorIsLive(root) { return true }
+        guard externalSupervisorIsLive(root) else { return false }
+        return !(await terminalServiceRunsJournal(root))
     }
 
     private func beginUserAction(_ operation: JournalRitualOperationToken, continuing: Bool = false) -> Bool {

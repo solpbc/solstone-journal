@@ -1124,8 +1124,11 @@ fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool 
     let Some(dict) = value.as_dictionary() else {
         return false;
     };
+    // `ExitTimeOut` is accepted a release before the renderer writes it, so
+    // the release before that one still manages a plist the next one wrote.
     let allowed = BTreeSet::from([
         "EnvironmentVariables",
+        "ExitTimeOut",
         "KeepAlive",
         "Label",
         "ProgramArguments",
@@ -1200,6 +1203,11 @@ fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool 
         && limits.is_none_or(|value| {
             value.len() == 1
                 && value.get("NumberOfFiles") == Some(&plist::Value::Integer(4096_i64.into()))
+        })
+        && dict.get("ExitTimeOut").is_none_or(|value| {
+            value
+                .as_unsigned_integer()
+                .is_some_and(|seconds| seconds > 0)
         })
         && launchd_logs_are_managed(dict)
 }
@@ -1351,6 +1359,7 @@ fn cleanup_stale_launchd(home: &Path) -> Result<(), String> {
 fn stale_launchd_managed(dictionary: &plist::Dictionary, label: &str, launcher: &Path) -> bool {
     let allowed = BTreeSet::from([
         "EnvironmentVariables",
+        "ExitTimeOut",
         "KeepAlive",
         "Label",
         "Program",
@@ -2480,6 +2489,43 @@ mod tests {
         let mut partial_bytes = Vec::new();
         partial.to_writer_xml(&mut partial_bytes).unwrap();
         assert!(!launchd_managed(&partial_bytes, launcher, LABEL));
+    }
+
+    /// The next release writes `ExitTimeOut` so launchd's bootout allows a
+    /// full shutdown. This release must still uninstall, stop and replace
+    /// that plist, through both the ordinary and the stale-plist paths.
+    #[test]
+    fn a_plist_carrying_exit_timeout_is_still_ours() {
+        let launcher = Path::new("/home/owner/.local/bin/journal");
+        let plist =
+            render_launchd_plist(&guarded_environment(), path_text(launcher).unwrap(), "5015");
+        let with_exit_timeout = |value: plist::Value| {
+            let mut parsed = plist::Value::from_reader_xml(plist.as_slice()).unwrap();
+            parsed
+                .as_dictionary_mut()
+                .unwrap()
+                .insert("ExitTimeOut".to_owned(), value);
+            let mut bytes = Vec::new();
+            parsed.to_writer_xml(&mut bytes).unwrap();
+            (parsed, bytes)
+        };
+
+        let (next, next_bytes) = with_exit_timeout(plist::Value::Integer(20_i64.into()));
+        assert!(launchd_managed(&next_bytes, launcher, LABEL));
+        assert!(stale_launchd_managed(
+            next.as_dictionary().unwrap(),
+            LABEL,
+            launcher
+        ));
+
+        for malformed in [
+            plist::Value::Integer(0_i64.into()),
+            plist::Value::Integer((-1_i64).into()),
+            plist::Value::String("20".to_owned()),
+        ] {
+            let (_, bytes) = with_exit_timeout(malformed);
+            assert!(!launchd_managed(&bytes, launcher, LABEL));
+        }
     }
 
     #[test]
