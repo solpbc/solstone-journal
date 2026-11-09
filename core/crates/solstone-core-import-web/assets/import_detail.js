@@ -84,6 +84,7 @@
     day: 'day',
     days: 'days',
     copied: 'copied',
+    zone_differs_under: "less than an hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.",
     zone_differs_one: "1 hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.",
     zone_differs_many: "{hours} hours of {source} may show at the wrong time: they were saved in a different time zone from the one this journal holds for {source}.",
     skipped: 'skipped',
@@ -525,7 +526,9 @@
   function zoneDiffersLine(differs) {
     const hours = numberValue(differs?.hours);
     const source = differs?.source || '';
-    return (hours === 1 ? strings.zone_differs_one : strings.zone_differs_many)
+    const line = hours === 0 ? strings.zone_differs_under
+      : hours === 1 ? strings.zone_differs_one : strings.zone_differs_many;
+    return line
       .replace('{hours}', String(hours))
       .replaceAll('{source}', source);
   }

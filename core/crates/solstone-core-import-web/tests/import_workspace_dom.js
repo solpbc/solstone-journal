@@ -2720,6 +2720,19 @@ function runDetailDropsFactsThatDoNotApply() {
     collisionHtml.includes('4 copied'),
     'a journal archive merge shows what it copied'
   );
+  const zoneLineHtml = (hours) => ImportDetail.renderDetail({
+    status: 'success',
+    target_day: '20260706',
+    import_json: {},
+    imported_json: null,
+    merge_summary: {
+      segments_copied: 1,
+      body_zones_differ: [{ source: 'Oura', hours }],
+    },
+  });
+  assert.ok(zoneLineHtml(0).includes('less than an hour of Oura may show at the wrong time: it was'));
+  assert.ok(zoneLineHtml(1).includes('1 hour of Oura may show at the wrong time: it was'));
+  assert.ok(zoneLineHtml(3).includes('3 hours of Oura may show at the wrong time: they were'));
   const stagedCollisionHtml = ImportDetail.renderDetail({
     status: 'success',
     target_day: '20260706',

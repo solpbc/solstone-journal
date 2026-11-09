@@ -281,6 +281,11 @@ pub fn source_archive_merge_complete(
 
 /// What the owner reads about body data that came in on another time zone.
 pub fn body_zones_differ(source: &str, hours: u64) -> String {
+    if hours == 0 {
+        return format!(
+            "less than an hour of {source} may show at the wrong time: it was saved in a different time zone from the one this journal holds for {source}.\n"
+        );
+    }
     let (unit, were) = if hours == 1 {
         ("hour", "it was")
     } else {
@@ -300,4 +305,16 @@ pub fn source_archive_already_present(source: RegistrySource) -> String {
 
 pub fn source_archive_incomplete(source: RegistrySource, detail: &str) -> String {
     format!("{} import incomplete: {detail}\n", source.name())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::body_zones_differ;
+
+    #[test]
+    fn a_zone_line_claims_no_more_of_the_clock_than_it_covers() {
+        assert!(body_zones_differ("Oura", 0).starts_with("less than an hour of Oura"));
+        assert!(body_zones_differ("Oura", 1).starts_with("1 hour of Oura"));
+        assert!(body_zones_differ("Oura", 3).starts_with("3 hours of Oura"));
+    }
 }
