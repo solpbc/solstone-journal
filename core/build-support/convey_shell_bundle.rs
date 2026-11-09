@@ -861,11 +861,11 @@ pub fn line_source_map(bundle: &Bundle, files: &[(BundledTag, String)], file: &s
     }
     let mut mappings = String::new();
     let (mut last_source, mut last_line) = (0i64, 0i64);
-    for line in 1..total {
+    for (line, slot) in owner.iter().enumerate().take(total).skip(1) {
         if line > 1 {
             mappings.push(';');
         }
-        if let Some((source, offset)) = owner[line] {
+        if let Some((source, offset)) = *slot {
             vlq(0, &mut mappings);
             vlq(source as i64 - last_source, &mut mappings);
             vlq(offset as i64 - last_line, &mut mappings);
