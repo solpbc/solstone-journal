@@ -1235,6 +1235,12 @@ a:focus-visible {
    visibility, not opacity, so a screen reader doesn't reach it early; it holds
    its space from the start, so showing it moves nothing. */
 .surface-state-still {
+  display: block;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
   visibility: hidden;
   animation: surface-state-still-shows 0s linear 10s forwards;
 }
