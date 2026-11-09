@@ -479,6 +479,47 @@ mod tests {
         parse_day(text).unwrap()
     }
 
+    #[test]
+    fn unheld_days_leave_out_a_deferred_one_and_ask_other_holes_and_the_trailing_week() {
+        let mut coverage = Coverage::default();
+        coverage.endpoints.insert(
+            "sleep".to_owned(),
+            EndpointCoverage {
+                covered: vec![
+                    ["2026-01-01".to_owned(), "2026-01-09".to_owned()],
+                    ["2026-01-11".to_owned(), "2026-01-14".to_owned()],
+                    ["2026-01-16".to_owned(), "2026-01-20".to_owned()],
+                ],
+                holes: vec![
+                    StoredHole {
+                        at: "2026-01-10".to_owned(),
+                        reason: HoleReason::Deferred,
+                    },
+                    StoredHole {
+                        at: "2026-01-15".to_owned(),
+                        reason: HoleReason::Unreadable,
+                    },
+                ],
+            },
+        );
+        let spans = coverage
+            .unheld_spans(
+                "sleep",
+                day("2026-01-01"),
+                day("2026-01-25"),
+                day("2026-01-27"),
+                chrono_tz::UTC,
+            )
+            .unwrap();
+        assert_eq!(
+            spans,
+            [
+                (day("2026-01-15"), day("2026-01-15")),
+                (day("2026-01-21"), day("2026-01-27")),
+            ]
+        );
+    }
+
     fn hole(endpoint: &str, at: &str, reason: HoleReason) -> Hole {
         Hole {
             endpoint: endpoint.to_owned(),

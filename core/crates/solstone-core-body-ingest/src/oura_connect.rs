@@ -526,6 +526,25 @@ mod tests {
     }
 
     #[test]
+    fn connecting_clears_a_held_renewal() {
+        let journal = TempDir::new();
+        fs::create_dir_all(journal.0.join("config")).expect("config");
+        fs::write(journal.0.join("config/journal.json"), b"{}").expect("config");
+        fs::write(journal.0.join("config/oura-renewal.json"), b"{}").expect("hold");
+        persist_tokens(
+            &journal.0,
+            TokenValues {
+                access_token: "a".to_owned(),
+                refresh_token: "r".to_owned(),
+                token_type: "Bearer".to_owned(),
+                expires_at: 1.0,
+            },
+        )
+        .expect("tokens");
+        assert!(!journal.0.join("config/oura-renewal.json").exists());
+    }
+
+    #[test]
     fn callback_parser_rejects_state_confusion_duplicates_and_invalid_encoding() {
         assert_eq!(
             callback_code("/callback?code=hello%2Bworld&state=expected", "expected")

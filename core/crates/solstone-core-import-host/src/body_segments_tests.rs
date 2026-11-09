@@ -2607,6 +2607,33 @@ fn more_than_the_owner_was_told_moves_none_and_says_so() {
 }
 
 #[test]
+fn a_new_record_that_joins_a_workout_the_owner_hid_says_so() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let watch = export(&scratch.path().join("1"), &[workout(10)]);
+    run(root, &watch, "20261012_120000", Some("work"));
+    let file = root.join("facets/work/activities/20261010.jsonl");
+    let hidden = fs::read_to_string(&file)
+        .unwrap()
+        .replace(r#""hidden":false"#, r#""hidden":true"#);
+    fs::write(&file, hidden).unwrap();
+    let band = export(
+        &scratch.path().join("2"),
+        &[workout(10).replace("Synthetic Watch", "Synthetic Band")],
+    );
+    let outcome = run(root, &band, "20261012_130000", Some("work"));
+    assert!(
+        outcome
+            .summary
+            .contains("1 joined a workout you'd hidden, so it's hidden too."),
+        "{}",
+        outcome.summary
+    );
+}
+
+#[test]
 fn an_exports_manifest_says_the_days_it_reached() {
     let journal = journal();
     let root = journal.path();

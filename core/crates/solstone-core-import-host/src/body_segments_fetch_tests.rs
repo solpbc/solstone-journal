@@ -771,13 +771,21 @@ fn the_manifest_says_which_days_a_range_with_a_failed_chunk_read() {
     let journal = connected("America/Denver");
     let root = journal.path();
     let oura = Oura::new();
-    oura.rule(
-        "sleep",
-        |query| query["start_date"] == "2023-12-30",
-        500,
-        json!({}),
-        None,
-    );
+    // Every endpoint stops at the chunk reaching into 2023.
+    for endpoint in solstone_core_import_sources::oura::ENDPOINTS {
+        oura.rule(
+            endpoint,
+            |query| {
+                query
+                    .get("start_date")
+                    .or_else(|| query.get("start_datetime"))
+                    .is_some_and(|start| start.as_str() >= "2023")
+            },
+            500,
+            json!({}),
+            None,
+        );
+    }
     let outcome = finished(
         root,
         &oura,
@@ -793,8 +801,9 @@ fn the_manifest_says_which_days_a_range_with_a_failed_chunk_read() {
     )
     .unwrap();
     let span = manifest["span"].as_array().unwrap();
-    assert!(!span.is_empty());
+    assert_eq!(span.len(), 1, "{span:?}");
     assert_eq!(span[0][0], "20220101");
+    assert_eq!(span[0][1], "20231229", "{span:?}");
 }
 
 /// The kill fixture: the slice's kill base and pages, served by Oura, plus a daily

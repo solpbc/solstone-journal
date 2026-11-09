@@ -58,6 +58,20 @@ fn a_yes_says_how_many_it_was_shown_and_a_no_answer_shows_none() {
 }
 
 #[test]
+fn the_question_is_worded_for_every_body_import() {
+    let journal = journal(&["work"]);
+    let mut output = Vec::new();
+    ask_body_facet(
+        journal.path(),
+        "import.oura",
+        &mut "n\n".as_bytes(),
+        &mut output,
+    );
+    let said = String::from_utf8(output).unwrap();
+    assert!(said.contains("workouts, sleep and health data"), "{said}");
+}
+
+#[test]
 fn a_yes_makes_the_facet_remembers_it_and_files_this_import_under_it() {
     let journal = journal(&["work"]);
     let root = journal.path();
