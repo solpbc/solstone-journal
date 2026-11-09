@@ -1606,17 +1606,44 @@ fn recount_listed(journal: &Path, source: &BodySource, state: &mut RunState) {
     if total > shown {
         state.move_listed = false;
         state.listed_over = Some((shown, total));
+        keep_half_done_day_filed(journal, source, state);
     }
+}
+
+/// The stopped day's decisions were made with moving on. A window it hadn't
+/// refiled yet stays under the facet it has.
+fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut RunState) {
+    let Some(facet) = state.facet.clone() else {
+        return;
+    };
+    let Some(pending) = state.pending.as_mut() else {
+        return;
+    };
+    let target = facet_file_text(&facet);
+    let day = pending.day.clone();
+    let mut kept = 0;
+    for window in pending.windows.iter_mut().filter(|window| window.facet) {
+        let file = window_dir(journal, source, &(day.clone(), window.key.clone()))
+            .join("talents/facets.json");
+        if fs::read_to_string(&file).is_ok_and(|held| held != target) {
+            window.facet = false;
+            kept += 1;
+        }
+    }
+    pending.counts.refiled = pending.counts.refiled.saturating_sub(kept);
 }
 
 /// The summary's counts, with facets named by their titles.
 fn summary_counts(journal: &Path, state: &RunState) -> SummaryCounts {
     let mut counts = summary_of(state);
-    counts.listed_moved_from = counts
-        .listed_moved_from
-        .iter()
-        .map(|facet| crate::strava_convert::facet_title(journal, facet))
-        .collect();
+    let titles = |facets: &[String]| {
+        facets
+            .iter()
+            .map(|facet| crate::strava_convert::facet_title(journal, facet))
+            .collect::<Vec<_>>()
+    };
+    counts.listed_moved_from = titles(&counts.listed_moved_from);
+    counts.activities_refused = titles(&counts.activities_refused);
     counts
 }
 
@@ -1979,6 +2006,8 @@ fn run_phases(
             // What the old run couldn't write whole stays a hole: this run won't
             // redo its days.
             let mut holes = holes_in(&old);
+            // It moved on an answer given to the run it's taking over.
+            recount_listed(journal, source, &mut old);
             // Another export, or a finished run's leftovers: everything the old
             // run wrote is bound and queued before its staging goes.
             // Its half-done day's windows are on disk as far as they got; what it

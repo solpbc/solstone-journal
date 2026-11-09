@@ -250,11 +250,7 @@ fn size_from_preview(run: CliRun) -> Result<Value, PreviewError> {
     let size: Value = serde_json::from_str(&run.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
-    // What the page can't start says so here: a queued run's own words don't
-    // reach the page, only that it failed.
-    if let Some(words) = size.get("page_refusal").and_then(Value::as_str) {
-        return Err(PreviewError::PlanFailed(words.to_owned()));
-    }
+    refuse_what_the_page_cant_start(&size)?;
     require_size_preview(size)
 }
 
@@ -280,6 +276,15 @@ fn checked_input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
         ));
     }
     Ok(input)
+}
+
+/// What the page can't start says so here: a queued run's own words don't reach
+/// the page, only that it failed.
+fn refuse_what_the_page_cant_start(size: &Value) -> Result<(), PreviewError> {
+    match size.get("page_refusal").and_then(Value::as_str) {
+        Some(words) => Err(PreviewError::PlanFailed(words.to_owned())),
+        None => Ok(()),
+    }
 }
 
 fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
@@ -649,6 +654,7 @@ async fn plan_using(
     let size: Value = serde_json::from_slice(&output.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
+    refuse_what_the_page_cant_start(&size)?;
     require_size_preview(size)
 }
 
@@ -1003,6 +1009,36 @@ pub(crate) async fn prepare_embedded_start(
 mod tests {
     use super::*;
     use std::fs;
+
+    /// The route a desktop page takes: the importer as its own process.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_programs_refusal_reaches_the_page_on_the_desktop_route() {
+        use std::os::unix::fs::PermissionsExt as _;
+        const WORDS: &str = "saving an Apple Health export needs your go-ahead";
+        let root = tempfile::tempdir().unwrap();
+        let program = root.path().join("importer");
+        fs::write(
+            &program,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' '{{\"source\":\"apple_health\",\"page_refusal\":\"{WORDS}\"}}'\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        let options = json!({"zone": "UTC", "timestamp": "20261012_120000"});
+        let error = plan_using(
+            &program,
+            root.path(),
+            &options,
+            &ImportMetadata::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap_err();
+        let body = preview_error_body("import_preview_failed", &error);
+        assert!(body.to_string().contains(WORDS), "{body}");
+    }
 
     #[test]
     fn a_preview_the_page_cant_start_shows_the_importers_own_words() {

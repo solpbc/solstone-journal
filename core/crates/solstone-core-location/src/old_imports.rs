@@ -390,8 +390,10 @@ pub fn covered_days_among<'d>(
     days.filter_map(|day| {
         let scopes = bundles
             .iter()
-            .filter(|bundle| !touched.source_touched(bundle.source, day))
-            .filter_map(|bundle| covers(bundle, day))
+            .filter_map(|bundle| {
+                let scope = covers(bundle, day)?;
+                (!touched.source_touched(bundle.source, day)).then_some(scope)
+            })
             .collect::<Vec<_>>();
         (!scopes.is_empty()).then(|| (day.to_owned(), scopes.contains(&CoverScope::Day)))
     })

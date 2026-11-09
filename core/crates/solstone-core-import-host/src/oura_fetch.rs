@@ -410,6 +410,7 @@ pub(crate) fn endpoint_plan_lines(
     zone: Tz,
 ) -> Result<String, String> {
     let coverage = crate::oura_coverage::read_coverage(journal)?;
+    plan(range, &coverage, today, zone)?;
     let mut lines = String::from("this would ask Oura for:\n");
     for endpoint in ENDPOINTS {
         let spans = match range {
@@ -427,11 +428,12 @@ pub(crate) fn endpoint_plan_lines(
             })
             .collect::<Vec<_>>()
             .join(", ");
-        let _ = writeln!(
-            lines,
-            "  {}: {days}",
-            solstone_core_import_sources::apple_health::name_words(endpoint)
-        );
+        let name = solstone_core_import_sources::apple_health::name_words(endpoint);
+        let _ = if days.is_empty() {
+            writeln!(lines, "  {name}: nothing to ask for")
+        } else {
+            writeln!(lines, "  {name}: {days}")
+        };
     }
     lines.push_str("nothing was saved. add --save to bring it in.\n");
     Ok(lines)

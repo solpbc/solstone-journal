@@ -1493,7 +1493,14 @@ fn count_of_records(count: u64) -> String {
 /// home facets".
 #[must_use]
 pub fn facets_words(titles: &[String]) -> String {
-    match titles {
+    // Two facets can share a title.
+    let unique = titles
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    match unique.as_slice() {
         [] => "another facet".to_owned(),
         [one] => format!("your {one} facet"),
         [rest @ .., last] => format!("your {} and {last} facets", rest.join(", ")),
@@ -1724,11 +1731,7 @@ pub fn summary_text(
         );
     }
     if !counts.activities_refused.is_empty() {
-        let facets = match counts.activities_refused.as_slice() {
-            [one] => format!("the {one} facet"),
-            [rest @ .., last] => format!("the {} and {last} facets", rest.join(", ")),
-            [] => String::new(),
-        };
+        let facets = facets_words(&counts.activities_refused);
         let _ = writeln!(
             text,
             "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"

@@ -37,7 +37,7 @@ fn apple_without_the_go_ahead_says_so_before_anything_else() {
         journal.path(),
     );
     assert_eq!(run.exit_code, 1);
-    assert_eq!(run.stderr, APPLE_CONFIRM_WORDS);
+    assert_eq!(run.stderr, apple_confirm_words());
     assert!(!journal.path().join("imports").exists());
 }
 
@@ -80,7 +80,7 @@ fn a_preview_names_what_would_be_read_and_keeps_the_source() {
 fn a_preview_carries_the_words_the_page_shows() {
     let run = preview_apple(true);
     let preview: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
-    assert_eq!(preview["page_refusal"], APPLE_CONFIRM_WORDS.trim_end());
+    assert_eq!(preview["page_refusal"], apple_confirm_words().trim_end());
 }
 
 #[test]
@@ -156,6 +156,35 @@ fn oura_ranges_mean_what_they_say() {
             ..command()
         }),
         Some((NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(), today()))
+    );
+}
+
+#[test]
+fn an_oura_plan_refuses_a_range_the_wrong_way_round() {
+    let journal = tempfile::tempdir().unwrap();
+    let run = sync_oura(
+        &BodyCommand {
+            date_from: Some("2026-03-01"),
+            date_to: Some("2026-02-01"),
+            ..command()
+        },
+        journal.path(),
+    );
+    assert_eq!(run.exit_code, 1, "{}", run.stdout);
+    assert!(
+        run.stderr.contains("put the earlier date first"),
+        "{}",
+        run.stderr
+    );
+}
+
+#[test]
+fn the_go_ahead_refusal_says_where_to_type_it_for_this_platform() {
+    let words = apple_confirm_words();
+    assert_eq!(
+        words.contains("open admin terminal"),
+        cfg!(target_os = "macos"),
+        "{words}"
     );
 }
 

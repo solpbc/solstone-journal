@@ -39,13 +39,24 @@ pub(crate) struct BodyCommand<'a> {
     pub save: bool,
 }
 
-const APPLE_CONFIRM_WORDS: &str = "saving an Apple Health export needs your go-ahead, so nothing from it was brought in. from a terminal (on a mac, open admin terminal in the journal app's journal menu), run: solstone journal importer <your export> --confirm-body-save\n";
+/// Where an owner on this platform can type the command.
+const WHERE_TO_RUN: &str = if cfg!(target_os = "macos") {
+    "in the journal app's journal menu, choose open admin terminal, and run"
+} else {
+    "from a terminal, run"
+};
+
+fn apple_confirm_words() -> String {
+    format!(
+        "saving an Apple Health export needs your go-ahead, so nothing from it was brought in. {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save\n"
+    )
+}
 const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, and importing it again changes nothing, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
 
 /// Save an Apple Health export.
 pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path) -> CliRun {
     if !command.confirm {
-        return failure("", APPLE_CONFIRM_WORDS, 1);
+        return failure("", &apple_confirm_words(), 1);
     }
     if command.date_from.is_some() || command.date_to.is_some() || command.force {
         return failure("", APPLE_WHOLE_WORDS, 1);
@@ -85,7 +96,7 @@ pub(crate) fn preview_apple(json_output: bool) -> CliRun {
                 "source": "apple_health",
                 "mode": "preview",
                 "reads": APPLE_READS,
-                "page_refusal": APPLE_CONFIRM_WORDS.trim_end(),
+                "page_refusal": apple_confirm_words().trim_end(),
             })
         ));
     }

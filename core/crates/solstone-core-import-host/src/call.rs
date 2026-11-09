@@ -780,6 +780,23 @@ mod tests {
     }
 
     #[test]
+    fn an_apple_export_previewed_on_the_phone_says_it_stays_on_the_desktop() {
+        let journal = tempfile::tempdir().unwrap();
+        let export = journal.path().join("apple_health_export");
+        std::fs::create_dir_all(&export).unwrap();
+        std::fs::write(
+            export.join("export.xml"),
+            "<?xml version=\"1.0\"?>\n<HealthData locale=\"en_US\"></HealthData>\n",
+        )
+        .unwrap();
+        let seams = idle_seams(journal.path());
+        let args = vec![export.to_str().unwrap().to_owned()];
+        let run = preview(&args, journal.path(), &seams);
+        assert_eq!(run.exit_code, 1, "{}", run.stderr);
+        assert!(run.stderr.contains("desktop importer"), "{}", run.stderr);
+    }
+
+    #[test]
     fn no_oura_sync_runs_on_the_embedded_entry() {
         let journal = tempfile::tempdir().unwrap();
         let seams = idle_seams(journal.path());

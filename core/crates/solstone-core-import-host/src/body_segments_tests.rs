@@ -2663,6 +2663,19 @@ fn a_resumed_run_counts_again_and_moves_no_more_than_the_owner_was_told() {
         "{}",
         outcome.summary
     );
+    // The half-done day was decided with moving on, and still stays where it is.
+    let stream = root.join("chronicle/20261011").join(STREAM);
+    for entry in fs::read_dir(&stream).unwrap().flatten() {
+        let facets = entry.path().join("talents/facets.json");
+        if facets.is_file() {
+            assert_eq!(
+                fs::read_to_string(&facets).unwrap(),
+                facet_file_text("work"),
+                "{}",
+                entry.path().display()
+            );
+        }
+    }
 }
 
 #[test]
@@ -2690,6 +2703,44 @@ fn a_resumed_run_within_what_the_owner_was_told_finishes_moving() {
         outcome.summary.contains("2 records already listed"),
         "{}",
         outcome.summary
+    );
+}
+
+#[test]
+fn a_takeover_counts_again_and_moves_no_more_than_the_owner_was_told() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    let stop = stopping_at("written", 1);
+    let mut told = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    let more = export(
+        &scratch.path().join("2"),
+        &[
+            workout(10),
+            workout(11),
+            heart("2026-10-10 06:40:10 -0600", "70"),
+        ],
+    );
+    told.source = &more;
+    run_apple_health_segments(root, &told).unwrap_err();
+    add_listed_elsewhere(root, "20261001", "later-a");
+    add_listed_elsewhere(root, "20261002", "later-b");
+    let other = export(
+        &scratch.path().join("3"),
+        &[heart("2026-10-22 06:31:10 -0600", "70")],
+    );
+    run(root, &other, "20261012_140000", None);
+    let old = fs::read_to_string(root.join("imports/20261012_130000/summary.md")).unwrap();
+    assert_eq!(records_in(root, "work", "20261010"), 1, "{old}");
+    assert_eq!(records_in(root, "body", "20261010"), 0, "{old}");
+    assert!(
+        old.contains("nothing already listed moved: 4 records would have, and you were told 2."),
+        "{old}"
     );
 }
 

@@ -462,6 +462,19 @@ fn a_window_that_cant_be_read_is_left_alone_and_counted() {
 }
 
 #[test]
+fn facets_are_named_once_each_with_a_noun() {
+    let words =
+        |titles: &[&str]| facets_words(&titles.iter().map(ToString::to_string).collect::<Vec<_>>());
+    assert_eq!(words(&["Work"]), "your Work facet");
+    assert_eq!(words(&["Work", "Work"]), "your Work facet");
+    assert_eq!(words(&["Home", "Work"]), "your Home and Work facets");
+    assert_eq!(
+        words(&["Fun", "Home", "Work"]),
+        "your Fun, Home and Work facets"
+    );
+}
+
+#[test]
 fn the_summary_says_what_moved_what_didnt_and_what_waits() {
     let counts = SummaryCounts {
         listed_moved: 2,
