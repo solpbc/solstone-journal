@@ -752,6 +752,14 @@ fn run_archive_with_seams(
         ));
     }
     let merge_result = merge_journal_archive(&dispatch.media, journal, &options, Some(reindex));
+    // A merged journal may hold old Strava records again. The merge has let go
+    // of its locks, so this waits on nothing of its own.
+    if merge_result.is_ok() {
+        if let Err(error) = crate::strava_convert::mark_conversion_needed(journal) {
+            log::warn!("journal merge: Strava records weren't marked to update: {error}");
+        }
+        crate::strava_convert::sweep_strava_conversions(journal);
+    }
     let finished_at_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default()
@@ -1267,6 +1275,26 @@ fn run_strava_internal(
         written_keys.contains(&key) && !skipped_keys.contains(&key)
     };
     let live = crate::strava_filing::live_tiles(journal, &placement, &is_written);
+    // Records an earlier reading filed become code records first, and every
+    // record of a workout in the download goes where its workout now is. Only
+    // the owner's answer for this import moves one to another facet.
+    let owner_chose = (run_facet.basis == crate::strava_filing::FacetBasis::Chosen)
+        .then_some(run_facet.facet.as_deref())
+        .flatten();
+    let download = live
+        .keys()
+        .map(ToString::to_string)
+        .collect::<BTreeSet<_>>();
+    let conversion = crate::strava_convert::convert_held(
+        journal,
+        &_source_lock,
+        crate::strava_convert::ConversionScope {
+            chosen: owner_chose.map(|facet| (&download, facet)),
+            publishes_tiles: false,
+        },
+        chrono::Utc::now(),
+    );
+    let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
     let mut list_refiles = |tiles: &[(String, String)]| {
         solstone_core_import::strava_refile::add_strava_refiles(journal, tiles, &_source_lock)
     };
@@ -1275,6 +1303,7 @@ fn run_strava_internal(
             journal,
             &live,
             facet,
+            owner_chose.is_some(),
             &mut list_refiles,
         ) {
             Ok(filing) => filing,
@@ -1331,7 +1360,7 @@ fn run_strava_internal(
     days.dedup();
     let mut records = crate::body_activity::RecordCounts::default();
     for day in days {
-        let counts = crate::body_activity::write_strava_records_at(journal, day, now);
+        let counts = crate::body_activity::write_strava_records_at(journal, day, now, &held_back);
         records.written += counts.written;
         records.refreshed += counts.refreshed;
         records.no_facet += counts.no_facet;
@@ -1444,6 +1473,7 @@ fn run_strava_internal(
     );
 
     let run_summary = crate::strava_summary::StravaRunSummary {
+        conversion,
         new_workouts: corrected_counts.new_workouts as u64,
         updated_workouts: corrected_counts.present_updated as u64,
         replaced_workouts: corrected_counts.replaced_workouts as u64,

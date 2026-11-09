@@ -328,7 +328,7 @@ fn strava_tiles(journal: &Path, day: &str) -> BTreeMap<String, BTreeSet<String>>
 /// The day and key of each tile Strava's import cuts a workout into: one every
 /// five minutes from its start, keyed by its clock and length on the zone its
 /// first import fixed, or on the start's own offset with none.
-fn strava_cut(
+pub(crate) fn strava_cut(
     start: DateTime<FixedOffset>,
     end: DateTime<FixedOffset>,
     zone: Option<chrono_tz::Tz>,
@@ -385,7 +385,12 @@ fn written_fields(stream: &str, row: &BodyRow) -> [Option<String>; 5] {
 /// without opening a window (the workout's shared type and an opaque recorder
 /// id), and the owner's day it arrived on, by this code's clock. Nothing the
 /// owner or the source wrote is copied.
-fn record_for(stream: &str, key: &str, row: &BodyRow, arrived: &str) -> Map<String, Value> {
+pub(crate) fn record_for(
+    stream: &str,
+    key: &str,
+    row: &BodyRow,
+    arrived: &str,
+) -> Map<String, Value> {
     let mut account = json!({
         "key": key,
         "start": row.start,
@@ -421,7 +426,7 @@ pub(crate) fn write_records_at(
     day: &str,
     now: chrono::DateTime<chrono::Utc>,
 ) -> RecordCounts {
-    write_stream_records_at(journal, &source.records(), day, now)
+    write_stream_records_at(journal, &source.records(), day, now, &BTreeSet::new())
 }
 
 /// [`write_records_at`] over Strava's tiles on `day`: one record per workout,
@@ -433,8 +438,9 @@ pub(crate) fn write_strava_records_at(
     journal: &Path,
     day: &str,
     now: chrono::DateTime<chrono::Utc>,
+    held_back: &BTreeSet<String>,
 ) -> RecordCounts {
-    write_stream_records_at(journal, &STRAVA, day, now)
+    write_stream_records_at(journal, &STRAVA, day, now, held_back)
 }
 
 fn write_stream_records_at(
@@ -442,6 +448,7 @@ fn write_stream_records_at(
     source: &RecordSource,
     day: &str,
     now: chrono::DateTime<chrono::Utc>,
+    held_back: &BTreeSet<String>,
 ) -> RecordCounts {
     let mut counts = RecordCounts::default();
     let Some(windows) = day_windows(journal, day, source.stream) else {
@@ -465,6 +472,13 @@ fn write_stream_records_at(
         };
         for row in experiences {
             let key = account_key(source.stream, &row.id);
+            if held_back.contains(&key) {
+                counts.refused.push((
+                    facet.clone().unwrap_or_default(),
+                    "its record couldn't be placed yet".to_owned(),
+                ));
+                continue;
+            }
             if let Some(stored) = recorded.get(&key) {
                 let fields = written_fields(source.stream, &row);
                 if stored.fields == fields {
@@ -547,7 +561,7 @@ pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> R
 /// [`write_strava_records_at`] on the wall clock.
 #[cfg(test)]
 pub(crate) fn write_strava_records(journal: &Path, day: &str) -> RecordCounts {
-    write_strava_records_at(journal, day, chrono::Utc::now())
+    write_strava_records_at(journal, day, chrono::Utc::now(), &BTreeSet::new())
 }
 
 #[cfg(test)]

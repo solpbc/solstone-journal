@@ -22,6 +22,7 @@ mod news;
 mod observations;
 mod paths;
 mod publication;
+mod strava_converted;
 pub use publication::queue_body_entries_once;
 mod recent_names;
 pub(crate) mod reference_scan;
@@ -54,8 +55,9 @@ pub use awareness::{
     record_import_nudge, record_import_offer_declined,
 };
 pub use body_moves::{
-    BodyMoveOutcome, BodyRecordPlace, OpenBodyMove, body_record_key, complete_body_move,
-    move_body_record, open_body_moves,
+    BodyMoveOutcome, BodyRecordPlace, LineRemoval, OpenBodyMove, body_record_key,
+    complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
+    write_body_record_with,
 };
 pub use connections_horizon::{
     ConnectionsHorizon, read_connections_horizon, refresh_connections_horizon,
@@ -155,6 +157,7 @@ pub use seeding::{
     SeedEntitiesError, SeedEntityBaseOutcome, SeedEntityInput, SeedEntityItemResult,
     SeedEntityOutcome, seed_entities,
 };
+pub use strava_converted::{StravaConvertedLine, append_strava_converted, read_strava_converted};
 pub use write::{
     DEFAULT_FACET, create_facet, delete_facet, delete_facet_entity_link, ensure_default_facet,
     retitle_facet, save_facet_entity_link, set_facet_entity_link_detached, set_facet_muted,

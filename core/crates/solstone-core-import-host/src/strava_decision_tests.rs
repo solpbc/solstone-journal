@@ -64,7 +64,9 @@ fn an_owner_title_carries_and_is_held_and_removable() {
     let a = visible_with_title();
     let folded = fold(base(), &[&a], &key("a"));
     assert_eq!(folded["title"], "Run");
-    assert!(solstone_core_format::content::activity_field_held(&folded, "title"));
+    assert!(solstone_core_format::content::activity_field_held(
+        &folded, "title"
+    ));
     let carried = &folded["edits"][0];
     assert_eq!(carried["before"], json!({}));
     assert_eq!(carried["carried"], key("a"));
@@ -189,8 +191,15 @@ fn the_records_own_edits_and_hide_win() {
     existing.insert("hidden".to_owned(), json!(true));
     existing.insert(
         "edits".to_owned(),
-        json!([edit("2026-02-01T00:00:00Z", "owner:update", &["title"], json!({"title": "Mine"})),
-               hide("2026-02-02T00:00:00Z", "owner:hide")]),
+        json!([
+            edit(
+                "2026-02-01T00:00:00Z",
+                "owner:update",
+                &["title"],
+                json!({"title": "Mine"})
+            ),
+            hide("2026-02-02T00:00:00Z", "owner:hide")
+        ]),
     );
     let a = visible_with_title();
     let folded = fold(existing, &[&a], &key("a"));
@@ -297,9 +306,18 @@ fn a_spanning_line_gives_its_fields_only_where_told_and_its_hide_to_both() {
 
 #[test]
 fn the_primary_is_the_target_facets_first_tile_then_the_earliest() {
-    let a = line("a", json!({"id": "x", "created_at": 5, "segments": ["070000_300"]}));
-    let b = line("b", json!({"id": "y", "created_at": 1, "segments": ["070500_300"]}));
-    let c = line("b", json!({"id": "z", "created_at": 9, "segments": ["070000_300"]}));
+    let a = line(
+        "a",
+        json!({"id": "x", "created_at": 5, "segments": ["070000_300"]}),
+    );
+    let b = line(
+        "b",
+        json!({"id": "y", "created_at": 1, "segments": ["070500_300"]}),
+    );
+    let c = line(
+        "b",
+        json!({"id": "z", "created_at": 9, "segments": ["070000_300"]}),
+    );
     assert_eq!(
         choose_primary(&[&a, &b, &c], "b", Some(("20260101", "070000_300"))),
         Some(c.key())

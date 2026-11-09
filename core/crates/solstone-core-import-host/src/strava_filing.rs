@@ -9,9 +9,9 @@
 //! it never makes a facet and never asks. With a facet, every live tile of the
 //! download's workouts, written or unchanged, gets it in `talents/facets.json`
 //! wherever it has another, so a facet chosen later replaces the earlier one.
-//! A workout an earlier reading of its tiles filed an activity record for keeps
-//! its tiles' facet, because that record stays where it is, and so does one
-//! whose day file can't be read to tell. With none, no file is touched.
+//! Only an owner's answer moves a workout already listed: an unattended run
+//! keeps its tiles' facet, as does one whose day file can't be read to tell.
+//! With none, no file is touched.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -188,8 +188,8 @@ pub(crate) struct Filing {
 pub(crate) type BeforeRefile<'a> = &'a mut dyn FnMut(&[(String, String)]) -> Result<(), String>;
 
 /// File every live tile of the download's workouts under `facet` wherever it
-/// has another, except a workout already listed with the owner's activities
-/// and one whose day can't be read. `before_write` is given every tile that
+/// has another, except one whose day can't be read, and, unless the owner chose
+/// this facet for this import, a workout already listed with their activities. `before_write` is given every tile that
 /// is about to change before any is written, so a run stopped part way still
 /// knows which tiles to publish again.
 /// Call it before the record writer, so a new workout's record goes in `facet`.
@@ -197,6 +197,7 @@ pub(crate) fn file_strava_workouts(
     journal: &Path,
     workouts: &LiveWorkouts,
     facet: &str,
+    may_move_listed: bool,
     before_write: BeforeRefile<'_>,
 ) -> Result<Filing, String> {
     let mut filing = Filing::default();
@@ -233,6 +234,8 @@ pub(crate) fn file_strava_workouts(
             });
         match listed {
             Ok(false) => {}
+            // Only the owner's answer moves a workout that's already listed.
+            Ok(true) if may_move_listed => {}
             Ok(true) => {
                 filing.kept_sensed += 1;
                 continue;

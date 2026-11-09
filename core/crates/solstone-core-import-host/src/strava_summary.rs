@@ -26,6 +26,7 @@ pub(crate) struct StravaRunSummary {
     pub filing: Filing,
     pub records: RecordCounts,
     pub names: StravaNamesOutcome,
+    pub conversion: crate::strava_convert::ConversionCounts,
 }
 
 fn plural(count: u64, one: &str, many: &str) -> String {
@@ -301,6 +302,7 @@ mod tests {
 
     fn summary(facet: Option<&str>, basis: FacetBasis) -> StravaRunSummary {
         StravaRunSummary {
+            conversion: Default::default(),
             new_workouts: 2,
             updated_workouts: 1,
             replaced_workouts: 0,

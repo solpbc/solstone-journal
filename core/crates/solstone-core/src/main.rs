@@ -1807,6 +1807,11 @@ fn run_convey(
         #[cfg(windows)]
         admitted,
         move |parent| {
+            // Beside the server, so a long walk never delays it.
+            let sweep_journal = service_journal.clone();
+            let _ = std::thread::spawn(move || {
+                solstone_core_import_host::strava_convert::sweep_strava_conversions(&sweep_journal);
+            });
             #[cfg(feature = "journal-mcp-endpoint")]
             let agents_routes = Some(solstone_core_mcp_endpoint::owner_routes(
                 service_journal.clone(),

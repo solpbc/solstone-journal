@@ -385,6 +385,95 @@ fn complete_held(root: &Path, open: &OpenBodyMove) -> Result<(), ActivityRecordS
     Ok(())
 }
 
+/// Create or rewrite one body record under its day file's lock, from the record
+/// as it stands then. Refused while the record has an open move: nothing writes
+/// the key anywhere until the move finishes.
+///
+/// # Errors
+///
+/// The store's errors for the file, or an open move.
+pub fn write_body_record_with(
+    root: &Path,
+    place: &BodyRecordPlace,
+    record_id: &str,
+    make: impl FnOnce(Option<ActivityRecord>) -> ActivityRecord,
+) -> Result<ActivityRecord, ActivityRecordStoreError> {
+    let facet_id = admit_activity_destination(root, &place.facet)?;
+    locked_modify_day_records(
+        root,
+        &place.facet,
+        &place.day,
+        true,
+        &facet_id,
+        |mut rows| {
+            let found = rows
+                .iter()
+                .position(|row| id(row) == record_id && is_body_record(row));
+            let mut written = match found {
+                Some(position) => {
+                    refuse_while_moving(root, place, &rows, record_id)?;
+                    make(Some(rows.remove(position)))
+                }
+                None => {
+                    let made = make(None);
+                    refuse_create_while_moving(root, &made)?;
+                    made
+                }
+            };
+            written.insert("destination_id".to_owned(), Value::String(facet_id.clone()));
+            let at = found.unwrap_or(rows.len());
+            rows.insert(at, written.clone());
+            Ok((rows, written))
+        },
+    )
+}
+
+/// What removing a line that must still match did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineRemoval {
+    Removed,
+    /// It's there and no longer matches, so it stays.
+    Changed,
+    /// It's already gone.
+    Absent,
+}
+
+/// Remove the record `record_id` at this place, if `matches` still says yes for
+/// it under the day file's lock.
+///
+/// # Errors
+///
+/// The store's errors for the file.
+pub fn remove_activity_line_if(
+    root: &Path,
+    place: &BodyRecordPlace,
+    record_id: &str,
+    matches: impl FnOnce(&ActivityRecord) -> bool,
+) -> Result<LineRemoval, ActivityRecordStoreError> {
+    let facet_id = admit_activity_destination(root, &place.facet)?;
+    let removed = locked_modify_day_records(
+        root,
+        &place.facet,
+        &place.day,
+        false,
+        &facet_id,
+        |mut rows| {
+            let Some(position) = rows.iter().position(|row| id(row) == record_id) else {
+                return Ok((rows, LineRemoval::Absent));
+            };
+            if !matches(&rows[position]) {
+                return Ok((rows, LineRemoval::Changed));
+            }
+            rows.remove(position);
+            Ok((rows, LineRemoval::Removed))
+        },
+    );
+    match removed {
+        Err(ActivityRecordStoreError::MissingDayFile { .. }) => Ok(LineRemoval::Absent),
+        other => other,
+    }
+}
+
 #[cfg(test)]
 #[path = "body_moves_tests.rs"]
 mod tests;

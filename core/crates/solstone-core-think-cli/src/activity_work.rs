@@ -571,9 +571,24 @@ pub(crate) fn is_body_data_activity(record: &solstone_core_facets::ActivityRecor
     solstone_core_format::content::is_strava_reading(record)
 }
 
+/// Whether a record became a workout's code record. It's settled body data,
+/// whether its line is still there or already gone.
+fn is_converted(journal: &Path, day: &str, facet: &str, activity: &str) -> Result<bool, String> {
+    let listed =
+        solstone_core_facets::read_strava_converted(journal).map_err(|error| error.to_string())?;
+    Ok(listed.contains(&solstone_core_facets::StravaConvertedLine {
+        day: day.to_owned(),
+        facet: facet.to_owned(),
+        id: activity.to_owned(),
+    }))
+}
+
 /// Whether this work is on an activity that is body data.
 fn is_body_data_work(journal: &Path, record: &Record) -> Result<bool, String> {
     let identity = &record.identity;
+    if is_converted(journal, &identity.day, &identity.facet, &identity.activity)? {
+        return Ok(true);
+    }
     Ok(solstone_core_facets::get_activity_record(
         journal,
         &identity.facet,
@@ -707,6 +722,11 @@ pub(crate) fn rebuild_receipts(
     require_day_drained(&context.journal, day)?;
     let mut proof = BTreeMap::new();
     for receipt in retained_receipts(context, day)? {
+        // A record that became a workout's code record: its receipt stands.
+        if is_converted(&context.journal, day, &receipt.facet, &receipt.activity)? {
+            proof.insert(receipt.proof_path, receipt.input_hash);
+            continue;
+        }
         let record = retained_record(context, day, &receipt.facet, &receipt.activity)?;
         // Settled body data: its receipt stands whatever became of the tile.
         if is_body_data_activity(&record) {
@@ -850,6 +870,14 @@ pub(crate) fn reconcile_retained(
         .ok_or("activity receipt disappeared")?;
         if current.bytes != receipt.bytes {
             return Err("activity receipt identity changed".into());
+        }
+        if is_converted(
+            &context.journal,
+            &context.day,
+            &receipt.facet,
+            &receipt.activity,
+        )? {
+            continue;
         }
         let record = retained_record(context, &context.day, &receipt.facet, &receipt.activity)?;
         // A Strava activity's work is settled, never run again.

@@ -269,10 +269,10 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     let unreadable = root.join("facets/work/activities/20261006.jsonl");
     fs::create_dir_all(&unreadable).unwrap();
 
-    // The same download with body: the unsensed workout's tiles move to body
-    // and are published again, and it gets its record there. The sensed one
-    // keeps its tile and record under work, the unreadable one its tile, and
-    // both are counted.
+    // The same download with body, the owner's answer: the unsensed workout's
+    // tiles move to body and are published again, and it gets its record there.
+    // The sensed one's record becomes a code record and goes with its tile to
+    // body too. The unreadable one keeps its tile, and is counted.
     let (run, id) = import(
         root,
         &csv,
@@ -286,12 +286,16 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     }
     assert_eq!(
         tile_facet(root, "20261005", "090000_300").as_deref(),
-        Some("work")
+        Some("body")
     );
     assert_eq!(tile_facet(root, "20261006", "060000_300"), None);
     assert_eq!(
         published(root, &id),
-        ["20261004/070000_300", "20261004/070500_300"]
+        [
+            "20261004/070000_300",
+            "20261004/070500_300",
+            "20261005/090000_300"
+        ]
     );
     assert_eq!(
         (
@@ -299,7 +303,7 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
             count(&run, "kept_sensed"),
             count(&run, "kept_unreadable")
         ),
-        (1, 1, 1)
+        (1, 0, 1)
     );
     assert_eq!(
         (
@@ -307,13 +311,13 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
             count(&run, "records_kept"),
             count(&run, "records_refused")
         ),
-        (1, 1, 1)
+        (1, 0, 1)
     );
     assert_eq!(records(root, "body", "20261004").len(), 1);
-    assert_eq!(
-        records(root, "work", "20261005"),
-        std::slice::from_ref(&sense_record)
-    );
+    assert!(records(root, "work", "20261005").is_empty());
+    let converted = records(root, "body", "20261005");
+    assert_eq!(converted.len(), 1);
+    assert_eq!(converted[0]["source"], "body");
     // Filed under body, its words are read now, after the lock was released;
     // the two with none aren't read again.
     assert_eq!(
@@ -393,9 +397,33 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     assert_eq!(count(&run, "names_calls"), 1);
     assert_eq!(records(root, "body", "20261004").len(), 1);
 
-    // Another facet for the same download: workouts already listed with the
-    // owner's activities keep their facet beside that listing, so a listing
-    // and its workout never split.
+    // Choosing no facet on a later import removes nothing and moves nothing.
+    let (run, _) = import(root, &csv, "20261010_145000", ImportFacet::None, &model);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+    assert_eq!(records(root, "body", "20261004").len(), 1);
+
+    // An import nobody answered for moves nothing already listed.
+    let (run, _) = import(
+        root,
+        &csv,
+        "20261010_145500",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+    assert_eq!(records(root, "body", "20261004").len(), 1);
+
+    // The owner answers with another facet: every workout in the download
+    // moves there, tiles and record together, so a listing and its workout
+    // never split.
     let (run, _) = import(
         root,
         &csv,
@@ -404,13 +432,13 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
         &model,
     );
     assert_eq!(run.exit_code, 0, "{}", run.stderr);
-    assert_eq!(count(&run, "filed"), 0);
+    assert_eq!(count(&run, "filed"), 3);
     assert_eq!(
         tile_facet(root, "20261004", "070000_300").as_deref(),
-        Some("body")
+        Some("work")
     );
-    assert_eq!(records(root, "body", "20261004").len(), 1);
-    assert!(records(root, "work", "20261004").is_empty());
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
 }
 
 #[test]

@@ -158,7 +158,7 @@ fn carried_entries(line: &SenseLine) -> Vec<Record> {
 
 /// The owner or command-line hide a line stands on, `(timestamp, actor)`, when
 /// that's why it's hidden. A line hidden any other way counts as visible.
-fn owner_hide(line: &SenseLine) -> Option<(String, String)> {
+pub(crate) fn owner_hide(line: &SenseLine) -> Option<(String, String)> {
     let hidden = line.record.get(HIDDEN).is_some_and(|value| {
         value.as_bool().unwrap_or(false) || value.as_str().is_some_and(|text| !text.is_empty())
     });
@@ -171,7 +171,12 @@ fn owner_hide(line: &SenseLine) -> Option<(String, String)> {
         .enumerate()
         .filter(|(_, edit)| edit_names(edit, HIDDEN))
         .max_by_key(|(at, edit)| (text(edit, "timestamp").to_owned(), *at))?;
-    owner_edit(edit).then(|| (text(edit, "timestamp").to_owned(), text(edit, "actor").to_owned()))
+    owner_edit(edit).then(|| {
+        (
+            text(edit, "timestamp").to_owned(),
+            text(edit, "actor").to_owned(),
+        )
+    })
 }
 
 /// What the decision keeps about one line.
@@ -191,10 +196,12 @@ impl LineEntry {
                 .unwrap_or_default()
                 .to_owned(),
             hidden: value.get(HIDDEN).and_then(Value::as_bool).unwrap_or(false),
-            hide: value
-                .get("hide")
-                .and_then(Value::as_object)
-                .map(|hide| (text(hide, "timestamp").to_owned(), text(hide, "actor").to_owned())),
+            hide: value.get("hide").and_then(Value::as_object).map(|hide| {
+                (
+                    text(hide, "timestamp").to_owned(),
+                    text(hide, "actor").to_owned(),
+                )
+            }),
             fields: value
                 .get("fields")
                 .and_then(Value::as_object)
@@ -204,7 +211,8 @@ impl LineEntry {
     }
 
     fn to_value(&self) -> Value {
-        let mut value = json!({"sha256": self.digest, "hidden": self.hidden, "fields": self.fields});
+        let mut value =
+            json!({"sha256": self.digest, "hidden": self.hidden, "fields": self.fields});
         if let Some((timestamp, actor)) = &self.hide {
             value["hide"] = json!({"timestamp": timestamp, "actor": actor});
         }
@@ -292,7 +300,10 @@ pub(crate) fn decide(
     let mut carried: BTreeMap<String, Vec<Record>> = BTreeMap::new();
     for edit in &edits {
         if let Some(key) = carried_of(edit).filter(|key| *key != DECISION) {
-            carried.entry(key.to_owned()).or_default().push(edit.clone());
+            carried
+                .entry(key.to_owned())
+                .or_default()
+                .push(edit.clone());
         }
     }
 
@@ -347,9 +358,13 @@ pub(crate) fn decide(
         .iter()
         .filter(|(key, _)| **key != primary)
         .flat_map(|(key, group)| {
-            group
-                .iter()
-                .map(move |edit| (text(edit, "timestamp").to_owned(), key.clone(), edit.clone()))
+            group.iter().map(move |edit| {
+                (
+                    text(edit, "timestamp").to_owned(),
+                    key.clone(),
+                    edit.clone(),
+                )
+            })
         })
         .collect::<Vec<_>>();
     ordered.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
@@ -423,7 +438,10 @@ pub(crate) fn decide(
         }))
     };
 
-    let mut rebuilt = carried_order.into_iter().map(Value::Object).collect::<Vec<_>>();
+    let mut rebuilt = carried_order
+        .into_iter()
+        .map(Value::Object)
+        .collect::<Vec<_>>();
     rebuilt.extend(decision);
     rebuilt.extend(own.into_iter().map(Value::Object));
     if !rebuilt.is_empty() {

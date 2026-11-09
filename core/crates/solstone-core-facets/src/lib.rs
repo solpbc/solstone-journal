@@ -99,9 +99,11 @@ pub use store::{
     write_facet_entity_observations, write_log_file,
 };
 pub use store::{
-    BodyMoveOutcome, BodyRecordPlace, OpenBodyMove, body_record_key, complete_body_move,
-    move_body_record, open_body_moves,
+    BodyMoveOutcome, BodyRecordPlace, LineRemoval, OpenBodyMove, body_record_key,
+    complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
+    write_body_record_with,
 };
+pub use store::{StravaConvertedLine, append_strava_converted, read_strava_converted};
 pub use store::{
     add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
     create_facet_entity_if_absent, detach_facet_entity, iter_detected_entity_names_since,

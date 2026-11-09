@@ -1017,6 +1017,29 @@ fn tile_from(start: DateTime<Tz>, elapsed_seconds: u64) -> Vec<TileSlice> {
     slices
 }
 
+/// Every day and key an earlier version may have placed a workout's tiles at,
+/// reading its UTC start as wall time in `zone`, with the keys a collision
+/// would have stepped to.
+#[must_use]
+pub fn misread_tile_keys(
+    start: chrono::DateTime<chrono::FixedOffset>,
+    elapsed_seconds: u64,
+    zone: Tz,
+) -> Vec<(String, String)> {
+    let Some(misread) = zone.from_local_datetime(&start.naive_utc()).earliest() else {
+        return Vec::new();
+    };
+    tile_from(misread, elapsed_seconds)
+        .into_iter()
+        .flat_map(|slice| {
+            segment_key_candidates(&slice.natural_key)
+                .unwrap_or_default()
+                .into_iter()
+                .map(move |key| (slice.natural_day.clone(), key))
+        })
+        .collect()
+}
+
 pub fn read_zone_record(journal: &Path) -> Result<Option<Tz>, StravaError> {
     let path = journal.join(ZONE_FILE_REL);
     if !path.exists() {
