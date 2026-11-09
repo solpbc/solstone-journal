@@ -12,6 +12,8 @@
 enum class Callee { Valid, Null, Throw };
 static Callee callee = Callee::Valid;
 static bool weight_failure = false;
+static bool use_ternary = false;
+static int metadata_calls = 0;
 static int live_loaders = 0;
 static int failures = 0;
 #define PK_LOG(...) do {} while (0)
@@ -31,6 +33,7 @@ struct ModelLoader {
     bool load(const std::string& path) {
         if (callee == Callee::Throw) throw std::runtime_error("test-only callee failure");
         cfg.arch = path == "diar" ? "diarization" : path;
+        cfg.ternary.present = use_ternary;
         return callee != Callee::Null;
     }
     bool load_component(const std::string& path, const std::string&) { return load(path); }
@@ -44,8 +47,11 @@ static void ensure_weights_realized(ModelLoader& loader) {
 }
 static std::string ternary_flag_consistency_error(const ModelLoader&) { return ""; }
 static void ternary_prepare(const ModelLoader&) {}
-struct Backend { const char* device_name() const { return "cpu"; } };
-static Backend& global_backend() { static Backend backend; return backend; }
+// Declarations for the exact projected revision; only its selected definition
+// is supplied below. No alias is added to the production library.
+struct Backend { const char* device_name() const { ++metadata_calls; return "cpu"; } };
+static Backend& global_backend();
+static std::string backend_device_name();
 struct Component { explicit Component(const ModelLoader&) {} };
 using MelFrontend = Component;
 using DiarizationEncoder = Component;
@@ -96,6 +102,14 @@ struct parakeet_ctx {
 
 #include LOAD_SOURCE_INCLUDE
 
+namespace pk {
+#if LOAD_TEST_LEGACY_METADATA
+static Backend& global_backend() { static Backend backend; return backend; }
+#else
+static std::string backend_device_name() { ++metadata_calls; return "cpu"; }
+#endif
+}
+
 static void check_no_context_leak() {
     CHECK(live_contexts.empty());
     // Bound the old negative's leaked TEST objects after recording the failure.
@@ -121,6 +135,14 @@ int main() {
     eager([] { return pk::Model::load_vad_only("vad"); });
     eager([] { return pk::DiarizationModel::load("diar"); });
     callee = Callee::Valid;
+    use_ternary = true;
+    {
+        auto metadata = pk::Model::load("asr");
+        CHECK(metadata != nullptr);
+        CHECK(metadata_calls == 1);
+    }
+    use_ternary = false;
+    CHECK(live_loaders == 0);
     CHECK(load_plain(nullptr) == nullptr);
     for (const char* path : {"ced", "silero", "vad", "voice", "asr", "diar"}) {
         callee = Callee::Throw;

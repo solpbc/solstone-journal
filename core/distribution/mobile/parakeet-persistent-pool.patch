@@ -80,9 +80,9 @@
      bool is_cpu() const;
 --- a/src/ggml_graph.hpp
 +++ b/src/ggml_graph.hpp
-@@ -58,5 +58,7 @@
- // is still alive — otherwise static destruction frees it after the CUDA atexit
- // handler and aborts. A later global_backend() call recreates it.
+@@ -87,5 +87,7 @@
+ // handler and aborts. A request with live owners/borrows is deferred; a later
+ // admitted borrow recreates it only after they are gone.
  void shutdown_backend();
 +// Release idle CPU workers without discarding the persistent graph backend.
 +void release_backend_threads();
@@ -90,18 +90,19 @@
  } // namespace pk
 --- a/src/ggml_graph.cpp
 +++ b/src/ggml_graph.cpp
-@@ -98,6 +98,11 @@
-     return g_backend_threads;
+@@ -131,6 +131,12 @@
+     return state.threads;
  }
  
 +void release_backend_threads() {
-+    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
-+    if (g_backend) g_backend->release_threadpool();
++    auto& state = backend_state();
++    std::lock_guard<std::recursive_mutex> lock(state.mutex);
++    if (state.backend) state.backend->release_threadpool();
 +}
 +
  void shutdown_backend() {
-     // Free the process-global backend explicitly. Required for GPU backends: the
-     // backend (and its gallocr's device buffer) must be released while the CUDA/
+     auto& state = backend_state();
+     std::lock_guard<std::recursive_mutex> lock(state.mutex);
 --- a/src/parakeet_capi.cpp
 +++ b/src/parakeet_capi.cpp
 @@ -439,7 +439,13 @@
