@@ -7,7 +7,7 @@
 use super::*;
 use std::path::PathBuf;
 
-#[cfg(feature = "full-tests")]
+#[cfg(all(test, feature = "full-tests"))]
 mod native;
 
 const FOLDER_GLOB: &str = ".before-restore-";

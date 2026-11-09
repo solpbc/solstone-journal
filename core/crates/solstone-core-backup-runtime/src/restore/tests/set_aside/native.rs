@@ -4,9 +4,8 @@
 //! The whole restore against real restic. Needs `SOLSTONE_NATIVE_RESTIC`.
 
 use super::*;
+use crate::runner::run_restic;
 use std::cell::Cell;
-use std::io::Write;
-use std::process::{Command, Stdio};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Stop {
@@ -32,24 +31,7 @@ impl Restic {
     }
 
     fn execute(request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-        let mut child = Command::new(&request.program)
-            .arg("--no-cache")
-            .args(&request.argv)
-            .env_clear()
-            .envs(&request.env)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        if let Some(bytes) = &request.stdin {
-            child.stdin.take().unwrap().write_all(bytes)?;
-        }
-        let output = child.wait_with_output()?;
-        Ok(ToolOutput {
-            returncode: output.status.code().unwrap_or(-1),
-            stdout: output.stdout,
-            stderr: output.stderr,
-        })
+        crate::runner::SystemToolRunner::default().run(request)
     }
 }
 
@@ -114,14 +96,21 @@ impl Fixture {
         let mut destination = destination();
         destination.repository = repository.path().join("r").to_string_lossy().into_owned();
         let restic = |args: &[&str]| {
-            let status = Command::new(&binary)
-                .args(["--no-cache", "-q", "-r", &destination.repository])
-                .args(args)
-                .env("RESTIC_PASSWORD", &key)
-                .stdout(Stdio::null())
-                .status()
-                .unwrap();
-            assert!(status.success(), "{args:?}");
+            let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+            let output = run_restic(
+                &crate::runner::SystemToolRunner::default(),
+                &args,
+                &destination.repository,
+                &key,
+                binary.as_path(),
+                None,
+                false,
+                None,
+                None,
+                &[],
+            )
+            .unwrap();
+            assert_eq!(output.returncode, 0, "{args:?}");
         };
         restic(&["init"]);
 
@@ -160,19 +149,20 @@ impl Fixture {
     }
 
     fn snapshot_id(&self) -> String {
-        let output = Command::new(&self.binary)
-            .args([
-                "--no-cache",
-                "-r",
-                &self.destination.repository,
-                "snapshots",
-                "--json",
-            ])
-            .env("RESTIC_PASSWORD", &self.key)
-            .output()
-            .unwrap();
-        let listed: Value = serde_json::from_slice(&output.stdout).unwrap();
-        listed[0]["id"].as_str().unwrap().to_owned()
+        let output = run_restic(
+            &crate::runner::SystemToolRunner::default(),
+            &["snapshots".to_owned()],
+            &self.destination.repository,
+            &self.key,
+            self.binary.as_path(),
+            None,
+            true,
+            None,
+            None,
+            &[],
+        )
+        .unwrap();
+        output.json.unwrap()[0]["id"].as_str().unwrap().to_owned()
     }
 
     fn restore_mobile(&self, runner: &Restic, drained: &Cell<usize>) -> RestoreOutcome {
