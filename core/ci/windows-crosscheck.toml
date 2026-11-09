@@ -21,8 +21,10 @@ target = "x86_64-pc-windows-msvc"
 # and on Windows it builds as an empty library.
 # Re-derived on 2026-11-08 with the same metadata join: solstone-core-removals
 # adds one member and one library (143/136 -> 144/137).
-workspace_packages = 144
-library_packages = 137
+# Re-derived on 2026-11-08 with the same metadata join: solstone-core-trash
+# adds one member and one library (144/137 -> 145/138).
+workspace_packages = 145
+library_packages = 138
 
 [[exclusions]]
 package = "ring"
