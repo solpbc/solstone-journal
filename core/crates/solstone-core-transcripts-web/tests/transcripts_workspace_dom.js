@@ -678,6 +678,24 @@ function createTranscriptsDOM() {
   modalPart('button', 'trDeleteSegmentModalEraseConfirm', eraseFoot);
   doc.body.appendChild(deleteSegmentModal);
 
+  // Select mode, as workspace.html lays it out: the header's select button, and
+  // the panel with its strip and list that stands in for the transcript.
+  const content = doc.createElement('div');
+  content.id = 'trContent';
+  doc.body.appendChild(content);
+  modalPart('button', 'trSelectBtn', doc.body, true);
+  const pickPanel = modalPart('div', 'trPickPanel', doc.body, true);
+  const pickBar = modalPart('div', 'trPickBar', pickPanel);
+  const pickIdle = modalPart('div', 'trPickIdle', pickBar);
+  modalPart('input', 'trPickAll', pickIdle);
+  modalPart('span', 'trPickAllLabel', pickIdle);
+  modalPart('button', 'trPickDoneIdle', pickIdle);
+  const pickSome = modalPart('div', 'trPickSome', pickBar, true);
+  modalPart('span', 'trPickCount', pickSome);
+  modalPart('button', 'trPickDelete', pickSome);
+  modalPart('button', 'trPickDoneSome', pickSome);
+  modalPart('div', 'trPickList', pickPanel);
+
   const initialEmptyIcon = doc.createElement('div');
   initialEmptyIcon.id = 'trInitialEmptyIcon';
   doc.body.appendChild(initialEmptyIcon);
@@ -2963,6 +2981,173 @@ test('full-frame temporary pixels are released after drawing and after a draw fa
     assert.deepStrictEqual([frame.width, frame.height], [0, 0]);
     if (!fail) assert.strictEqual(drawn, 'selected frame');
   }
+});
+
+// Select mode: several segments of this range chosen and deleted together.
+const pickFill = (template, values) => Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+const pickId = (pill) => JSON.stringify([pill.dataset.stream, pill.dataset.key]);
+const pickRows = (doc) => doc.querySelectorAll('#trPickList .trash-row');
+const settle = () => new Promise((r) => setTimeout(r, 10));
+
+test('select mode: the list replaces the transcript, a pill toggles its row, select all and done', async () => {
+  const env = await createEnvironment();
+  const $ = (id) => env.doc.getElementById(id);
+  assert.strictEqual($('trSelectBtn').hidden, false, 'the range has a segment, so select shows');
+  assert.strictEqual($('trSelectBtn').textContent, TRASH_COPY.select);
+  const getsBefore = env.history.length;
+
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  assert.ok($('trContent').classList.contains('tr-picking'), 'tabs, notice and transcript give way');
+  assert.strictEqual($('trPickPanel').hidden, false);
+  assert.strictEqual($('trPickIdle').hidden, false, 'nothing chosen: select all and done');
+  assert.strictEqual($('trPickSome').hidden, true);
+  const pills = getZoomPills(env.doc);
+  assert.strictEqual(pickRows(env.doc).length, pills.length, 'one row per segment in the range');
+  assert.ok(pickRows(env.doc)[0].querySelector('.removal-time').textContent.length > 0);
+  assert.strictEqual(pickRows(env.doc)[0].querySelector('.removal-qual').textContent, pills[0].dataset.stream);
+
+  // A pill toggles its row instead of opening its segment.
+  pills[0].dispatchEvent({ type: 'click' });
+  assert.strictEqual(env.history.length, getsBefore, 'nothing opened');
+  assert.strictEqual(isDeleteBtnVisible(env.doc), false);
+  let pill = getZoomPills(env.doc).find((item) => pickId(item) === pickId(pills[0]));
+  assert.ok(pill.classList.contains('tr-active') && pill.classList.contains('tr-picked'));
+  assert.strictEqual(pickRows(env.doc)[0].querySelector('input').checked, true);
+  assert.strictEqual($('trPickSome').hidden, false);
+  assert.ok($('trPickCount').textContent.includes('1'));
+  pill.dispatchEvent({ type: 'click' });
+  pill = getZoomPills(env.doc).find((item) => pickId(item) === pickId(pills[0]));
+  assert.ok(!pill.classList.contains('tr-picked'), 'a second press clears it');
+
+  // The row's own checkbox does the same.
+  const box = pickRows(env.doc)[1].querySelector('input');
+  box.checked = true;
+  box.dispatchEvent({ type: 'change' });
+  assert.ok($('trPickCount').textContent.includes('1'));
+
+  // Select all takes every segment in the range.
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  assert.ok($('trPickCount').textContent.includes(String(pills.length)));
+  assert.strictEqual(env.doc.activeElement, $('trPickDelete'));
+
+  // done leaves select mode and clears the choice.
+  $('trPickDoneSome').dispatchEvent({ type: 'click' });
+  assert.ok(!$('trContent').classList.contains('tr-picking'));
+  assert.strictEqual($('trPickPanel').hidden, true);
+  assert.ok(getZoomPills(env.doc).every((item) => !item.classList.contains('tr-picked')));
+  assert.strictEqual(env.doc.activeElement, $('trSelectBtn'));
+});
+
+const SEVEN = Array.from({ length: 7 }, (_, index) => {
+  const minute = 45 + index * 5;
+  const hour = 11 + Math.floor(minute / 60);
+  const mm = String(minute % 60).padStart(2, '0');
+  const end = minute + 5;
+  return {
+    key: `${hour}${mm}00_300`, stream: 'room', start: `${hour}:${mm}`,
+    end: `${11 + Math.floor(end / 60)}:${String(end % 60).padStart(2, '0')}`,
+    types: ['audio'], data_state: { audio: 'analyzed' },
+  };
+});
+
+test('select mode: the set dialog lists five segments then how many more, and moves each one\'s own', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, SEVEN);
+  const $ = (id) => env.doc.getElementById(id);
+  assert.strictEqual(getZoomPills(env.doc).length, 7);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  const C = TRASH_COPY.set;
+  assert.strictEqual($('trDeleteSegmentModal').style.display, 'flex');
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, pickFill(C.moveTitle, { n: 7 }));
+  assert.strictEqual(env.doc.activeElement, $('trDeleteSegmentModalConfirm'));
+  const shown = env.doc.querySelectorAll('#trDeleteSegmentModalBody .trash-set-list li');
+  assert.strictEqual(shown.length, 6);
+  assert.ok(shown[5].classList.contains('trash-set-more'));
+  assert.strictEqual(shown[5].textContent, pickFill(C.more, { n: 2 }));
+  const text = (selector) => env.doc.querySelector(`#trDeleteSegmentModalBody ${selector}`)?.textContent;
+  assert.strictEqual(text('.tr-delete-reach'), C.moveReach);
+  assert.strictEqual(text('.tr-delete-lead'), C.moveLead);
+  assert.strictEqual(text('.tr-delete-stays'), C.moveStays);
+  assert.strictEqual(env.doc.querySelectorAll('#trDeleteSegmentModalBody .tr-delete-segment-list li').length, 4);
+  assert.strictEqual(env.doc.querySelector('#trDeleteSegmentModalBody .tr-delete-segment-size'), null, 'no size unless every size is known');
+  $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, pickFill(C.eraseTitle, { n: 7 }));
+  assert.strictEqual(text('.tr-delete-lead'), C.eraseLead);
+  assert.strictEqual(text('.tr-delete-stays'), C.eraseStays);
+  assert.ok($('trDeleteSegmentModalHeader').classList.contains('danger'));
+});
+
+test('select mode: a set that partly moves keeps the refused one chosen with its note, and recover puts the rest back', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    postResponse: (record) => {
+      if (record.url.endsWith('/app/transcripts/api/segments/delete')) {
+        const [a, b, c] = record.body.segments;
+        return { status: 200, body: {
+          done: [{ segment: a, trash: { id: 'ta', erase_at: '2020-01-22T09:00:00Z' }, erased: false }, { segment: b, trash: { id: 'tb', erase_at: '2020-01-23T09:00:00Z' }, erased: false }],
+          failed: [{ segment: c, key: 'busy', reason: 'synthetic reason' }],
+        } };
+      }
+      return { status: 200, body: { done: record.body.ids, failed: [] } };
+    },
+  });
+  const $ = (id) => env.doc.getElementById(id);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  await settle();
+  const sent = env.posts.find((post) => post.url.endsWith('/app/transcripts/api/segments/delete'));
+  assert.strictEqual(sent.body.segments.length, 3);
+  assert.ok(sent.body.segments.every((seg) => seg.day === '20200115' && seg.stream && seg.key));
+  assert.strictEqual(sent.body.erase, undefined, 'move to trash asks for no erase');
+  assert.strictEqual(getZoomPills(env.doc).length, 1, 'what moved leaves the detail column');
+  assert.ok($('trContent').classList.contains('tr-picking'), 'some refused: select mode stays');
+  assert.strictEqual(pickRows(env.doc).length, 1);
+  assert.strictEqual(pickRows(env.doc)[0].querySelector('input').checked, true, 'the refused one stays chosen');
+  assert.strictEqual(pickRows(env.doc)[0].querySelector('.tr-pick-note').textContent, TRASH_COPY.notes.busy);
+  const R = TRASH_COPY.setReceipt;
+  const notice = env.notifications.at(-1);
+  assert.strictEqual(notice.title, pickFill(R.partMoved.title, { done: 2, n: 3 }));
+  assert.strictEqual(notice.message, pickFill(R.stillOne, { k: 1 }));
+  assert.strictEqual(notice.autoDismiss, undefined);
+  await receiptButton(notice, TRASH_COPY.buttons.recover).onClick();
+  assert.deepStrictEqual(env.posts.at(-1).body, { ids: ['ta', 'tb'], page: 'transcripts' });
+  assert.strictEqual(getZoomPills(env.doc).length, 3, 'recover puts them back');
+  assert.strictEqual(env.notifications.at(-1).title, pickFill(R.recovered.title, { n: 2, things: TRASH_COPY.noun.segments }));
+});
+
+test('select mode: a set that all moves leaves select mode; one chosen uses the single dialog', async () => {
+  const env = await createEnvironment(undefined, 'analyzed', false, null, {
+    postResponse: (record) => ({ status: 200, body: {
+      done: record.body.segments.map((segment, index) => ({ segment, trash: { id: `t${index}`, erase_at: '2020-01-22T09:00:00Z' }, erased: true })),
+      failed: [],
+    } }),
+    deleteResponse: () => ({ status: 409, body: { success: false, key: 'importing' } }),
+  });
+  const $ = (id) => env.doc.getElementById(id);
+  $('trSelectBtn').dispatchEvent({ type: 'click' });
+  const pills = getZoomPills(env.doc);
+  pills[0].dispatchEvent({ type: 'click' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  assert.strictEqual($('trDeleteSegmentModalTitle').textContent, TRASH_COPY.move.title, 'one chosen: the single dialog');
+  $('trDeleteSegmentModalConfirm').dispatchEvent({ type: 'click' });
+  await settle();
+  assert.strictEqual(env.deletes.length, 1);
+  assert.ok($('trContent').classList.contains('tr-picking'));
+  assert.strictEqual(pickRows(env.doc)[0].querySelector('.tr-pick-note').textContent, TRASH_COPY.notes.importing);
+
+  $('trPickAll').dispatchEvent({ type: 'change' });
+  $('trPickDelete').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalErase').dispatchEvent({ type: 'click' });
+  $('trDeleteSegmentModalEraseConfirm').dispatchEvent({ type: 'click' });
+  await settle();
+  assert.strictEqual(env.posts.at(-1).body.erase, true);
+  assert.strictEqual(getZoomPills(env.doc).length, 0);
+  assert.ok(!$('trContent').classList.contains('tr-picking'), 'all done: select mode ends');
+  const notice = env.notifications.at(-1);
+  assert.strictEqual(notice.title, pickFill(TRASH_COPY.setReceipt.erased.title, { n: 3, things: TRASH_COPY.noun.segments }));
+  assert.strictEqual(notice.autoDismiss, 10000);
 });
 
 let completedRun = false;

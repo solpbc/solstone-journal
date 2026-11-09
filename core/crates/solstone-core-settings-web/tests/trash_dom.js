@@ -14,6 +14,8 @@ const start = html.indexOf('// ========== TRASH ==========');
 const end = html.indexOf('// ========== END TRASH ==========');
 assert.ok(start > 0 && end > start, 'the trash block is marked');
 const history = html.slice(html.indexOf('const REMOVAL_EVENT'), html.indexOf('function removalGroups'));
+const sourceNames = html.slice(html.indexOf('// ========== SOURCE NAMES =========='), html.indexOf('// ========== END SOURCE NAMES =========='));
+assert.ok(sourceNames.includes('REMOVAL_SOURCE'), 'the source names block is marked');
 
 class El {
   constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.style = {}; this.hidden = false; this.listeners = {}; this.className = ''; this._text = ''; }
@@ -64,7 +66,7 @@ const sandbox = {
   saveField: (el, section, key, value) => saves.push({ section, key, value }),
 };
 vm.createContext(sandbox);
-vm.runInContext(`${html.slice(start, end)};this.api={TRASH_COPY,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected};`, sandbox);
+vm.runInContext(`${sourceNames}\n${html.slice(start, end)};this.api={TRASH_COPY,renderTrash,loadTrash,trashEraseDate,trashResultLine,trashConfirmCopy,setupTrash,saveTrashDays,trashSelected,trashWord,REMOVAL_SOURCE,REMOVAL_IMPORTED,TRASH_KIND_LABEL};`, sandbox);
 const { api } = sandbox;
 const C = api.TRASH_COPY;
 api.setupTrash();
@@ -72,6 +74,7 @@ api.setupTrash();
 const LATER = '2099-11-15T00:00:00.000Z';
 const seg = (id, extra = {}) => ({ id, kind: 'segment', day: '20261101', stream: 'field', segment: '070000_300', erase_at: LATER, bytes: 2048, replaces: false, ...extra });
 const mem = (id) => ({ id, kind: 'memory', day: '20261101', stream: 'agent-memory-x', segment: '080000_1', erase_at: LATER, bytes: 10, replaces: false });
+const imp = (id, extra = {}) => ({ id, kind: 'import', source: 'chatgpt', import_id: '20261102_161200', label: 'conversations.zip', imported_day: '20261102', segments: 12, days: ['20261005', '20261009'], erase_at: LATER, bytes: 3 * 1024 * 1024, replaces: false, ...extra });
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 (async () => {
@@ -103,6 +106,27 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.ok(segRow.textContent.includes(C.returned));
   assert.ok(!memRow.textContent.includes('label:'));
   assert.ok(!memRow.textContent.includes(C.returned));
+
+  // An import names its source, its own file name and the day it came in, then
+  // its segments and size; its returned line is its own.
+  answers['api/trash'] = { erase_after_days: 7, items: [imp('i', { replaces: true }), imp('j', { label: null, source: 'not-a-source', segments: 1 })] };
+  await api.loadTrash();
+  const [impRow, bareRow] = byId.trashList.children;
+  const quals = (row) => row.all('removal-qual').map((node) => node.textContent);
+  assert.strictEqual(impRow.all('removal-what')[0].textContent, api.TRASH_KIND_LABEL.import);
+  assert.deepStrictEqual(quals(impRow), [api.REMOVAL_SOURCE.chatgpt, 'conversations.zip', api.REMOVAL_IMPORTED.replace('{day}', '20261102')]);
+  assert.ok(impRow.textContent.includes(C.segmentMany.replace('{n}', 12)));
+  assert.ok(impRow.textContent.includes('3.0 MB'));
+  assert.ok(impRow.textContent.includes(C.returnedImport));
+  assert.ok(!impRow.textContent.includes(C.returned));
+  assert.deepStrictEqual(quals(bareRow), [api.REMOVAL_IMPORTED.replace('{day}', '20261102')], 'no file name and an unknown source leave no empty qualifier');
+  assert.ok(bareRow.textContent.includes(C.segmentOne.replace('{n}', 1)));
+  assert.strictEqual(api.trashWord([imp('i')], 1), 'import');
+  assert.strictEqual(api.trashWord([imp('i'), imp('j')], 2), 'imports');
+  assert.strictEqual(api.trashWord([imp('i'), seg('a')], 2), 'things', 'a mixed selection stays things');
+  assert.strictEqual(api.trashWord([{ kind: 'workout' }], 1), 'workout');
+  answers['api/trash'] = { erase_after_days: 7, items: [seg('a', { replaces: true }), mem('b')] };
+  await api.loadTrash();
 
   // The date: never in the past.
   const now = new Date('2026-11-08T00:00:00Z');
@@ -163,6 +187,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.deepStrictEqual(K('erase', [seg('a'), seg('c')]).paragraphs, [C.bodyMany, C.staysMany]);
   assert.deepStrictEqual(K('erase', [mem('b')]).paragraphs, [C.bodyOne, C.staysOne, C.agentOne]);
   assert.strictEqual(K('empty', [seg('a')]).title, C.confirmEmpty);
+  // An import or a workout in the selection: summaries and entities.
+  assert.deepStrictEqual(K('erase', [imp('i')]).paragraphs, [C.bodyOne, C.madeOne]);
+  assert.deepStrictEqual(K('erase', [imp('i'), seg('a')]).paragraphs, [C.bodyMany, C.madeMany]);
+  assert.deepStrictEqual(K('erase', [{ kind: 'workout' }, seg('a')]).paragraphs, [C.bodyMany, C.madeMany]);
 
   // Results: what the answer says, checked against the reloaded list.
   const items = [seg('a'), seg('c')];
@@ -216,4 +244,30 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.strictEqual(hist.removalHow({ surface: 'cli', event: 'recovered' }), `${hist.REMOVAL_EVENT.recovered} BY-CLI`);
   assert.strictEqual(hist.removalHow({ surface: 'policy', policy: 'trash', event: 'erased' }), 'TIMER');
   assert.strictEqual(hist.removalHow({ ...web, event: 'removed', action: 'segment_delete' }), 'STAGE1 IN-SETTINGS');
+
+  // An import's line: the kind, its source, the day it came in from its id; never its file.
+  const rows = {};
+  vm.createContext(rows);
+  rows.document = document;
+  rows.window = { JournalFormat: { day: (key) => `d${key}` } };
+  vm.runInContext(`${html.slice(html.indexOf('// Removal history:'), html.indexOf('function renderRemovalHistory'))}
+    this.removalWhat = removalWhat; this.removalGroupWhat = removalGroupWhat; this.REMOVAL_KIND = REMOVAL_KIND; this.REMOVAL_SOURCE = REMOVAL_SOURCE;`, rows);
+  const historyLine = (unit) => {
+    const node = rows.removalWhat(unit);
+    return { what: node.all('removal-what').map((n) => n.textContent), quals: node.all('removal-qual').map((n) => n.textContent) };
+  };
+  const importLine = historyLine({ kind: 'import', source: 'chatgpt', id: '20261102_161200', file: 'secret.zip' });
+  assert.deepStrictEqual(importLine.what, [rows.REMOVAL_KIND.import[0]]);
+  assert.strictEqual(importLine.quals.length, 2);
+  assert.strictEqual(importLine.quals[0], rows.REMOVAL_SOURCE.chatgpt);
+  assert.ok(importLine.quals[1].includes('d20261102'));
+  assert.ok(!JSON.stringify(importLine).includes('secret'), 'the history keeps nothing that was in it');
+  assert.ok(historyLine({ kind: 'import', source: '', id: '20261102_161200' }).quals.length === 1, 'a source-less import shows no empty qualifier');
+  assert.ok(historyLine({ kind: 'import', source: 'toString', id: 'bad' }).quals.length === 0);
+  const workoutLine = historyLine({ kind: 'workout', source: 'strava', id: 'w1' });
+  assert.deepStrictEqual(workoutLine.what, [rows.REMOVAL_KIND.workout[0]]);
+  assert.deepStrictEqual(workoutLine.quals, [rows.REMOVAL_SOURCE.strava], 'without its day a workout reads as its kind and source');
+  assert.deepStrictEqual(historyLine({ kind: 'workout', source: 'strava', day: '20261108' }).quals, ['d20261108', rows.REMOVAL_SOURCE.strava]);
+  const group = rows.removalGroupWhat({ units: [{ unit: { kind: 'import', source: 'chatgpt', id: '20261102_161200' } }, { unit: { kind: 'import', source: 'document', id: '20261101_094000' } }] });
+  assert.ok(group.all('removal-what')[0].textContent.endsWith(rows.REMOVAL_KIND.import[1]), 'a group of imports keeps the plural kind');
 })().catch((error) => { console.error(error); process.exit(1); });

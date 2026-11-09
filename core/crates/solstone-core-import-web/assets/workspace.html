@@ -494,7 +494,9 @@
 .modal-actions { margin-top: 1em; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: flex-end; }
 #quickSizePreview { flex: 1 1 100%; }
 
-.import-list { margin-top: 2em; overflow-x: auto; padding: 1rem 1.25rem; border-radius: 12px; background: var(--panel); }
+.import-list { margin-top: 2em; padding: 1rem 1.25rem; border-radius: 12px; background: var(--panel); }
+/* The table scrolls sideways on its own, so the selection strip above it can stay in view. */
+.import-table-wrap { overflow-x: auto; }
 .import-list h2 { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.75rem 0; color: var(--ink); }
 .import-table { width: 100%; border-collapse: collapse; }
 .import-table th { background: var(--hairline); text-align: left; padding: 8px; border-bottom: 1px solid var(--hairline); font-size: 0.9em; }
@@ -623,13 +625,73 @@
     border-bottom: 1px solid var(--hairline);
   }
   .import-table td { border: 0; padding: 4px; min-width: 0; white-space: normal; }
-  .import-table td:nth-child(2) { grid-column: 1 / -1; grid-row: 1; overflow-wrap: anywhere; font-weight: 600; }
+  .import-table td.import-file-cell { grid-column: 1 / -1; grid-row: 1; overflow-wrap: anywhere; font-weight: 600; }
   .import-table td.status-cell { grid-column: 1 / -1; grid-row: 2; }
-  .import-table td:nth-child(1) { grid-column: 1 / -1; }
-  .import-table td:nth-child(1)::before { content: 'imported to '; color: var(--ink-soft); }
-  .import-table td:nth-child(6) { grid-column: 1 / -1; font-size: .85em; color: var(--ink-soft); }
-  .import-table td:nth-child(6)::before { content: 'imported at '; }
+  .import-table td.import-day-cell { grid-column: 1 / -1; }
+  .import-table td.import-day-cell::before { content: 'imported to '; color: var(--ink-soft); }
+  .import-table td.import-at-cell { grid-column: 1 / -1; font-size: .85em; color: var(--ink-soft); }
+  .import-table td.import-at-cell::before { content: 'imported at '; }
   .import-table td.source-cell { overflow-wrap: anywhere; }
+  .import-table--picking tbody tr { position: relative; padding-left: 2.5em; }
+  .import-table--picking td.import-pick-col { position: absolute; left: 4px; top: 12px; width: auto; }
+  .import-pick-col input { width: 20px; height: 20px; }
+  .import-pick-bar button { min-height: 44px; }
+}
+
+/* Deleting imports: the button on an import's page, select mode on the list,
+   and the trash's own three-button dialog. */
+.import-delete { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--hairline); }
+.import-select-btn { margin-left: .5em; padding: .35em .9em; }
+.import-select-btn[hidden] { display: none; }
+.trash-bar { min-height: 2.5em; padding: .5em 1em .5em .85em; background: var(--cream); }
+.trash-bar[hidden], .trash-bar-group[hidden] { display: none; }
+.trash-bar:focus { outline: none; }
+.trash-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em .75em; }
+.trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
+.trash-all { display: inline-flex; align-items: center; gap: .5em; cursor: pointer; }
+.trash-bar-actions { margin-left: auto; display: flex; gap: .5em; }
+.import-pick-bar { position: sticky; top: 0; z-index: 1; border: 1px solid var(--hairline); border-bottom: 0; border-radius: 8px 8px 0 0; }
+.import-pick-bar .import-secondary-btn { padding: .35em .9em; }
+.import-pick-col { width: 2.25em; text-align: center; }
+.import-table--picking tbody tr { cursor: pointer; }
+.import-table tbody tr.import-row--picked { background: var(--orange-wash); }
+.import-row-note { margin-top: .25em; color: var(--ink-soft); font-size: .85em; }
+.trash-set-list { list-style: none; margin: 0 0 12px; padding: 0; font-size: 14px; }
+.trash-set-list li + li { margin-top: 2px; }
+.trash-set-more { color: var(--ink-soft); }
+
+#importDeleteModal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 24px; margin: 0; background: color-mix(in srgb, var(--surface-dark) 55%, transparent); z-index: 1100; }
+#importDeleteModal .modal-content { width: min(520px, 100%); max-width: none; max-height: calc(100vh - 48px); margin: 0; padding: 0; background: var(--paper); border-radius: 16px; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22); overflow: hidden; display: flex; flex-direction: column; }
+/* Title and buttons stay put; only the body scrolls on a short screen. */
+#importDeleteModal .modal-header, #importDeleteModal .modal-footer { flex: none; }
+#importDeleteModal .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px; border-bottom: 1px solid var(--hairline); }
+#importDeleteModal .modal-header h3 { margin: 0; font-size: 20px; font-weight: 700; color: var(--ink); }
+#importDeleteModal .modal-header.danger h3 { color: var(--danger); }
+#importDeleteModal .close { position: static; color: var(--ink-faint); font-size: 28px; line-height: 1; }
+#importDeleteModal .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 20px 24px; }
+#importDeleteModal .modal-footer { padding: 0 24px 24px; }
+#importDeleteModal .trash-dlg-note { padding: 16px 18px; border-radius: 12px; background: var(--cream); border-left: 4px solid var(--hairline-2); color: var(--ink); }
+#importDeleteModal .delete-warning { padding: 16px 18px; border-radius: 12px; background: var(--danger-wash); border-left: 4px solid var(--hairline-2); color: var(--danger); }
+#importDeleteModal .trash-dlg-note p, #importDeleteModal .delete-warning p { margin: 0 0 12px; }
+#importDeleteModal .trash-dlg-note p:last-child, #importDeleteModal .delete-warning p:last-child { margin-bottom: 0; }
+#importDeleteModal .trash-dlg-meta { font-size: 14px; }
+#importDeleteModal .trash-dlg-meta strong { white-space: nowrap; }
+#importDeleteModal .import-delete-list { margin: 0 0 12px; padding-left: 20px; }
+#importDeleteModal .import-delete-list:empty { display: none; }
+#importDeleteModal .import-delete-list li + li { margin-top: 6px; }
+#importDeleteModal .import-delete-size { font-size: 13px; color: var(--ink-soft); }
+#importDeleteModal .trash-dlg-foot { display: flex; align-items: center; flex-wrap: wrap; gap: .5em; }
+#importDeleteModal .trash-dlg-foot[hidden] { display: none; }
+#importDeleteModal .trash-dlg-right { margin-left: auto; display: flex; gap: .5em; }
+#importDeleteModal .trash-primary, #importDeleteModal .trash-danger-outline, #importDeleteModal .btn-secondary, #importDeleteModal .btn-danger { border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+#importDeleteModal .trash-primary { background: var(--orange); color: var(--ink-on-brand); border: 0; }
+#importDeleteModal .trash-danger-outline { background: var(--paper); color: var(--danger); border: 1px solid var(--danger); }
+#importDeleteModal .btn-secondary { background: var(--cream-bright); color: var(--ink-soft); border: 0; }
+#importDeleteModal .btn-secondary:hover { background: var(--hairline); }
+#importDeleteModal .btn-danger { background: var(--danger); color: var(--ink-on-danger); border: 0; }
+#importDeleteModal .btn-danger:hover { background: color-mix(in srgb, var(--danger) 78%, var(--surface-dark)); }
+@media (max-width: 480px) {
+  #importDeleteModal .trash-dlg-foot button { min-height: 44px; padding-left: 12px; padding-right: 12px; white-space: nowrap; }
 }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
@@ -694,6 +756,31 @@
 
 </div>
 
+<div id="importDeleteModal" class="modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="importDeleteModalTitle">
+  <div class="modal-content">
+    <div class="modal-header" id="importDeleteModalHeader">
+      <h3 id="importDeleteModalTitle"></h3>
+      <button type="button" class="close" id="importDeleteModalClose" aria-label="close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="importDeleteModalBody" class="trash-dlg-note"></div>
+    </div>
+    <div class="modal-footer trash-dlg-foot" id="importDeleteModalMoveFoot">
+      <button type="button" id="importDeleteModalErase" class="trash-danger-outline"></button>
+      <span class="trash-dlg-right">
+        <button type="button" id="importDeleteModalCancel" class="btn-secondary"></button>
+        <button type="button" id="importDeleteModalConfirm" class="trash-primary"></button>
+      </span>
+    </div>
+    <div class="modal-footer trash-dlg-foot" id="importDeleteModalEraseFoot" hidden>
+      <span class="trash-dlg-right">
+        <button type="button" id="importDeleteModalBack" class="btn-secondary"></button>
+        <button type="button" id="importDeleteModalEraseConfirm" class="btn-danger"></button>
+      </span>
+    </div>
+  </div>
+</div>
+
 <script>
   const reportImportReady = window.createViewReady('import');
 
@@ -701,9 +788,6 @@
 function importErrorMessage(data, fallback) {
   if (data?.reason_code === 'invalid_operation_for_state') {
     switch (data.detail) {
-      case 'content already imported':
-      case 'content already imported; will not start':
-        return "you've already imported this file.";
       case 'import already started or processed':
         return 'this import has already started. check its progress in your imports.';
       default:
@@ -952,18 +1036,14 @@ function isTerminalDuplicate(data) {
   return data?.status === 'duplicate' || data?.recommended_action === 'do_not_start';
 }
 
+// The same content again is a new import, so a repeat is only ever one still
+// on its way in: running, or saved and not yet started.
 function duplicateNoticeText(duplicate = {}, inProgress = false) {
-  const state = duplicate.state || 'imported';
   const importId = duplicate.import_id || '';
   if (inProgress) {
     return `this import is already in progress${importId ? ` as ${importId}` : ''}.`;
   }
-  if (state === 'staged') {
-    return `this file was already staged${importId ? ` as ${importId}` : ''}.`;
-  }
-  const importedAt = duplicate.imported_at || 'an earlier import';
-  const entries = duplicate.entry_count ? ` (${duplicate.entry_count} entries)` : '';
-  return `this file was already imported on ${importedAt}${entries}.`;
+  return `this file was already staged${importId ? ` as ${importId}` : ''}.`;
 }
 
 function showDetect(res) {
@@ -1158,6 +1238,17 @@ function buildHistoryHeader(total, totalEntriesWritten) {
         <select id="importSourceFilter">
           ${sourceOptions}
         </select>
+        <button type="button" class="import-secondary-btn import-select-btn" id="importSelectBtn" hidden></button>
+      </div>
+    </div>
+    <div class="trash-bar import-pick-bar" id="importPickBar" tabindex="-1" hidden>
+      <div class="trash-bar-group" id="importPickIdle">
+        <label class="trash-all"><input type="checkbox" id="importPickAll"> <span id="importPickAllLabel"></span></label>
+        <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDoneIdle"></button></span>
+      </div>
+      <div class="trash-bar-group" id="importPickSome" hidden>
+        <span class="trash-count" id="importPickCount"></span>
+        <span class="trash-bar-actions"><button type="button" class="import-secondary-btn" id="importPickDelete"></button><button type="button" class="import-secondary-btn" id="importPickDoneSome"></button></span>
       </div>
     </div>
   `;
@@ -1171,7 +1262,9 @@ function sourceLabel(imp) {
   return knownSourceName || (recordedIsFilename ? '' : recordedDisplay);
 }
 
-function renderImportRow(imp) {
+// `picking` adds select mode's first column: a checkbox for an import that can
+// be deleted, and an empty cell for one that can't.
+function renderImportRow(imp, picking = false) {
   const importedAtMs = (imp.imported_at || imp.created_at) * 1000;
   const importedAt = window.JournalFormat.timestamp(importedAtMs);
   const targetDayDisplay = imp.target_day ? window.JournalFormat.day(imp.target_day) : '—';
@@ -1233,29 +1326,746 @@ function renderImportRow(imp) {
   }
   const encodedId = encodeURIComponent(imp.timestamp);
 
-  let html = `<tr data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}"`;
+  let html = `<tr data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}" data-deletable="${imp.deletable === true}"`;
   if (isArchive) {
     html += ` data-saved="${imp.saved ?? 0}" data-remaining="${imp.remaining ?? 0}" data-left-out="${imp.left_out ?? 0}" data-processing="${imp.processing ?? 0}" data-unavailable="${imp.unavailable_parts ?? 0}"`;
   }
   html += ` tabindex="0" role="link" data-import-link="/app/import/${encodedId}">`;
+  if (picking) html += importPickCellHtml(imp.deletable === true, fileDisplay);
   // 'imported to' leads: it is the column that varies, and it is the fact the
   // owner came for. 'imported at' is constant across a bulk import, so it sits
   // last rather than first (G3-209).
-  html += '<td class="nowrap">';
+  html += '<td class="nowrap import-day-cell">';
   if (imp.target_day) {
     html += `<a href="/app/transcripts/${encodeURIComponent(imp.target_day)}" class="timestamp-link">${escapeHtml(targetDayDisplay)}</a>`;
   } else {
     html += '—';
   }
   html += '</td>';
-  html += `<td>${escapeHtml(fileDisplay)}</td>`;
+  html += `<td class="import-file-cell">${escapeHtml(fileDisplay)}</td>`;
   html += `<td class="source-cell">${sourceCell}</td>`;
   html += `<td class="status-cell"><span class="import-status ${statusClass}">${statusText}</span>${statusDetail}</td>`;
   html += `<td class="stats-cell import-stats-cell">${statsText}</td>`;
-  html += `<td class="nowrap">${importedAt}</td>`;
+  html += `<td class="nowrap import-at-cell">${importedAt}</td>`;
   html += '</tr>';
   return html;
 }
+
+// ========== IMPORT DELETE ==========
+// Deleting imports: one from its own page or the list, or a set chosen on the
+// list. The dialog, its erase step and the receipts are the trash's own, as the
+// transcripts and settings pages have them; what moves is the import's own.
+const IMPORT_DELETE_COPY = {
+  noun: 'import',
+  things: 'imports',
+  select: 'select',
+  selectAll: 'select all',
+  selected: '{n} selected',
+  delete: 'delete',
+  done: 'done',
+  pickLabel: 'select {name}',
+  meta: 'imported {day}',
+  more: 'and {n} more',
+  move: {
+    title: 'delete this import?',
+    titleMany: 'delete {n} imports?',
+    reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+    reachMany: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
+    lead: "this moves the import's own:",
+    ownMany: "this moves each import's own segments, any original file it kept, and its row in your import history.",
+    stays: 'summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.',
+    staysMany: 'summaries and entities made from them elsewhere in your journal stay where they are and may still mention them.',
+    size: 'total size: {size}',
+  },
+  erase: {
+    title: 'erase this import now?',
+    titleMany: 'erase {n} imports now?',
+    reach: "it leaves your journal now and can't be recovered.",
+    reachMany: "they leave your journal now and can't be recovered.",
+    lead: "this erases the import's own:",
+    ownMany: "this erases each import's own segments, any original file it kept, and its row in your import history.",
+    stays: "summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
+    staysMany: "summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
+  },
+  list: {
+    spanOne: '{n} segment from {first} to {last}',
+    spanMany: '{n} segments from {first} to {last}',
+    dayOne: '{n} segment from {day}',
+    dayMany: '{n} segments from {day}',
+    originalOne: 'the original file it kept',
+    originalMany: 'the {n} original files it kept',
+    row: 'its row in your import history',
+    segmentsUnknown: 'the segments it brought in',
+    originalUnknown: 'any original file it kept',
+  },
+  buttons: {
+    eraseNow: 'erase now',
+    cancel: 'cancel',
+    moveToTrash: 'move to trash',
+    back: 'back',
+    recover: 'recover',
+    openTrash: 'open trash',
+  },
+  notes: {
+    busy: 'this is already being moved or erased. reload in a minute to check.',
+    importing: "this wasn't moved because it's still importing. try again once it's done.",
+    other: "this wasn't moved. try again.",
+    eraseImporting: "this wasn't erased because it's still importing. try again once it's done.",
+    eraseOther: "this wasn't erased. try again.",
+  },
+  receipt: {
+    moved: { title: 'moved to the trash', message: 'erases {date} unless you recover it.' },
+    recovered: { title: '{noun} recovered', message: "it's back in your journal." },
+    erased: { title: '{noun} erased from your journal' },
+    recoverFailed: { title: "couldn't recover that {noun}", message: "it's still in the trash. you can try again from there." },
+    moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
+    eraseRefused: { title: "couldn't erase that {noun}", message: "it's still in your journal." },
+    eraseFailed: { title: "couldn't erase that {noun}", message: "it's in the trash. you can try again from there." },
+    noAnswerMove: { title: "your journal didn't answer", message: 'it may already be in the trash. reload to check.' },
+    noAnswerErase: { title: "your journal didn't answer", message: 'it may already be erased. reload to check.' },
+    noAnswerRecover: { title: "your journal didn't answer", message: 'it may already be back in your journal. reload to check.' },
+  },
+  set: {
+    moved: { title: 'moved {n} {things} to the trash', message: 'they erase {date} unless you recover them.' },
+    partMoved: { title: 'moved {done} of {n} to the trash' },
+    stillOne: "{k} couldn't be moved and is still in your journal, marked below.",
+    stillMany: "{k} couldn't be moved and are still in your journal, marked below.",
+    markedOne: "{k} couldn't be moved and is marked below.",
+    markedMany: "{k} couldn't be moved and are marked below.",
+    goneMoreOne: '{g} more is no longer listed.',
+    goneMoreMany: '{g} more are no longer listed.',
+    othersGoneOne: 'the other is no longer listed here.',
+    othersGoneMany: 'the others are no longer listed here.',
+    noneMoved: { title: "couldn't move those to the trash" },
+    noneStillOne: '{k} is still in your journal, marked below.',
+    noneStillMany: '{k} are still in your journal, marked below.',
+    noneGoneOne: "it's no longer listed here.",
+    noneGoneMany: "they're no longer listed here.",
+    erased: { title: 'erased {n} {things} from your journal' },
+    partErased: { title: 'erased {done} of {n}' },
+    partErasedOne: "the other wasn't erased. look for it below or in the trash.",
+    partErasedMany: "the others weren't erased. look for them below or in the trash.",
+    noneErased: { title: "couldn't erase those" },
+    noneErasedOne: 'look for it below or in the trash.',
+    noneErasedMany: 'look for them below or in the trash.',
+    recovered: { title: '{n} {things} recovered', message: "they're back in your journal." },
+    partRecovered: { title: 'recovered {done} of {n}' },
+    partRecoveredOne: 'the other is still in the trash. you can try again from there.',
+    partRecoveredMany: 'the others are still in the trash. you can try again from there.',
+    recoverFailed: { title: "couldn't recover those", message: "they're still in the trash. you can try again from there." },
+    noAnswerMove: { title: "your journal didn't answer", message: 'they may already be in the trash. reload to check.' },
+    noAnswerErase: { title: "your journal didn't answer", message: 'they may already be erased. reload to check.' },
+    noAnswerRecover: { title: "your journal didn't answer", message: 'they may already be back in your journal. reload to check.' },
+  },
+};
+// The Import page's own name for each source, for the page that has not loaded
+// its source cards (an import's own page) and for sources with no card.
+const IMPORT_SOURCE_NAMES = {
+  ics: 'calendar', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', journal_archive: 'journal',
+  audio_archive: 'audio archive', recording: 'meeting audio', document: 'document', image: 'image',
+  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
+  obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
+};
+const IMPORT_TRASH_PAGE = '/app/settings#trash';
+const IMPORT_RECEIPT_KEY = 'journal-import-delete-receipt';
+const IMPORT_SET_SHOWN = 5;
+const IMPORT_RECEIPT_LIFE = 10000;
+// Select mode on the list: whether it is on, the chosen import ids, and the
+// note a refused one carries.
+const importPick = { on: false, ids: new Set(), notes: new Map() };
+// The open dialog: what it deletes, its step, and where focus goes back to.
+let importDialog = null;
+
+function importDeleteFill(template, values = {}) {
+  return Object.entries(values).reduce((text, [key, value]) => text.split(`{${key}}`).join(String(value)), template);
+}
+
+function importDeleteEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function importDeleteDay(key) {
+  const day = String(key || '').slice(0, 8);
+  return /^\d{8}$/.test(day) ? window.JournalFormat.day(day).toLowerCase() : '';
+}
+
+function importDeleteSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+// The erase date on the journal's own clock, worded as the trash page words it.
+function importEraseDate(eraseAt) {
+  const instant = new Date(eraseAt);
+  if (!eraseAt || Number.isNaN(instant.getTime())) return '';
+  return importDeleteDay(window.JournalClock ? window.JournalClock.dayKey(instant) : instant.toISOString().slice(0, 10).replace(/-/g, ''));
+}
+
+// The Import page's name for a source, or nothing for one it doesn't know.
+function importSourceName(sourceType, display) {
+  if (!sourceType) return '';
+  return sourceMetadataByName[sourceType]?.display_name
+    || IMPORT_SOURCE_NAMES[sourceType]
+    || sourceLabel({ source_type: sourceType, source_display: display || '' })
+    || '';
+}
+
+function importDeleteItem(imp) {
+  return { id: imp.timestamp, source: importSourceName(imp.source_type, imp.source_display) };
+}
+
+// What one import's dialog lists, from its preview: nothing yet while it loads,
+// words without counts if it couldn't load, and only lines that are true.
+function importOneListLines(preview) {
+  const L = IMPORT_DELETE_COPY.list;
+  if (preview === null) return [L.segmentsUnknown, L.originalUnknown, L.row];
+  if (!preview) return [];
+  const lines = [];
+  const segments = Number(preview.segments) || 0;
+  if (segments > 0) {
+    const [first, last] = Array.isArray(preview.days) ? preview.days : [];
+    if (first && last && first !== last) {
+      lines.push(importDeleteFill(segments === 1 ? L.spanOne : L.spanMany, { n: segments, first: importDeleteDay(first), last: importDeleteDay(last) }));
+    } else if (first) {
+      lines.push(importDeleteFill(segments === 1 ? L.dayOne : L.dayMany, { n: segments, day: importDeleteDay(first) }));
+    } else {
+      lines.push(L.segmentsUnknown);
+    }
+  }
+  const originals = Number(preview.originals) || 0;
+  if (originals === 1) lines.push(L.originalOne);
+  else if (originals > 1) lines.push(importDeleteFill(L.originalMany, { n: originals }));
+  lines.push(L.row);
+  return lines;
+}
+
+function importMetaLine(item) {
+  const meta = importDeleteEl('p', 'trash-dlg-meta');
+  if (item.source) meta.append(importDeleteEl('strong', null, item.source), importDeleteEl('span', null, ' · '));
+  meta.append(importDeleteEl('strong', null, importDeleteFill(IMPORT_DELETE_COPY.meta, { day: importDeleteDay(item.id) })));
+  return meta;
+}
+
+// One import: its source and day, what moves, what stays, and on the first
+// step its size once the preview has it.
+function importOneBody(step, item, preview) {
+  const copy = IMPORT_DELETE_COPY[step];
+  const list = importDeleteEl('ul', 'import-delete-list');
+  importOneListLines(preview).forEach(line => list.append(importDeleteEl('li', null, line)));
+  const nodes = [
+    importMetaLine(item),
+    importDeleteEl('p', 'import-delete-reach', copy.reach),
+    importDeleteEl('p', 'import-delete-lead', copy.lead),
+    list,
+    importDeleteEl('p', 'import-delete-stays', copy.stays),
+  ];
+  const size = step === 'move' && preview ? importDeleteSize(preview.bytes) : '';
+  if (size) nodes.push(importDeleteEl('p', 'import-delete-size', importDeleteFill(copy.size, { size })));
+  return nodes;
+}
+
+// A set: up to five imports by source and day, then how many more, and no counts.
+function importSetBody(step, items) {
+  const copy = IMPORT_DELETE_COPY[step];
+  const list = importDeleteEl('ul', 'trash-set-list');
+  items.slice(0, IMPORT_SET_SHOWN).forEach(item => {
+    const line = importDeleteEl('li');
+    if (item.source) line.append(importDeleteEl('strong', null, item.source), importDeleteEl('span', null, ' · '));
+    line.append(importDeleteEl('span', null, importDeleteFill(IMPORT_DELETE_COPY.meta, { day: importDeleteDay(item.id) })));
+    list.append(line);
+  });
+  if (items.length > IMPORT_SET_SHOWN) {
+    list.append(importDeleteEl('li', 'trash-set-more', importDeleteFill(IMPORT_DELETE_COPY.more, { n: items.length - IMPORT_SET_SHOWN })));
+  }
+  return [
+    list,
+    importDeleteEl('p', 'import-delete-reach', copy.reachMany),
+    importDeleteEl('p', 'import-delete-own', copy.ownMany),
+    importDeleteEl('p', 'import-delete-stays', copy.staysMany),
+  ];
+}
+
+function importDialogNodes() {
+  const byId = id => document.getElementById(id);
+  return {
+    modal: byId('importDeleteModal'), header: byId('importDeleteModalHeader'), title: byId('importDeleteModalTitle'),
+    body: byId('importDeleteModalBody'), moveFoot: byId('importDeleteModalMoveFoot'), eraseFoot: byId('importDeleteModalEraseFoot'),
+    close: byId('importDeleteModalClose'), erase: byId('importDeleteModalErase'), cancel: byId('importDeleteModalCancel'),
+    confirm: byId('importDeleteModalConfirm'), back: byId('importDeleteModalBack'), eraseConfirm: byId('importDeleteModalEraseConfirm'),
+  };
+}
+
+function renderImportDeleteStep(step) {
+  const nodes = importDialogNodes();
+  const erasing = step === 'erase';
+  importDialog.step = step;
+  nodes.title.textContent = importDialog.spec.title(step);
+  nodes.header.classList.toggle('danger', erasing);
+  nodes.body.className = erasing ? 'delete-warning' : 'trash-dlg-note';
+  nodes.body.dataset.step = step;
+  nodes.moveFoot.hidden = erasing;
+  nodes.eraseFoot.hidden = !erasing;
+  nodes.body.replaceChildren(...importDialog.spec.body(step));
+}
+
+function wireImportDeleteDialog(nodes) {
+  if (nodes.modal.dataset.wired) return;
+  nodes.modal.dataset.wired = 'true';
+  const B = IMPORT_DELETE_COPY.buttons;
+  nodes.erase.textContent = B.eraseNow;
+  nodes.cancel.textContent = B.cancel;
+  nodes.confirm.textContent = B.moveToTrash;
+  nodes.back.textContent = B.back;
+  nodes.eraseConfirm.textContent = B.eraseNow;
+  nodes.close.addEventListener('click', () => closeImportDeleteDialog());
+  nodes.cancel.addEventListener('click', () => closeImportDeleteDialog());
+  nodes.erase.addEventListener('click', () => {
+    if (!importDialog) return;
+    renderImportDeleteStep('erase');
+    nodes.back.focus();
+  });
+  nodes.back.addEventListener('click', () => {
+    if (!importDialog) return;
+    renderImportDeleteStep('move');
+    nodes.erase.focus();
+  });
+  const act = erase => {
+    if (!importDialog) return;
+    const spec = importDialog.spec;
+    closeImportDeleteDialog(false);
+    spec.act(erase);
+  };
+  nodes.confirm.addEventListener('click', () => act(false));
+  nodes.eraseConfirm.addEventListener('click', () => act(true));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && importDialog) {
+      event.preventDefault();
+      closeImportDeleteDialog();
+    }
+  });
+}
+
+// spec: { title(step), body(step), act(erase) }. Focus lands on the reversible act.
+function openImportDeleteDialog(spec) {
+  const nodes = importDialogNodes();
+  if (!nodes.modal) return;
+  wireImportDeleteDialog(nodes);
+  if (importDialog) closeImportDeleteDialog(false);
+  importDialog = { spec, step: 'move', returnFocus: document.activeElement, overflow: document.body.style.overflow };
+  renderImportDeleteStep('move');
+  nodes.modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  nodes.confirm.focus();
+}
+
+function closeImportDeleteDialog(restoreFocus = true) {
+  if (!importDialog) return;
+  const nodes = importDialogNodes();
+  const { returnFocus, overflow } = importDialog;
+  importDialog = null;
+  nodes.modal.style.display = 'none';
+  nodes.body.replaceChildren();
+  document.body.style.overflow = overflow;
+  if (restoreFocus && returnFocus && document.contains(returnFocus)) returnFocus.focus();
+}
+
+// One import's dialog. The preview fills its list when it arrives; a preview
+// that fails leaves words without counts and never blocks the delete.
+function importOneSpec(item, act) {
+  const spec = {
+    preview: undefined,
+    title: step => IMPORT_DELETE_COPY[step].title,
+    body: step => importOneBody(step, item, spec.preview),
+    act,
+  };
+  fetch(`/app/import/api/imports/${encodeURIComponent(item.id)}/delete`)
+    .then(response => (response.ok ? response.json() : null))
+    .catch(() => null)
+    .then(preview => {
+      spec.preview = preview && typeof preview === 'object' ? preview : null;
+      if (importDialog && importDialog.spec === spec) renderImportDeleteStep(importDialog.step);
+    });
+  return spec;
+}
+
+function importSetSpec(items, act) {
+  return {
+    title: step => importDeleteFill(IMPORT_DELETE_COPY[step].titleMany, { n: items.length }),
+    body: step => importSetBody(step, items),
+    act,
+  };
+}
+
+function importReceipt(copy, fill = {}, buttons = [], options = {}) {
+  const put = text => importDeleteFill(text, { noun: IMPORT_DELETE_COPY.noun, things: IMPORT_DELETE_COPY.things, ...fill });
+  const notice = {
+    app: 'import',
+    icon: options.icon || (options.settled ? 'trash-2' : 'triangle-alert'),
+    title: put(copy.title),
+    dismissible: true,
+    buttons,
+  };
+  const message = options.message !== undefined ? options.message : copy.message && put(copy.message);
+  if (message) notice.message = message;
+  // A refused or failed card stays until the owner dismisses it.
+  if (options.settled) notice.autoDismiss = IMPORT_RECEIPT_LIFE;
+  window.AppServices.notifications.show(notice);
+}
+
+function importOpenTrashButton() {
+  return { label: IMPORT_DELETE_COPY.buttons.openTrash, onClick: () => { window.location.href = IMPORT_TRASH_PAGE; } };
+}
+
+function importNoteKey(key, erase) {
+  if (key === 'busy') return 'busy';
+  if (key === 'importing') return erase ? 'eraseImporting' : 'importing';
+  return erase ? 'eraseOther' : 'other';
+}
+
+// Moves one import to the trash, or erases it now. A non-200 answer means
+// nothing changed; no answer at all means it may have.
+async function deleteOneImport(item, erase) {
+  let response;
+  try {
+    response = await fetch(`/app/import/api/imports/${encodeURIComponent(item.id)}`, erase
+      ? { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ erase: true }) }
+      : { method: 'DELETE' });
+  } catch (_) {
+    return { kind: 'noAnswer' };
+  }
+  const data = await response.json().catch(() => null);
+  if (!response.ok) return { kind: 'refused', key: data?.key || 'other' };
+  if (!data || data.success !== true) return { kind: 'noAnswer' };
+  if (data.erased === true) return { kind: 'erased' };
+  if (data.erase_failed === true) return { kind: 'eraseFailed' };
+  return { kind: 'moved', trashId: data.trash?.id, eraseAt: data.trash?.erase_at };
+}
+
+function showImportOneReceipt(outcome, erase, reload) {
+  const R = IMPORT_DELETE_COPY.receipt;
+  switch (outcome.kind) {
+    case 'moved':
+      importReceipt(R.moved, { date: importEraseDate(outcome.eraseAt) }, [
+        { label: IMPORT_DELETE_COPY.buttons.recover, onClick: () => recoverImports([outcome.trashId], reload) },
+        importOpenTrashButton(),
+      ], { settled: true, message: importEraseDate(outcome.eraseAt) ? undefined : '' });
+      return;
+    case 'erased':
+      importReceipt(R.erased, {}, [], { settled: true });
+      return;
+    case 'eraseFailed':
+      importReceipt(R.eraseFailed, {}, [importOpenTrashButton()]);
+      return;
+    case 'refused':
+      importReceipt(erase ? R.eraseRefused : R.moveRefused);
+      return;
+    default:
+      importReceipt(erase ? R.noAnswerErase : R.noAnswerMove);
+  }
+}
+
+// The receipt's recover is the trash page's recover: the same files go back.
+async function recoverImports(trashIds, reload) {
+  const ids = trashIds.filter(Boolean);
+  const one = ids.length === 1;
+  const R = IMPORT_DELETE_COPY.receipt;
+  const S = IMPORT_DELETE_COPY.set;
+  let response;
+  try {
+    response = await fetch('/app/settings/api/trash/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, page: 'import' }),
+    });
+  } catch (_) {
+    importReceipt(one ? R.noAnswerRecover : S.noAnswerRecover);
+    return;
+  }
+  const data = response.ok ? await response.json().catch(() => null) : null;
+  if (response.ok && !data) {
+    importReceipt(one ? R.noAnswerRecover : S.noAnswerRecover);
+    return;
+  }
+  const done = Array.isArray(data?.done) ? ids.filter(id => data.done.includes(id)) : [];
+  if (typeof reload === 'function') await reload();
+  if (done.length && done.length === ids.length) {
+    importReceipt(one ? R.recovered : S.recovered, { n: ids.length }, [], { settled: true, icon: 'undo-2' });
+  } else if (done.length) {
+    const others = ids.length - done.length;
+    importReceipt(S.partRecovered, { done: done.length, n: ids.length }, [importOpenTrashButton()], { message: others === 1 ? S.partRecoveredOne : S.partRecoveredMany });
+  } else {
+    importReceipt(one ? R.recoverFailed : S.recoverFailed, {}, [importOpenTrashButton()]);
+  }
+}
+
+// What a set's answer says, checked against what the reloaded list still
+// holds. A refused id the list no longer shows gets no note and isn't counted
+// as still in the journal; without a list, nothing is said that needs one.
+function importSetOutcome(erase, ids, answer, listed) {
+  const S = IMPORT_DELETE_COPY.set;
+  const n = ids.length;
+  const fill = (template, values) => importDeleteFill(template, values);
+  if (!answer || !Array.isArray(answer.done) || !Array.isArray(answer.failed)) {
+    return {
+      receipt: erase ? S.noAnswerErase : S.noAnswerMove, fill: {}, buttons: [], settled: false,
+      keep: listed ? ids.filter(id => listed.has(id)).map(id => [id, null]) : [], moved: [],
+    };
+  }
+  const done = answer.done.filter(entry => entry && ids.includes(entry.id));
+  const failed = answer.failed.filter(entry => entry && ids.includes(entry.id));
+  const moved = done
+    .filter(entry => entry.result?.trash?.id && entry.result.erased !== true)
+    .map(entry => ({ trashId: entry.result.trash.id, eraseAt: entry.result.trash.erase_at }));
+  const still = listed ? failed.filter(entry => listed.has(entry.id)) : [];
+  const k = still.length;
+  const g = failed.length - k;
+  const keep = still.map(entry => [entry.id, importNoteKey(entry.key, erase)]);
+  const earliest = moved.map(entry => entry.eraseAt).filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0];
+  const out = { keep, moved, fill: { n, done: done.length, date: importEraseDate(earliest) }, settled: false };
+  const R = IMPORT_DELETE_COPY.receipt;
+  if (erase) {
+    const erased = done.filter(entry => entry.result?.erased === true).length;
+    if (erased === n) return { ...out, receipt: n === 1 ? R.erased : S.erased, buttons: [], settled: true };
+    out.buttons = ['openTrash'];
+    if (erased) {
+      out.receipt = S.partErased;
+      out.fill.done = erased;
+      out.message = listed ? (n - erased === 1 ? S.partErasedOne : S.partErasedMany) : '';
+    } else {
+      out.receipt = S.noneErased;
+      out.message = listed ? (n === 1 ? S.noneErasedOne : S.noneErasedMany) : '';
+    }
+    return out;
+  }
+  if (!failed.length) {
+    return { ...out, receipt: n === 1 ? R.moved : S.moved, buttons: ['recover', 'openTrash'], settled: true, message: out.fill.date ? undefined : '' };
+  }
+  const goneMore = g ? ` ${fill(g === 1 ? S.goneMoreOne : S.goneMoreMany, { g })}` : '';
+  if (done.length) {
+    out.receipt = S.partMoved;
+    out.buttons = ['recover', 'openTrash'];
+    if (!listed) out.message = '';
+    else if (k && !g) out.message = fill(k === 1 ? S.stillOne : S.stillMany, { k });
+    else if (k) out.message = fill(k === 1 ? S.markedOne : S.markedMany, { k }) + goneMore;
+    else out.message = failed.length === 1 ? S.othersGoneOne : S.othersGoneMany;
+    return out;
+  }
+  out.receipt = S.noneMoved;
+  if (!listed) {
+    out.message = '';
+    out.buttons = ['openTrash'];
+  } else if (k) {
+    out.message = fill(k === 1 ? S.noneStillOne : S.noneStillMany, { k }) + goneMore;
+    out.buttons = [];
+  } else {
+    out.message = failed.length === 1 ? S.noneGoneOne : S.noneGoneMany;
+    out.buttons = ['openTrash'];
+  }
+  return out;
+}
+
+function importPickHeadHtml() {
+  return `<th class="import-pick-col"><span class="visually-hidden">${escapeHtml(IMPORT_DELETE_COPY.select)}</span></th>`;
+}
+
+function importPickCellHtml(deletable, name) {
+  const label = importDeleteFill(IMPORT_DELETE_COPY.pickLabel, { name: name || '' }).trim();
+  return `<td class="import-pick-col">${deletable ? `<input type="checkbox" data-import-pick aria-label="${escapeHtml(label)}">` : ''}</td>`;
+}
+
+function importListRows() {
+  return Array.from(document.querySelectorAll('.import-table tbody tr[data-import-id]'));
+}
+
+// Puts select mode's column in or takes it out, in place: rows keep whatever a
+// live import event has already written into them.
+function applyImportPickMode() {
+  const table = document.querySelector('.import-table');
+  if (table) {
+    table.classList.toggle('import-table--picking', importPick.on);
+    const head = table.querySelector('thead tr');
+    if (head) {
+      head.querySelector('.import-pick-col')?.remove();
+      if (importPick.on) head.insertAdjacentHTML('afterbegin', importPickHeadHtml());
+    }
+    importListRows().forEach(row => {
+      row.querySelector('.import-pick-col')?.remove();
+      if (importPick.on) {
+        const name = row.querySelector('.import-file-cell')?.firstChild?.textContent || '';
+        row.insertAdjacentHTML('afterbegin', importPickCellHtml(row.getAttribute('data-deletable') === 'true', name));
+      }
+    });
+  }
+  paintImportPick();
+}
+
+function paintImportPick() {
+  const byId = id => document.getElementById(id);
+  const C = IMPORT_DELETE_COPY;
+  const selectBtn = byId('importSelectBtn');
+  const bar = byId('importPickBar');
+  if (selectBtn) {
+    selectBtn.textContent = C.select;
+    selectBtn.hidden = importPick.on;
+    selectBtn.onclick = enterImportPick;
+  }
+  if (bar) {
+    const count = importPick.ids.size;
+    bar.hidden = !importPick.on;
+    byId('importPickIdle').hidden = count > 0;
+    byId('importPickSome').hidden = count === 0;
+    byId('importPickAllLabel').textContent = C.selectAll;
+    byId('importPickAll').checked = false;
+    byId('importPickAll').onchange = selectAllImports;
+    byId('importPickCount').textContent = importDeleteFill(C.selected, { n: count });
+    byId('importPickDelete').textContent = C.delete;
+    byId('importPickDelete').onclick = deleteChosenImports;
+    for (const id of ['importPickDoneIdle', 'importPickDoneSome']) {
+      byId(id).textContent = C.done;
+      byId(id).onclick = exitImportPick;
+    }
+  }
+  importListRows().forEach(row => {
+    const id = row.getAttribute('data-import-id');
+    const picked = importPick.on && importPick.ids.has(id);
+    const box = row.querySelector('input[data-import-pick]');
+    if (box) box.checked = picked;
+    row.classList.toggle('import-row--picked', picked);
+    row.querySelector('.import-row-note')?.remove();
+    const note = importPick.on ? importPick.notes.get(id) : null;
+    const fileCell = row.querySelector('.import-file-cell');
+    if (note && fileCell) fileCell.append(importDeleteEl('div', 'import-row-note', C.notes[note] || C.notes.other));
+  });
+}
+
+function enterImportPick() {
+  importPick.on = true;
+  importPick.ids.clear();
+  importPick.notes.clear();
+  applyImportPickMode();
+  document.getElementById('importPickBar')?.focus();
+}
+
+function exitImportPick() {
+  importPick.on = false;
+  importPick.ids.clear();
+  importPick.notes.clear();
+  applyImportPickMode();
+  document.getElementById('importSelectBtn')?.focus();
+}
+
+// The rows this page has loaded; rows that arrive with load more come unselected.
+function selectAllImports() {
+  importsCache.filter(imp => imp.deletable === true).forEach(imp => importPick.ids.add(imp.timestamp));
+  paintImportPick();
+  // The strip just swapped away the control that had focus.
+  if (importPick.ids.size) document.getElementById('importPickDelete')?.focus();
+}
+
+// A press on a selectable row toggles it; the row's own links still open.
+function toggleImportPick(row, fromBox = false) {
+  const box = row.querySelector('input[data-import-pick]');
+  if (!box) return false;
+  if (!fromBox) box.checked = !box.checked;
+  const id = row.getAttribute('data-import-id');
+  if (box.checked) importPick.ids.add(id);
+  else importPick.ids.delete(id);
+  importPick.notes.delete(id);
+  paintImportPick();
+  return true;
+}
+
+function deleteChosenImports() {
+  const chosen = importsCache.filter(imp => importPick.ids.has(imp.timestamp)).map(importDeleteItem);
+  if (!chosen.length) return;
+  if (chosen.length === 1) {
+    openImportDeleteDialog(importOneSpec(chosen[0], erase => deleteOneFromList(chosen[0], erase)));
+    return;
+  }
+  openImportDeleteDialog(importSetSpec(chosen, erase => deleteSetFromList(chosen, erase)));
+}
+
+async function deleteOneFromList(item, erase) {
+  const outcome = await deleteOneImport(item, erase);
+  if (outcome.kind === 'refused') {
+    importPick.notes.set(item.id, importNoteKey(outcome.key, erase));
+    paintImportPick();
+  } else {
+    if (outcome.kind !== 'noAnswer') {
+      importPick.on = false;
+      importPick.ids.clear();
+      importPick.notes.clear();
+    }
+    await loadImports();
+  }
+  showImportOneReceipt(outcome, erase, loadImports);
+}
+
+async function deleteSetFromList(items, erase) {
+  const ids = items.map(item => item.id);
+  let answer = null;
+  try {
+    const response = await fetch('/app/import/api/imports/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(erase ? { ids, erase: true } : { ids }),
+    });
+    answer = response.ok ? await response.json().catch(() => null) : null;
+  } catch (_) {
+    answer = null;
+  }
+  const loaded = await loadImports();
+  const listed = loaded ? new Set(importsCache.map(imp => imp.timestamp)) : null;
+  const outcome = importSetOutcome(erase, ids, answer, listed);
+  importPick.on = outcome.keep.length > 0;
+  importPick.ids = new Set(outcome.keep.map(([id]) => id));
+  importPick.notes = new Map(outcome.keep.filter(([, note]) => note));
+  applyImportPickMode();
+  const buttons = outcome.buttons.map(name => (name === 'recover'
+    ? { label: IMPORT_DELETE_COPY.buttons.recover, onClick: () => recoverImports(outcome.moved.map(entry => entry.trashId), loadImports) }
+    : importOpenTrashButton()));
+  importReceipt(outcome.receipt, outcome.fill, buttons, {
+    settled: outcome.settled,
+    icon: outcome.settled ? 'trash-2' : 'triangle-alert',
+    message: outcome.message,
+  });
+}
+
+// From an import's own page: after a move or an erase the page goes back to
+// the import list, which shows the receipt.
+function deleteImportFromPage(item) {
+  openImportDeleteDialog(importOneSpec(item, async erase => {
+    const outcome = await deleteOneImport(item, erase);
+    if (['moved', 'erased', 'eraseFailed'].includes(outcome.kind)) {
+      try {
+        window.sessionStorage.setItem(IMPORT_RECEIPT_KEY, JSON.stringify({ at: Date.now(), erase, outcome }));
+      } catch (_) { /* the receipt is a courtesy; the list still reloads */ }
+      window.location.href = '/app/import/';
+      return;
+    }
+    showImportOneReceipt(outcome, erase);
+  }));
+}
+
+function showStashedImportReceipt() {
+  let stashed = null;
+  try {
+    stashed = JSON.parse(window.sessionStorage.getItem(IMPORT_RECEIPT_KEY) || 'null');
+    window.sessionStorage.removeItem(IMPORT_RECEIPT_KEY);
+  } catch (_) {
+    stashed = null;
+  }
+  if (!stashed || !stashed.outcome || !(Date.now() - stashed.at < 60000)) return;
+  showImportOneReceipt(stashed.outcome, stashed.erase === true, loadImports);
+}
+// ========== END IMPORT DELETE ==========
 
 function scrollToGrid() {
   const grid = document.getElementById('importGrid');
@@ -1276,9 +2086,9 @@ async function loadImports() {
     // A source list that can't load ends in the history's error state below,
     // not in a loading spinner that never resolves.
     await loadSourceGrid();
-    if (generation !== historyRequestGeneration) return;
+    if (generation !== historyRequestGeneration) return false;
     const data = await window.apiJson(url);
-    if (generation !== historyRequestGeneration) return;
+    if (generation !== historyRequestGeneration) return false;
     if (!Array.isArray(data.imports) || !Array.isArray(data.source_options) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
       throw malformedImportHistoryResponse(url);
     }
@@ -1297,13 +2107,22 @@ async function loadImports() {
         desc: 'import from any source above.',
         action: '<a href="#" onclick="scrollToGrid(); return false;" style="color: var(--orange-text-aa); font-weight: 600;">choose a source →</a>'
       });
+      importPick.on = false;
+      importPick.ids.clear();
+      importPick.notes.clear();
       reportImportReady('empty');
-      return;
+      return true;
     }
 
+    // A row the reloaded list no longer holds can't stay selected.
+    const listedIds = new Set(imports.map(imp => imp.timestamp));
+    [...importPick.ids].forEach(id => { if (!listedIds.has(id)) importPick.ids.delete(id); });
+    [...importPick.notes.keys()].forEach(id => { if (!listedIds.has(id)) importPick.notes.delete(id); });
+
     let html = buildHistoryHeader(data.total, data.total_entries_written);
-    html += '<table class="import-table">';
+    html += `<div class="import-table-wrap"><table class="import-table${importPick.on ? ' import-table--picking' : ''}">`;
     html += '<thead><tr>';
+    if (importPick.on) html += importPickHeadHtml();
     html += '<th>imported to</th>';
     html += '<th>file</th>';
     html += '<th>source</th>';
@@ -1313,10 +2132,10 @@ async function loadImports() {
     html += '</tr></thead><tbody>';
 
     imports.forEach(imp => {
-      html += renderImportRow(imp);
+      html += renderImportRow(imp, importPick.on);
     });
 
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     if (!imports.length) html += window.SurfaceState.empty({
       icon: window.ConveyIcons.svg('search'), heading: 'no imports match this filter'
     });
@@ -1338,9 +2157,12 @@ async function loadImports() {
       if (restoreFilterFocus) sourceFilter.focus();
       sourceFilter.onchange = event => {
         currentSourceFilter = event.target.value;
+        importPick.ids.clear();
+        importPick.notes.clear();
         loadImports();
       };
     }
+    paintImportPick();
 
     imports.forEach(imp => {
       if (imp.status === 'running' || imp.status === 'pending') {
@@ -1349,8 +2171,9 @@ async function loadImports() {
         clearPendingImport(imp.timestamp);
       }
     });
+    return true;
   } catch (err) {
-    if (generation !== historyRequestGeneration) return;
+    if (generation !== historyRequestGeneration) return false;
     window.SurfaceState.replaceLoading('importListContent', window.SurfaceState.error({
       heading: 'couldn\'t load your import history',
       desc: window.CONVEY_COPY.RELOAD_HINT,
@@ -1358,6 +2181,7 @@ async function loadImports() {
       detail: err,
     }));
     reportImportReady('error');
+    return false;
   } finally {
     if (generation === historyRequestGeneration) historyLoading = false;
   }
@@ -1380,10 +2204,11 @@ function renderLoadMoreError(err) {
   errorEl.innerHTML = `<strong>couldn&#39;t load more imports.</strong> ${window.CONVEY_COPY.RELOAD_HINT}${serverMessage ? ` ${escapeHtml(serverMessage)}` : ''}`;
 
   const loadMoreContainer = document.getElementById('importLoadMore');
+  const host = (typeof table.closest === 'function' && table.closest('.import-table-wrap')) || table;
   if (loadMoreContainer) {
-    table.parentNode.insertBefore(errorEl, loadMoreContainer);
+    host.parentNode.insertBefore(errorEl, loadMoreContainer);
   } else {
-    table.parentNode.appendChild(errorEl);
+    host.parentNode.appendChild(errorEl);
   }
 }
 
@@ -1414,7 +2239,7 @@ async function loadMoreImports() {
     if (tbody) {
       let rowsHtml = '';
       data.imports.forEach(imp => {
-        rowsHtml += renderImportRow(imp);
+        rowsHtml += renderImportRow(imp, importPick.on);
       });
       tbody.insertAdjacentHTML('beforeend', rowsHtml);
     }
@@ -2959,6 +3784,12 @@ document.addEventListener('click', event => {
     }
     return;
   }
+  // In select mode a press on a row that can be deleted toggles it; the day
+  // link inside it still opens the day.
+  const pickRow = importPick.on && event.target.closest('.import-table--picking tr[data-import-id]');
+  if (pickRow && !event.target.closest('a, button, select, textarea')) {
+    if (toggleImportPick(pickRow, Boolean(event.target.closest('input[data-import-pick]')))) return;
+  }
   const tr = event.target.closest('tr[data-import-link]');
   if (tr && !event.target.closest('a, button, input, select, textarea')) {
     const link = tr.getAttribute('data-import-link');
@@ -2969,6 +3800,7 @@ document.addEventListener('click', event => {
 document.addEventListener('keydown', event => {
   if (event.key === 'Enter') {
     const tr = event.target.closest('tr[data-import-link]');
+    if (tr && event.target === tr && importPick.on && toggleImportPick(tr)) return;
     if (tr && event.target === tr) {
       const link = tr.getAttribute('data-import-link');
       if (link) window.location.href = link;
@@ -3077,7 +3909,11 @@ function initImportWorkspace() {
   if (typeof bindImportReturnRead === 'function') bindImportReturnRead();
   loadImports()
     .catch(err => window.logError?.(err, { context: 'import: initial load failed' }))
-    .finally(handleHashChange);
+    .finally(() => {
+      // A delete on an import's own page comes back here with its receipt.
+      if (typeof showStashedImportReceipt === 'function') showStashedImportReceipt();
+      handleHashChange();
+    });
 }
 
 if (document.readyState === 'loading') {

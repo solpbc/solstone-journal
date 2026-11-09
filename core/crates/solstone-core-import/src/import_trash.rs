@@ -43,25 +43,15 @@ const IMPORTS_DIR: &str = "imports";
 /// is keyed on.
 pub const STILL_IMPORTING: &str = "this import is still running; try again when it's done";
 
-/// Whether an import of `source` deletes as a whole here: the kinds whose
-/// records and segments this module knows. Anything else (a journal archive
-/// merge, which isn't one thing; Strava, Apple Health and Oura, which move with
-/// the body pages; a kind this build doesn't name) doesn't.
+/// Whether an import of `source` deletes as a whole here. A journal archive
+/// merge isn't one thing (each thing it brought in is its own; `archive` is
+/// its older name); Strava, Apple Health and Oura imports move with the body
+/// pages' lane. Every other import, one whose kind went unrecorded included,
+/// is its record and the segments it lists.
 pub fn deletes_here(source: &str) -> bool {
-    matches!(
+    !matches!(
         source,
-        "document"
-            | "image"
-            | "text"
-            | "audio"
-            | "audio_archive"
-            | "plaud"
-            | "ics"
-            | "chatgpt"
-            | "claude"
-            | "gemini"
-            | "obsidian"
-            | "kindle"
+        "journal_archive" | "archive" | "strava" | "apple_health" | "oura"
     )
 }
 
@@ -938,7 +928,13 @@ mod tests {
 
     #[test]
     fn deletes_here_leaves_the_body_lane_and_merges_alone() {
-        for source in ["strava", "apple_health", "oura", "journal_archive"] {
+        for source in [
+            "strava",
+            "apple_health",
+            "oura",
+            "journal_archive",
+            "archive",
+        ] {
             assert!(!deletes_here(source), "{source}");
         }
         for source in [
@@ -949,6 +945,8 @@ mod tests {
             "audio_archive",
             "ics",
             "chatgpt",
+            // A kind that went unrecorded is still its record and segments.
+            "import",
         ] {
             assert!(deletes_here(source), "{source}");
         }

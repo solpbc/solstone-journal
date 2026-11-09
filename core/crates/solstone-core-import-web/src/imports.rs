@@ -431,7 +431,7 @@ pub(crate) async fn list(
             let deletable = !matches!(status, Some("running" | "pending"))
                 && source_type
                     .as_deref()
-                    .is_some_and(solstone_core_import::import_trash::deletes_here);
+                    .is_none_or(solstone_core_import::import_trash::deletes_here);
             info.values.insert("deletable".into(), json!(deletable));
             rows.push(info);
         }
@@ -567,6 +567,17 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
         body.insert("untimed_transcript".into(), json!(true));
     }
     let projection = solstone_core_import::project_import_result(&state.root, &timestamp);
+    // Whether the page offers deleting it whole: not while it runs or waits to.
+    body.insert(
+        "deletable".into(),
+        json!(
+            !matches!(
+                projection.status,
+                solstone_core_import::ProjectionStatus::Running
+                    | solstone_core_import::ProjectionStatus::Pending
+            ) && solstone_core_import::import_trash::deletes_here(&projection.source_type)
+        ),
+    );
     let active = state
         .route
         .as_ref()
