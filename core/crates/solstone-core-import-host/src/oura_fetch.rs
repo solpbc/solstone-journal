@@ -336,9 +336,8 @@ fn date_chunks(from: NaiveDate, to: NaiveDate) -> Vec<[String; 2]> {
     chunks
 }
 
-/// What a new run asks for: the range named, or each endpoint from seven days
-/// before what it last covered through today, or the last 30 days when it has
-/// covered nothing.
+/// What a new run asks for: the range named, or for each endpoint every stretch
+/// since the floor that coverage doesn't hold, and its trailing week.
 pub(crate) fn plan(
     range: Option<(NaiveDate, NaiveDate)>,
     coverage: &Coverage,
@@ -399,7 +398,7 @@ fn unheld_spans(
     let (year, month, day) = HISTORY_FLOOR;
     let floor = NaiveDate::from_ymd_opt(year, month, day).ok_or("the floor isn't a day")?;
     let trailing = (today - Days::new(TRAILING_DAYS)).max(floor);
-    Ok(coverage.unheld_spans(endpoint, floor, trailing, today, zone)?)
+    coverage.unheld_spans(endpoint, floor, trailing, today, zone)
 }
 
 /// What a run would ask Oura for, in words, from what the journal holds. It

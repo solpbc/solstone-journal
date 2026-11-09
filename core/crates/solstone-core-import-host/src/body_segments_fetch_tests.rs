@@ -684,7 +684,7 @@ fn a_document_refused_for_size_is_named_under_refused_and_is_no_hole() {
     assert!(
         outcome
             .summary
-            .contains("## Couldn't be read\n\n- workouts: too large to keep: 1"),
+            .contains("## couldn't be read\n\n- workouts: too large to keep: 1"),
         "{}",
         outcome.summary
     );

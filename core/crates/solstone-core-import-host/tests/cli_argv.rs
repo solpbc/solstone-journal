@@ -189,6 +189,45 @@ fn an_import_refuses_a_facet_that_is_not_enabled_and_writes_nothing() {
 }
 
 #[test]
+fn an_apple_export_takes_a_facet_or_none() {
+    let journal = journal_with_facets();
+    let export = journal.path().join("apple_health_export");
+    fs::create_dir_all(&export).unwrap();
+    fs::write(
+        export.join("export.xml"),
+        "<?xml version=\"1.0\"?>\n<HealthData locale=\"en_US\"></HealthData>\n",
+    )
+    .unwrap();
+    let path = export.to_str().unwrap();
+    for args in [
+        &["--facet", "desk-a", "--dry-run", path][..],
+        &["--no-facet", "--dry-run", path][..],
+    ] {
+        let run = run_facet_import(journal.path(), args);
+        assert_eq!(run.exit_code, 0, "{args:?}: {}", run.stderr);
+    }
+}
+
+#[test]
+fn an_oura_sync_takes_a_facet_and_other_syncs_dont() {
+    for args in [
+        &["--sync", "oura", "--save", "--facet", "body"][..],
+        &["--sync", "oura", "--save", "--no-facet"][..],
+    ] {
+        let owned: Vec<String> = args.iter().map(ToString::to_string).collect();
+        assert!(
+            solstone_core_import_host::cli_argv::admit_arguments(&owned).is_ok(),
+            "{args:?}"
+        );
+    }
+    let owned: Vec<String> = ["--sync", "plaud", "--no-facet"]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert!(solstone_core_import_host::cli_argv::admit_arguments(&owned).is_err());
+}
+
+#[test]
 fn a_facet_never_goes_quietly_unused() {
     let journal = journal_with_facets();
     let calendar = journal.path().join("calendar.ics");

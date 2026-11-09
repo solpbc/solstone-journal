@@ -15,19 +15,20 @@ use solstone_core_journal_config_write::record_body_facet;
 
 use crate::cli_argv::ImportFacet;
 
-const NO_MEANS: &str = "if you say no, new workouts, sleep and health data aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.";
+const NO_MEANS_STRAVA: &str = "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.";
+const NO_MEANS_BODY: &str = "if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.";
 
 fn question(ask: &BodyFacetAsk) -> Option<String> {
     match ask {
         BodyFacetAsk::Chosen(_) | BodyFacetAsk::Declined => None,
         BodyFacetAsk::AskExisting(facet) => Some(format!(
-            "file your workouts, sleep and health data under the facet you named {facet}?"
+            "file your workouts, sleep and other body data under the facet you named {facet}?"
         )),
         BodyFacetAsk::AskMakeBody => {
-            Some("make a body facet for your workouts, sleep and health data?".to_owned())
+            Some("make a body facet for your workouts, sleep and other body data?".to_owned())
         }
         BodyFacetAsk::AskUnmute => Some(
-            "your body facet is muted. turn it back on for your workouts, sleep and health data?"
+            "your body facet is muted. turn it back on for your workouts, sleep and other body data?"
                 .to_owned(),
         ),
     }
@@ -63,7 +64,7 @@ pub(crate) fn ask_strava_facet(
     let ids = download_ids(media);
     ask_facet(
         journal,
-        ("workout", "workouts"),
+        (("workout", "workouts"), NO_MEANS_STRAVA),
         &|facet| crate::strava_convert::listed_moves(journal, &ids, facet),
         input,
         output,
@@ -80,7 +81,7 @@ pub(crate) fn ask_body_facet(
 ) -> (ImportFacet, Option<usize>) {
     ask_facet(
         journal,
-        ("record", "records"),
+        (("record", "records"), NO_MEANS_BODY),
         &|facet| {
             let (count, from) = crate::body_activity::listed_elsewhere(journal, stream, facet);
             (count > 0).then(|| (count, from.into_iter().collect()))
@@ -94,7 +95,7 @@ type ListedCount<'a> = &'a dyn Fn(&str) -> Option<(usize, Vec<String>)>;
 
 fn ask_facet(
     journal: &Path,
-    (one, many): (&str, &str),
+    ((one, many), no_means): ((&str, &str), &str),
     listed: ListedCount<'_>,
     input: &mut dyn BufRead,
     output: &mut dyn Write,
@@ -107,7 +108,7 @@ fn ask_facet(
     };
     let moves = listed(would_file_under(&ask));
     let shown = moves.as_ref().map_or(0, |(count, _)| *count);
-    let _ = writeln!(output, "{NO_MEANS}");
+    let _ = writeln!(output, "{no_means}");
     if let Some((count, from)) = &moves {
         let _ = writeln!(
             output,

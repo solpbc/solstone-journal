@@ -385,7 +385,7 @@ fn a_document_over_the_row_bound_is_refused_by_name_and_is_no_hole() {
     assert!(
         outcome
             .summary
-            .contains("## Couldn't be read\n\n- workouts: too large to keep: 1"),
+            .contains("## couldn't be read\n\n- workouts: too large to keep: 1"),
         "{}",
         outcome.summary
     );
@@ -1091,7 +1091,7 @@ fn with_no_record_a_deleted_window_on_the_lookup_days_refuses_a_revision_by_its_
     // fills it.
     assert!(
         outcome.summary.contains(
-            "## Couldn't be read\n\n- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"
+            "## couldn't be read\n\n- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"
         ),
         "{}",
         outcome.summary
@@ -1327,7 +1327,7 @@ fn oura_experiences_get_records_with_a_facet_and_a_retyped_workouts_record_follo
         None,
     );
     assert!(
-        bare.summary.contains("3 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because those parts of your journal have no facet."),
+        bare.summary.contains("3 of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet."),
         "{}",
         bare.summary
     );

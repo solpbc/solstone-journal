@@ -89,8 +89,9 @@ pub(crate) fn preview_apple(json_output: bool) -> CliRun {
         ));
     }
     success(format!(
-        "this looks like an Apple Health export. saving it reads {}.\n",
-        APPLE_READS.join(", ")
+        "this looks like an Apple Health export. saving it reads {}, and {}.\n",
+        APPLE_READS[..APPLE_READS.len() - 1].join(", "),
+        APPLE_READS[APPLE_READS.len() - 1]
     ))
 }
 

@@ -475,7 +475,7 @@ fn the_summary_says_what_moved_what_didnt_and_what_waits() {
     for line in [
         "2 records already listed on the activities page moved there, from Work.",
         "nothing already listed moved: 3 records would have, and you weren't shown any.",
-        "2 joined a workout you'd hidden, so they're hidden too.",
+        "2 records joined a workout you'd hidden, so they're hidden too.",
         "1 earlier Strava workout couldn't be updated yet",
     ] {
         assert!(summary.contains(line), "{line}: {summary}");

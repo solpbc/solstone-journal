@@ -722,23 +722,22 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
         && !strava
         && matches!(
             outcome,
-            ResolutionOutcome::RouteAppleHealth
-                | ResolutionOutcome::Resolved {
-                    source: ResolvedSource::Registry(_),
-                    ..
-                }
+            ResolutionOutcome::Resolved {
+                source: ResolvedSource::Registry(_),
+                ..
+            }
         )
     {
         return rendered(failure(
             "",
-            "--facet only applies to an audio file, a plain text file or a Strava download, so nothing was imported; import this one without it\n",
+            "--facet only applies to an audio file, a plain text file or a body import, so nothing was imported; import this one without it\n",
             1,
         ));
     }
-    if options.no_facet && !strava {
+    if options.no_facet && !strava && !matches!(outcome, ResolutionOutcome::RouteAppleHealth) {
         return rendered(failure(
             "",
-            "--no-facet only applies to a Strava download, so nothing was imported; import this one without it\n",
+            "--no-facet only applies to a body import, so nothing was imported; import this one without it\n",
             1,
         ));
     }
@@ -2215,10 +2214,11 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
         return Err("--archive-identity is only valid with --audio-archive".to_owned());
     }
     if (options.facet.is_some() || options.no_facet)
-        && (options.audio_archive.is_some() || options.sync.is_some())
+        && (options.audio_archive.is_some()
+            || options.sync.as_deref().is_some_and(|sync| sync != "oura"))
     {
         return Err(
-            "--facet is only valid when importing one audio or text file or a Strava download"
+            "--facet is only valid when importing one audio or text file or a body import"
                 .to_owned(),
         );
     }

@@ -2086,7 +2086,7 @@ fn one_record_that_cant_be_read_is_counted_and_the_rest_are_saved() {
         assert!(done.finished, "{shown}: {}", done.summary);
         assert_eq!(saved_windows(root), 2, "{shown}");
         assert!(
-            done.summary.contains("## Couldn't be read"),
+            done.summary.contains("## couldn't be read"),
             "{}",
             done.summary
         );
@@ -2285,7 +2285,7 @@ fn a_day_with_more_stuck_windows_than_the_bound_is_recorded_and_the_next_run_goe
         assert!(later_day_landed(root));
         assert!(!two.finished);
         assert_eq!(two.import_id, "20261104_120000");
-        assert!(two.summary.contains("Not saved yet"), "{}", two.summary);
+        assert!(two.summary.contains("not saved yet"), "{}", two.summary);
         // Unstuck, a later run with the same export saves them.
         (0..slots).for_each(|slot| {
             let minutes = 6 * 60 + slot * 5;
@@ -2627,7 +2627,7 @@ fn a_new_record_that_joins_a_workout_the_owner_hid_says_so() {
     assert!(
         outcome
             .summary
-            .contains("1 joined a workout you'd hidden, so it's hidden too."),
+            .contains("1 record joined a workout you'd hidden, so it's hidden too."),
         "{}",
         outcome.summary
     );
@@ -2912,7 +2912,7 @@ fn an_import_adds_one_activity_per_workout_and_again_adds_none() {
     .unwrap();
     let three = run(fresh.path(), &source, "20261012_120002", None);
     assert!(
-        three.summary.contains("2 of the workouts, nights of sleep and mindfulness sessions don't show on their days, because those parts of your journal have no facet."),
+        three.summary.contains("2 of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet."),
         "{}",
         three.summary
     );

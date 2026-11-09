@@ -8,7 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. workouts, sleep and readings land on their own days, and show in the body app, in search and to your agents. the import asks once which facet to file them under.
+- you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. workouts, sleep and readings land on their own days, and show in the body app and to your agents. workouts and sleep show in search too. the import asks once which facet to file them under.
 - agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health or Oura and says where it holds nothing, and `get_transcript` pages through those readings.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
@@ -60,8 +60,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - the body app's trends page and its highest, lowest and comparison lines are gone. the transcripts day panel's body line shows counts now.
-- an Apple Health import no longer keeps any of your export or takes a date range. it reads the whole export each time, and importing it again changes nothing.
-- the "need a privacy setup" step for Apple Health and Oura is gone.
+- an Apple Health import no longer keeps a copy of your export or takes a date range. it reads the whole export each time, and importing it again changes nothing.
+- importing Apple Health or Oura no longer needs an approval file set up first.
 
 ## [2.0.73] - 2026-11-09
 

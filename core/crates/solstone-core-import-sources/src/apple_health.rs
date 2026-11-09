@@ -1544,9 +1544,9 @@ pub fn stage_words(stage: &str) -> String {
     match stage {
         "end_before_start" => "ended before it started".to_owned(),
         "row_too_large" => "too large to keep".to_owned(),
-        "time" | "event_time" => "no time we could read".to_owned(),
+        "time" | "event_time" => "no time the journal could read".to_owned(),
         "span_too_long" => "covers too long a stretch of time".to_owned(),
-        "type" => "no kind we could read".to_owned(),
+        "type" => "no kind the journal could read".to_owned(),
         other => other.replace('_', " "),
     }
 }
@@ -1576,10 +1576,10 @@ pub fn summary_text(
     );
     match facet {
         Some(facet) => {
-            let _ = writeln!(text, "Filed under the {facet} facet.\n");
+            let _ = writeln!(text, "filed under the {facet} facet.\n");
         }
         None => text.push_str(
-            "Filed under no facet: an agent that can read your whole journal reads it, and one limited to chosen facets doesn't.\n\n",
+            "filed under no facet: an agent that can read your whole journal reads it, and one limited to chosen facets doesn't.\n\n",
         ),
     }
     if counts.took_facet > 0 {
@@ -1639,10 +1639,10 @@ pub fn summary_text(
             text,
             "{}\n",
             if counts.joined_hidden == 1 {
-                "1 joined a workout you'd hidden, so it's hidden too.".to_owned()
+                "1 record joined a workout you'd hidden, so it's hidden too.".to_owned()
             } else {
                 format!(
-                    "{} joined a workout you'd hidden, so they're hidden too.",
+                    "{} records joined a workout you'd hidden, so they're hidden too.",
                     counts.joined_hidden
                 )
             }
@@ -1681,10 +1681,10 @@ pub fn summary_text(
             text,
             "{}\n",
             if counts.activities_no_facet == 1 {
-                "1 workout, night of sleep or mindfulness session doesn't show on its day, because that part of your journal has no facet.".to_owned()
+                "1 workout, night of sleep or mindfulness session isn't listed on the activities page, because that part of your journal has no facet.".to_owned()
             } else {
                 format!(
-                    "{} of the workouts, nights of sleep and mindfulness sessions don't show on their days, because those parts of your journal have no facet.",
+                    "{} of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet.",
                     counts.activities_no_facet
                 )
             }
@@ -1785,7 +1785,7 @@ pub fn summary_text(
         }
     };
     section(
-        "Read",
+        "read",
         counts
             .read
             .iter()
@@ -1793,7 +1793,7 @@ pub fn summary_text(
             .collect(),
     );
     section(
-        "Not read",
+        "not read",
         counts
             .not_read
             .iter()
@@ -1823,14 +1823,14 @@ pub fn summary_text(
         });
     }
     if !refused.is_empty() {
-        let _ = writeln!(text, "## Couldn't be read\n");
+        let _ = writeln!(text, "## couldn't be read\n");
         for line in refused {
             let _ = writeln!(text, "- {line}");
         }
         text.push('\n');
     }
     if !counts.not_saved.is_empty() {
-        let _ = writeln!(text, "## Not saved yet\n");
+        let _ = writeln!(text, "## not saved yet\n");
         for line in &counts.not_saved {
             let _ = writeln!(text, "- {line}");
         }

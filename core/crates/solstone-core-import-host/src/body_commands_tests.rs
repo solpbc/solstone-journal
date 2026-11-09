@@ -165,3 +165,23 @@ fn an_oura_plan_says_what_it_would_ask_and_writes_nothing() {
     assert!(!journal.path().join("imports").exists());
     assert!(!journal.path().join("chronicle").exists());
 }
+
+#[test]
+fn a_facet_that_isnt_one_of_yours_stops_a_body_import() {
+    let journal = tempfile::tempdir().unwrap();
+    let run = save_apple(
+        "nowhere",
+        &BodyCommand {
+            facet: ImportFacet::Facet("absent".to_owned()),
+            ..command()
+        },
+        journal.path(),
+    );
+    assert_eq!(run.exit_code, 1);
+    assert!(
+        run.stderr.contains("isn't one of") || run.stderr.contains("not one of"),
+        "{}",
+        run.stderr
+    );
+    assert!(!journal.path().join("imports").exists());
+}

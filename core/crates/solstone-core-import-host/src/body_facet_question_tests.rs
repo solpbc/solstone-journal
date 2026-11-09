@@ -68,7 +68,11 @@ fn the_question_is_worded_for_every_body_import() {
         &mut output,
     );
     let said = String::from_utf8(output).unwrap();
-    assert!(said.contains("workouts, sleep and health data"), "{said}");
+    assert!(
+        said.contains("workouts, sleep and other body data"),
+        "{said}"
+    );
+    assert!(!said.contains("people or things"), "{said}");
 }
 
 #[test]
