@@ -518,7 +518,13 @@ mod tests {
                 StatusCode::NOT_FOUND,
                 "no-store",
             ),
-            ("redirect", "/".into(), StatusCode::FOUND, "no-store"),
+            ("front door", "/".into(), StatusCode::OK, "no-cache"),
+            (
+                "redirect",
+                "/app/home".into(),
+                StatusCode::PERMANENT_REDIRECT,
+                "no-store",
+            ),
         ];
         for (class, path, status, expected) in cases {
             let (actual, headers, _) = fetch(&app, &path, None).await;
@@ -615,6 +621,7 @@ mod tests {
         let journal = established_journal();
         let app = crate::router(journal.path().to_owned());
         for path in [
+            "/",
             "/app/home/",
             "/app/transcripts/20260101",
             "/app/home/workspace",

@@ -1628,11 +1628,11 @@ test('while the day is read the panel says loading, then shows the invitation', 
   );
   const panel = h.doc.querySelector('#trPanel');
   assert.ok(panel.querySelector('.surface-state--loading'), 'loading while the day is read');
-  assert.strictEqual(panel.querySelector('[data-day-invitation="true"]'), null, 'no invitation yet');
+  assert.strictEqual(panel.querySelector('.surface-state--empty'), null, 'no invitation yet');
   release();
   await new Promise((r) => setTimeout(r, 10));
   assert.strictEqual(panel.querySelector('.surface-state--loading'), null);
-  assert.ok(panel.querySelector('[data-day-invitation="true"]'), 'the invitation once the day has loaded');
+  assert.ok(panel.querySelector('.surface-state--empty'), 'the invitation once the day has loaded');
 });
 
 test('endpoint failure non-OK: day timeline renders, notice present, section absent', async () => {

@@ -1901,14 +1901,11 @@ pub(crate) fn not_found_response() -> Response {
         .expect("not found response builds")
 }
 
+// The front door serves the shell itself: one redirect hop less on every open
+// of the root, phones included. The page moves its address to the home view
+// before any script reads it.
 async fn root() -> Response {
-    let location = "/app/home/";
-    Response::builder()
-        .status(StatusCode::FOUND)
-        .header(header::LOCATION, location)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(Body::from(session_gate::redirect_body(location)))
-        .expect("root redirect builds")
+    asset_response("/static/shell.html")
 }
 
 async fn favicon() -> Response {

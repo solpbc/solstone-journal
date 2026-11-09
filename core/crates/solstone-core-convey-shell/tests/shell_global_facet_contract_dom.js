@@ -42,8 +42,9 @@ function cookieDocument() {
   return document;
 }
 
-function websocketHarness() {
+function websocketHarness(options = {}) {
   const document = cookieDocument();
+  document.querySelector = () => options.statusIcon || null;
   let eventSource = null;
   class FakeEventSource {
     constructor(url) {
@@ -56,8 +57,8 @@ function websocketHarness() {
   const window = {
     document,
     location: { href: '/app/entities/', origin: 'http://localhost' },
-    setTimeout,
-    clearTimeout,
+    setTimeout: options.setTimeout || setTimeout,
+    clearTimeout: options.clearTimeout || clearTimeout,
     AppServices: { sameOriginPath: appHarness().AppServices.sameOriginPath, notifications: { show() {} } },
   };
   window.window = window;
@@ -68,7 +69,7 @@ function websocketHarness() {
     setTimeout,
     clearTimeout,
     console: { debug() {}, log() {}, warn() {}, error() {} },
-    Date,
+    Date: options.Date || Date,
   });
   vm.runInContext(staticSource('websocket.js'), context, { filename: 'websocket.js' });
   document.dispatch('DOMContentLoaded');
@@ -254,10 +255,57 @@ function testDegradedDeviceDetail() {
   assert.ok(lines.includes('reason: bad_segment'), 'and why');
 }
 
+function statusMarkHarness() {
+  const sources = [];
+  const img = {
+    dataset: {},
+    style: {},
+    classList: { toggle() {} },
+    set src(value) { sources.push(String(value)); },
+    get src() { return sources[sources.length - 1] || ''; },
+  };
+  const statusIcon = { querySelector: (selector) => (selector.startsWith('img') ? img : null) };
+  let clock = 1000;
+  const timers = new Map();
+  let nextTimer = 1;
+  class FakeDate extends Date { static now() { return clock; } }
+  const h = websocketHarness({
+    statusIcon,
+    Date: FakeDate,
+    setTimeout: (fn) => { const id = nextTimer; nextTimer += 1; timers.set(id, fn); return id; },
+    clearTimeout: (id) => { timers.delete(id); },
+  });
+  return {
+    h,
+    sources,
+    advance(ms) {
+      clock += ms;
+      for (const [id, fn] of Array.from(timers)) { timers.delete(id); fn(); }
+    },
+  };
+}
+
+function testConnectingMarkWaits() {
+  const animated = (sources) => sources.filter((src) => src.includes('animated'));
+  const slow = statusMarkHarness();
+  slow.h.window.renderStatusMark();
+  assert.deepStrictEqual(animated(slow.sources), [], 'no animated mark at the start of a wait');
+  slow.advance(1500);
+  assert.strictEqual(animated(slow.sources).length, 1, 'a wait long enough to notice animates');
+
+  const fast = statusMarkHarness();
+  fast.h.window.renderStatusMark();
+  fast.h.eventSource.onmessage({ data: JSON.stringify({ tract: 'heartbeat' }) });
+  fast.h.window.appEvents.setCaptureStatus('active');
+  fast.advance(1500);
+  assert.deepStrictEqual(animated(fast.sources), [], 'a stream that settles first never asks for the file');
+}
+
 testContinuity();
+testConnectingMarkWaits();
 testDegradedDeviceDetail();
 testNotificationBoundaries();
 testNavigateMessages();
 testNotificationCardAction();
 testStatusHistoryAction();
-console.log('DOM CASES: 6 passed');
+console.log('DOM CASES: 7 passed');
