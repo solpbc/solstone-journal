@@ -184,11 +184,11 @@ fn a_removed_recording_is_left_out_and_nothing_is_created() {
         "absent is not removed"
     );
     assert!(!place.exists(), "looking creates nothing");
-    fs::create_dir_all(&place).unwrap();
+    std::fs::create_dir_all(&place).unwrap();
     assert!(
         !removed_from_journal(temp.path(), &segment),
         "live is not removed"
     );
-    fs::write(place.join("tombstone.json"), b"{}").unwrap();
+    std::fs::write(place.join("tombstone.json"), b"{}").unwrap();
     assert!(removed_from_journal(temp.path(), &segment));
 }
