@@ -342,7 +342,15 @@ fn detach_as(
         .sum();
     ensure_trash(journal)?;
     let dir = trash_root(journal).join(&item.id);
-    std::fs::create_dir(&dir).map_err(|error| TrashError::Io(error.to_string()))?;
+    match std::fs::create_dir(&dir) {
+        Ok(()) => {}
+        // A set names its item before moving it, so a stop here leaves the
+        // folder with no record yet, and nothing moved into it.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::AlreadyExists
+                && read_item(journal, &item.id)?.is_none() => {}
+        Err(error) => return Err(TrashError::Io(error.to_string())),
+    }
     if let Err(error) = publish_new(journal, &item) {
         abandon(journal, &item);
         return Err(error);
@@ -577,9 +585,14 @@ pub struct Chosen {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct Entry {
     chosen: Chosen,
-    /// The item it became, once it moved.
+    /// The item it becomes, named before anything of it moves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     item: Option<String>,
+    /// That item has existed. An item gone after this was erased or recovered
+    /// by the owner, so nothing more is owed; only one that never arrived is
+    /// still to move.
+    #[serde(default)]
+    arrived: bool,
     /// Nothing more is owed for it: it moved (and was erased if the owner
     /// asked), or it was refused for good.
     #[serde(default)]
@@ -636,6 +649,7 @@ pub fn detach_set(
             .map(|chosen| Entry {
                 chosen,
                 item: None,
+                arrived: false,
                 settled: false,
             })
             .collect(),
@@ -722,7 +736,16 @@ fn settle(
         }
     };
     let item = match existing {
-        Some(item) => item,
+        Some(item) => {
+            entry.arrived = true;
+            item
+        }
+        // It arrived and has gone: the owner recovered or erased it. Moving
+        // it again would undo what they just did.
+        None if entry.arrived => {
+            entry.settled = true;
+            return (entry, None);
+        }
         // Not moved yet. A stop before this leaves it to do; a thing gone
         // since is refused as missing, so every entry answers.
         None => {
@@ -757,7 +780,10 @@ fn settle(
                 }
             }
             match read_item(journal, &id) {
-                Ok(Some(item)) => item,
+                Ok(Some(item)) => {
+                    entry.arrived = true;
+                    item
+                }
                 // A detach that found nothing to move keeps no item.
                 Ok(None) => {
                     entry.settled = true;
@@ -1882,6 +1908,7 @@ mod tests {
             entries: vec![Entry {
                 chosen: chosen(),
                 item: None,
+                arrived: false,
                 settled: false,
             }],
         }
@@ -1967,6 +1994,62 @@ mod tests {
         publish_set(&root, &set, true).unwrap();
         sweep(&root, &[&kind], Utc::now());
         assert!(all_items(&root).unwrap().is_empty());
+        assert!(!root.join(SEGMENT).join("audio.flac").exists());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The owner recovered it while the set still owed its erase: a sweep
+    /// leaves it alone.
+    #[test]
+    fn a_set_never_moves_again_what_the_owner_took_back() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let item = trash(&root, &kind);
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item.id.clone());
+        set.entries[0].arrived = true;
+        publish_set(&root, &set, true).unwrap();
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(root.join(SEGMENT).join("audio.flac").exists());
+        assert!(all_items(&root).unwrap().is_empty());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// A recover a stop interrupted is finished first, and the set leaves it.
+    #[test]
+    fn a_set_leaves_alone_a_recover_a_stop_interrupted() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let mut item = trash(&root, &kind);
+        item.state = State::Attaching;
+        item.pending = Some(Pending {
+            action: Action::Recover,
+            surface: web(),
+            at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        });
+        publish(&root, &item).unwrap();
+        let mut set = set_of(true);
+        set.entries[0].item = Some(item.id.clone());
+        set.entries[0].arrived = true;
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert!(root.join(SEGMENT).join("audio.flac").exists());
+        assert!(waiting_sets(&root).is_empty());
+    }
+
+    /// The stop came after the item's folder and before its record.
+    #[test]
+    fn a_set_moves_a_thing_whose_item_folder_has_no_record_yet() {
+        let (_dir, root) = journal();
+        let kind = Fake::default();
+        let id = item_id(Utc::now());
+        fs::create_dir_all(root.join(TRASH_DIR).join(&id)).unwrap();
+        let mut set = set_of(false);
+        set.entries[0].item = Some(id.clone());
+        publish_set(&root, &set, true).unwrap();
+        sweep(&root, &[&kind], Utc::now());
+        assert_eq!(item(&root, &id).unwrap().unwrap().state, State::Trashed);
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert!(waiting_sets(&root).is_empty());
     }

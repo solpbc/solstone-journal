@@ -396,9 +396,9 @@ fn legacy_created_segment(journal: &Path, file: &str) -> Option<String> {
         .iter()
         .rposition(|part| *part == "chronicle")
         .map(|chronicle| chronicle + 1)
-        .or_else(|| parts.iter().position(|part| is_day(part)))?;
+        .or_else(|| parts.iter().position(&is_day))?;
     let rest = parts.get(start..)?;
-    if !rest.first().is_some_and(|day| is_day(day)) {
+    if !rest.first().is_some_and(is_day) {
         return None;
     }
     let is_key = |part: &str| {
