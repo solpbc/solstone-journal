@@ -374,9 +374,12 @@ async fn ac7_only_boot_assets_are_exempt() {
         let (status, _) = request(app.clone(), path, Some(linked_device(&fixture, 0))).await;
         assert_eq!(status, StatusCode::OK, "{path}");
     }
-    let (status, body) = request(app, "/api/shell", Some(linked_device(&fixture, 0))).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
+    // The front door is a page like the home view, not a boot asset.
+    for path in ["/api/shell", "/", "/app/home/"] {
+        let (status, body) = request(app.clone(), path, Some(linked_device(&fixture, 0))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+        assert_eq!(body, revoked_body(), "{path}");
+    }
 }
 
 #[tokio::test]
