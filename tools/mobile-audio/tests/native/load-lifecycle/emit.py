@@ -31,7 +31,11 @@ for name, signatures, namespace in (
                       + ('}\n' if namespace else ''))
         rows.append(dict(source=str(path), source_sha256=hashlib.sha256(data).hexdigest(),
                          signature=signature, body_sha256=hashlib.sha256(body.encode()).hexdigest()))
-args.output.write_text('\n'.join(pieces))
+legacy_metadata = any('global_backend()' in piece for piece in pieces)
+assert not (legacy_metadata and any('backend_device_name()' in piece for piece in pieces))
+# Select only the explicit caller double appropriate to these exact bodies.
+# This is test-only old-revision support, not a native compatibility alias.
+args.output.write_text(f'#define LOAD_TEST_LEGACY_METADATA {int(legacy_metadata)}\n' + '\n'.join(pieces))
 args.output.with_suffix('.json').write_text(json.dumps(dict(
     scope='Exact source bodies; context/callee doubles are explicitly test-only, no model or OOM proof.',
     projected_sha256=hashlib.sha256(args.output.read_bytes()).hexdigest(), functions=rows), indent=2) + '\n')

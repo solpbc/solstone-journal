@@ -94,10 +94,9 @@ int main() {
     // Global route: failure unwinds the scoped thread override and mutex.
     pk::set_num_threads(0);
     valid_graph();
-    const int original_threads = pk::backend_thread_count();
     failure_is_not_consumed();
     failed_weight_preparation_is_not_consumed();
-    CHECK(pk::backend_thread_count() == original_threads);
+    CHECK(pk::backend_thread_count() == 0); // Last failed owner/borrow retired.
     valid_graph();
     pk::shutdown_backend(); // No model or pool holds weights in this control.
     CHECK(pk::backend_thread_count() == 0);

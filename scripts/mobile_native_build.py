@@ -475,6 +475,11 @@ class Build:
         self.run("parakeet-load-lifecycle-proof", ["git", "apply", "--no-index", "--check", "--reverse", loading], source)
         self.summary["patches"].append({"component": "parakeet", "path": str(loading.relative_to(ROOT)),
                                         "sha256": sha256(loading)})
+        retirement = ROOT / "core/distribution/mobile/parakeet-error-retirement.patch"
+        self.run("parakeet-error-retirement-patch", ["git", "apply", "--no-index", retirement], source)
+        self.run("parakeet-error-retirement-proof", ["git", "apply", "--no-index", "--check", "--reverse", retirement], source)
+        self.summary["patches"].append({"component": "parakeet", "path": str(retirement.relative_to(ROOT)),
+                                        "sha256": sha256(retirement)})
         if self.args.platform == "android":
             pool = ROOT / "core/distribution/mobile/parakeet-persistent-pool.patch"
             self.run("parakeet-persistent-pool-patch", ["git", "apply", "--no-index", pool], source)
