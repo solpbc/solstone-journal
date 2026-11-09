@@ -1995,6 +1995,29 @@ fn a_strava_record_composes_from_its_tile_live_removed_by_you_or_unreadable() {
 
 /// A body.jsonl in a Strava tile's folder isn't what the tile holds.
 #[test]
+fn a_strava_record_reads_the_lowest_key_the_strava_importer_keeps_writing() {
+    let journal = journal_with_strava();
+    let root = journal.path();
+    let (_, run) = strava_tile(
+        root,
+        DAY,
+        "070000_300",
+        (7001, 0, 1),
+        ("Run", "2026-10-10T07:00:00-06:00", 300),
+    );
+    // An archive merge's copy, on the next key.
+    strava_tile(
+        root,
+        DAY,
+        "070000_301",
+        (7001, 0, 1),
+        ("Run", "2026-10-10T07:00:00-06:00", 300),
+    );
+    record_in(root, STRAVA, DAY, &run);
+    assert_eq!(composed(root)[0].window.as_deref(), Some("070000_300"));
+}
+
+#[test]
 fn a_strava_window_is_read_by_its_own_file_only() {
     let journal = journal_with_strava();
     let root = journal.path();

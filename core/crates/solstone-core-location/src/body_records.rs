@@ -554,10 +554,14 @@ impl Windows {
                     })
                     .collect::<Vec<_>>();
                 // A record reads the copy the importer still writes to, when an
-                // archive merge left two.
-                names.sort_by(|left, right| {
-                    (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0))
-                });
+                // archive merge left two. Strava's keeps the lowest key.
+                if stored.stream == STRAVA_STREAM {
+                    names.sort();
+                } else {
+                    names.sort_by(|left, right| {
+                        (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0))
+                    });
+                }
                 (
                     names,
                     solstone_core_journal_config::placed_zone(journal, source_of(&stored.stream)),
