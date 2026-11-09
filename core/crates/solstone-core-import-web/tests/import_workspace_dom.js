@@ -3539,6 +3539,25 @@ async function runSourceChangeWhileUploading() {
   cases += 1;
 }
 
+async function runPreviewWithOnlyMovesCanStartAndSaysHowMany() {
+  const h = makeHarness({ guidedStartBtn: '', guidedSettingInput: 'first', guidedSizePreview: '' });
+  h.context.fetch = async (url, options) => {
+    h.requests.push({ url, options });
+    return { ok: true, json: async () => url.endsWith('/preview')
+      ? { preview_token: 'preview-1', size: { recordings: 0, days: 0, other_units: null,
+        listed_moves: { count: 2, from: ['Work'] } } }
+      : {} };
+  };
+  vm.runInContext("currentGuidedSaved = { path: '/saved', timestamp: '20261011_120000' }", h.context);
+  vm.runInContext(functionSource(workspace, 'startGuidedImport'), h.context);
+  await h.context.startGuidedImport({ name: 'workout' });
+  const said = h.elements.guidedSizePreview.textContent;
+  assert.ok(said.includes("2 workouts already listed with your activities would move to this import's facet from Work"), said);
+  assert.ok(!said.includes('nothing to import'), said);
+  assert.strictEqual(h.elements.guidedStartBtn.focused, true, 'a preview with only moves can start');
+  cases += 1;
+}
+
 async function runPreviewEditRequiresNewPreview() {
   const h = makeHarness({ guidedStartBtn: '', guidedSettingInput: 'first', guidedSizePreview: '' });
   vm.runInContext("currentGuidedSaved = { path: '/saved', timestamp: '20261011_120000' }", h.context);
@@ -4034,6 +4053,7 @@ Promise.resolve()
   .then(runNativeFolderBusyStateSurvivesGuideRemount)
   .then(runSourceChangeWhileUploading)
   .then(runPreviewEditRequiresNewPreview)
+  .then(runPreviewWithOnlyMovesCanStartAndSaysHowMany)
   .then(runThinkingRefreshKeepsControlsAndFocus)
   .then(runQuickSubmit)
   .then(runQuickSaveFailureReadsOnce)
