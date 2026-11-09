@@ -109,7 +109,7 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
         return Err(ToolError::SourceArguments);
     }
     if (params.time_from.is_some() || params.time_to.is_some()) && normalized_day.is_none() {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::TranscriptTimeArguments);
     }
     if let Some(ref tf) = params.time_from {
         validate_time(tf)?;
@@ -118,7 +118,7 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
         validate_time(tt)?;
     }
     if matches!((&params.time_from, &params.time_to), (Some(tf), Some(tt)) if tf > tt) {
-        return Err(ToolError::InvalidInput);
+        return Err(ToolError::TranscriptTimeArguments);
     }
     if params
         .cursor

@@ -3238,6 +3238,12 @@ mod tests {
             conflict["error"]["data"]["reason"],
             "memory_operation_conflict"
         );
+        assert!(
+            conflict["error"]["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("operation_id")),
+            "{conflict}"
+        );
         assert_eq!(
             fs::read(note_dir.join("note.txt")).unwrap(),
             b"exact live original"
