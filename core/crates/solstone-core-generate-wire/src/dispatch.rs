@@ -175,7 +175,12 @@ fn respond_config(
     let response = match outcome {
         crate::LaneOutcome::BundledLocal => {
             let mut authority = acquire_local_inference_authority(journal);
-            match crate::bundled_generate_with_authority(request, journal, authority.as_mut()) {
+            match crate::bundled::bundled_generate_with_context(
+                request,
+                journal,
+                authority.as_mut(),
+                context,
+            ) {
                 Ok(solstone_core_local::GenerateResult::Success(mut success)) => {
                     if cancellation.is_cancelled() {
                         return Ok(solstone_core_generate::GenerateResponse::Cancelled);
@@ -217,6 +222,9 @@ fn respond_config(
                     }
                 }
                 Ok(solstone_core_local::GenerateResult::Failure(failure)) => {
+                    if cfg!(target_os = "ios") && cancellation.is_cancelled() {
+                        return Ok(solstone_core_generate::GenerateResponse::Cancelled);
+                    }
                     solstone_core_generate::GenerateResponse::Refused(crate::refusal_for(
                         &crate::LaneOutcome::BundledFailure(Box::new(failure)),
                         &provider,

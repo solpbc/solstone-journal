@@ -1520,10 +1520,12 @@ impl SenseExecutor for HostSenseExecutor {
                     let config = self.audio_state.lock().unwrap().clone();
                     match config {
                         Some(config) => {
-                            match config
-                                .worker
-                                .process_host_input(input, attempt, &checkpoint)
-                            {
+                            match config.worker.process_host_input(
+                                input,
+                                attempt,
+                                priority,
+                                &checkpoint,
+                            ) {
                                 Ok(true) => SenseJobResult::Finished(0),
                                 Ok(false) => SenseJobResult::Hold,
                                 Err(_) => SenseJobResult::Finished(1),

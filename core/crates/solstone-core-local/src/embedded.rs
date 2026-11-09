@@ -7,10 +7,71 @@
 
 use std::num::NonZeroU16;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+
+/// A request may relinquish its slot before the native generation has joined.
+/// The exact authority keeps this carrier until validated retirement; neither
+/// an HTTP error nor disappearance from an owner registry confirms it.
+#[derive(Default, Debug)]
+pub struct InferenceRetirement {
+    state: Mutex<InferenceRetirementState>,
+}
+
+#[derive(Default, Debug)]
+struct InferenceRetirementState {
+    requested: bool,
+    joined: bool,
+    permit: Option<crate::admission::LocalSlotPermit>,
+}
+
+impl InferenceRetirement {
+    pub fn is_live(&self) -> bool {
+        let state = self.state.lock().expect("native inference retirement lock");
+        !state.requested && !state.joined
+    }
+
+    pub fn requested(&self) -> bool {
+        self.state
+            .lock()
+            .expect("native inference retirement lock")
+            .requested
+    }
+
+    pub fn request(&self, permit: crate::admission::LocalSlotPermit) {
+        let mut state = self.state.lock().expect("native inference retirement lock");
+        if !state.joined {
+            assert!(
+                state.permit.is_none(),
+                "one-slot native generation already owns admission"
+            );
+            state.requested = true;
+            state.permit = Some(permit);
+        }
+        // A previously confirmed join can release this late handoff at once.
+    }
+
+    /// The authority calls this only after its owned native join, terminal phase
+    /// and generation have all been validated.
+    pub fn confirm_joined(&self) {
+        let permit = {
+            let mut state = self.state.lock().expect("native inference retirement lock");
+            state.joined = true;
+            state.permit.take()
+        };
+        drop(permit);
+    }
+}
+
+// No Debug/serde: the accepted per-launch credential stays in memory.
+pub struct InferenceCredentials {
+    pub generation: u64,
+    pub port: u16,
+    pub token: Vec<u8>,
+    pub retirement: Arc<InferenceRetirement>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeIdentity {

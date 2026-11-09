@@ -9,7 +9,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::LoopbackAddr;
-use crate::admission::{AdmissionError, acquire_local_slot, admission_dir};
+use crate::admission::{
+    AdmissionError, CheckedAdmissionError, acquire_local_slot, acquire_local_slot_checked,
+    admission_dir,
+};
+
+/// Trusted hosted-call state, never part of the serialized Generate request.
+pub struct GenerateControl<'a> {
+    pub priority: solstone_core_journal_config::work_priority::WorkPriority,
+    pub cancelled: &'a dyn Fn() -> bool,
+}
 use crate::connect::{ConnectInput, ConnectOutcome, ConnectedServer, connect, props_slots};
 use crate::fixture::local_generate;
 use crate::plan::Platform;
@@ -228,6 +237,14 @@ pub fn generate_with_authority(
     generate_with_transport_and_authority(input, &mut transport, authority)
 }
 
+pub fn generate_with_authority_control(
+    input: GenerateInput,
+    authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+    control: &GenerateControl<'_>,
+) -> GenerateResult {
+    generate_with_transport_and_control(input, &mut UreqTransport, authority, Some(control))
+}
+
 /// Execute with injected readiness and HTTP seams.
 pub fn generate_with<T, F>(input: GenerateInput, transport: &mut T, connector: F) -> GenerateResult
 where
@@ -257,13 +274,22 @@ where
             return failure("model_not_ready", reason, None);
         }
     };
-    generate_with_connected_server_at(input, transport, server, None, started)
+    generate_with_connected_server_at(input, transport, server, None, started, None)
 }
 
 pub(crate) fn generate_with_transport_and_authority<T: GenerateTransport>(
     input: GenerateInput,
     transport: &mut T,
+    authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+) -> GenerateResult {
+    generate_with_transport_and_control(input, transport, authority, None)
+}
+
+fn generate_with_transport_and_control<T: GenerateTransport>(
+    input: GenerateInput,
+    transport: &mut T,
     mut authority: Option<&mut crate::connect::LocalInferenceAuthority>,
+    control: Option<&GenerateControl<'_>>,
 ) -> GenerateResult {
     let started = Instant::now();
     let deadline = started
@@ -295,7 +321,7 @@ pub(crate) fn generate_with_transport_and_authority<T: GenerateTransport>(
             return failure("model_not_ready", reason, None);
         }
     };
-    generate_with_connected_server_at(input, transport, server, authority, started)
+    generate_with_connected_server_at(input, transport, server, authority, started, control)
 }
 
 fn request_timeout(input: &GenerateInput) -> Duration {
@@ -313,7 +339,7 @@ fn generate_with_connected_server<T: GenerateTransport>(
     server: ConnectedServer,
     authority: Option<&mut crate::connect::LocalInferenceAuthority>,
 ) -> GenerateResult {
-    generate_with_connected_server_at(input, transport, server, authority, Instant::now())
+    generate_with_connected_server_at(input, transport, server, authority, Instant::now(), None)
 }
 
 // All preflight calls share the operation's deadline. On Windows an authorization
@@ -379,6 +405,7 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
     server: ConnectedServer,
     mut authority: Option<&mut crate::connect::LocalInferenceAuthority>,
     started: Instant,
+    control: Option<&GenerateControl<'_>>,
 ) -> GenerateResult {
     let contract = local_generate();
     let timeout = request_timeout(&input);
@@ -402,6 +429,11 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
 
     let mut auth_token = authority.as_ref().map(|a| a.token.clone());
     let mut base_url = server.base_url.clone();
+    let retirement = if input.platform == Platform::Ios && control.is_some() {
+        authority.as_ref().and_then(|a| a.retirement.clone())
+    } else {
+        None
+    };
 
     let window = resolve_context_window(&server, &mut preflight, auth_token.as_deref());
     let prepared = if input.platform == Platform::Linux && count_image_parts(&input.contents) == 0 {
@@ -444,8 +476,38 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
     };
 
     let permit = match remaining_timeout(started, timeout).and_then(|remaining| {
+        let root = admission_dir(std::path::Path::new(&input.journal_path));
+        if input.platform == Platform::Ios
+            && let Some(control) = control
+        {
+            let Some(retirement) = retirement.as_ref() else {
+                return Err(RemainingTimeout::GenerationRetired);
+            };
+            let interrupted = || (control.cancelled)() || !retirement.is_live();
+            return acquire_local_slot_checked(
+                &root,
+                1,
+                Some(remaining),
+                input.exclusive_admission,
+                control.priority,
+                &interrupted,
+                &mut || {},
+            )
+            .map_err(|error| match error {
+                CheckedAdmissionError::Cancelled if !(control.cancelled)() => {
+                    RemainingTimeout::GenerationRetired
+                }
+                CheckedAdmissionError::Cancelled => RemainingTimeout::Cancelled,
+                CheckedAdmissionError::Admission(AdmissionError::Timeout) => {
+                    RemainingTimeout::AdmissionTimeout
+                }
+                CheckedAdmissionError::Admission(AdmissionError::Io(error)) => {
+                    RemainingTimeout::AdmissionError(error.to_string())
+                }
+            });
+        }
         acquire_local_slot(
-            &admission_dir(std::path::Path::new(&input.journal_path)),
+            &root,
             server.parallel_slots,
             Some(remaining),
             input.exclusive_admission,
@@ -458,6 +520,16 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
         })
     }) {
         Ok(permit) => permit,
+        Err(RemainingTimeout::Cancelled) => {
+            return cancelled_inference(context_for(None, elapsed_ms(started), false));
+        }
+        Err(RemainingTimeout::GenerationRetired) => {
+            return failure(
+                "model_not_ready",
+                "local model runtime is stopping".into(),
+                None,
+            );
+        }
         Err(RemainingTimeout::AdmissionTimeout) => {
             return failure_with_inference(
                 Some("admission_timeout"),
@@ -492,9 +564,30 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
     let admission_slot = permit.slot_index;
     let queue_wait_ms = permit.queue_wait_ms;
     let inference_context = context_for(Some(admission_slot), queue_wait_ms, false);
+    let mut permit = Some(permit);
+    // The accepted generation may have retired while this call was queued.
+    // Never refresh/start a replacement while holding its compute slot.
+    if let Some(retirement) = retirement.as_ref() {
+        if control.is_some_and(|control| (control.cancelled)()) {
+            return cancelled_inference(inference_context);
+        }
+        if !retirement.is_live() {
+            return failure(
+                "model_not_ready",
+                "local model runtime is stopping".into(),
+                None,
+            );
+        }
+    }
     // Hold the permit through interpret and at most one empty_completion retry
     // POST, then release before returning the result.
     let fail_post = |error: RemainingTimeout| match error {
+        RemainingTimeout::GenerationRetired => failure(
+            "model_not_ready",
+            "local model runtime is stopping".into(),
+            None,
+        ),
+        RemainingTimeout::Cancelled => cancelled_inference(inference_context),
         RemainingTimeout::AdmissionTimeout => failure_with_inference(
             Some("admission_timeout"),
             "Local inference request exceeded its deadline before posting.".into(),
@@ -536,8 +629,16 @@ fn generate_with_connected_server_at<T: GenerateTransport>(
         auth_token.as_deref(),
     ) {
         Ok(response) => response,
-        Err(error) => return fail_post(error),
+        Err(error) => {
+            if matches!(&error, RemainingTimeout::PostError(_)) {
+                retire_ambiguous_request(&mut permit, retirement.as_deref());
+            }
+            return fail_post(error);
+        }
     };
+    if !(200..300).contains(&response.status) {
+        retire_ambiguous_request(&mut permit, retirement.as_deref());
+    }
     if !input.platform.requires_runtime_authority()
         && response.status == 401
         && let Some(auth) = authority.as_mut()
@@ -2120,6 +2221,36 @@ fn failure_with_inference(
     })
 }
 
+fn retire_ambiguous_request(
+    permit: &mut Option<crate::admission::LocalSlotPermit>,
+    retirement: Option<&crate::embedded::InferenceRetirement>,
+) {
+    // A disconnected/failed POST may leave native compute alive. Its exact
+    // authority takes the slot before this call returns and retires through
+    // the coordinator. Rare interruptions therefore cost a model reload;
+    // successful completions preserve the warm generation and Brain choice.
+    if let Some(retirement) = retirement {
+        retirement.request(permit.take().expect("admitted request owns its permit"));
+    }
+}
+
+fn cancelled_inference(context: InferenceContext<'_>) -> GenerateResult {
+    let mut result = failure_with_inference(
+        None,
+        "request cancelled".into(),
+        context,
+        "cancelled",
+        None,
+        None,
+    );
+    if let GenerateResult::Failure(failure) = &mut result
+        && let Some(inference) = &mut failure.inference
+    {
+        inference.cancelled = true;
+    }
+    result
+}
+
 fn failure_timing(context: InferenceContext<'_>, client_total_ms: f64) -> Value {
     json!({
         "phase": if context.admission_slot.is_some() { "admitted" } else { "admission" },
@@ -2157,6 +2288,8 @@ fn inference(
 }
 
 enum RemainingTimeout {
+    GenerationRetired,
+    Cancelled,
     AdmissionTimeout,
     AdmissionError(String),
     PostError(String),
@@ -3796,6 +3929,297 @@ mod tests {
             server: server(),
         });
         (result, transport.completion_posts)
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn ios_generate_cancels_the_shared_queue_without_posting_or_leaving_a_ticket() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let admission = admission_dir(root.path());
+        let held = acquire_local_slot(&admission, 1, None, false, WorkPriority::default()).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = cancelled.clone();
+        let mut request = input(json!("Hello"));
+        request.platform = Platform::Ios;
+        request.journal_path = root.path().to_str().unwrap().to_owned();
+        let (sent, response) = mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let mut transport = ScriptedTransport::new([]);
+            transport.props = Some(HttpResponse {
+                status: 200,
+                body: json!({"n_ctx":32768,"total_slots":1}).to_string(),
+            });
+            transport.tokenize_divisor = Some(1);
+            let mut authority =
+                crate::connect::LocalInferenceAuthority::new(7, 8080, "secret".into(), None);
+            authority.retirement = Some(Arc::new(crate::embedded::InferenceRetirement::default()));
+            let result = generate_with_connected_server_at(
+                request,
+                &mut transport,
+                server(),
+                Some(&mut authority),
+                Instant::now(),
+                Some(&GenerateControl {
+                    priority: WorkPriority::default(),
+                    cancelled: &|| worker_cancelled.load(Ordering::Acquire),
+                }),
+            );
+            sent.send((result, transport.completion_posts)).unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let has_ticket = || {
+            std::fs::read_dir(&admission)
+                .unwrap()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with("wait-"))
+        };
+        while !has_ticket() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            has_ticket(),
+            "Generate did not reach shared admission after authenticated preflight"
+        );
+        cancelled.store(true, Ordering::Release);
+        let (result, posts) = response.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.join().unwrap();
+        assert_eq!(posts, 0);
+        let GenerateResult::Failure(failure) = result else {
+            panic!("cancelled queue generated")
+        };
+        assert!(failure.inference.unwrap().cancelled);
+        assert!(!has_ticket());
+        drop(held);
+        assert!(
+            acquire_local_slot(
+                &admission,
+                1,
+                Some(Duration::from_secs(1)),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn admitted_disconnect_transfers_the_slot_and_rejects_a_stale_queued_generate() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use std::path::Path;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        };
+        struct Interrupted {
+            inner: ScriptedTransport,
+            entered: mpsc::SyncSender<()>,
+            disconnect: mpsc::Receiver<()>,
+        }
+        impl GenerateTransport for Interrupted {
+            fn get(
+                &mut self,
+                b: &str,
+                p: &str,
+                t: Duration,
+                a: Option<&str>,
+            ) -> Result<HttpResponse, String> {
+                self.inner.get(b, p, t, a)
+            }
+            fn post_json(
+                &mut self,
+                b: &str,
+                p: &str,
+                v: &Value,
+                t: Duration,
+                a: Option<&str>,
+            ) -> Result<HttpResponse, String> {
+                if p == "/v1/chat/completions" {
+                    self.entered.send(()).unwrap();
+                    self.disconnect
+                        .recv_timeout(Duration::from_secs(2))
+                        .unwrap();
+                    Err("client connection interrupted".into())
+                } else {
+                    self.inner.post_json(b, p, v, t, a)
+                }
+            }
+        }
+        fn transport() -> ScriptedTransport {
+            let mut transport = ScriptedTransport::new([]);
+            transport.props = Some(HttpResponse {
+                status: 200,
+                body: json!({"n_ctx":32768,"total_slots":1}).to_string(),
+            });
+            transport.tokenize_divisor = Some(1);
+            transport
+        }
+        fn call<T: GenerateTransport>(
+            root: &Path,
+            retirement: Arc<crate::embedded::InferenceRetirement>,
+            refreshes: Arc<AtomicUsize>,
+            transport: &mut T,
+        ) -> GenerateResult {
+            let mut request = input(json!("Hello"));
+            request.platform = Platform::Ios;
+            request.journal_path = root.display().to_string();
+            let mut authority = crate::connect::LocalInferenceAuthority::new(
+                7,
+                8080,
+                "old-attempt-secret".into(),
+                Some(Box::new(move |_| {
+                    refreshes.fetch_add(1, Ordering::SeqCst);
+                    Err("must not refresh inside shared admission".into())
+                })),
+            );
+            authority.retirement = Some(retirement);
+            generate_with_connected_server_at(
+                request,
+                transport,
+                server(),
+                Some(&mut authority),
+                Instant::now(),
+                Some(&GenerateControl {
+                    priority: WorkPriority::default(),
+                    cancelled: &|| false,
+                }),
+            )
+        }
+        let root = tempfile::tempdir().unwrap();
+        let admission = admission_dir(root.path());
+        let retirement = Arc::new(crate::embedded::InferenceRetirement::default());
+        let refreshes = Arc::new(AtomicUsize::new(0));
+        let (sent_entered, entered) = mpsc::sync_channel(1);
+        let (disconnect, disconnected) = mpsc::sync_channel(1);
+        let first_root = root.path().to_owned();
+        let first_retirement = retirement.clone();
+        let first_refresh = refreshes.clone();
+        let first = std::thread::spawn(move || {
+            call(
+                &first_root,
+                first_retirement,
+                first_refresh,
+                &mut Interrupted {
+                    inner: transport(),
+                    entered: sent_entered,
+                    disconnect: disconnected,
+                },
+            )
+        });
+        entered.recv_timeout(Duration::from_secs(2)).unwrap();
+        let second_root = root.path().to_owned();
+        let second_retirement = retirement.clone();
+        let second_refresh = refreshes.clone();
+        let second = std::thread::spawn(move || {
+            let mut transport = transport();
+            let result = call(
+                &second_root,
+                second_retirement,
+                second_refresh,
+                &mut transport,
+            );
+            (result, transport.completion_posts)
+        });
+        let queued = || {
+            std::fs::read_dir(&admission)
+                .unwrap()
+                .flatten()
+                .any(|e| e.file_name().to_string_lossy().starts_with("wait-"))
+        };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !queued() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            queued(),
+            "second call reached admission with its old accepted credential"
+        );
+        disconnect.send(()).unwrap();
+        assert!(matches!(first.join().unwrap(), GenerateResult::Failure(_)));
+        assert!(retirement.requested());
+        let (result, posts) = second.join().unwrap();
+        assert_eq!(posts, 0);
+        assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+        let GenerateResult::Failure(failure) = result else {
+            panic!("stale generation posted")
+        };
+        assert_eq!(failure.reason_code.as_deref(), Some("model_not_ready"));
+        // HTTP has returned, but the owned native join has not acknowledged.
+        assert!(
+            acquire_local_slot(
+                &admission,
+                1,
+                Some(Duration::from_millis(30)),
+                false,
+                WorkPriority::default()
+            )
+            .is_err()
+        );
+        retirement.confirm_joined();
+        assert!(
+            acquire_local_slot(
+                &admission,
+                1,
+                Some(Duration::from_secs(1)),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn successful_ios_completion_keeps_the_native_generation_warm() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use std::sync::Arc;
+        let root = tempfile::tempdir().unwrap();
+        let retirement = Arc::new(crate::embedded::InferenceRetirement::default());
+        let mut request = input(json!("Hello"));
+        request.platform = Platform::Ios;
+        request.journal_path = root.path().display().to_string();
+        let mut transport = ScriptedTransport::new([ok_http(
+            json!({"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}]}),
+        )]);
+        transport.props = Some(HttpResponse {
+            status: 200,
+            body: json!({"n_ctx":32768,"total_slots":1}).to_string(),
+        });
+        transport.tokenize_divisor = Some(1);
+        let mut authority =
+            crate::connect::LocalInferenceAuthority::new(7, 8080, "secret".into(), None);
+        authority.retirement = Some(retirement.clone());
+        let result = generate_with_connected_server_at(
+            request,
+            &mut transport,
+            server(),
+            Some(&mut authority),
+            Instant::now(),
+            Some(&GenerateControl {
+                priority: WorkPriority::default(),
+                cancelled: &|| false,
+            }),
+        );
+        assert!(matches!(result, GenerateResult::Success(_)));
+        assert!(retirement.is_live());
+        assert!(!retirement.requested());
+        assert!(
+            acquire_local_slot(
+                &admission_dir(root.path()),
+                1,
+                Some(Duration::from_secs(1)),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
     }
 
     #[test]

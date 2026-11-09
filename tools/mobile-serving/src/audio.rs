@@ -34,11 +34,73 @@ struct LocalAsr<'a> {
     reused: Cell<bool>,
     inferred: Cell<bool>,
     native_call: &'a dyn Fn(bool),
+    #[cfg(feature = "processing")]
+    admission: Option<LocalAsrAdmission<'a>>,
+}
+
+#[cfg(feature = "processing")]
+struct LocalAsrAdmission<'a> {
+    root: &'a Path,
+    priority: solstone_core_journal_config::work_priority::WorkPriority,
+    cancelled: &'a dyn Fn() -> bool,
+}
+
+#[cfg(feature = "processing")]
+impl LocalAsrAdmission<'_> {
+    fn acquire<T>(
+        &self,
+        loaded: &mut Option<T>,
+        verify_loaded: &Cell<bool>,
+    ) -> Result<solstone_core_local::admission::LocalSlotPermit, String> {
+        use solstone_core_local::admission::{
+            AdmissionError, CheckedAdmissionError, acquire_local_slot_checked, admission_dir,
+        };
+        let result = acquire_local_slot_checked(
+            &admission_dir(self.root),
+            1,
+            None,
+            false,
+            self.priority,
+            self.cancelled,
+            &mut || {
+                // Preserve the immediate warm path, but an actually queued
+                // recognizer must not retain its old model while waiting.
+                loaded.take();
+                verify_loaded.set(false);
+            },
+        )
+        .and_then(|permit| {
+            if (self.cancelled)() {
+                Err(solstone_core_local::admission::CheckedAdmissionError::Cancelled)
+            } else {
+                Ok(permit)
+            }
+        });
+        if result.is_err() {
+            loaded.take();
+            verify_loaded.set(false);
+        }
+        result.map_err(|error| match error {
+            CheckedAdmissionError::Cancelled => "speech-to-text was cancelled".into(),
+            CheckedAdmissionError::Admission(AdmissionError::Timeout) => {
+                "speech-to-text waited too long for local thinking to finish".into()
+            }
+            CheckedAdmissionError::Admission(AdmissionError::Io(error)) => {
+                format!("speech-to-text could not wait for local thinking: {error}")
+            }
+        })
+    }
 }
 
 impl solstone_core_transcribe::EmbeddedAsr for LocalAsr<'_> {
     fn transcribe(&self, samples: &[f32]) -> Result<Value, String> {
         let mut loaded = self.loaded.borrow_mut();
+        #[cfg(feature = "processing")]
+        let _permit = self
+            .admission
+            .as_ref()
+            .map(|admission| admission.acquire(&mut loaded, &self.verify_loaded))
+            .transpose()?;
         if self.verify_loaded.replace(false) {
             if let Err(error) = journal_mobile_audio::Parakeet::verify_model(self.model) {
                 loaded.take();
@@ -439,6 +501,7 @@ impl AudioWorker {
         &self,
         input: &Path,
         attempt: Option<&solstone_core_system::work_retry::Attempt>,
+        priority: solstone_core_journal_config::work_priority::WorkPriority,
         cancelled: &dyn Fn() -> bool,
     ) -> Result<bool, String> {
         let config = self
@@ -537,6 +600,11 @@ impl AudioWorker {
             loaded: RefCell::new(cached.map(|cached| cached.model)),
             load_ms: Cell::new(None),
             native_call: &native_call,
+            admission: cfg!(target_os = "ios").then_some(LocalAsrAdmission {
+                root,
+                priority,
+                cancelled: &cancel,
+            }),
         };
         journal_mobile_audio::install_embedded_ced();
         let result = process_embedded(
@@ -723,6 +791,8 @@ fn run(
         reused: Cell::new(false),
         inferred: Cell::new(false),
         native_call: &native_call,
+        #[cfg(feature = "processing")]
+        admission: None,
     };
     let worker_start_ms = started.elapsed().as_secs_f64() * 1000.;
     *state.status.lock().unwrap() = json!({"state":"ready","worker_start_ms":worker_start_ms,"model_load_ms":asr.load_ms.get()});
@@ -950,6 +1020,143 @@ mod tests {
             recent_completions: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
         }
+    }
+
+    #[cfg(all(feature = "processing", feature = "full-tests"))]
+    #[test]
+    fn local_asr_admission_keeps_immediate_warm_cache_and_releases_before_next_generate() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+        let directory = tempfile::tempdir().unwrap();
+        let model = std::rc::Rc::new(());
+        let mut loaded = Some(model.clone());
+        let verify = Cell::new(true);
+        let admission = LocalAsrAdmission {
+            root: directory.path(),
+            priority: WorkPriority::default(),
+            cancelled: &|| false,
+        };
+        let permit = admission.acquire(&mut loaded, &verify).unwrap();
+        assert!(std::rc::Rc::ptr_eq(loaded.as_ref().unwrap(), &model));
+        assert!(verify.get());
+        assert!(
+            acquire_local_slot(
+                &admission_dir(directory.path()),
+                1,
+                Some(Duration::from_millis(30)),
+                false,
+                WorkPriority::default()
+            )
+            .is_err()
+        );
+        drop(permit);
+        let next = acquire_local_slot(
+            &admission_dir(directory.path()),
+            1,
+            Some(Duration::from_secs(1)),
+            false,
+            WorkPriority::default(),
+        )
+        .unwrap();
+        drop(next);
+        drop(loaded);
+        assert_eq!(std::rc::Rc::strong_count(&model), 1);
+    }
+
+    #[cfg(all(feature = "processing", feature = "full-tests"))]
+    #[test]
+    fn refused_asr_admission_drops_its_native_cache_without_entry() {
+        let directory = tempfile::tempdir().unwrap();
+        let model = std::rc::Rc::new(());
+        let mut loaded = Some(model.clone());
+        let verify = Cell::new(true);
+        let admission = LocalAsrAdmission {
+            root: directory.path(),
+            priority: Default::default(),
+            cancelled: &|| true,
+        };
+        assert!(admission.acquire(&mut loaded, &verify).is_err());
+        assert!(loaded.is_none());
+        assert!(!verify.get());
+        assert_eq!(std::rc::Rc::strong_count(&model), 1);
+        assert!(
+            !directory
+                .path()
+                .join("health/local-inference-admission")
+                .exists()
+        );
+    }
+
+    #[cfg(all(feature = "processing", feature = "full-tests"))]
+    #[test]
+    fn queued_asr_evicts_cache_and_cancels_before_model_entry_on_generation_change() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+        struct Model(Arc<AtomicBool>);
+        impl Drop for Model {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let held = acquire_local_slot(
+            &admission_dir(directory.path()),
+            1,
+            None,
+            false,
+            WorkPriority::default(),
+        )
+        .unwrap();
+        let generation = Arc::new(AtomicU64::new(7));
+        let evicted = Arc::new(AtomicBool::new(false));
+        let entered = Arc::new(AtomicBool::new(false));
+        let (sent, result) = std::sync::mpsc::sync_channel(1);
+        let root = directory.path().to_owned();
+        let (other_generation, other_evicted, other_entered) =
+            (generation.clone(), evicted.clone(), entered.clone());
+        let worker = thread::spawn(move || {
+            let mut cached = Some(Model(other_evicted));
+            let verify = Cell::new(true);
+            let cancelled = || other_generation.load(Ordering::Acquire) != 7;
+            let admission = LocalAsrAdmission {
+                root: &root,
+                priority: WorkPriority::default(),
+                cancelled: &cancelled,
+            };
+            let permit = admission.acquire(&mut cached, &verify);
+            if permit.is_ok() {
+                other_entered.store(true, Ordering::Release);
+            }
+            sent.send((permit.is_err(), cached.is_none(), verify.get()))
+                .unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !evicted.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            evicted.load(Ordering::Acquire),
+            "queued native cache was not released"
+        );
+        assert!(!entered.load(Ordering::Acquire));
+        generation.store(8, Ordering::Release);
+        assert_eq!(
+            result.recv_timeout(Duration::from_secs(2)).unwrap(),
+            (true, true, false)
+        );
+        worker.join().unwrap();
+        assert!(!entered.load(Ordering::Acquire));
+        drop(held);
+        assert!(
+            acquire_local_slot(
+                &admission_dir(directory.path()),
+                1,
+                Some(Duration::from_secs(1)),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
     }
 
     #[cfg(feature = "processing")]
@@ -1626,7 +1833,11 @@ mod tests {
         );
         let worker = host_worker(temp.path());
 
-        assert!(worker.process_host_input(&input, None, &|| false).unwrap());
+        assert!(
+            worker
+                .process_host_input(&input, None, Default::default(), &|| false)
+                .unwrap()
+        );
         let status = worker.status();
         assert_eq!(status["state"], "ready");
         assert!(status["recent_failures"].as_array().unwrap().is_empty());
@@ -1647,7 +1858,11 @@ mod tests {
         assert!(!input.with_extension("npz").exists());
         assert_eq!(std::fs::read(&input).unwrap(), original);
 
-        assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
+        assert!(
+            !worker
+                .process_host_input(&input, None, Default::default(), &|| false)
+                .unwrap()
+        );
         assert!(
             worker.status()["recent_failures"]
                 .as_array()
@@ -1655,7 +1870,11 @@ mod tests {
                 .is_empty()
         );
         worker.resume();
-        assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
+        assert!(
+            !worker
+                .process_host_input(&input, None, Default::default(), &|| false)
+                .unwrap()
+        );
         assert!(
             worker.status()["recent_failures"]
                 .as_array()
@@ -1678,7 +1897,11 @@ mod tests {
         );
         let worker = host_worker(temp.path());
         worker.cancel();
-        assert!(!worker.process_host_input(&input, None, &|| false).unwrap());
+        assert!(
+            !worker
+                .process_host_input(&input, None, Default::default(), &|| false)
+                .unwrap()
+        );
         assert!(
             worker.status()["recent_failures"]
                 .as_array()
@@ -1805,7 +2028,7 @@ mod tests {
             };
             assert!(
                 !worker
-                    .process_host_input(&input, None, &checkpoint)
+                    .process_host_input(&input, None, Default::default(), &checkpoint)
                     .unwrap()
             );
             assert!(

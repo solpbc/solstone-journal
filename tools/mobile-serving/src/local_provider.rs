@@ -45,6 +45,28 @@ pub(crate) fn request_stop(journal: &Path) {
 /// read from a port file or retained across worker replacement/Stop.
 pub(crate) fn authority(journal: &Path) -> Option<solstone_core_local::LocalInferenceAuthority> {
     let owner = Arc::downgrade(&current(journal)?);
+    if cfg!(target_os = "ios") {
+        return Some(solstone_core_local::LocalInferenceAuthority::new_embedded(
+            Box::new(move |deadline| {
+                loop {
+                    let owner = owner
+                        .upgrade()
+                        .ok_or_else(|| "local provider owner retired".to_owned())?;
+                    if owner.shared.launch_credentials_closed()
+                        || owner.root.revalidate_canonical_binding().is_err()
+                        || Instant::now() >= deadline
+                    {
+                        return Err("local provider credentials unavailable".into());
+                    }
+                    if let Some(snapshot) = owner.shared.embedded_inference_credentials() {
+                        return Ok(snapshot);
+                    }
+                    drop(owner);
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+            }),
+        ));
+    }
     Some(solstone_core_local::LocalInferenceAuthority::new(
         0,
         0,

@@ -31,6 +31,8 @@ pub(crate) enum LocalAuthority {
     Embedded {
         // Engine Drop joins native work before the following holds are dropped.
         engine: Box<dyn Engine>,
+        startup_permit: Option<solstone_core_local::admission::LocalSlotPermit>,
+        inference_retirement: Arc<embedded::InferenceRetirement>,
         generation: u64,
         host_pid: u32,
         _holds: Vec<Arc<dyn Send + Sync>>,
@@ -72,8 +74,15 @@ impl LocalAuthority {
         match self {
             Self::Process(authority) => authority.poll(),
             Self::Embedded {
-                engine, generation, ..
+                engine,
+                generation,
+                startup_permit,
+                inference_retirement,
+                ..
             } => {
+                if inference_retirement.requested() {
+                    engine.request_stop();
+                }
                 if !engine.is_finished() {
                     return Ok(None);
                 }
@@ -84,6 +93,8 @@ impl LocalAuthority {
                 {
                     return Err(io::Error::other("native retirement is not confirmed"));
                 }
+                startup_permit.take();
+                inference_retirement.confirm_joined();
                 Ok(Some(snapshot.engine_result))
             }
         }
@@ -93,7 +104,11 @@ impl LocalAuthority {
         match self {
             Self::Process(authority) => authority.terminate(timeout),
             Self::Embedded {
-                engine, generation, ..
+                engine,
+                generation,
+                startup_permit,
+                inference_retirement,
+                ..
             } => {
                 engine.request_stop();
                 let snapshot = engine
@@ -107,10 +122,33 @@ impl LocalAuthority {
                         "native retirement is not confirmed",
                     )));
                 }
+                startup_permit.take();
+                inference_retirement.confirm_joined();
                 Ok(())
             }
         }
     }
+}
+
+fn acquire_startup_permit(
+    shared: &LocalRuntimeShared,
+    journal: &Path,
+    timeout: Duration,
+) -> Result<
+    solstone_core_local::admission::LocalSlotPermit,
+    solstone_core_local::admission::CheckedAdmissionError,
+> {
+    use solstone_core_local::admission::{acquire_local_slot_checked, admission_dir};
+    acquire_local_slot_checked(
+        &admission_dir(journal),
+        1,
+        Some(timeout),
+        false,
+        // Starting the owner's runtime is immediate work with no dated source.
+        solstone_core_journal_config::work_priority::WorkPriority::default(),
+        &|| shared.launch_credentials_closed() || !shared.launch_binding_valid(journal),
+        &mut || {},
+    )
 }
 
 fn outcome(status: LaunchOutcomeStatus, code: &'static str) -> ProviderLaunchOutcome {
@@ -188,6 +226,34 @@ pub(super) fn start_embedded(
         return outcome(LaunchOutcomeStatus::LaunchFailed, "launch-failed");
     }
     let token: String = entropy.iter().map(|byte| format!("{byte:02x}")).collect();
+    let waiting = Instant::now();
+    let startup_permit = if cfg!(target_os = "ios") {
+        use solstone_core_local::admission::{AdmissionError, CheckedAdmissionError};
+        match acquire_startup_permit(shared, journal, warmup_timeout) {
+            Ok(permit) => Some(permit),
+            Err(CheckedAdmissionError::Cancelled) => {
+                return outcome(LaunchOutcomeStatus::NotReady, "intent-removed");
+            }
+            Err(CheckedAdmissionError::Admission(AdmissionError::Timeout)) => {
+                return outcome(LaunchOutcomeStatus::WarmupTimeout, "warmup-timeout");
+            }
+            Err(CheckedAdmissionError::Admission(AdmissionError::Io(_))) => {
+                return outcome(LaunchOutcomeStatus::LaunchFailed, "launch-failed");
+            }
+        }
+    } else {
+        None
+    };
+    if startup_permit.is_some()
+        && (shared.launch_credentials_closed() || !shared.launch_binding_valid(journal))
+    {
+        return outcome(LaunchOutcomeStatus::NotReady, "intent-removed");
+    }
+    let warmup_timeout = if startup_permit.is_some() {
+        warmup_timeout.saturating_sub(waiting.elapsed())
+    } else {
+        warmup_timeout
+    };
     let engine = match factory.start(embedded::Launch {
         identity: identity.clone(),
         generation: state.generation,
@@ -201,6 +267,8 @@ pub(super) fn start_embedded(
     };
     let authority = LocalAuthority::Embedded {
         engine,
+        startup_permit,
+        inference_retirement: Arc::new(embedded::InferenceRetirement::default()),
         generation: state.generation,
         host_pid: std::process::id(),
         _holds: vec![Arc::new(model_hold)],
@@ -293,6 +361,12 @@ fn warmup_native(
             && let Some(port) = snapshot.port
             && probe(port.get(), &token) == WarmupHealth::Ready
         {
+            // The startup permit belongs to this authority through failed/late
+            // warmup and every unconfirmed join. Only authenticated readiness
+            // releases it while the native worker remains alive.
+            if let LocalAuthority::Embedded { startup_permit, .. } = &mut authority {
+                startup_permit.take();
+            }
             shared.stage_launch_credentials(fence, port.get(), token.into_bytes());
             let managed = ManagedProcess {
                 id: process_id.clone(),
@@ -491,16 +565,18 @@ mod tests {
     }
 
     struct Native {
+        generation: u64,
         finished: Arc<AtomicBool>,
         fail_join: Arc<AtomicBool>,
         joins: Arc<AtomicUsize>,
         held: Arc<AtomicBool>,
         ready: bool,
+        stops: Arc<AtomicUsize>,
     }
     impl Engine for Native {
         fn snapshot(&self) -> Result<embedded::Snapshot, String> {
             Ok(embedded::Snapshot {
-                generation: 7,
+                generation: self.generation,
                 phase: if self.is_finished() {
                     Phase::Stopped
                 } else if self.ready {
@@ -513,7 +589,9 @@ mod tests {
                 error: String::new(),
             })
         }
-        fn request_stop(&self) {}
+        fn request_stop(&self) {
+            self.stops.fetch_add(1, Ordering::SeqCst);
+        }
         fn is_finished(&self) -> bool {
             self.finished.load(Ordering::SeqCst)
         }
@@ -545,18 +623,35 @@ mod tests {
         Arc<AtomicBool>,
         Arc<AtomicUsize>,
     ) {
+        native_authority_at(fail_join, ready, 7)
+    }
+
+    fn native_authority_at(
+        fail_join: bool,
+        ready: bool,
+        generation: u64,
+    ) -> (
+        LocalAuthority,
+        Arc<AtomicBool>,
+        Arc<AtomicBool>,
+        Arc<AtomicUsize>,
+    ) {
         let held = Arc::new(AtomicBool::new(true));
         let finished = Arc::new(AtomicBool::new(false));
         let joins = Arc::new(AtomicUsize::new(0));
         let authority = LocalAuthority::Embedded {
             engine: Box::new(Native {
+                generation,
                 finished: Arc::clone(&finished),
                 fail_join: Arc::new(AtomicBool::new(fail_join)),
                 joins: Arc::clone(&joins),
                 held: Arc::clone(&held),
                 ready,
+                stops: Arc::new(AtomicUsize::new(0)),
             }),
-            generation: 7,
+            startup_permit: None,
+            inference_retirement: Arc::new(embedded::InferenceRetirement::default()),
+            generation,
             host_pid: 19,
             _holds: vec![Arc::new(HeldModel(Arc::clone(&held)))],
         };
@@ -588,6 +683,509 @@ mod tests {
         assert_eq!(joins.load(Ordering::SeqCst), 2);
         drop(authority);
         assert!(!held.load(Ordering::SeqCst));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn startup_permit_survives_timeout_and_failed_join_until_real_retirement() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use solstone_core_local::admission::{AdmissionError, acquire_local_slot, admission_dir};
+        let directory = tempfile::tempdir().unwrap();
+        let canonical = directory.path().canonicalize().unwrap();
+        let journal = canonical.as_path();
+        let acquire = || {
+            acquire_local_slot(
+                &admission_dir(journal),
+                1,
+                Some(Duration::from_millis(100)),
+                false,
+                WorkPriority::default(),
+            )
+        };
+        // The same bounded probe must acquire an unheld slot before it can
+        // establish exclusion while native startup or retirement holds it.
+        drop(acquire().unwrap());
+        let shared = LocalRuntimeShared::default();
+        shared.retain_bound_root(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(journal).unwrap(),
+        ));
+        let (mut authority, _, finished, _) = native_authority(true, false);
+        if let LocalAuthority::Embedded { startup_permit, .. } = &mut authority {
+            *startup_permit =
+                Some(acquire_startup_permit(&shared, journal, Duration::from_secs(1)).unwrap());
+        }
+        let fence = fence(7);
+        let result = warmup_native(
+            &shared,
+            &clock(None),
+            authority,
+            &fence,
+            "secret".into(),
+            Duration::ZERO,
+            Duration::ZERO,
+            |_, _| WarmupHealth::Loading,
+        );
+        assert_eq!(result.status, LaunchOutcomeStatus::WarmupTimeout);
+        let mut authority = shared.take_child(&result.managed.unwrap().id).unwrap();
+        assert!(matches!(acquire(), Err(AdmissionError::Timeout)));
+        assert!(authority.terminate(Duration::ZERO).is_err());
+        assert!(!finished.load(Ordering::Acquire));
+        assert!(matches!(acquire(), Err(AdmissionError::Timeout)));
+        authority.terminate(Duration::ZERO).unwrap();
+        assert!(finished.load(Ordering::Acquire));
+        drop(acquire().unwrap());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn startup_root_replacement_refuses_before_native_entry() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = directory.path().join("journal");
+        std::fs::create_dir(&journal).unwrap();
+        let journal = journal.canonicalize().unwrap();
+        let shared = LocalRuntimeShared::default();
+        shared.retain_bound_root(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
+        ));
+        std::fs::rename(&journal, directory.path().join("old")).unwrap();
+        std::fs::create_dir(&journal).unwrap();
+        assert!(matches!(
+            acquire_startup_permit(&shared, &journal, Duration::from_secs(1)),
+            Err(solstone_core_local::admission::CheckedAdmissionError::Cancelled)
+        ));
+        assert!(!journal.join("health/local-inference-admission").exists());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn authenticated_ready_releases_startup_slot_before_generate() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+        let directory = tempfile::tempdir().unwrap();
+        let canonical = directory.path().canonicalize().unwrap();
+        let journal = canonical.as_path();
+        let shared = LocalRuntimeShared::default();
+        shared.retain_bound_root(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(journal).unwrap(),
+        ));
+        let (mut authority, _, finished, _) = native_authority(false, true);
+        if let LocalAuthority::Embedded { startup_permit, .. } = &mut authority {
+            *startup_permit =
+                Some(acquire_startup_permit(&shared, journal, Duration::from_secs(1)).unwrap());
+        }
+        let f = fence(7);
+        let result = warmup_native(
+            &shared,
+            &clock(None),
+            authority,
+            &f,
+            "secret".into(),
+            Duration::from_secs(1),
+            Duration::ZERO,
+            |port, token| {
+                assert_eq!((port, token), (1234, "secret"));
+                assert!(
+                    acquire_local_slot(
+                        &admission_dir(journal),
+                        1,
+                        Some(Duration::from_millis(30)),
+                        false,
+                        WorkPriority::default()
+                    )
+                    .is_err()
+                );
+                classify_properties(
+                    200,
+                    r#"{"default_generation_settings":{"n_ctx":32768},"total_slots":1}"#,
+                )
+            },
+        );
+        assert_eq!(result.status, LaunchOutcomeStatus::Ready);
+        assert!(!finished.load(Ordering::Acquire));
+        let generate = acquire_local_slot(
+            &admission_dir(journal),
+            1,
+            Some(Duration::from_secs(1)),
+            false,
+            WorkPriority::default(),
+        )
+        .unwrap();
+        drop(generate);
+        let (_, mut authority) = shared.take_ready_child(&f).unwrap();
+        authority.terminate(Duration::ZERO).unwrap();
+        assert!(finished.load(Ordering::Acquire));
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn late_generation_retains_startup_slot_until_joined_cleanup() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+        let directory = tempfile::tempdir().unwrap();
+        let journal = directory.path().canonicalize().unwrap();
+        let shared = LocalRuntimeShared::default();
+        shared.retain_bound_root(Arc::new(
+            solstone_core_journal_io::JournalRoot::open(&journal).unwrap(),
+        ));
+        let (mut authority, _, finished, _) = native_authority(false, true);
+        if let LocalAuthority::Embedded { startup_permit, .. } = &mut authority {
+            *startup_permit =
+                Some(acquire_startup_permit(&shared, &journal, Duration::from_secs(1)).unwrap());
+        }
+        let result = warmup_native(
+            &shared,
+            &clock(None),
+            authority,
+            &fence(8),
+            "secret".into(),
+            Duration::from_secs(1),
+            Duration::ZERO,
+            |_, _| panic!("stale generation must not probe"),
+        );
+        assert_eq!(result.status, LaunchOutcomeStatus::LaunchFailed);
+        assert!(!finished.load(Ordering::Acquire));
+        assert!(
+            acquire_local_slot(
+                &admission_dir(&journal),
+                1,
+                Some(Duration::from_millis(30)),
+                false,
+                WorkPriority::default()
+            )
+            .is_err()
+        );
+        let mut authority = shared.take_child(&result.managed.unwrap().id).unwrap();
+        authority.terminate(Duration::ZERO).unwrap();
+        assert!(finished.load(Ordering::Acquire));
+        assert!(
+            acquire_local_slot(
+                &admission_dir(&journal),
+                1,
+                Some(Duration::from_secs(1)),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn admitted_error_keeps_asr_excluded_through_active_work_and_failed_join() {
+        use solstone_core_journal_config::work_priority::WorkPriority;
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+        let directory = tempfile::tempdir().unwrap();
+        let root = admission_dir(directory.path());
+        let retirement = Arc::new(embedded::InferenceRetirement::default());
+        let held = Arc::new(AtomicBool::new(true));
+        let finished = Arc::new(AtomicBool::new(false));
+        let stops = Arc::new(AtomicUsize::new(0));
+        let mut authority = LocalAuthority::Embedded {
+            engine: Box::new(Native {
+                generation: 7,
+                finished: finished.clone(),
+                fail_join: Arc::new(AtomicBool::new(true)),
+                joins: Arc::new(AtomicUsize::new(0)),
+                held: held.clone(),
+                ready: true,
+                stops: stops.clone(),
+            }),
+            startup_permit: None,
+            inference_retirement: retirement.clone(),
+            generation: 7,
+            host_pid: 19,
+            _holds: vec![Arc::new(HeldModel(held))],
+        };
+        let permit = acquire_local_slot(&root, 1, None, false, WorkPriority::default()).unwrap();
+        retirement.request(permit);
+        let worker_root = root.clone();
+        let (sent, entered) = std::sync::mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let permit = acquire_local_slot(
+                &worker_root,
+                1,
+                Some(Duration::from_secs(2)),
+                false,
+                WorkPriority::default(),
+            )
+            .unwrap();
+            sent.send(()).unwrap();
+            drop(permit);
+        });
+        assert_eq!(authority.poll().unwrap(), None);
+        assert!(stops.load(Ordering::Acquire) > 0);
+        assert!(!finished.load(Ordering::Acquire));
+        assert!(entered.recv_timeout(Duration::from_millis(30)).is_err());
+        finished.store(true, Ordering::Release);
+        assert!(authority.poll().is_err(), "first actual join was refused");
+        assert!(entered.recv_timeout(Duration::from_millis(30)).is_err());
+        authority.terminate(Duration::ZERO).unwrap();
+        entered.recv_timeout(Duration::from_secs(1)).unwrap();
+        worker.join().unwrap();
+        assert!(!retirement.is_live());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn accepted_retirement_owner_is_attempt_and_credential_bound() {
+        use super::super::store::ReadyProcessLookup;
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+        let root = tempfile::tempdir().unwrap();
+        let shared = LocalRuntimeShared::default();
+        let first = fence(7);
+        let mut second = fence(7);
+        second.attempt = 2;
+        for (f, token) in [(&first, "first-secret"), (&second, "second-secret")] {
+            let (authority, _, _, _) = native_authority(false, true);
+            let outcome = warmup_native(
+                &shared,
+                &clock(None),
+                authority,
+                f,
+                token.into(),
+                Duration::from_secs(1),
+                Duration::ZERO,
+                |_, _| WarmupHealth::Ready,
+            );
+            assert_eq!(outcome.status, LaunchOutcomeStatus::Ready);
+            shared.accept_ready(f);
+            if f.attempt == 1 {
+                // Capture the exact old authority before publishing a replacement.
+                let old = shared.embedded_inference_credentials().unwrap();
+                let permit = acquire_local_slot(
+                    &admission_dir(root.path()),
+                    1,
+                    None,
+                    false,
+                    Default::default(),
+                )
+                .unwrap();
+                old.retirement.request(permit);
+            }
+        }
+        let current = shared.embedded_inference_credentials().unwrap();
+        assert_eq!(
+            (current.generation, current.port, current.token.as_slice()),
+            (7, 1234, b"second-secret".as_slice())
+        );
+        assert!(current.retirement.is_live());
+        let (_, mut old) = shared.take_ready_child(&first).unwrap();
+        old.terminate(Duration::ZERO).unwrap();
+        assert!(
+            current.retirement.is_live(),
+            "an old interrupted request cannot stop its replacement"
+        );
+        let (_, mut new) = shared.take_ready_child(&second).unwrap();
+        new.terminate(Duration::ZERO).unwrap();
+        assert!(!current.retirement.is_live());
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn interrupted_native_generation_reconciles_to_ready_without_changing_brain_choice() {
+        use super::super::store::ReadyProcessLookup;
+        use super::super::{
+            FileRuntimeStore, LifecycleSeam, LocalLifecycleSeam, NoopWorkers,
+            ProviderRuntimeCoordinator, ProviderRuntimeNow, ReconcileContext, RuntimeStore,
+            StopCleanupStatus, VecEventSink,
+        };
+        use solstone_core_local::admission::{acquire_local_slot, admission_dir};
+
+        struct Lifecycle {
+            actual: LocalLifecycleSeam,
+            starts: Vec<ProviderFence>,
+        }
+        impl LifecycleSeam for Lifecycle {
+            fn dispatch_start(&mut self, _: &ProviderRuntimeState, fence: &ProviderFence) {
+                self.starts.push(fence.clone());
+            }
+            fn dispatch_stop(&mut self, state: &ProviderRuntimeState, fence: &ProviderFence) {
+                self.actual.dispatch_stop(state, fence);
+            }
+        }
+        fn reconcile(
+            coordinator: &ProviderRuntimeCoordinator,
+            seconds: f64,
+            state: &mut ProviderRuntimeState,
+            processes: &mut Vec<ManagedProcess>,
+            lifecycle: &mut Lifecycle,
+            store: &mut FileRuntimeStore,
+        ) {
+            coordinator.reconcile(
+                ProviderRuntimeNow {
+                    monotonic_seconds: seconds,
+                },
+                state,
+                processes,
+                &mut ReconcileContext {
+                    truth: &mut NoopWorkers,
+                    lifecycle,
+                    probe: &mut NoopWorkers,
+                    store,
+                    sink: &mut VecEventSink::default(),
+                    gate: None,
+                },
+            );
+        }
+
+        let directory = tempfile::tempdir().unwrap();
+        let journal = directory.path().canonicalize().unwrap();
+        let config = solstone_core_journal_config::get_journal_config_path(&journal);
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        let choice = br#"{"setup":{"thinking_choice":"local"},"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}"#;
+        std::fs::write(&config, choice).unwrap();
+        let shared = Arc::new(LocalRuntimeShared::default());
+        let runtime_clock: Arc<dyn RuntimeClock> = Arc::new(clock(None));
+        let coordinator = ProviderRuntimeCoordinator::with_incarnation("owner");
+        let first = fence(7);
+        let (authority, _, finished, _) = native_authority(false, true);
+        let initial = warmup_native(
+            &shared,
+            runtime_clock.as_ref(),
+            authority,
+            &first,
+            "first-token".into(),
+            Duration::from_secs(1),
+            Duration::ZERO,
+            |_, _| WarmupHealth::Ready,
+        );
+        shared.accept_ready(&first);
+        let mut processes = vec![initial.managed.unwrap()];
+        let mut state = ProviderRuntimeState::new(ProviderName::Local);
+        state.generation = 7;
+        state.retry.attempt_count = 1;
+        state.desired_fingerprint = first.fingerprint.clone();
+        state.has_plan = true;
+        state.latest_phase = RuntimePhase::Ready;
+        let mut store = FileRuntimeStore::new(
+            &journal,
+            ProviderName::Local,
+            shared.clone(),
+            runtime_clock.clone(),
+        );
+        let mut lifecycle = Lifecycle {
+            actual: LocalLifecycleSeam::new(shared.clone(), runtime_clock.clone()),
+            starts: Vec::new(),
+        };
+        let accepted = shared.embedded_inference_credentials().unwrap();
+        accepted.retirement.request(
+            acquire_local_slot(&admission_dir(&journal), 1, None, false, Default::default())
+                .unwrap(),
+        );
+        assert!(
+            shared
+                .observe_exited_current_process(&processes, Instant::now())
+                .is_none()
+        );
+        finished.store(true, Ordering::Release);
+        let exited = shared
+            .observe_exited_current_process(&processes, Instant::now())
+            .unwrap();
+        coordinator.observe_process_exit(
+            ProviderRuntimeNow {
+                monotonic_seconds: 10.0,
+            },
+            &mut state,
+            &processes,
+            &exited,
+            &mut store,
+            &mut VecEventSink::default(),
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::Backoff);
+        assert!(!accepted.retirement.is_live());
+        assert!(shared.embedded_inference_credentials().is_none());
+        reconcile(
+            &coordinator,
+            10.0,
+            &mut state,
+            &mut processes,
+            &mut lifecycle,
+            &mut store,
+        );
+        let work = state.stop_cleanup.as_mut().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while work.result.is_none() && Instant::now() < deadline {
+            work.result = shared.take_stop_cleanup_result(&work.fence);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            work.result.as_ref().unwrap().status,
+            StopCleanupStatus::Stopped
+        );
+        reconcile(
+            &coordinator,
+            11.0,
+            &mut state,
+            &mut processes,
+            &mut lifecycle,
+            &mut store,
+        );
+        assert!(processes.is_empty());
+        assert!(lifecycle.starts.is_empty());
+        // Re-observe the same current desired candidate, as LocalTruthSeam does;
+        // neither a retry token nor owner Stop/Start is needed within the budget.
+        state.truth.as_mut().unwrap().result = Some(super::super::ProviderTruthObservation {
+            provider: ProviderName::Local,
+            phase: RuntimePhase::Starting,
+            reason_code: Some(ReasonCode::known("launch-requested")),
+            desired_fingerprint: first.fingerprint.clone(),
+            has_plan: true,
+            boot_required: false,
+            detail: None,
+        });
+        reconcile(
+            &coordinator,
+            12.0,
+            &mut state,
+            &mut processes,
+            &mut lifecycle,
+            &mut store,
+        );
+        let replacement = state.start.as_ref().unwrap().fence.clone();
+        assert_eq!(lifecycle.starts.as_slice(), std::slice::from_ref(&replacement));
+        assert_eq!((replacement.generation, replacement.attempt), (8, 2));
+        let (authority, _, _, _) = native_authority_at(false, true, replacement.generation);
+        let ready = warmup_native(
+            &shared,
+            runtime_clock.as_ref(),
+            authority,
+            &replacement,
+            "replacement-token".into(),
+            Duration::from_secs(1),
+            Duration::ZERO,
+            |_, _| WarmupHealth::Ready,
+        );
+        assert_eq!(ready.status, LaunchOutcomeStatus::Ready);
+        state.start.as_mut().unwrap().result = Some(ready);
+        reconcile(
+            &coordinator,
+            12.1,
+            &mut state,
+            &mut processes,
+            &mut lifecycle,
+            &mut store,
+        );
+        assert_eq!(state.latest_phase, RuntimePhase::Ready);
+        assert!(!state.shutdown_requested);
+        assert_eq!(state.desired_fingerprint, first.fingerprint);
+        assert_eq!(std::fs::read(&config).unwrap(), choice);
+        assert!(
+            store
+                .read_retry_token(ProviderName::Local)
+                .unwrap()
+                .is_none()
+        );
+        let current = shared.embedded_inference_credentials().unwrap();
+        assert_eq!(
+            (current.generation, current.token.as_slice()),
+            (8, b"replacement-token".as_slice())
+        );
+        assert!(current.retirement.is_live());
+        assert!(!Arc::ptr_eq(&current.retirement, &accepted.retirement));
+        let (_, mut authority) = shared.take_ready_child(&replacement).unwrap();
+        authority.terminate(Duration::ZERO).unwrap();
+        shared.remove_ready_process(&replacement);
+        assert!(shared.reap_finished_workers());
     }
 
     #[test]

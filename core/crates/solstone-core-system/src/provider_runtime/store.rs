@@ -266,6 +266,16 @@ struct LocalRuntimeResults {
 }
 
 impl LocalRuntimeShared {
+    pub(super) fn launch_binding_valid(&self, journal: &Path) -> bool {
+        self.bound_root
+            .lock()
+            .expect("local runtime shared lock")
+            .as_ref()
+            .is_some_and(|root| {
+                root.canonical_path() == journal && root.revalidate_canonical_binding().is_ok()
+            })
+    }
+
     pub fn retain_bound_root(&self, root: Arc<solstone_core_journal_io::JournalRoot>) {
         self.bound_root
             .lock()
@@ -787,6 +797,57 @@ impl LocalRuntimeShared {
         let key = creds.accepted.as_ref()?;
         let (port, token) = creds.staged.get(key)?;
         Some((key.generation, *port, token.clone()))
+    }
+
+    /// Capture the native retirement owner from the same accepted fence/attempt
+    /// as the credential. A later operation cannot redirect an old handoff to a
+    /// replacement, even if its host PID, generation number or port is reused.
+    pub fn embedded_inference_credentials(
+        &self,
+    ) -> Option<solstone_core_local::embedded::InferenceCredentials> {
+        let (key, port, token) = {
+            let creds = self
+                .launch_credentials
+                .lock()
+                .expect("local runtime shared lock");
+            if creds.closed || !creds.admitted {
+                return None;
+            }
+            let key = creds.accepted.as_ref()?;
+            let (port, token) = creds.staged.get(key)?;
+            (key.clone(), *port, token.clone())
+        };
+        let retirement = {
+            let children = self
+                .ready_children
+                .lock()
+                .expect("local runtime shared lock");
+            match &children.get(&key)?.authority {
+                LocalAuthority::Embedded {
+                    generation,
+                    inference_retirement,
+                    ..
+                } if *generation == key.generation => Arc::clone(inference_retirement),
+                _ => return None,
+            }
+        };
+        let creds = self
+            .launch_credentials
+            .lock()
+            .expect("local runtime shared lock");
+        if creds.closed
+            || !creds.admitted
+            || creds.accepted.as_ref() != Some(&key)
+            || creds.staged.get(&key) != Some(&(port, token.clone()))
+        {
+            return None;
+        }
+        Some(solstone_core_local::embedded::InferenceCredentials {
+            generation: key.generation,
+            port,
+            token,
+            retirement,
+        })
     }
 
     pub(super) fn admitted_generation_matches(

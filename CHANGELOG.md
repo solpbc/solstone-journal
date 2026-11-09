@@ -24,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
 - fixed an intermittent failure that could leave new recordings unprocessed after your journal started.
 - importing a Strava download again now picks up a description, private note or gear you changed on Strava, and search finds the new words.

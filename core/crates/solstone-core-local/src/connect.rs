@@ -25,6 +25,8 @@ pub struct ConnectInput {
 }
 
 pub type RefreshAuthorityFn = Box<dyn FnMut(Instant) -> Result<(u64, u16, String), String> + Send>;
+pub type RefreshEmbeddedAuthorityFn =
+    Box<dyn FnMut(Instant) -> Result<crate::embedded::InferenceCredentials, String> + Send>;
 
 pub struct LocalInferenceAuthority {
     pub generation: u64,
@@ -32,6 +34,8 @@ pub struct LocalInferenceAuthority {
     pub token: String,
     pub refresh: Option<RefreshAuthorityFn>,
     pub refreshed: bool,
+    embedded_refresh: Option<RefreshEmbeddedAuthorityFn>,
+    pub(crate) retirement: Option<std::sync::Arc<crate::embedded::InferenceRetirement>>,
     deadline: Instant,
 }
 
@@ -41,7 +45,10 @@ impl std::fmt::Debug for LocalInferenceAuthority {
             .field("generation", &self.generation)
             .field("port", &self.port)
             .field("token_len", &self.token.len())
-            .field("has_refresh", &self.refresh.is_some())
+            .field(
+                "has_refresh",
+                &(self.refresh.is_some() || self.embedded_refresh.is_some()),
+            )
             .field("refreshed", &self.refreshed)
             .finish()
     }
@@ -72,8 +79,16 @@ impl LocalInferenceAuthority {
             token,
             refresh,
             refreshed: false,
+            embedded_refresh: None,
+            retirement: None,
             deadline: Instant::now() + Duration::from_secs(120),
         }
+    }
+
+    pub fn new_embedded(refresh: RefreshEmbeddedAuthorityFn) -> Self {
+        let mut authority = Self::new(0, 0, String::new(), None);
+        authority.embedded_refresh = Some(refresh);
+        authority
     }
 
     pub fn token(&self) -> &str {
@@ -92,7 +107,17 @@ impl LocalInferenceAuthority {
     pub fn begin_operation(&mut self, deadline: Instant) -> Result<(), String> {
         self.deadline = deadline;
         self.refreshed = false;
-        if let Some(refresh) = self.refresh.as_mut() {
+        self.retirement = None;
+        if let Some(refresh) = self.embedded_refresh.as_mut() {
+            self.token.clear();
+            self.port = 0;
+            self.retirement = None;
+            let snapshot = refresh(deadline)?;
+            self.generation = snapshot.generation;
+            self.port = snapshot.port;
+            self.token = String::from_utf8(snapshot.token).map_err(|error| error.to_string())?;
+            self.retirement = Some(snapshot.retirement);
+        } else if let Some(refresh) = self.refresh.as_mut() {
             self.token.clear();
             self.port = 0;
             let (generation, port, token) = refresh(deadline)?;
@@ -109,6 +134,11 @@ impl LocalInferenceAuthority {
     pub fn refresh_if_needed(&mut self) -> Result<bool, String> {
         if self.refreshed {
             return Ok(false);
+        }
+        if self.embedded_refresh.is_some() {
+            self.begin_operation(self.deadline)?;
+            self.refreshed = true;
+            return Ok(true);
         }
         if let Some(refresh_fn) = self.refresh.as_mut() {
             self.refreshed = true;
