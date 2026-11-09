@@ -163,6 +163,10 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   assert.deepStrictEqual(K('erase', [seg('a'), seg('c')]).paragraphs, [C.bodyMany, C.staysMany]);
   assert.deepStrictEqual(K('erase', [mem('b')]).paragraphs, [C.bodyOne, C.staysOne, C.agentOne]);
   assert.strictEqual(K('empty', [seg('a')]).title, C.confirmEmpty);
+  // Nothing was made from a previous journal, so that line stays off.
+  const previous = { id: 'previous-20261027T150200Z', kind: 'previous_journal' };
+  assert.deepStrictEqual(K('erase', [previous]).paragraphs, [C.bodyOne]);
+  assert.deepStrictEqual(K('erase', [previous, seg('c')]).paragraphs, [C.bodyMany, C.staysMany]);
 
   // Results: what the answer says, checked against the reloaded list.
   const items = [seg('a'), seg('c')];
@@ -213,6 +217,8 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
   `, hist);
   const web = { surface: 'web', page: 'settings' };
   assert.strictEqual(hist.removalHow({ ...web, event: 'trashed' }), `${hist.REMOVAL_EVENT.trashed} IN-SETTINGS`);
+  // "in backup" would read as being in the owner's backup.
+  assert.strictEqual(hist.removalHow({ surface: 'web', page: 'settings', event: 'trashed', unit: { kind: 'previous_journal' } }), hist.REMOVAL_EVENT.trashed);
   assert.strictEqual(hist.removalHow({ surface: 'cli', event: 'recovered' }), `${hist.REMOVAL_EVENT.recovered} BY-CLI`);
   assert.strictEqual(hist.removalHow({ surface: 'policy', policy: 'trash', event: 'erased' }), 'TIMER');
   assert.strictEqual(hist.removalHow({ ...web, event: 'removed', action: 'segment_delete' }), 'STAGE1 IN-SETTINGS');

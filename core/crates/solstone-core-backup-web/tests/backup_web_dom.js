@@ -194,6 +194,7 @@ class Element {
   }
 
   focus() { this.ownerDocument.activeElement = this; }
+  scrollIntoView() {}
 
   click() {
     if (this.tagName === 'A' && this.download) this.ownerDocument.downloads.push({ url: this.href, name: this.download });
@@ -429,9 +430,19 @@ function fixture(document) {
   const reopen = add(operated, 'a', { 'data-hosted-restore-reopen': '', 'data-solstone-outside': '', hidden: '' });
   const byo = add(restore, 'div', { 'data-restore-lane-panel': 'byo', hidden: '' });
   add(byo, 'form', { 'data-restore-form': '' });
+  const gate = add(restore, 'div', { 'data-restore-gate': '', hidden: '' });
+  const gateTitle = add(gate, 'h3', { 'data-restore-gate-title': '' });
+  const gateLines = add(gate, 'div', { 'data-restore-gate-lines': '' });
+  const gateMore = add(gate, 'details', { 'data-restore-gate-more': '' });
+  const gateConfirm = add(gate, 'button', { type: 'button', 'data-action': 'restore-gate-confirm' });
+  const gateCancel = add(gate, 'button', { type: 'button', 'data-action': 'restore-gate-cancel' });
+  const previous = add(root, 'section', { 'data-previous-journal': '', hidden: '' });
+  const previousRows = add(previous, 'div', { 'data-previous-rows': '' });
+  const previousHelp = add(previous, 'p', { 'data-previous-help': '' });
+  const previousResult = add(previous, 'p', { 'data-previous-result': '', hidden: '' });
   const panelCancel = add(restore, 'button', { 'data-action': 'cancel-restore' });
   panelCancel.textContent = 'cancel';
-  return { pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
+  return { gate, gateTitle, gateLines, gateMore, gateConfirm, gateCancel, previous, previousRows, previousHelp, previousResult, pausedSection, resume, byoLocation, destinationEdit, pauseSection, pause, destinationCancel, switchGate, switchDays, switchConfirm, root, destination, destinationForm, destinationStatus, enableBackup, saveDestination, showRestore, generateKey, backupNow, viewKey, rotateKey, retention, saveRetention, offloadProof, lastOffload, lastVerify, runHistory, runSuccessTime, verifyHistory, verifySuccessTime, stallReason, saveOffload, restore, destinationByo, destinationHosted, byoLane, operatedLane, operated, byo, heading, keyControl, key, keyReassurance, outcome, primary, attemptCancel, reopen, panelCancel, banner, cleanupBanner, cleanup, management, managementGrid, lastBackup, teardownOpen, teardownGate, teardownInput, teardownConfirm };
 }
 
 function createHarness(options = {}) {
@@ -452,6 +463,11 @@ function createHarness(options = {}) {
     close() { this.closed = true; },
   }));
   const fetch = (url, request = {}) => {
+    // The kept-journal read is the page's own; `calls` is what a test acts on.
+    if (String(url) === '/app/backup/previous-journal') {
+      const answer = options.previous === undefined ? { kept: [], keeps_previous: true } : options.previous;
+      return Promise.resolve(typeof answer === 'function' ? answer() : answer === null ? response({}, 500) : response(answer));
+    }
     const call = { url: String(url), request };
     calls.push(call);
     let result;
@@ -473,6 +489,8 @@ function createHarness(options = {}) {
   };
   const navigator = { userAgent: options.userAgent || 'Mozilla/5.0 (X11; Linux x86_64)', ...options.navigator };
   const window = { createViewReady: () => () => {},
+    JournalClock: { parts: () => ({ year: 2026, month: '11', day: '08' }) },
+    JournalFormat: { day: (key) => `day:${key}`, time: () => 'time' },
     crypto: require('crypto').webcrypto,
     document,
     console,
@@ -592,9 +610,16 @@ function hostedSequence(statusPayload) {
   };
 }
 
+// A restore starts from the confirmation the primary button opens.
+async function confirmGate(harness) {
+  click(harness.primary);
+  await settle();
+  click(harness.gateConfirm);
+}
+
 async function startToPolling(harness) {
   assert.ok(!harness.primary.disabled, 'hosted primary is enabled before starting');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   await harness.runTimer(0);
   await settle();
@@ -1227,7 +1252,7 @@ for (const scope of ['own', 'global', 'contended']) {
     click(harness.enableBackup);
     setKey(harness, 'synthetic recovery key');
     assert.ok(harness.primary.disabled, 'ordinary input render cannot reopen a blocked action');
-    click(harness.primary);
+    await confirmGate(harness);
     // Programmatic activation cannot bypass the delegated pending guard.
     harness.backupNow.disabled = false;
     click(harness.backupNow);
@@ -1314,7 +1339,7 @@ asyncCase('popup preflight failures make no server calls', async () => {
     await ready(harness);
     selectOperated(harness);
     setKey(harness, 'recovery key');
-    click(harness.primary);
+    await confirmGate(harness);
     await settle();
     assert.strictEqual(harness.calls.length, 0);
     assert.ok(!harness.heading.hidden && !harness.keyControl.hidden && !harness.primary.hidden);
@@ -1340,8 +1365,8 @@ asyncCase('rapid hosted restore clicks issue one prepare request', async () => {
   selectOperated(harness);
   assert.ok(!harness.keyReassurance.hidden);
   setKey(harness, 'recovery key');
-  click(harness.primary);
-  click(harness.primary);
+  await confirmGate(harness);
+  await confirmGate(harness);
   await settle();
   assert.strictEqual(harness.calls.filter((call) => call.url.endsWith('/prepare')).length, 1);
   resolvePrepare(response({ capability: 'capability' }));
@@ -1363,7 +1388,7 @@ asyncCase('switching restore lanes cancels a prepare lease received after cancel
   await ready(harness);
   selectOperated(harness);
   setKey(harness, 'recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   click(harness.byoLane);
   await settle();
@@ -1389,7 +1414,7 @@ asyncCase('cancelling after key submission stops before arm', async () => {
   await ready(harness);
   selectOperated(harness);
   setKey(harness, 'recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.ok(!harness.attemptCancel.hidden);
   click(harness.attemptCancel);
@@ -1418,7 +1443,7 @@ asyncCase('invalid hosted portal URL is cancelled before arm', async () => {
   await ready(harness);
   selectOperated(harness);
   setKey(harness, 'recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.deepStrictEqual(harness.calls.map((call) => call.url), [
     '/app/backup/restore-hosted/prepare',
@@ -1446,7 +1471,7 @@ asyncCase('switching restore lanes cancels an in-flight hosted attempt', async (
   await ready(harness);
   selectOperated(harness);
   setKey(harness, 'recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.ok(!harness.attemptCancel.hidden);
   click(harness.byoLane);
@@ -1542,7 +1567,7 @@ asyncCase('hosted recovery-key ARIA separates local validation from C3 failures'
   click(harness.showRestore);
   selectOperated(harness);
   assert.ok(harness.primary.disabled);
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.strictEqual(harness.key.getAttribute('aria-describedby'), harness.heading.id);
   assert.strictEqual(harness.key.getAttribute('aria-invalid'), 'true');
@@ -1550,7 +1575,7 @@ asyncCase('hosted recovery-key ARIA separates local validation from C3 failures'
   setKey(harness, 'recovery key');
   assert.ok(!harness.primary.disabled);
   assert.strictEqual(harness.key.getAttribute('aria-describedby'), harness.heading.id);
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.strictEqual(harness.key.getAttribute('aria-invalid'), null);
   assert.strictEqual(harness.key.getAttribute('aria-errormessage'), null);
@@ -1577,7 +1602,7 @@ asyncCase('server invalid_key marks the hosted recovery key invalid', async () =
   await ready(harness);
   selectOperated(harness);
   setKey(harness, 'recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle(32);
   assert.strictEqual(harness.key.getAttribute('aria-invalid'), 'true');
   assert.strictEqual(harness.key.getAttribute('aria-errormessage'), harness.outcome.id);
@@ -1600,7 +1625,7 @@ asyncCase('primary remains disabled through an in-flight attempt', async () => {
   await ready(harness);
   selectOperated(harness);
   setKey(harness, 'recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.ok(harness.primary.disabled);
   harness.primary.disabled = false;
@@ -1742,7 +1767,7 @@ asyncCase('capable host unbound restore start assigns location, avoids window.op
   click(harness.showRestore);
   selectOperated(harness);
   setKey(harness, 'valid recovery key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   await harness.runTimer(0);
   await settle();
@@ -1772,7 +1797,7 @@ asyncCase('hosted restore key exchange rejecting unsafe portal URL cleans up att
   click(harness.showRestore);
   selectOperated(harness);
   setKey(harness, 'key for bad portal');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   assert.strictEqual(harness.location.assigned, null, 'no location assigned on bad portal');
   assert.strictEqual(harness.popups.length, 1, 'browser popup was created');
@@ -1797,7 +1822,7 @@ asyncCase('cancel during restore-hosted prepare releases gate and drops attempt'
   click(harness.showRestore);
   selectOperated(harness);
   setKey(harness, 'key for cancel test');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   // Cancel while prepare is inflight
   click(harness.attemptCancel);
@@ -1837,14 +1862,14 @@ for (const boundary of ['key', 'arm', 'activate']) {
       click(harness.showRestore);
       selectOperated(harness);
       setKey(harness, 'local key A');
-      click(harness.primary);
+      await confirmGate(harness);
       await settle();
       if (boundary !== 'key') { await harness.runTimer(0); await settle(); }
       assert.ok(completeOld, 'old request reached the held boundary');
       click(harness.attemptCancel);
       await settle();
       setKey(harness, 'local key B');
-      click(harness.primary);
+      await confirmGate(harness);
       await settle();
       await harness.runTimer(0);
       await settle();
@@ -1874,7 +1899,7 @@ asyncCase('terminal arm reply stops activation and closes its browser reservatio
   click(harness.showRestore);
   selectOperated(harness);
   setKey(harness, 'local key');
-  click(harness.primary);
+  await confirmGate(harness);
   await settle();
   await harness.runTimer(0);
   await settle();
@@ -1898,7 +1923,7 @@ for (const failure of ['reject', 'throw']) {
     click(harness.showRestore);
     selectOperated(harness);
     setKey(harness, 'local key');
-    click(harness.primary);
+    await confirmGate(harness);
     await settle();
     await harness.runTimer(0);
     await settle();
@@ -2517,6 +2542,136 @@ asyncCase('an unavailable clipboard leaves a visible recovery path', async () =>
   const error = h.root.querySelector('[data-recovery-error]');
   assert.strictEqual(error.hidden, false);
   assert.ok(error.textContent.length > 0);
+  h.detach();
+});
+
+async function gateHarness(previous) {
+  const h = createHarness({ statusQueue: [status()], previous });
+  await ready(h);
+  selectOperated(h);
+  setKey(h, 'test key');
+  await settle();
+  click(h.primary);
+  await settle();
+  return h;
+}
+
+asyncCase('the restore gate opens from the primary and hides it until it closes', async () => {
+  const h = await gateHarness();
+  assert.strictEqual(h.gate.hidden, false);
+  assert.strictEqual(h.primary.hidden, true);
+  assert.strictEqual(h.document.activeElement, h.gateCancel);
+  assert.strictEqual(h.popups.length, 0, 'nothing starts until the confirm');
+  click(h.gateCancel);
+  assert.strictEqual(h.gate.hidden, true);
+  assert.strictEqual(h.primary.hidden, false);
+  assert.strictEqual(h.document.activeElement, h.primary);
+  h.detach();
+});
+
+asyncCase('escape closes the gate and a lane change closes it too', async () => {
+  const h = await gateHarness();
+  h.gate.dispatchEvent(Object.assign(event('keydown', { bubbles: true }), { key: 'Escape' }));
+  assert.strictEqual(h.gate.hidden, true);
+  click(h.primary);
+  await settle();
+  assert.strictEqual(h.gate.hidden, false);
+  click(h.byoLane);
+  assert.strictEqual(h.gate.hidden, true);
+  h.detach();
+});
+
+asyncCase('what the gate offers follows whether this platform keeps a previous journal', async () => {
+  const full = await gateHarness();
+  assert.strictEqual(full.gateMore.hidden, false);
+  assert.strictEqual(full.gateConfirm.hidden, false);
+  assert.ok(full.gateConfirm.classList.contains('primary'));
+  assert.strictEqual(full.gateLines.children.length, 3);
+  full.detach();
+
+  const ios = await gateHarness({ kept: [], keeps_previous: false });
+  assert.strictEqual(ios.gateMore.hidden, true);
+  assert.strictEqual(ios.gateConfirm.hidden, false);
+  assert.ok(ios.gateConfirm.classList.contains('danger'));
+  assert.strictEqual(ios.gateLines.children.length, 1);
+  ios.detach();
+
+  for (const unreadable of [null, { kept: [] }]) {
+    const unknown = await gateHarness(unreadable);
+    assert.strictEqual(unknown.gate.hidden, false);
+    assert.strictEqual(unknown.gateConfirm.hidden, true, 'no restore can start from an unknown');
+    assert.strictEqual(unknown.gateTitle.hidden, true);
+    unknown.detach();
+  }
+});
+
+const KEPT = [
+  { folder: '.a', stamp: '20261108T191400Z', bytes: 10, unfinished: true },
+  { folder: '.b', stamp: '20261027T150200Z', bytes: 20, unfinished: false },
+];
+
+asyncCase('kept rows show one per restore, and a running restore hides its own and disables remove', async () => {
+  const running = { kind: 'restore', phase: 'restoring', reason_code: null };
+  const idle = createHarness({ statusQueue: [status()], previous: { kept: KEPT, keeps_previous: true } });
+  await ready(idle);
+  assert.strictEqual(idle.previous.hidden, false);
+  assert.strictEqual(idle.previousRows.children.length, 2);
+  assert.notStrictEqual(
+    idle.previousRows.children[0].children[0].children[0].textContent,
+    idle.previousRows.children[1].children[0].children[0].textContent,
+    'an unfinished row never reads as a previous journal',
+  );
+  idle.detach();
+
+  const active = createHarness({ statusQueue: [status(running)], previous: { kept: KEPT, keeps_previous: true } });
+  await ready(active);
+  assert.strictEqual(active.previousRows.children.length, 1);
+  assert.strictEqual(active.previousRows.children[0].children[1].disabled, true);
+  active.detach();
+});
+
+asyncCase('nothing kept and no message leaves the section hidden', async () => {
+  const h = createHarness({ statusQueue: [status()] });
+  await ready(h);
+  assert.strictEqual(h.previous.hidden, true);
+  h.detach();
+});
+
+asyncCase('a kept-table reason shows only when this platform keeps a previous journal', async () => {
+  const stopped = { kind: 'restore', phase: 'error', reason_code: 'restore_io_failed' };
+  const kept = createHarness({ statusQueue: [status(stopped)], previous: { kept: [], keeps_previous: true } });
+  await ready(kept);
+  const keptLine = kept.root.querySelector('[data-operation-error]').textContent;
+  kept.detach();
+  const ios = createHarness({ statusQueue: [status(stopped)], previous: { kept: [], keeps_previous: false } });
+  await ready(ios);
+  const iosLine = ios.root.querySelector('[data-operation-error]').textContent;
+  ios.detach();
+  assert.ok(keptLine.length > 0 && iosLine.length > 0);
+  assert.notStrictEqual(keptLine, iosLine);
+});
+
+asyncCase('removing a kept journal reports the result and reloads the list', async () => {
+  let kept = KEPT.slice(1);
+  const h = createHarness({
+    statusQueue: [status()],
+    previous: () => response({ kept, keeps_previous: true }),
+    respond: (call) => {
+      if (call.url === '/app/backup/previous-journal/remove') {
+        kept = [];
+        return response({ id: 'previous-1' });
+      }
+      return undefined;
+    },
+  });
+  await ready(h);
+  click(h.previousRows.children[0].children[1]);
+  await settle();
+  const remove = h.calls.find((call) => call.url === '/app/backup/previous-journal/remove');
+  assert.deepStrictEqual(JSON.parse(remove.request.body), { stamp: KEPT[1].stamp });
+  assert.strictEqual(h.previousRows.children.length, 0);
+  assert.strictEqual(h.previous.hidden, false, 'the result stays after the last row goes');
+  assert.strictEqual(h.previousResult.hidden, false);
   h.detach();
 });
 

@@ -1984,7 +1984,9 @@
     note.textContent = item.unfinished
       ? previousCopy.unfinished_note.replace('{when}', when)
       : previousCopy.from.replace('{when}', when);
-    text.append(title, document.createTextNode(` · ${formatBytes(item.bytes)}`), note);
+    const size = document.createElement('span');
+    size.textContent = ` · ${formatBytes(item.bytes)}`;
+    text.append(title, size, note);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.setAttribute('data-previous-remove', item.stamp);
@@ -2007,12 +2009,12 @@
     const result = section.querySelector('[data-previous-result]');
     result.replaceChildren();
     if (previousMessage) {
-      result.textContent = previousMessage.text;
+      result.textContent = previousMessage.trashLink ? `${previousMessage.text} ` : previousMessage.text;
       if (previousMessage.trashLink) {
         const link = document.createElement('a');
         link.href = '/app/settings#trash';
         link.textContent = previousCopy.open_trash;
-        result.append(' ', link);
+        result.append(link);
       }
     }
     result.hidden = !previousMessage;
