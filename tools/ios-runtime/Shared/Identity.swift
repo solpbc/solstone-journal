@@ -4,8 +4,8 @@ import Foundation
 
 enum RuntimeIdentity {
   #if JOURNAL_OWNER_APP
-  static let host = "app.solstone.journal.owner.dev"
-  static let group = "group.app.solstone.journal.owner.dev"
+  static let host = "app.solstone.journal.owner.eva261108iz4fjkhb"
+  static let group = "group.app.solstone.journal.owner.eva261108iz4fjkhb"
   #else
   static let host = "app.solstone.journal.runtime.dev"
   static let group = "group.app.solstone.journal.runtime.dev"

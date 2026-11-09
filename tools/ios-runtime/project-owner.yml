@@ -2,8 +2,8 @@ include:
   - project.yml
 settings:
   base:
-    JOURNAL_BUNDLE_IDENTIFIER: app.solstone.journal.owner.dev
-    JOURNAL_APP_GROUP: group.app.solstone.journal.owner.dev
+    JOURNAL_BUNDLE_IDENTIFIER: app.solstone.journal.owner.eva261108iz4fjkhb
+    JOURNAL_APP_GROUP: group.app.solstone.journal.owner.eva261108iz4fjkhb
     JOURNAL_OWNER_ENTITLEMENTS: Shared/Serving.entitlements
     SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) JOURNAL_OWNER_APP
 targets:

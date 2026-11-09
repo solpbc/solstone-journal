@@ -281,7 +281,7 @@ struct AppraisalHandler: XPCPeerHandler {
 @main struct Appraisal: AppExtension {
   @AppExtensionPoint.Bind var boundExtensionPoint: AppExtensionPoint {
     #if JOURNAL_OWNER_APP
-    AppExtensionPoint.Identifier(host: "app.solstone.journal.owner.dev", name: "gpu-appraisal")
+    AppExtensionPoint.Identifier(host: "app.solstone.journal.owner.eva261108iz4fjkhb", name: "gpu-appraisal")
     #else
     AppExtensionPoint.Identifier(host: "app.solstone.journal.runtime.dev", name: "gpu-appraisal")
     #endif

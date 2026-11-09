@@ -20,7 +20,7 @@ struct Handler: XPCPeerHandler {
 @main struct Worker: AppExtension {
   @AppExtensionPoint.Bind var boundExtensionPoint: AppExtensionPoint {
     #if JOURNAL_OWNER_APP
-    AppExtensionPoint.Identifier(host: "app.solstone.journal.owner.dev", name: "journal")
+    AppExtensionPoint.Identifier(host: "app.solstone.journal.owner.eva261108iz4fjkhb", name: "journal")
     #else
     AppExtensionPoint.Identifier(host: "app.solstone.journal.runtime.dev", name: "journal")
     #endif
