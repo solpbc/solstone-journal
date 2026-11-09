@@ -213,6 +213,22 @@ impl ToolRunner for ArgvResticFixture {
                 stdout: self.catalog.as_bytes().to_vec(),
                 stderr: vec![],
             }),
+            Some("restore") if argv.iter().any(|argument| argument == "--dry-run") => {
+                let plain = argv
+                    .iter()
+                    .filter(|argument| !matches!(argument.as_str(), "--dry-run" | "-v" | "--delete"))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if admitted_restore_argv(&plain) {
+                    Ok(ToolOutput {
+                        returncode: 0,
+                        stdout: b"{\"message_type\":\"summary\"}\n".to_vec(),
+                        stderr: vec![],
+                    })
+                } else {
+                    self.refuse(argv, REFUSED_UNEXPECTED_EXIT)
+                }
+            }
             Some("restore") if admitted_restore_argv(&argv) => Ok(self.restore.clone()),
             Some("check") if argv == ["check"] => Ok(self.check.clone()),
             _ => self.refuse(argv, REFUSED_UNEXPECTED_EXIT),
@@ -329,6 +345,11 @@ fn admitted_restore_argv(argv: &[String]) -> bool {
         .collect();
     expected.extend(["--exclude", "/health/whole-journal-restore.json"]);
     expected.extend(["--exclude", "/health/!solstone-claim-00000000-*"]);
+    let rooted: Vec<String> = solstone_core_journal_io::copy_excludes::COPY_EXCLUDES
+        .iter()
+        .map(|pattern| format!("/{pattern}"))
+        .collect();
+    expected.extend(rooted.iter().flat_map(|pattern| ["--exclude", pattern.as_str()]));
     let keeps = expected.len();
     expected.push("--json");
     let with_lock = {

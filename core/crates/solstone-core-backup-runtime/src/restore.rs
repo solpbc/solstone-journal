@@ -16,6 +16,8 @@ use solstone_core_backup::{
 
 use crate::engine::{BackupServices, Clock, RestoreRecorder};
 use crate::restore_catalog::{CatalogError, select_journal_snapshot, snapshot_with_id};
+#[cfg(not(target_os = "ios"))]
+use crate::restore_set_aside;
 use crate::runner::{ResticResult, reason_for_returncode, run_restic, select_summary};
 
 pub const RESTORE_LIST_TIMEOUT_SECONDS: u64 = 5 * 60;
@@ -44,6 +46,16 @@ pub const RESTORE_REASON_RECOVERY_CONFIRMATION_PUBLISH_FAILED: &str =
     "recovery_confirmation_publish_failed";
 pub const RESTORE_REASON_FULL_SCAN_FAILED: &str = "full_scan_failed";
 pub const RESTORE_REASON_RESTORE_RECORD_FAILED: &str = "restore_record_failed";
+/// The dry run that names what a restore would change didn't finish whole.
+pub const RESTORE_REASON_PREVIEW_FAILED: &str = "restore_preview_failed";
+/// That report was larger than this platform can read.
+pub const RESTORE_REASON_PREVIEW_TOO_LARGE: &str = "restore_preview_too_large";
+/// A file the restore would overwrite couldn't be set aside first.
+pub const RESTORE_REASON_COPY_FAILED: &str = "restore_copy_failed";
+/// The set-aside copies and the restored files won't fit.
+pub const RESTORE_REASON_INSUFFICIENT_FREE_SPACE: &str = "insufficient_free_space";
+/// The restore finished, but the journal isn't yet exactly the backup.
+pub const RESTORE_REASON_SET_ASIDE_INCOMPLETE: &str = "set_aside_incomplete";
 pub const RESTORE_REASON_RECOVERY_KEY_REVOCATION_PENDING: &str = "recovery_key_revocation_pending";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,6 +209,31 @@ fn restic(
     timeout: u64,
     runner_error_reason: &'static str,
 ) -> Result<ResticResult, &'static str> {
+    restic_mapped(
+        services,
+        admitted,
+        args,
+        destination,
+        key,
+        env,
+        json_output,
+        timeout,
+        |_| runner_error_reason,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn restic_mapped(
+    services: &BackupServices<'_>,
+    admitted: &crate::destination_admission::AdmittedDestination,
+    args: Vec<String>,
+    destination: &Destination,
+    key: &str,
+    env: &BTreeMap<String, Option<String>>,
+    json_output: bool,
+    timeout: u64,
+    reason: impl Fn(&crate::runner::RunnerError) -> &'static str,
+) -> Result<ResticResult, &'static str> {
     admitted
         .revalidate_for_target()
         .map_err(|_| RESTORE_REASON_DESTINATION_ADMISSION_FAILED)?;
@@ -229,7 +266,7 @@ fn restic(
             "restore step {} refused: {error:?}",
             args.first().map_or("", String::as_str)
         );
-        runner_error_reason
+        reason(&error)
     })
 }
 
@@ -337,6 +374,12 @@ pub(crate) fn restore_args(snapshot_id: &str, tree_path: &str, target: &str) -> 
             "--exclude".to_owned(),
             "/health/!solstone-claim-00000000-*".to_owned(),
         ]);
+        // What backups don't carry a restore leaves alone, including from a
+        // snapshot taken before a path was omitted. Rooted, so an owner path
+        // of the same name further down still restores.
+        for pattern in solstone_core_journal_io::copy_excludes::COPY_EXCLUDES {
+            args.extend(["--exclude".to_owned(), format!("/{pattern}")]);
+        }
     }
     #[cfg(any(target_os = "linux", target_os = "android"))]
     args.extend(["--exclude".to_owned(), "backup-activity.lock".to_owned()]);
@@ -652,6 +695,102 @@ pub fn restore_mobile_latest_journal(
     )
 }
 
+/// Why a restore's report couldn't be read. Only Windows bounds the capture.
+#[cfg(not(target_os = "ios"))]
+fn preview_failure_reason(error: &crate::runner::RunnerError) -> &'static str {
+    #[cfg(windows)]
+    if let crate::runner::RunnerError::Process(error) = error
+        && let Some(failure) = error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<solstone_core_system::process::BoundedHelperFailure>())
+        && matches!(
+            failure.cause(),
+            solstone_core_system::process::BoundedHelperError::OutputLimitExceeded { .. }
+        )
+    {
+        return RESTORE_REASON_PREVIEW_TOO_LARGE;
+    }
+    let _ = error;
+    RESTORE_REASON_PREVIEW_FAILED
+}
+
+/// What the two steps around a restore need to ask restic what it would do.
+#[cfg(not(target_os = "ios"))]
+struct SetAsideContext<'a> {
+    services: &'a BackupServices<'a>,
+    admitted: &'a crate::destination_admission::AdmittedDestination,
+    snapshot_id: &'a str,
+    tree_path: &'a str,
+    target: &'a Path,
+    destination: &'a Destination,
+    key: &'a str,
+    env: &'a BTreeMap<String, Option<String>>,
+}
+
+#[cfg(not(target_os = "ios"))]
+impl SetAsideContext<'_> {
+    /// restic's report of what the restore would do; only ever a whole one.
+    fn report(&self, delete: bool) -> Result<restore_set_aside::Report, &'static str> {
+        let target = self.target.display().to_string();
+        let mut args = restore_args(self.snapshot_id, self.tree_path, &target);
+        args.extend(["--dry-run".to_owned(), "-v".to_owned(), "-v".to_owned()]);
+        if delete {
+            args.push("--delete".to_owned());
+        }
+        let output = restic_mapped(
+            self.services,
+            self.admitted,
+            args,
+            self.destination,
+            self.key,
+            self.env,
+            true,
+            RESTORE_TIMEOUT_SECONDS,
+            preview_failure_reason,
+        )?;
+        if output.returncode != 0 {
+            return Err(recognized_returncode_reason(output.returncode)
+                .unwrap_or(RESTORE_REASON_PREVIEW_FAILED));
+        }
+        restore_set_aside::parse_report(&output.stdout, self.target)
+            .ok_or(RESTORE_REASON_PREVIEW_FAILED)
+    }
+
+    /// The files to set aside, once they and the restore are known to fit.
+    fn plan(&self, journal: &Path) -> Result<Vec<String>, &'static str> {
+        let report = self.report(false)?;
+        let files = restore_set_aside::files_to_copy(journal, &report);
+        let fits = restore_set_aside::fits(
+            restore_set_aside::free_bytes(journal),
+            restore_set_aside::copies_bytes(journal, &files),
+            report.bytes_to_restore,
+        );
+        if fits {
+            Ok(files)
+        } else {
+            Err(RESTORE_REASON_INSUFFICIENT_FREE_SPACE)
+        }
+    }
+
+    /// After a clean restore: move out what the snapshot doesn't hold. True
+    /// only when the journal is now the snapshot.
+    fn sweep(&self, journal: &Path, attempt: &restore_set_aside::Attempt) -> bool {
+        let report = match self.report(true) {
+            Ok(report) => report,
+            Err(reason) => {
+                log::warn!("restore: the report after the restore failed: {reason}");
+                return false;
+            }
+        };
+        let left = restore_set_aside::move_removed(journal, &attempt.folder(), &report);
+        if left > 0 || !restore_set_aside::matches_snapshot(journal, &report) {
+            return false;
+        }
+        restore_set_aside::finish_attempt(journal);
+        true
+    }
+}
+
 fn restore_journal_with(
     journal: &Path,
     services: &BackupServices<'_>,
@@ -869,6 +1008,23 @@ fn restore_journal_with(
             return unrecorded_outcome(error_draft(RESTORE_REASON_DESTINATION_ADMISSION_FAILED));
         }
     };
+    // Everything here runs read-only, so a refusal leaves the journal running.
+    #[cfg(not(target_os = "ios"))]
+    let set_aside = SetAsideContext {
+        services,
+        admitted: &admitted,
+        snapshot_id: &snapshot.id,
+        tree_path: &tree_path,
+        target: &target_path,
+        destination: &destination,
+        key: &canonical,
+        env: &env,
+    };
+    #[cfg(not(target_os = "ios"))]
+    let previewed = match set_aside.plan(journal) {
+        Ok(plan) => plan,
+        Err(reason) => return finish(journal, services.clock, recorder, error_draft(reason)),
+    };
     let mut obligation = match &phase {
         RestorePhase::Desktop => None,
         RestorePhase::Adopted { record } => Some(record.clone()),
@@ -913,6 +1069,41 @@ fn restore_journal_with(
             }
         }
     }
+    #[cfg(not(target_os = "ios"))]
+    let attempt = {
+        // Work was drained since the first report, so it may no longer hold.
+        let files = if obligation.is_some() {
+            match set_aside.plan(journal) {
+                Ok(plan) => plan,
+                Err(reason) => {
+                    return finish(journal, services.clock, recorder, error_draft(reason));
+                }
+            }
+        } else {
+            previewed
+        };
+        let attempt = restore_set_aside::begin_attempt(
+            journal,
+            &snapshot.id,
+            &restore_set_aside::stamp(services.clock.now_unix()),
+        )
+        .and_then(|attempt| {
+            restore_set_aside::copy_originals(journal, &attempt.folder(), &files)?;
+            Ok(attempt)
+        });
+        match attempt {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                log::warn!("restore: originals could not be set aside: {error}");
+                return finish(
+                    journal,
+                    services.clock,
+                    recorder,
+                    error_draft(RESTORE_REASON_COPY_FAILED),
+                );
+            }
+        }
+    };
     let restored = match restic(
         services,
         &admitted,
@@ -1024,6 +1215,15 @@ fn restore_journal_with(
     if admitted.revalidate_for_target().is_err() {
         return admission_failed();
     }
+    #[cfg(not(target_os = "ios"))]
+    let (status, reason_code) = if integrity_ok && !set_aside.sweep(journal, &attempt) {
+        ("degraded", Some(RESTORE_REASON_SET_ASIDE_INCOMPLETE.to_owned()))
+    } else {
+        (status, reason_code)
+    };
+    if admitted.revalidate_for_target().is_err() {
+        return admission_failed();
+    }
     if services
         .journal_maintenance
         .rebuild_body_history(journal)
@@ -1131,28 +1331,8 @@ fn restore_journal_with(
 mod tests {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     mod cooperation;
-
-    /// The deletion record is write-once files under `config/removals`. A
-    /// restore can only add to it while restic neither deletes files the
-    /// snapshot lacks nor skips the record, so a removal made after the backup
-    /// keeps its entry.
-    #[test]
-    fn a_restore_only_adds_to_the_deletion_record() {
-        let args = restore_args("abc123", "/journal", "/journal");
-        assert!(!args.iter().any(|arg| arg.starts_with("--delete")));
-        let excluded: Vec<&String> = args
-            .windows(2)
-            .filter(|pair| pair[0] == "--exclude")
-            .map(|pair| &pair[1])
-            .collect();
-        assert!(
-            excluded
-                .iter()
-                .all(|pattern| !pattern.contains("removals")
-                    && !pattern.trim_matches('/').eq("config")),
-            "{excluded:?}"
-        );
-    }
+    #[cfg(unix)]
+    mod set_aside;
 
     use super::*;
     use crate::engine::{JournalMaintenance, JournalMaintenanceError, NativeRestoreRecorder};
@@ -1191,8 +1371,25 @@ mod tests {
         }
     }
 
+    /// A restore's report of what it would do, asked before and after it.
+    /// Scripted restores name no files, so there is nothing to set aside.
+    pub(super) fn is_dry_run(request: &ToolRequest<'_>) -> bool {
+        request.argv.iter().any(|arg| arg == "--dry-run")
+    }
+
+    pub(super) fn empty_report() -> ToolOutput {
+        ToolOutput {
+            returncode: 0,
+            stdout: b"{\"message_type\":\"summary\"}\n".to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+
     impl ToolRunner for Script {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if is_dry_run(request) {
+                return Ok(empty_report());
+            }
             self.calls.borrow_mut().push(
                 request
                     .argv
@@ -1519,7 +1716,9 @@ mod tests {
         }
         impl ToolRunner for BindingRestore<'_> {
             fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
-                if request.argv.first().is_some_and(|arg| arg == "restore") {
+                if request.argv.first().is_some_and(|arg| arg == "restore")
+                    && !is_dry_run(request)
+                {
                     let mut retired = solstone_core_backup::load_hosted_binding(self.journal)
                         .expect("active binding");
                     retired.broker_token = "retired-token-from-snapshot".into();
@@ -2699,6 +2898,9 @@ mod tests {
         }
         impl ToolRunner for ImportPending {
             fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+                if is_dry_run(request) {
+                    return Ok(empty_report());
+                }
                 let args: Vec<String> = request
                     .argv
                     .iter()

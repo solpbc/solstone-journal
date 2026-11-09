@@ -52,7 +52,7 @@ pub(crate) fn deny_top_level(name: &str) -> DenyAction {
     let name = name.as_str();
     if PRUNED_ROOTS.contains(&name) {
         DenyAction::TreePrune
-    } else if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(original_name))
+    } else if solstone_core_journal::is_hidden_root_name(std::ffi::OsStr::new(original_name))
         || portable_copy_excluded(original_name)
     {
         DenyAction::Skip
@@ -66,7 +66,7 @@ pub(crate) fn deny_member(member: &str, regular_file: bool) -> bool {
     // The trash is never part of a copy of the journal. Omitted silently: a
     // pruned root would be named to the owner.
     let first = member.split('/').next().unwrap_or(member);
-    if solstone_core_journal::is_trash_root_name(std::ffi::OsStr::new(first)) {
+    if solstone_core_journal::is_hidden_root_name(std::ffi::OsStr::new(first)) {
         return true;
     }
     if portable_copy_excluded(member) || (regular_file && copy_file_excluded(member)) {

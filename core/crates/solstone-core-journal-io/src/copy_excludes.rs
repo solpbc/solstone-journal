@@ -17,6 +17,12 @@ pub const COPY_EXCLUDES: &[&str] = &[
     "config/chatgpt-sign-in.json*",
     // Deletion pivots must never be restored, including ambiguous raw names.
     "**/.removing_*",
+    // What a restore set aside, and its attempt marker. A previous journal in
+    // the trash stays out too, so removing it can't put its keys into a backup.
+    ".before-restore-*",
+    "health/restore-attempt.json",
+    ".trash/previous-*",
+    ".trash/trash.lock",
     // These namespaces are application-owned, unlike raw segment filenames.
     "health/sync",
     "health/brain.json",

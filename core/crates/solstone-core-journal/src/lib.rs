@@ -22,6 +22,20 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 /// nothing. The trash itself lives in `solstone-core-trash`.
 pub const TRASH_DIR: &str = ".trash";
 
+/// What a whole-journal restore sets aside goes into a folder named this and
+/// then its time, at the journal root. It is hidden the way the trash is.
+pub const BEFORE_RESTORE_PREFIX: &str = ".before-restore-";
+
+/// Whether a name at the journal root is one nothing that reads the journal
+/// sees: the trash, or what a restore set aside.
+pub fn is_hidden_root_name(name: &std::ffi::OsStr) -> bool {
+    is_trash_root_name(name)
+        || name.to_str().is_some_and(|name| {
+            name.get(..BEFORE_RESTORE_PREFIX.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(BEFORE_RESTORE_PREFIX))
+        })
+}
+
 /// Whether a name at the journal root is the trash folder. Every walk that
 /// lists the journal root skips a name for which this is true.
 ///
