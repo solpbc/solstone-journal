@@ -188,6 +188,59 @@ impl ArgvResticFixture {
     }
 }
 
+/// The excludes a restore adds for what backups omit, beyond the ones it
+/// names itself.
+fn rooted_copy_excludes() -> Vec<String> {
+    let named: Vec<String> = crate::restore::RESTORE_KEEPS_LOCAL
+        .iter()
+        .map(|pattern| (*pattern).to_owned())
+        .chain([
+            "/health/whole-journal-restore.json".to_owned(),
+            "/health/!solstone-claim-00000000-*".to_owned(),
+        ])
+        .collect();
+    solstone_core_journal_io::copy_excludes::COPY_EXCLUDES
+        .iter()
+        .map(|pattern| format!("/{pattern}"))
+        .filter(|pattern| !named.contains(pattern))
+        .collect()
+}
+
+/// `argv` without the excludes every restore passes for what backups omit.
+/// [`ArgvResticFixture`] checks those are there; a test comparing a restore's
+/// argv reads what is specific to it.
+pub fn without_copy_excludes(argv: &[String]) -> Vec<String> {
+    let rooted = rooted_copy_excludes();
+    let mut kept = Vec::with_capacity(argv.len());
+    let mut arguments = argv.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--exclude" {
+            match arguments.next() {
+                Some(pattern) if rooted.contains(pattern) => {}
+                Some(pattern) => kept.extend([argument.clone(), pattern.clone()]),
+                None => kept.push(argument.clone()),
+            }
+        } else {
+            kept.push(argument.clone());
+        }
+    }
+    kept
+}
+
+/// The answer to a restore's dry-run report, when `request` is one. A fake
+/// restore names no files, so there is nothing to set aside.
+pub fn dry_run_report(request: &ToolRequest<'_>) -> Option<ToolOutput> {
+    request
+        .argv
+        .iter()
+        .any(|arg| arg == "--dry-run")
+        .then(|| ToolOutput {
+            returncode: 0,
+            stdout: b"{\"message_type\":\"summary\"}\n".to_vec(),
+            stderr: vec![],
+        })
+}
+
 impl ToolRunner for ArgvResticFixture {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
         let argv = request
@@ -195,10 +248,13 @@ impl ToolRunner for ArgvResticFixture {
             .iter()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        self.calls
-            .lock()
-            .expect("fixture calls lock")
-            .push(argv.clone());
+        // A restore's reports are its own business; `calls` is what ran.
+        if !argv.iter().any(|argument| argument == "--dry-run") {
+            self.calls
+                .lock()
+                .expect("fixture calls lock")
+                .push(argv.clone());
+        }
         match argv.first().map(String::as_str) {
             Some("version") if argv == ["version"] => Ok(ToolOutput {
                 returncode: 0,
@@ -345,10 +401,7 @@ fn admitted_restore_argv(argv: &[String]) -> bool {
         .collect();
     expected.extend(["--exclude", "/health/whole-journal-restore.json"]);
     expected.extend(["--exclude", "/health/!solstone-claim-00000000-*"]);
-    let rooted: Vec<String> = solstone_core_journal_io::copy_excludes::COPY_EXCLUDES
-        .iter()
-        .map(|pattern| format!("/{pattern}"))
-        .collect();
+    let rooted = rooted_copy_excludes();
     expected.extend(rooted.iter().flat_map(|pattern| ["--exclude", pattern.as_str()]));
     let keeps = expected.len();
     expected.push("--json");

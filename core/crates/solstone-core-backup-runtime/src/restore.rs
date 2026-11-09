@@ -378,7 +378,10 @@ pub(crate) fn restore_args(snapshot_id: &str, tree_path: &str, target: &str) -> 
         // snapshot taken before a path was omitted. Rooted, so an owner path
         // of the same name further down still restores.
         for pattern in solstone_core_journal_io::copy_excludes::COPY_EXCLUDES {
-            args.extend(["--exclude".to_owned(), format!("/{pattern}")]);
+            let rooted = format!("/{pattern}");
+            if !args.contains(&rooted) {
+                args.extend(["--exclude".to_owned(), rooted]);
+            }
         }
     }
     #[cfg(any(target_os = "linux", target_os = "android"))]

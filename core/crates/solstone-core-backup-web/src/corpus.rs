@@ -1135,6 +1135,9 @@ impl ScriptRunner {
 
 impl ToolRunner for ScriptRunner {
     fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+            return Ok(report);
+        }
         let argv: Vec<String> = request
             .argv
             .iter()
@@ -1562,7 +1565,7 @@ fn restore_body() -> Value {
         "recovery_key": crate::test_support::RECOVERY_KEY,
         "repository": "s3:bucket",
         "backend": "s3",
-        "credentials": {"access_key_id": "key", "secret_access_key": "secret"}
+        "credentials": {"access_key_id": "fixture-id", "secret_access_key": "fixture-credential"}
     })
 }
 
@@ -1874,7 +1877,11 @@ async fn restore_success_records_snapshots_then_restore() {
     let done = wait_terminal(&deps).await;
     assert_eq!(done["operation"]["phase"], "done");
     assert_eq!(
-        runner.calls(),
+        runner
+            .calls()
+            .iter()
+            .map(|argv| solstone_core_backup_runtime::test_support::without_copy_excludes(argv))
+            .collect::<Vec<_>>(),
         vec![
             vec!["snapshots".into(), "--json".into()],
             vec![
@@ -1923,6 +1930,9 @@ async fn embedded_first_restore_without_drain_cannot_copy_into_a_live_target() {
     struct CopyRunner(ScriptRunner);
     impl ToolRunner for CopyRunner {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+                return Ok(report);
+            }
             if request.argv.first().is_some_and(|arg| arg == "restore") {
                 let target = request
                     .argv
@@ -4191,7 +4201,7 @@ fn assert_runner_argv(runner: &ScriptRunner, expected: &[Vec<String>]) {
     assert_eq!(
         calls
             .iter()
-            .map(|(_, argv)| argv.clone())
+            .map(|(_, argv)| solstone_core_backup_runtime::test_support::without_copy_excludes(argv))
             .collect::<Vec<_>>(),
         expected
     );
@@ -6668,6 +6678,9 @@ async fn cancelled_restore_worker_does_not_cancel_later_idle_destination_validat
     struct CancellableScript(Arc<ScriptRunner>);
     impl ToolRunner for CancellableScript {
         fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            if let Some(report) = solstone_core_backup_runtime::test_support::dry_run_report(request) {
+                return Ok(report);
+            }
             self.0.run(request)
         }
         fn run_cancellable(
@@ -6713,7 +6726,7 @@ async fn cancelled_restore_worker_does_not_cancel_later_idle_destination_validat
         let rotated = json!({
             "repository": "s3:s3.example.invalid/journal-corpus",
             "backend": "s3",
-            "credentials": {"access_key_id": "key", "secret_access_key": "secret"}
+            "credentials": {"access_key_id": "fixture-id", "secret_access_key": "fixture-credential"}
         });
         assert_eq!(
             post_json(&deps, "/app/backup/destination", Some(rotated))

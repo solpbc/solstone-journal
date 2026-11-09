@@ -128,6 +128,8 @@ pub enum Action {
     RetentionTool,
     /// Finished removals that had stopped partway (Home's "finish them").
     FinishStopped,
+    /// Removed what a whole-journal restore set aside.
+    PreviousJournalRemove,
     /// Recovered something from the trash.
     Recover,
     /// Erased something from the trash: a selection on the trash page, or
@@ -224,6 +226,8 @@ pub enum Unit {
     Memory { day: String, segment: String },
     /// The copies held in a backup destination.
     Backup { storage: String },
+    /// What a whole-journal restore set aside.
+    PreviousJournal,
 }
 
 /// One entry of the deletion record.

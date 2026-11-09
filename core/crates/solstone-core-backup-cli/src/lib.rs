@@ -2323,7 +2323,7 @@ mod tests {
         payload(json!({
             "repository": "s3:bucket/prefix",
             "backend": "s3",
-            "credentials": {"access_key_id": "access", "secret_access_key": "key"},
+            "credentials": {"access_key_id": "access", "secret_access_key": "fixture-credential"},
         }))
     }
 
@@ -3387,7 +3387,11 @@ mod tests {
         restore_argv.extend(["--exclude".into(), "backup-activity.lock".into()]);
         restore_argv.push("--json".into());
         assert_eq!(
-            runner.calls(),
+            runner
+                .calls()
+                .iter()
+                .map(|argv| solstone_core_backup_runtime::test_support::without_copy_excludes(argv))
+                .collect::<Vec<_>>(),
             vec![
                 vec!["snapshots".into(), "--json".into()],
                 restore_argv,

@@ -434,6 +434,11 @@ mod tests {
         }
         impl ToolRunner for Runner {
             fn run(&self, request: &ToolRequest<'_>) -> std::io::Result<ToolOutput> {
+                if let Some(report) =
+                    solstone_core_backup_runtime::test_support::dry_run_report(request)
+                {
+                    return Ok(report);
+                }
                 self.execute(request, None)
             }
             fn run_cancellable(
@@ -441,6 +446,11 @@ mod tests {
                 request: &ToolRequest<'_>,
                 cancellation: &ArchiveCancellation,
             ) -> std::io::Result<ToolOutput> {
+                if let Some(report) =
+                    solstone_core_backup_runtime::test_support::dry_run_report(request)
+                {
+                    return Ok(report);
+                }
                 self.execute(request, Some(cancellation))
             }
         }

@@ -21,7 +21,7 @@ pub fn erase(args: &[String], journal: &Path) -> CliRun {
     }
     let index = RetentionIndex::new(journal);
     let recordings = Recordings::new(&index);
-    let swept = solstone_core_trash::sweep(journal, &[&recordings], chrono::Utc::now());
+    let swept = solstone_core_trash::sweep(journal, &[&recordings, &solstone_core_trash::previous_journal::PreviousJournal], chrono::Utc::now());
     let mut stderr = String::new();
     for failure in &swept.failed {
         stderr.push_str(&format!("trash: {failure}\n"));
