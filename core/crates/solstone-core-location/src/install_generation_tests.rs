@@ -119,6 +119,7 @@ fn interrupted_installer_reuses_the_same_partial_and_credits_remaining_disk() {
         for response in [b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nab".as_slice(),b"HTTP/1.1 206 Partial Content\r\nContent-Length: 2\r\nContent-Range: bytes 2-3/4\r\nConnection: close\r\n\r\ncd".as_slice()] {
             let deadline = Instant::now()+Duration::from_secs(5);
             let mut connection = loop { match listener.accept() { Ok((c,_))=>break c, Err(e) if e.kind()==io::ErrorKind::WouldBlock && Instant::now()<deadline => thread::sleep(Duration::from_millis(10)), e=>panic!("expected request: {e:?}") } };
+            connection.set_nonblocking(false).unwrap();
             connection.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
             let mut bytes = Vec::new(); while !bytes.ends_with(b"\r\n\r\n") { let mut one=[0]; connection.read_exact(&mut one).unwrap();bytes.push(one[0]);assert!(bytes.len()<16384); }
             seen.lock().unwrap().push(String::from_utf8(bytes).unwrap().to_ascii_lowercase()); connection.write_all(response).unwrap();
