@@ -1319,8 +1319,9 @@ fn run_strava_internal(
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
     // Counted from where the records are now: a group that waited didn't move.
-    let listed_moved = owner_chose
-        .and_then(|facet| crate::strava_convert::listed_moved_now(journal, &would_move, facet));
+    let listed_moved = owner_chose.and_then(|facet| {
+        crate::strava_convert::listed_moved_now(journal, &would_move, facet, &held_back)
+    });
     conversion.moves_open = solstone_core_facets::open_body_moves(journal)
         .map_or(1, |open| u64::try_from(open.len()).unwrap_or(u64::MAX));
     let mut list_refiles = |tiles: &[(String, String)]| {

@@ -2492,6 +2492,77 @@ fn a_window_that_isnt_rows_where_its_reading_goes_is_counted_and_the_run_goes_on
     }
 }
 
+/// A takeover lists the windows the stopped run got to and no others, because a
+/// day in a listing counts as read again for the old-import line.
+#[test]
+fn a_takeovers_listing_names_only_the_windows_its_run_reached() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(
+        scratch.path(),
+        &[
+            heart("2026-10-20 06:31:10 -0600", "70"),
+            heart("2026-10-20 07:31:10 -0600", "71"),
+            heart("2026-10-20 08:31:10 -0600", "72"),
+        ],
+    );
+    let stop = stopping_at("written", 1);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+
+    let other = export(
+        &scratch.path().join("other"),
+        &[heart("2026-10-22 06:31:10 -0600", "70")],
+    );
+    run(root, &other, "20261104_130000", None);
+    let listing = root.join("imports/20261104_120000/body-touched.jsonl");
+    let lines = fs::read_to_string(&listing).unwrap();
+    let entries: Vec<serde_json::Value> = lines
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(entries.len(), 1, "{lines}");
+    assert_eq!(
+        entries[0]["windows"].as_array().unwrap().len(),
+        1,
+        "{lines}"
+    );
+    let listed = entries[0]["windows"][0][0].as_str().unwrap();
+    let day = entries[0]["day"].as_str().unwrap();
+    assert!(
+        root.join("chronicle")
+            .join(day)
+            .join(STREAM)
+            .join(listed)
+            .join(BODY_RECORDS_FILE)
+            .is_file(),
+        "{lines}"
+    );
+}
+
+/// A takeover of a run stopped before its first window names no day at all.
+#[test]
+fn a_takeover_of_a_run_that_wrote_nothing_lists_nothing() {
+    let journal = journal();
+    let root = journal.path();
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(scratch.path(), &[heart("2026-10-20 06:31:10 -0600", "70")]);
+    let stop = stopping_at("pending", 1);
+    let mut stopped = request(&source, "20261104_120000");
+    stopped.stop_at = Some(&stop);
+    run_apple_health_segments(root, &stopped).unwrap_err();
+
+    let other = export(
+        &scratch.path().join("other"),
+        &[heart("2026-10-22 06:31:10 -0600", "70")],
+    );
+    run(root, &other, "20261104_130000", None);
+    let listing = root.join("imports/20261104_120000/body-touched.jsonl");
+    assert_eq!(fs::read_to_string(&listing).unwrap_or_default(), "");
+}
+
 /// A takeover killed after its listing line landed and before its state moved: the
 /// next one cuts back to the length the state knows, so no day is listed twice.
 #[test]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -723,11 +723,27 @@ fn only_a_record_now_in_the_facet_counts_as_moved() {
     add_line(root, "a", DAY, sense(json!({})));
     run(root);
     let counted = vec![(WORKOUT.to_string(), "a".to_owned())];
-    assert_eq!(listed_moved_now(root, &counted, "b"), None);
+    let none = BTreeSet::new();
+    assert_eq!(listed_moved_now(root, &counted, "b", &none), None);
     assert_eq!(
-        listed_moved_now(root, &counted, "a"),
+        listed_moved_now(root, &counted, "a", &none),
         Some((1, vec!["a".to_owned()]))
     );
+    let held = BTreeSet::from([account_key(STRAVA_STREAM, &WORKOUT.to_string())]);
+    assert_eq!(listed_moved_now(root, &counted, "a", &held), None);
+}
+
+#[test]
+fn no_merge_can_begin_while_the_marker_takes_its_last_look() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    fn merge_is_shut_out(root: &Path) {
+        assert!(hold_lock_if_no_merge_running(root).is_none());
+    }
+    BEFORE_MARKER_SCAN.set(Some(merge_is_shut_out));
+    run(root);
+    assert!(BEFORE_MARKER_SCAN.take().is_none());
+    assert!(root.join(MARKER).exists());
 }
 
 #[test]

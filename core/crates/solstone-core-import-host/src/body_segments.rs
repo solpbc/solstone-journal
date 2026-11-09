@@ -30,6 +30,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use solstone_core_body_ingest::oura_sync::OuraHttp;
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
@@ -362,6 +363,10 @@ impl Totals {
 struct PendingWindow {
     key: String,
     write: bool,
+    /// What a written window's file will hold, so a takeover can tell whether
+    /// the run it took over got that far.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    written_sha: Option<String>,
     facet: bool,
     publish: bool,
     /// Under a run that names no facet, the facet a document this window now
@@ -984,6 +989,7 @@ impl Run<'_, '_> {
                     recorded.push(PendingWindow {
                         key: window.1.clone(),
                         write: decision.contents.is_some(),
+                        written_sha: decision.contents.as_deref().map(text_sha),
                         facet: decision.facet_changed,
                         publish,
                         taken,
@@ -1457,6 +1463,31 @@ fn holds_a_run(journal: &Path, import_id: &str) -> bool {
         .any(|name| dir.join(name).exists())
 }
 
+fn text_sha(text: &str) -> String {
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The windows of a stopped day that hold what its run meant to write. One with
+/// nothing to write was already as it should be.
+fn reached_windows(journal: &Path, source: &BodySource, pending: &Pending) -> BTreeSet<String> {
+    pending
+        .windows
+        .iter()
+        .filter(|window| match (&window.written_sha, window.write) {
+            (Some(sha), true) => {
+                let id = (pending.day.clone(), window.key.clone());
+                fs::read_to_string(window_dir(journal, source, &id).join(BODY_RECORDS_FILE))
+                    .is_ok_and(|text| text_sha(&text) == *sha)
+            }
+            _ => true,
+        })
+        .map(|window| window.key.clone())
+        .collect()
+}
+
 /// Publish an Apple export as body windows. Runs under the source's lock.
 pub fn run_apple_health_segments(
     journal: &Path,
@@ -1759,7 +1790,7 @@ fn run_phases(
             // run wrote is bound and queued before its staging goes.
             // Its half-done day's windows are on disk as far as they got; what it
             // owed them is publication, which is all this does.
-            if let Some(pending) = old.pending.take() {
+            if let Some(mut pending) = old.pending.take() {
                 run.write_facets(&pending.day, &pending.windows, old.facet.as_deref())?;
                 let windows: Vec<WindowId> = pending
                     .windows
@@ -1770,11 +1801,16 @@ fn run_phases(
                 let failed = run.publish_day(&windows)?;
                 old.failed.extend(failed);
                 sync_day_folders(journal, source, &pending.day)?;
-                // That day's rows name the old import, so its listing has to, whichever
-                // of the windows it had got to. A window it hadn't is listed too.
+                // That day's rows name the old import, so its listing has to, for the
+                // windows it got to and no others.
+                let reached = reached_windows(journal, source, &pending);
+                pending.listing.retain(|(key, ..)| reached.contains(key));
+                pending.moved.retain(|(key, _)| reached.contains(key));
                 let import = journal.join("imports").join(&old.import_id);
                 if import.is_dir() {
-                    run.append_listing(&mut old, &pending)?;
+                    if !pending.listing.is_empty() {
+                        run.append_listing(&mut old, &pending)?;
+                    }
                     old.totals.add(&pending.counts);
                 }
                 // A record its run didn't get to; the totals are this run's.

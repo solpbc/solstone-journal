@@ -212,7 +212,10 @@ fn callback_root_replacement_keeps_original_effects_and_exclusion_on_return_or_u
         mode: u8,
     }
     impl JournalMaintenance for Replace<'_> {
-        fn rebuild_body_history(&self, journal: &Path) -> Result<(), JournalMaintenanceError> {
+        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
+            panic!("a restore no longer rebuilds body history")
+        }
+        fn full_scan(&self, journal: &Path) -> Result<(), JournalMaintenanceError> {
             assert_busy(self.original);
             fs::rename(self.original, self.moved).unwrap();
             fs::create_dir(self.original).unwrap();
@@ -224,9 +227,6 @@ fn callback_root_replacement_keeps_original_effects_and_exclusion_on_return_or_u
                 1 => Err(JournalMaintenanceError),
                 _ => panic!("callback unwind with original Activity still held"),
             }
-        }
-        fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("later callback must not run after binding loss")
         }
     }
     for mode in 0..3 {
@@ -259,7 +259,8 @@ fn callback_root_replacement_keeps_original_effects_and_exclusion_on_return_or_u
         assert!(moved.join("callback-at-original-root").is_file());
         assert!(!journal.join("callback-at-original-root").exists());
         assert_eq!(fs::read(journal.join("replacement")).unwrap(), b"keep");
-        assert_eq!(
+        // The destination went in before this callback, at the original root.
+        assert_ne!(
             solstone_core_backup::get_backup_config(&moved).unwrap(),
             config_before
         );
