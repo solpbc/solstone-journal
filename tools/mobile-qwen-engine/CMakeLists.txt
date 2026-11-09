@@ -88,4 +88,16 @@ if(JOURNAL_MOBILE_QWEN_TESTS)
     target_link_libraries(journal_mobile_qwen_active_stop_tests PRIVATE journal_mobile_qwen cpp-httplib Threads::Threads)
     add_test(NAME journal_mobile_qwen_active_stop COMMAND journal_mobile_qwen_active_stop_tests)
     set_tests_properties(journal_mobile_qwen_active_stop PROPERTIES TIMEOUT 180 SKIP_RETURN_CODE 77)
+    add_executable(journal_mobile_qwen_response_retirement_tests tests/response_retirement_test.cpp journal_mobile_qwen.cpp)
+    target_include_directories(journal_mobile_qwen_response_retirement_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/tools/server" "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/vendor" "${JOURNAL_MOBILE_QWEN_LLAMA_SOURCE_DIR}/vendor/cpp-httplib")
+    target_compile_definitions(journal_mobile_qwen_response_retirement_tests PRIVATE
+        JOURNAL_MOBILE_QWEN_TEST_SILENT_LOOP_EXIT=1
+        JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY="${JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY}"
+        JOURNAL_MOBILE_QWEN_SOURCE_REVISION="8642541b255bfb5dc39cd351a178be09013a55d6")
+    target_link_libraries(journal_mobile_qwen_response_retirement_tests PRIVATE llama-server-impl cpp-httplib Threads::Threads)
+    if(ANDROID)
+        target_link_libraries(journal_mobile_qwen_response_retirement_tests PRIVATE log)
+    endif()
+    add_test(NAME journal_mobile_qwen_response_retirement COMMAND journal_mobile_qwen_response_retirement_tests)
+    set_tests_properties(journal_mobile_qwen_response_retirement PROPERTIES TIMEOUT 180 SKIP_RETURN_CODE 77)
 endif()

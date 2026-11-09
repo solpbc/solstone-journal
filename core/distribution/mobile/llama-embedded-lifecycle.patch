@@ -201,7 +201,7 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
  #ifdef DEBUG_TIMINGS
          static int64_t t_prev = 0;
          int64_t t_start = ggml_time_us();
-@@ -5201,7 +5260,21 @@
+@@ -5201,11 +5260,29 @@
  
  void server_context::start_loop() {
      auto & params = impl->params_base;
@@ -216,13 +216,21 @@ diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
 +        }
 +    } final_progress_guard{*impl};
      impl->queue_tasks.start_loop(params.sleep_idle_seconds * 1000);
-+}
-+
-+void server_context::set_progress_callback(std::function<void(const server_embedded_progress &)> callback) {
-+    impl->progress_callback = std::move(callback);
  }
  
++void server_context::set_progress_callback(std::function<void(const server_embedded_progress &)> callback) {
++    impl->progress_callback = std::move(callback);
++}
++
  void server_context::terminate() {
+     impl->queue_tasks.terminate();
++}
++
++void server_context::cancel_pending_responses() {
++    impl->queue_results.cancel_waiters();
+ }
+ 
+ llama_context * server_context::get_llama_context() const {
 diff --git a/tools/server/server-context.h b/tools/server/server-context.h
 --- a/tools/server/server-context.h
 +++ b/tools/server/server-context.h
@@ -234,7 +242,15 @@ diff --git a/tools/server/server-context.h b/tools/server/server-context.h
  
  struct server_context_meta {
      std::string build_info;
-@@ -89,6 +90,8 @@
+@@ -75,6 +76,7 @@
+ 
+     // terminate main loop (will unblock start_loop)
+     void terminate();
++    void cancel_pending_responses();
+ 
+     // get the underlaying llama_context, can return nullptr if sleeping
+     // not thread-safe, should only be used from the main thread
+@@ -89,6 +91,8 @@
  
      // note: must be set before load_model() is called
      void set_state_callback(server_state_callback_t callback);
@@ -247,7 +263,7 @@ diff --git a/tools/server/server-embedded.h b/tools/server/server-embedded.h
 new file mode 100644
 --- /dev/null
 +++ b/tools/server/server-embedded.h
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,86 @@
 +#pragma once
 +#include <atomic>
 +#include <functional>
@@ -301,6 +317,9 @@ new file mode 100644
 +// One app-owned generation. Never share this control with the CLI entry points.
 +struct server_embedded_control {
 +    std::atomic<bool> cancelled{false};
++    // The host regression disables CPU-only abort to exercise a quiet loop exit,
++    // matching backends where llama's abort callback is not implemented.
++    bool use_compute_abort = true;
 +    std::function<void(int)> on_ready;
 +    std::function<void(const server_embedded_progress &)> on_progress;
 +
@@ -494,6 +513,100 @@ diff --git a/tools/server/server-queue.cpp b/tools/server/server-queue.cpp
      time_last_task = ggml_time_ms();
  
      // spawn the worker thread used by yield_to_queue()
+@@ -386,15 +391,25 @@
+ // server_response
+ //
+ 
++server_task_result_ptr server_response::cancelled_result(int id_task) {
++    auto result = std::make_unique<server_task_result_error>();
++    result->id = id_task;
++    result->err_type = ERROR_TYPE_UNAVAILABLE;
++    result->err_msg = "local model runtime is stopping";
++    return result;
++}
++
+ void server_response::add_waiting_task_id(int id_task) {
+     RES_DBG("add task %d to waiting list. current waiting = %d (before add)\n", id_task, (int) waiting_task_ids.size());
+ 
+     std::unique_lock<std::mutex> lock(mutex_results);
++    if (embedded_cancelled) { return; }
+     waiting_task_ids.insert(id_task);
+ }
+ 
+ void server_response::add_waiting_task_ids(const std::unordered_set<int> & id_tasks) {
+     std::unique_lock<std::mutex> lock(mutex_results);
++    if (embedded_cancelled) { return; }
+ 
+     for (const auto & id_task : id_tasks) {
+         RES_DBG("add task %d to waiting list. current waiting = %d (before add)\n", id_task, (int) waiting_task_ids.size());
+@@ -428,12 +443,16 @@
+     while (true) {
+         std::unique_lock<std::mutex> lock(mutex_results);
+         condition_results.wait(lock, [&]{
++            if (embedded_cancelled) { return true; }
+             if (!running) {
+                 RES_DBG("%s : queue result stop\n", "recv");
+                 std::terminate(); // we cannot return here since the caller is HTTP code
+             }
+             return !queue_results.empty();
+         });
++        if (embedded_cancelled) {
++            return cancelled_result(id_tasks.empty() ? -1 : *id_tasks.begin());
++        }
+ 
+         for (size_t i = 0; i < queue_results.size(); i++) {
+             if (id_tasks.find(queue_results[i]->id) != id_tasks.end()) {
+@@ -451,6 +470,9 @@
+     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout);
+     while (true) {
+         std::unique_lock<std::mutex> lock(mutex_results);
++        if (embedded_cancelled) {
++            return cancelled_result(id_tasks.empty() ? -1 : *id_tasks.begin());
++        }
+ 
+         for (int i = 0; i < (int) queue_results.size(); i++) {
+             if (id_tasks.find(queue_results[i]->id) != id_tasks.end()) {
+@@ -461,6 +483,9 @@
+         }
+ 
+         std::cv_status cr_res = condition_results.wait_until(lock, deadline);
++        if (embedded_cancelled) {
++            return cancelled_result(id_tasks.empty() ? -1 : *id_tasks.begin());
++        }
+         if (!running) {
+             RES_DBG("%s : queue result stop\n", __func__);
+             std::terminate(); // we cannot return here since the caller is HTTP code
+@@ -482,6 +507,7 @@
+     RES_DBG("sending result for task id = %d\n", result->id);
+ 
+     std::unique_lock<std::mutex> lock(mutex_results);
++    if (embedded_cancelled) { return; }
+     for (const auto & id_task : waiting_task_ids) {
+         if (result->id == id_task) {
+             RES_DBG("task id = %d pushed to result queue\n", result->id);
+@@ -495,6 +521,7 @@
+ 
+ void server_response::broadcast(server_task_result_ptr && result) {
+     std::unique_lock<std::mutex> lock(mutex_results);
++    if (embedded_cancelled) { return; }
+     for (const auto & id_task : waiting_task_ids) {
+         RES_DBG("task id = %d pushed to result queue\n", id_task);
+         server_task_result_ptr res_copy(result->clone());
+@@ -506,6 +533,14 @@
+ 
+ void server_response::terminate() {
+     running = false;
++    condition_results.notify_all();
++}
++
++void server_response::cancel_waiters() {
++    std::unique_lock<std::mutex> lock(mutex_results);
++    if (embedded_cancelled) { return; }
++    embedded_cancelled = true;
++    queue_results.clear();
+     condition_results.notify_all();
+ }
+ 
 diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
 --- a/tools/server/server-queue.h
 +++ b/tools/server/server-queue.h
@@ -505,6 +618,27 @@ diff --git a/tools/server/server-queue.h b/tools/server/server-queue.h
      bool sleeping = false;
      bool req_stop_sleeping = false;
      int64_t time_last_task = 0;
+@@ -154,6 +155,9 @@
+ struct server_response {
+ private:
+     bool running = true;
++    bool embedded_cancelled = false;
++
++    static server_task_result_ptr cancelled_result(int id_task);
+ 
+     // for keeping track of all tasks waiting for the result
+     std::unordered_set<int> waiting_task_ids;
+@@ -195,6 +199,10 @@
+ 
+     // terminate the waiting loop
+     void terminate();
++
++    // App-owned teardown retires readers normally, including later admission.
++    // Standalone process termination keeps its existing separate behavior.
++    void cancel_waiters();
+ };
+ 
+ // RAII wrapper to make working with server_queue and server_response easier
 diff --git a/tools/server/server.cpp b/tools/server/server.cpp
 --- a/tools/server/server.cpp
 +++ b/tools/server/server.cpp
@@ -515,7 +649,7 @@ diff --git a/tools/server/server.cpp b/tools/server/server.cpp
  #include "server-http.h"
  #include "server-models.h"
  #include "server-cors-proxy.h"
-@@ -811,3 +812,71 @@
+@@ -811,3 +812,74 @@
      server_role role;
      return server_run(params, argc, argv, role, opts);
  }
@@ -553,6 +687,7 @@ diff --git a/tools/server/server.cpp b/tools/server/server.cpp
 +            control.clear_stop();
 +            http.is_ready.store(false);
 +            http.stop();
++            ctx.cancel_pending_responses();
 +            ctx.terminate();
 +            server_stream_session_manager_stop();
 +            mcp.shutdown();
@@ -568,6 +703,7 @@ diff --git a/tools/server/server.cpp b/tools/server/server.cpp
 +    control.bind_stop([&] {
 +        ctx_http.is_ready.store(false);
 +        ctx_http.stop();
++        ctx_server.cancel_pending_responses();
 +        ctx_server.terminate();
 +    });
 +    if (control.cancelled.load()) { return 0; }
@@ -580,7 +716,8 @@ diff --git a/tools/server/server.cpp b/tools/server/server.cpp
 +    if (!ctx_server.load_model(params)) { return control.cancelled.load() ? 0 : 1; }
 +    if (control.cancelled.load()) { return 0; }
 +    llama_set_abort_callback(ctx_server.get_llama_context(), [](void * data) {
-+        return static_cast<server_embedded_control *>(data)->cancelled.load();
++        auto * control = static_cast<server_embedded_control *>(data);
++        return control->use_compute_abort && control->cancelled.load();
 +    }, &control);
 +    routes.update_meta(ctx_server);
 +    if (!control.publish_ready(ctx_http.port, ctx_http.is_ready)) { return 0; }

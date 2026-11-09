@@ -12,6 +12,7 @@
 #include <android/log.h>
 #endif
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -98,6 +99,22 @@ int32_t invalid(char * error, size_t capacity, const char * message) {
 extern "C" uint32_t journal_mobile_qwen_abi_version(void) { return JOURNAL_MOBILE_QWEN_ABI_V1; }
 extern "C" const char * journal_mobile_qwen_source_revision(void) { return JOURNAL_MOBILE_QWEN_SOURCE_REVISION; }
 extern "C" const char * journal_mobile_qwen_runtime_identity(void) { return JOURNAL_MOBILE_QWEN_RUNTIME_IDENTITY; }
+
+#if defined(JOURNAL_MOBILE_QWEN_TEST_SILENT_LOOP_EXIT)
+// Private executable-only fixture: no additional symbol enters the image ABI.
+bool journal_mobile_qwen_test_silent_loop_exit(journal_mobile_qwen_handle * handle,
+    std::function<void(const server_embedded_progress &)> observer) {
+    std::lock_guard<std::mutex> lock(handle->mutex);
+    if (handle->run_started) { return false; }
+    handle->control.use_compute_abort = false;
+    auto report = handle->control.on_progress;
+    handle->control.on_progress = [report, observer](const server_embedded_progress & value) {
+        report(value);
+        observer(value);
+    };
+    return true;
+}
+#endif
 
 extern "C" int32_t journal_mobile_qwen_create_v1(const journal_mobile_qwen_config_v1 * config,
     journal_mobile_qwen_handle ** out, char * error, size_t capacity) {
