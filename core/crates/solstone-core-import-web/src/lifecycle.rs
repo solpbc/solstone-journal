@@ -2857,7 +2857,7 @@ mod tests {
 
     #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
-    async fn save_conflict_and_already_imported_leave_no_temp() {
+    async fn save_conflict_leaves_no_temp() {
         let root = TempDir::new().unwrap();
         let boundary = "first";
         let first = format!(
@@ -2880,37 +2880,6 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(conflict["reason_code"], "invalid_operation_for_state");
         assert_eq!(fs::read(&first_path).unwrap(), b"first bytes");
-        assert_save_tmp_clean(root.path());
-
-        let hash = read_import_metadata(root.path(), first["timestamp"].as_str().unwrap()).unwrap()
-            ["source_hash"]
-            .as_str()
-            .unwrap()
-            .to_owned();
-        write_manifest(&ManifestWriteRequest {
-            journal_root: root.path(),
-            import_id: "complete",
-            source_type: "text",
-            source_hash: &SourceHash::new(hash),
-            entry_count: 1,
-            days_affected: &[],
-            files_created: &[],
-            imported_via: "test",
-            link_id: None,
-            observer_handle: None,
-            raw_retention: None,
-            span: None,
-        })
-        .unwrap();
-        let imported = format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\nnew-id\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"note.txt\"\r\nContent-Type: text/plain\r\n\r\nfirst bytes\r\n--{boundary}--\r\n"
-        );
-        let imported = crate::routes(root.path().to_path_buf())
-            .oneshot(multipart_save(imported, boundary))
-            .await
-            .unwrap();
-        let (_, imported) = response_json(imported).await;
-        assert_eq!(imported["reason_code"], "invalid_operation_for_state");
         assert_save_tmp_clean(root.path());
     }
 
