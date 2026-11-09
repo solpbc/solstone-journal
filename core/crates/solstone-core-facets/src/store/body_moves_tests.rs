@@ -324,3 +324,18 @@ fn a_stop_after_the_intent_appends_the_intents_copy() {
     complete_body_move(root.path(), &open).unwrap();
     assert_eq!(rows(root.path(), "b", "20260102").len(), 1);
 }
+
+#[test]
+fn the_log_says_the_target_holds_it_before_the_source_goes() {
+    let root = journal();
+    let (from, to) = (place("20260101", "a"), place("20260102", "b"));
+    let open = started(root.path(), &from, &to);
+    assert!(!open.placed);
+    // The source can't be rewritten, so the move stops after the target's write.
+    let source = root.path().join("facets/a/activities/20260101.jsonl");
+    std::fs::remove_file(&source).unwrap();
+    std::fs::create_dir(&source).unwrap();
+    assert!(complete_body_move(root.path(), &open).is_err());
+    assert!(open_body_moves(root.path()).unwrap()[0].placed);
+    assert_eq!(rows(root.path(), "b", "20260102").len(), 1);
+}

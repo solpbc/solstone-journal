@@ -105,8 +105,13 @@ impl StravaRunSummary {
                 if let Some((shown, count)) = self.listed_over {
                     let _ = writeln!(
                         text,
-                        "nothing already listed moved: {} would have, and you saw {shown}. import again to see the new count.\n",
+                        "nothing already listed moved: {} would have, and you {}.\n",
                         plural(count as u64, "workout", "workouts"),
+                        if shown == 0 {
+                            "weren't shown any".to_owned()
+                        } else {
+                            format!("were told {shown}")
+                        },
                     );
                 }
             }

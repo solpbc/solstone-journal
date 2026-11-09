@@ -256,6 +256,14 @@ fn a_strava_download_takes_a_facet_or_none_and_a_muted_one_is_refused() {
             }
         }
     }
+    match dispatch(&["--facet", "desk-a", "--listed-moves-shown", "2"]) {
+        CliOutcome::Registry(registry) => assert_eq!(registry.listed_moves_shown, Some(2)),
+        _ => panic!("the shown count is a run's own argument"),
+    }
+    match dispatch(&["--facet", "desk-a"]) {
+        CliOutcome::Registry(registry) => assert_eq!(registry.listed_moves_shown, None),
+        _ => panic!("no count shown is no cap"),
+    }
     for (extra, code) in [
         (&["--facet", "old"][..], 1),
         (&["--facet", "desk-a", "--no-facet"][..], 2),

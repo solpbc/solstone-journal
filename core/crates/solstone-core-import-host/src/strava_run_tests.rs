@@ -304,7 +304,8 @@ fn a_run_moves_what_the_owner_was_shown() {
 fn more_to_move_than_the_owner_saw_moves_none_and_says_so() {
     let (journal, summary) = moved_with(Some(2));
     assert!(
-        summary.contains("nothing already listed moved: 3 workouts would have, and you saw 2."),
+        summary
+            .contains("nothing already listed moved: 3 workouts would have, and you were told 2."),
         "{summary}"
     );
     assert!(!summary.contains("moved there"), "{summary}");
