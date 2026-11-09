@@ -23,6 +23,7 @@ mod cache;
 pub mod day;
 pub mod fingerprint;
 pub mod install;
+pub mod old_imports;
 pub mod pack;
 pub mod places;
 pub mod projection;

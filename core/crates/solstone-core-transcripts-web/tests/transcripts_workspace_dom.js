@@ -883,6 +883,14 @@ async function createEnvironment(
       });
     }
 
+    if (urlStr.includes('/app/body/api/window') && options.bodyWindow) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => options.bodyWindow,
+      });
+    }
+
     if (urlStr.includes('/app/transcripts/api/segment/') && urlStr.includes('/body-window')) {
       return Promise.resolve({
         ok: true,
@@ -1160,6 +1168,34 @@ test('case 1: selection pushes history and navigating back reaches day view', as
 // 2. Click A, release. Click the audio tab. Click B, release. back, flush hashchange while
 // the segment GET is still pending (exactly one new segment GET so far), then release.
 // Active tab is audio, not transcript.
+test('body context counts what a segment holds and never states a value', async () => {
+  const bodyWindow = {
+    has_data: true,
+    from: '2020-01-15T11:45:00-07:00',
+    to: '2020-01-15T11:50:00-07:00',
+    signals: [
+      { label: 'heart rate', count: 3, count_label: '3 readings' },
+      { label: 'step count', count: 2, count_label: '2 entries' },
+    ],
+    events: [],
+    sources: { chips: [{ name: 'Apple Health', count: 3, count_label: '3 entries' }] },
+    hourly: [],
+    // A stale payload's figures must not surface even if a server still sent them.
+    heart_rate: { count: 3, label: '60-70 bpm' },
+    glucose: { count: 2, range_label: '90-110 mg/dL' },
+    steps: { label: '1,234 steps' },
+  };
+  const env = await createEnvironment(undefined, 'analyzed', false, null, { bodyWindow });
+  getZoomPills(env.doc)[0].dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets('analyzed', {
+    chunks: [{ type: 'audio', time: '11:45', text: 'hello', timestamp: 0 }],
+  });
+  const transcript = env.doc.querySelector('#tr-tabpanel-transcript').innerHTML;
+  assert.ok(transcript.includes('heart rate · 3 readings'), transcript);
+  assert.ok(transcript.includes('step count · 2 entries'), transcript);
+  assert.ok(!/HR |60-70|90-110|1,234 steps/.test(transcript), transcript);
+});
+
 test('case 2: back navigation preserves previously active tab', async () => {
   const env = await createEnvironment();
   const pills = getZoomPills(env.doc);

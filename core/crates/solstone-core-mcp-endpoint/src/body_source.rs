@@ -22,6 +22,7 @@ use solstone_core_journal_config::Tz;
 use solstone_core_journal_io::paths::{
     PathOrDay, Segment, iter_segments_skipping_unreadable_streams,
 };
+use solstone_core_location::old_imports::{CoverScope, OldSource, covers_on_day, month_words};
 use solstone_core_transcripts::segment_clock;
 
 use crate::dispatch::{
@@ -54,6 +55,50 @@ const SPAN_EMPTY_CONTINUES: &str =
 const KIND_ABSENT: &str = "This source holds entries in that time, but none of the kind asked for. Its entries name their kinds; list without kind to see them.";
 const BEGAN_EARLIER: &str = "Nothing in this range is listed, but an entry that began before the range runs into it. Pass span_reference to get_transcript as reference to read it.";
 const OTHER_CONTENT: &str = "This source also holds other content on this day that isn't listed here, so these gaps describe only its body segments. List the day without source to see it.";
+
+/// What an earlier import of a body source holds for this day, for a connection
+/// that may read the whole journal's transcripts. A bundle has no facet, so a
+/// limited connection is told nothing of it.
+fn earlier_import_note(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+    only: Option<OldSource>,
+) -> Option<String> {
+    if !snapshot.categories.contains(&AdmittedCategory::Transcripts)
+        || !matches!(
+            snapshot.scope,
+            solstone_core_indexer_query::ConnectionScope::WholeJournal
+        )
+    {
+        return None;
+    }
+    let notes = covers_on_day(journal_root, day, only)
+        .into_iter()
+        .map(|cover| {
+            let source = cover.source.words();
+            match cover.scope {
+                CoverScope::Day => format!(
+                    "An earlier import of {source} covers this day and isn't read, so what it holds isn't listed here."
+                ),
+                CoverScope::Month(month) => format!(
+                    "An earlier import of {source} covers the month of {} and isn't read, so what it holds isn't listed here.",
+                    month_words(&month).unwrap_or(month)
+                ),
+            }
+        })
+        .collect::<Vec<_>>();
+    (!notes.is_empty()).then(|| notes.join(" "))
+}
+
+/// The note for a plain day listing, when an old import of any body source covers it.
+pub(crate) fn listing_earlier_import_note(
+    journal_root: &Path,
+    snapshot: &ConnectionReadSnapshot,
+    day: &str,
+) -> Option<String> {
+    earlier_import_note(journal_root, snapshot, day, None)
+}
 
 struct Window {
     segment: Segment,
@@ -545,14 +590,26 @@ pub(crate) fn list_source(
     let stream = BODY_RECORD_STREAMS
         .iter()
         .find(|stream| labels.get(**stream).is_some_and(|label| label == source));
-    let empty =
-        || Prepared::new(json!({ "transcripts": [] }), 0, Vec::new()).when_empty(NOTHING_READABLE);
     let Some(stream) = stream else {
-        return Ok(empty());
+        return Ok(
+            Prepared::new(json!({ "transcripts": [] }), 0, Vec::new()).when_empty(NOTHING_READABLE)
+        );
     };
+    // The source this listing names, so its note speaks only of that source.
+    let source_kind = match *stream {
+        "import.apple_health" => Some(OldSource::AppleHealth),
+        "import.oura" => Some(OldSource::Oura),
+        _ => None,
+    };
+    let earlier =
+        source_kind.and_then(|only| earlier_import_note(journal_root, snapshot, day, Some(only)));
     let windows = readable_windows(journal_root, snapshot, day, stream)?;
     if windows.is_empty() {
-        return Ok(empty());
+        let mut response = json!({ "transcripts": [] });
+        if let Some(note) = &earlier {
+            response["gaps_note"] = json!(note);
+        }
+        return Ok(Prepared::new(response, 0, Vec::new()).when_empty(NOTHING_READABLE));
     }
     let from = request
         .time_from
@@ -644,10 +701,11 @@ pub(crate) fn list_source(
     }
     if kind.is_some() && in_range.is_empty() && unreadable == 0 && !began_earlier && holds_entries()
     {
-        return Ok(
-            Prepared::new(json!({ "transcripts": [], "gaps": gaps }), 0, Vec::new())
-                .when_empty(KIND_ABSENT),
-        );
+        let mut response = json!({ "transcripts": [], "gaps": gaps });
+        if let Some(note) = &earlier {
+            response["gaps_note"] = json!(note);
+        }
+        return Ok(Prepared::new(response, 0, Vec::new()).when_empty(KIND_ABSENT));
     }
 
     let mint = |target| {
@@ -738,8 +796,13 @@ pub(crate) fn list_source(
     if unreadable > 0 {
         response["unreadable"] = json!(unreadable);
     }
+    let mut gaps_notes = Vec::new();
     if holds_other_content(journal_root, snapshot, day, stream)? {
-        response["gaps_note"] = json!(OTHER_CONTENT);
+        gaps_notes.push(OTHER_CONTENT.to_owned());
+    }
+    gaps_notes.extend(earlier);
+    if !gaps_notes.is_empty() {
+        response["gaps_note"] = json!(gaps_notes.join(" "));
     }
     if began_earlier {
         response["began_earlier"] = json!(BEGAN_EARLIER);
