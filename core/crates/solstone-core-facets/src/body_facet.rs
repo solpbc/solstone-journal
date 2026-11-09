@@ -2,16 +2,17 @@
 // Copyright (c) 2026 sol pbc
 
 //! What a body import offers for its facet, from the owner's remembered
-//! default and the journal's declared facets. Read-only: the answer is
-//! recorded by `record_body_facet` in the config write crate, and a `body`
-//! facet is made with [`crate::create_facet`].
+//! default and the journal's declared facets, and what an answer does. The
+//! answer itself is recorded by `record_body_facet` in the config write crate.
 
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
+use serde_json::{Value, json};
 use solstone_core_journal_config::{
-    BodyFacetOffer, ConfigLoadError, StoredBodyFacet, parse_body_facet, read_journal_config,
+    BodyFacetChoice, BodyFacetOffer, ConfigLoadError, PREFERRED_BODY_FACET, StoredBodyFacet,
+    parse_body_facet, read_journal_config,
 };
 
 use crate::{FacetStoreError, observe_declared_facet_inventory};
@@ -48,6 +49,122 @@ impl Error for BodyFacetReadError {
             Self::Facets(error) => Some(error),
         }
     }
+}
+
+/// What a body import asks an owner, or what is already remembered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BodyFacetAsk {
+    Chosen(String),
+    Declined,
+    AskExisting(String),
+    AskMakeBody,
+    /// A `body` facet exists but is muted: offer to turn it back on.
+    AskUnmute,
+}
+
+/// What to ask, and the enabled facets by name and title.
+///
+/// # Errors
+///
+/// The configuration or the facet declarations can't be read.
+pub fn body_facet_ask(root: &Path) -> Result<(BodyFacetAsk, Vec<(String, String)>), String> {
+    let read = body_facet_offer(root).map_err(|error| error.to_string())?;
+    let inventory = observe_declared_facet_inventory(root).map_err(|error| error.to_string())?;
+    let offer = match read.offer {
+        BodyFacetOffer::Chosen(facet) => BodyFacetAsk::Chosen(facet),
+        BodyFacetOffer::Declined => BodyFacetAsk::Declined,
+        BodyFacetOffer::AskExisting(facet) => BodyFacetAsk::AskExisting(facet),
+        BodyFacetOffer::AskMakeBody
+            if inventory
+                .muted
+                .iter()
+                .any(|facet| facet == PREFERRED_BODY_FACET) =>
+        {
+            BodyFacetAsk::AskUnmute
+        }
+        BodyFacetOffer::AskMakeBody => BodyFacetAsk::AskMakeBody,
+    };
+    let facets = inventory
+        .enabled
+        .iter()
+        .map(|facet| {
+            let title = crate::read_facet_declaration(root, facet)
+                .ok()
+                .flatten()
+                .and_then(|snapshot| {
+                    snapshot
+                        .value()
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or_else(|| facet.clone());
+            (facet.clone(), title)
+        })
+        .collect();
+    Ok((offer, facets))
+}
+
+const BODY_TITLE: &str = "Body";
+const BODY_COLOR: &str = "#667eea";
+const BODY_EMOJI: &str = "\u{1f4e6}";
+
+/// Do what an answer to `ask` means, making or unmuting the facet a yes names,
+/// and return what to remember. `None`: it was already answered.
+///
+/// # Errors
+///
+/// The facet can't be made, unmuted or logged.
+pub fn apply_body_facet_answer(
+    root: &Path,
+    ask: &BodyFacetAsk,
+    yes: bool,
+) -> Result<Option<BodyFacetChoice>, String> {
+    Ok(Some(match (ask, yes) {
+        (BodyFacetAsk::Chosen(_) | BodyFacetAsk::Declined, _) => return Ok(None),
+        (_, false) => BodyFacetChoice::None,
+        (BodyFacetAsk::AskExisting(facet), true) => BodyFacetChoice::Facet(facet.clone()),
+        (BodyFacetAsk::AskUnmute, true) => {
+            crate::set_facet_muted(root, PREFERRED_BODY_FACET, false)
+                .map_err(|error| error.to_string())?;
+            log_facet_action(
+                root,
+                PREFERRED_BODY_FACET,
+                "facet_unmute",
+                json!({"muted": false}),
+            )?;
+            BodyFacetChoice::Facet(PREFERRED_BODY_FACET.to_owned())
+        }
+        (BodyFacetAsk::AskMakeBody, true) => BodyFacetChoice::Facet(make_body(root)?),
+    }))
+}
+
+/// Make the `body` facet, or the next free name when `body` belonged to a
+/// facet that was deleted or merged, as the settings page does.
+fn make_body(root: &Path) -> Result<String, String> {
+    let name = match crate::retired_facet_entry(root, PREFERRED_BODY_FACET)
+        .map_err(|error| error.to_string())?
+    {
+        None => PREFERRED_BODY_FACET.to_owned(),
+        Some(_) => crate::first_free_facet_name(root, PREFERRED_BODY_FACET)
+            .map_err(|error| error.to_string())?,
+    };
+    crate::create_facet(root, &name, BODY_TITLE, "", BODY_COLOR, BODY_EMOJI, None)
+        .map_err(|error| error.to_string())?;
+    log_facet_action(
+        root,
+        &name,
+        "facet_create",
+        json!({"title": BODY_TITLE, "emoji": BODY_EMOJI, "color": BODY_COLOR, "description": ""}),
+    )?;
+    Ok(name)
+}
+
+fn log_facet_action(root: &Path, facet: &str, action: &str, params: Value) -> Result<(), String> {
+    crate::append_action_log(root, Some(facet), "import", "owner", action, params)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 /// What a body import with the owner present offers for its facet.

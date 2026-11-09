@@ -8,6 +8,7 @@ pub mod audio_archive;
 pub mod audio_custody;
 pub mod audio_publication;
 mod body_activity;
+mod body_facet_question;
 pub mod body_segments;
 pub mod call;
 pub mod cli_argv;

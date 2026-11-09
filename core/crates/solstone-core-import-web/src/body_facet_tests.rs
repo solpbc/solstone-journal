@@ -11,6 +11,7 @@ use tempfile::TempDir;
 use tower::ServiceExt;
 
 use super::*;
+use solstone_core_journal_config::BodyFacetChoice;
 
 fn journal(facets: &[&str]) -> TempDir {
     let root = TempDir::new().unwrap();

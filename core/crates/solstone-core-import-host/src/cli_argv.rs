@@ -4,6 +4,7 @@
 //! Journal importer argv parsing and dispatch.
 
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -853,7 +854,7 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
                 force: options.force,
                 owner_timestamp: options.timestamp.clone(),
                 fallback_timestamp: options.fallback_timestamp.clone(),
-                facet: import_facet(&options),
+                facet: asked_import_facet(&options, source, media, journal_path),
             };
             match dispatch.seams() {
                 None => CliOutcome::Registry(registry_dispatch),
@@ -880,6 +881,35 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             }
         }
     }
+}
+
+/// The facet a run was given, or the owner's answer when it's a saving Strava
+/// run at a terminal with no facet named and a question still open. Anything
+/// else goes on unattended. No lock or sweep has started yet, so a terminal
+/// left waiting holds nothing.
+fn asked_import_facet(
+    options: &Options,
+    source: RegistrySource,
+    media: &str,
+    journal: &Path,
+) -> ImportFacet {
+    let given = import_facet(options);
+    if given != ImportFacet::Unattended
+        || source != RegistrySource::Strava
+        || options.dry_run
+        || options.scheduled
+        || options.json
+        || !std::io::stdin().is_terminal()
+        || !std::io::stdout().is_terminal()
+    {
+        return given;
+    }
+    crate::body_facet_question::ask_strava_facet(
+        journal,
+        Path::new(media),
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
 }
 
 /// The facet a run was given on its command line.

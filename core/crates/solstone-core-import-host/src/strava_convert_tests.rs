@@ -665,3 +665,77 @@ fn an_open_move_is_finished_by_the_start_and_an_open_apple_move_with_the_marker_
             .is_empty()
     );
 }
+
+#[test]
+fn a_facet_choice_counts_only_listed_workouts_that_would_move() {
+    let journal = journal(&["a", "b"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(root, "a", DAY, sense(json!({})));
+    let download = BTreeSet::from([WORKOUT.to_string()]);
+    assert_eq!(
+        listed_moves(root, &download, "b"),
+        Some((1, vec!["a".to_owned()]))
+    );
+    assert_eq!(
+        listed_moves(root, &download, "a"),
+        None,
+        "it's there already"
+    );
+    assert_eq!(
+        listed_moves(root, &BTreeSet::new(), "b"),
+        None,
+        "not in the download"
+    );
+    run(root);
+    assert_eq!(
+        listed_moves(root, &download, "b"),
+        Some((1, vec!["a".to_owned()])),
+        "a code record counts the same"
+    );
+}
+
+#[test]
+fn a_misplaced_workout_placed_again_moves_its_record_with_its_title_and_hide() {
+    let journal = journal(&["a"]);
+    let root = journal.path();
+    workout(root, Some("a"));
+    add_line(
+        root,
+        "a",
+        DAY,
+        sense(json!({"title": "Run", "hidden": true, "edits": [
+            title_edit("2026-01-02T00:00:00Z", "Run"), hide_edit("2026-01-03T00:00:00Z")]})),
+    );
+    run(root);
+    assert_eq!(lines(root, "a", DAY).len(), 1);
+    // A re-import put the workout on the next day.
+    fs::remove_dir_all(root.join("chronicle").join(DAY)).unwrap();
+    const START: &str = "2026-01-02T07:00:00+00:00";
+    tile(root, "20260102", "070000_300", WORKOUT, 0, START, Some("a"));
+    let live = LiveWorkouts::from([(
+        WORKOUT,
+        (
+            Some(("20260102".to_owned(), "070000_300".to_owned())),
+            vec![crate::strava_filing::LiveTile {
+                day: "20260102".to_owned(),
+                segment: "070000_300".to_owned(),
+                index: 0,
+            }],
+        ),
+    )]);
+    // The record's old day is where the misread start put it.
+    let days = BTreeSet::from([DAY.to_owned(), "20260102".to_owned()]);
+    assert!(
+        find_code_record(root, &days, &account_key(STRAVA_STREAM, "901"))
+            .unwrap()
+            .is_some()
+    );
+    let held_back = relocate_with_days(root, &live, None, &days);
+    assert!(held_back.is_empty());
+    assert!(lines(root, "a", DAY).is_empty());
+    let moved = lines(root, "a", "20260102");
+    assert_eq!(moved.len(), 1);
+    assert_eq!(moved[0]["title"], "Run");
+    assert_eq!(moved[0]["hidden"], true);
+}

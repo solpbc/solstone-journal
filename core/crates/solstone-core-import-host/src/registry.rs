@@ -170,11 +170,24 @@ fn preview_size(
                     });
                 }
             }
+            let listed_moves = match &dispatch.facet {
+                crate::cli_argv::ImportFacet::Facet(facet) => crate::strava_convert::listed_moves(
+                    journal,
+                    &workouts
+                        .workouts
+                        .iter()
+                        .map(|workout| workout.activity_id.to_string())
+                        .collect(),
+                    facet,
+                ),
+                _ => None,
+            };
             Ok(solstone_core_import::size::ImportSize {
                 recordings,
                 skipped: placement.counts.stayed_deleted_tiles
                     + placement.counts.no_free_key_tiles
                     + placement.counts.duplicate_identity_tiles,
+                listed_moves,
                 ..Default::default()
             })
         }

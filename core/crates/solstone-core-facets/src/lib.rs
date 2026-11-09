@@ -23,7 +23,8 @@ pub use activity_placement::{
     ActivityCourse, PlacedRecord, ResolvedSegment, activity_span, place_activity_records,
 };
 pub use body_facet::{
-    BodyFacetOfferRead, BodyFacetReadError, body_facet_offer, default_for_unattended,
+    BodyFacetAsk, BodyFacetOfferRead, BodyFacetReadError, apply_body_facet_answer, body_facet_ask,
+    body_facet_offer, default_for_unattended,
 };
 pub use solstone_core_entity::facet_links;
 pub use solstone_core_entity::{EntityIdentityMap, read_identity_map};

@@ -819,6 +819,65 @@ pub(crate) fn convert_held(
     counts
 }
 
+/// How many workouts in a download, already listed with the owner's
+/// activities, a choice of `facet` would move, and the titles of the facets
+/// they'd move from. `None` when it moves none.
+pub(crate) fn listed_moves(
+    journal: &Path,
+    download: &BTreeSet<String>,
+    facet: &str,
+) -> Option<(usize, Vec<String>)> {
+    let workouts = live_workouts(journal);
+    let (lines, _) = all_sense_lines(journal);
+    let (parts, _) = components(&workouts, &lines);
+    let mut named: BTreeMap<usize, Vec<&SenseLine>> = BTreeMap::new();
+    for part in &parts {
+        for (line, workouts) in &part.names {
+            for workout in workouts {
+                named.entry(*workout).or_default().push(&lines[*line]);
+            }
+        }
+    }
+    let mut count = 0;
+    let mut from = BTreeSet::new();
+    for (at, workout) in workouts.iter().enumerate() {
+        if !download.contains(&workout.activity) {
+            continue;
+        }
+        let code = find_code_record(journal, &workout.candidate_days(), &workout.account())
+            .ok()
+            .flatten();
+        let current = match &code {
+            Some((place, _)) => Some(place.facet.clone()),
+            None => named
+                .get(&at)
+                .and_then(|lines| target_facet(journal, workout, lines)),
+        };
+        if let Some(current) = current
+            && current != facet
+        {
+            count += 1;
+            from.insert(facet_title(journal, &current));
+        }
+    }
+    (count > 0).then(|| (count, from.into_iter().collect()))
+}
+
+fn facet_title(journal: &Path, facet: &str) -> String {
+    solstone_core_facets::read_facet_declaration(journal, facet)
+        .ok()
+        .flatten()
+        .and_then(|snapshot| {
+            snapshot
+                .value()
+                .get("title")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|title| !title.trim().is_empty())
+        .unwrap_or_else(|| facet.to_owned())
+}
+
 /// Put each code record of the download's workouts where its workout now is:
 /// on its first tile's day, and under the facet the owner chose when they
 /// chose one. Returns the accounts it couldn't place, which the writer leaves
@@ -827,6 +886,16 @@ pub(crate) fn relocate_download(
     journal: &Path,
     live: &LiveWorkouts,
     chosen: Option<&str>,
+) -> BTreeSet<String> {
+    relocate_with_days(journal, live, chosen, &BTreeSet::new())
+}
+
+/// [`relocate_download`], also looking on `extra_days`.
+pub(crate) fn relocate_with_days(
+    journal: &Path,
+    live: &LiveWorkouts,
+    chosen: Option<&str>,
+    extra_days: &BTreeSet<String>,
 ) -> BTreeSet<String> {
     let mut held_back = BTreeSet::new();
     let workouts = live_workouts(journal)
@@ -849,6 +918,7 @@ pub(crate) fn relocate_download(
             .map(Workout::candidate_days)
             .unwrap_or_default();
         days.insert(day.clone());
+        days.extend(extra_days.iter().cloned());
         let placed = finish_open_move(journal, &key).and_then(|()| {
             let Some((from, _)) = find_code_record(journal, &days, &key)? else {
                 return Ok(());
