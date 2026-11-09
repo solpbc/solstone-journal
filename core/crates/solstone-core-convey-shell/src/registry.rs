@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct AppDefinition {
     pub name: &'static str,
