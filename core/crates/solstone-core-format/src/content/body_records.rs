@@ -164,16 +164,20 @@ pub fn copy_rank(key: &str) -> u8 {
     }
 }
 
-/// A day's windows of one stream, with their rows, keeping each row once: a row
-/// id in two windows reads from the better copy by [`copy_rank`], then key order.
-/// `moved` rows are dropped first, so a mark never hides a row's new home.
+/// A day's windows of one stream, with their rows, keeping each row once when
+/// an archive merge left a second copy: a row id in two windows at one clock
+/// reads from the better copy by [`copy_rank`], then key order. `moved` rows are
+/// dropped first, so a mark never hides a row's new home.
 #[must_use]
 pub fn one_copy_per_row(mut windows: Vec<(String, Vec<BodyRow>)>) -> Vec<(String, Vec<BodyRow>)> {
     windows
         .sort_by(|left, right| (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0)));
     let mut seen = std::collections::BTreeSet::new();
-    for (_, rows) in &mut windows {
-        rows.retain(|row| row.kind != RowKind::Moved && seen.insert(row.id.clone()));
+    for (name, rows) in &mut windows {
+        let clock = name.split('_').next().unwrap_or_default().to_owned();
+        rows.retain(|row| {
+            row.kind != RowKind::Moved && seen.insert((clock.clone(), row.id.clone()))
+        });
     }
     windows
 }
@@ -630,15 +634,24 @@ mod tests {
     fn a_moved_mark_never_hides_a_rows_new_home() {
         let read = one_copy_per_row(vec![
             ("090000_3601".to_owned(), vec![row(RowKind::Moved, "r1")]),
-            ("100000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
+            ("090000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
         ]);
         assert_eq!(
             ids(&read),
             [
                 ("090000_3601".to_owned(), Vec::new()),
-                ("100000_3600".to_owned(), vec!["r1".to_owned()]),
+                ("090000_3600".to_owned(), vec!["r1".to_owned()]),
             ]
         );
+    }
+
+    #[test]
+    fn a_row_live_at_two_clocks_isnt_a_merged_copy_and_reads_at_both() {
+        let read = one_copy_per_row(vec![
+            ("090000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
+            ("100000_3600".to_owned(), vec![row(RowKind::Reading, "r1")]),
+        ]);
+        assert_eq!(read.iter().map(|(_, rows)| rows.len()).sum::<usize>(), 2);
     }
 
     #[test]
