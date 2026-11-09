@@ -4212,6 +4212,7 @@ fn a_session_answers_each_request_by_that_requests_own_setting() {
     assert_eq!(hit_positions(open.results.iter()), [0, 1]);
     let closed = index.search(&request("Kestrel"), reference_date()).unwrap();
     assert_eq!(hit_positions(closed.results.iter()), [0]);
+    drop(index);
     fs::remove_dir_all(root).unwrap();
 }
 
