@@ -114,11 +114,11 @@ fn an_edit_holds_what_was_written_and_nothing_before_it() {
 #[test]
 fn removed_text_is_counted_and_never_quoted() {
     let edit = render_edit("keep this\nsecret words here\n", "keep this\n").unwrap();
-    assert_eq!(edit, "Removed 3 words.");
+    assert_eq!(edit, "removed 3 words.");
     let replaced = render_edit("alpha beta\n", "alpha gamma\n").unwrap();
     assert!(replaced.contains("gamma"));
     assert!(!replaced.contains("beta"));
-    assert!(replaced.contains("Removed 1 word."));
+    assert!(replaced.contains("removed 1 word."));
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn a_transcript_titles_each_note_and_names_its_path() {
     let text = render_transcript(&[
         NoteEntry {
             path: "people/Alex Rivera.md".to_owned(),
-            status: Some("Renamed from inbox/Alex.md".to_owned()),
+            status: Some("renamed from inbox/Alex.md".to_owned()),
             body: String::new(),
         },
         NoteEntry {
@@ -228,6 +228,6 @@ fn a_transcript_titles_each_note_and_names_its_path() {
     ]);
     assert_eq!(
         text,
-        "## Alex Rivera\nSource: people/Alex Rivera.md\nRenamed from inbox/Alex.md\n\n## 2026-11-08\nSource: daily/2026-11-08.md\n\nMet Alex.\n"
+        "## Alex Rivera\nSource: people/Alex Rivera.md\nrenamed from inbox/Alex.md\n\n## 2026-11-08\nSource: daily/2026-11-08.md\n\nMet Alex.\n"
     );
 }

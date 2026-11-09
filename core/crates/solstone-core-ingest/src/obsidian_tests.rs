@@ -84,7 +84,7 @@ fn an_edit_holds_only_what_changed() {
         )],
     )
     .unwrap();
-    assert!(memory.contains("Edited"), "{memory}");
+    assert!(memory.contains("edited"), "{memory}");
     assert!(memory.contains("second thoughts arrive"), "{memory}");
     assert!(!memory.contains("first thoughts"), "{memory}");
 }
@@ -133,7 +133,7 @@ fn a_rename_is_one_entry_and_the_next_edit_is_a_change_not_a_first_sight() {
     .unwrap();
     assert_eq!(
         memory,
-        "## Alex Rivera\nSource: people/Alex Rivera.md\nRenamed from inbox/Alex.md\n"
+        "## Alex Rivera\nSource: people/Alex Rivera.md\nrenamed from inbox/Alex.md\n"
     );
     let edit = apply(
         journal.path(),
@@ -145,7 +145,7 @@ fn a_rename_is_one_entry_and_the_next_edit_is_a_change_not_a_first_sight() {
         )],
     )
     .unwrap();
-    assert!(edit.contains("Edited"), "{edit}");
+    assert!(edit.contains("edited"), "{edit}");
     assert!(edit.contains("And long walks."), "{edit}");
     assert!(!edit.contains("likes rivers"), "{edit}");
 }
@@ -169,7 +169,7 @@ fn renaming_a_linked_note_folds_the_link_rewrites_into_it() {
     }
     let memory = apply(journal.path(), "a", upload).unwrap();
     assert_eq!(memory.matches("## ").count(), 1, "{memory}");
-    assert!(memory.contains("Renamed from Alex.md"), "{memory}");
+    assert!(memory.contains("renamed from Alex.md"), "{memory}");
 
     // A rewrite arriving in a later window folds too.
     apply(
@@ -206,7 +206,7 @@ fn a_delete_is_one_entry_and_the_note_is_forgotten() {
         vec![changed("a.md", "09:00:00", "text\n")],
     );
     let memory = apply(journal.path(), "a", vec![removed("a.md", "09:10:00")]).unwrap();
-    assert_eq!(memory, "## a\nSource: a.md\nDeleted\n");
+    assert_eq!(memory, "## a\nSource: a.md\nno longer in the vault\n");
     assert!(!note_file(journal.path(), "Notes", "a.md").exists());
     assert_eq!(
         apply(journal.path(), "a", vec![removed("a.md", "09:20:00")]),
@@ -311,7 +311,7 @@ fn a_link_edit_long_after_a_rename_is_the_owners_own() {
     let mut late = changed("n.md", "23:00:00", "See [[B]].\n");
     late.changed_at += chrono::Duration::days(2);
     let memory = apply(journal.path(), "a", vec![late]).unwrap();
-    assert!(memory.contains("Edited"), "{memory}");
+    assert!(memory.contains("edited"), "{memory}");
 }
 
 #[test]

@@ -378,8 +378,8 @@ pub fn render_edit(old: &str, new: &str) -> Option<String> {
             out.push_str("\n\n");
         }
         out.push_str(&match removed_words {
-            1 => "Removed 1 word.".to_owned(),
-            count => format!("Removed {count} words."),
+            1 => "removed 1 word.".to_owned(),
+            count => format!("removed {count} words."),
         });
     }
     (!out.is_empty()).then_some(out)
