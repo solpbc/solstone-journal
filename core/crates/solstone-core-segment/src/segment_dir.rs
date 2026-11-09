@@ -957,7 +957,11 @@ pub fn reclaim_for_arrival(segment_dir: &Path) -> Result<Arrival, SegmentError> 
             path: segment_dir.to_path_buf(),
             source,
         })?;
-    if entries.len() != 1 || entries.iter().any(|entry| entry.file_name() != TOMBSTONE_NAME) {
+    if entries.len() != 1
+        || entries
+            .iter()
+            .any(|entry| entry.file_name() != TOMBSTONE_NAME)
+    {
         return Ok(Arrival::Removing);
     }
     let tombstone = segment_dir.join(TOMBSTONE_NAME);

@@ -2021,10 +2021,16 @@ fn remove_segments_moves_to_the_trash_even_beside_a_stopped_older_removal() {
     assert_eq!(trashed.status.code(), Some(0), "{:?}", receipt(&trashed));
     assert_eq!(receipt(&trashed)["trashed"].as_array().unwrap().len(), 1);
     assert!(segment.join("tombstone.json").is_file());
-    assert!(staged.is_dir(), "the older stopped removal is left for finish them");
+    assert!(
+        staged.is_dir(),
+        "the older stopped removal is left for finish them"
+    );
     let items = solstone_core_trash::list(bed.journal()).unwrap();
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0].action, solstone_core_removals::Action::RetentionTool);
+    assert_eq!(
+        items[0].action,
+        solstone_core_removals::Action::RetentionTool
+    );
 }
 
 #[test]

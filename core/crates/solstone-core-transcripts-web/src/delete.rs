@@ -11,12 +11,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path as RoutePath, State};
 use axum::http::header::USER_AGENT;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde_json::json;
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_removals::{Action, Page, Surface, Unit};
@@ -76,7 +76,9 @@ pub(crate) async fn delete_segment(
     let page = page_of(&stream);
     let surface = Surface::of_request(
         page,
-        headers.get(USER_AGENT).and_then(|value| value.to_str().ok()),
+        headers
+            .get(USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
     );
     let root = state.journal_root.clone();
     let erase = request.erase;
@@ -91,8 +93,9 @@ pub(crate) async fn delete_segment(
             erase_at,
             erased,
         })) => match (erase, erased) {
-            (true, true) => Json(json!({"success": true, "deleted": key, "erased": true}))
-                .into_response(),
+            (true, true) => {
+                Json(json!({"success": true, "deleted": key, "erased": true})).into_response()
+            }
             // In the trash, but the erase the owner asked for was refused:
             // say where it is.
             (true, false) => Json(json!({
@@ -309,4 +312,3 @@ fn invalid_segment(detail: &str, status: StatusCode) -> Response {
         status,
     )
 }
-

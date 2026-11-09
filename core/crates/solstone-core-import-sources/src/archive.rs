@@ -164,9 +164,9 @@ pub enum SegmentDispositionKind {
     },
     /// Its own key and every key ingest would try held different content.
     DifferingContentCollision,
-    /// The owner deleted this segment from the journal (its key holds a
-    /// tombstone, or its removal is in progress), so the archive's copy is not
-    /// brought back.
+    /// The owner's removal of the segment at this key is part-way through, so
+    /// the archive's copy is not placed there now. A key the owner already
+    /// removed is not this: the archive's copy is new data and comes back.
     DeletedByOwner,
 }
 
@@ -1485,7 +1485,8 @@ fn stage_segments(
             // siblings (`093000_300_a` / `_b`) land at distinct paths.
             let mut relative = segment_relative_for(&day_name, &segment, identity);
             let mut disposition = SegmentDispositionKind::Copied;
-            if deleted_by_owner(&target.join(&relative))? {
+            let own_key = key_state(&target.join(&relative))?;
+            if own_key == KeyState::Removing {
                 state.summary.segments_skipped += 1;
                 state.segment_dispositions.push(SegmentDisposition {
                     day: day_name.clone(),
@@ -1495,7 +1496,9 @@ fn stage_segments(
                 });
                 continue;
             }
-            if fs::symlink_metadata(target.join(&relative)).is_ok() {
+            // A key the owner removed takes the archive's copy as a free key
+            // would; its tombstone gives way at publication.
+            if own_key == KeyState::Live {
                 match place_colliding_segment(
                     target, &day_name, &segment, identity, &own_paths, state,
                 )? {
@@ -1595,12 +1598,13 @@ fn place_colliding_segment(
     for name in &candidates {
         let relative = segment_relative_for(day, segment, RecordIdentity { name, ..identity });
         let destination = target.join(&relative);
-        if fs::symlink_metadata(&destination).is_ok() {
+        let candidate = key_state(&destination)?;
+        if candidate == KeyState::Live {
             if tree_digest(&destination)? == source_digest {
                 return Ok(CollisionPlacement::Held);
             }
         } else if free.is_none()
-            && !deleted_by_owner(&destination)?
+            && candidate != KeyState::Removing
             && !state.chronicle_units.contains_key(&relative)
             && !own_paths.contains(&relative)
         {
@@ -2952,6 +2956,14 @@ fn publish_one(
     })?;
     match unit {
         PublishUnit::Tree => {
+            if state.chronicle_units.contains_key(&relative) {
+                reclaim_removed_key(&destination).map_err(|error| {
+                    ImportSourcesError::MergePublishFailed {
+                        detail: error.to_string(),
+                        mutation,
+                    }
+                })?;
+            }
             if fs::symlink_metadata(&destination).is_ok() {
                 return Err(ImportSourcesError::MergePublishFailed {
                     detail: format!("{relative} appeared while the import was running"),
@@ -3353,11 +3365,71 @@ fn join_contained(root: &Path, relative: &str) -> Result<PathBuf, ImportSourcesE
     })
 }
 
-fn deleted_by_owner(path: &Path) -> Result<bool, ImportSourcesError> {
-    solstone_core_segment::owner_deleted(path).map_err(|error| ImportSourcesError::SegmentMerge {
+/// What a segment key in the target journal holds, for placing an archive
+/// segment there. Planning only reads; the tombstone gives way at publication.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KeyState {
+    /// Nothing is there.
+    Free,
+    /// The owner removed the segment and only its tombstone stands: the key is
+    /// free again for what arrives.
+    Removed,
+    /// Something live is there.
+    Live,
+    /// A removal is part-way through (a staged sibling, an occupied marker, or
+    /// a tombstone beside other files).
+    Removing,
+}
+
+fn key_state(path: &Path) -> Result<KeyState, ImportSourcesError> {
+    let io = |detail: String| ImportSourcesError::SegmentMerge {
         path: path.to_path_buf(),
-        detail: error.to_string(),
-    })
+        detail,
+    };
+    match solstone_core_segment::owner_deletion_state(path)
+        .map_err(|error| io(error.to_string()))?
+    {
+        solstone_core_segment::OwnerDeletionState::Live => {
+            Ok(if fs::symlink_metadata(path).is_ok() {
+                KeyState::Live
+            } else {
+                KeyState::Free
+            })
+        }
+        solstone_core_segment::OwnerDeletionState::Deleted => {
+            let mut entries = fs::read_dir(path).map_err(|error| io(error.to_string()))?;
+            let only_tombstone = match (entries.next(), entries.next()) {
+                (Some(entry), None) => {
+                    entry.map_err(|error| io(error.to_string()))?.file_name() == "tombstone.json"
+                }
+                _ => false,
+            };
+            Ok(if only_tombstone {
+                KeyState::Removed
+            } else {
+                KeyState::Removing
+            })
+        }
+        solstone_core_segment::OwnerDeletionState::Staged
+        | solstone_core_segment::OwnerDeletionState::Occupied => Ok(KeyState::Removing),
+    }
+}
+
+/// At publication, a removed key's tombstone gives way to the archive segment
+/// arriving there, and its emptied folder makes room for the staged pivot. A
+/// removal in progress, or anything written into the folder meanwhile, stays
+/// and the publication refuses as for any occupied name.
+fn reclaim_removed_key(destination: &Path) -> io::Result<()> {
+    if key_state(destination).map_err(io::Error::other)? != KeyState::Removed {
+        return Ok(());
+    }
+    if solstone_core_segment::reclaim_for_arrival(destination).map_err(io::Error::other)?
+        == solstone_core_segment::Arrival::Reclaimed
+    {
+        // `remove_dir` takes only an empty folder.
+        fs::remove_dir(destination)?;
+    }
+    Ok(())
 }
 
 fn segment_relative_for(day: &str, segment: &Segment, identity: RecordIdentity<'_>) -> String {

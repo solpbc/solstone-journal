@@ -1755,14 +1755,32 @@ fn allocate_segment(
             }
         }
         let candidate_path = parent.join(&segment);
-        if solstone_core_segment::owner_deleted(&candidate_path).map_err(|error| {
-            DocumentSegmentError::Io {
-                path: candidate_path.clone(),
-                detail: error.to_string(),
+        let candidate_io = |error: solstone_core_segment::SegmentError| DocumentSegmentError::Io {
+            path: candidate_path.clone(),
+            detail: error.to_string(),
+        };
+        // A key the owner removed is free again: what arrives is new data. Only
+        // a removal still in progress steps on. A preview does not touch the
+        // tombstone; a publish lets it give way before the write lock is taken.
+        let removed = match solstone_core_segment::owner_deletion_state(&candidate_path)
+            .map_err(candidate_io)?
+        {
+            solstone_core_segment::OwnerDeletionState::Live => false,
+            solstone_core_segment::OwnerDeletionState::Deleted => true,
+            solstone_core_segment::OwnerDeletionState::Staged
+            | solstone_core_segment::OwnerDeletionState::Occupied => continue,
+        };
+        let reclaimed = removed && publish && {
+            match solstone_core_segment::reclaim_for_arrival(&candidate_path)
+                .map_err(candidate_io)?
+            {
+                solstone_core_segment::Arrival::Reclaimed => true,
+                solstone_core_segment::Arrival::Free => false,
+                solstone_core_segment::Arrival::Live | solstone_core_segment::Arrival::Removing => {
+                    continue;
+                }
             }
-        })? {
-            continue;
-        }
+        };
         let _allocation = if publish {
             Some(
                 solstone_core_segment::output_attempt::SegmentMutation::acquire(
@@ -1777,7 +1795,16 @@ fn allocate_segment(
         } else {
             None
         };
-        let fresh = if publish {
+        let fresh = if reclaimed {
+            // Under the lock, the reclaimed folder is ours only while it is
+            // still empty; anything written into it meanwhile steps us on.
+            if !empty_directory(&candidate_path)? {
+                continue;
+            }
+            true
+        } else if removed && !publish {
+            true
+        } else if publish {
             match fs::create_dir(&candidate_path) {
                 Ok(()) => true,
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => false,
@@ -1882,6 +1909,17 @@ fn document_transcript_exists(candidate: &Path) -> Result<bool, DocumentSegmentE
             detail: error.to_string(),
         }),
     }
+}
+
+fn empty_directory(path: &Path) -> Result<bool, DocumentSegmentError> {
+    let io = |error: io::Error| DocumentSegmentError::Io {
+        path: path.to_path_buf(),
+        detail: error.to_string(),
+    };
+    if !fs::symlink_metadata(path).map_err(io)?.is_dir() {
+        return Ok(false);
+    }
+    Ok(fs::read_dir(path).map_err(io)?.next().is_none())
 }
 
 /// `Ok(true)` only for the same regular `original.pdf`. Every other occupant is
@@ -2819,10 +2857,38 @@ mod claim_tests {
     }
 
     #[test]
-    fn skips_tombstone_removing_marker_and_conflicting_original_for_ordinary_and_force() {
+    fn a_document_arriving_again_at_a_key_the_owner_removed_lands_at_that_key() {
+        for force in [false, true] {
+            let journal = tempfile::tempdir().unwrap();
+            let root = parent(journal.path());
+            fs::create_dir_all(&root).unwrap();
+            let removed = root.join("120000_0");
+            fs::create_dir(&removed).unwrap();
+            fs::write(removed.join("tombstone.json"), b"tomb").unwrap();
+            let claim = claim_segment(
+                journal.path(),
+                Tz::UTC,
+                utc(12, 0, 0),
+                "same-hash",
+                &mut std::collections::HashMap::new(),
+                force,
+            )
+            .unwrap();
+            assert_eq!(claim.segment, "120000_0");
+            assert!(!claim.already_imported);
+            assert!(claim.binding.is_some());
+            assert!(removed.is_dir());
+            assert!(!removed.join("tombstone.json").exists());
+            assert!(!root.join("120001_0").exists());
+        }
+    }
+
+    #[test]
+    fn skips_a_removal_in_progress_and_conflicting_original_for_ordinary_and_force() {
         let journal = tempfile::tempdir().unwrap();
         let root = parent(journal.path());
         fs::create_dir_all(&root).unwrap();
+        // A tombstone beside other files: the removal is part-way through.
         let tombstone = root.join("120000_0");
         fs::create_dir(&tombstone).unwrap();
         fs::write(tombstone.join("tombstone.json"), b"tomb").unwrap();

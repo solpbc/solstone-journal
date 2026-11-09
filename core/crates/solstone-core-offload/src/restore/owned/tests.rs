@@ -4,7 +4,6 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
 
 use super::*;
-use solstone_core_journal_io::paths::SegmentLayout;
 
 fn selected() -> SegmentCatalog {
     let intent = crate::test_restore_intent::fixture(false);
@@ -162,4 +161,34 @@ fn legacy_only_refusal_precedes_capacity_and_mixed_legacy_does_not_inflate_stage
     assert_eq!(bound_maximum(&mut files), Some(3));
     assert_eq!(files[0].disposition, RestoreDisposition::Unattempted);
     assert!(matches!(files[0].owner, FileOwner::None));
+}
+
+/// A recording in the trash or erased leaves a tombstone where it was; there is
+/// nothing to restore into, and it is left out, not reported.
+#[test]
+fn a_removed_recording_is_left_out_and_nothing_is_created() {
+    let temp = tempfile::tempdir().unwrap();
+    let segment = selected();
+    let name = segment.active[0].segment_dir.clone().unwrap();
+    let place = match segment.active[0].layout.unwrap() {
+        SegmentLayout::Direct => temp.path().join("chronicle").join(&segment.day).join(&name),
+        SegmentLayout::Named => temp
+            .path()
+            .join("chronicle")
+            .join(&segment.day)
+            .join(&segment.stream)
+            .join(&name),
+    };
+    assert!(
+        !removed_from_journal(temp.path(), &segment),
+        "absent is not removed"
+    );
+    assert!(!place.exists(), "looking creates nothing");
+    fs::create_dir_all(&place).unwrap();
+    assert!(
+        !removed_from_journal(temp.path(), &segment),
+        "live is not removed"
+    );
+    fs::write(place.join("tombstone.json"), b"{}").unwrap();
+    assert!(removed_from_journal(temp.path(), &segment));
 }

@@ -5,6 +5,8 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+
+use solstone_core_journal_io::paths::SegmentLayout;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -428,6 +430,9 @@ fn select(
         .filter(|candidate| day.is_none_or(|day| candidate.day == day))
         .flat_map(|day| day.segments)
         .filter(|segment| !segment.active.is_empty())
+        // A recording in the trash, or erased from it, has nothing here to
+        // restore into. It is left out rather than reported as a problem.
+        .filter(|segment| !removed_from_journal(root.canonical_path(), segment))
         .collect();
     let mut files = Vec::new();
     for (detail, segment) in segments.iter().enumerate() {
@@ -450,6 +455,29 @@ fn select(
         Box::new(base("error", Some("failed"), scope, day).with_reason_detail(error.into()))
     })?;
     Ok((report, files))
+}
+
+/// Whether the owner removed this recording: its place holds a tombstone or a
+/// removal of it is under way. An unreadable place is not taken for removed, so
+/// the ordinary restore path reports it.
+fn removed_from_journal(journal: &Path, segment: &SegmentCatalog) -> bool {
+    let chronicle = journal.join("chronicle").join(&segment.day);
+    segment.active.iter().any(|witness| {
+        let name = witness
+            .segment_dir
+            .as_deref()
+            .unwrap_or(segment.segment.as_str());
+        let direct = match witness.layout {
+            Some(layout) => layout == SegmentLayout::Direct,
+            None => segment.stream == solstone_core_journal_io::DEFAULT_STREAM,
+        };
+        let place = if direct {
+            chronicle.join(name)
+        } else {
+            chronicle.join(&segment.stream).join(name)
+        };
+        solstone_core_segment::owner_deleted(&place).unwrap_or(false)
+    })
 }
 
 /// Every segment of one day, refusing unrepresentable or duplicate identities.

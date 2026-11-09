@@ -358,7 +358,7 @@ where
             }
         })?;
         let key_duration = chunk_duration_seconds.ceil().max(1.0) as u64;
-        let (segment, segment_dir, admitted) =
+        let (segment, segment_dir, admitted, reclaimed) =
             match allocate_segment_directory(&request, &segment_parent, true_start, key_duration) {
                 Ok(allocation) => allocation,
                 Err(error) => {
@@ -450,7 +450,9 @@ where
                 });
             }
             Err(error) if error.is_tolerated() => {
-                if let Err(remove_error) = remove_failed_audio_segment(&segment_dir, &admitted) {
+                if let Err(remove_error) =
+                    remove_failed_audio_segment(&segment_dir, &admitted, reclaimed)
+                {
                     let error = ImportError::AudioSegmentDirectory {
                         path: segment_dir,
                         message: remove_error.to_string(),
@@ -476,7 +478,7 @@ where
                 });
             }
             Err(error) => {
-                let cleanup_note = remove_failed_audio_segment(&segment_dir, &admitted)
+                let cleanup_note = remove_failed_audio_segment(&segment_dir, &admitted, reclaimed)
                     .err()
                     .map(|cleanup_error| {
                         format!("; cleanup left {}: {cleanup_error}", segment_dir.display())
@@ -838,13 +840,21 @@ fn segment_candidate(
             message: error.to_string(),
         }
     })?;
-    let deleted = solstone_core_segment::owner_deleted(&path).map_err(|error| {
+    let state = solstone_core_segment::owner_deletion_state(&path).map_err(|error| {
         ImportError::AudioSegmentDirectory {
             path: path.clone(),
             message: error.to_string(),
         }
     })?;
-    Ok((!occupied && !deleted).then_some((segment, path)))
+    // A key the owner removed is free again: what arrives is new data. Only
+    // live content or a removal still in progress steps on to the next key.
+    let free = match state {
+        solstone_core_segment::OwnerDeletionState::Live => !occupied,
+        solstone_core_segment::OwnerDeletionState::Deleted => true,
+        solstone_core_segment::OwnerDeletionState::Staged
+        | solstone_core_segment::OwnerDeletionState::Occupied => false,
+    };
+    Ok(free.then_some((segment, path)))
 }
 
 fn allocate_segment_directory(
@@ -852,13 +862,28 @@ fn allocate_segment_directory(
     parent: &Path,
     true_start: NaiveDateTime,
     key_duration: u64,
-) -> Result<(String, PathBuf, solstone_core_journal_io::JournalRoot), ImportError> {
+) -> Result<(String, PathBuf, solstone_core_journal_io::JournalRoot, bool), ImportError> {
     for attempt in 0..COLLISION_FORWARD_PROBE_LIMIT {
         let Some((segment, path)) =
             segment_candidate(request, parent, true_start, key_duration, attempt)?
         else {
             continue;
         };
+        // The removed segment's tombstone gives way before the write lock is
+        // taken; its emptied folder stays and this chunk is written into it.
+        let reclaimed =
+            match solstone_core_segment::reclaim_for_arrival(&path).map_err(|error| {
+                ImportError::AudioSegmentDirectory {
+                    path: path.clone(),
+                    message: error.to_string(),
+                }
+            })? {
+                solstone_core_segment::Arrival::Free => false,
+                solstone_core_segment::Arrival::Reclaimed => true,
+                solstone_core_segment::Arrival::Live | solstone_core_segment::Arrival::Removing => {
+                    continue;
+                }
+            };
         let _allocation = solstone_core_segment::output_attempt::SegmentMutation::acquire(
             &path,
             solstone_core_journal_io::LockOptions::default(),
@@ -867,7 +892,18 @@ fn allocate_segment_directory(
             path: path.clone(),
             message: error.to_string(),
         })?;
-        match fs::create_dir(&path) {
+        let created = if reclaimed {
+            // Under the lock, the reclaimed folder is ours only while it is
+            // still empty; anything written into it meanwhile steps us on.
+            match empty_directory(&path) {
+                Ok(true) => Ok(()),
+                Ok(false) => continue,
+                Err(error) => Err(error),
+            }
+        } else {
+            fs::create_dir(&path)
+        };
+        match created {
             Ok(()) => {
                 let admitted =
                     solstone_core_journal_io::JournalRoot::open(&path).map_err(|error| {
@@ -876,7 +912,7 @@ fn allocate_segment_directory(
                             message: error.to_string(),
                         }
                     })?;
-                return Ok((segment, path, admitted));
+                return Ok((segment, path, admitted, reclaimed));
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
@@ -989,9 +1025,19 @@ fn publish_audio_slice(
     })
 }
 
+fn empty_directory(path: &Path) -> std::io::Result<bool> {
+    if !fs::symlink_metadata(path)?.is_dir() {
+        return Ok(false);
+    }
+    Ok(fs::read_dir(path)?.next().is_none())
+}
+
+/// Remove a chunk's segment after its slice failed. A folder reclaimed from an
+/// earlier removal keeps standing, emptied, because a stream chain may name it.
 fn remove_failed_audio_segment(
     segment: &Path,
     admitted: &solstone_core_journal_io::JournalRoot,
+    keep_folder: bool,
 ) -> Result<(), std::io::Error> {
     let claims =
         solstone_core_segment::output_attempt::OutputClaims::discover(segment, Default::default())?;
@@ -999,7 +1045,18 @@ fn remove_failed_audio_segment(
     admitted
         .revalidate_canonical_binding()
         .map_err(|error| std::io::Error::other(error.to_string()))?;
-    fs::remove_dir_all(segment)
+    if !keep_folder {
+        return fs::remove_dir_all(segment);
+    }
+    for entry in fs::read_dir(segment)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(entry.path())?;
+        } else {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn remux_slice_to_stage(
@@ -1598,7 +1655,7 @@ mod publication_tests {
                 }
                 _ => (),
             }
-            let result = remove_failed_audio_segment(&segment, &admitted);
+            let result = remove_failed_audio_segment(&segment, &admitted, false);
             if mutation == "unchanged" {
                 result.unwrap();
                 assert!(!segment.exists());

@@ -655,7 +655,10 @@ mod tests {
                 Body::from(body.to_owned()),
             )
             .await;
-            (status, serde_json::from_slice(&body).expect("delete response"))
+            (
+                status,
+                serde_json::from_slice(&body).expect("delete response"),
+            )
         }
 
         fn trash_items(root: &Path) -> Vec<solstone_core_trash::Item> {
@@ -700,7 +703,10 @@ mod tests {
             );
             let history = solstone_core_removals::history(root.path(), 10).unwrap();
             assert_eq!(history.entries.len(), 1);
-            assert_eq!(history.entries[0].event, solstone_core_removals::Event::Trashed);
+            assert_eq!(
+                history.entries[0].event,
+                solstone_core_removals::Event::Trashed
+            );
             // Nothing else in the journal changed.
             for path in snapshot(root.path()).keys().chain(before.keys()) {
                 let changed = snapshot(root.path()).get(path) != before.get(path);
@@ -754,8 +760,7 @@ mod tests {
             delete(root.path(), "").await;
             let id = trash_items(root.path())[0].id.clone();
             let index = solstone_core_indexer_store::RetentionIndex::new(root.path());
-            let recordings =
-                solstone_core_retention::recording_trash::Recordings::new(&index);
+            let recordings = solstone_core_retention::recording_trash::Recordings::new(&index);
             solstone_core_trash::attach(
                 root.path(),
                 &[&recordings],
@@ -779,7 +784,10 @@ mod tests {
         #[tokio::test]
         async fn a_body_that_is_not_json_deletes_nothing() {
             let root = deletion_root();
-            assert_eq!(delete_raw(root.path(), "erase").await, StatusCode::BAD_REQUEST);
+            assert_eq!(
+                delete_raw(root.path(), "erase").await,
+                StatusCode::BAD_REQUEST
+            );
             assert!(root.path().join(SEGMENT).join("audio.flac").is_file());
         }
 

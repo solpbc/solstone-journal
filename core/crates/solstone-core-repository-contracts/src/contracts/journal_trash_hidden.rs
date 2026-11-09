@@ -197,7 +197,8 @@ impl<'ast> Visit<'ast> for Scan {
 
     fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
         if names_a_listing(&call.func) && call.args.first().is_some_and(is_root) {
-            self.root_walks.push(call.paren_token.span.open().start().line);
+            self.root_walks
+                .push(call.paren_token.span.open().start().line);
         }
         syn::visit::visit_expr_call(self, call);
     }

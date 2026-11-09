@@ -340,7 +340,11 @@ fn run_remove_segments(args: &Args) -> ExitCode {
             })),
         }
     }
-    let code = if refused.is_empty() { EXIT_OK } else { EXIT_REFUSED };
+    let code = if refused.is_empty() {
+        EXIT_OK
+    } else {
+        EXIT_REFUSED
+    };
     emit(
         serde_json::json!({
             "ok": code == EXIT_OK,

@@ -48,7 +48,11 @@ pub fn segment_rel(day: &str, stream: &str, dir: &str) -> String {
 pub fn parse_segment_rel(rel: &str) -> Option<(String, String, String)> {
     let parts: Vec<&str> = rel.split('/').collect();
     match parts.as_slice() {
-        ["chronicle", day, dir] => Some(((*day).to_owned(), DEFAULT_STREAM.to_owned(), (*dir).to_owned())),
+        ["chronicle", day, dir] => Some((
+            (*day).to_owned(),
+            DEFAULT_STREAM.to_owned(),
+            (*dir).to_owned(),
+        )),
         ["chronicle", day, stream, dir] if *stream != DEFAULT_STREAM => {
             Some(((*day).to_owned(), (*stream).to_owned(), (*dir).to_owned()))
         }

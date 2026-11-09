@@ -470,11 +470,10 @@ pub fn sweep(journal: &Path, kinds: &[&dyn Kind], now: DateTime<Utc>) -> Swept {
                 })
             }
             State::Trashed => match item.erase_at() {
-                Some(at) if at <= now => {
-                    erase(journal, &item.id, Action::Erase, timer_surface()).map(|()| {
+                Some(at) if at <= now => erase(journal, &item.id, Action::Erase, timer_surface())
+                    .map(|()| {
                         swept.erased += 1;
-                    })
-                }
+                    }),
                 Some(_) => {
                     swept.waiting += 1;
                     Ok(())
@@ -872,7 +871,8 @@ fn item_file(journal: &Path, item: &Item) -> Result<PathBuf, TrashError> {
 }
 
 fn publish_new(journal: &Path, item: &Item) -> Result<(), TrashError> {
-    let bytes = serde_json::to_vec_pretty(item).map_err(|error| TrashError::Io(error.to_string()))?;
+    let bytes =
+        serde_json::to_vec_pretty(item).map_err(|error| TrashError::Io(error.to_string()))?;
     write_bytes_exclusive(
         &item_file(journal, item)?,
         &bytes,
@@ -882,7 +882,8 @@ fn publish_new(journal: &Path, item: &Item) -> Result<(), TrashError> {
 }
 
 fn publish(journal: &Path, item: &Item) -> Result<(), TrashError> {
-    let bytes = serde_json::to_vec_pretty(item).map_err(|error| TrashError::Io(error.to_string()))?;
+    let bytes =
+        serde_json::to_vec_pretty(item).map_err(|error| TrashError::Io(error.to_string()))?;
     atomic_replace(
         item_file(journal, item)?,
         &bytes,
@@ -1064,8 +1065,17 @@ mod tests {
         let kind = Fake::default();
         let item = trash(&root, &kind);
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
-        let held = root.join(TRASH_DIR).join(&item.id).join("files").join(SEGMENT);
-        assert!(root.join(TRASH_DIR).join(&item.id).join("item.json").is_file());
+        let held = root
+            .join(TRASH_DIR)
+            .join(&item.id)
+            .join("files")
+            .join(SEGMENT);
+        assert!(
+            root.join(TRASH_DIR)
+                .join(&item.id)
+                .join("item.json")
+                .is_file()
+        );
         assert_eq!(fs::read(held.join("audio.flac")).unwrap(), b"sound");
         assert_eq!(item.state, State::Trashed);
         assert_eq!(item.bytes, 8);
@@ -1106,7 +1116,10 @@ mod tests {
         let kind = Fake::default();
         let item = trash(&root, &kind);
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
-        assert_eq!(fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(), b"sound");
+        assert_eq!(
+            fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(),
+            b"sound"
+        );
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(list(&root).unwrap().is_empty());
         assert_eq!(kind.seen.borrow()[1].0, Change::Attached);
@@ -1129,7 +1142,10 @@ mod tests {
         fs::write(root.join(SEGMENT).join("audio.flac"), b"again").unwrap();
         fs::write(root.join(SEGMENT).join("extra.json"), b"{}").unwrap();
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
-        assert_eq!(fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(), b"sound");
+        assert_eq!(
+            fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(),
+            b"sound"
+        );
         assert!(!root.join(SEGMENT).join("extra.json").exists());
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         // The copy it replaced is recorded as erased by the recover.
@@ -1142,7 +1158,11 @@ mod tests {
         let kind = Fake::default();
         let item = trash(&root, &kind);
         attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
-        assert!(!events(&root).iter().any(|(event, _)| *event == Event::Erased));
+        assert!(
+            !events(&root)
+                .iter()
+                .any(|(event, _)| *event == Event::Erased)
+        );
     }
 
     /// A refusal before anything moved leaves the recording in place and no
@@ -1167,7 +1187,10 @@ mod tests {
         assert!(events(&root).is_empty());
         kind.refuse_check_at.set(0);
         sweep(&root, &[&kind], Utc::now());
-        assert!(root.join(SEGMENT).join("audio.flac").is_file(), "no later sweep moves it");
+        assert!(
+            root.join(SEGMENT).join("audio.flac").is_file(),
+            "no later sweep moves it"
+        );
     }
 
     /// A failure after the move says so, never "nothing was deleted", and the
@@ -1192,7 +1215,10 @@ mod tests {
         assert!(!root.join(SEGMENT).join("audio.flac").exists());
         assert!(list(&root).unwrap().is_empty());
         assert_eq!(unfinished(&root).unwrap(), 1);
-        assert!(events(&root).is_empty(), "nothing recorded before it is settled");
+        assert!(
+            events(&root).is_empty(),
+            "nothing recorded before it is settled"
+        );
         kind.fail_references.set(false);
         let swept = sweep(&root, &[&kind], Utc::now());
         assert_eq!(swept.resumed, 1, "{swept:?}");
@@ -1378,7 +1404,10 @@ mod tests {
         .unwrap();
         let swept = sweep(&root, &[&kind], Utc::now());
         assert_eq!(swept.resumed, 1, "{swept:?}");
-        assert_eq!(fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(), b"sound");
+        assert_eq!(
+            fs::read(root.join(SEGMENT).join("audio.flac")).unwrap(),
+            b"sound"
+        );
         assert!(!root.join(TRASH_DIR).join(&item.id).exists());
         assert!(
             events(&root)
@@ -1454,7 +1483,11 @@ mod tests {
             format!("{{\"{SETTINGS_SECTION}\":{{\"{ERASE_AFTER_DAYS_KEY}\":1}}}}"),
         )
         .unwrap();
-        let swept = sweep(&root, &[&kind], item.trashed_at().unwrap() + Duration::days(2));
+        let swept = sweep(
+            &root,
+            &[&kind],
+            item.trashed_at().unwrap() + Duration::days(2),
+        );
         assert_eq!((swept.erased, swept.waiting), (0, 1));
     }
 

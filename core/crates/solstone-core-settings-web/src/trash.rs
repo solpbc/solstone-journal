@@ -54,11 +54,19 @@ fn view(journal_root: &Path, item: &Item) -> Value {
             place.as_ref().map(|(_, stream, _)| stream.clone()),
             segment.clone(),
         ),
-        (Unit::Segment {
-            day,
-            stream,
-            segment,
-        }, _) => ("segment", day.clone(), Some(stream.clone()), segment.clone()),
+        (
+            Unit::Segment {
+                day,
+                stream,
+                segment,
+            },
+            _,
+        ) => (
+            "segment",
+            day.clone(),
+            Some(stream.clone()),
+            segment.clone(),
+        ),
         _ => ("other", String::new(), None, String::new()),
     };
     json!({
@@ -269,7 +277,10 @@ mod tests {
             .unwrap();
         let status = response.status();
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        (
+            status,
+            serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+        )
     }
 
     #[tokio::test]
@@ -284,7 +295,10 @@ mod tests {
         assert_eq!(item["kind"], "segment");
         assert_eq!(item["stream"], "field");
         assert_eq!(item["bytes"], 3);
-        assert_eq!(item["replaces"], false, "its own tombstone is not something");
+        assert_eq!(
+            item["replaces"], false,
+            "its own tombstone is not something"
+        );
         fs::write(root.path().join(SEGMENT).join("audio.flac"), b"again").unwrap();
         let (_, body) = call(root.path(), Method::GET, "/app/settings/api/trash", "").await;
         assert_eq!(body["items"][0]["replaces"], true);
@@ -304,8 +318,14 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["done"], json!([id]));
-        assert_eq!(body["failed"][0]["reason"], "that is no longer in the trash");
-        assert_eq!(fs::read(root.path().join(SEGMENT).join("audio.flac")).unwrap(), b"raw");
+        assert_eq!(
+            body["failed"][0]["reason"],
+            "that is no longer in the trash"
+        );
+        assert_eq!(
+            fs::read(root.path().join(SEGMENT).join("audio.flac")).unwrap(),
+            b"raw"
+        );
         let history = solstone_core_removals::history(root.path(), 10).unwrap();
         let recovered = history
             .entries
@@ -336,7 +356,13 @@ mod tests {
         fs::create_dir_all(root.path().join(SEGMENT)).unwrap();
         fs::write(root.path().join(SEGMENT).join("audio.flac"), b"raw").unwrap();
         let second = trash_one(root.path());
-        let (_, body) = call(root.path(), Method::POST, "/app/settings/api/trash/empty", "").await;
+        let (_, body) = call(
+            root.path(),
+            Method::POST,
+            "/app/settings/api/trash/empty",
+            "",
+        )
+        .await;
         assert_eq!(body["done"], json!([second]));
         assert!(solstone_core_trash::list(root.path()).unwrap().is_empty());
     }

@@ -672,6 +672,26 @@ fn collisions_choose_and_report_a_different_segment_key() {
 }
 
 #[test]
+fn a_transcript_lands_at_a_key_the_owner_removed_and_steps_past_a_removal_in_progress() {
+    let (_temporary, source, day) = setup("t.txt", "one");
+    let removed = day.join("import.text/120000_300");
+    fs::create_dir_all(&removed).unwrap();
+    fs::write(removed.join("tombstone.json"), b"{}").unwrap();
+    let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(no_engine));
+    assert_eq!(created[0].segment, "120000_300");
+    assert!(!removed.join("tombstone.json").exists());
+    assert!(removed.join("conversation_transcript.jsonl").is_file());
+
+    let (_temporary, source, day) = setup("t.txt", "one");
+    let staged = day.join("import.text/.removing_120000_300");
+    fs::create_dir_all(&staged).unwrap();
+    let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(no_engine));
+    assert_ne!(created[0].segment, "120000_300");
+    assert!(!day.join("import.text/120000_300").exists());
+    assert!(staged.is_dir());
+}
+
+#[test]
 fn text_created_identity_carries_complete_metadata() {
     let (_temporary, source, day) = setup("t.txt", "hello");
     let created = run_ok(&source, &day, "12:00:00", &RecordingWire::always(no_engine));

@@ -13,7 +13,7 @@ use solstone_core_entity::{
 use solstone_core_facets::{add_observation, save_facet_entity_link};
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, EntityDispositionKind, PrincipalAdoption, RetryDisposition,
-    SegmentDispositionKind, merge_journal_archive,
+    SegmentDispositionKind, merge_journal_archive, preview_size,
 };
 use solstone_core_import_sources::{ArchiveSafetyPhase, ImportSourcesError};
 use solstone_core_journal_io::{
@@ -158,21 +158,36 @@ fn identical_retry_is_noop_and_different_segment_lands_on_a_new_key() {
 }
 
 #[test]
-fn a_segment_the_owner_deleted_is_never_brought_back() {
+fn a_segment_the_owner_removed_comes_back_and_a_removal_in_progress_is_skipped() {
     let tree = TempTree::new();
     let source = tree.path.join("source");
     let target = tree.path.join("target");
-    fs::create_dir_all(source.join("chronicle/20260811/120000_60")).unwrap();
-    fs::write(source.join("chronicle/20260811/120000_60/value"), b"one").unwrap();
-    fs::create_dir_all(source.join("chronicle/20260811/130000_60")).unwrap();
-    fs::write(source.join("chronicle/20260811/130000_60/value"), b"two").unwrap();
-    fs::create_dir_all(source.join("chronicle/20260811/140000_60")).unwrap();
-    fs::write(source.join("chronicle/20260811/140000_60/value"), b"three").unwrap();
+    for (segment, value) in [
+        ("120000_60", "one"),
+        ("130000_60", "two"),
+        ("140000_60", "three"),
+        ("150000_60", "four"),
+    ] {
+        fs::create_dir_all(source.join("chronicle/20260811").join(segment)).unwrap();
+        fs::write(
+            source
+                .join("chronicle/20260811")
+                .join(segment)
+                .join("value"),
+            value,
+        )
+        .unwrap();
+    }
+    // 160000_60 collides with live content at its own key; the next key ingest
+    // would choose is one the owner removed.
+    fs::create_dir_all(source.join("chronicle/20260811/160000_60")).unwrap();
+    fs::write(source.join("chronicle/20260811/160000_60/value"), b"moved").unwrap();
     let archive = archive_from(&source, &tree.path);
     let options = options(&tree);
 
-    // The owner deleted one segment (a tombstone holds its key) and another is
-    // mid-removal (its staged removal sits beside where it was).
+    // The owner removed one segment (only its tombstone holds its key), another
+    // is mid-removal (its staged removal sits beside where it was), and a third
+    // holds a tombstone beside other files (also part-way through).
     fs::create_dir_all(target.join("chronicle/20260811/120000_60")).unwrap();
     fs::write(
         target.join("chronicle/20260811/120000_60/tombstone.json"),
@@ -180,29 +195,76 @@ fn a_segment_the_owner_deleted_is_never_brought_back() {
     )
     .unwrap();
     fs::create_dir_all(target.join("chronicle/20260811/.removing_130000_60")).unwrap();
+    fs::create_dir_all(target.join("chronicle/20260811/150000_60")).unwrap();
+    fs::write(
+        target.join("chronicle/20260811/150000_60/tombstone.json"),
+        b"{}",
+    )
+    .unwrap();
+    fs::write(target.join("chronicle/20260811/150000_60/audio.flac"), b"x").unwrap();
+    fs::create_dir_all(target.join("chronicle/20260811/160000_60")).unwrap();
+    fs::write(
+        target.join("chronicle/20260811/160000_60/value"),
+        b"already here",
+    )
+    .unwrap();
+    fs::create_dir_all(target.join("chronicle/20260811/160000_61")).unwrap();
+    fs::write(
+        target.join("chronicle/20260811/160000_61/tombstone.json"),
+        b"{}",
+    )
+    .unwrap();
+
+    let preview = preview_size(&archive, &target).unwrap();
+    assert!(
+        target
+            .join("chronicle/20260811/120000_60/tombstone.json")
+            .exists(),
+        "preview writes nothing to the journal"
+    );
+    assert_eq!(preview.recordings.len(), 3);
 
     let result = merge_journal_archive(&archive, &target, &options, None).unwrap();
-    for key in ["120000_60", "130000_60"] {
-        assert!(result.segment_dispositions.iter().any(|item| {
-            item.key == key && item.disposition == SegmentDispositionKind::DeletedByOwner
-        }));
-    }
-    assert!(result.segment_dispositions.iter().any(|item| {
-        item.key == "140000_60" && item.disposition == SegmentDispositionKind::Copied
-    }));
-    assert_eq!(
-        fs::read_dir(target.join("chronicle/20260811/120000_60"))
+    let disposition = |key: &str| {
+        result
+            .segment_dispositions
+            .iter()
+            .find(|item| item.key == key)
             .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect::<Vec<_>>(),
-        vec![std::ffi::OsString::from("tombstone.json")]
-    );
-    assert!(!target.join("chronicle/20260811/120000_61").exists());
-    assert!(!target.join("chronicle/20260811/130000_60").exists());
+            .disposition
+            .clone()
+    };
+    assert_eq!(disposition("120000_60"), SegmentDispositionKind::Copied);
     assert_eq!(
-        fs::read(target.join("chronicle/20260811/140000_60/value")).unwrap(),
-        b"three"
+        disposition("130000_60"),
+        SegmentDispositionKind::DeletedByOwner
     );
+    assert_eq!(disposition("140000_60"), SegmentDispositionKind::Copied);
+    assert_eq!(
+        disposition("150000_60"),
+        SegmentDispositionKind::DeletedByOwner
+    );
+    assert_eq!(
+        disposition("160000_60"),
+        SegmentDispositionKind::CopiedToNewKey {
+            landed_segment: "160000_61".to_owned()
+        }
+    );
+    let day = target.join("chronicle/20260811");
+    assert_eq!(fs::read(day.join("120000_60/value")).unwrap(), b"one");
+    assert!(!day.join("120000_60/tombstone.json").exists());
+    assert!(!day.join("120000_61").exists());
+    assert!(!day.join("130000_60").exists());
+    assert!(day.join(".removing_130000_60").is_dir());
+    assert_eq!(fs::read(day.join("140000_60/value")).unwrap(), b"three");
+    assert!(day.join("150000_60/tombstone.json").exists());
+    assert!(!day.join("150000_60/value").exists());
+    assert_eq!(
+        fs::read(day.join("160000_60/value")).unwrap(),
+        b"already here"
+    );
+    assert_eq!(fs::read(day.join("160000_61/value")).unwrap(), b"moved");
+    assert!(!day.join("160000_61/tombstone.json").exists());
 }
 
 #[test]

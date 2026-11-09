@@ -3109,7 +3109,7 @@ mod tests {
     }
 
     #[test]
-    fn chat_reimport_with_tombstone_filters_manifest_and_adjusts_counts() {
+    fn chat_reimport_at_a_removed_key_brings_it_back_with_full_counts() {
         use std::io::Write;
         use zip::write::SimpleFileOptions;
 
@@ -3206,7 +3206,8 @@ mod tests {
             .join(format!("imports/{id1}/content_manifest.jsonl"));
         let run1_manifest_bytes = fs::read(&run1_manifest_path).unwrap();
 
-        // Tombstone the segment under chronicle/20260101/
+        // The owner removes the segment under chronicle/20260101/: only its
+        // tombstone stands.
         let day1_dir = journal.path().join("chronicle/20260101/import.chatgpt");
         for entry in fs::read_dir(&day1_dir).unwrap() {
             let seg_dir = entry.unwrap().path();
@@ -3252,37 +3253,48 @@ mod tests {
         assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
         let id2 = id2.unwrap();
 
-        // Run 2 assertions
-        assert!(run2.stdout.contains("entries_written=3"), "{}", run2.stdout);
+        // Run 2: what arrives again is new data, so the removed segment comes
+        // back at its key and nothing is left out of the counts.
+        assert!(run2.stdout.contains("entries_written=5"), "{}", run2.stdout);
         assert!(
             run2.stdout
-                .contains("imported 3 messages from 2 conversations across 2 days"),
+                .contains("imported 5 messages from 2 conversations across 3 days"),
             "{}",
             run2.stdout
         );
+        for entry in fs::read_dir(&day1_dir).unwrap() {
+            let seg_dir = entry.unwrap().path();
+            if seg_dir.is_dir() {
+                assert!(!seg_dir.join("tombstone.json").exists());
+                assert!(fs::read_dir(&seg_dir).unwrap().next().is_some());
+            }
+        }
 
         let manifest2_meta: serde_json::Value = serde_json::from_slice(
             &fs::read(journal.path().join(format!("imports/{id2}/manifest.json"))).unwrap(),
         )
         .unwrap();
-        assert_eq!(manifest2_meta["entry_count"], 3);
+        assert_eq!(manifest2_meta["entry_count"], 5);
         let days_affected = manifest2_meta["days_affected"].as_array().unwrap();
         assert_eq!(
             days_affected,
-            &vec![serde_json::json!("20260102"), serde_json::json!("20260103")]
+            &vec![
+                serde_json::json!("20260101"),
+                serde_json::json!("20260102"),
+                serde_json::json!("20260103")
+            ]
         );
         let files_created = manifest2_meta["files_created"].as_array().unwrap();
-        assert_eq!(files_created.len(), 2);
+        assert_eq!(files_created.len(), 3);
 
         let run2_manifest_path = journal
             .path()
             .join(format!("imports/{id2}/content_manifest.jsonl"));
         let run2_manifest_content = fs::read_to_string(&run2_manifest_path).unwrap();
         let run2_rows: Vec<&str> = run2_manifest_content.lines().collect();
-        assert_eq!(run2_rows.len(), 1);
-        assert!(run2_rows[0].contains("Distinct Title B"));
-        assert!(!run2_manifest_content.contains("Distinct Title A"));
-        assert!(!run2_manifest_content.contains("Distinct preview message A"));
+        assert_eq!(run2_rows.len(), 2);
+        assert!(run2_manifest_content.contains("Distinct Title A"));
+        assert!(run2_manifest_content.contains("Distinct Title B"));
 
         // Run 1's manifest bytes are unchanged
         assert_eq!(fs::read(&run1_manifest_path).unwrap(), run1_manifest_bytes);

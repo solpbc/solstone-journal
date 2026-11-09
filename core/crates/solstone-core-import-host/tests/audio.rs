@@ -548,6 +548,72 @@ async fn allocation_steps_past_a_segment_mid_removal() {
 }
 
 #[tokio::test]
+async fn audio_arriving_again_at_a_key_the_owner_removed_lands_at_that_key() {
+    let temp = TempDir::new().unwrap();
+    let initial = request(&temp, "removed-key");
+    let parent = initial
+        .journal_root
+        .join("chronicle")
+        .join(&initial.day)
+        .join(&initial.stream);
+    // The owner removed the segment at this key: only its tombstone stands.
+    fs::create_dir_all(parent.join("120000_300")).unwrap();
+    fs::write(parent.join("120000_300/tombstone.json"), b"{}").unwrap();
+    let preview =
+        solstone_core_import_host::audio::preview_with_probe(&initial, probed(300.0)).unwrap();
+    assert_eq!(
+        preview
+            .recordings
+            .iter()
+            .map(|recording| recording.segment.as_str())
+            .collect::<Vec<_>>(),
+        ["120000_300"]
+    );
+    let outcome = fake_import(
+        initial.clone(),
+        300.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await
+    .unwrap();
+    assert_eq!(created(&outcome).segments[0].segment, "120000_300");
+    assert!(!parent.join("120000_300/tombstone.json").exists());
+    assert_eq!(
+        fs::read(parent.join("120000_300/imported_audio.m4a")).unwrap(),
+        b"audio"
+    );
+    assert!(!parent.join("120001_300").exists());
+
+    // A chunk whose slice fails at a reclaimed key leaves the folder standing,
+    // emptied: a stream chain may still name it.
+    let failing = TempDir::new().unwrap();
+    let failing_request = request(&failing, "removed-key-failed");
+    let failing_parent = failing_request
+        .journal_root
+        .join("chronicle")
+        .join(&failing_request.day)
+        .join(&failing_request.stream);
+    fs::create_dir_all(failing_parent.join("120000_300")).unwrap();
+    fs::write(failing_parent.join("120000_300/tombstone.json"), b"{}").unwrap();
+    fake_import(
+        failing_request,
+        600.0,
+        Some(0),
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await
+    .unwrap();
+    assert!(failing_parent.join("120000_300").is_dir());
+    assert_eq!(
+        fs::read_dir(failing_parent.join("120000_300"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
 async fn ac6_allocation_is_exclusive_bounded_and_cleans_failed_leaves() {
     let temp = TempDir::new().unwrap();
     let initial = request(&temp, "collision");

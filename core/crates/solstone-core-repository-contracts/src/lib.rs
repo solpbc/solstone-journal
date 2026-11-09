@@ -69,9 +69,6 @@ mod entity_facet_file_names;
 #[cfg(test)]
 #[path = "contracts/facet_link_layout.rs"]
 mod facet_link_layout;
-#[cfg(test)]
-#[path = "contracts/journal_trash_hidden.rs"]
-mod journal_trash_hidden;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/facet_read_purity.rs"]
 mod facet_read_purity;
@@ -87,6 +84,9 @@ mod installation_binding_admission_surface;
 #[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/journal_artifact_durability.rs"]
 mod journal_artifact_durability;
+#[cfg(test)]
+#[path = "contracts/journal_trash_hidden.rs"]
+mod journal_trash_hidden;
 #[cfg(test)]
 #[path = "contracts/journal_web_host_contract.rs"]
 mod journal_web_host_contract;

@@ -205,7 +205,10 @@ mod tests {
     fn the_trash_is_never_exported_and_never_named() {
         assert_eq!(deny_top_level(".trash"), DenyAction::Skip);
         assert!(deny_member(".trash", false));
-        assert!(deny_member(".trash/20261108T000000000Z-00000000/item.json", true));
+        assert!(deny_member(
+            ".trash/20261108T000000000Z-00000000/item.json",
+            true
+        ));
         assert!(!deny_member("chronicle/20261108/.trash", false));
     }
 
