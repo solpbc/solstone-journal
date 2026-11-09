@@ -18,7 +18,7 @@ use serde_json::{Map, Value};
 use solstone_core_facets::{
     BodyMoveOutcome, BodyRecordPlace, LineRemoval, StravaConvertedLine, append_strava_converted,
     complete_body_move, move_body_record, open_body_moves, remove_activity_line_if,
-    write_body_record_with,
+    require_declared_facet, write_body_record_with,
 };
 use solstone_core_format::content::body_records::{BodyRow, RowKind, parse_source_time};
 use solstone_core_format::content::strava_body::{STRAVA_SOURCE, STRAVA_STREAM, STRAVA_TILE_FILE};
@@ -421,11 +421,7 @@ fn find_code_record(
 }
 
 fn facet_declared(journal: &Path, facet: &str) -> bool {
-    journal
-        .join("facets")
-        .join(facet)
-        .join("facet.json")
-        .is_file()
+    require_declared_facet(journal, facet).is_ok()
 }
 
 /// The facet a workout's first conversion files it under.
