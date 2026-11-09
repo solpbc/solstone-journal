@@ -15,6 +15,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the dashboard now reconnects to your journal on its own after the connection drops, and stops showing it as connected soon after it goes quiet. a page that waits more than 10 seconds says it's still working, and one that never gets an answer offers to try again instead of waiting forever.
 - your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
 - restoring a journal from a backup now happens while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
 - Strava workouts your journal read on an earlier version are now listed the same way as new ones, each one once, keeping your edits and hides. a workout that was listed in two facets now shows in one, where you hadn't hidden it, and an agent limited to the other facet no longer sees it. one listing that covered two workouts becomes two.
