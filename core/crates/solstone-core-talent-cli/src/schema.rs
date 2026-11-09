@@ -120,4 +120,37 @@ mod tests {
             "entities":[]
         })));
     }
+
+    #[test]
+    fn shipped_screen_schema_limits_attendees_to_people() {
+        let talent_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/talent")
+            .canonicalize()
+            .expect("shipped talent directory");
+        let schema = load_talent_schema("screen", &talent_dir, "screen.schema.json")
+            .expect("shipped screen schema");
+        let validator = options()
+            .with_draft(Draft::Draft202012)
+            .build(&schema)
+            .expect("valid screen schema");
+
+        for kind in ["Person", "Company", "Project", "Tool", "FilePath", "URL"] {
+            for role in ["mentioned", "attendee"] {
+                let record = serde_json::json!({
+                    "narrative": "The source named an entity.",
+                    "entities": [{
+                        "type": kind,
+                        "name": "Named entity",
+                        "role": role,
+                        "context": "The source supplied this entity.",
+                    }],
+                });
+                assert_eq!(
+                    validator.is_valid(&record),
+                    role == "mentioned" || kind == "Person",
+                    "{kind} with role {role}"
+                );
+            }
+        }
+    }
 }
