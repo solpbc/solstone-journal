@@ -351,9 +351,13 @@ pub fn forget_gone_runs(
                 .collect::<Result<_, _>>()?
         };
         for id in ids {
+            let record = journal.join("imports").join(&id);
+            // `held` reads the trash now, and the record is looked at again
+            // after it, so a run moving either way between them is left be.
             if crate::timestamp::validate_timestamp(&id).is_ok()
-                && !journal.join("imports").join(&id).exists()
+                && !record.exists()
                 && !held(&id)
+                && !record.exists()
             {
                 forgotten += tx.execute(
                     &format!("DELETE FROM {table} WHERE import_id=?"),

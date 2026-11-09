@@ -585,6 +585,18 @@ impl SegmentHold {
         })
     }
 
+    /// [`SegmentHold::check`] for one move: this target, or, for something
+    /// outside the chronicle, the lease alone. The whole list was checked when
+    /// the hold was taken, so a thing of thousands of segments isn't walked
+    /// again for each of them.
+    pub fn check_one(&self, target: Option<&Target>) -> Result<(), String> {
+        let guard = WholeSegmentActivity::admitted(&self.admitted);
+        match target {
+            Some(target) => guard.before_phase(target),
+            None => guard.population(),
+        }
+    }
+
     /// Lock one segment under this hold, for the length of its move.
     pub fn lock_one(&self, target: &Target) -> Result<solstone_core_journal_io::FileLock, String> {
         let guard = WholeSegmentActivity::admitted(&self.admitted);

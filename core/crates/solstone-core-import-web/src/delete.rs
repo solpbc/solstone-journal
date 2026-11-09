@@ -259,13 +259,22 @@ pub(crate) async fn delete_set(
     }
     let surface = surface_of(&headers);
     let root = state.root.clone();
-    let outcome = tokio::task::spawn_blocking(move || {
-        let mut ids: Vec<String> = Vec::new();
-        for id in request.ids {
-            if !ids.contains(&id) {
-                ids.push(id);
-            }
+    let mut ids: Vec<String> = Vec::new();
+    for id in request.ids {
+        if !ids.contains(&id) {
+            ids.push(id);
         }
+    }
+    // As for one import, each waits for a start of it already under way. In
+    // one order, so two sets can't wait on each other.
+    let mut gates: Vec<String> = ids.iter().filter(|id| is_import_id(id)).cloned().collect();
+    gates.sort();
+    let mut guards = Vec::with_capacity(gates.len());
+    for id in &gates {
+        guards.push(crate::start_lock::acquire(&root, id).await);
+    }
+    let outcome = tokio::task::spawn_blocking(move || {
+        let _guards = guards;
         let mut failed = Vec::new();
         let mut chosen = Vec::new();
         let mut order = Vec::new();

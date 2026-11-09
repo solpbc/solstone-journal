@@ -30,15 +30,15 @@ pub fn sweep(journal: &Path, now: DateTime<Utc>) -> Swept {
     let mut swept = with_kinds(journal, |kinds| {
         solstone_core_trash::sweep(journal, kinds, now)
     });
-    match solstone_core_trash::held_paths(journal) {
-        Ok(paths) => {
-            let held = |id: &str| paths.iter().any(|path| *path == format!("imports/{id}"));
-            if let Err(error) = crate::audio_archive::claims::forget_gone_runs(journal, &held) {
-                swept.failed.push(format!("archive claims: {error}"));
-            }
-        }
-        // A trash that can't be read never lets an archive's claims go.
-        Err(error) => swept.failed.push(format!("archive claims: {error}")),
+    // Read afresh for each run it asks about; a trash that can't be read never
+    // lets an archive's claims go.
+    let held = |id: &str| {
+        solstone_core_trash::held_paths(journal).map_or(true, |paths| {
+            paths.iter().any(|path| *path == format!("imports/{id}"))
+        })
+    };
+    if let Err(error) = crate::audio_archive::claims::forget_gone_runs(journal, &held) {
+        swept.failed.push(format!("archive claims: {error}"));
     }
     swept
 }

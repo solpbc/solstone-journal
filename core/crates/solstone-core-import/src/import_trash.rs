@@ -388,30 +388,34 @@ fn legacy_segment(journal: &Path, day: &str, key: &str) -> Option<String> {
 /// The segment a legacy record's created file sits in, if that segment is
 /// there to name.
 fn legacy_created_segment(journal: &Path, file: &str) -> Option<String> {
-    let file = file.strip_prefix("chronicle/").unwrap_or(file);
-    let parts: Vec<&str> = file.split('/').collect();
-    let day = *parts.first()?;
-    if day.len() != 8 || !day.bytes().all(|byte| byte.is_ascii_digit()) {
+    let is_day = |part: &&str| part.len() == 8 && part.bytes().all(|byte| byte.is_ascii_digit());
+    // The older importer wrote absolute paths: read from the chronicle, or
+    // from the first part that is a day.
+    let parts: Vec<&str> = file.split('/').filter(|part| !part.is_empty()).collect();
+    let start = parts
+        .iter()
+        .rposition(|part| *part == "chronicle")
+        .map(|chronicle| chronicle + 1)
+        .or_else(|| parts.iter().position(|part| is_day(part)))?;
+    let rest = parts.get(start..)?;
+    if !rest.first().is_some_and(|day| is_day(day)) {
         return None;
     }
-    let named = match parts.as_slice() {
-        [day, stream, key, _, ..] if valid_part(stream) && valid_part(key) => {
-            Some(segment_rel(day, stream, key))
+    let is_key = |part: &str| {
+        part.len() > 7
+            && part.as_bytes().iter().take(6).all(u8::is_ascii_digit)
+            && part.as_bytes().get(6) == Some(&b'_')
+    };
+    let segment = match rest {
+        [day, key, _, ..] if is_key(key) && valid_part(key) => {
+            segment_rel(day, solstone_core_journal_io::paths::DEFAULT_STREAM, key)
         }
-        _ => None,
+        [day, stream, key, _, ..] if valid_part(stream) && valid_part(key) => {
+            segment_rel(day, stream, key)
+        }
+        _ => return None,
     };
-    let direct = match parts.as_slice() {
-        [day, key, _] if valid_part(key) => Some(segment_rel(
-            day,
-            solstone_core_journal_io::paths::DEFAULT_STREAM,
-            key,
-        )),
-        _ => None,
-    };
-    [named, direct]
-        .into_iter()
-        .flatten()
-        .find(|segment| journal.join(segment).is_dir())
+    journal.join(&segment).is_dir().then_some(segment)
 }
 
 fn array<'v>(value: &'v Value, key: &str) -> &'v [Value] {
@@ -494,26 +498,30 @@ fn reclaim_for_own_file(journal: &Path, segment: &str, item: &str) -> Result<(),
 
 /// An archive still owed processing is owed it again once it's back: the
 /// journal forgets a pending tile whose run has left.
-fn restore_pending_tiles(journal: &Path, item: &Item) {
+fn restore_pending_tiles(journal: &Path, item: &Item) -> Result<(), String> {
     let Unit::Import { source, id } = &item.unit else {
-        return;
+        return Ok(());
     };
     if source != "audio_archive" {
-        return;
+        return Ok(());
     }
-    let pending = crate::audio_archive::ArchiveStore::open(journal, id, false)
-        .and_then(|store| store.pending_tiles(u32::MAX));
-    let result = pending.and_then(|tiles| {
-        tiles.iter().try_for_each(|(day, key)| {
-            crate::audio_archive::claims::register_pending_tile(journal, id, day, key)
-        })
-    });
-    if let Err(error) = result {
-        log::warn!(
-            "trash item {}: pending tiles weren't restored: {error}",
-            item.id
-        );
-    }
+    // A record that can't be read owes nothing it can name.
+    let tiles = match crate::audio_archive::ArchiveStore::open(journal, id, false)
+        .and_then(|store| store.pending_tiles(u32::MAX))
+    {
+        Ok(tiles) => tiles,
+        Err(error) => {
+            log::warn!(
+                "trash item {}: its pending work couldn't be read: {error}",
+                item.id
+            );
+            return Ok(());
+        }
+    };
+    tiles.iter().try_for_each(|(day, key)| {
+        crate::audio_archive::claims::register_pending_tile(journal, id, day, key)
+            .map_err(|error| format!("pending tiles weren't restored: {error}"))
+    })
 }
 
 /// The trash's kind for imports.
@@ -619,8 +627,12 @@ impl Hold for ImportHold {
     fn moving(&self, path: &str) -> Result<(), String> {
         // Let go of the last segment before taking the next.
         self.moving.borrow_mut().take();
-        self.check()?;
-        if let Some(target) = target_of_path(path) {
+        if attempt_holder(&self.journal, &self.id) == AttemptHolder::Held {
+            return Err(STILL_IMPORTING.to_owned());
+        }
+        let target = target_of_path(path);
+        self.segments.check_one(target.as_ref())?;
+        if let Some(target) = target {
             *self.moving.borrow_mut() = Some(self.segments.lock_one(&target)?);
         }
         Ok(())
@@ -713,7 +725,7 @@ impl Kind for Imports<'_> {
                         reclaim_for_own_file(journal, parent, &item.id)?;
                     }
                 }
-                restore_pending_tiles(journal, item);
+                restore_pending_tiles(journal, item)?;
                 self.index.paths_returned(files)
             }
         }
@@ -1076,6 +1088,27 @@ mod tests {
                 "chronicle/20260805/import.ics/093000_300".to_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn a_legacy_record_with_absolute_paths_names_its_segments_and_what_it_shares() {
+        let root = journal();
+        let shared = "chronicle/20260802/import.ics/090000_300";
+        write(
+            root.path(),
+            "imports/20260801_120000/imported.json",
+            serde_json::json!({"all_created_files": [
+                format!("/home/owner/journal/{shared}/event_transcript.md")
+            ], "source_type": "ics"})
+            .to_string()
+            .as_bytes(),
+        );
+        // `OTHER` goes; the older record still names the segment, so `ID` can't
+        // take it whole.
+        trash_other(root.path());
+        let things = import_things(root.path(), ID).unwrap();
+        assert!(!things.segments.contains(&shared.to_owned()));
+        assert_eq!(things.files, vec![format!("{shared}/calendar_{ID}.jsonl")]);
     }
 
     #[test]
