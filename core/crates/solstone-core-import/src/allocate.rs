@@ -716,6 +716,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let bound = bind_import_record(root.path(), &source, Some(&input)).unwrap();

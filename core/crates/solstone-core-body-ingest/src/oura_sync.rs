@@ -686,6 +686,16 @@ pub fn refresh(
         let next_access = access_token.clone();
         let next_refresh = refresh_token.clone();
         let next_type = token_type.clone();
+        hold_renewal(
+            journal,
+            &settings.refresh_token,
+            &json!({
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "token_type": token_type,
+            }),
+        );
         mutate_journal_config(
             journal,
             solstone_core_journal_config_write::LockOptions::default(),
@@ -707,10 +717,90 @@ pub fn refresh(
             },
         )
         .map_err(|_| failure(BodyIngestErrorKind::Publication, "token_store"))?;
+        clear_held_renewal(journal);
     }
     settings.access_token = access_token;
     settings.refresh_token = refresh_token;
     settings.token_type = token_type;
+    Ok(())
+}
+
+/// Oura's answer to a refresh, held until it's in config. A refresh token works
+/// once, so an answer lost between Oura and config would end the connection.
+const RENEWAL_HOLD: &str = "config/oura-renewal.json";
+
+/// Keep Oura's answer before config is touched. A hold that can't be written
+/// doesn't stop the config write: that would be no better off than without it.
+fn hold_renewal(journal: &Path, spent: &str, tokens: &Value) {
+    let path = journal.join(RENEWAL_HOLD);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let body = json!({"spent_refresh_token": spent, "tokens": tokens}).to_string();
+    let _ = solstone_core_journal_io::atomic_replace(
+        &path,
+        body.as_bytes(),
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    );
+}
+
+/// Forget any held answer: it reached config, or config has moved past it.
+pub fn clear_held_renewal(journal: &Path) {
+    let _ = std::fs::remove_file(journal.join(RENEWAL_HOLD));
+}
+
+/// Put a held answer into config, while config still holds the token it spent.
+/// Config having moved on, by a reconnect or a later renewal, drops the hold.
+/// The caller holds `imports/oura.json`. A hold that can't be read says nothing.
+///
+/// # Errors
+///
+/// The answer belongs in config and config can't be written.
+pub fn apply_held_renewal(journal: &Path) -> Result<(), BodyIngestError> {
+    let Ok(text) = std::fs::read_to_string(journal.join(RENEWAL_HOLD)) else {
+        return Ok(());
+    };
+    let Ok(hold) = serde_json::from_str::<Value>(&text) else {
+        clear_held_renewal(journal);
+        return Ok(());
+    };
+    let (Some(spent), Some(tokens)) = (
+        hold.get("spent_refresh_token")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        hold.get("tokens").cloned(),
+    ) else {
+        clear_held_renewal(journal);
+        return Ok(());
+    };
+    mutate_journal_config(
+        journal,
+        solstone_core_journal_config_write::LockOptions::default(),
+        move |config| {
+            let section = config
+                .entry("oura".to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            let current = section
+                .get("tokens")
+                .and_then(|tokens| tokens.get("refresh_token"))
+                .and_then(Value::as_str);
+            if current != Some(spent.as_str()) {
+                return JournalConfigMutation {
+                    changed: false,
+                    value: (),
+                };
+            }
+            if let Some(section) = section.as_object_mut() {
+                section.insert("tokens".to_owned(), tokens);
+            }
+            JournalConfigMutation {
+                changed: true,
+                value: (),
+            }
+        },
+    )
+    .map_err(|_| failure(BodyIngestErrorKind::Publication, "token_store"))?;
+    clear_held_renewal(journal);
     Ok(())
 }
 

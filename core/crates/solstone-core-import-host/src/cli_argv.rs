@@ -11,7 +11,6 @@ use std::time::Duration;
 use chrono::{Local, NaiveDateTime};
 use ffmpeg_next as ffmpeg;
 use serde_json::Value;
-use serde_json::json;
 use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
 };
@@ -386,12 +385,6 @@ fn embedded_body_refused() -> CliRun {
     )
 }
 
-/// A stored Oura sync already carries the handwritten confirm or schedule flag.
-/// An ordinary sync, and every connect, does not.
-fn oura_sync_is_stored(options: &Options) -> bool {
-    options.confirm_body_save || options.scheduled
-}
-
 /// Shape one embedded preview so it cannot save, admit, or publish.
 ///
 /// A file import that is not already a dry run keeps today's digest and zone
@@ -449,11 +442,8 @@ fn without_flag(args: &[String], flag: &str) -> Vec<String> {
 pub enum BodyAdmission {
     /// Not `--source apple_health`, `--connect oura`, or `--sync oura`.
     NotBody,
-    /// Apple Health import, Oura connect, or an Oura sync that does not
-    /// already carry `--confirm-body-save` or `--scheduled`.
+    /// Apple Health import, Oura connect, or an Oura sync.
     Held,
-    /// `--sync oura` that already carries `--confirm-body-save` or `--scheduled`.
-    StoredOura,
 }
 
 /// Parsed shape of one importer invocation.
@@ -491,11 +481,7 @@ fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
             sync_source: Some(backend.clone()),
             explicit_path: options.path.clone(),
             body: if backend == "oura" {
-                if oura_sync_is_stored(options) {
-                    BodyAdmission::StoredOura
-                } else {
-                    BodyAdmission::Held
-                }
+                BodyAdmission::Held
             } else {
                 BodyAdmission::NotBody
             },
@@ -581,7 +567,7 @@ fn dispatch_parsed(
         }
         ParsedCommand::RetiredNotesFolder => rendered(notes_folder_retired()),
         ParsedCommand::Sync { backend, options } => {
-            if dispatch.embedded() && backend == "oura" && !oura_sync_is_stored(&options) {
+            if dispatch.embedded() && backend == "oura" {
                 return rendered(embedded_body_refused());
             }
             rendered(run_sync(&backend, &options, journal_path))
@@ -646,28 +632,7 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
 
 fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     match backend {
-        "oura" => {
-            let result = solstone_core_body_ingest::sync_oura(
-                journal_path,
-                &solstone_core_body_ingest::OuraSyncOptions {
-                    save: options.save,
-                    confirm_body_save: options.confirm_body_save,
-                    scheduled: options.scheduled,
-                    window_days: options.window_days,
-                    today: None,
-                },
-            );
-            match result {
-                Ok(report) => success(format!(
-                    "Oura body sync {}: rows={} days={} pages={}\n",
-                    if options.save { "complete" } else { "preview" },
-                    report.rows(),
-                    report.days().len(),
-                    report.pages()
-                )),
-                Err(error) => failure("", &format!("{error}\n"), 1),
-            }
-        }
+        "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
         "plaud" => run_plaud_sync(journal_path, options),
         "audio" => run_audio_sync(journal_path, options),
         _ => failure(
@@ -782,7 +747,11 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             if dispatch.embedded() {
                 rendered(embedded_body_refused())
             } else {
-                rendered(run_apple(media, &options, journal_path))
+                rendered(if options.dry_run {
+                    crate::body_commands::preview_apple(options.json)
+                } else {
+                    crate::body_commands::save_apple(media, &body_command(&options), journal_path)
+                })
             }
         }
         ResolutionOutcome::Skipped {
@@ -916,6 +885,21 @@ fn asked_import_facet(
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
+}
+
+fn body_command(options: &Options) -> crate::body_commands::BodyCommand<'_> {
+    crate::body_commands::BodyCommand {
+        facet: import_facet(options),
+        listed_moves_shown: options.listed_moves_shown,
+        scheduled: options.scheduled,
+        json: options.json,
+        confirm: options.confirm_body_save,
+        date_from: options.date_from.as_deref(),
+        date_to: options.date_to.as_deref(),
+        window_days: options.window_days,
+        force: options.force,
+        save: options.save,
+    }
 }
 
 /// The facet a run was given on its command line.
@@ -1222,6 +1206,7 @@ fn write_audio_manifest(
         link_id: None,
         observer_handle: None,
         raw_retention: None,
+        span: None,
     })
     .map(|_| ())
     .map_err(|error| error.to_string())
@@ -1352,47 +1337,6 @@ fn run_text(
         TextImportOutcome::Failed { error, .. } => failure("", &format!("{error}\n"), 1),
     };
     (run, import_id)
-}
-
-fn run_apple(media: &str, options: &Options, journal_path: &Path) -> CliRun {
-    let result = if options.dry_run {
-        solstone_core_body_ingest::preview_apple(
-            Path::new(media),
-            options.date_from.as_deref(),
-            options.date_to.as_deref(),
-        )
-    } else {
-        solstone_core_body_ingest::save_apple(
-            Path::new(media),
-            journal_path,
-            &solstone_core_body_ingest::AppleImportOptions {
-                date_from: options.date_from.clone(),
-                date_to: options.date_to.clone(),
-                confirm_body_save: options.confirm_body_save,
-                force: options.force,
-            },
-        )
-    };
-    match result {
-        Ok(report) if options.json => success(format!(
-            "{}\n",
-            json!({"schema":"solstone.body.ingest.result.v1", "source":"apple_health", "mode": if options.dry_run { "preview" } else { "save" }, "bundle_id":report.bundle_id(), "rows":report.rows(), "days":report.days(), "skipped":report.skipped()})
-        )),
-        Ok(report) => success(format!(
-            "Apple Health {} complete.\n  Rows:                {}\n  Days:                {}\n",
-            if options.dry_run { "preview" } else { "save" },
-            report.rows(),
-            report.days().len()
-        )),
-        Err(error) => failure(
-            "",
-            &format!(
-                "{}\n",
-                solstone_core_body_ingest::apple_refusal_text(&error)
-            ),
-            1,
-        ),
-    }
 }
 
 fn options_ref<'a>(options: &'a Options, media: &'a str) -> ResolutionOptions<'a> {
@@ -2539,14 +2483,14 @@ fn argparse_error(arguments: String) -> CliRun {
         2,
     )
 }
-fn success(stdout: String) -> CliRun {
+pub(crate) fn success(stdout: String) -> CliRun {
     CliRun {
         stdout,
         stderr: String::new(),
         exit_code: 0,
     }
 }
-fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
+pub(crate) fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
     CliRun {
         stdout: stdout.to_owned(),
         stderr: stderr.to_owned(),
@@ -2567,12 +2511,12 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         std::fs::write(scratch.path().join("export.xml"), "<HealthData><Record").unwrap();
         let options = Options {
-            dry_run: true,
+            confirm_body_save: true,
             ..Options::default()
         };
-        let run = run_apple(
+        let run = crate::body_commands::save_apple(
             scratch.path().to_str().unwrap(),
-            &options,
+            &body_command(&options),
             &scratch.path().join("journal"),
         );
         assert_eq!(run.exit_code, 1, "{}", run.stderr);

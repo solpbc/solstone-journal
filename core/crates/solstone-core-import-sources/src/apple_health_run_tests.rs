@@ -197,7 +197,7 @@ fn streamed(journal: &Path, source: &Path, spill: usize) -> (Windows, ScanCounts
     let mut windows = Windows::new();
     while let Some((_, day)) = days.next_day().unwrap() {
         for (window, rows) in day {
-            let decision = decide(journal, &APPLE, &window, rows, None, None).unwrap();
+            let decision = decide(journal, &APPLE, &window, rows, None, true, None).unwrap();
             if let Some(contents) = decision.contents {
                 windows.insert(window, contents);
             }
@@ -470,7 +470,7 @@ fn staged(journal: &Path, source: &Path) -> (Windows, u64, u64) {
     let mut windows = Windows::new();
     while let Some((_, day)) = days.next_day().unwrap() {
         for (window, rows) in day {
-            let decision = decide(journal, &APPLE, &window, rows, None, None).unwrap();
+            let decision = decide(journal, &APPLE, &window, rows, None, true, None).unwrap();
             windows.insert(window, decision.contents.unwrap());
         }
     }
@@ -588,6 +588,7 @@ fn a_mark_takes_its_rows_place_and_names_or_writes_nothing() {
         &window,
         marks,
         Some("health"),
+        true,
         Some("20261104_120001"),
     )
     .unwrap();
@@ -613,6 +614,7 @@ fn a_mark_takes_its_rows_place_and_names_or_writes_nothing() {
         &missing,
         BTreeMap::from([("w1".to_owned(), mark("w1", "w1"))]),
         Some("health"),
+        true,
         Some("20261104_120001"),
     )
     .unwrap();

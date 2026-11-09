@@ -258,7 +258,7 @@ fn persist_tokens(journal: &Path, tokens: TokenValues) -> Result<(), BodyIngestE
             JournalConfigMutation { changed, value: () }
         },
     )
-    .map(|_| ())
+    .map(|_| crate::oura_sync::clear_held_renewal(journal))
     .map_err(|_| publication("token_store"))
 }
 

@@ -23,8 +23,8 @@ use chrono::{DateTime, Duration, FixedOffset, NaiveDate};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_facets::{
-    AppendOutcome, BODY_RECORD_SOURCE, BodyAccountRefresh, append_activity_record,
-    refresh_body_account,
+    AppendOutcome, BODY_RECORD_SOURCE, BodyAccountRefresh, BodyMoveOutcome, BodyRecordPlace,
+    append_activity_record, move_body_record, refresh_body_account,
 };
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, RowKind, decode_rows, mapped_workout_type, parse_source_time,
@@ -47,6 +47,11 @@ pub(crate) struct RecordCounts {
     pub refreshed: u64,
     /// Experiences in a window with no facet, which get no record.
     pub no_facet: u64,
+    /// Records the owner's answer moved to this run's facet, and from which.
+    pub moved: u64,
+    pub moved_from: BTreeSet<String>,
+    /// New records that joined a group the owner had hidden.
+    pub joined_hidden: u64,
     /// Strava workouts an earlier reading of their tiles already filed a
     /// record for, which get no other.
     pub sensed: u64,
@@ -433,8 +438,63 @@ pub(crate) fn write_records_at(
     source: &BodySource,
     day: &str,
     now: chrono::DateTime<chrono::Utc>,
+    move_listed: bool,
 ) -> RecordCounts {
-    write_stream_records_at(journal, &source.records(), day, now, &BTreeSet::new())
+    write_stream_records_at(
+        journal,
+        &source.records(),
+        day,
+        now,
+        &BTreeSet::new(),
+        move_listed,
+    )
+}
+
+/// How many body records of `stream` sit in a facet other than `facet`, and
+/// those facets: what a choice of `facet` could move.
+pub(crate) fn listed_elsewhere(
+    journal: &Path,
+    stream: &str,
+    facet: &str,
+) -> (usize, BTreeSet<String>) {
+    let prefix = format!("{stream}\u{1f}");
+    let mut count = 0;
+    let mut from = BTreeSet::new();
+    let Ok(facets) = fs::read_dir(journal.join("facets")) else {
+        return (count, from);
+    };
+    for entry in facets.flatten().filter(|entry| entry.path().is_dir()) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == facet {
+            continue;
+        }
+        let Ok(days) = fs::read_dir(entry.path().join("activities")) else {
+            continue;
+        };
+        for day in days.flatten() {
+            if day.path().extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Ok(bytes) = fs::read(day.path()) else {
+                continue;
+            };
+            for line in bytes.split(|&byte| byte == b'\n') {
+                let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
+                    continue;
+                };
+                let of_stream = record
+                    .get("account")
+                    .and_then(|account| account.get("key"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|key| key.starts_with(&prefix));
+                if solstone_core_facets::is_body_record(&record) && of_stream {
+                    count += 1;
+                    from.insert(name.clone());
+                }
+            }
+        }
+    }
+    (count, from)
 }
 
 /// [`write_records_at`] over Strava's tiles on `day`: one record per workout,
@@ -448,7 +508,7 @@ pub(crate) fn write_strava_records_at(
     now: chrono::DateTime<chrono::Utc>,
     held_back: &BTreeSet<String>,
 ) -> RecordCounts {
-    write_stream_records_at(journal, &STRAVA, day, now, held_back)
+    write_stream_records_at(journal, &STRAVA, day, now, held_back, false)
 }
 
 fn write_stream_records_at(
@@ -457,6 +517,7 @@ fn write_stream_records_at(
     day: &str,
     now: chrono::DateTime<chrono::Utc>,
     held_back: &BTreeSet<String>,
+    move_listed: bool,
 ) -> RecordCounts {
     let mut counts = RecordCounts::default();
     let Some(windows) = day_windows(journal, day, source.stream) else {
@@ -487,7 +548,34 @@ fn write_stream_records_at(
                 ));
                 continue;
             }
-            if let Some(stored) = recorded.get(&key) {
+            if let Some(stored) = recorded.get_mut(&key) {
+                if move_listed
+                    && let Some(target) = facet.as_deref()
+                    && stored.facet != target
+                {
+                    let from = BodyRecordPlace {
+                        day: day.to_owned(),
+                        facet: stored.facet.clone(),
+                    };
+                    let to = BodyRecordPlace {
+                        day: day.to_owned(),
+                        facet: target.to_owned(),
+                    };
+                    match move_body_record(journal, &record_id(&key), &from, &to) {
+                        Ok(BodyMoveOutcome::Moved) => {
+                            counts.moved += 1;
+                            counts.moved_from.insert(stored.facet.clone());
+                            stored.facet = target.to_owned();
+                        }
+                        Ok(_) => stored.facet = target.to_owned(),
+                        Err(error) => {
+                            counts
+                                .refused
+                                .push((stored.facet.clone(), error.to_string()));
+                            continue;
+                        }
+                    }
+                }
                 let fields = written_fields(source.stream, &row);
                 if stored.fields == fields {
                     continue;
@@ -544,6 +632,17 @@ fn write_stream_records_at(
                 Ok(outcome) => {
                     if matches!(outcome, AppendOutcome::Written(_)) {
                         counts.written += 1;
+                        let group = solstone_core_location::body_records::owner_group(
+                            journal,
+                            facet,
+                            day,
+                            &record_id(&key),
+                        );
+                        if group.is_ok_and(|group| {
+                            group.len() > 1 && group.iter().any(|member| member.hidden)
+                        }) {
+                            counts.joined_hidden += 1;
+                        }
                     }
                     recorded.insert(
                         key,
@@ -563,7 +662,7 @@ fn write_stream_records_at(
 /// [`write_records_at`] on the wall clock.
 #[cfg(test)]
 pub(crate) fn write_records(journal: &Path, source: &BodySource, day: &str) -> RecordCounts {
-    write_records_at(journal, source, day, chrono::Utc::now())
+    write_records_at(journal, source, day, chrono::Utc::now(), false)
 }
 
 /// [`write_strava_records_at`] on the wall clock.

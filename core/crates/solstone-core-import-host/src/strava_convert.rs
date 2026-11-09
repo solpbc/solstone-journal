@@ -1116,7 +1116,7 @@ pub(crate) fn listed_moves_by_workout(
     moves
 }
 
-fn facet_title(journal: &Path, facet: &str) -> String {
+pub(crate) fn facet_title(journal: &Path, facet: &str) -> String {
     solstone_core_facets::read_facet_declaration(journal, facet)
         .ok()
         .flatten()

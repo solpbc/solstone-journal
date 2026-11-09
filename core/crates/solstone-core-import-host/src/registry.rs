@@ -453,6 +453,7 @@ fn write_save_manifest(
         link_id: None,
         observer_handle: None,
         raw_retention: None,
+        span: None,
     })
     .map(|_| ())
     .map_err(|error| error.to_string())
@@ -1446,6 +1447,7 @@ fn run_strava_internal(
             link_id: None,
             observer_handle: None,
             raw_retention: Some(STRAVA_RAW_RETENTION),
+            span: None,
         });
     if let Err(error) = manifest_res {
         let _ = finish(ImportTerminalInput::Failed(&publish_slice));

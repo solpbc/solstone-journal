@@ -727,6 +727,7 @@ fn manifest_scan_reports_skipped_corruption() {
         link_id: None,
         observer_handle: None,
         raw_retention: Some("delete_after_processing"),
+        span: None,
     };
     write_manifest(&request).unwrap();
     fs::create_dir_all(journal.join("imports/bad")).unwrap();

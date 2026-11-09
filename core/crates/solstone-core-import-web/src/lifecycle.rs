@@ -2952,6 +2952,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let imported = format!(
@@ -3477,6 +3478,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let now = super::now_ms() as u64;
@@ -3819,6 +3821,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let meta = crate::routes(root.path().to_path_buf())
@@ -5679,6 +5682,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
 
@@ -5755,6 +5759,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
 

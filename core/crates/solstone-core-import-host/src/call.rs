@@ -744,7 +744,7 @@ mod tests {
             "--confirm-body-save".to_owned(),
         ])
         .unwrap();
-        assert_eq!(confirmed.body, BodyAdmission::StoredOura);
+        assert_eq!(confirmed.body, BodyAdmission::Held);
 
         let scheduled = classify_arguments(&[
             "--sync".to_owned(),
@@ -752,7 +752,7 @@ mod tests {
             "--scheduled".to_owned(),
         ])
         .unwrap();
-        assert_eq!(scheduled.body, BodyAdmission::StoredOura);
+        assert_eq!(scheduled.body, BodyAdmission::Held);
 
         let connect = classify_arguments(&["--connect".to_owned(), "oura".to_owned()]).unwrap();
         assert_eq!(connect.sync_source, None);
@@ -780,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_oura_sync_keeps_the_handwritten_gate() {
+    fn no_oura_sync_runs_on_the_embedded_entry() {
         let journal = tempfile::tempdir().unwrap();
         let seams = idle_seams(journal.path());
         for args in [
@@ -801,12 +801,7 @@ mod tests {
             assert_eq!(run.exit_code, 1, "{args:?} {}", run.stderr);
             assert!(id.is_none(), "{args:?}");
             assert!(
-                !run.stderr.contains("desktop importer"),
-                "{args:?} {}",
-                run.stderr
-            );
-            assert!(
-                run.stderr.contains("missing_approval_artifact"),
+                run.stderr.contains("desktop importer"),
                 "{args:?} {}",
                 run.stderr
             );

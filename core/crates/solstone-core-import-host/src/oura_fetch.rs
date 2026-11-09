@@ -64,8 +64,8 @@ const MOST_PAGES_PER_CHUNK: usize = 1_000;
 const MOST_RENEWALS: u32 = 4;
 /// A run with no range asks again from this many days before what it last covered.
 const TRAILING_DAYS: u64 = 7;
-/// And this many days back when nothing is covered yet.
-const FIRST_DAYS: u64 = 30;
+/// The first day a run with no range asks about.
+const HISTORY_FLOOR: (i32, u32, u32) = (2015, 1, 1);
 const INDEX_FILE: &str = "index.json";
 const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 /// Oura's scopes, as its API names them.
@@ -169,7 +169,7 @@ impl EndpointReport {
     pub fn line(&self) -> String {
         format!(
             "- {}: {}: {}",
-            self.endpoint,
+            solstone_core_import_sources::apple_health::name_words(&self.endpoint),
             self.kind.as_str(),
             self.words
         )
@@ -356,19 +356,22 @@ pub(crate) fn plan(
     }
     let mut endpoints = BTreeMap::new();
     for endpoint in ENDPOINTS {
-        let (from, to) = range.unwrap_or_else(|| {
-            let from = coverage
-                .last_covered_day(endpoint, zone)
-                .map_or(today - Days::new(FIRST_DAYS), |day| {
-                    day - Days::new(TRAILING_DAYS)
-                });
-            (from.min(today), today)
-        });
-        let chunks = if endpoint == HEARTRATE {
-            heartrate_chunks(from, to, zone)
-        } else {
-            date_chunks(from, to)
+        let spans = match range {
+            Some(span) => vec![span],
+            None => unheld_spans(coverage, endpoint, today, zone)?,
         };
+        let from = spans.first().map_or(today, |span| span.0);
+        let to = spans.last().map_or(today, |span| span.1);
+        let chunks = spans
+            .into_iter()
+            .flat_map(|(from, to)| {
+                if endpoint == HEARTRATE {
+                    heartrate_chunks(from, to, zone)
+                } else {
+                    date_chunks(from, to)
+                }
+            })
+            .collect();
         endpoints.insert(
             endpoint.to_owned(),
             EndpointPlan {
@@ -383,6 +386,48 @@ pub(crate) fn plan(
         asked: range.map(|(from, to)| [day_text(from), day_text(to)]),
         endpoints,
     })
+}
+
+/// What a run with no range asks an endpoint for: every span from the floor to
+/// today that coverage doesn't hold, and the trailing week, which Oura can revise.
+fn unheld_spans(
+    coverage: &Coverage,
+    endpoint: &str,
+    today: NaiveDate,
+    zone: Tz,
+) -> Result<Vec<(NaiveDate, NaiveDate)>, String> {
+    let (year, month, day) = HISTORY_FLOOR;
+    let floor = NaiveDate::from_ymd_opt(year, month, day).ok_or("the floor isn't a day")?;
+    let trailing = (today - Days::new(TRAILING_DAYS)).max(floor);
+    Ok(coverage.unheld_spans(endpoint, floor, trailing, today, zone)?)
+}
+
+/// What a run would ask Oura for, in words, from what the journal holds. It
+/// writes nothing and asks Oura nothing.
+pub(crate) fn endpoint_plan_lines(
+    journal: &Path,
+    range: Option<(NaiveDate, NaiveDate)>,
+    today: NaiveDate,
+    zone: Tz,
+) -> Result<String, String> {
+    let planned = plan(
+        range,
+        &crate::oura_coverage::read_coverage(journal)?,
+        today,
+        zone,
+    )?;
+    let mut lines = String::from("this would ask Oura for:\n");
+    for (endpoint, endpoint_plan) in &planned.endpoints {
+        let _ = writeln!(
+            lines,
+            "  {}: {} to {}",
+            endpoint.replace('_', " "),
+            endpoint_plan.from,
+            endpoint_plan.to
+        );
+    }
+    lines.push_str("nothing was saved. add --save to bring it in.\n");
+    Ok(lines)
 }
 
 impl FetchState {
@@ -775,6 +820,8 @@ impl<'j> Tokens<'j> {
             LockError::Timeout(_) => Fault::Stop(OuraStop::AnotherSync),
             other => Fault::Run(format!("the Oura sync lock couldn't be taken: {other}")),
         })?;
+        solstone_core_body_ingest::oura_sync::apply_held_renewal(self.journal)
+            .map_err(|_| Fault::Run(TOKEN_STORE_WORDS.to_owned()))?;
         let mut current = load_settings(self.journal)?;
         if current.access_token != self.settings.access_token
             || current.refresh_token != self.settings.refresh_token
