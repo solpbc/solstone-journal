@@ -2170,7 +2170,7 @@ button:focus:not(:focus-visible) {
 /* Trash: what waits before it's erased. One strip above the rows swaps in place. */
 .trash-panel { margin-top: .5em; }
 .trash-panel .log-entries { max-height: none; overflow: visible; padding: 0; }
-.trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
+.trash-bar { position: sticky; top: 0; z-index: 1; min-height: 2.5em; padding: .5em 1em .5em .85em; border-bottom: 1px solid var(--hairline); background: var(--cream); border-radius: 8px 8px 0 0; }
 .trash-bar[hidden], .trash-bar-group[hidden], .trash-result[hidden] { display: none; }
 .trash-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: .5em .75em; }
 .trash-count, .trash-all { color: var(--ink-soft); font-weight: 600; font-size: .9em; }
@@ -2190,7 +2190,7 @@ button:focus:not(:focus-visible) {
 .trash-confirm h3 { color: var(--danger); margin-bottom: .75em; }
 .trash-confirm-body p { margin: 0 0 .75em; }
 .trash-confirm-actions { display: flex; gap: .75em; justify-content: flex-end; margin-top: 1em; }
-@media (max-width: 480px) { .trash-row, .trash-all { min-height: 44px; } .trash-bar-actions button, .trash-confirm-actions button { min-height: 44px; } .trash-row input { width: 20px; height: 20px; } }
+@media (max-width: 480px) { .trash-row, .trash-all { min-height: 44px; } .trash-bar-actions button, .trash-confirm-actions button { min-height: 44px; } .trash-row input, .trash-all input { width: 20px; height: 20px; } }
 </style>
 
 <script src="/app/settings/static/settings.js"></script>
@@ -6334,7 +6334,7 @@ function setupStorageListeners() {
 
 function openCleanupModal() {
   const modal = document.getElementById('cleanupModal');
-  modal.style.display = 'flex';
+  modal.style.display = 'block';
   modal._openAccessible(document.getElementById('cleanupNowBtn'));
   resetCleanupResults();
 
@@ -6419,7 +6419,7 @@ function openLogCleanupModal() {
   const daysInput = document.getElementById('cleanupLogsDaysInput');
   const configuredDays = storageData?.retention?.journal_logs?.days || 30;
   daysInput.value = configuredDays;
-  modal.style.display = 'flex';
+  modal.style.display = 'block';
   modal._openAccessible(document.getElementById('cleanupLogsBtn'));
   resetLogCleanupPreview();
 }
@@ -7264,7 +7264,7 @@ function openTrashConfirm(act, items, trigger) {
   document.getElementById('trashConfirmBody').replaceChildren(...copy.paragraphs.map(text => removalEl('p', '', text)));
   trashConfirmed = () => runTrashAct(act, items);
   const modal = document.getElementById('trashConfirmModal');
-  modal.style.display = 'flex';
+  modal.style.display = 'block';
   modal._openAccessible(trigger);
 }
 

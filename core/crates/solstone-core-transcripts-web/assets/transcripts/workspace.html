@@ -1487,6 +1487,20 @@
   border-radius: 16px;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Title and buttons stay put; only the body scrolls on a short screen. */
+#trDeleteSegmentModal .modal-header,
+#trDeleteSegmentModal .modal-footer {
+  flex: none;
+}
+
+#trDeleteSegmentModal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 #trDeleteSegmentModal .modal-header {
@@ -1672,6 +1686,9 @@
 @media (max-width: 480px) {
   #trDeleteSegmentModal .trash-dlg-foot button {
     min-height: 44px;
+    padding-left: 12px;
+    padding-right: 12px;
+    white-space: nowrap;
   }
 }
 
