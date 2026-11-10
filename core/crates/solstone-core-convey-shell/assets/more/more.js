@@ -16,8 +16,14 @@ const MORE_STATE_FIELDS = [
   {"view":"backup","url":"/app/backup/status","path":["success"]}
 ];
 
+// More on the view contract: this script only registers. Nothing of the view
+// runs when the script loads. The backup helper is the fragment's, loaded
+// once for the page, and dispose does not remove it.
 (function () {
-  const reportMoreReady = window.createViewReady('more');
+  // A pin write outlives the view. This holds its outcome, not the page, so
+  // the owner can leave while it is in flight. The next mount reads the shell
+  // and paints that when this view did not.
+  let pinWrite = null;
 
   const GROUPS = [
     ['keeps', 'what your journal keeps', 'your days, as your journal holds them'],
@@ -186,7 +192,7 @@ const MORE_STATE_FIELDS = [
     } else {
       shell.pinned = Array.isArray(pinned) ? pinned.slice() : [];
     }
-    syncPins(root, shell);
+    if (root) syncPins(root, shell);
   }
 
   function showSaveError(root) {
@@ -199,38 +205,28 @@ const MORE_STATE_FIELDS = [
     if (live) live.textContent = '';
   }
 
-  function installFilter(root) {
+  function applyFilter(root) {
     const input = root.querySelector('#more-filter');
     const empty = root.querySelector('.more-empty');
-    const apply = () => {
-      const query = input.value.trim().toLowerCase();
-      let visible = 0;
-      root.querySelectorAll('.more-card').forEach((card) => {
-        const name = card.getAttribute('data-app-name');
-        const link = card.querySelector('.more-card-link');
-        const haystack = ((link && link.textContent) || '') + ' ' + name;
-        const app = card._app;
-        const keywords = app && app.keywords ? app.keywords.join(' ') : '';
-        const source = app && app.source ? app.source : '';
-        const description = app && app.description ? app.description : '';
-        const label = app && app.label ? app.label : '';
-        const blob = (label + ' ' + name + ' ' + description + ' ' + source + ' ' + keywords).toLowerCase();
-        const matches = blob.includes(query);
-        card.hidden = !matches;
-        if (matches) visible += 1;
-      });
-      root.querySelectorAll('.more-group').forEach((group) => {
-        group.hidden = !group.querySelector('.more-card:not([hidden])');
-      });
-      if (empty) empty.hidden = visible !== 0;
-    };
-    input.addEventListener('input', apply);
-    document.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || document.activeElement !== input) return;
-      if (!input.value) return;
-      input.value = '';
-      apply();
+    if (!input) return;
+    const query = input.value.trim().toLowerCase();
+    let visible = 0;
+    root.querySelectorAll('.more-card').forEach((card) => {
+      const name = card.getAttribute('data-app-name');
+      const app = card._app;
+      const keywords = app && app.keywords ? app.keywords.join(' ') : '';
+      const source = app && app.source ? app.source : '';
+      const description = app && app.description ? app.description : '';
+      const label = app && app.label ? app.label : '';
+      const blob = (label + ' ' + name + ' ' + description + ' ' + source + ' ' + keywords).toLowerCase();
+      const matches = blob.includes(query);
+      card.hidden = !matches;
+      if (matches) visible += 1;
     });
+    root.querySelectorAll('.more-group').forEach((group) => {
+      group.hidden = !group.querySelector('.more-card:not([hidden])');
+    });
+    if (empty) empty.hidden = visible !== 0;
   }
 
   function rememberApps(root, shell) {
@@ -240,89 +236,152 @@ const MORE_STATE_FIELDS = [
     });
   }
 
-  function installPins(root, shell) {
+  function here(ctx, root) {
+    return !ctx.disposed && root && root.isConnected;
+  }
+
+  function installPins(root, shell, ctx) {
     const busy = new Set();
     root.querySelectorAll('[data-pin-view]').forEach((button) => {
-      button.addEventListener('click', async () => {
+      ctx.on(button, 'click', async () => {
         const name = button.getAttribute('data-pin-view');
         if (button.disabled || busy.has(name)) return;
         busy.add(name);
         button.disabled = true;
         const want = button.getAttribute('aria-pressed') !== 'true';
         const previous = Array.isArray(shell.pinned) ? shell.pinned.slice() : [];
+        // Not the mount's signal: a write has no deadline, and leaving the
+        // view must not abandon it.
+        const request = window.apiJson('/api/shell/pins', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ view: name, pinned: want }),
+          noAuthRedirect: true
+        });
+        const settled = request.then(
+          (response) => ({ ok: true, pinned: Array.isArray(response && response.pinned) ? response.pinned : null }),
+          () => ({ ok: false })
+        );
+        pinWrite = settled;
         try {
-          const response = await window.apiJson('/api/shell/pins', {
-            method: 'PUT',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ view: name, pinned: want }),
-            noAuthRedirect: true
-          });
-          if (!response || !Array.isArray(response.pinned)) {
-            throw new Error('pins response');
+          const response = await request;
+          if (!response || !Array.isArray(response.pinned)) throw new Error('pins response');
+          if (!here(ctx, root)) {
+            if (window.solShellChrome && typeof window.solShellChrome.updatePinnedViews === 'function') {
+              window.solShellChrome.updatePinnedViews(shell, response.pinned);
+            } else {
+              shell.pinned = response.pinned.slice();
+            }
+            if (pinWrite === settled) pinWrite = null;
+            return;
           }
           applyPinned(root, shell, response.pinned);
           clearSaveError(root);
+          if (pinWrite === settled) pinWrite = null;
         } catch (error) {
+          if (!here(ctx, root)) return;
           try {
-            const fresh = await window.apiJson('/api/shell', { noAuthRedirect: true });
+            // Shell scope: a view read would never settle once the owner has left.
+            const fresh = await window.apiJson('/api/shell', { scope: 'shell', noAuthRedirect: true });
+            if (!here(ctx, root)) return;
             if (!fresh || !Array.isArray(fresh.pinned)) throw error;
             applyPinned(root, shell, fresh.pinned);
           } catch (refetchError) {
+            if (!here(ctx, root)) return;
             applyPinned(root, shell, previous);
           }
+          if (!here(ctx, root)) return;
           showSaveError(root);
+          if (pinWrite === settled) pinWrite = null;
         } finally {
           busy.delete(name);
-          button.disabled = false;
+          if (here(ctx, root)) button.disabled = false;
         }
       });
     });
   }
 
-  function loadStates(root, timeout) {
+  function loadStates(root, ctx, timeout) {
     const jobs = MORE_STATE_FIELDS.map(async (field) => {
       const card = root.querySelector('.more-card[data-app-name="' + field.view + '"]');
       const slot = card && card.querySelector('.more-state');
       if (!slot) return;
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeout);
+      if (ctx.signal.aborted) controller.abort();
+      else ctx.on(ctx.signal, 'abort', () => controller.abort());
+      const timer = ctx.setTimeout(() => controller.abort(), timeout);
       try {
         const body = await window.apiJson(field.url, { noAuthRedirect: true, signal: controller.signal });
+        if (!here(ctx, root)) return;
         const state = stateFor(field.view, body);
         if (!state) return;
         slot.textContent = state.text;
         slot.className = state.action ? 'more-state more-state-action' : 'more-state';
         slot.hidden = false;
       } catch (error) {
-        slot.hidden = true;
+        if (here(ctx, root)) slot.hidden = true;
       } finally {
-        clearTimeout(timer);
+        ctx.clearTimeout(timer);
       }
     });
     return Promise.all(jobs);
   }
 
-  function renderMorePage(root, shell, options) {
-    const timeout = options && options.timeout != null ? options.timeout : 4000;
-    paint(root, shell, PIN_ICON);
-    rememberApps(root, shell);
-    installFilter(root);
-    installPins(root, shell);
-    reportMoreReady('content');
-    return loadStates(root, timeout).then(() => root);
-  }
-
-  window.renderMorePage = renderMorePage;
-
-  function boot() {
-    const root = document.getElementById('more-root');
-    if (!root || typeof window.whenShellReady !== 'function') return;
-    window.whenShellReady((shell) => {
-      renderMorePage(root, shell);
+  function shellFromPage() {
+    return new Promise((resolve) => {
+      if (typeof window.whenShellReady !== 'function') resolve(null);
+      else window.whenShellReady(resolve);
     });
   }
 
-  if (document.getElementById('more-root') && document.getElementById('more-root').childElementCount === 0) {
-    boot();
+  async function mountMore(ctx) {
+    // A test may set a shorter bound before mount. Production stays at 4s.
+    const timeout = Number.isFinite(window.__moreStateTimeout) ? window.__moreStateTimeout : 4000;
+    delete window.__moreStateTimeout;
+
+    const root = document.getElementById('more-root');
+    ctx.on(document, 'keydown', (event) => {
+      if (!here(ctx, root)) return;
+      const input = root.querySelector('#more-filter');
+      if (!input || event.key !== 'Escape' || document.activeElement !== input) return;
+      if (!input.value) return;
+      input.value = '';
+      applyFilter(root);
+    });
+    if (!root) throw new Error('more has no root');
+
+    const shell = await shellFromPage();
+    if (!shell || ctx.disposed) return;
+
+    if (pinWrite) {
+      const pending = pinWrite;
+      pinWrite = null;
+      await pending;
+      if (ctx.disposed) return;
+      try {
+        const fresh = await window.apiJson('/api/shell', { scope: 'shell', noAuthRedirect: true, signal: ctx.signal });
+        if (ctx.disposed) return;
+        if (fresh && Array.isArray(fresh.pinned)) {
+          if (window.solShellChrome && typeof window.solShellChrome.updatePinnedViews === 'function') {
+            window.solShellChrome.updatePinnedViews(shell, fresh.pinned);
+          } else {
+            shell.pinned = fresh.pinned.slice();
+          }
+        }
+      } catch (_) {
+        // The shell already in hand still paints. The write was not shown as failed.
+      }
+    }
+    if (ctx.disposed) return;
+
+    paint(root, shell, PIN_ICON);
+    rememberApps(root, shell);
+    const input = root.querySelector('#more-filter');
+    if (input) ctx.on(input, 'input', () => applyFilter(root));
+    installPins(root, shell, ctx);
+    ctx.ready('content');
+    await loadStates(root, ctx, timeout);
   }
+
+  window.SolViews.register('more', { mount: mountMore });
 })();
