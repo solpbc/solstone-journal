@@ -303,7 +303,10 @@ fn shell_bundles(
     let registry = format!("globalThis.SOL_SHELL_REGISTRY = {registry};\n");
 
     let map_name = SHELL_SCRIPT_MAP.rsplit('/').next().expect("map file name");
-    let rest_map_name = SHELL_REST_MAP.rsplit('/').next().expect("rest map file name");
+    let rest_map_name = SHELL_REST_MAP
+        .rsplit('/')
+        .next()
+        .expect("rest map file name");
     let script_name = SHELL_SCRIPT_BUNDLE
         .rsplit('/')
         .next()
