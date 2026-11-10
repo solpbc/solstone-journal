@@ -69,6 +69,14 @@ pub fn media_kind(extension: &str) -> Option<MediaKind> {
         .map(|(_, kind)| *kind)
 }
 
+/// Every extension the journal reads as audio.
+pub(crate) fn audio_extensions() -> impl Iterator<Item = &'static str> {
+    FORMATS
+        .iter()
+        .filter(|(_, kind)| *kind == MediaKind::Audio)
+        .map(|(extension, _)| *extension)
+}
+
 /// Whether an extension names media at all.
 pub fn is_media_extension(extension: &str) -> bool {
     media_kind(extension).is_some()
