@@ -4569,6 +4569,15 @@ function runAppleImportEndsInItsOwnWords() {
     stage: 'initialization', elapsed_ms: 300 })})`, context);
   assert.ok(!guideSteps.innerHTML.includes('initialization') && !guideSteps.innerHTML.includes('elapsed'), guideSteps.innerHTML);
   assert.ok(guideSteps.innerHTML.includes('Apple Health'), guideSteps.innerHTML);
+  // The import's own page reads as its row does, not "start status unknown".
+  const ImportDetail = loadImportDetailModule();
+  const stopped = { timestamp: '20261109_225511', status: 'noted', body_state: 'stopped',
+    body_words: 'stopped before it finished. your import of NOV-9 is running now.', error: 'import failed',
+    error_stage: 'execution', saved_start: { state: 'consumed' }, source_display: 'Apple Health' };
+  const stoppedHtml = ImportDetail.renderDetail(stopped);
+  assert.ok(stoppedHtml.includes('stopped') && !stoppedHtml.includes('start status unknown'), stoppedHtml);
+  assert.ok(!stoppedHtml.includes('import failed'), 'the row words say why, not a bare failure: ' + stoppedHtml);
+  assert.strictEqual(ImportDetail.composeDrawerLine(stopped), stopped.body_words);
   done({ body_state: 'saved', entries_written: 0, duration_ms: 1000 });
   assert.ok(guideSteps.innerHTML.includes('nothing new'), 'the same export again: ' + guideSteps.innerHTML);
   // The run's phase is said while it runs, and not once it has ended.

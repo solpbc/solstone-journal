@@ -60,6 +60,11 @@
     saved: 'saved',
     not_started: 'not started',
     start_unknown: 'start status unknown',
+    // An Apple Health import's own states, as its row says them. Owner copy: voice-checked.
+    body_partly_saved: 'partly saved',
+    body_stopped: 'stopped',
+    body_failed: 'not brought in',
+    body_didnt_start: "didn't start",
     start_unknown_detail: "this file is saved, but its history doesn't confirm whether the import started.",
     starting: 'starting…',
     preview_import: 'preview import',
@@ -255,6 +260,17 @@
   function deriveStatus(data) {
     const principalCollision = asObject(data?.principal_collision);
     const canonicalStatus = data?.status;
+    // An Apple Health import that didn't save everything reads as its row does.
+    const bodyLabel = {
+      partly_saved: strings.body_partly_saved,
+      stopped: strings.body_stopped,
+      failed: strings.body_failed,
+      didnt_start: strings.body_didnt_start,
+    }[data?.body_state];
+    if (bodyLabel) {
+      const warn = data.body_state === 'partly_saved' || data.body_state === 'stopped';
+      return { status: bodyLabel, chipText: bodyLabel, chipTone: warn ? 'warn' : 'danger', open: true, body: true };
+    }
 
     if (canonicalStatus === 'failed') {
       return {
@@ -310,6 +326,7 @@
     const importJson = asObject(data?.import_json) || {};
     const derived = deriveStatus(data);
 
+    if (derived.body) return data?.body_words || derived.status;
     if (derived.status === strings.saved) return strings.not_started;
     if (derived.status === strings.start_unknown) return strings.start_unknown_detail;
     if (data?.saved_start?.active === true && data?.status !== 'running') return strings.starting;
@@ -468,8 +485,8 @@
       data?.has_gaps ? kvRow(strings.has_gaps, 'yes') : '',
       finished ? kvRow(strings.completed_at, formatDateTime(data?.finished_at), { always: true, wall: true }) : '',
       didFail ? kvRow(strings.failed_at, formatDateTime(data?.finished_at), { always: true, wall: true }) : '',
-      kvRow(strings.failed_stage, data?.error_stage, { always: didFail }),
-      kvRow(strings.error, data?.error, { always: didFail })
+      kvRow(strings.failed_stage, derived.body ? null : data?.error_stage, { always: didFail }),
+      kvRow(strings.error, derived.body ? null : data?.error, { always: didFail })
     ]);
   }
 
