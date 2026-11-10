@@ -495,6 +495,30 @@ mod page_start {
     }
 
     #[test]
+    fn a_hand_typed_start_aimed_at_another_sources_import_changes_nothing() {
+        let journal = journal();
+        let root = journal.path();
+        // A pending import the Apple Health card didn't make, holding an export
+        // the save would otherwise accept.
+        let q = "20261012_160000";
+        let held = page_record(root, q, &[heart("2026-10-09 06:40:00 -0600")]);
+        let mut metadata = solstone_core_import::read_import_metadata(root, q).unwrap();
+        metadata.insert("source_hint".into(), json!("strava"));
+        solstone_core_import::write_import_metadata(root, q, &metadata).unwrap();
+        let untouched =
+            solstone_core_import::snapshot::fingerprint(&root.join("imports").join(q)).unwrap();
+        let run = run_page(root, &page_args(&held, q, true));
+        assert_eq!(run.exit_code, 1, "{}", run.stderr);
+        assert_eq!(run.stderr, crate::body_commands::CARD_ONLY);
+        assert_eq!(
+            solstone_core_import::snapshot::fingerprint(&root.join("imports").join(q)).unwrap(),
+            untouched,
+            "no stop record, nothing written"
+        );
+        assert!(held.exists(), "its upload stays");
+    }
+
+    #[test]
     fn a_page_start_for_an_import_that_ran_or_doesnt_hold_the_export_changes_nothing() {
         let journal = journal();
         let root = journal.path();

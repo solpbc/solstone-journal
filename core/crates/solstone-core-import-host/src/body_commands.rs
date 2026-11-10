@@ -54,8 +54,12 @@ const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole e
 /// its own words for it.
 const ALREADY_RAN: &str = "this import has already run, so nothing was brought in. start a new one from the Apple Health card.\n";
 
+/// What a start that names an import is told when nothing about it is an Apple
+/// Health card's save.
+pub(crate) const CARD_ONLY: &str = "--import-id is only for saving an Apple Health export from its card, so nothing was brought in.\n";
+
 /// A page start names the import it runs under. Accept it only when that import
-/// was made by the page for this export and has never run; refuse otherwise
+/// was made by the Apple Health card for this export and has never run; refuse otherwise
 /// before anything else is checked, so a start aimed at an import that already
 /// ran never changes it.
 pub(crate) fn accept_page_import(
@@ -76,6 +80,15 @@ pub(crate) fn accept_page_import(
             "--import-id names no import, so nothing was brought in.\n",
         ));
     };
+    // Only an import the Apple Health card made: a hand-typed start aimed at
+    // another source's import must never write into it or remove its upload.
+    if metadata
+        .get("source_hint")
+        .and_then(serde_json::Value::as_str)
+        != Some("apple_health")
+    {
+        return Err(refuse(CARD_ONLY));
+    }
     let has_attempt = !matches!(
         solstone_core_import::metadata::read_attempt_facts(&metadata),
         solstone_core_import::metadata::AttemptRead::Absent

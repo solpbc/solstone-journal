@@ -652,11 +652,7 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
         let apple_save =
             options.source.as_deref() == Some("apple_health") && options.media.is_some();
         if !apple_save {
-            return rendered(failure(
-                "",
-                "--import-id is only for saving an Apple Health export from its card, so nothing was brought in.\n",
-                2,
-            ));
+            return rendered(failure("", crate::body_commands::CARD_ONLY, 2));
         }
         if let Err(run) = crate::body_commands::accept_page_import(
             journal_path,

@@ -76,32 +76,37 @@ fn bytes_under(dir: &Path) -> u64 {
 }
 
 /// What an import of an `export.xml` of `xml_bytes` needs, before anything is
-/// counted as free. `first` is whether no Apple import has finished here yet:
-/// a later one writes mostly what's already there. Staging a stopped run left is
-/// given back when the next run starts, so it's taken off.
+/// counted as free. `covered` is the largest `export.xml` an Apple import that
+/// finished here is known to have read (0 when none has, or none says): an
+/// export holds the whole history, so what it leaves in the journal grows only
+/// with what it holds beyond that. Staging a stopped run left is given back
+/// when the next run starts, so it's taken off.
 #[must_use]
-pub fn need(xml_bytes: u64, first: bool, staging_now: u64) -> u64 {
+pub fn need(xml_bytes: u64, covered: u64, staging_now: u64) -> u64 {
     let xml = xml_bytes as f64;
-    let mut need = xml * STAGING_PER_XML_BYTE;
-    if first {
-        need += xml * GROWTH_PER_XML_BYTE;
-    }
+    let added = xml_bytes.saturating_sub(covered) as f64;
+    let need = xml * STAGING_PER_XML_BYTE + added * GROWTH_PER_XML_BYTE;
     ((need as u64).saturating_add(RESERVE)).saturating_sub(staging_now)
 }
 
 /// Whether an Apple import fits now.
-pub fn apple_space(journal: &Path, xml_bytes: u64, first: bool) -> Result<Space, String> {
-    apple_space_with(journal, xml_bytes, first, &crate::archive::available_bytes)
+pub fn apple_space(journal: &Path, xml_bytes: u64, covered: u64) -> Result<Space, String> {
+    apple_space_with(
+        journal,
+        xml_bytes,
+        covered,
+        &crate::archive::available_bytes,
+    )
 }
 
 fn apple_space_with(
     journal: &Path,
     xml_bytes: u64,
-    first: bool,
+    covered: u64,
     available: &dyn Fn(&Path) -> Result<u64, String>,
 ) -> Result<Space, String> {
     let staging_now = bytes_under(&journal.join(APPLE.run_dir_rel));
-    let need = need(xml_bytes, first, staging_now);
+    let need = need(xml_bytes, covered, staging_now);
     let free = free_for_apple_with(journal, available)?;
     Ok(Space {
         need,
@@ -152,30 +157,52 @@ mod tests {
     #[test]
     fn a_first_import_counts_what_it_leaves_and_staging_already_there_is_taken_off() {
         let xml = 10 * GIB;
-        assert!(need(xml, true, 0) > need(xml, false, 0));
+        assert!(need(xml, 0, 0) > need(xml, xml, 0));
         for peak in MEASURED_PEAKS {
             assert!(
-                need(xml, true, 0) as f64 >= xml as f64 * peak + RESERVE as f64,
+                need(xml, 0, 0) as f64 >= xml as f64 * peak + RESERVE as f64,
                 "a first import's need covers the measured peak {peak}, with the reserve kept"
             );
         }
-        assert_eq!(need(xml, false, GIB), need(xml, false, 0) - GIB);
-        assert_eq!(need(0, false, 5 * GIB), 0);
+        assert_eq!(need(xml, xml, GIB), need(xml, xml, 0) - GIB);
+        assert_eq!(need(0, 0, 5 * GIB), 0);
         let journal = tempfile::tempdir().unwrap();
         let staging = journal.path().join(APPLE.run_dir_rel);
         std::fs::create_dir_all(&staging).unwrap();
         std::fs::write(staging.join("run"), vec![0_u8; 4096]).unwrap();
         let roomy = |_: &Path| Ok(u64::MAX);
-        let space = apple_space_with(journal.path(), 0, true, &roomy).unwrap();
+        let space = apple_space_with(journal.path(), 0, 0, &roomy).unwrap();
         assert_eq!(space.need, RESERVE - 4096);
         assert!(space.fits);
         let full = |_: &Path| Ok(RESERVE / 2);
-        let short = apple_space_with(journal.path(), 0, true, &full).unwrap();
+        let short = apple_space_with(journal.path(), 0, 0, &full).unwrap();
         assert!(!short.fits);
         assert!(
             too_full_words(&short).contains("free up about 537 MB"),
             "{}",
             too_full_words(&short)
         );
+    }
+
+    #[test]
+    fn a_later_import_counts_growth_for_what_it_holds_beyond_earlier_ones() {
+        let small = GIB;
+        let long = 8 * GIB;
+        // The same history again: staging only.
+        assert_eq!(
+            need(long, long, 0),
+            (long as f64 * STAGING_PER_XML_BYTE) as u64 + RESERVE
+        );
+        // A much longer export after a small first one: what it adds grows the
+        // journal as a first import would.
+        let added = long - small;
+        assert_eq!(
+            need(long, small, 0),
+            (long as f64 * STAGING_PER_XML_BYTE + added as f64 * GROWTH_PER_XML_BYTE) as u64
+                + RESERVE
+        );
+        assert!(need(long, small, 0) > need(long, long, 0));
+        // A shorter export than one already held adds nothing.
+        assert_eq!(need(small, long, 0), need(small, small, 0));
     }
 }
