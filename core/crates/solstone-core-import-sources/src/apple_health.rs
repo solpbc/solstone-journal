@@ -929,7 +929,8 @@ pub(crate) fn resolve_key(journal: &Path, source: &BodySource, day: &str, key: &
 }
 
 /// Why a window's rows couldn't be had.
-pub(crate) enum StoredRowsError {
+#[derive(Debug)]
+pub enum StoredRowsError {
     /// The file's bytes aren't text, its text isn't rows, or it isn't a file. Trying
     /// again changes none of these.
     NotRows,
@@ -938,7 +939,7 @@ pub(crate) enum StoredRowsError {
 }
 
 /// The rows stored in a window, and `None` for a window with no file.
-pub(crate) fn stored_rows(
+pub fn stored_rows(
     journal: &Path,
     source: &BodySource,
     (day, key): &WindowId,
@@ -1605,6 +1606,7 @@ pub struct SummaryCounts {
     pub split_rows: u64,
     #[serde(default)]
     pub retained_revisions: BTreeMap<String, u64>,
+    pub kept_unfiled: bool,
     pub refiled: u64,
     /// Activity records created for workouts, nights and mindfulness sessions.
     #[serde(default)]
@@ -1665,6 +1667,7 @@ impl SummaryCounts {
             kept_facet: plan.kept_facet,
             split_rows: 0,
             retained_revisions: BTreeMap::new(),
+            kept_unfiled: false,
             refiled: plan.refiled,
             activities: 0,
             activities_no_facet: 0,
@@ -1691,10 +1694,25 @@ fn count_of_records(count: u64) -> String {
     }
 }
 
+/// An assignment whose facet names cannot all be identified.
+pub const UNNAMED_FILING: &str = "\0";
+
 /// Facet titles as an owner would say them: "your work facet", "your work and
 /// home facets".
 #[must_use]
 pub fn facets_words(titles: &[String]) -> String {
+    if titles.iter().any(|title| title == UNNAMED_FILING) {
+        let named = titles
+            .iter()
+            .filter(|title| title.as_str() != UNNAMED_FILING)
+            .cloned()
+            .collect::<Vec<_>>();
+        return if named.is_empty() {
+            "an earlier filing".to_owned()
+        } else {
+            format!("{} and an earlier filing", facets_words(&named))
+        };
+    }
     // Two facets can share a title.
     let unique = titles
         .iter()
@@ -1799,7 +1817,7 @@ pub fn summary_text(
             let _ = writeln!(text, "new entries are filed under the {facet} facet.\n");
         }
         None => text.push_str(
-            "filed under no facet: an agent that can read your whole journal reads it, and one limited to chosen facets doesn't.\n\n",
+            "no facet was chosen for this import. entries without a facet are readable to an agent that can read your whole journal, and not to one limited to chosen facets.\n\n",
         ),
     }
     if counts.split_rows > 0 {
@@ -1823,6 +1841,9 @@ pub fn summary_text(
             text,
             "{count} updated {noun} stayed under {facets}, where {earlier} already filed.\n"
         );
+    }
+    if counts.kept_unfiled {
+        text.push_str("some earlier entries stayed without a facet. only an agent that can read your whole journal can read them.\n\n");
     }
     if counts.took_facet > 0 {
         let _ = writeln!(

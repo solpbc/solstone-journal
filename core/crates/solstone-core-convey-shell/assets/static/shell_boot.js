@@ -228,6 +228,15 @@
     }
   }
 
+  // The view the rail marks as current, after a move inside the page.
+  function markCurrent(name) {
+    const shell = window.solShellData;
+    if (!shell || !findApp(shell, name)) return;
+    renderAppRail(shell, name);
+    renderAppDock(shell, name);
+    renderStatusInstrument();
+  }
+
   function updatePinnedViews(shell, pinnedList) {
     shell.pinned = Array.isArray(pinnedList) ? pinnedList.slice() : [];
     const current = pathContext().appName;
@@ -243,6 +252,7 @@
       renderAppDock,
       renderStatusInstrument,
       updatePinnedViews,
+      markCurrent,
     };
   }
 
@@ -296,22 +306,6 @@
     return shellFrom(await window.apiJson('/api/shell', { scope: 'shell' }));
   }
 
-  // A view can open on an address with no day, and name a read that picks one
-  // on the journal's clock. The page takes that address before the view runs,
-  // so the view only ever sees a day in its path.
-  async function openDay(app) {
-    const open = window.__SOL_ENTRY_TABLE__?.views?.[app.name]?.openDay;
-    if (!open || window.location.pathname !== open.route) return;
-    const { day } = await window.apiJson(open.url);
-    if (typeof day !== 'string' || !DAY_RE.test(day)) {
-      throw new Error('No day to open');
-    }
-    window.history.replaceState(
-      window.history.state,
-      '',
-      `${open.route}${day}${window.location.search}${window.location.hash}`
-    );
-  }
 
   async function boot() {
     performance.mark('shell:scripts-loaded');
@@ -336,7 +330,7 @@
       renderAppDock(shell, app.name);
       renderStatusInstrument();
       applyBodyState(app);
-      await openDay(app);
+      await window.solRouter.openDay(app);
       window.resolveSolShellReady(shell);
 
       for (const backgroundApp of shell.apps || []) {
@@ -367,7 +361,13 @@
         window.JournalFormat.logStreamLabelProblem('slow');
       }
 
-      await window.mountWorkspaceFragment(app.workspace_url, { appName: app.name });
+      try {
+        await window.mountWorkspaceFragment(app.workspace_url, { appName: app.name });
+      } finally {
+        // A pilot view keeps the page from here on, even one whose first
+        // load failed: it reads again when the live stream connects.
+        window.solRouter?.start(app.name);
+      }
     } catch (error) {
       if (window.logError) {
         window.logError(error, { context: 'shell-boot' });

@@ -788,7 +788,23 @@
     if (!normalized || !state.appName) return;
     const keepSearch = Boolean(state.host && state.host.hasAttribute('data-date-nav-keep-search'));
     const search = keepSearch && window.location.search ? window.location.search : '';
-    window.location.href = `/app/${state.appName}/${normalized}${search}`;
+    const href = `/app/${state.appName}/${normalized}${search}`;
+    // A view that takes a new day in place does so inside the page; every
+    // other view loads the day's page.
+    if (window.solRouter?.navigate?.(href)) return;
+    window.location.href = href;
+  }
+
+  // The view moved to another day in place. The heading, the label and the
+  // arrows follow it; the calendar it already read stays.
+  function setDay(day) {
+    const normalized = parseDayString(day);
+    if (!normalized || !state.config) return;
+    state.day = isWeekStep() ? (sundayOf(normalized) || normalized) : normalized;
+    state.month = state.day.slice(0, 6);
+    state.year = Number(state.month.slice(0, 4));
+    if (state.open) hidePanel({ restoreFocus: false });
+    updateLabels();
   }
 
   function navigateDay(delta) {
@@ -1450,6 +1466,7 @@
     weekHeadingLabel,
     stepDay,
     sundayOf,
-    mountScoped
+    mountScoped,
+    setDay
   };
 })();

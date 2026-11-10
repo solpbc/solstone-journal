@@ -131,3 +131,119 @@ fn a_deleted_original_refuses_new_rows_but_not_a_live_siblings_revision() {
     .unwrap();
     assert!(refused.stayed_deleted && refused.contents.is_none());
 }
+
+#[test]
+fn an_orphan_unfiled_tile_never_lends_its_window_to_a_run_facet() {
+    for deleted in [false, true] {
+        for repeat in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = temp.path();
+            crate::apple_health::read_or_create_zone(root, &APPLE).unwrap();
+            let mut tile = BodyRow::new(
+                RowKind::ExperienceTile,
+                "orphan-tile".into(),
+                "Watch",
+                "sleep",
+                "private night".into(),
+            );
+            tile.of = Some("missing-parent".into());
+            tile.start = Some("2026-10-10 05:00:00 -0600".into());
+            tile.end = Some("2026-10-10 07:00:00 -0600".into());
+            if deleted {
+                let mut parent = tile.clone();
+                parent.kind = RowKind::Experience;
+                parent.id = "missing-parent".into();
+                put(root, "050000_3600", &[parent], Some("work"));
+                fs::write(
+                    stream_dir(root, &APPLE, "20261010").join("050000_3600/tombstone.json"),
+                    "{}",
+                )
+                .unwrap();
+            }
+            put(root, "060000_3600", &[tile.clone()], None);
+            let hour = if repeat { "07" } else { "06" };
+            let mut incoming = BTreeMap::from([("new".to_owned(), row("new", hour, "7333"))]);
+            if repeat {
+                tile.end = Some("2026-10-10 08:00:00 -0600".into());
+                incoming.insert(tile.id.clone(), tile);
+            }
+            let filed = DayPlacement::load(root, &APPLE, "20261010")
+                .unwrap()
+                .file(
+                    vec![(("20261010".into(), format!("{hour}0000_3600")), incoming)],
+                    Some("body"),
+                    false,
+                )
+                .unwrap();
+            assert!(filed.reserved_unfiled.contains("060000_3600"));
+            assert!(!filed.filings.contains_key("060000_3600"));
+            assert!(filed.tile_repairs.is_empty());
+            if repeat {
+                let ((_, key), _) = filed
+                    .windows
+                    .iter()
+                    .find(|(_, rows)| rows.contains_key("orphan-tile"))
+                    .unwrap();
+                assert_eq!(key, "060000_3600", "an orphan keeps its physical window");
+            }
+            let ((_, destination), _) = filed
+                .windows
+                .iter()
+                .find(|(_, rows)| rows.contains_key("new"))
+                .unwrap();
+            assert_ne!(destination, "060000_3600");
+            assert_eq!(filed.filings[destination], facet_file_text("body"));
+        }
+    }
+}
+
+#[test]
+fn a_no_facet_tile_never_claims_an_absent_original_before_or_after_a_reading() {
+    for (tile_id, reading_id) in [("a-tile", "z-reading"), ("z-tile", "a-reading")] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        crate::apple_health::read_or_create_zone(root, &APPLE).unwrap();
+        let mut parent = BodyRow::new(
+            RowKind::Experience,
+            "parent".into(),
+            "Watch",
+            "workout",
+            "private workout".into(),
+        );
+        parent.start = Some("2026-10-10 05:00:00 -0600".into());
+        parent.end = Some("2026-10-10 07:00:00 -0600".into());
+        put(root, "050000_3600", &[parent.clone()], Some("other"));
+        let mut tile = parent;
+        tile.kind = RowKind::ExperienceTile;
+        tile.id = tile_id.into();
+        tile.of = Some("parent".into());
+        let incoming = BTreeMap::from([
+            (tile_id.to_owned(), tile),
+            (reading_id.to_owned(), row(reading_id, "06", "8333")),
+        ]);
+        let filed = DayPlacement::load(root, &APPLE, "20261010")
+            .unwrap()
+            .file(
+                vec![(("20261010".into(), "060000_3600".into()), incoming)],
+                None,
+                false,
+            )
+            .unwrap();
+        let destination = |id: &str| {
+            &filed
+                .windows
+                .iter()
+                .find(|(_, rows)| rows.contains_key(id))
+                .unwrap()
+                .0
+                .1
+        };
+        assert_eq!(destination(reading_id), "060000_3600");
+        assert!(!filed.filings.contains_key("060000_3600"));
+        assert_ne!(destination(tile_id), "060000_3600");
+        assert_eq!(
+            filed.filings[destination(tile_id)],
+            facet_file_text("other")
+        );
+    }
+}

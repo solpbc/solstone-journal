@@ -154,16 +154,17 @@ pub fn parse_and_validate_nuspec<R: Read + Seek>(
 ) -> Result<(), velopack::Error> {
     parse_and_validate_nuspec_for_architecture(
         reader,
-        expected_version,
+        Some(expected_version),
         solstone_core_installed_payload::compiled_windows_architecture(),
     )
+    .map(|_| ())
 }
 
 fn parse_and_validate_nuspec_for_architecture<R: Read + Seek>(
     mut reader: R,
-    expected_version: &str,
+    expected_version: Option<&str>,
     architecture: solstone_core_installed_payload::WindowsArchitecture,
-) -> Result<(), velopack::Error> {
+) -> Result<String, velopack::Error> {
     use quick_xml::events::Event;
 
     let identity = super::package_identity(architecture);
@@ -233,6 +234,7 @@ fn parse_and_validate_nuspec_for_architecture<R: Read + Seek>(
 
     let mut xml_reader = quick_xml::Reader::from_str(&text);
     let mut counts = NuspecCounts::default();
+    let mut extracted_version: Option<String> = None;
 
     let mut path = Vec::<String>::new();
     let mut current_tag: Option<String> = None;
@@ -283,6 +285,7 @@ fn parse_and_validate_nuspec_for_architecture<R: Read + Seek>(
                         expected_version,
                         identity,
                         &mut counts,
+                        &mut extracted_version,
                     )?;
                 }
                 path.pop();
@@ -335,7 +338,7 @@ fn parse_and_validate_nuspec_for_architecture<R: Read + Seek>(
         ));
     }
 
-    Ok(())
+    extracted_version.ok_or_else(|| velopack::Error::Other("missing nuspec version".into()))
 }
 
 #[derive(Default)]
@@ -352,9 +355,10 @@ struct NuspecCounts {
 fn process_nuspec_tag(
     tag: &str,
     val_trimmed: &str,
-    expected_version: &str,
+    expected_version: Option<&str>,
     identity: super::PackageIdentity,
     counts: &mut NuspecCounts,
+    extracted_version: &mut Option<String>,
 ) -> Result<(), velopack::Error> {
     match tag {
         "id" => {
@@ -366,14 +370,24 @@ fn process_nuspec_tag(
         }
         "version" => {
             counts.version += 1;
-            if counts.version > 1 || val_trimmed != expected_version {
+            if counts.version > 1 {
+                log::warn!("invalid or duplicate version: {val_trimmed}");
+                return Err(velopack::Error::Other(
+                    "invalid or duplicate version".into(),
+                ));
+            }
+            if expected_version.is_some_and(|expected| val_trimmed != expected) {
                 log::warn!(
-                    "invalid or duplicate version: {val_trimmed}, expected {expected_version}"
+                    "invalid or duplicate version: {val_trimmed}, expected {expected_version:?}"
                 );
                 return Err(velopack::Error::Other(
                     "invalid or duplicate version".into(),
                 ));
             }
+            if val_trimmed.is_empty() {
+                return Err(velopack::Error::Other("empty version in nuspec".into()));
+            }
+            *extracted_version = Some(val_trimmed.to_string());
         }
         "channel" => {
             counts.channel += 1;
@@ -493,12 +507,105 @@ pub fn admit_existing_package(
     Ok(package_file)
 }
 
+#[derive(Debug)]
+pub struct Admitted {
+    pub version: String,
+    pub file: std::fs::File,
+}
+
+pub fn is_deferral_error(err: &velopack::Error) -> bool {
+    match err {
+        velopack::Error::Other(msg) => msg.contains("download deferred"),
+        _ => false,
+    }
+}
+
+pub fn admit_cached_package(
+    package_path: &Path,
+    sidecar_path: &Path,
+) -> Result<Admitted, velopack::Error> {
+    let package_name = package_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| velopack::Error::Other("invalid package filename".into()))?;
+    let sidecar_name = sidecar_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| velopack::Error::Other("invalid sidecar filename".into()))?;
+    if !asset_name_is_plain(package_name) || !asset_name_is_plain(sidecar_name) {
+        log::warn!("package or sidecar filename is not plain");
+        return Err(velopack::Error::Other("filename is not plain".into()));
+    }
+    let matches_final = sidecar_name == format!("{package_name}.minisig");
+    let matches_temp = package_name.strip_suffix(".partial").is_some_and(|stem| {
+        let base = stem.strip_suffix(".nupkg").unwrap_or(stem);
+        sidecar_name == format!("{base}.nupkg.minisig.partial")
+            || sidecar_name == format!("{stem}.minisig.partial")
+    });
+    if !matches_final && !matches_temp {
+        log::warn!("sidecar filename does not match package filename");
+        return Err(velopack::Error::Other(
+            "sidecar filename does not match package filename".into(),
+        ));
+    }
+
+    let mut sidecar_file = open_regular_file(sidecar_path)?;
+    let mut sidecar_bytes = Vec::new();
+    sidecar_file
+        .by_ref()
+        .take(MAX_SIDECAR_BYTES + 1)
+        .read_to_end(&mut sidecar_bytes)
+        .map_err(|e| {
+            log::warn!("could not read sidecar: {e}");
+            velopack::Error::Other(format!("could not read sidecar: {e}"))
+        })?;
+    if sidecar_bytes.len() as u64 > MAX_SIDECAR_BYTES {
+        log::warn!("sidecar length {} exceeds limit", sidecar_bytes.len());
+        return Err(velopack::Error::Other("sidecar exceeds size limit".into()));
+    }
+
+    check_sidecar_format(sidecar_path, &sidecar_bytes)?;
+
+    let mut package_file = open_regular_file(package_path)?;
+
+    solstone_core_installed_payload::verify_pinned_signature_reader(
+        &mut package_file,
+        sidecar_path,
+        &sidecar_bytes,
+    )
+    .map_err(|e| {
+        log::warn!("pinned signature verification failed: {e}");
+        velopack::Error::Other(format!("signature verification failed: {e}"))
+    })?;
+
+    package_file
+        .rewind()
+        .map_err(|e| velopack::Error::Other(format!("could not rewind package file: {e}")))?;
+
+    let version = parse_and_validate_nuspec_for_architecture(
+        &mut package_file,
+        None,
+        solstone_core_installed_payload::compiled_windows_architecture(),
+    )?;
+
+    package_file
+        .rewind()
+        .map_err(|e| velopack::Error::Other(format!("could not rewind package file: {e}")))?;
+
+    Ok(Admitted {
+        version,
+        file: package_file,
+    })
+}
+
 /// Download an HTTP package with sidecar verification.
 pub fn download_http_package(
     feed: &FirstPartyFeed,
     asset: &VelopackAsset,
     local_file: &Path,
     progress_sender: Option<Sender<i16>>,
+    is_allowed: impl Fn() -> bool,
+    promote_sidecar: bool,
 ) -> Result<(), velopack::Error> {
     if !asset.Type.eq_ignore_ascii_case("Full") {
         log::warn!("asset type {} is not Full", asset.Type);
@@ -554,6 +661,9 @@ pub fn download_http_package(
             .open(local_file)?;
         let mut buffer = [0_u8; 64 * 1024];
         loop {
+            if !is_allowed() {
+                return Err(velopack::Error::Other("download deferred".into()));
+            }
             use std::io::Write;
             let size = reader.read(&mut buffer)?;
             if size == 0 {
@@ -608,7 +718,9 @@ pub fn download_http_package(
             sidecar.write_all(&sidecar_bytes)?;
             sidecar.sync_all()?;
         }
-        std::fs::rename(&sidecar_partial, &sidecar_final)?;
+        if promote_sidecar {
+            std::fs::rename(&sidecar_partial, &sidecar_final)?;
+        }
         Ok(())
     })();
 
@@ -625,6 +737,8 @@ pub fn download_dir_package(
     asset: &VelopackAsset,
     local_file: &Path,
     progress_sender: Option<Sender<i16>>,
+    is_allowed: impl Fn() -> bool,
+    promote_sidecar: bool,
 ) -> Result<(), velopack::Error> {
     if !asset.Type.eq_ignore_ascii_case("Full") {
         log::warn!("asset type {} is not Full", asset.Type);
@@ -691,6 +805,9 @@ pub fn download_dir_package(
             .open(local_file)?;
         let mut buffer = [0_u8; 64 * 1024];
         loop {
+            if !is_allowed() {
+                return Err(velopack::Error::Other("download deferred".into()));
+            }
             use std::io::Write;
             let size = source_file.read(&mut buffer)?;
             if size == 0 {
@@ -745,7 +862,9 @@ pub fn download_dir_package(
             sidecar.write_all(&sidecar_bytes)?;
             sidecar.sync_all()?;
         }
-        std::fs::rename(&sidecar_partial, &sidecar_final)?;
+        if promote_sidecar {
+            std::fs::rename(&sidecar_partial, &sidecar_final)?;
+        }
         Ok(())
     })();
 
@@ -776,9 +895,10 @@ mod tests {
     ) -> Result<(), velopack::Error> {
         parse_and_validate_nuspec_for_architecture(
             reader,
-            version,
+            Some(version),
             solstone_core_installed_payload::WindowsArchitecture::X86_64,
         )
+        .map(|_| ())
     }
 
     #[test]
@@ -791,8 +911,17 @@ mod tests {
                 identity.channel, identity.rid, identity.machine_architecture
             );
             let bytes = make_test_zip(&[("SolstoneJournal.nuspec", &nuspec)]);
-            parse_and_validate_nuspec_for_architecture(Cursor::new(&bytes), "2.0.28", architecture)
-                .unwrap();
+            let extracted = parse_and_validate_nuspec_for_architecture(
+                Cursor::new(&bytes),
+                Some("2.0.28"),
+                architecture,
+            )
+            .unwrap();
+            assert_eq!(extracted, "2.0.28");
+            let unverified_version =
+                parse_and_validate_nuspec_for_architecture(Cursor::new(&bytes), None, architecture)
+                    .unwrap();
+            assert_eq!(unverified_version, "2.0.28");
             assert_eq!(
                 super::parse_and_validate_nuspec(Cursor::new(&bytes), "2.0.28").is_ok(),
                 architecture == compiled_windows_architecture()
@@ -802,8 +931,12 @@ mod tests {
                 .find(|other| *other != architecture)
                 .unwrap();
             assert!(
-                parse_and_validate_nuspec_for_architecture(Cursor::new(&bytes), "2.0.28", foreign)
-                    .is_err()
+                parse_and_validate_nuspec_for_architecture(
+                    Cursor::new(&bytes),
+                    Some("2.0.28"),
+                    foreign
+                )
+                .is_err()
             );
             let foreign_identity = super::super::package_identity(foreign);
             for (tag, foreign_value) in [
@@ -818,7 +951,7 @@ mod tests {
                 assert!(
                     parse_and_validate_nuspec_for_architecture(
                         Cursor::new(bytes),
-                        "2.0.28",
+                        Some("2.0.28"),
                         architecture
                     )
                     .is_err(),
@@ -1007,5 +1140,18 @@ AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         assert!(!asset_name_is_plain("../traversal.nupkg"));
         assert!(!asset_name_is_plain("sub/file.nupkg"));
         assert!(!asset_name_is_plain("sub\\file.nupkg"));
+    }
+
+    #[test]
+    fn deferral_error_matching() {
+        assert!(super::is_deferral_error(&velopack::Error::Other(
+            "download deferred".into()
+        )));
+        assert!(super::is_deferral_error(&velopack::Error::Other(
+            "the download deferred due to cost".into()
+        )));
+        assert!(!super::is_deferral_error(&velopack::Error::Other(
+            "connection refused".into()
+        )));
     }
 }

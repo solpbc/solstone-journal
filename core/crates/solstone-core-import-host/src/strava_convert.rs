@@ -117,6 +117,7 @@ struct Tile {
     key: String,
     index: u64,
     facet: Option<String>,
+    original_started_at: Option<u64>,
 }
 
 /// How surely a key belongs to a workout.
@@ -133,6 +134,48 @@ struct Workout {
     row: BodyRow,
     tiles: Vec<Tile>,
     keys: BTreeMap<(String, String), Rank>,
+}
+
+/// Legacy associations resolved while the source still holds its old bytes.
+/// An unmatched line remains unmatched after this import creates new tiles.
+#[derive(Clone, Default)]
+pub(crate) struct LegacyMatches(std::sync::Arc<BTreeMap<String, (String, BTreeSet<String>)>>);
+
+impl LegacyMatches {
+    pub(crate) fn facet(&self, workout: &str) -> Option<String> {
+        let facets = self
+            .0
+            .values()
+            .filter(|(_, ids)| ids.contains(workout))
+            .map(|(facet, _)| facet.clone())
+            .collect::<BTreeSet<_>>();
+        (facets.len() == 1)
+            .then(|| facets.into_iter().next())
+            .flatten()
+    }
+}
+
+pub(crate) fn legacy_matches(journal: &Path) -> LegacyMatches {
+    let (workouts, _) = live_workouts(journal);
+    let (lines, _) = all_sense_lines(journal);
+    let mut index = BTreeMap::<(String, String), Vec<(usize, Rank)>>::new();
+    for (at, workout) in workouts.iter().enumerate() {
+        for (key, rank) in &workout.keys {
+            index.entry(key.clone()).or_default().push((at, *rank));
+        }
+    }
+    LegacyMatches(std::sync::Arc::new(
+        lines
+            .iter()
+            .map(|line| {
+                let ids = named_workouts(line, &index, &workouts)
+                    .into_iter()
+                    .map(|at| workouts[at].activity.clone())
+                    .collect();
+                (line.key(), (line.facet.clone(), ids))
+            })
+            .collect(),
+    ))
 }
 
 impl Workout {
@@ -331,6 +374,7 @@ fn sense_lines_in(bytes: &[u8], day: &str, facet: &str) -> Vec<SenseLine> {
 /// folders couldn't be read. A deleted tile isn't one of those.
 fn live_workouts(journal: &Path) -> (Vec<Workout>, u64) {
     let mut workouts: BTreeMap<String, Workout> = BTreeMap::new();
+    let mut attempt_starts = BTreeMap::new();
     let mut unreadable = 0;
     let days = match fs::read_dir(journal.join("chronicle")) {
         Ok(days) => days,
@@ -389,6 +433,7 @@ fn live_workouts(journal: &Path) -> (Vec<Workout>, u64) {
                 key,
                 index,
                 facet: window_facet(&window),
+                original_started_at: original_tile_start(journal, &window, &mut attempt_starts),
             });
         }
     }
@@ -414,6 +459,22 @@ fn live_workouts(journal: &Path) -> (Vec<Workout>, u64) {
         })
         .collect();
     (workouts, unreadable)
+}
+
+fn original_tile_start(
+    journal: &Path,
+    window: &Path,
+    starts: &mut BTreeMap<String, Option<u64>>,
+) -> Option<u64> {
+    let raw: Value = serde_json::from_slice(&fs::read(window.join(STRAVA_TILE_FILE)).ok()?).ok()?;
+    let import_id = raw.get("import_id")?.as_str()?;
+    *starts.entry(import_id.to_owned()).or_insert_with(|| {
+        let metadata =
+            solstone_core_import::metadata::read_import_metadata(journal, import_id).ok()?;
+        let facts = solstone_core_import::metadata::get_attempt_facts(&metadata)?;
+        (facts.attempt_id == format!("{import_id}:{}", facts.generation))
+            .then_some(facts.started_at_ms)
+    })
 }
 
 /// Read a component's workouts again, now its lock is held: a delete may have
@@ -454,6 +515,7 @@ fn add_misplaced(
 fn named_workouts(
     line: &SenseLine,
     index: &BTreeMap<(String, String), Vec<(usize, Rank)>>,
+    workouts: &[Workout],
 ) -> Vec<usize> {
     let mut found = BTreeMap::new();
     for segment in line
@@ -469,16 +531,27 @@ fn named_workouts(
             .into_iter()
             .flatten()
         {
+            let created_at = line.record.get("created_at").and_then(Value::as_u64);
+            if *rank != Rank::Live
+                || !workouts[*workout].tiles.iter().any(|tile| {
+                    tile.day == line.day
+                        && tile.key == segment
+                        && tile
+                            .original_started_at
+                            .zip(created_at)
+                            .is_some_and(|(started, created)| started <= created)
+                })
+            {
+                continue;
+            }
             let best = found.entry(*workout).or_insert(*rank);
             *best = (*best).max(*rank);
         }
     }
-    let Some(top) = found.values().copied().max() else {
-        return Vec::new();
-    };
     found
         .into_iter()
-        .filter(|(_, rank)| *rank == top)
+        // Geometry alone does not identify the workout a legacy record named.
+        .filter(|(_, rank)| *rank == Rank::Live)
         .map(|(workout, _)| workout)
         .collect()
 }
@@ -491,6 +564,14 @@ struct Component {
 }
 
 fn components(workouts: &[Workout], lines: &[SenseLine]) -> (Vec<Component>, u64) {
+    components_with_matches(workouts, lines, None)
+}
+
+fn components_with_matches(
+    workouts: &[Workout],
+    lines: &[SenseLine],
+    legacy: Option<&LegacyMatches>,
+) -> (Vec<Component>, u64) {
     let mut index: BTreeMap<(String, String), Vec<(usize, Rank)>> = BTreeMap::new();
     for (at, workout) in workouts.iter().enumerate() {
         for (key, rank) in &workout.keys {
@@ -508,7 +589,17 @@ fn components(workouts: &[Workout], lines: &[SenseLine]) -> (Vec<Component>, u64
     let mut names = BTreeMap::new();
     let mut no_workout = 0;
     for (at, line) in lines.iter().enumerate() {
-        let named = named_workouts(line, &index);
+        let named = match legacy {
+            None => named_workouts(line, &index, workouts),
+            Some(legacy) => legacy.0.get(&line.key()).map_or_else(Vec::new, |(_, ids)| {
+                workouts
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, workout)| ids.contains(&workout.activity))
+                    .map(|(at, _)| at)
+                    .collect()
+            }),
+        };
         if named.is_empty() {
             no_workout += 1;
             continue;
@@ -1001,17 +1092,29 @@ fn tally(counts: &mut ConversionCounts, result: Result<(), Unfinished>) {
 
 /// Convert every component in the journal while `held` is held the whole time:
 /// the writer and filing, inside a Strava import.
+#[cfg(test)]
 pub(crate) fn convert_held(
     journal: &Path,
     held: &FileLock,
     scope: ConversionScope<'_>,
     now: DateTime<Utc>,
 ) -> ConversionCounts {
+    let legacy = legacy_matches(journal);
+    convert_held_with_matches(journal, held, scope, now, &legacy)
+}
+
+pub(crate) fn convert_held_with_matches(
+    journal: &Path,
+    held: &FileLock,
+    scope: ConversionScope<'_>,
+    now: DateTime<Utc>,
+    legacy: &LegacyMatches,
+) -> ConversionCounts {
     let mut counts = ConversionCounts::default();
     let (lines, unreadable) = all_sense_lines(journal);
     let (workouts, folders) = live_workouts(journal);
     counts.waiting += unreadable + folders;
-    let (parts, no_workout) = components(&workouts, &lines);
+    let (parts, no_workout) = components_with_matches(&workouts, &lines, Some(legacy));
     counts.no_workout = no_workout;
     let at = now_text(now);
     for part in &parts {
@@ -1020,6 +1123,17 @@ pub(crate) fn convert_held(
     }
     let orphans = folded_orphans(journal, &lines, &parts);
     remove_folded_orphans(journal, &orphans, held, &mut counts);
+    // Only records actually left behind belong in the owner's disclosure.
+    counts.no_workout = all_sense_lines(journal)
+        .0
+        .iter()
+        .filter(|line| {
+            legacy
+                .0
+                .get(&line.key())
+                .is_none_or(|(_, ids)| ids.is_empty())
+        })
+        .count() as u64;
     counts
 }
 
@@ -1034,13 +1148,18 @@ pub(crate) fn listed_moves(
     summed_moves(journal, &listed_moves_by_workout(journal, download, facet))
 }
 
-/// A workout a choice would move, and the facet it's in now.
-pub(crate) type ListedMove = (String, BTreeSet<String>);
+/// A workout the answer can move, including whether a known record must move.
+#[derive(Clone)]
+pub(crate) struct ListedMove {
+    activity: String,
+    facets: BTreeSet<String>,
+    record_required: bool,
+}
 
-/// Of the workouts counted before a run, the ones whose record is now in
-/// `facet`, summed as [`listed_moves`] sums them. A workout whose group waited
-/// isn't one of them, and nor is one whose move was held back: a stopped move
-/// can leave a copy in the facet that isn't its place yet.
+/// Count completed moves against the same population as the bound. A known
+/// record must finish moving too; a tile-only filing needs no new canonical
+/// record when a display-only legacy alias suppresses it. A held-back group
+/// never counts as finished.
 pub(crate) fn listed_moved_now(
     journal: &Path,
     counted: &[ListedMove],
@@ -1054,17 +1173,17 @@ pub(crate) fn listed_moved_now(
         .collect::<BTreeMap<_, _>>();
     let moved = counted
         .iter()
-        .filter(|(activity, _)| !held_back.contains(&account_key(STRAVA_STREAM, activity)))
-        .filter(|(activity, _)| {
-            workouts.get(activity).is_some_and(|workout| {
+        .filter(|counted| !held_back.contains(&account_key(STRAVA_STREAM, &counted.activity)))
+        .filter(|counted| {
+            workouts.get(&counted.activity).is_some_and(|workout| {
                 let record =
                     find_code_record(journal, &workout.candidate_days(), &workout.account());
                 match record {
                     Ok(Some((place, _))) => place.facet == facet,
-                    Ok(None) => false,
+                    Ok(None) => !counted.record_required,
                     Err(_) => false,
                 }
-            }) && workouts.get(activity).is_some_and(|workout| {
+            }) && workouts.get(&counted.activity).is_some_and(|workout| {
                 workout
                     .tiles
                     .iter()
@@ -1079,7 +1198,12 @@ pub(crate) fn listed_moved_now(
 fn summed_moves(journal: &Path, moves: &[ListedMove]) -> Option<(usize, Vec<String>)> {
     let from = moves
         .iter()
-        .flat_map(|(_, facets)| facets.iter().map(|facet| facet_title(journal, facet)))
+        .flat_map(|counted| {
+            counted
+                .facets
+                .iter()
+                .map(|facet| facet_title(journal, facet))
+        })
         .collect::<BTreeSet<_>>();
     (!moves.is_empty()).then(|| (moves.len(), from.into_iter().collect()))
 }
@@ -1090,9 +1214,18 @@ pub(crate) fn listed_moves_by_workout(
     download: &BTreeSet<String>,
     facet: &str,
 ) -> Vec<ListedMove> {
+    listed_moves_with_matches(journal, download, facet, None)
+}
+
+pub(crate) fn listed_moves_with_matches(
+    journal: &Path,
+    download: &BTreeSet<String>,
+    facet: &str,
+    legacy: Option<&LegacyMatches>,
+) -> Vec<ListedMove> {
     let (workouts, _) = live_workouts(journal);
     let (lines, _) = all_sense_lines(journal);
-    let (parts, _) = components(&workouts, &lines);
+    let (parts, _) = components_with_matches(&workouts, &lines, legacy);
     let mut named: BTreeMap<usize, Vec<&SenseLine>> = BTreeMap::new();
     for part in &parts {
         for (line, workouts) in &part.names {
@@ -1116,18 +1249,75 @@ pub(crate) fn listed_moves_by_workout(
         let mut from = workout
             .tiles
             .iter()
-            .filter_map(|tile| tile.facet.clone())
+            .flat_map(|tile| {
+                let path = journal
+                    .join("chronicle")
+                    .join(&tile.day)
+                    .join(STRAVA_STREAM)
+                    .join(&tile.key)
+                    .join("talents/facets.json");
+                match fs::read_to_string(path) {
+                    Ok(text) => foreign_tile_filings(&text, facet),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
+                    Err(_) => BTreeSet::from([
+                        solstone_core_import_sources::apple_health::UNNAMED_FILING.to_owned(),
+                    ]),
+                }
+            })
             .collect::<BTreeSet<_>>();
         from.extend(current);
+        from.extend(
+            named
+                .get(&at)
+                .into_iter()
+                .flatten()
+                .map(|line| line.facet.clone()),
+        );
         from.remove(facet);
         if !from.is_empty() {
-            moves.push((workout.activity.clone(), from));
+            moves.push(ListedMove {
+                activity: workout.activity.clone(),
+                facets: from,
+                record_required: code.is_some()
+                    || named.get(&at).is_some_and(|lines| !lines.is_empty()),
+            });
         }
     }
     moves
 }
 
+fn foreign_tile_filings(text: &str, target: &str) -> BTreeSet<String> {
+    let parsed = serde_json::from_str::<Value>(text).ok();
+    let entries = parsed.as_ref().and_then(Value::as_array);
+    let facet = |entry: &Value| {
+        entry
+            .get("facet")
+            .and_then(Value::as_str)
+            .filter(|facet| !facet.trim().is_empty())
+            .map(str::to_owned)
+    };
+    if entries
+        .is_some_and(|entries| entries.len() == 1 && facet(&entries[0]).as_deref() == Some(target))
+    {
+        return BTreeSet::new();
+    }
+    let mut names = entries
+        .into_iter()
+        .flatten()
+        .filter_map(facet)
+        .collect::<BTreeSet<_>>();
+    names.remove(target);
+    let unknown = entries.is_none_or(|entries| entries.iter().any(|entry| facet(entry).is_none()));
+    if names.is_empty() || unknown {
+        names.insert(solstone_core_import_sources::apple_health::UNNAMED_FILING.to_owned());
+    }
+    names
+}
+
 pub(crate) fn facet_title(journal: &Path, facet: &str) -> String {
+    if facet == solstone_core_import_sources::apple_health::UNNAMED_FILING {
+        return facet.to_owned();
+    }
     solstone_core_facets::read_facet_declaration(journal, facet)
         .ok()
         .flatten()

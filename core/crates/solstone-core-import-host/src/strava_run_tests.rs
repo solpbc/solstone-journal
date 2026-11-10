@@ -318,7 +318,7 @@ fn the_summary_counts_what_moved_and_not_what_was_going_to() {
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     let line = json!({"id": "exercise_070000_300", "activity": "exercise", "segments": segments,
-        "created_at": 1, "stream": "import.strava"});
+        "created_at": now_ms(), "stream": "import.strava"});
     fs::write(
         root.join(format!("facets/work/activities/{DAY}.jsonl")),
         format!("{line}\n"),
@@ -704,6 +704,59 @@ fn strava_tile_only_filings_obey_the_move_bound_and_new_workouts_use_the_run_fac
 
 #[cfg(feature = "full-tests")]
 #[test]
+fn strava_tile_only_moves_count_even_when_a_display_alias_keeps_the_generic_row() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    let original = fs::read_to_string(&csv)
+        .unwrap()
+        .lines()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(&csv, original).unwrap();
+    assert_eq!(
+        import(
+            root,
+            &csv,
+            "20261010_100000",
+            ImportFacet::Facet("work".into()),
+            &model
+        )
+        .0
+        .exit_code,
+        0
+    );
+    let path = root.join("facets/work/activities/20261004.jsonl");
+    let generic = json!({"id":"earlier-alias", "stream":"import.strava", "activity":"run", "segments":["070000_300"], "created_at":1}).to_string()+"\n";
+    fs::write(&path, &generic).unwrap();
+    let (result, import_id) = import_shown(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+        Some(1),
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(fs::read_to_string(path).unwrap(), generic);
+    assert!(records(root, "body", "20261004").is_empty());
+    let summary =
+        fs::read_to_string(root.join("imports").join(import_id).join("summary.md")).unwrap();
+    assert!(summary.contains("1 workout moved"), "{summary}");
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("body")
+    );
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
 fn strava_unreadable_prior_assignments_do_not_become_absent_filings() {
     let journal = journal(&["body", "work"]);
     let root = journal.path();
@@ -752,6 +805,209 @@ fn strava_unreadable_prior_assignments_do_not_become_absent_filings() {
         Some("work")
     );
     assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_non_single_assignments_count_as_foreign_and_need_a_sufficient_bound() {
+    for assignment in [
+        r#"[{"facet":"body"},{"facet":"work"}]"#,
+        "[]",
+        "not json",
+        r#"[{"facet":"body"},{}]"#,
+        r#"[{"facet":"body"},{"facet":"body"}]"#,
+        r#"[{"facet":"body"}]"#,
+    ] {
+        for shown in [None, Some(0), Some(1)] {
+            let journal = journal(&["body", "work"]);
+            let root = journal.path();
+            let model = Model {
+                lock: root.join("imports/.strava"),
+                calls: Cell::new(0),
+            };
+            let csv = download(root, "first with Sam");
+            let original = fs::read_to_string(&csv)
+                .unwrap()
+                .lines()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n";
+            fs::write(&csv, original).unwrap();
+            assert_eq!(
+                import(root, &csv, "20261010_100000", ImportFacet::None, &model)
+                    .0
+                    .exit_code,
+                0
+            );
+            let held = tile(root, "20261004", "070000_300").join("talents/facets.json");
+            fs::create_dir_all(held.parent().unwrap()).unwrap();
+            fs::write(&held, assignment).unwrap();
+            let count = crate::strava_convert::listed_moves(
+                root,
+                &BTreeSet::from(["901".to_owned()]),
+                "body",
+            );
+            assert_eq!(
+                count.as_ref().map_or(0, |(count, _)| *count),
+                usize::from(assignment != r#"[{"facet":"body"}]"#),
+                "{assignment}"
+            );
+            let (result, _) = match shown {
+                None => {
+                    solstone_core_journal_config_write::record_body_facet(
+                        root,
+                        &BodyFacetChoice::Facet("body".into()),
+                    )
+                    .unwrap();
+                    import(
+                        root,
+                        &csv,
+                        "20261010_110000",
+                        ImportFacet::Unattended,
+                        &model,
+                    )
+                }
+                Some(shown) => import_shown(
+                    root,
+                    &csv,
+                    "20261010_110000",
+                    ImportFacet::Facet("body".into()),
+                    &model,
+                    Some(shown),
+                ),
+            };
+            assert_eq!(result.exit_code, 0, "{}", result.stderr);
+            let actual = fs::read_to_string(&held).unwrap();
+            if shown == Some(1) {
+                assert_eq!(
+                    serde_json::from_str::<Value>(&actual).unwrap(),
+                    json!([{"facet":"body"}])
+                );
+            } else {
+                assert_eq!(actual, assignment, "{assignment} with bound {shown:?}");
+            }
+        }
+    }
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_a_stale_legacy_key_never_files_or_converts_a_new_workout_elsewhere() {
+    for created_at in [1, u64::MAX] {
+        let journal = journal(&["body", "work"]);
+        let root = journal.path();
+        let model = Model {
+            lock: root.join("imports/.strava"),
+            calls: Cell::new(0),
+        };
+        let csv = download(root, "new workout with Sam");
+        let original = fs::read_to_string(&csv)
+            .unwrap()
+            .lines()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(&csv, original).unwrap();
+        let legacy_path = root.join("facets/work/activities/20261004.jsonl");
+        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+        let legacy = json!({"id":"old-record","activity":"run","stream":"import.strava", "segments":["070000_300"], "created_at":created_at, "description":"owner's earlier words", "edits":[{"description":"owner edit"}], "hide":true}).to_string()+"\n";
+        fs::write(&legacy_path, &legacy).unwrap();
+        let (result, _) = import_shown(
+            root,
+            &csv,
+            "20261010_110000",
+            ImportFacet::Facet("body".into()),
+            &model,
+            Some(0),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(fs::read_to_string(&legacy_path).unwrap(), legacy);
+        for key in ["070000_300", "070500_300"] {
+            assert_eq!(tile_facet(root, "20261004", key).as_deref(), Some("body"));
+        }
+        // The unchanged legacy alias remains the only activity row. It supplies
+        // no facet and is never converted into this new workout's account.
+        assert_eq!(records(root, "work", "20261004").len(), 1);
+        assert!(records(root, "body", "20261004").is_empty());
+        if created_at == 1 {
+            let (again, _) = import_shown(
+                root,
+                &csv,
+                "20261010_120000",
+                ImportFacet::Facet("body".into()),
+                &model,
+                Some(0),
+            );
+            assert_eq!(again.exit_code, 0, "{}", again.stderr);
+            assert_eq!(fs::read_to_string(&legacy_path).unwrap(), legacy);
+            assert!(records(root, "body", "20261004").is_empty());
+        }
+    }
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_unverifiable_legacy_duplicates_stay_unchanged_and_the_summary_counts_them() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "new workout with Sam");
+    let original = fs::read_to_string(&csv)
+        .unwrap()
+        .lines()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    fs::write(&csv, original).unwrap();
+    let generic = json!({"id":"earlier-record", "activity":"run", "stream":"import.strava", "segments":["070000_300"], "created_at":1, "description":"owner's earlier words", "hidden":false}).to_string()+"\n";
+    for facet in ["body", "work"] {
+        let path = root.join(format!("facets/{facet}/activities/20261004.jsonl"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, &generic).unwrap();
+    }
+    let (result, import_id) = import_shown(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Facet("body".into()),
+        &model,
+        Some(0),
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    let mut visible = 0;
+    for facet in ["body", "work"] {
+        let path = root.join(format!("facets/{facet}/activities/20261004.jsonl"));
+        assert_eq!(fs::read_to_string(path).unwrap(), generic);
+        let rows = records(root, facet, "20261004")
+            .into_iter()
+            .map(|row| row.as_object().unwrap().clone())
+            .collect::<Vec<_>>();
+        let superseded =
+            solstone_core_facets::superseded_record_ids(root, facet, "20261004", &rows);
+        visible += rows
+            .iter()
+            .filter(|row| {
+                row.get("hidden").and_then(Value::as_bool) != Some(true)
+                    && !superseded.contains(row.get("id").and_then(Value::as_str).unwrap())
+            })
+            .count();
+    }
+    assert_eq!(
+        visible, 2,
+        "the two earlier rows remain; no third row is added"
+    );
+    let summary =
+        fs::read_to_string(root.join("imports").join(import_id).join("summary.md")).unwrap();
+    assert!(
+        summary.contains("2 earlier records were left unchanged"),
+        "{summary}"
+    );
 }
 
 #[cfg(feature = "full-tests")]
@@ -862,7 +1118,7 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     fs::write(sensed.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
     let sense_record = json!({"id": "run_090000", "facet": "work", "activity": "running",
         "segments": ["090000_300"], "level_avg": 0.5, "description": "a run",
-        "active_entities": [], "created_at": 1, "stream": "import.strava"});
+        "active_entities": [], "created_at": now_ms(), "stream": "import.strava"});
     fs::create_dir_all(root.join("facets/work/activities")).unwrap();
     fs::write(
         root.join("facets/work/activities/20261005.jsonl"),
@@ -871,6 +1127,14 @@ fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() 
     .unwrap();
     let unreadable = root.join("facets/work/activities/20261006.jsonl");
     fs::create_dir_all(&unreadable).unwrap();
+    assert_eq!(
+        crate::strava_convert::legacy_matches(root)
+            .facet("902")
+            .as_deref(),
+        Some("work"),
+        "original attempt: {:?}",
+        solstone_core_import::metadata::read_import_metadata(root, "20261010_100000")
+    );
 
     // The same download with body, the owner's answer: the unsensed workout's
     // tiles move to body and are published again, and it gets its record there.

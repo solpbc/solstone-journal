@@ -6,10 +6,11 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withViewRuntime, EXPORT_ANCHOR } = require('./view_runtime');
 const cases = JSON.parse(fs.readFileSync(0, 'utf8'));
 const manifest = process.argv[2];
 let source = fs.readFileSync(path.join(manifest, 'assets/home.js'), 'utf8');
-const anchor = '  window.selectAccountSide = selectAccountSide;\n';
+const anchor = EXPORT_ANCHOR;
 assert(source.includes(anchor));
 source = source.replace(anchor, `  window.__backup = {observeBackup, renderVitalsHtml, homeHealthGlance, receiveSupervisorStatus,
   fail: value => { pulseReadFailed=value; }, refreshVitals,
@@ -18,7 +19,7 @@ ${anchor}`);
 const document = {readyState:'loading',addEventListener(){},querySelector(){return null;},getElementById(){return null;},querySelectorAll(){return [];}};
 const window = { createViewReady: () => () => {},document,location:{href:''},addEventListener(){},setTimeout(){return 1;},clearTimeout(){},apiJson(){return new Promise(()=>{});}};
 window.window=window;document.defaultView=window;
-vm.runInNewContext(source,{window,document,console,Date},{filename:'home.js'});
+vm.runInNewContext(withViewRuntime(source),{window,document,console,Date},{filename:'home.js'});
 const ui=window.__backup;
 ui.receiveSupervisorStatus({event:'status',queues:{},held:[]});
 function backupIssues(payload) { return ui.homeHealthGlance(payload).glance.issues.filter(issue => issue.href === '/app/health/#backup'); }

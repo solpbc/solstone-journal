@@ -5,15 +5,16 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withViewRuntime, EXPORT_ANCHOR } = require('./view_runtime');
 
 const manifestDir = process.argv[2];
 if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.selectAccountSide = selectAccountSide;\n',
+  EXPORT_ANCHOR,
   `  window.__home = { connectionRecovery, wireRealtime, readPulse };
-  window.selectAccountSide = selectAccountSide;\n`,
+${EXPORT_ANCHOR}`,
 );
 
 let firstMinutesResponse = null;
@@ -41,7 +42,7 @@ const window = { createViewReady: () => () => {},
 window.window = window;
 window.document.defaultView = window;
 
-vm.runInNewContext(source, { window, document: window.document, console }, { filename: 'home.js' });
+vm.runInNewContext(withViewRuntime(source), { window, document: window.document, console }, { filename: 'home.js' });
 const { connectionRecovery, wireRealtime } = window.__home;
 assert(connectionRecovery, 'connectionRecovery exported');
 assert(wireRealtime, 'wireRealtime exported');
@@ -151,7 +152,7 @@ async function main() {
     };
     outage.window = outage;
     outage.document.defaultView = outage;
-    vm.runInNewContext(source, { window: outage, document: outage.document, console }, { filename: 'home.js' });
+    vm.runInNewContext(withViewRuntime(source), { window: outage, document: outage.document, console }, { filename: 'home.js' });
     outage.__home.wireRealtime();
     await outage.__home.readPulse().catch(() => {});
     pulseFails = false;
@@ -178,7 +179,7 @@ async function main() {
   };
   bare.window = bare;
   bare.document.defaultView = bare;
-  vm.runInNewContext(source, { window: bare, document: bare.document, console }, { filename: 'home.js' });
+  vm.runInNewContext(withViewRuntime(source), { window: bare, document: bare.document, console }, { filename: 'home.js' });
   assert.doesNotThrow(() => bare.__home.wireRealtime());
 
   console.log('home reconnect reconciliation passed');

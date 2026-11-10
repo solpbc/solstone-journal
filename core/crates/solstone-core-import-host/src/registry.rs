@@ -1577,6 +1577,7 @@ fn run_strava_internal(
         Ok(facet) => facet,
         Err(error) => return failure(format!("{name} import failed: {error}\n")),
     };
+    let legacy_matches = crate::strava_convert::legacy_matches(journal);
 
     // 8. claim_dispatch_id, refuse_if_live_running, admit_running_attempt
     if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
@@ -1689,14 +1690,19 @@ fn run_strava_internal(
     // Counted again now the lock is held. A run never moves more than the
     // owner was shown.
     let would_move = owner_chose.map_or_else(Vec::new, |facet| {
-        crate::strava_convert::listed_moves_by_workout(journal, &download, facet)
+        crate::strava_convert::listed_moves_with_matches(
+            journal,
+            &download,
+            facet,
+            Some(&legacy_matches),
+        )
     });
     let listed_over = dispatch
         .listed_moves_shown
         .map(|shown| (shown, would_move.len()))
         .filter(|(shown, count)| count > shown);
     let owner_chose = owner_chose.filter(|_| listed_over.is_none());
-    let mut conversion = crate::strava_convert::convert_held(
+    let mut conversion = crate::strava_convert::convert_held_with_matches(
         journal,
         &_source_lock,
         crate::strava_convert::ConversionScope {
@@ -1704,6 +1710,7 @@ fn run_strava_internal(
             publishes_tiles: false,
         },
         chrono::Utc::now(),
+        &legacy_matches,
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
     conversion.moves_open = solstone_core_facets::open_body_moves(journal)
@@ -1717,6 +1724,7 @@ fn run_strava_internal(
         run_facet.facet.as_deref(),
         owner_chose.is_some(),
         &mut list_refiles,
+        &legacy_matches,
     ) {
         Ok(filing) => filing,
         Err(error) => {
@@ -1770,7 +1778,13 @@ fn run_strava_internal(
     days.dedup();
     let mut records = crate::body_activity::RecordCounts::default();
     for day in days {
-        let counts = crate::body_activity::write_strava_records_at(journal, day, now, &held_back);
+        let counts = crate::body_activity::write_strava_records_with_matches(
+            journal,
+            day,
+            now,
+            &held_back,
+            &legacy_matches,
+        );
         records.written += counts.written;
         records.refreshed += counts.refreshed;
         records.no_facet += counts.no_facet;

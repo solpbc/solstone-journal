@@ -249,7 +249,7 @@ When setup replaces recognized legacy launchers, it keeps durable recovery backu
 
 ## Upgrading
 
-On windows, download and run the newer installer. It updates the journal in place, and a running journal starts again afterward.
+on windows, the journal app checks once a day and downloads an update in the background when the connection allows it. the update installs the next time the app starts, including when you sign in. you can still check, download, and install from settings. a journal that was running starts again after the update. a journal you had stopped stays stopped.
 
 On mac, each app handles its own updates. The shell installer verifies an existing app and leaves it unchanged; it does not replace or upgrade app bundles.
 

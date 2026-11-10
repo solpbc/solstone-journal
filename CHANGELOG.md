@@ -22,6 +22,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the journal app on windows checks for a journal update once a day, downloads it in the background on an unrestricted connection, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.
+- moving between home and transcripts, and to another day in transcripts, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - the body app now shows what's in your journal: each source you hold, its days, and each day's readings, counts and logged entries. earlier Apple Health, Oura and Dexcom Clarity imports stay on disk and aren't read. the body app lists each one and says how to import it again, where there's still a way to.
 - a damaged earlier Apple Health or Oura import no longer stops a restore from finishing.
 - `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.
@@ -29,7 +31,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the dashboard now reconnects to your journal on its own after the connection drops, and stops showing it as connected soon after it goes quiet. a page that waits more than 10 seconds says it's still working, and one that never gets an answer offers to try again instead of waiting forever.
 - your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
 - restoring a journal from a backup now happens while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
-- Strava workouts your journal read on an earlier version are now listed the same way as new ones, each one once, keeping your edits and hides. a workout that was listed in two facets now shows in one, where you hadn't hidden it, and an agent limited to the other facet no longer sees it. one listing that covered two workouts becomes two.
+- when your journal can confirm which workout an earlier Strava record belongs to, it now lists the workout the same way as new ones, each one once, keeping your edits and hides. it can join duplicate listings and split a listing that covered two workouts. records it can't match stay as they were, and the import summary counts them.
 - choosing a facet when you import from Strava now moves every workout in that download there, including ones already listed. the import page and the terminal question say how many before anything moves, and if more would move by the time it runs, none do and its summary says so. with `--facet` on the command line, its summary says afterward how many moved. an import you didn't choose a facet for moves nothing already listed.
 - once after this update, your journal thinks again about days that hold both a Strava workout and something else you did, now leaving the workout out, and again about days that hold notes it once wrote about a workout. a day can be thought about twice. this morning's daily briefing can change until noon, and earlier ones don't.
 

@@ -43,9 +43,10 @@
     // table is generated with the journal from each view's fragment.
     window.__SOL_ENTRY_TABLE__ = {/*entry-table*/};
     (function () {
-      var early = { view: null, claimed: false, reads: Object.create(null), stats: {} };
-      window.__solEarly = early;
-      function ask(path, expect) {
+      function newTable() {
+        return { view: null, claimed: false, reads: Object.create(null), stats: {} };
+      }
+      function ask(early, path, expect) {
         try {
           var controller = typeof AbortController === 'function' ? new AbortController() : null;
           var href = new URL(path, window.location.href).href;
@@ -81,30 +82,48 @@
         }
         return { day: day };
       }
-      ask('/api/shell', 'json');
-      ask('/api/streams/labels', 'json');
-      var path = window.location.pathname;
-      var table = window.__SOL_ENTRY_TABLE__ || {};
-      var views = table.views || {};
-      var name = (/^\/app\/([^/]+)/.exec(path) || [])[1];
-      if (!name || !Object.prototype.hasOwnProperty.call(views, name)) return;
-      var entry = views[name];
-      early.view = name;
-      ask(entry.fragment, 'html');
-      entry.scripts.forEach(function (script) {
-        if (!script.routePrefix || path.indexOf(script.routePrefix) === 0) preload(script.src, 'script');
-      });
-      entry.styles.forEach(function (href) { preload(href, 'style'); });
-      // A query or a hash can change what the view reads, so those pages ask
-      // for themselves.
-      if (window.location.search || window.location.hash) return;
-      if (entry.openDay && routeDay(entry.openDay.route, path)) ask(entry.openDay.url, 'json');
-      entry.reads.some(function (row) {
-        var match = routeDay(row.route, path);
-        if (!match) return false;
-        row.urls.forEach(function (url) { ask(url.replace('{day}', match.day), 'json'); });
-        return true;
-      });
+      // Starts what the view at `url` reads first. `opts.code` also asks for
+      // its fragment and preloads its code (the page's own first view);
+      // `opts.fragment` asks for the fragment alone.
+      function startView(early, url, opts) {
+        var path = url.pathname;
+        var table = window.__SOL_ENTRY_TABLE__ || {};
+        var views = table.views || {};
+        var name = (/^\/app\/([^/]+)/.exec(path) || [])[1];
+        if (!name || !Object.prototype.hasOwnProperty.call(views, name)) return;
+        var entry = views[name];
+        early.view = name;
+        if (opts.code || opts.fragment) ask(early, entry.fragment, 'html');
+        if (opts.code) {
+          entry.scripts.forEach(function (script) {
+            if (!script.routePrefix || path.indexOf(script.routePrefix) === 0) preload(script.src, 'script');
+          });
+          entry.styles.forEach(function (href) { preload(href, 'style'); });
+        }
+        // A query or a hash can change what the view reads, so those pages ask
+        // for themselves.
+        if (url.search || url.hash) return;
+        if (entry.openDay && routeDay(entry.openDay.route, path)) ask(early, entry.openDay.url, 'json');
+        entry.reads.some(function (row) {
+          var match = routeDay(row.route, path);
+          if (!match) return false;
+          row.urls.forEach(function (u) { ask(early, u.replace('{day}', match.day), 'json'); });
+          return true;
+        });
+      }
+      var early = newTable();
+      window.__solEarly = early;
+      ask(early, '/api/shell', 'json');
+      ask(early, '/api/streams/labels', 'json');
+      startView(early, window.location, { code: true });
+      // A move to another view inside the page starts that view's first reads
+      // the same way, at the move, in a table of their own.
+      window.__solEarlyRoute = function (href, opts) {
+        var next = newTable();
+        startView(next, new URL(href, window.location.href), opts || {});
+        window.__solEarly = next;
+        return next;
+      };
     })();
   </script>
   <meta charset="utf-8"/>
@@ -127,12 +146,15 @@
   <script src="/static/diagnostic-console.js" defer></script>
   <script src="/static/websocket.js" defer></script>
   <script src="/static/api.js" defer></script>
+  <script src="/static/store.js" defer></script>
+  <script src="/static/views.js" defer></script>
   <script src="/static/app.js" defer></script>
   <script src="/static/journal-web-host.js" defer></script>
   <script src="/static/external-navigation.js" defer></script>
   <script src="/static/report-error.js" defer></script>
   <script src="/static/date_format.js" defer></script>
   <script src="/static/mount-workspace.js" defer></script>
+  <script src="/static/router.js" defer></script>
   <script src="/static/drawer.js" defer></script>
   <script src="/static/gate-drawer.js" defer></script>
   <script src="/static/modal_layer.js" defer></script>
@@ -231,6 +253,7 @@
 </aside>
 
 <div class="notification-center" id="notification-center" role="log" aria-live="polite" aria-label="notifications"></div>
+<div id="view-announcer" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
 
 <main id="main-content" class="workspace" tabindex="-1">

@@ -8,3 +8,18 @@ mod prefs;
 #[allow(dead_code)]
 #[path = "../src/update.rs"]
 mod update;
+
+// Compile the production Windows journal bridge used by startup/apply. The
+// updater cases inject ApplyHooks, so these imports do not start a journal.
+#[cfg(windows)]
+#[allow(dead_code)]
+#[path = "../src/journal.rs"]
+mod journal;
+#[cfg(windows)]
+#[allow(dead_code)]
+#[path = "../src/setup_events.rs"]
+mod setup_events;
+#[cfg(windows)]
+#[allow(dead_code)]
+#[path = "../src/status.rs"]
+mod status;

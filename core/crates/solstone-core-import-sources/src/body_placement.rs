@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use solstone_core_format::content::body_records::{
     BodyRow, RowKind, copy_rank, grid_length, parse_source_time, same_grid,
 };
@@ -32,6 +33,15 @@ struct ParentFiling {
     prior: bool,
 }
 
+/// A misplaced unfiled replica: retire it only after its replacement is live.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct TileRepair {
+    pub source_key: String,
+    pub destination_key: String,
+    pub filing: String,
+    pub mark: BodyRow,
+}
+
 /// A day's rows at their physical destinations, with any assignments to write.
 #[derive(Default)]
 pub struct FiledDay {
@@ -40,6 +50,9 @@ pub struct FiledDay {
     pub split_rows: BTreeMap<String, BTreeSet<String>>,
     /// Changed existing identities kept under their earlier assignment.
     pub revisions: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub reserved_unfiled: BTreeSet<String>,
+    pub tile_repairs: Vec<TileRepair>,
+    pub kept_unfiled: BTreeSet<String>,
 }
 
 /// One read of each live window on a day, under the source's import lock.
@@ -169,39 +182,67 @@ impl<'a> DayPlacement<'a> {
             .map(|row| row.id.clone())
             .collect();
         let mut parent_days = BTreeMap::new();
-        for (_, rows) in &windows {
-            for row in rows
-                .values()
-                .filter(|row| row.kind == RowKind::ExperienceTile)
+        for row in windows
+            .iter()
+            .flat_map(|(_, rows)| rows.values())
+            .chain(self.held.values().flat_map(|held| held.rows.iter()))
+            .filter(|row| row.kind == RowKind::ExperienceTile)
+        {
+            let Some(parent) = &row.of else {
+                continue;
+            };
+            if parents.contains_key(parent) || incoming_parents.contains(parent) {
+                continue;
+            }
+            let zone = solstone_core_journal_config::placed_zone(journal, source.source)
+                .ok_or(source.zone_unrecognised)?;
+            let Some(start) = row.start.as_deref().and_then(parse_source_time) else {
+                continue;
+            };
+            let day = start.with_timezone(&zone).format("%Y%m%d").to_string();
+            if day == self.day {
+                continue;
+            }
+            if !parent_days.contains_key(&day) {
+                parent_days.insert(day.clone(), Self::load(journal, source, &day)?);
+            }
+            if let Some((_, held, first)) = parent_days[&day].existing("", parent)
+                && first.kind == RowKind::Experience
             {
-                let Some(parent) = &row.of else {
-                    continue;
-                };
-                if parents.contains_key(parent) || incoming_parents.contains(parent) {
-                    continue;
-                }
-                let zone = solstone_core_journal_config::placed_zone(journal, source.source)
-                    .ok_or(source.zone_unrecognised)?;
-                let Some(start) = row.start.as_deref().and_then(parse_source_time) else {
-                    continue;
-                };
-                let day = start.with_timezone(&zone).format("%Y%m%d").to_string();
-                if day == self.day {
-                    continue;
-                }
-                if !parent_days.contains_key(&day) {
-                    parent_days.insert(day.clone(), Self::load(journal, source, &day)?);
-                }
-                if let Some((_, held, first)) = parent_days[&day].existing("", parent)
-                    && first.kind == RowKind::Experience
-                {
-                    parents.insert(
-                        parent.clone(),
-                        ParentFiling {
-                            filing: held.filing.clone(),
-                            prior: prior(first),
-                        },
+                parents.insert(
+                    parent.clone(),
+                    ParentFiling {
+                        filing: held.filing.clone(),
+                        prior: prior(first),
+                    },
+                );
+            }
+        }
+        let mut orphaned_tiles = BTreeSet::new();
+        if !may_refile {
+            for (key, held) in &self.held {
+                if held.filing.is_none() {
+                    orphaned_tiles.extend(
+                        held.rows
+                            .iter()
+                            .filter(|row| {
+                                row.kind == RowKind::ExperienceTile
+                                    && row.of.as_ref().and_then(|id| parents.get(id)).is_none()
+                            })
+                            .map(|row| row.id.clone()),
                     );
+                }
+                if held.filing.is_none()
+                    && held.rows.iter().any(|row| {
+                        row.kind == RowKind::ExperienceTile
+                            && row
+                                .of
+                                .as_ref()
+                                .and_then(|id| parents.get(id))
+                                .is_none_or(|parent| parent.filing.is_some())
+                    })
+                {
+                    result.reserved_unfiled.insert(key.clone());
                 }
             }
         }
@@ -249,9 +290,12 @@ impl<'a> DayPlacement<'a> {
             for (id, mut row) in rows {
                 let existing = self.existing(&key, &id);
                 let same_place = existing.filter(|(old, _, _)| same_grid(&key, old));
-                let parent = (row.kind == RowKind::ExperienceTile && existing.is_none())
+                let needs_parent = row.kind == RowKind::ExperienceTile
+                    && existing.is_none_or(|(_, held, _)| held.filing.is_none());
+                let parent = needs_parent
                     .then(|| row.of.as_ref().and_then(|id| parents.get(id)))
                     .flatten()
+                    .filter(|_| !orphaned_tiles.contains(&id))
                     .cloned();
                 if row.kind == RowKind::ExperienceTile && existing.is_none() && parent.is_none() {
                     // A refused/unreadable parent cannot become readable through
@@ -269,9 +313,19 @@ impl<'a> DayPlacement<'a> {
                     .as_ref()
                     .and_then(|parent| parent.filing.as_deref())
                     .filter(|_| !may_refile);
+                let repair = inherited.is_some()
+                    && existing.is_some_and(|(old, held, _)| {
+                        held.filing.is_none() && result.reserved_unfiled.contains(old)
+                    });
+                let same_place = same_place.filter(|_| !repair);
                 let filing = if inherited.is_some() {
                     inherited
-                } else if facet.is_none() {
+                } else if (needs_parent && parent.is_none())
+                    || existing.is_some_and(|(old, held, _)| {
+                        held.filing.is_none() && result.reserved_unfiled.contains(old)
+                    })
+                    || facet.is_none()
+                {
                     None
                 } else if !may_refile {
                     existing
@@ -280,28 +334,52 @@ impl<'a> DayPlacement<'a> {
                 } else {
                     chosen.as_deref()
                 };
-                let destination = if let Some((old, _, _)) = same_place {
-                    old.to_owned()
-                } else if (facet.is_none() && inherited.is_none())
-                    || (filing.is_none() && existing.is_none())
-                {
-                    key.clone()
-                } else {
-                    self.destination(
-                        &key,
-                        filing,
-                        if facet.is_none() {
-                            filing
-                        } else {
-                            chosen.as_deref()
-                        },
-                        may_refile,
-                        &placed,
-                        &result.filings,
-                    )?
-                };
+                let destination =
+                    if let Some((old, _, _)) = existing.filter(|_| orphaned_tiles.contains(&id)) {
+                        old.to_owned()
+                    } else if let Some((old, _, _)) = same_place {
+                        old.to_owned()
+                    } else if (facet.is_none() && inherited.is_none())
+                        || (filing.is_none() && existing.is_none())
+                    {
+                        key.clone()
+                    } else {
+                        self.destination(
+                            &key,
+                            filing,
+                            if facet.is_none() && parent.is_none() {
+                                filing
+                            } else {
+                                chosen.as_deref()
+                            },
+                            may_refile,
+                            &placed,
+                            &result,
+                        )?
+                    };
+                if repair && let Some((old_key, _, old)) = existing {
+                    let mut mark = BodyRow::new(
+                        RowKind::Moved,
+                        id.clone(),
+                        &old.source,
+                        &old.record_type,
+                        old.label.clone(),
+                    );
+                    mark.of.clone_from(&old.of);
+                    mark.run.clone_from(&old.run);
+                    placed
+                        .entry(old_key.to_owned())
+                        .or_default()
+                        .insert(id.clone(), mark.clone());
+                    result.tile_repairs.push(TileRepair {
+                        source_key: old_key.to_owned(),
+                        destination_key: destination.clone(),
+                        filing: filing.expect("a repair inherits a filing").to_owned(),
+                        mark,
+                    });
+                }
                 if let Some((_, held, old)) = existing {
-                    if facet.is_some() {
+                    if facet.is_some() || repair {
                         row.run.clone_from(&old.run);
                     }
                     if row.kind != RowKind::ExperienceTile
@@ -370,6 +448,17 @@ impl<'a> DayPlacement<'a> {
                 placed.entry(destination).or_default().insert(id, row);
             }
         }
+        for key in &result.reserved_unfiled {
+            if self.held[key].rows.iter().any(|row| {
+                row.kind != RowKind::Moved
+                    && !result
+                        .tile_repairs
+                        .iter()
+                        .any(|repair| repair.source_key == *key && repair.mark.id == row.id)
+            }) {
+                result.kept_unfiled.insert(key.clone());
+            }
+        }
         result.windows = placed
             .into_iter()
             .map(|(key, rows)| ((self.day.clone(), key), rows))
@@ -384,8 +473,11 @@ impl<'a> DayPlacement<'a> {
         chosen: Option<&str>,
         may_refile: bool,
         placed: &BTreeMap<String, BTreeMap<String, BodyRow>>,
-        filings: &BTreeMap<String, String>,
+        plan: &FiledDay,
     ) -> Result<String, String> {
+        let filings = &plan.filings;
+        let reserved_unfiled = &plan.reserved_unfiled;
+        let sibling_only = chosen.is_none() && filing.is_some();
         let journal = self.journal;
         let source = self.source;
         // A run authorized to move may reuse the original segment as before.
@@ -394,9 +486,10 @@ impl<'a> DayPlacement<'a> {
                 .get(original)
                 .and_then(|held| held.filing.as_deref())
         });
-        if filings
-            .get(original)
-            .is_none_or(|planned| Some(planned.as_str()) == filing)
+        if !reserved_unfiled.contains(original)
+            && filings
+                .get(original)
+                .is_none_or(|planned| Some(planned.as_str()) == filing)
             && (may_refile
                 || (original_filing.is_none()
                     && filing == chosen
@@ -411,6 +504,8 @@ impl<'a> DayPlacement<'a> {
             .iter()
             .find(|(key, held)| {
                 same_grid(key, original)
+                    && !(sibling_only && key.as_str() == original)
+                    && !reserved_unfiled.contains(*key)
                     && filings
                         .get(*key)
                         .map(String::as_str)
@@ -424,7 +519,11 @@ impl<'a> DayPlacement<'a> {
             .or_else(|| {
                 filings
                     .iter()
-                    .find(|(key, value)| same_grid(key, original) && Some(value.as_str()) == filing)
+                    .find(|(key, value)| {
+                        same_grid(key, original)
+                            && !(sibling_only && key.as_str() == original)
+                            && Some(value.as_str()) == filing
+                    })
                     .map(|(key, _)| key.clone())
             })
             .or_else(|| {

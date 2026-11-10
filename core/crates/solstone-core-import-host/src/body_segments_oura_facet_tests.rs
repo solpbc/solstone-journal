@@ -20,6 +20,392 @@ fn facets(root: &Path) {
     }
 }
 
+fn unfiled_tile_fixture(repeat: bool) -> (tempfile::TempDir, tempfile::TempDir, PathBuf, String) {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = stage(
+        &scratch.path().join("first"),
+        &[(
+            "workout",
+            vec![workout(
+                "private",
+                "running",
+                "2026-01-05T06:00:00-07:00",
+                "2026-01-05T06:15:00-07:00",
+            )],
+        )],
+    );
+    let original = run(root, &first, "20261104_120000", Some("other"));
+    // Independently construct the legacy state: the parent was filed, but a
+    // no-facet extension left its later tile unfiled beside another workout.
+    fs::remove_file(window(root, "20260105", "061000_300").join("talents/facets.json")).unwrap();
+    let unrelated = workout(
+        "unfiled",
+        "walking",
+        "2026-01-05T06:11:00-07:00",
+        "2026-01-05T06:14:00-07:00",
+    );
+    let unfiled = stage(
+        &scratch.path().join("unfiled"),
+        &[("workout", vec![unrelated.clone()])],
+    );
+    run(root, &unfiled, "20261104_130000", None);
+    let mut workouts = vec![
+        workout(
+            "private",
+            "running",
+            "2026-01-05T06:00:00-07:00",
+            "2026-01-05T06:20:00-07:00",
+        ),
+        workout(
+            "new",
+            "yoga",
+            "2026-01-05T06:12:00-07:00",
+            "2026-01-05T06:14:00-07:00",
+        ),
+    ];
+    if repeat {
+        workouts.push(unrelated);
+    }
+    let next = stage(&scratch.path().join("next"), &[("workout", workouts)]);
+    (journal, scratch, next, original.import_id)
+}
+
+fn assert_repair_visibility(root: &Path) {
+    assert!(
+        !window(root, "20260105", "061000_300")
+            .join("talents/facets.json")
+            .exists()
+    );
+    let other = entries(root, OTHER, "20260105", "Oura · imported")
+        .join("\n")
+        .replace('\\', "");
+    let health = entries(root, HEALTH, "20260105", "Oura · imported")
+        .join("\n")
+        .replace('\\', "");
+    assert!(
+        !other.contains("walking") && !other.contains("06:11"),
+        "{other}"
+    );
+    assert!(
+        !health.contains("running") && !health.contains("walking") && !health.contains("06:20"),
+        "{health}"
+    );
+}
+
+#[test]
+fn repairing_an_unfiled_tile_reserves_its_old_window_at_every_interruption() {
+    for repeat in [false, true] {
+        for facet in [Some("health"), None] {
+            for point in ["pending", "written", "marking", "published"] {
+                let (journal, _scratch, next, origin) = unfiled_tile_fixture(repeat);
+                let root = journal.path();
+                let stop = stopping_at(point, 1);
+                let mut saving = request(&next, "20261104_140000", facet);
+                saving.stop_at = Some(&stop);
+                run_oura_segments(root, &saving).unwrap_err();
+                let Read::Trusted(state) = read_state(root, &OURA) else {
+                    panic!("no checkpoint");
+                };
+                assert_repair_visibility(root);
+                saving.stop_at = None;
+                let done = run_oura_segments(root, &saving).unwrap();
+                assert_eq!(done.import_id, state.import_id);
+                assert_repair_visibility(root);
+                let visible = entries(root, HEALTH, "20260105", "Oura · imported").join("\n");
+                assert_eq!(visible.contains("yoga"), facet.is_some(), "{visible}");
+                assert!(
+                    done.summary
+                        .contains("earlier entries stayed without a facet"),
+                    "{}",
+                    done.summary
+                );
+                let parent_id = placed(root, "private")[0].2.id.clone();
+                let rows = stored_windows_of_day(root, &OURA, "20260105")
+                    .unwrap()
+                    .into_iter()
+                    .flat_map(|window| {
+                        stored_rows(root, &OURA, &window)
+                            .unwrap()
+                            .unwrap()
+                            .1
+                            .into_iter()
+                            .map(move |row| (window.clone(), row))
+                    })
+                    .filter(|(_, row)| {
+                        row.kind == RowKind::ExperienceTile
+                            && row.of.as_deref() == Some(parent_id.as_str())
+                            && row.index == Some(2)
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(rows.len(), 1, "{rows:?}");
+                assert_eq!(rows[0].1.run.as_deref(), Some(origin.as_str()));
+                assert_eq!(
+                    fs::read_to_string(
+                        window(root, &rows[0].0.0, &rows[0].0.1).join("talents/facets.json")
+                    )
+                    .unwrap(),
+                    facet_file_text("other")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_repair_resume_refuses_a_changed_assignment_on_its_reserved_source() {
+    let (journal, _scratch, next, _) = unfiled_tile_fixture(true);
+    let root = journal.path();
+    let stop = stopping_at("pending", 1);
+    let mut saving = request(&next, "20261104_140000", Some("health"));
+    saving.stop_at = Some(&stop);
+    run_oura_segments(root, &saving).unwrap_err();
+    let Read::Trusted(state) = read_state(root, &OURA) else {
+        panic!("no checkpoint");
+    };
+    let repair = state
+        .pending
+        .as_ref()
+        .unwrap()
+        .tile_repairs
+        .first()
+        .unwrap();
+    let old = window(root, "20260105", &repair.source_key);
+    let before = fs::read(old.join(BODY_RECORDS_FILE)).unwrap();
+    fs::write(old.join("talents/facets.json"), facet_file_text("health")).unwrap();
+    saving.stop_at = None;
+    assert!(run_oura_segments(root, &saving).is_err());
+    assert_eq!(fs::read(old.join(BODY_RECORDS_FILE)).unwrap(), before);
+}
+
+#[test]
+fn a_refused_repair_destination_never_retires_the_old_live_tile() {
+    for deleted in [false, true] {
+        let (journal, _scratch, next, origin) = unfiled_tile_fixture(true);
+        let root = journal.path();
+        let stop = stopping_at("pending", 1);
+        let mut saving = request(&next, "20261104_140000", Some("health"));
+        saving.stop_at = Some(&stop);
+        run_oura_segments(root, &saving).unwrap_err();
+        let Read::Trusted(state) = read_state(root, &OURA) else {
+            panic!("no checkpoint");
+        };
+        let repair = state
+            .pending
+            .as_ref()
+            .unwrap()
+            .tile_repairs
+            .first()
+            .unwrap();
+        let target = window(root, "20260105", &repair.destination_key);
+        fs::create_dir_all(&target).unwrap();
+        if deleted {
+            fs::write(target.join("tombstone.json"), "{}").unwrap();
+        } else {
+            fs::write(target.join(BODY_RECORDS_FILE), "unreadable old input").unwrap();
+        }
+        saving.stop_at = None;
+        assert!(run_oura_segments(root, &saving).is_err());
+        let old = stored_rows(root, &OURA, &("20260105".into(), repair.source_key.clone()))
+            .unwrap()
+            .unwrap()
+            .1;
+        let tile = old.iter().find(|row| row.id == repair.mark.id).unwrap();
+        assert_eq!(tile.kind, RowKind::ExperienceTile);
+        assert_eq!(tile.run.as_deref(), Some(origin.as_str()));
+        assert_repair_visibility(root);
+    }
+}
+
+#[test]
+fn takeover_keeps_the_reached_repair_copy_and_the_sources_first_pass_rows() {
+    let (journal, scratch, next, _) = unfiled_tile_fixture(true);
+    let root = journal.path();
+    let stop = stopping_at("marking", 1);
+    let mut saving = request(&next, "20261104_140000", None);
+    saving.stop_at = Some(&stop);
+    run_oura_segments(root, &saving).unwrap_err();
+    let Read::Trusted(state) = read_state(root, &OURA) else {
+        panic!("no checkpoint");
+    };
+    let pending = state.pending.as_ref().unwrap();
+    let repair = pending.tile_repairs.first().unwrap();
+    let source = pending
+        .windows
+        .iter()
+        .find(|window| window.key == repair.source_key)
+        .unwrap();
+    let actual =
+        fs::read_to_string(window(root, "20260105", &repair.source_key).join(BODY_RECORDS_FILE))
+            .unwrap();
+    assert_eq!(
+        source.first_sha.as_deref(),
+        Some(text_sha(&actual).as_str())
+    );
+    assert_ne!(source.written_sha.as_deref(), source.first_sha.as_deref());
+    assert_repair_visibility(root);
+    let takeover = stage(
+        &scratch.path().join("takeover"),
+        &[
+            (
+                "workout",
+                vec![
+                    workout(
+                        "private",
+                        "running",
+                        "2026-01-05T06:00:00-07:00",
+                        "2026-01-05T06:20:00-07:00",
+                    ),
+                    workout(
+                        "unfiled",
+                        "walking",
+                        "2026-01-05T06:11:00-07:00",
+                        "2026-01-05T06:14:00-07:00",
+                    ),
+                    workout(
+                        "new",
+                        "yoga",
+                        "2026-01-05T06:12:00-07:00",
+                        "2026-01-05T06:14:00-07:00",
+                    ),
+                ],
+            ),
+            (
+                "heartrate",
+                vec![heart("2026-01-05T06:13:00-07:00", 8333, "awake")],
+            ),
+        ],
+    );
+    let done = run(root, &takeover, "20261104_150000", Some("health"));
+    assert_ne!(done.import_id, state.import_id);
+    assert_repair_visibility(root);
+    let listing = fs::read_to_string(
+        root.join("imports")
+            .join(&state.import_id)
+            .join(LISTING_FILE),
+    )
+    .unwrap();
+    assert!(
+        listing.contains(&repair.source_key) && listing.contains(&repair.destination_key),
+        "{listing}"
+    );
+    let entry: Value = serde_json::from_str(listing.lines().last().unwrap()).unwrap();
+    assert!(
+        !entry["moved"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|moved| moved[0] == repair.source_key)
+    );
+    let new = placed(root, "new");
+    assert_eq!(new.len(), 1);
+    assert_eq!(new[0].2.run.as_deref(), Some(state.import_id.as_str()));
+}
+
+#[test]
+fn a_no_facet_extension_never_files_an_unrelated_unfiled_workout() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = stage(
+        &scratch.path().join("first"),
+        &[(
+            "workout",
+            vec![workout(
+                "private",
+                "running",
+                "2026-01-05T06:00:00-07:00",
+                "2026-01-05T06:04:00-07:00",
+            )],
+        )],
+    );
+    run(root, &first, "20261104_120000", Some("other"));
+    let second = stage(
+        &scratch.path().join("unfiled"),
+        &[(
+            "workout",
+            vec![workout(
+                "unfiled",
+                "walking",
+                "2026-01-05T06:11:00-07:00",
+                "2026-01-05T06:14:00-07:00",
+            )],
+        )],
+    );
+    run(root, &second, "20261104_130000", None);
+    let next = stage(
+        &scratch.path().join("next"),
+        &[(
+            "workout",
+            vec![workout(
+                "private",
+                "running",
+                "2026-01-05T06:00:00-07:00",
+                "2026-01-05T06:20:00-07:00",
+            )],
+        )],
+    );
+    run(root, &next, "20261104_140000", None);
+    assert_repair_visibility(root);
+    let visible = entries(root, OTHER, "20260105", "Oura · imported").join("\n");
+    assert!(visible.contains("running"), "{visible}");
+}
+
+#[test]
+fn a_no_facet_extension_keeps_new_heart_readings_out_of_its_inherited_tiles() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = stage(
+        &scratch.path().join("first"),
+        &[(
+            "workout",
+            vec![workout(
+                "private",
+                "running",
+                "2026-01-05T06:00:00-07:00",
+                "2026-01-05T06:04:00-07:00",
+            )],
+        )],
+    );
+    run(root, &first, "20261104_120000", Some("other"));
+    let next = stage(
+        &scratch.path().join("next"),
+        &[
+            (
+                "workout",
+                vec![workout(
+                    "private",
+                    "running",
+                    "2026-01-05T06:00:00-07:00",
+                    "2026-01-05T06:20:00-07:00",
+                )],
+            ),
+            (
+                "heartrate",
+                vec![heart("2026-01-05T06:12:00-07:00", 8333, "awake")],
+            ),
+        ],
+    );
+    run(root, &next, "20261104_130000", None);
+    let other = entries(root, OTHER, "20260105", "Oura · imported").join("\n");
+    assert!(
+        other.contains("running") && !other.contains("8333"),
+        "{other}"
+    );
+    let original = window(root, "20260105", "061000_300");
+    assert!(!original.join("talents/facets.json").exists());
+    assert!(
+        fs::read_to_string(original.join(BODY_RECORDS_FILE))
+            .unwrap()
+            .contains("8333")
+    );
+}
+
 #[test]
 fn a_new_oura_experience_tile_cannot_reveal_its_label_or_span_under_the_run_facet() {
     let journal = journal();

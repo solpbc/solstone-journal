@@ -5,17 +5,18 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withViewRuntime, EXPORT_ANCHOR } = require('./view_runtime');
 
 const manifestDir = process.argv[2];
 if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.selectAccountSide = selectAccountSide;\n',
+  EXPORT_ANCHOR,
   `  window.__vitals = { renderVitalsHtml, homeHealthGlance, receiveSupervisorStatus, invalidateHeldWork, refreshVitals, refreshNarrative, refreshChangedPulse,
     captureNarrative: () => { renderNarrative = data => { window.__narrative = data.narrative_content; }; },
     seedPulse: data => { lastPulse=data; pulseObservedAt=Date.now(); pulseReadFailed=false; pulseRequest=null; vitalsRequest=null; narrativeRequest=null; } };
-  window.selectAccountSide = selectAccountSide;\n`,
+${EXPORT_ANCHOR}`,
 );
 
 let now = 1000;
@@ -43,7 +44,7 @@ const window = { createViewReady: () => () => {},
 window.window = window;
 document.defaultView = window;
 
-vm.runInNewContext(source, { window, document, console, Date:TestDate }, { filename: 'home.js' });
+vm.runInNewContext(withViewRuntime(source), { window, document, console, Date:TestDate }, { filename: 'home.js' });
 const { renderVitalsHtml } = window.__vitals;
 assert(renderVitalsHtml, 'renderVitalsHtml exported');
 const { homeHealthGlance, receiveSupervisorStatus, invalidateHeldWork, refreshVitals, seedPulse } = window.__vitals;

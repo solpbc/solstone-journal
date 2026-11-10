@@ -19,9 +19,11 @@ use solstone_core_installation_identity::{
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
-    WindowsServiceAction, WindowsTaskDefinition, WindowsTaskInput, WindowsTaskProfile,
-    encode_windows_task_xml, parse_windows_task_xml, render_windows_task_xml,
-    windows_registration_profile, windows_service_update_plan,
+    OwnerRunIntent, WindowsServiceAction, WindowsTaskDefinition, WindowsTaskInput,
+    WindowsTaskProfile, encode_windows_task_xml, parse_windows_task_xml,
+    parse_windows_update_intent, render_windows_task_xml, windows_registration_profile,
+    windows_service_update_plan, windows_update_intent_bytes, windows_update_quiesce,
+    windows_update_restore, windows_update_stop_failure_restore,
 };
 use solstone_core_setup::args::InitialStartAtSignIn;
 use solstone_core_setup::clean_uninstall::{
@@ -75,6 +77,8 @@ pub(crate) fn run(action: ServiceAction) -> ExitCode {
         ServiceAction::ResumeAfterUpdate => run_resume_after_update(),
         ServiceAction::BeforeUninstall => run_before_uninstall(),
         ServiceAction::AppStatus => run_app_status(),
+        ServiceAction::StopForUpdate => run_stop_for_update_action(),
+        ServiceAction::RestoreUpdateIntent => run_restore_update_intent_action(),
         ServiceAction::SignIn { on } => run_sign_in(on),
         ServiceAction::Logs { .. } => unreachable!("logs handled by service_logs"),
     }
@@ -338,7 +342,7 @@ fn install_task(
     let stopped;
     let after = if before.present {
         let current = if plan.stop_before_update {
-            stop_task(ctx)?;
+            stop_task(ctx, true)?;
             let idle = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
             let idle_definition = validate_task(ctx, &idle)?;
             // The stop records itself as a disabled registration, which is the
@@ -624,7 +628,7 @@ fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
+fn stop_task(ctx: &ServiceContext, disable: bool) -> Result<(), ExitCode> {
     let deadline = Instant::now() + STOP_TIMEOUT;
     let before = inspect_task(ctx, deadline)?;
     if !before.present {
@@ -632,9 +636,10 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
             "service task is absent and its forwarder cleanup cannot be verified",
         ));
     }
-    // Disable first, so the five-minute recovery trigger cannot race the stop.
-    // A public stop arms a separate hidden sign-in resume before reaching here.
-    let before = if validate_task(ctx, &before)?.enabled {
+    // Disable first when requested, so the five-minute recovery trigger cannot
+    // race the stop. A public stop arms a separate hidden sign-in resume before
+    // reaching here.
+    let before = if disable && validate_task(ctx, &before)?.enabled {
         set_task_enabled(ctx, &before, false, deadline)?
     } else {
         before
@@ -1392,7 +1397,7 @@ fn run_uninstall_action() -> ExitCode {
                 Ok(())
             }
         },
-        &mut || stop_task(&ctx).map_err(|code| format!("TaskStopFailed: {code:?}")),
+        &mut || stop_task(&ctx, true).map_err(|code| format!("TaskStopFailed: {code:?}")),
         &mut || delete_task(&ctx).map_err(|code| format!("TaskDeleteFailed: {code:?}")),
     );
     if let Err((name, reason)) = removed {
@@ -1530,11 +1535,27 @@ fn run_uninstall_action() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn clear_update_intent(ctx: &ServiceContext) -> Result<(), ExitCode> {
+    let directory = task_artifact_directory(&ctx.owner)
+        .ok_or_else(|| task_error("cannot resolve task artifact directory"))?;
+    let path = directory.join(format!("{}.update-intent.json", ctx.guard.namespace));
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(task_error(format!(
+            "could not clear prior update intent: {error}"
+        ))),
+    }
+}
+
 fn run_start_action() -> ExitCode {
     let ctx = match resolve_context() {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     match start_task(&ctx) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
@@ -1546,12 +1567,99 @@ fn run_stop_action() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     if let Err(code) = prepare_sign_in_resume(&ctx) {
         return code;
     }
-    match stop_task(&ctx) {
+    match stop_task(&ctx, true) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
+    }
+}
+
+fn run_stop_for_update_action() -> ExitCode {
+    let ctx = match resolve_context() {
+        Ok(ctx) => ctx,
+        Err(code) => return code,
+    };
+    let deadline = Instant::now() + STOP_TIMEOUT;
+    let snapshot = match inspect_task(&ctx, deadline) {
+        Ok(s) => s,
+        Err(code) => return code,
+    };
+    if !snapshot.present {
+        return ExitCode::SUCCESS;
+    }
+    if snapshot.instances.len() > 1 {
+        return task_error("cannot identify one running service task");
+    }
+    let Some(artifact_dir) = task_artifact_directory(&ctx.owner) else {
+        return task_error("cannot resolve task artifact directory");
+    };
+    let intent_path = artifact_dir.join(format!("{}.update-intent.json", ctx.guard.namespace));
+    let saved_intent = match fs::read(&intent_path) {
+        Ok(bytes) => match parse_windows_update_intent(&bytes) {
+            Some(intent) => Some(intent),
+            None => return task_error("update intent record is invalid"),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return task_error(format!("could not read update intent record: {error}")),
+    };
+    let definition = match validate_task(&ctx, &snapshot) {
+        Ok(definition) => definition,
+        Err(code) => return code,
+    };
+    let was_running = !snapshot.instances.is_empty();
+    let intent = saved_intent.unwrap_or(OwnerRunIntent {
+        was_running,
+        was_enabled: registered_run_intent(&ctx, &definition, was_running),
+    });
+
+    // Publish the recovery record before disabling or stopping anything. A
+    // retry after an interrupted stop must retain the original owner intent.
+    if saved_intent.is_none() {
+        let temp_path = artifact_dir.join(format!("{}.update-intent.tmp", ctx.guard.namespace));
+        let publish = || -> std::io::Result<()> {
+            use std::io::Write;
+            fs::create_dir_all(&artifact_dir)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&temp_path)?;
+            file.write_all(&windows_update_intent_bytes(intent))?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temp_path, &intent_path)
+        };
+        if let Err(error) = publish() {
+            let _ = fs::remove_file(&temp_path);
+            return task_error(format!("could not write update intent record: {error}"));
+        }
+    }
+
+    match stop_task(&ctx, windows_update_quiesce().disable_before_stop) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(code) => {
+            if windows_update_stop_failure_restore(intent.was_enabled).enable_without_start {
+                let restore_deadline = Instant::now() + STOP_TIMEOUT;
+                let restore = inspect_task(&ctx, restore_deadline).and_then(|after| {
+                    if after.present {
+                        // A surviving instance still needs its registration enabled.
+                        set_task_enabled(&ctx, &after, true, restore_deadline)?;
+                    }
+                    Ok(())
+                });
+                if restore.is_err() {
+                    log::error!(
+                        "could not restore the service registration after a failed update stop; saved intent remains"
+                    );
+                }
+            }
+            code
+        }
     }
 }
 
@@ -1560,6 +1668,9 @@ fn run_restart_action(if_installed: bool) -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     let installed = match inspect_task(&ctx, Instant::now() + STOP_TIMEOUT) {
         Ok(snapshot) => snapshot.present,
         Err(code) => return code,
@@ -1572,7 +1683,7 @@ fn run_restart_action(if_installed: bool) -> ExitCode {
             return ExitCode::from(1);
         }
     }
-    if let Err(code) = stop_task(&ctx) {
+    if let Err(code) = stop_task(&ctx, true) {
         return code;
     }
     match start_task(&ctx) {
@@ -1601,6 +1712,9 @@ fn run_up() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     let before = match inspect_task(&ctx, Instant::now() + STOP_TIMEOUT) {
         Ok(snapshot) => snapshot,
         Err(code) => return code,
@@ -1623,10 +1737,13 @@ fn run_down() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     if let Err(code) = prepare_sign_in_resume(&ctx) {
         return code;
     }
-    match stop_task(&ctx) {
+    match stop_task(&ctx, true) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
     }
@@ -2147,11 +2264,80 @@ fn run_resume_after_update() -> ExitCode {
     }
 }
 
+fn run_restore_update_intent_action() -> ExitCode {
+    let Ok(ctx) = resolve_context() else {
+        return ExitCode::SUCCESS;
+    };
+    match consume_saved_intent(&ctx) {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(code) => code,
+    }
+}
+
+fn consume_saved_intent(ctx: &ServiceContext) -> Result<Option<&'static str>, ExitCode> {
+    let Some(directory) = task_artifact_directory(&ctx.owner) else {
+        return Ok(None);
+    };
+    let intent_path = directory.join(format!("{}.update-intent.json", ctx.guard.namespace));
+    let bytes = match fs::read(&intent_path) {
+        Ok(b) => b,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            log::warn!("could not read update intent file: {e}");
+            return Err(task_error(format!(
+                "could not read update intent record: {e}"
+            )));
+        }
+    };
+    let Some(intent) = parse_windows_update_intent(&bytes) else {
+        return Err(task_error("update intent record is invalid"));
+    };
+
+    let restore = windows_update_restore(intent);
+    let deadline = Instant::now() + STOP_TIMEOUT;
+    let after = inspect_task(ctx, deadline)?;
+    if !after.present {
+        let _ = fs::remove_file(&intent_path);
+        return Ok(Some("not-installed"));
+    }
+    let is_running = !after.instances.is_empty();
+    let is_enabled = validate_task(ctx, &after)?.enabled;
+
+    if restore.start {
+        if !is_enabled {
+            set_task_enabled(ctx, &after, true, deadline)?;
+        }
+        if !is_running {
+            start_task(ctx)?;
+        }
+        fs::remove_file(&intent_path)
+            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
+        Ok(Some("started"))
+    } else if restore.enable_without_start {
+        if !is_enabled {
+            set_task_enabled(ctx, &after, true, deadline)?;
+        }
+        fs::remove_file(&intent_path)
+            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
+        Ok(Some("enabled"))
+    } else {
+        if is_enabled || is_running {
+            stop_task(ctx, true)?;
+        }
+        fs::remove_file(&intent_path)
+            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
+        Ok(Some("stopped"))
+    }
+}
+
 fn resume_after_update(ctx: &ServiceContext) -> Result<&'static str, ExitCode> {
     if !inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?.present {
         return Ok("not-installed");
     }
     install_task(ctx, None, None)?;
+    if let Some(outcome) = consume_saved_intent(ctx)? {
+        return Ok(outcome);
+    }
     let after = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
     if !validate_task(ctx, &after)?.enabled {
         return Ok("stopped");

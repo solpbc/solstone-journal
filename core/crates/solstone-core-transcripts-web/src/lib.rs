@@ -108,6 +108,7 @@ fn router_with_dependencies(
     Router::new()
         .route("/app/transcripts/", get(shell::root))
         .route("/app/transcripts/workspace", get(shell::workspace))
+        .route("/app/transcripts/static/transcripts.js", get(shell::script))
         .route("/app/transcripts/{day}", get(shell::day))
         .route("/app/transcripts/api/open-day", get(shell::open_day))
         .route("/app/transcripts/api/index", get(calendar::index))
@@ -241,6 +242,13 @@ fn workspace_response() -> Response {
         .header(header::CONTENT_TYPE, WORKSPACE.content_type)
         .body(Body::from(WORKSPACE.bytes))
         .expect("workspace response builds")
+}
+
+fn script_response() -> Response {
+    Response::builder()
+        .header(header::CONTENT_TYPE, SCRIPT.content_type)
+        .body(Body::from(SCRIPT.bytes))
+        .expect("script response builds")
 }
 
 pub(crate) fn legacy_error_response(
