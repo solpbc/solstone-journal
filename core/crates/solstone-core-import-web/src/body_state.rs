@@ -240,7 +240,9 @@ pub(crate) fn apple_row(
 pub(crate) fn overlay(root: &Path, import_id: &str, values: &mut Map<String, Value>, all: &[Seen]) {
     // An Apple Health upload is named for what it is in every state, running and
     // pending included, not by the generic kind its upload was saved as.
-    if values.get("source_hint").and_then(Value::as_str) == Some(APPLE) {
+    let apple = read_import_metadata(root, import_id)
+        .is_ok_and(|metadata| metadata.get("source_hint").and_then(Value::as_str) == Some(APPLE));
+    if apple {
         values.insert("source_type".into(), json!(APPLE));
         values.insert(
             "source_display".into(),
@@ -644,8 +646,8 @@ mod tests {
         let journal = journal();
         let root = journal.path();
         staged(root, "20261010_120000");
+        // The row as the list builds it: no hint, the upload's generic kind.
         let mut values = serde_json::Map::new();
-        values.insert("source_hint".into(), json!(APPLE));
         values.insert("source_type".into(), json!("text"));
         values.insert("source_display".into(), json!("Text"));
         overlay(root, "20261010_120000", &mut values, &apple_imports(root));
