@@ -4557,7 +4557,7 @@ function runAppleImportEndsInItsOwnWords() {
   const context = makeContext({ console });
   context.document = { getElementById: (id) => (id === 'guideSteps' ? guideSteps : null) };
   context.window = { location: { hash: '#progress/a1' }, CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
-    JournalFormat: { day: (value) => `DAY(${value})` } };
+    JournalFormat: { day: () => 'Saturday', dayFull: (value) => `DAY(${value})` } };
   context.encodeURIComponent = encodeURIComponent;
   context.sourceMetadataByName = { apple_health: { name: 'apple_health', display_name: 'Apple Health' } };
   context.currentGuideSource = 'apple_health';

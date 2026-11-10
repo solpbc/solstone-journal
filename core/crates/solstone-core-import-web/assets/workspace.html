@@ -3597,7 +3597,8 @@ function showProgressView(importId, eventData = null) {
     const words = currentEvent?.body_words || importInfo?.body_words || '';
     const facts = [];
     if (Array.isArray(range) && range[0]) {
-      const day = value => window.JournalFormat.day(value);
+      // Anchored both ends: `day` would give a date in the last week as a bare weekday.
+      const day = value => window.JournalFormat.dayFull(value);
       facts.push(range[1] && range[1] !== range[0] ? `${day(range[0])} to ${day(range[1])}` : day(range[0]));
     }
     if (entries === 0) facts.push('nothing new');
