@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{borrow::Cow, collections::BTreeMap, path::PathBuf};
 
 use axum::{
     Router,
@@ -199,12 +199,13 @@ pub(crate) fn search_response_with_index(
                 } else {
                     None
                 };
+                let display_text = search_display_text(&hit.metadata.path, &hit.text);
                 let readable = readable_record(&hit.text);
                 // Fresh-eyes 3 #3: when the readable sentences hold no match
                 // the stored record becomes the excerpt, and sending it again
                 // as `record` printed the same JSON twice on one card.
                 let (excerpt, excerpt_is_record) =
-                    excerpt_html(&hit.text, readable.as_ref(), &request.query);
+                    excerpt_html(&display_text, readable.as_ref(), &request.query);
                 let week_url = week_link(
                     journal_root,
                     &hit.metadata.agent,
@@ -804,13 +805,70 @@ fn excerpt_html(raw: &str, readable: Option<&ReadableRecord>, query: &str) -> (S
     }
 }
 
+// Screen text keeps literal Markdown bytes in the index. Other Markdown
+// sources, including imported image descriptions, are decoded by the chunker.
+// Undo one layer only for this family, before the HTML presentation boundary.
+fn search_display_text<'a>(path: &str, text: &'a str) -> Cow<'a, str> {
+    if !solstone_core_format::content::screen_text::is_screen_text_path(path) {
+        return Cow::Borrowed(text);
+    }
+    let mut visible = String::with_capacity(text.len());
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        if let Some(rest) = remaining.strip_prefix('\\')
+            && let Some(ch) = rest.chars().next().filter(char::is_ascii_punctuation)
+        {
+            visible.push(ch);
+            remaining = &rest[ch.len_utf8()..];
+            continue;
+        }
+        if let Some((entity, ch)) = [("&amp;", '&'), ("&lt;", '<'), ("&gt;", '>')]
+            .into_iter()
+            .find(|(entity, _)| remaining.starts_with(entity))
+        {
+            visible.push(ch);
+            remaining = &remaining[entity.len()..];
+            continue;
+        }
+        let ch = remaining.chars().next().expect("nonempty text");
+        visible.push(ch);
+        remaining = &remaining[ch.len_utf8()..];
+    }
+    Cow::Owned(visible)
+}
+
 fn highlight(text: &str, query: &str) -> String {
-    let mut value = html_escape(&cap_words(text));
+    let text = cap_words(text);
+    let lower = text.to_ascii_lowercase();
+    let mut matches = Vec::new();
     for term in highlight_terms(query) {
         if term.len() >= 2 {
-            value = replace_case_insensitive(&value, &term);
+            for (start, _) in lower.match_indices(&term.to_ascii_lowercase()) {
+                matches.push((start, start + term.len()));
+            }
         }
     }
+    matches.sort_unstable();
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in matches {
+        if let Some(last) = spans.last_mut()
+            && start <= last.1
+        {
+            last.1 = last.1.max(end);
+        } else {
+            spans.push((start, end));
+        }
+    }
+    let mut value = String::new();
+    let mut cursor = 0;
+    for (start, end) in spans {
+        value.push_str(&html_escape(&text[cursor..start]));
+        value.push_str("<strong>");
+        value.push_str(&html_escape(&text[start..end]));
+        value.push_str("</strong>");
+        cursor = end;
+    }
+    value.push_str(&html_escape(&text[cursor..]));
     value
 }
 
@@ -869,23 +927,6 @@ fn html_escape(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('\"', "&quot;")
         .replace('\'', "&#x27;")
-}
-
-fn replace_case_insensitive(value: &str, term: &str) -> String {
-    let lower = value.to_ascii_lowercase();
-    let needle = term.to_ascii_lowercase();
-    let mut result = String::new();
-    let mut start = 0;
-    while let Some(offset) = lower[start..].find(&needle) {
-        let index = start + offset;
-        result.push_str(&value[start..index]);
-        result.push_str("<strong>");
-        result.push_str(&value[index..index + term.len()]);
-        result.push_str("</strong>");
-        start = index + term.len();
-    }
-    result.push_str(&value[start..]);
-    result
 }
 
 fn has_index_suffix(path: &str) -> bool {
@@ -1074,6 +1115,72 @@ mod search_failure_detail_tests {
 #[cfg(test)]
 mod highlight_phrase_tests {
     use super::*;
+
+    #[test]
+    fn screen_text_excerpts_decode_one_literal_layer_before_html_escaping() {
+        use solstone_core_format::content::screen_text::append_screen_text_line;
+
+        let path = "20260101/default/100000_60/talents/screen_text.md";
+        for text in [
+            "2 lb roma tomatoes, 1 onion, smoked paprika: marmalade-heron-7",
+            r#"![cover](https://example.test/a.png) <img src="x"> & 日本語"#,
+            r#"C:\notes\draft.md &lt;tag&gt; &amp; &#33; \*literal*"#,
+            "- list\n# heading\n> quote\n```\ntrailing \\",
+        ] {
+            let mut stored = String::new();
+            append_screen_text_line(&mut stored, text);
+            let display = search_display_text(path, &stored);
+            assert_eq!(
+                cap_words(&display),
+                text.split_whitespace().collect::<Vec<_>>().join(" "),
+                "{stored:?}"
+            );
+        }
+        let mut stored = String::new();
+        append_screen_text_line(&mut stored, "tomatoes, & <img> &lt;tag&gt;");
+        let display = search_display_text(path, &stored);
+        assert_eq!(
+            excerpt_html(&display, None, "tomatoes").0,
+            "<strong>tomatoes</strong>, &amp; &lt;img&gt; &amp;lt;tag&amp;gt;"
+        );
+    }
+
+    #[test]
+    fn other_search_sources_keep_their_already_decoded_text() {
+        let text = r"C:\notes\draft.md &lt;tag&gt; &amp;";
+        for path in [
+            "20260101/import/100000_60/image.md",
+            "20260101/default/100000_60/talents/other.md",
+            "entity_search:example",
+        ] {
+            assert_eq!(search_display_text(path, text), text);
+        }
+        // Imported descriptions have already crossed the Markdown chunker.
+        let text = "tomatoes, & <img>";
+        let markdown = format!("> {}\n", solstone_core_format::markdown::literal_text(text));
+        let chunks = solstone_core_format::chunker::format_markdown(&markdown);
+        let chunk = &chunks.chunks[0].markdown;
+        let display = search_display_text("20260101/import/100000_60/image.md", chunk);
+        let excerpt = highlight(&display, "tomatoes");
+        assert!(excerpt.contains("<strong>tomatoes</strong>"), "{excerpt}");
+        assert!(excerpt.contains("&amp;"), "{excerpt}");
+        assert!(!excerpt.contains("&amp;amp;"), "{excerpt}");
+        assert!(!excerpt.contains('\\'), "{excerpt}");
+        assert!(!excerpt.contains("<img"), "{excerpt}");
+    }
+
+    #[test]
+    fn highlighting_matches_visible_text_without_splitting_html_entities_or_tags() {
+        assert_eq!(highlight("& < >", "amp lt gt"), "&amp; &lt; &gt;");
+        assert_eq!(
+            highlight("<img src=x> &lt;", "\"<img\" \"&lt;\""),
+            "<strong>&lt;img</strong> src=x&gt; <strong>&amp;lt;</strong>"
+        );
+        assert_eq!(
+            highlight("stronger STRONG 日本語", "strong stronger"),
+            "<strong>stronger</strong> <strong>STRONG</strong> 日本語"
+        );
+    }
 
     #[test]
     fn an_excerpt_drops_markdown_markers_that_open_a_line() {
@@ -1414,7 +1521,12 @@ mod facet_reader_tests {
         std::fs::create_dir_all(&screen_dir).unwrap();
         let screen_file = screen_dir.join("screen_text.md");
         let audio_file = screen_dir.join("audio.md");
-        std::fs::write(&screen_file, "## 00:12 · terminal\nscreen test content\n").unwrap();
+        let mut screen_record = "## 00:12 · terminal\n".to_owned();
+        solstone_core_format::content::screen_text::append_screen_text_line(
+            &mut screen_record,
+            "screen test content, & <img src=x> &lt;tag&gt;",
+        );
+        std::fs::write(&screen_file, &screen_record).unwrap();
         std::fs::write(&audio_file, "audio test content\n").unwrap();
 
         solstone_core_indexer_store::scan::scan_journal(&root, true).unwrap();
@@ -1440,6 +1552,28 @@ mod facet_reader_tests {
         assert_eq!(screen_hit["segment"], "100000_60");
         assert_eq!(screen_hit["minute"], "00:12");
         assert!(screen_hit.get("group_offset_ms").is_none());
+        assert_eq!(
+            screen_hit["text"],
+            "00:12 · terminal screen test <strong>content</strong>, &amp; &lt;img src=x&gt; &amp;lt;tag&amp;gt;"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&screen_file).unwrap(),
+            screen_record
+        );
+        let entry = body_to_json(
+            entry_api(
+                root.clone(),
+                Query(EntryQuery {
+                    path: screen_hit["path"].as_str().unwrap().to_owned(),
+                    idx: screen_hit["idx"].as_i64().unwrap(),
+                    entry_id: screen_hit["entry_id"].as_i64().unwrap(),
+                }),
+            )
+            .await,
+        )
+        .await;
+        // The indexed read remains literal Markdown; decoding is display-only.
+        assert_eq!(entry["content"], screen_record.trim_end());
 
         let audio_hit = hits
             .iter()
