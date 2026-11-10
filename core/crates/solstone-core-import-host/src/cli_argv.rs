@@ -643,10 +643,26 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
     // A page start's import is checked before anything else, so a start aimed at
     // an import that already ran never changes it.
     let page_import = options.import_id.clone();
-    if let (Some(id), Some(media)) = (page_import.as_deref(), options.media.as_deref())
-        && let Err(run) = crate::body_commands::accept_page_import(journal_path, id, media)
-    {
-        return rendered(run);
+    if let Some(id) = page_import.as_deref() {
+        // Only an Apple Health card's save names its import. Anything else that
+        // names one is refused here, and nothing is written or removed.
+        let apple_save = !options.dry_run
+            && options.source.as_deref() == Some("apple_health")
+            && options.media.is_some();
+        if !apple_save {
+            return rendered(failure(
+                "",
+                "--import-id is only for saving an Apple Health export from its card, so nothing was brought in.\n",
+                2,
+            ));
+        }
+        if let Err(run) = crate::body_commands::accept_page_import(
+            journal_path,
+            id,
+            options.media.as_deref().unwrap_or_default(),
+        ) {
+            return rendered(run);
+        }
     }
     let outcome = run_import_accepted(options, journal_path, dispatch);
     if let Some(id) = page_import.as_deref() {

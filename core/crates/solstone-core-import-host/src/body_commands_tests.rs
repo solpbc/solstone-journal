@@ -482,19 +482,26 @@ mod page_start {
             solstone_core_import::snapshot::fingerprint(&root.join("imports").join(P)).unwrap(),
             before
         );
-        // Holding another export: refused, with its reason, and nothing else.
+        // Holding another export, a dry run, or anything but an Apple save: refused,
+        // and the named import is exactly as it was, its upload included.
         let other = "20261012_150000";
-        page_record(root, other, &[heart("2026-10-09 06:40:00 -0600")]);
-        let run = run_page(root, &page_args(elsewhere.path(), other, true));
-        assert_eq!(run.exit_code, 1);
-        assert_eq!(
-            solstone_core_import_sources::body_status::read(root, other),
-            Some(("not_this_import".to_owned(), 1))
-        );
-        assert!(matches!(
-            attempt(root, other),
-            solstone_core_import::metadata::AttemptRead::Absent
-        ));
+        let held = page_record(root, other, &[heart("2026-10-09 06:40:00 -0600")]);
+        let untouched = solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap();
+        let mut dry = page_args(&held, other, true);
+        dry.push("--dry-run".to_owned());
+        let mut not_apple = page_args(&held, other, true);
+        let at = not_apple.iter().position(|arg| arg == "apple_health").unwrap();
+        not_apple[at] = "ics".to_owned();
+        for args in [page_args(elsewhere.path(), other, true), dry, not_apple] {
+            let run = run_page(root, &args);
+            assert_ne!(run.exit_code, 0, "{args:?}");
+            assert_eq!(
+                solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap(),
+                untouched,
+                "{args:?}"
+            );
+        }
+        assert!(held.exists(), "its upload stays");
     }
 
     #[test]

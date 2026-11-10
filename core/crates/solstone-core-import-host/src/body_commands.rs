@@ -98,7 +98,6 @@ pub(crate) fn accept_page_import(
         _ => false,
     };
     if !inside {
-        solstone_core_import_sources::body_status::record(journal, import_id, "not_this_import", 1);
         return Err(refuse(
             "that import doesn't hold this export, so nothing was brought in.\n",
         ));
