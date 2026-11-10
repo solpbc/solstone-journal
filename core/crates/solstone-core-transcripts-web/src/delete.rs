@@ -404,19 +404,34 @@ fn is_tombstone_only(path: &Path) -> bool {
 /// Runs when the journal's web app starts; the maintenance schedule runs it
 /// hourly.
 pub(crate) fn sweep_trash(journal_root: &Path) {
+    // Unit route fixtures must finish startup before staging the next trash
+    // operation. Integration tests still exercise the production thread.
+    #[cfg(test)]
+    finish_trash_sweep(journal_root);
+
+    #[cfg(not(test))]
+    start_trash_sweep(journal_root);
+}
+
+#[cfg(not(test))]
+fn start_trash_sweep(journal_root: &Path) {
     // Off the request path: after a long time away, erasing what fell due can
     // take a while, and the pages need not wait for it.
     let journal_root = journal_root.to_path_buf();
     let spawned = std::thread::Builder::new()
         .name("trash-sweep".to_owned())
         .spawn(move || {
-            let swept = solstone_core_import::trash_kinds::sweep(&journal_root, chrono::Utc::now());
-            for failure in &swept.failed {
-                log::warn!("trash: {failure}");
-            }
+            finish_trash_sweep(&journal_root);
         });
     if let Err(error) = spawned {
         log::warn!("trash: the start-up sweep did not start: {error}");
+    }
+}
+
+fn finish_trash_sweep(journal_root: &Path) {
+    let swept = solstone_core_import::trash_kinds::sweep(journal_root, chrono::Utc::now());
+    for failure in &swept.failed {
+        log::warn!("trash: {failure}");
     }
 }
 

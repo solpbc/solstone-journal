@@ -198,6 +198,7 @@ fn reclaims_removed_keys(source: RegistrySource) -> bool {
             | RegistrySource::Claude
             | RegistrySource::Gemini
             | RegistrySource::Ics
+            | RegistrySource::Evernote
     )
 }
 

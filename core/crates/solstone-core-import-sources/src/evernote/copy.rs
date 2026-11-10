@@ -17,8 +17,6 @@ pub const TOO_BIG: &str =
     "this export is over 2 GB. in Evernote, export it again in smaller parts.";
 pub const NOTEBOOK_HINT: &str = "notes that share this name stay together.";
 pub const ALREADY_IN_JOURNAL: &str = "these notes are already in your journal.";
-pub const IN_THE_TRASH: &str =
-    "some of these notes are in the trash. restore that import to see them again.";
 
 pub fn preview_counts(notes: usize, first_year: i32, last_year: i32, attachments: usize) -> String {
     format!("{notes} notes, from {first_year} to {last_year}. {attachments} attachments.")

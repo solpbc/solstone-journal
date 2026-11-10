@@ -216,6 +216,13 @@ pub trait Kind {
     fn refs(&self, _journal: &Path, _unit: &Unit) -> Vec<String> {
         Vec::new()
     }
+
+    /// Files outside the thing's primary paths that must travel with it.
+    /// Discovered under its hold before publishing the detach intent; after
+    /// that, the persisted paths govern every resumed move, recover and erase.
+    fn companions(&self, _journal: &Path, _item: &Item) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
 }
 
 /// Why a trash step did not happen.
@@ -330,6 +337,8 @@ fn detach_as(
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
     let _lock = lock(journal)?;
+    let companions = kind.companions(journal, &item).map_err(TrashError::Io)?;
+    item.paths.extend(companions);
     for path in &item.paths {
         if !kind.present(journal, path) {
             return Err(TrashError::Missing(describe(&item.unit).to_owned()));
@@ -1515,6 +1524,7 @@ mod tests {
         seen: RefCell<Vec<(Change, Vec<String>)>>,
         fail_references: std::cell::Cell<bool>,
         refuse_check_at: std::cell::Cell<u32>,
+        companion: bool,
     }
 
     impl Kind for Fake {
@@ -1526,7 +1536,14 @@ mod tests {
         }
         fn present(&self, journal: &Path, path: &str) -> bool {
             let place = journal.join(path);
-            place.is_dir() && !place.join("tombstone.json").exists()
+            place.is_file() || (place.is_dir() && !place.join("tombstone.json").exists())
+        }
+        fn companions(&self, _: &Path, _: &Item) -> Result<Vec<String>, String> {
+            Ok(if self.companion {
+                vec!["config/private-note.json".into()]
+            } else {
+                Vec::new()
+            })
         }
         fn references(
             &self,
@@ -1549,6 +1566,41 @@ mod tests {
     }
 
     const SEGMENT: &str = "chronicle/20261108/phone/070000_300";
+
+    #[test]
+    fn companion_paths_survive_an_interrupted_detach_and_recovery() {
+        let (_dir, root) = journal();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(root.join("config/private-note.json"), b"private text").unwrap();
+        let kind = Fake {
+            companion: true,
+            ..Fake::default()
+        };
+        kind.fail_references.set(true);
+        assert!(matches!(
+            detach(
+                &root,
+                &kind,
+                unit(),
+                Action::SegmentDelete,
+                web(),
+                vec![SEGMENT.into()]
+            ),
+            Err(TrashError::Unfinished(_))
+        ));
+        let item = all_items(&root).unwrap().remove(0);
+        assert_eq!(item.state, State::Detaching);
+        assert!(item.paths.contains(&"config/private-note.json".into()));
+        assert!(!root.join("config/private-note.json").exists());
+        kind.fail_references.set(false);
+        let swept = sweep(&root, &[&kind], Utc::now());
+        assert_eq!(swept.resumed, 1);
+        attach(&root, &[&kind], &item.id, Action::Recover, web()).unwrap();
+        assert_eq!(
+            fs::read(root.join("config/private-note.json")).unwrap(),
+            b"private text"
+        );
+    }
 
     fn journal() -> (tempfile_dir::Dir, PathBuf) {
         let dir = tempfile_dir::Dir::new();

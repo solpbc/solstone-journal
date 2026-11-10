@@ -391,7 +391,7 @@ fn split_filenames_propose_one_name_and_the_typed_name_is_stored() {
 }
 
 #[test]
-fn a_trashed_note_stays_out_and_says_so() {
+fn a_deleted_note_is_new_beside_a_live_note_in_a_later_export() {
     let root = journal();
     let path = write_export(
         root.path(),
@@ -432,19 +432,9 @@ fn a_trashed_note_stays_out_and_says_so() {
         )),
     );
     let next = plan_at(root.path(), &again, "Inbox");
+    assert_eq!(next.entries, 2);
     assert!(
-        next.summary.contains(copy::IN_THE_TRASH),
-        "{}",
-        next.summary
-    );
-    assert!(
-        next.summary.contains("brought in 1 notes"),
-        "{}",
-        next.summary
-    );
-    assert!(
-        !next
-            .files
+        next.files
             .iter()
             .any(|file| file.contents.contains("a later sentence"))
     );
@@ -456,7 +446,7 @@ fn a_trashed_note_stays_out_and_says_so() {
     assert!(
         next.updates
             .iter()
-            .all(|note| note.original_title != "River")
+            .any(|note| note.original_title == "River")
     );
 }
 

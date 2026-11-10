@@ -654,6 +654,10 @@ impl Kind for Imports<'_> {
         matches!(unit, Unit::Import { .. })
     }
 
+    fn companions(&self, journal: &Path, item: &Item) -> Result<Vec<String>, String> {
+        solstone_core_retention::recording_trash::evernote_companions(journal, &item.paths)
+    }
+
     fn hold<'h>(&'h self, journal: &Path, item: &Item) -> Result<Box<dyn Hold + 'h>, String> {
         let id = import_id_of(item).ok_or_else(|| "this isn't an import".to_owned())?;
         let returning = (item.state != solstone_core_trash::State::Detaching)

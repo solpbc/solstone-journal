@@ -15,7 +15,7 @@ pub use parse::{
     proposed_notebook, read_export,
 };
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -263,7 +263,6 @@ enum Step {
         index: usize,
         time: Option<DateTime<Utc>>,
     },
-    Trash,
     Edit {
         index: usize,
         body: String,
@@ -293,11 +292,34 @@ where
     Z: TimeZone,
     Z::Offset: std::fmt::Display,
 {
-    let mut working = stored.to_vec();
+    let mut working = Vec::new();
+    for note in stored {
+        if segment_live(journal, &note.day, &note.segment)? {
+            working.push(note.clone());
+        }
+    }
+    // Re-import and recovery can leave both the plain key and its title key
+    // for one note. Compare against the newest record, while keeping their
+    // mutable state together. Hash-disambiguated notes remain distinct.
+    let mut canonical = HashMap::<_, usize>::new();
+    for (index, note) in working.iter().enumerate() {
+        let prior = canonical.entry(comparison_identity(note)).or_insert(index);
+        if (&note.time, note_id(note)) > (&working[*prior].time, note_id(&working[*prior])) {
+            *prior = index;
+        }
+    }
+    let aliases: Vec<_> = working
+        .iter()
+        .enumerate()
+        .filter_map(|(index, note)| {
+            let prior = canonical[&comparison_identity(note)];
+            (index != prior).then_some((index, prior))
+        })
+        .collect();
+    let alias_indexes: HashSet<_> = aliases.iter().map(|(index, _)| *index).collect();
     let mut steps = Vec::with_capacity(notes.len());
     let mut undated = 0_u64;
     let mut future = 0_u64;
-    let mut trash = false;
     let mut matched = 0_u64;
 
     for note in notes {
@@ -320,7 +342,10 @@ where
         let second = stamp(&identity);
         let title = heading_title(&note.title);
         let rendered = normalize(&note.rendered);
-        let candidates = indexes_for(&working, &second);
+        let candidates: Vec<usize> = indexes_for(&working, &second)
+            .into_iter()
+            .filter(|index| !alias_indexes.contains(index))
+            .collect();
         let content_hits: Vec<usize> = candidates
             .iter()
             .copied()
@@ -340,11 +365,6 @@ where
         };
         if let Some(index) = matched_index {
             matched += 1;
-            if !segment_live(journal, &working[index].day, &working[index].segment)? {
-                trash = true;
-                steps.push(Step::Trash);
-                continue;
-            }
             let stored_time = parse_stamp(&working[index].time).unwrap_or(memory);
             let differs = normalize(&working[index].rendered) != rendered;
             if !differs {
@@ -509,11 +529,7 @@ where
                 });
                 new_count += 1;
             }
-            Step::Undated
-            | Step::Future
-            | Step::Older
-            | Step::Trash
-            | Step::Unchanged { time: None, .. } => {}
+            Step::Undated | Step::Future | Step::Older | Step::Unchanged { time: None, .. } => {}
         }
     }
 
@@ -526,6 +542,16 @@ where
         }
     }
 
+    for (alias, canonical) in aliases {
+        let current = working[canonical].clone();
+        let duplicate = &mut working[alias];
+        duplicate.last_title = current.last_title;
+        duplicate.content_hash = current.content_hash;
+        duplicate.rendered = current.rendered;
+        duplicate.time = current.time;
+        duplicate.day = current.day;
+        duplicate.segment = current.segment;
+    }
     let files = compose(journal, &writes)?;
     let summary = finish_lines(FinishCounts {
         new_count,
@@ -534,7 +560,6 @@ where
         future,
         undated,
         ended_early,
-        trash,
         matched,
     });
     let updates = changed_notes(stored, &working);
@@ -569,11 +594,11 @@ fn compose(journal: &Path, writes: &[Write]) -> Result<Vec<PlannedFile>, String>
     let mut files = Vec::new();
     for key in order {
         let entries = groups.remove(&key).unwrap_or_default();
-        if !segment_live(journal, &key.0, &key.1)? && segment_dir(journal, &key.0, &key.1).is_dir()
-        {
-            continue;
-        }
-        let prior = transcript_text(journal, &key.0, &key.1);
+        let prior = if segment_live(journal, &key.0, &key.1)? {
+            transcript_text(journal, &key.0, &key.1)
+        } else {
+            None
+        };
         let contents = match prior {
             Some(mut body) if !body.is_empty() => {
                 for entry in &entries {
@@ -604,7 +629,6 @@ struct FinishCounts {
     future: u64,
     undated: u64,
     ended_early: bool,
-    trash: bool,
     matched: u64,
 }
 
@@ -616,7 +640,6 @@ fn finish_lines(counts: FinishCounts) -> String {
         future,
         undated,
         ended_early,
-        trash,
         matched,
     } = counts;
     let mut lines = Vec::new();
@@ -639,10 +662,7 @@ fn finish_lines(counts: FinishCounts) -> String {
     if ended_early {
         lines.push(copy::ended_early(new_count));
     }
-    if trash {
-        lines.push(copy::IN_THE_TRASH.to_owned());
-    }
-    if new_count == 0 && changed == 0 && matched > 0 && !trash {
+    if new_count == 0 && changed == 0 && matched > 0 {
         lines.push(copy::ALREADY_IN_JOURNAL.to_owned());
     }
     lines.join("\n")
@@ -655,6 +675,16 @@ fn indexes_for(notes: &[StoredNote], second: &str) -> Vec<usize> {
         .filter(|(_, note)| note.identity_second == second)
         .map(|(index, _)| index)
         .collect()
+}
+
+fn comparison_identity(note: &StoredNote) -> (String, String, Option<String>) {
+    (
+        note.identity_second.clone(),
+        note.original_title.clone(),
+        note.disambiguator
+            .clone()
+            .filter(|key| key != &note.original_title),
+    )
 }
 
 fn title_matches(note: &StoredNote, title: &str) -> bool {
