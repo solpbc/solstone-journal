@@ -743,7 +743,12 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
                 rendered(embedded_body_refused())
             } else {
                 rendered(if options.dry_run {
-                    crate::body_commands::preview_apple(options.json)
+                    crate::body_commands::preview_apple(
+                        media,
+                        journal_path,
+                        &import_facet(&options),
+                        options.json,
+                    )
                 } else {
                     crate::body_commands::save_apple(media, &body_command(&options), journal_path)
                 })

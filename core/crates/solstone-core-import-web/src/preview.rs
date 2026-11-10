@@ -259,7 +259,7 @@ fn size_from_preview(run: CliRun) -> Result<Value, PreviewError> {
     let size: Value = serde_json::from_str(&run.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
-    refuse_what_the_page_cant_start(&size)?;
+    refuse_what_the_page_cant_start(&size, false)?;
     require_size_preview(size)
 }
 
@@ -288,13 +288,26 @@ fn checked_input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
 }
 
 /// What the page can't start says so here: a queued run's own words don't reach
-/// the page, only that it failed.
-fn refuse_what_the_page_cant_start(size: &Value) -> Result<(), PreviewError> {
-    match size.get("page_refusal").and_then(Value::as_str) {
-        Some(words) => Err(PreviewError::Refused(words.to_owned())),
-        None => Ok(()),
+/// the page, only that it failed. An export the importer refuses is refused on
+/// every page. A save that needs the owner's go-ahead is refused unless the
+/// Apple Health card asked, because only the card carries that go-ahead.
+fn refuse_what_the_page_cant_start(size: &Value, from_card: bool) -> Result<(), PreviewError> {
+    if let Some(words) = size.get("page_refusal").and_then(Value::as_str) {
+        return Err(PreviewError::Refused(words.to_owned()));
+    }
+    match size.get("go_ahead").and_then(Value::as_str) {
+        Some(words) if !from_card => Err(PreviewError::Refused(words.to_owned())),
+        _ => Ok(()),
     }
 }
+
+/// Whether a staged import was previewed from the Apple Health card.
+pub(crate) fn from_body_card(metadata: &ImportMetadata) -> bool {
+    metadata.get(BODY_CARD).and_then(Value::as_bool) == Some(true)
+}
+
+/// Set on an import the Apple Health card staged.
+pub(crate) const BODY_CARD: &str = "body_card";
 
 fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
     if let Some(size) = crate::audio_archive::size(&size) {
@@ -663,7 +676,7 @@ async fn plan_using(
     let size: Value = serde_json::from_slice(&output.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
-    refuse_what_the_page_cant_start(&size)?;
+    refuse_what_the_page_cant_start(&size, from_body_card(metadata))?;
     require_size_preview(size)
 }
 
@@ -1079,6 +1092,30 @@ mod tests {
         let body = preview_error_body("import_preview_failed", &error);
         assert_eq!(body["error"], WORDS, "{body}");
     }
+    #[test]
+    fn only_the_apple_card_can_start_a_save_that_needs_the_go_ahead() {
+        let needs = json!({"schema": "solstone.import.size.v1", "source": "apple_health",
+            "other_units": ["Apple Health records", 1], "go_ahead": "needs your go-ahead"});
+        let Err(PreviewError::Refused(words)) = refuse_what_the_page_cant_start(&needs, false)
+        else {
+            panic!("another page started a save that needs the go-ahead");
+        };
+        assert_eq!(words, "needs your go-ahead");
+        assert!(refuse_what_the_page_cant_start(&needs, true).is_ok());
+        // An export the importer refuses is refused on the card too.
+        let refused = json!({"source": "apple_health", "page_refusal": "looks incomplete",
+            "go_ahead": "needs your go-ahead"});
+        let Err(PreviewError::Refused(words)) = refuse_what_the_page_cant_start(&refused, true)
+        else {
+            panic!("the card started a refused export");
+        };
+        assert_eq!(words, "looks incomplete");
+        let mut card = ImportMetadata::new();
+        assert!(!from_body_card(&card));
+        card.insert(BODY_CARD.to_owned(), json!(true));
+        assert!(from_body_card(&card));
+    }
+
     const ID: &str = "20261011_120000";
     fn fixture() -> (tempfile::TempDir, Value) {
         let root = tempfile::tempdir().unwrap();

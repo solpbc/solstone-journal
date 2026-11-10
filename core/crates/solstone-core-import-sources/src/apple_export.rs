@@ -51,7 +51,7 @@ pub fn detect_apple_source(source: &Path) -> Result<bool, BodyIngestError> {
             match open_descendant_file(source, candidate) {
                 Ok(_) => return Ok(true),
                 Err(error) if missing_or_not_directory(&error) => {}
-                Err(_) => return Err(source_error("source_symlink")),
+                Err(error) => return Err(open_failure(&error, "source_symlink")),
             }
         }
         return Ok(false);
@@ -66,7 +66,7 @@ pub fn detect_apple_source(source: &Path) -> Result<bool, BodyIngestError> {
     if !has_zip_extension {
         return Ok(false);
     }
-    let mut file = open_nofollow(source).map_err(|_| source_error("archive"))?;
+    let mut file = open_nofollow(source).map_err(|error| open_failure(&error, "archive"))?;
     preflight_zip(&mut file)?;
     let archive = zip::ZipArchive::new(file).map_err(|_| source_error("archive"))?;
     let (_archive, names) =
@@ -121,6 +121,33 @@ pub fn scan_apple_export(
     with_export_within(source, &export, MAX_APPLE_SCAN_BYTES, |reader| {
         scan_elements(reader, MAX_APPLE_SCAN_CHILDREN, visit)
     })
+}
+
+/// How many bytes the export's `export.xml` holds uncompressed, from the folder or
+/// the zip's own directory. Nothing is unpacked or read past that directory.
+pub fn apple_export_bytes(source: &Path) -> Result<u64, BodyIngestError> {
+    let export = find_export_within(source, MAX_APPLE_SCAN_BYTES)?;
+    if fs::symlink_metadata(source).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+        let file = open_descendant_file(source, &export)
+            .map_err(|error| open_failure(&error, "export_xml"))?;
+        return file
+            .metadata()
+            .map(|metadata| metadata.len())
+            .map_err(|_| source_error("export_xml"));
+    }
+    let mut file = open_nofollow(source).map_err(|error| open_failure(&error, "archive"))?;
+    preflight_zip_within(&mut file, MAX_APPLE_SCAN_BYTES.max(MAX_APPLE_SOURCE_BYTES))?;
+    let archive = zip::ZipArchive::new(file).map_err(|_| source_error("archive"))?;
+    let (mut archive, names) =
+        crate::zip_names::prove_open_zip(archive).map_err(|_| source_error("archive"))?;
+    let index = names
+        .iter()
+        .position(|name| *name == export)
+        .ok_or_else(|| source_error("export_xml"))?;
+    let entry = archive
+        .by_index(index)
+        .map_err(|_| source_error("archive"))?;
+    Ok(entry.size())
 }
 
 /// Which file of a folder source holds the export, within the scan path's bounds. A
@@ -361,7 +388,7 @@ fn find_export_within(source: &Path, source_limit: u64) -> Result<String, BodyIn
             match open_descendant_file(source, candidate) {
                 Ok(_) => return Ok(candidate.to_owned()),
                 Err(error) if missing_or_not_directory(&error) => {}
-                Err(_) => return Err(source_error("source_symlink")),
+                Err(error) => return Err(open_failure(&error, "source_symlink")),
             }
         }
         return Err(source_error("export_xml"));
@@ -371,7 +398,7 @@ fn find_export_within(source: &Path, source_limit: u64) -> Result<String, BodyIn
         .and_then(|value| value.to_str())
         .is_some_and(|value| value.eq_ignore_ascii_case("zip"))
     {
-        let mut file = open_nofollow(source).map_err(|_| source_error("archive"))?;
+        let mut file = open_nofollow(source).map_err(|error| open_failure(&error, "archive"))?;
         preflight_zip_within(&mut file, source_limit)?;
         let archive = zip::ZipArchive::new(file).map_err(|_| source_error("archive"))?;
         let (_archive, names) =
@@ -409,14 +436,15 @@ fn with_export_within<T>(
     operation: impl FnOnce(&mut dyn BufRead) -> Result<T, BodyIngestError>,
 ) -> Result<T, BodyIngestError> {
     if fs::symlink_metadata(source).is_ok_and(|metadata| metadata.file_type().is_dir()) {
-        let file = open_descendant_file(source, export).map_err(|_| source_error("export_xml"))?;
+        let file = open_descendant_file(source, export)
+            .map_err(|error| open_failure(&error, "export_xml"))?;
         let metadata = file.metadata().map_err(|_| source_error("export_xml"))?;
         if !metadata.file_type().is_file() || metadata.len() > limit {
             return Err(source_error("export_size_limit"));
         }
         return with_capped_reader(file, limit, operation);
     }
-    let mut file = open_nofollow(source).map_err(|_| source_error("archive"))?;
+    let mut file = open_nofollow(source).map_err(|error| open_failure(&error, "archive"))?;
     preflight_zip_within(&mut file, limit.max(MAX_APPLE_SOURCE_BYTES))?;
     let archive = zip::ZipArchive::new(file).map_err(|_| source_error("archive"))?;
     let (mut archive, names) =
@@ -621,6 +649,16 @@ fn read_u32(bytes: &[u8]) -> Option<u32> {
 
 fn read_u64(bytes: &[u8]) -> Option<u64> {
     Some(u64::from_le_bytes(bytes.try_into().ok()?))
+}
+
+/// An export the journal isn't allowed to open is said as that, not as the
+/// shape of what was opened.
+fn open_failure(error: &std::io::Error, otherwise: &'static str) -> BodyIngestError {
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        source_error("permission")
+    } else {
+        source_error(otherwise)
+    }
 }
 
 fn source_error(stage: &'static str) -> BodyIngestError {
@@ -942,5 +980,47 @@ mod tests {
             .unwrap_err();
         assert_eq!(export.stage(), "archive");
         assert_ne!(export.stage(), "export_xml");
+    }
+
+    #[test]
+    fn an_exports_size_is_read_from_the_zips_directory_without_unpacking() {
+        use zip::write::SimpleFileOptions;
+        let directory = TestDir::new();
+        let path = directory.0.join("export.zip");
+        let body = format!("<HealthData>{}</HealthData>", "x".repeat(10_000));
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        writer
+            .start_file(
+                "apple_health_export/export.xml",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+            )
+            .unwrap();
+        writer.write_all(body.as_bytes()).unwrap();
+        writer.finish().unwrap();
+        assert!(fs::metadata(&path).unwrap().len() < body.len() as u64);
+        assert_eq!(apple_export_bytes(&path).unwrap(), body.len() as u64);
+        let folder = TestDir::new();
+        fs::write(folder.0.join("export.xml"), &body).unwrap();
+        assert_eq!(apple_export_bytes(&folder.0).unwrap(), body.len() as u64);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_export_the_journal_cant_open_says_so_not_what_shape_it_is() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let directory = TestDir::new();
+        let zip = directory.0.join("export.zip");
+        fs::write(&zip, b"PK").unwrap();
+        fs::set_permissions(&zip, fs::Permissions::from_mode(0o000)).unwrap();
+        if File::open(&zip).is_ok() {
+            // Running as a user who can read anything, so nothing to show.
+            return;
+        }
+        assert_eq!(scan_apple_export(&zip, &mut |_| {}).unwrap_err().stage(), "permission");
+        let folder = directory.0.join("folder");
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("export.xml"), b"<HealthData/>").unwrap();
+        fs::set_permissions(folder.join("export.xml"), fs::Permissions::from_mode(0o000)).unwrap();
+        assert_eq!(detect_apple_source(&folder).unwrap_err().stage(), "permission");
     }
 }

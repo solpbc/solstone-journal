@@ -10,6 +10,7 @@ pub mod apple_export;
 pub mod apple_health;
 pub mod apple_health_run;
 pub mod archive;
+pub mod body_status;
 pub mod body_stream;
 pub mod chatgpt;
 pub mod claude;

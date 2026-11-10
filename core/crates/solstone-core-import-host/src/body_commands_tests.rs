@@ -64,23 +64,111 @@ fn apple_refuses_dates_and_force_before_any_write() {
     assert!(!journal.path().join("imports").exists());
 }
 
-#[test]
-fn a_preview_names_what_would_be_read_and_keeps_the_source() {
-    let run = preview_apple(true);
-    assert_eq!(run.exit_code, 0);
-    assert!(
-        run.stdout.contains("\"source\":\"apple_health\""),
-        "{}",
-        run.stdout
-    );
-    assert!(preview_apple(false).stdout.contains("workouts"));
+const SRC: &str = r#"sourceName="Watch" sourceVersion="11""#;
+
+fn export_with(records: &[String]) -> tempfile::TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("export.xml"),
+        format!("<HealthData>{}</HealthData>", records.join("")),
+    )
+    .unwrap();
+    directory
+}
+
+fn stage(start: &str, end: &str) -> String {
+    format!(
+        r#"<Record type="HKCategoryTypeIdentifierSleepAnalysis" {SRC} startDate="{start}" endDate="{end}" value="HKCategoryValueSleepAnalysisAsleepCore"/>"#
+    )
+}
+
+fn small_export() -> tempfile::TempDir {
+    export_with(&[
+        format!(
+            r#"<Workout workoutActivityType="HKWorkoutActivityTypeRunning" {SRC} startDate="2026-10-10 06:31:00 -0600" endDate="2026-10-10 07:20:00 -0600"/>"#
+        ),
+        format!(
+            r#"<Record type="HKQuantityTypeIdentifierHeartRate" {SRC} unit="count/min" startDate="2026-10-09 06:40:00 -0600" endDate="2026-10-09 06:40:00 -0600" value="70"/>"#
+        ),
+        format!(
+            r#"<Record type="HKQuantityTypeIdentifierStepCount" {SRC} unit="count" startDate="2026-10-11 06:00:00 -0600" endDate="2026-10-11 07:00:00 -0600" value="900"/>"#
+        ),
+        format!(
+            r#"<Record type="HKQuantityTypeIdentifierActiveEnergyBurned" {SRC} unit="kcal" startDate="2026-10-11 06:00:00 -0600" endDate="2026-10-11 07:00:00 -0600" value="9"/>"#
+        ),
+        // Two stages 20 minutes apart are one night; one more two hours on is another.
+        stage("2026-10-09 23:00:00 -0600", "2026-10-10 01:00:00 -0600"),
+        stage("2026-10-10 01:20:00 -0600", "2026-10-10 03:00:00 -0600"),
+        stage("2026-10-10 05:00:00 -0600", "2026-10-10 06:00:00 -0600"),
+    ])
 }
 
 #[test]
-fn a_preview_carries_the_words_the_page_shows() {
-    let run = preview_apple(true);
-    let preview: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
-    assert_eq!(preview["page_refusal"], apple_confirm_words().trim_end());
+fn a_preview_counts_what_an_export_holds_and_writes_nothing() {
+    let journal = tempfile::tempdir().unwrap();
+    let export = small_export();
+    let media = export.path().to_str().unwrap();
+    let run = preview_apple(media, journal.path(), &ImportFacet::Unattended, true);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let size: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(size["schema"], "solstone.import.size.v1");
+    assert_eq!(size["source"], "apple_health");
+    let held = &size["apple_health"];
+    assert_eq!(held["span"], serde_json::json!(["2026-10-09", "2026-10-11"]));
+    assert_eq!(held["workouts"], 1);
+    assert_eq!(held["nights"], 2);
+    assert_eq!(held["readings"], 1);
+    assert_eq!(held["daily_totals"], 1);
+    assert_eq!(held["not_read"]["HKQuantityTypeIdentifierActiveEnergyBurned"], 1);
+    assert_eq!(
+        held["export_bytes"],
+        std::fs::metadata(export.path().join("export.xml")).unwrap().len()
+    );
+    // The page refuses an empty preview, so what's read is its unit.
+    assert_eq!(size["other_units"], serde_json::json!(["Apple Health records", 5]));
+    assert_eq!(size["go_ahead"], apple_confirm_words().trim_end());
+    assert!(size.get("page_refusal").is_none(), "{size}");
+    assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
+    assert!(
+        preview_apple(media, journal.path(), &ImportFacet::Unattended, false)
+            .stdout
+            .contains("1 workouts, 2 nights put together from sleep stages")
+    );
+}
+
+#[test]
+fn a_preview_of_a_cut_export_answers_in_words_the_page_shows() {
+    let journal = tempfile::tempdir().unwrap();
+    let export = tempfile::tempdir().unwrap();
+    std::fs::write(
+        export.path().join("export.xml"),
+        format!(
+            r#"<HealthData><Record type="HKQuantityTypeIdentifierHeartRate" {SRC} unit="count/min" startDate="2026-10-09 06:40:00 -0600" endDate="2026-10-09 06:40:00 -0600" value="70"/>"#
+        ),
+    )
+    .unwrap();
+    let media = export.path().to_str().unwrap();
+    let run = preview_apple(media, journal.path(), &ImportFacet::Unattended, true);
+    assert_eq!(run.exit_code, 0, "{}", run.stderr);
+    let size: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(size["refusal"], "export_incomplete");
+    assert_eq!(
+        size["page_refusal"],
+        solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT
+    );
+    let words = preview_apple(media, journal.path(), &ImportFacet::Unattended, false);
+    assert_eq!(words.exit_code, 1);
+    assert!(!words.stderr.contains("body-ingest"), "{}", words.stderr);
+}
+
+#[test]
+fn a_preview_with_a_facet_says_how_many_a_yes_could_move_at_most() {
+    let journal = tempfile::tempdir().unwrap();
+    let export = small_export();
+    let media = export.path().to_str().unwrap();
+    let none = preview_apple(media, journal.path(), &ImportFacet::Facet("body".to_owned()), true);
+    let size: serde_json::Value = serde_json::from_str(&none.stdout).unwrap();
+    assert!(size.get("listed_moves").is_none(), "{size}");
 }
 
 #[test]

@@ -86,25 +86,87 @@ pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path)
     }
 }
 
-/// What an Apple export would bring: nothing is read beyond telling it's one.
-pub(crate) fn preview_apple(json_output: bool) -> CliRun {
+/// What an Apple export holds, counted in one pass that stages and writes
+/// nothing. With a facet named, it also says how many records already listed
+/// elsewhere a run could move: an upper bound, because what an export touches
+/// isn't known until it's read in full. A refused export answers in words with
+/// `--json` (exit 0), so the page shows them and can't start it.
+pub(crate) fn preview_apple(
+    media: &str,
+    journal: &Path,
+    facet: &ImportFacet,
+    json_output: bool,
+) -> CliRun {
+    let preview = match solstone_core_import_sources::apple_health::preview_export(Path::new(media)) {
+        Ok(preview) => preview,
+        Err(error) => {
+            let code = solstone_core_import_sources::body_status::code_for_source_stage(error.stage());
+            let words = solstone_core_import_sources::body_status::words(code);
+            return if json_output {
+                success(format!(
+                    "{}\n",
+                    json!({
+                        "schema": "solstone.import.size.v1",
+                        "source": "apple_health",
+                        "mode": "preview",
+                        "refusal": code,
+                        "page_refusal": words,
+                    })
+                ))
+            } else {
+                failure("", &format!("{words}\n"), 1)
+            };
+        }
+    };
+    let listed = match facet {
+        ImportFacet::Facet(name) => {
+            let (count, from) =
+                crate::body_activity::listed_elsewhere(journal, APPLE.records().stream, name);
+            (count > 0).then(|| (count, from.into_iter().collect::<Vec<_>>()))
+        }
+        _ => None,
+    };
     if json_output {
-        return success(format!(
-            "{}\n",
-            json!({
-                "schema": "solstone.body.import.preview.v2",
-                "source": "apple_health",
-                "mode": "preview",
-                "reads": APPLE_READS,
-                "page_refusal": apple_confirm_words().trim_end(),
-            })
-        ));
+        let mut size = json!({
+            "schema": "solstone.import.size.v1",
+            "source": "apple_health",
+            "mode": "preview",
+            "recordings": 0,
+            "days": 0,
+            "skipped": 0,
+            "other_units": ["Apple Health records", preview.read()],
+            "apple_health": preview,
+            "reads": APPLE_READS,
+            "go_ahead": apple_confirm_words().trim_end(),
+        });
+        if let Some((count, from)) = listed {
+            size["listed_moves"] = json!({"count": count, "from": from, "upper_bound": true});
+        }
+        return success(format!("{size}\n"));
     }
-    success(format!(
+    let mut text = format!(
         "this looks like an Apple Health export. saving it reads {}, and {}.\n",
         APPLE_READS[..APPLE_READS.len() - 1].join(", "),
         APPLE_READS[APPLE_READS.len() - 1]
-    ))
+    );
+    if let Some((first, last)) = &preview.span {
+        text.push_str(&format!(
+            "it runs from {first} to {last}: {} workouts, {} nights put together from sleep stages, {} mindful sessions, {} readings, {} daily totals and {} logged entries.\n",
+            preview.workouts,
+            preview.nights,
+            preview.mindful_sessions,
+            preview.readings,
+            preview.daily_totals,
+            preview.logged
+        ));
+    }
+    if let Some((count, _)) = listed {
+        text.push_str(&format!(
+            "a yes can move up to {count} {} already listed under another facet.\n",
+            if count == 1 { "record" } else { "records" }
+        ));
+    }
+    success(text)
 }
 
 const APPLE_READS: &[&str] = &[
