@@ -159,12 +159,8 @@
   }
 
   function pushApiErrorToConsole(apiError, url, fetchOptions) {
-    const diagnosticConsole = window.convey?.diagnosticConsole;
-    if (!diagnosticConsole || typeof diagnosticConsole.push !== 'function') {
-      return;
-    }
     const method = String(fetchOptions?.method || 'GET').toUpperCase();
-    diagnosticConsole.push({
+    const entry = {
       severity: 'error',
       source: 'api',
       // Owner language on the owner's instrument; the method, status, url,
@@ -183,7 +179,16 @@
           rawDetail: apiError.rawDetail
         }
       }
-    });
+    };
+    if (typeof window.convey?.keepDiagnostic === 'function') {
+      window.convey.keepDiagnostic(entry);
+      return;
+    }
+    const diagnosticConsole = window.convey?.diagnosticConsole;
+    if (!diagnosticConsole || typeof diagnosticConsole.push !== 'function') {
+      return;
+    }
+    diagnosticConsole.push(entry);
   }
 
   function getExistingControlError(el, errorHost) {

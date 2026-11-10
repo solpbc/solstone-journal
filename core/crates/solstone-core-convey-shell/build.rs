@@ -236,7 +236,11 @@ fn main() {
         generated.push_str(&format!("    ({SHELL_STYLE_BUNDLE:?}, {:?}),\n", tag.path));
     }
     for tag in &shell_tags.scripts {
-        generated.push_str(&format!("    ({SHELL_SCRIPT_BUNDLE:?}, {:?}),\n", tag.path));
+        generated.push_str(&format!(
+            "    ({:?}, {:?}),\n",
+            script_bundle_of(tag),
+            tag.path
+        ));
     }
     generated.push_str("];\n");
 
@@ -260,9 +264,10 @@ fn main() {
         .expect("generated embedded asset source writes");
 }
 
-/// Concatenate the shell page's stylesheets and scripts into one file each
-/// (and the script bundle's source map), add them to the shell's assets, and
-/// return the page's tags so the served page can name the bundles instead.
+/// Concatenate the shell page's stylesheets into one file and its scripts into
+/// a boot file and a rest file (and each script file's source map), add them
+/// to the shell's assets, and return the page's tags so the served page can
+/// name the bundles instead.
 fn shell_bundles(
     static_root: &Path,
     page_path: &Path,
@@ -283,31 +288,51 @@ fn shell_bundles(
     };
     let styles: Vec<_> = tags.styles.iter().map(read).collect();
     let scripts: Vec<_> = tags.scripts.iter().map(read).collect();
+    // Each bundle checks its own files. A name declared in both is still one
+    // global, so the page is checked whole before the split.
+    refuse_shared_top_level_names(&scripts)
+        .unwrap_or_else(|error| panic!("the shell's scripts can't be bundled: {error}"));
+    let (boot, rest): (Vec<_>, Vec<_>) = scripts
+        .into_iter()
+        .partition(|(tag, _)| script_bundle_of(tag) == SHELL_SCRIPT_BUNDLE);
+    if boot.is_empty() || rest.is_empty() {
+        panic!("the shell page needs scripts in both the boot file and the rest file");
+    }
 
     let registry = serde_json::to_string(&registry::shell_registry()).expect("registry serializes");
     let registry = format!("globalThis.SOL_SHELL_REGISTRY = {registry};\n");
 
     let map_name = SHELL_SCRIPT_MAP.rsplit('/').next().expect("map file name");
+    let rest_map_name = SHELL_REST_MAP.rsplit('/').next().expect("rest map file name");
     let script_name = SHELL_SCRIPT_BUNDLE
         .rsplit('/')
         .next()
         .expect("script file name");
+    let rest_name = SHELL_REST_BUNDLE
+        .rsplit('/')
+        .next()
+        .expect("rest script file name");
     let style_name = SHELL_STYLE_BUNDLE
         .rsplit('/')
         .next()
         .expect("style file name");
-    let script = script_bundle(&scripts, &registry, map_name)
-        .unwrap_or_else(|error| panic!("the shell's scripts can't be bundled: {error}"));
+    let script = script_bundle(&boot, &registry, map_name)
+        .unwrap_or_else(|error| panic!("the shell's boot scripts can't be bundled: {error}"));
+    let rest_script = script_bundle(&rest, "", rest_map_name)
+        .unwrap_or_else(|error| panic!("the shell's rest scripts can't be bundled: {error}"));
     let style = style_bundle(&styles)
         .unwrap_or_else(|error| panic!("the shell's stylesheets can't be bundled: {error}"));
-    let map = line_source_map(&script, &scripts, script_name);
+    let map = line_source_map(&script, &boot, script_name);
+    let rest_map = line_source_map(&rest_script, &rest, rest_name);
 
     let directory = output.join("shell-bundle");
     fs::create_dir_all(&directory).expect("bundle directory");
     for (route, name, text) in [
         (SHELL_SCRIPT_BUNDLE, script_name, &script.text),
+        (SHELL_REST_BUNDLE, rest_name, &rest_script.text),
         (SHELL_STYLE_BUNDLE, style_name, &style.text),
         (SHELL_SCRIPT_MAP, map_name, &map),
+        (SHELL_REST_MAP, rest_map_name, &rest_map),
     ] {
         let path = directory.join(name);
         // Rewrite only on change, so an unchanged bundle keeps its timestamp.
@@ -324,12 +349,15 @@ fn shell_bundles(
 }
 
 /// The edits that make the served shell page load the bundles: the first
-/// stylesheet and first script become the bundles, the rest go.
+/// stylesheet becomes the style bundle, the first boot script becomes the
+/// boot bundle, and the first rest script becomes a placeholder whose
+/// address the boot script fetches after the first view is ready.
 fn bundle_edits(
     page: &str,
     tags: &ShellPageTags,
     css: &str,
-    js: &str,
+    boot_js: &str,
+    rest_js: &str,
 ) -> Vec<(usize, usize, String)> {
     let indent = |tag: &BundledTag| -> String {
         page[tag.start..tag.end]
@@ -357,15 +385,29 @@ fn bundle_edits(
         };
         edits.push((tag.start, tag.end, text));
     }
-    for (index, tag) in tags.scripts.iter().enumerate() {
-        let text = if index == 0 {
+    let mut boot_placed = false;
+    let mut rest_placed = false;
+    for tag in &tags.scripts {
+        let text = if script_bundle_of(tag) == SHELL_REST_BUNDLE {
+            if rest_placed {
+                String::new()
+            } else {
+                rest_placed = true;
+                format!(
+                    "{}<script data-shell-part=\"rest\" data-src=\"{rest_js}\"></script>{}",
+                    indent(tag),
+                    newline(tag)
+                )
+            }
+        } else if boot_placed {
+            String::new()
+        } else {
+            boot_placed = true;
             format!(
-                "{}<script src=\"{js}\" defer></script>{}",
+                "{}<script src=\"{boot_js}\" defer data-shell-part=\"boot\"></script>{}",
                 indent(tag),
                 newline(tag)
             )
-        } else {
-            String::new()
         };
         edits.push((tag.start, tag.end, text));
     }
@@ -668,7 +710,8 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
                 let page = std::str::from_utf8(&record.bytes).expect("shell page is UTF-8");
                 let css = hashed_of(SHELL_STYLE_BUNDLE, hashes);
                 let js = hashed_of(SHELL_SCRIPT_BUNDLE, hashes);
-                let replaced = bundle_edits(page, shell_tags, &css, &js);
+                let rest = hashed_of(SHELL_REST_BUNDLE, hashes);
+                let replaced = bundle_edits(page, shell_tags, &css, &js, &rest);
                 edits.retain(|(start, end, _)| {
                     !replaced
                         .iter()

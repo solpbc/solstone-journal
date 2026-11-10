@@ -126,8 +126,8 @@
     return coerce(error);
   }
 
-  // The shell's scripts are served as one file. A position in it is named by
-  // the file it came from, so the diagnostic console names that file and line.
+  // The shell's scripts are served as two files. A position in either is named
+  // by the file it came from, so the diagnostic console names that file and line.
   function authoredStack(stack) {
     const shell = window.__solShell;
     return shell && typeof shell.stack === 'function' ? shell.stack(stack) : stack;
@@ -317,6 +317,29 @@
     recordError(error, context);
   };
 
+  // The diagnostic console loads after the first view. An error that lands
+  // before then is kept and handed over when the console arrives.
+  window.convey = window.convey || {};
+  window.convey.keepDiagnostic = function (entry) {
+    const api = window.convey.diagnosticConsole;
+    if (api && typeof api.push === 'function') {
+      api.push(entry);
+      return;
+    }
+    if (!Array.isArray(window.convey.pendingDiagnostics)) {
+      window.convey.pendingDiagnostics = [];
+    }
+    window.convey.pendingDiagnostics.push(entry);
+  };
+  window.convey.deliverPendingDiagnostics = function (api) {
+    const queued = window.convey.pendingDiagnostics;
+    if (!api || typeof api.push !== 'function' || !Array.isArray(queued) || !queued.length) {
+      return;
+    }
+    window.convey.pendingDiagnostics = [];
+    queued.forEach((entry) => api.push(entry));
+  };
+
   function recordError(error, context) {
     markError();
     if (window.console && typeof window.console.error === 'function') {
@@ -325,29 +348,26 @@
     const safe = safeContext(context);
     const message = messageFromError(error);
     const path = window.solPathContext?.() || {};
-    const diagnosticConsole = window.convey?.diagnosticConsole;
-    if (diagnosticConsole && typeof diagnosticConsole.push === 'function') {
-      diagnosticConsole.push({
-        severity: 'error',
-        source: 'js',
-        summary: ownerSummary(message),
-        detail: {
-          message,
-          stack: stackFromError(error),
-          apiError: {
-            reasonCode: error?.reasonCode || '',
-            status: error?.status || ''
-          },
-          app: path.appName || 'journal',
-          route: window.location.pathname,
-          filename: safe.filename,
-          lineno: safe.lineno,
-          colno: safe.colno,
-          kind: safe.kind || 'logError',
-          context: safe
-        }
-      });
-    }
+    window.convey.keepDiagnostic({
+      severity: 'error',
+      source: 'js',
+      summary: ownerSummary(message),
+      detail: {
+        message,
+        stack: stackFromError(error),
+        apiError: {
+          reasonCode: error?.reasonCode || '',
+          status: error?.status || ''
+        },
+        app: path.appName || 'journal',
+        route: window.location.pathname,
+        filename: safe.filename,
+        lineno: safe.lineno,
+        colno: safe.colno,
+        kind: safe.kind || 'logError',
+        context: safe
+      }
+    });
   }
 
   // Mark status icon as error state (red with glow)

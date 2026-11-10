@@ -307,6 +307,23 @@
   }
 
 
+  // The rest of the shell is a second file. It is fetched after the first
+  // view is ready, so the wait for that view does not include it. The flag
+  // latches only once the address is known.
+  let shellRestRequested = false;
+  function loadShellRest() {
+    if (shellRestRequested) return;
+    const holder = document.querySelector('script[data-shell-part="rest"]');
+    const src = holder && holder.getAttribute('data-src');
+    if (!src) return;
+    shellRestRequested = true;
+    const el = document.createElement('script');
+    el.src = src;
+    el.async = false;
+    document.head.appendChild(el);
+  }
+  window.loadShellRest = loadShellRest;
+
   async function boot() {
     performance.mark('shell:scripts-loaded');
     const startedAt = Date.now();
@@ -369,6 +386,7 @@
         window.solRouter?.start(app.name);
       }
     } catch (error) {
+      loadShellRest();
       if (window.logError) {
         window.logError(error, { context: 'shell-boot' });
       }

@@ -60,8 +60,10 @@ const SAME_TREE_ABSOLUTE: &[(&str, &str)] = &[
     ("/static/shell_boot.js", "/static/sol-status/"),
     ("/static/sunarc.js", "/static/sol-status/"),
     ("/static/websocket.js", "/static/sol-status/"),
-    // The same three, inside the shell's script bundle.
+    // The same paths, inside the shell's script bundles. Sun arc's fallback
+    // lives in the rest file; boot still names the status marks itself.
     ("/static/shell.js", "/static/sol-status/"),
+    ("/static/shell-rest.js", "/static/sol-status/"),
 ];
 
 /// Documents served with references left on their stable paths.
@@ -274,6 +276,9 @@ fn every_served_reference_resolves_to_a_hashed_path_or_is_listed() {
     let script_bundle = source_of("/static/shell.js");
     assert!(script_bundle.ends_with("//# sourceMappingURL=shell.js.map\n"));
     referenced.insert("/static/shell.js.map".to_owned());
+    let rest_bundle = source_of("/static/shell-rest.js");
+    assert!(rest_bundle.ends_with("//# sourceMappingURL=shell-rest.js.map\n"));
+    referenced.insert("/static/shell-rest.js.map".to_owned());
     let unreferenced: Vec<_> = INVENTORY
         .iter()
         .map(|asset| asset.path)
@@ -374,6 +379,7 @@ fn no_shell_script_calls_render_markdown() {
                 && !asset.path.starts_with("/static/vendor/")
                 // The bundle holds the shell's scripts, each checked on its own.
                 && asset.path != "/static/shell.js"
+                && asset.path != "/static/shell-rest.js"
                 && asset.content_type.starts_with("text/javascript")
         })
         .filter(|asset| {
