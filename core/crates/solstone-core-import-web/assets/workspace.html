@@ -3493,6 +3493,8 @@ const BODY_PHASE_WORDS = {
 
 function renderThinkingProgress(progress) {
   if (progress && progress.status === 'body') {
+    // A body run's phase is said while it runs; once it ends, its row says how.
+    if (progress.live !== true) return '';
     const body = progress.body || {};
     const phase = BODY_PHASE_WORDS[body.phase] || '';
     const days = Number.isSafeInteger(body.days_total) && body.days_total > 0
@@ -3568,7 +3570,8 @@ function showProgressView(importId, eventData = null) {
       const day = value => window.JournalFormat.day(value);
       facts.push(range[1] && range[1] !== range[0] ? `${day(range[0])} to ${day(range[1])}` : day(range[0]));
     }
-    if (typeof entries === 'number') facts.push(`${entries.toLocaleString()} ${entries === 1 ? 'entry' : 'entries'}`);
+    if (entries === 0) facts.push('nothing new');
+    else if (typeof entries === 'number') facts.push(`${entries.toLocaleString()} ${entries === 1 ? 'entry' : 'entries'}`);
     if (durationMs !== null && durationMs !== undefined) facts.push(`took ${formatElapsed(durationMs)}`);
     completionHtml = `
       <div class="import-completion-summary">

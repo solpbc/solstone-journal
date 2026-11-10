@@ -4564,6 +4564,16 @@ function runAppleImportEndsInItsOwnWords() {
   html = guideSteps.innerHTML;
   assert.ok(html.includes('partly saved'), html);
   assert.ok(html.includes('2 parts of your journal didn'), 'its row words: ' + html);
+  done({ body_state: 'saved', entries_written: 0, duration_ms: 1000 });
+  assert.ok(guideSteps.innerHTML.includes('nothing new'), 'the same export again: ' + guideSteps.innerHTML);
+  // The run's phase is said while it runs, and not once it has ended.
+  const phaseWords = workspace.match(/const BODY_PHASE_WORDS = \{[\s\S]*?\};/)[0];
+  vm.runInContext(phaseWords, context);
+  vm.runInContext(functionSource(workspace, 'renderThinkingProgress'), context);
+  const body = { phase: 'write', days_done: 15, days_total: 15 };
+  assert.strictEqual(vm.runInContext(`renderThinkingProgress(${JSON.stringify({ status: 'body', live: true, body })})`, context),
+    'saving · day 15 of 15');
+  assert.strictEqual(vm.runInContext(`renderThinkingProgress(${JSON.stringify({ status: 'body', live: false, body })})`, context), '');
   cases += 1;
 }
 
