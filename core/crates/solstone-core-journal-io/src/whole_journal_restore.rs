@@ -175,7 +175,7 @@ pub fn publish_whole_journal_restore(
     let record = bound_record(&root, next_attempt(), source.clone(), snapshot_id, subtree)?;
     let bytes = canonical_bytes(&record)?;
     let health = prepare_health_dir(&root, true)?;
-    with_obligation_lock(&root, &health, || {
+    with_obligation_lock(&root, &health, |lock| {
         root.revalidate_canonical_binding().map_err(root_error)?;
         require_absent(root.canonical_path())?;
         let checkpoint = || {
@@ -188,7 +188,7 @@ pub fn publish_whole_journal_restore(
                     }
                 })
         };
-        publish_bound_record(&root, &health, &bytes, &checkpoint)?;
+        publish_bound_record(&root, &health, lock, &bytes, &checkpoint)?;
         bump_generation(journal);
         Ok(record)
     })
@@ -204,7 +204,7 @@ pub fn adopt_whole_journal_restore(
     require_same_binding(&root, expected)?;
     let health = prepare_health_dir(&root, false)?;
     let expected_bytes = canonical_bytes(expected)?;
-    with_obligation_lock(&root, &health, || {
+    with_obligation_lock(&root, &health, |lock| {
         root.revalidate_canonical_binding().map_err(root_error)?;
         require_same_binding(&root, expected)?;
         restore_retained_record_name(&root, &health, &expected_bytes)?;
@@ -237,7 +237,7 @@ pub fn adopt_whole_journal_restore(
                     _ => Err("obligation changed before adoption".to_owned()),
                 })
         };
-        publish_bound_record(&root, &health, &bytes, &checkpoint)?;
+        publish_bound_record(&root, &health, lock, &bytes, &checkpoint)?;
         bump_generation(journal);
         Ok(record)
     })
@@ -262,7 +262,7 @@ pub fn clear_whole_journal_restore(
     }
     let health = prepare_health_dir(&root, false)?;
     let expected_bytes = canonical_bytes(expected)?;
-    let removed = with_obligation_lock(&root, &health, || {
+    let removed = with_obligation_lock(&root, &health, |_lock| {
         root.revalidate_canonical_binding().map_err(root_error)?;
         require_same_binding(&root, expected)?;
         restore_retained_record_name(&root, &health, &expected_bytes)?;
@@ -881,6 +881,7 @@ fn bound_record(
     })
 }
 
+#[cfg(unix)]
 pub(crate) fn retirement_claim_name(attempt: u64) -> String {
     format!("!solstone-claim-00000000-{attempt:016x}")
 }
@@ -993,21 +994,39 @@ fn restore_retained_record_name(
     }
 }
 
-#[cfg(not(unix))]
+/// Windows retirement deletes through one verified handle and never parks the
+/// record under a claim name, so there is nothing to put back: the record must
+/// still be here, unchanged.
+#[cfg(windows)]
 fn restore_retained_record_name(
-    _root: &Arc<JournalRoot>,
-    _health: &HealthDirectory,
-    _expected: &[u8],
+    root: &Arc<JournalRoot>,
+    health: &HealthDirectory,
+    expected: &[u8],
 ) -> Result<(), WholeJournalRestoreWriteError> {
-    Err(WholeJournalRestoreWriteError::Invalid(
-        "bound restore obligation writes are unavailable",
-    ))
+    use crate::windows_sync_dir::read_windows_observed_file_bounded;
+    use std::ffi::OsStr;
+    revalidate_health(root, health)?;
+    match read_windows_observed_file_bounded(
+        health,
+        OsStr::new(OBLIGATION_NAME),
+        MAX_OBLIGATION_BYTES as usize,
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+    {
+        Some(original) if original.bytes == expected => Ok(()),
+        Some(_) => Err(WholeJournalRestoreWriteError::Invalid(
+            "obligation or retirement claim changed",
+        )),
+        None => Err(WholeJournalRestoreWriteError::Invalid(
+            "obligation disappeared",
+        )),
+    }
 }
 
 #[cfg(unix)]
 type HealthDirectory = FlatDirectory;
-#[cfg(not(unix))]
-type HealthDirectory = PathBuf;
+#[cfg(windows)]
+type HealthDirectory = crate::windows_sync_dir::WindowsFlatDirectory;
 
 #[cfg(unix)]
 fn prepare_health_dir(
@@ -1037,14 +1056,33 @@ fn prepare_health_dir(
     Ok(health)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn prepare_health_dir(
-    _root: &JournalRoot,
-    _create: bool,
+    root: &JournalRoot,
+    create: bool,
 ) -> Result<HealthDirectory, WholeJournalRestoreWriteError> {
-    Err(WholeJournalRestoreWriteError::Invalid(
-        "bound restore obligation writes are unavailable",
-    ))
+    use crate::windows_sync_dir::{
+        create_or_open_windows_flat_directory_bound, open_windows_flat_directory_bound,
+    };
+    use std::ffi::OsStr;
+
+    root.revalidate_canonical_binding().map_err(root_error)?;
+    let health = if create {
+        create_or_open_windows_flat_directory_bound(
+            root,
+            OsStr::new("health"),
+            root.canonical_path(),
+        )
+        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+    } else {
+        open_windows_flat_directory_bound(root, OsStr::new("health"), root.canonical_path())
+            .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+            .ok_or(WholeJournalRestoreWriteError::Invalid(
+                "obligation is absent",
+            ))?
+    };
+    revalidate_health(root, &health)?;
+    Ok(health)
 }
 
 #[cfg(unix)]
@@ -1065,48 +1103,47 @@ fn revalidate_health(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn revalidate_health(
-    _root: &JournalRoot,
-    _health: &HealthDirectory,
+    root: &JournalRoot,
+    health: &HealthDirectory,
 ) -> Result<(), WholeJournalRestoreWriteError> {
-    Err(WholeJournalRestoreWriteError::Invalid(
-        "bound restore obligation writes are unavailable",
-    ))
+    root.revalidate_canonical_binding().map_err(root_error)?;
+    let changed = || WholeJournalRestoreWriteError::Invalid("health directory changed");
+    health.revalidate_bound().map_err(|_| changed())?;
+    match crate::windows_sync_dir::open_windows_flat_directory_bound(
+        root,
+        std::ffi::OsStr::new("health"),
+        root.canonical_path(),
+    ) {
+        Ok(Some(current)) if current.identity() == health.identity() => Ok(()),
+        _ => Err(changed()),
+    }
 }
 
 fn with_obligation_lock<T>(
     root: &JournalRoot,
     health: &HealthDirectory,
-    body: impl FnOnce() -> Result<T, WholeJournalRestoreWriteError>,
+    body: impl FnOnce(&crate::locking::BoundParentLock) -> Result<T, WholeJournalRestoreWriteError>,
 ) -> Result<T, WholeJournalRestoreWriteError> {
-    #[cfg(unix)]
-    {
-        let lock = crate::locking::acquire_existing_parent_lock_bound_checked(
-            health,
-            std::ffi::OsStr::new(OBLIGATION_LOCK),
-            crate::locking::DEFAULT_LOCK_TIMEOUT,
-            crate::locking::DEFAULT_LOCK_POLL_INTERVAL,
-            &|| revalidate_health(root, health).map_err(|error| error.to_string()),
-        )
-        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
-        let result = body();
-        drop(lock);
-        result
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (root, health, body);
-        Err(WholeJournalRestoreWriteError::Invalid(
-            "bound restore obligation writes are unavailable",
-        ))
-    }
+    let lock = crate::locking::acquire_existing_parent_lock_bound_checked(
+        health,
+        std::ffi::OsStr::new(OBLIGATION_LOCK),
+        crate::locking::DEFAULT_LOCK_TIMEOUT,
+        crate::locking::DEFAULT_LOCK_POLL_INTERVAL,
+        &|| revalidate_health(root, health).map_err(|error| error.to_string()),
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    let result = body(&lock);
+    drop(lock);
+    result
 }
 
 #[cfg(unix)]
 fn publish_bound_record(
     root: &JournalRoot,
     health: &HealthDirectory,
+    _lock: &crate::locking::BoundParentLock,
     bytes: &[u8],
     checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), WholeJournalRestoreWriteError> {
@@ -1128,16 +1165,37 @@ fn publish_bound_record(
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn publish_bound_record(
-    _root: &JournalRoot,
-    _health: &HealthDirectory,
-    _bytes: &[u8],
-    _checkpoint: &dyn Fn() -> Result<(), String>,
+    root: &JournalRoot,
+    health: &HealthDirectory,
+    lock: &crate::locking::BoundParentLock,
+    bytes: &[u8],
+    checkpoint: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), WholeJournalRestoreWriteError> {
-    Err(WholeJournalRestoreWriteError::Invalid(
-        "bound restore obligation writes are unavailable",
-    ))
+    use crate::atomic::{DetailedAtomicOutcome, atomic_replace_detailed_bound_checked};
+    use std::ffi::OsStr;
+    let check = || {
+        checkpoint()?;
+        lock.revalidate_bound(health, OsStr::new(OBLIGATION_LOCK))
+            .map_err(|error| error.to_string())
+    };
+    let outcome = atomic_replace_detailed_bound_checked(
+        health,
+        lock,
+        OsStr::new(OBLIGATION_NAME),
+        bytes,
+        0o644,
+        &check,
+    )
+    .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    revalidate_health(root, health)?;
+    match outcome {
+        DetailedAtomicOutcome::Published => Ok(()),
+        other => Err(WholeJournalRestoreWriteError::Io(format!(
+            "obligation publication is uncertain: {other:?}"
+        ))),
+    }
 }
 
 fn next_attempt() -> u64 {
@@ -1246,15 +1304,52 @@ fn retire_matching_file(
     }
 }
 
-#[cfg(not(unix))]
+/// Windows deletes the verified record through its own handle, shared for
+/// reading only, so no writer or rename can slip in between the check and the
+/// delete. Windows has no directory flush, so the name being gone is the proof.
+#[cfg(windows)]
 fn retire_matching_file(
-    _root: &Arc<JournalRoot>,
-    _health: &HealthDirectory,
-    _expected: &[u8],
+    root: &Arc<JournalRoot>,
+    health: &HealthDirectory,
+    expected: &[u8],
 ) -> Result<bool, WholeJournalRestoreWriteError> {
-    Err(WholeJournalRestoreWriteError::Invalid(
-        "bound restore obligation writes are unavailable",
-    ))
+    use crate::errors::ClaimRemovalOutcome;
+    use crate::windows_sync_dir::{
+        read_windows_observed_file_bounded, remove_windows_observed_file_bounded,
+    };
+    use std::ffi::OsStr;
+
+    let name = OsStr::new(OBLIGATION_NAME);
+    let limit = MAX_OBLIGATION_BYTES as usize;
+    revalidate_health(root, health)?;
+    let Some(observed) = read_windows_observed_file_bounded(health, name, limit)
+        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?
+    else {
+        return Ok(false);
+    };
+    if observed.bytes != expected {
+        return Err(WholeJournalRestoreWriteError::Invalid(
+            "obligation changed before retirement",
+        ));
+    }
+    revalidate_health(root, health)?;
+    let outcome = remove_windows_observed_file_bounded(health, name, &observed, limit)
+        .map_err(|error| WholeJournalRestoreWriteError::Io(error.to_string()))?;
+    revalidate_health(root, health)?;
+    match outcome {
+        ClaimRemovalOutcome::Removed | ClaimRemovalOutcome::RemovedUnflushed => {}
+        other => {
+            return Err(WholeJournalRestoreWriteError::Io(format!(
+                "obligation retirement is uncertain: {other:?}"
+            )));
+        }
+    }
+    match read_windows_observed_file_bounded(health, name, limit) {
+        Ok(None) => Ok(true),
+        _ => Err(WholeJournalRestoreWriteError::Io(
+            "obligation retirement is uncertain: the record is still there".to_owned(),
+        )),
+    }
 }
 
 #[cfg(windows)]
@@ -1943,28 +2038,119 @@ mod windows_tests {
         assert!(begin_target_use(&canonical).is_ok());
     }
 
+    const SNAPSHOT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn byo() -> WholeJournalRestoreSource {
+        WholeJournalRestoreSource::Byo {
+            repository: "repo".into(),
+            backend: "s3".into(),
+        }
+    }
+
     #[test]
-    fn mobile_publication_refuses_without_creating_state() {
+    fn publication_pauses_the_journal_and_only_its_own_attempt_clears_it() {
         let journal = tempfile::tempdir().unwrap();
-        let result = publish_whole_journal_restore(
-            journal.path(),
-            &WholeJournalRestoreSource::Byo {
-                repository: "repo".into(),
-                backend: "s3".into(),
-            },
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-            "/journal",
+        let path = journal.path().join(WHOLE_JOURNAL_RESTORE_FILE);
+        let record = publish_whole_journal_restore(journal.path(), &byo(), SNAPSHOT, "/journal")
+            .expect("publish");
+        assert_eq!(fs::read(&path).unwrap(), canonical_bytes(&record).unwrap());
+        match read_whole_journal_restore(journal.path()) {
+            WholeJournalRestoreReadiness::Pending(read) => assert_eq!(*read, record),
+            other => panic!("pending record, got {other:?}"),
+        }
+        assert_eq!(
+            whole_journal_restore_admission(journal.path()),
+            WholeJournalRestoreAdmission::Paused
         );
-        assert!(matches!(
-            result,
-            Err(WholeJournalRestoreWriteError::Invalid(
-                "bound restore obligation writes are unavailable"
-            ))
-        ));
-        assert_eq!(fs::read_dir(journal.path()).unwrap().count(), 0);
+        assert!(begin_target_use(journal.path()).is_err());
+        assert!(whole_journal_restore_matches(journal.path(), &record));
+
+        let mut stranger = record.clone();
+        stranger.attempt = stranger.attempt.wrapping_add(1);
+        assert!(clear_whole_journal_restore(journal.path(), &stranger).is_err());
+        assert!(whole_journal_restore_matches(journal.path(), &record));
+
+        clear_whole_journal_restore(journal.path(), &record).expect("clear");
+        assert!(!path.exists());
         assert_eq!(
             whole_journal_restore_admission(journal.path()),
             WholeJournalRestoreAdmission::Open
+        );
+        assert!(begin_target_use(journal.path()).is_ok());
+        clear_whole_journal_restore(journal.path(), &record).expect("second clear");
+    }
+
+    #[test]
+    fn publication_never_overwrites_and_adoption_retires_the_previous_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let first = publish_whole_journal_restore(journal.path(), &byo(), SNAPSHOT, "/journal")
+            .expect("publish");
+        assert!(publish_whole_journal_restore(journal.path(), &byo(), SNAPSHOT, "/other").is_err());
+        assert!(whole_journal_restore_matches(journal.path(), &first));
+
+        let adopted = adopt_whole_journal_restore(journal.path(), &first).expect("adopt");
+        assert_ne!(adopted.attempt, first.attempt);
+        assert_eq!(
+            (
+                &adopted.snapshot_id,
+                &adopted.subtree,
+                &adopted.root_identity
+            ),
+            (&first.snapshot_id, &first.subtree, &first.root_identity)
+        );
+        assert!(clear_whole_journal_restore(journal.path(), &first).is_err());
+        assert!(adopt_whole_journal_restore(journal.path(), &first).is_err());
+        assert!(whole_journal_restore_matches(journal.path(), &adopted));
+
+        clear_whole_journal_restore(journal.path(), &adopted).expect("clear adopted");
+        assert_eq!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        );
+        assert!(adopt_whole_journal_restore(journal.path(), &adopted).is_err());
+    }
+
+    #[test]
+    fn a_changed_or_unreadable_record_stays_paused_and_is_never_rewritten() {
+        let journal = tempfile::tempdir().unwrap();
+        let path = journal.path().join(WHOLE_JOURNAL_RESTORE_FILE);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"{").unwrap();
+        assert_eq!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Unavailable
+        );
+        assert!(
+            publish_whole_journal_restore(journal.path(), &byo(), SNAPSHOT, "/journal").is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"{");
+        fs::remove_file(&path).unwrap();
+
+        let record = publish_whole_journal_restore(journal.path(), &byo(), SNAPSHOT, "/journal")
+            .expect("publish");
+        let pretty = serde_json::to_vec_pretty(&record).unwrap();
+        fs::write(&path, &pretty).unwrap();
+        assert!(!whole_journal_restore_matches(journal.path(), &record));
+        assert!(clear_whole_journal_restore(journal.path(), &record).is_err());
+        assert!(adopt_whole_journal_restore(journal.path(), &record).is_err());
+        assert_eq!(fs::read(&path).unwrap(), pretty);
+
+        let mut foreign = record.clone();
+        foreign.root = r"C:\other\journal".into();
+        let foreign = canonical_bytes(&foreign).unwrap();
+        fs::write(&path, &foreign).unwrap();
+        assert_eq!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Unavailable
+        );
+        assert!(matches!(
+            clear_whole_journal_restore(journal.path(), &record),
+            Err(WholeJournalRestoreWriteError::Invalid(_))
+        ));
+        assert_eq!(fs::read(&path).unwrap(), foreign);
+        assert_eq!(
+            whole_journal_restore_admission(journal.path()),
+            WholeJournalRestoreAdmission::Paused
         );
     }
 

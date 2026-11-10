@@ -98,3 +98,111 @@ fn a_restore_outside_setup_asks_restic_for_no_report() {
     );
     assert_ne!(outcome.reason_code.as_deref(), Some("restore_failed"));
 }
+
+/// restic answering for a snapshot that holds `notes/from-backup.md`, over a
+/// journal whose setup left `notes/setup-only.md`.
+struct SetupRestic {
+    journal: std::path::PathBuf,
+    stop_restore: bool,
+    recorded_during_restore: std::cell::Cell<Option<bool>>,
+}
+
+impl ToolRunner for SetupRestic {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        let argv: Vec<String> = request
+            .argv
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let target = || {
+            let at = argv.iter().position(|arg| arg == "--target").unwrap();
+            std::path::PathBuf::from(&argv[at + 1])
+        };
+        match argv.first().map(String::as_str) {
+            Some("snapshots") => Ok(output(0, &catalog())),
+            Some("check") => Ok(output(0, "")),
+            Some("restore") if is_dry_run(request) => {
+                let mut report = String::new();
+                if argv.iter().any(|arg| arg == "--delete") {
+                    let item = target().join("notes").join("setup-only.md");
+                    report.push_str(
+                        &serde_json::json!({
+                            "message_type": "verbose_status",
+                            "action": "deleted",
+                            "item": item.display().to_string(),
+                        })
+                        .to_string(),
+                    );
+                    report.push('\n');
+                }
+                report.push_str("{\"message_type\":\"summary\",\"bytes_restored\":4}\n");
+                Ok(output(0, &report))
+            }
+            Some("restore") => {
+                self.recorded_during_restore
+                    .set(Some(obligation_path(&self.journal).is_file()));
+                if self.stop_restore {
+                    return Err(io::Error::from(io::ErrorKind::Interrupted));
+                }
+                write(&target(), "notes/from-backup.md", "from backup");
+                Ok(output(0, RESTORE_SUMMARY))
+            }
+            other => panic!("unexpected restic call: {other:?}"),
+        }
+    }
+}
+
+fn restore_during_setup_with(
+    stop_restore: bool,
+) -> (tempfile::TempDir, RestoreOutcome, SetupRestic) {
+    let journal = tempfile::tempdir().unwrap();
+    let stored = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+    write(journal.path(), "notes/setup-only.md", "setup");
+    let runner = SetupRestic {
+        journal: journal.path().to_owned(),
+        stop_restore,
+        recorded_during_restore: std::cell::Cell::new(None),
+    };
+    let clock = TestClock;
+    let maintenance = Maintenance;
+    let outcome = restore_during_setup(
+        journal.path(),
+        &services(&runner, &clock, &maintenance),
+        &Recorder::new(),
+        destination(),
+        &stored.recovery_key,
+    );
+    (journal, outcome, runner)
+}
+
+#[test]
+fn a_setup_restore_runs_on_the_record_and_leaves_only_the_snapshot() {
+    let (journal, outcome, runner) = restore_during_setup_with(false);
+    assert_eq!(outcome.status, "ok", "{outcome:?}");
+    assert_eq!(runner.recorded_during_restore.get(), Some(true));
+    assert_eq!(read(journal.path(), "notes/from-backup.md"), "from backup");
+    assert!(!journal.path().join("notes/setup-only.md").exists());
+    assert!(!restore_sweep::is_init_restore(journal.path()));
+    assert_eq!(
+        read_whole_journal_restore(journal.path()),
+        WholeJournalRestoreReadiness::Absent
+    );
+}
+
+#[test]
+fn a_stopped_setup_restore_keeps_the_journal_paused_at_setup() {
+    let (journal, outcome, runner) = restore_during_setup_with(true);
+    assert_ne!(outcome.status, "ok", "{outcome:?}");
+    assert_eq!(runner.recorded_during_restore.get(), Some(true));
+    assert!(matches!(
+        read_whole_journal_restore(journal.path()),
+        WholeJournalRestoreReadiness::Pending(_)
+    ));
+    assert!(
+        solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
+            journal.path()
+        )
+    );
+    assert!(restore_sweep::is_init_restore(journal.path()));
+    assert_eq!(read(journal.path(), "notes/setup-only.md"), "setup");
+}
