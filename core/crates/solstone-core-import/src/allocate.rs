@@ -159,6 +159,19 @@ pub fn bind_import_record_where(
     })
 }
 
+/// Bind exactly the import record `import_id`, as a page start names it: no other
+/// record is found or made. The whole-journal-restore guard and the saved-start
+/// revocation are the ones a normal binding takes.
+pub fn bind_exact_import_record(journal_root: &Path, import_id: &str) -> Result<(), ImportError> {
+    let _target_use = solstone_core_journal_io::whole_journal_restore::begin_target_use(
+        journal_root,
+    )
+    .map_err(|_| ImportError::InvalidAttemptState {
+        message: "import target is unavailable".to_owned(),
+    })?;
+    crate::saved_start::revoke_saved_start(journal_root, import_id)
+}
+
 /// Read the existing record a normal binding of these bytes would reuse.
 /// Unlike `bind_import_record`, this never allocates or writes a record.
 pub fn existing_import_record(

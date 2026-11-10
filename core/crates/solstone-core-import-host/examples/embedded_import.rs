@@ -65,7 +65,10 @@ fn main() {
         std::process::exit(2);
     });
     if class.body == BodyAdmission::Held {
-        eprintln!("Apple Health import, Oura sync, and Oura connect stay on the desktop importer.");
+        eprintln!(
+            "{}",
+            solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL
+        );
         std::process::exit(1);
     }
     // `class.sync_source` and `class.explicit_path` are the saved-settings

@@ -45,9 +45,10 @@ pub mod trash_kinds;
 pub mod work_stop;
 
 pub use allocate::{
-    AllocatedImport, BoundImport, IMPORT_ID_PROBE_LIMIT, allocate_import_id, bind_import_record,
-    bind_import_record_where, existing_import_record, remember_source_hash,
-    source_timestamp_for_preview, stored_source_timestamp, stored_source_timestamp_for_hash,
+    AllocatedImport, BoundImport, IMPORT_ID_PROBE_LIMIT, allocate_import_id,
+    bind_exact_import_record, bind_import_record, bind_import_record_where, existing_import_record,
+    remember_source_hash, source_timestamp_for_preview, stored_source_timestamp,
+    stored_source_timestamp_for_hash,
 };
 pub use body_ingest_error::{BodyIngestError, BodyIngestErrorKind};
 pub use connect::{OuraConnectOutcome, OuraConnectRequest, connect_oura};
