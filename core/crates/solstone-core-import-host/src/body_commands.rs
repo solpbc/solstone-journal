@@ -137,22 +137,14 @@ pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: O
         };
         solstone_core_import_sources::body_status::record(journal, import_id, code, 1);
     }
-    // An import another run has taken (a command-line run of the same export
-    // bound it while this one waited) keeps what it holds: this run ended
-    // nothing there.
-    let latest = match solstone_core_import::metadata::read_provenance(journal, import_id)
-        .ok()
-        .flatten()
-        .map(|metadata| solstone_core_import::metadata::read_attempt_facts(&metadata))
+    // This run is over, so its own attempt goes. The upload goes too unless a
+    // run still holds the import (a command-line run of the same export that
+    // bound it while this one waited); the page's sweep removes it once that
+    // run ends.
+    solstone_core_import::metadata::release_attempt(journal, import_id);
+    if solstone_core_import::metadata::attempt_holder(journal, import_id)
+        == solstone_core_import::metadata::AttemptHolder::Held
     {
-        Some(solstone_core_import::metadata::AttemptRead::Present(facts)) => facts.generation,
-        _ => 0,
-    };
-    let ours = failed_with.is_none()
-        || latest == 0
-        || solstone_core_import_sources::body_status::read(journal, import_id)
-            .is_some_and(|(_, generation)| generation == latest);
-    if !ours {
         return;
     }
     if let Err(error) = solstone_core_import::snapshot::discard_download(journal, import_id) {

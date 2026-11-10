@@ -2054,7 +2054,16 @@ fn run_segments_bound(
             solstone_core_import::metadata::release_attempt(journal, &import_id);
             Err(Err(format!("stopped at {point}")))
         }
-        Err(Stop::Superseded) => Err(Err("this import was superseded".to_owned())),
+        Err(Stop::Superseded) => {
+            // Said for this attempt only: a later one that has recorded its own
+            // reason keeps it.
+            let newer = solstone_core_import_sources::body_status::read(journal, &import_id)
+                .is_some_and(|(_, recorded)| recorded > generation);
+            if !newer {
+                record_stop(journal, source, &import_id, "other", generation);
+            }
+            Err(Err("this import was superseded".to_owned()))
+        }
         Err(Stop::Stopped) => {
             record_stop(journal, source, &import_id, "other", generation);
             let _ = finish(ImportTerminalInput::Failed(&[]), &[]);

@@ -218,6 +218,11 @@ pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
         ) {
             continue;
         }
+        if source_hint(&metadata).as_deref() == Some(APPLE_SOURCE)
+            && discard_ended_apple_upload(root, &id)
+        {
+            continue;
+        }
         let old_enough = entry
             .metadata()
             .and_then(|meta| meta.modified())
@@ -236,6 +241,42 @@ pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
     }
 }
 
+/// Remove the uploads of Apple Health imports that have ended, at any age.
+///
+/// An Apple Health import that has run never runs again (a start on it is
+/// refused), so a run killed after the page restarted leaves an upload nothing
+/// will read. The card's preview runs this before it counts free space. An
+/// upload whose import never started is left to the hour rule above.
+pub(crate) fn sweep_ended_apple_uploads(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root.join("imports")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if !id.starts_with('.') && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            discard_ended_apple_upload(root, &id);
+        }
+    }
+}
+
+/// Whether `id` is an Apple Health import that has run, removing its upload if
+/// its run has ended. A run that still holds its attempt is never touched.
+fn discard_ended_apple_upload(root: &Path, id: &str) -> bool {
+    if !apple_card_already_ran(root, id, false) {
+        return false;
+    }
+    // A record that ran reads pending only when a start was refused before its
+    // attempt: its words stay, and so does nothing else of the upload.
+    let live = solstone_core_import::metadata::attempt_holder(root, id)
+        == solstone_core_import::metadata::AttemptHolder::Held
+        || solstone_core_import::project_import_result(root, id).status
+            == solstone_core_import::ProjectionStatus::Running;
+    if !live && let Err(error) = solstone_core_import::snapshot::discard_download(root, id) {
+        log::warn!("could not remove the upload for {id}: {error}");
+    }
+    true
+}
+
 /// Preflight can fail before the source producer runs its own cleanup. Keep the
 /// terminal record, but never retain its uploaded Strava download or snapshots.
 fn discard_terminal_strava_download(root: &Path, id: &str) {
@@ -243,7 +284,9 @@ fn discard_terminal_strava_download(root: &Path, id: &str) {
     if matches!(
         solstone_core_import::project_import_result(root, id).status,
         ProjectionStatus::Pending | ProjectionStatus::Running
-    ) {
+    ) || solstone_core_import::metadata::attempt_holder(root, id)
+        == solstone_core_import::metadata::AttemptHolder::Held
+    {
         return;
     }
     if read_import_metadata(root, id).is_ok_and(|metadata| {
@@ -2892,7 +2935,10 @@ mod tests {
             let mut cursor = std::io::Cursor::new(Vec::new());
             let mut writer = zip::ZipWriter::new(&mut cursor);
             writer
-                .start_file("apple_health_export/export.xml", zip::write::SimpleFileOptions::default())
+                .start_file(
+                    "apple_health_export/export.xml",
+                    zip::write::SimpleFileOptions::default(),
+                )
                 .unwrap();
             writer.write_all(b"<HealthData></HealthData>").unwrap();
             writer.finish().unwrap();
@@ -2908,12 +2954,18 @@ mod tests {
             body.extend_from_slice(&zip_bytes);
             body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
             Request::post("/app/import/api/save")
-                .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
                 .body(Body::from(body))
                 .unwrap()
         };
         let root = TempDir::new().unwrap();
-        let response = crate::routes(root.path().to_path_buf()).oneshot(post("apple_health", "one")).await.unwrap();
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(post("apple_health", "one"))
+            .await
+            .unwrap();
         let (_, first) = response_json(response).await;
         let first_id = first["timestamp"].as_str().unwrap().to_owned();
         // It ran: its manifest names these bytes, and it stopped with a reason.
@@ -2925,10 +2977,16 @@ mod tests {
         .unwrap();
         solstone_core_import_sources::body_status::record(root.path(), &first_id, "disk_full", 1);
         for (hint, item) in [("apple_health", "two"), ("", "three")] {
-            let response = crate::routes(root.path().to_path_buf()).oneshot(post(hint, item)).await.unwrap();
+            let response = crate::routes(root.path().to_path_buf())
+                .oneshot(post(hint, item))
+                .await
+                .unwrap();
             let (status, again) = response_json(response).await;
             assert_eq!(status, StatusCode::OK, "{hint:?}: {again}");
-            assert_ne!(again["timestamp"], first_id, "{hint:?}: a new import, not the one that ran: {again}");
+            assert_ne!(
+                again["timestamp"], first_id,
+                "{hint:?}: a new import, not the one that ran: {again}"
+            );
             assert_eq!(again["replay"], false, "{again}");
             assert_eq!(again["metadata"]["source_hint"], "apple_health", "{again}");
         }
@@ -2942,7 +3000,10 @@ mod tests {
             let mut cursor = std::io::Cursor::new(Vec::new());
             let mut writer = zip::ZipWriter::new(&mut cursor);
             writer
-                .start_file("apple_health_export/export.xml", zip::write::SimpleFileOptions::default())
+                .start_file(
+                    "apple_health_export/export.xml",
+                    zip::write::SimpleFileOptions::default(),
+                )
                 .unwrap();
             writer.write_all(b"<HealthData></HealthData>").unwrap();
             writer.finish().unwrap();
@@ -2957,7 +3018,10 @@ mod tests {
             body.extend_from_slice(bytes);
             body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
             Request::post("/app/import/api/save")
-                .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+                .header(
+                    "content-type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
                 .body(Body::from(body))
                 .unwrap()
         };
@@ -4441,6 +4505,75 @@ mod tests {
         assert!(!source.exists());
         assert!(!copy.exists());
         assert!(directory.join("import.json").exists());
+    }
+
+    #[test]
+    fn an_ended_apple_health_upload_goes_at_once_and_a_live_one_stays() {
+        let root = TempDir::new().unwrap();
+        let stage = |id: &str| {
+            let dir = root.path().join("imports").join(id);
+            std::fs::create_dir_all(&dir).unwrap();
+            let upload = dir.join("export.zip");
+            std::fs::write(&upload, b"zip").unwrap();
+            write_import_metadata(
+                root.path(),
+                id,
+                json!({"source_hint": "apple_health", "file_path": upload, "original_filename": "export.zip"})
+                    .as_object()
+                    .unwrap(),
+            )
+            .unwrap();
+            upload
+        };
+        let now = super::now_ms() as u64;
+        let ended = stage("20261011_120000");
+        let attempt =
+            solstone_core_import::record_running_attempt(root.path(), "20261011_120000", now)
+                .unwrap();
+        solstone_core_import::record_unconfirmed_attempt(
+            root.path(),
+            "20261011_120000",
+            attempt.generation,
+            now,
+            None,
+        )
+        .unwrap();
+        let live = stage("20261011_130000");
+        solstone_core_import::record_running_attempt(root.path(), "20261011_130000", now).unwrap();
+        let refused = stage("20261011_140000");
+        solstone_core_import_sources::body_status::record(
+            root.path(),
+            "20261011_140000",
+            "facet",
+            1,
+        );
+        let unstarted = stage("20261011_150000");
+        super::sweep_ended_apple_uploads(root.path());
+        assert!(
+            !ended.exists(),
+            "an ended import's upload goes, within the hour"
+        );
+        assert!(
+            live.exists(),
+            "a run that holds its import keeps its upload"
+        );
+        assert!(!refused.exists(), "a refused start's upload goes");
+        assert!(
+            refused
+                .with_file_name(solstone_core_import_sources::body_status::STOP_FILE)
+                .exists(),
+            "and its words stay"
+        );
+        assert!(
+            unstarted.exists(),
+            "an upload not yet started waits for its start"
+        );
+        super::sweep_abandoned_strava_uploads(root.path());
+        assert!(
+            live.exists() && unstarted.exists(),
+            "the start-up sweep agrees"
+        );
+        solstone_core_import::metadata::release_attempt(root.path(), "20261011_130000");
     }
 
     #[test]

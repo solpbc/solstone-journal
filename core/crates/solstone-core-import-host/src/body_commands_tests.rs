@@ -369,6 +369,46 @@ mod page_start {
         snapshot
     }
 
+    #[test]
+    fn a_page_run_that_ends_any_way_leaves_no_upload_unless_a_live_run_holds_it() {
+        let journal = journal();
+        let root = journal.path();
+        let stage = |id: &str| {
+            let dir = root.join("imports").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            let upload = dir.join("export.zip");
+            fs::write(&upload, b"zip").unwrap();
+            let mut metadata = solstone_core_import::ImportMetadata::new();
+            metadata.insert("file_path".into(), json!(upload.to_str().unwrap()));
+            metadata.insert("source_hint".into(), json!("apple_health"));
+            solstone_core_import::write_import_metadata(root, id, &metadata).unwrap();
+            upload
+        };
+        // Superseded: the attempt this run holds ends with no outcome of its own.
+        let superseded = stage(P);
+        solstone_core_import::record_running_attempt(root, P, 1_000).unwrap();
+        crate::body_commands::settle_page_import(root, P, Some("this import was superseded"));
+        assert!(!superseded.exists(), "a superseded run's upload goes");
+        assert_ne!(
+            solstone_core_import::metadata::attempt_holder(root, P),
+            solstone_core_import::metadata::AttemptHolder::Held,
+            "and so does its hold on the import"
+        );
+        // Another process holds the import: its run is still going.
+        let other = "20261012_150000";
+        let held = stage(other);
+        let lock = solstone_core_journal_io::hold_lock(
+            &root.join("imports").join(other).join(".attempt"),
+            solstone_core_journal_io::LockOptions::default(),
+        )
+        .unwrap();
+        crate::body_commands::settle_page_import(root, other, Some("import stopped"));
+        assert!(held.exists(), "a live run's upload stays");
+        drop(lock);
+        crate::body_commands::settle_page_import(root, other, Some("import stopped"));
+        assert!(!held.exists(), "and goes once nothing holds it");
+    }
+
     fn heart(at: &str) -> String {
         format!(
             r#"<Record type="HKQuantityTypeIdentifierHeartRate" {SRC} unit="count/min" startDate="{at}" endDate="{at}" value="70"/>"#
@@ -486,17 +526,22 @@ mod page_start {
         // and the named import is exactly as it was, its upload included.
         let other = "20261012_150000";
         let held = page_record(root, other, &[heart("2026-10-09 06:40:00 -0600")]);
-        let untouched = solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap();
+        let untouched =
+            solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap();
         let mut dry = page_args(&held, other, true);
         dry.push("--dry-run".to_owned());
         let mut not_apple = page_args(&held, other, true);
-        let at = not_apple.iter().position(|arg| arg == "apple_health").unwrap();
+        let at = not_apple
+            .iter()
+            .position(|arg| arg == "apple_health")
+            .unwrap();
         not_apple[at] = "ics".to_owned();
         for args in [page_args(elsewhere.path(), other, true), dry, not_apple] {
             let run = run_page(root, &args);
             assert_ne!(run.exit_code, 0, "{args:?}");
             assert_eq!(
-                solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap(),
+                solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other))
+                    .unwrap(),
                 untouched,
                 "{args:?}"
             );

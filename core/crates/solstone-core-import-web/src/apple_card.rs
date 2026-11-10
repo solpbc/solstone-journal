@@ -48,6 +48,9 @@ pub(crate) fn add_space(root: &Path, import_id: &str, preview: &mut Value) {
     let Ok(metadata) = read_import_metadata(root, import_id) else {
         return;
     };
+    if crate::lifecycle::is_apple_card(&metadata) {
+        crate::lifecycle::sweep_ended_apple_uploads(root);
+    }
     let Some(space) = space(root, &metadata, &preview["size"]) else {
         return;
     };

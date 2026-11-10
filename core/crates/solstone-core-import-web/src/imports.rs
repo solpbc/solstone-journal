@@ -374,10 +374,7 @@ pub(crate) async fn sources(State(state): State<AppState>) -> Response {
         value
     }).collect();
     let total = items.len();
-    json_response(
-        StatusCode::OK,
-        json!({"items": items, "total": total}),
-    )
+    json_response(StatusCode::OK, json!({"items": items, "total": total}))
 }
 
 pub(crate) async fn list(
