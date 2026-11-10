@@ -246,6 +246,19 @@ pub(crate) mod tests {
                         expected["deletable"] =
                             json!(!path.ends_with(crate::test_support::PENDING));
                     }
+                    // The Apple Health card's too-large words name this
+                    // platform's place to type the command, so no one
+                    // recording holds them.
+                    if let Some(items) = expected.get_mut("items").and_then(Value::as_array_mut) {
+                        for item in items.iter_mut().filter(|item| {
+                            item["name"] == "apple_health" && item.get("upload_prompt").is_some()
+                        }) {
+                            item["too_big_words"] = json!(
+                                solstone_core_import_sources::body_status::too_big_to_upload_words(
+                                )
+                            );
+                        }
+                    }
                     serde_json::from_slice::<Value>(&actual_body)
                         .map(|value| {
                             if case.get("body_normalized").is_some() {
@@ -350,6 +363,9 @@ pub(crate) mod tests {
             if row["name"] == "audio_archive" {
                 expected_keys.insert("time_zones");
             }
+            if row["name"] == "apple_health" {
+                expected_keys.insert("too_big_words");
+            }
             row.as_object()
                 .unwrap()
                 .keys()
@@ -364,8 +380,13 @@ pub(crate) mod tests {
             .iter()
             .find(|case| case["path"] == "/app/import/api/sources")
             .unwrap();
+        // The platform's too-large words aren't in the recording (see ac4).
+        let mut recorded_shape = body.clone();
+        for item in recorded_shape["items"].as_array_mut().unwrap() {
+            item.as_object_mut().unwrap().remove("too_big_words");
+        }
         assert_eq!(
-            format!("{:x}", Sha256::digest(canonical_json(&body))),
+            format!("{:x}", Sha256::digest(canonical_json(&recorded_shape))),
             case["body_sha256"]
         );
     }

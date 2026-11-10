@@ -140,6 +140,21 @@ pub fn read(journal: &std::path::Path, import_id: &str) -> Option<(String, u64)>
     ))
 }
 
+/// Where an owner on this platform can type an importer command.
+pub const WHERE_TO_RUN: &str = if cfg!(target_os = "macos") {
+    "in the journal app's journal menu, choose open admin terminal, and run"
+} else {
+    "from a terminal on the computer your journal runs on, run"
+};
+
+/// What the card says of an export too large for the page to upload.
+#[must_use]
+pub fn too_big_to_upload_words() -> String {
+    format!(
+        "this export is larger than 4.3 GB, the most this page uploads. bring it in from the command line instead: {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save"
+    )
+}
+
 /// The size bound in the units the card shows sizes in. `too_large_words` keeps
 /// it in step with the bound itself.
 const TOO_LARGE: &str = "this export unpacks to more than 68.7 GB, the most one import reads.";
@@ -255,6 +270,17 @@ mod tests {
         let bound = crate::body_space::size_words(crate::apple_export::apple_scan_byte_bound());
         assert!(TOO_LARGE.contains(&bound), "{TOO_LARGE} against {bound}");
         assert_eq!(code_for_error_text(&too_large_words()), "export_too_large");
+    }
+
+    #[test]
+    fn the_too_large_words_name_the_pages_bound_and_where_to_type_the_command() {
+        let words = too_big_to_upload_words();
+        let bound = 4.0 * 1024.0 * 1024.0 * 1024.0 / 1e9;
+        assert!(
+            words.contains(&format!("larger than {bound:.1} GB")),
+            "{words}"
+        );
+        assert!(words.contains(WHERE_TO_RUN), "{words}");
     }
 
     #[test]

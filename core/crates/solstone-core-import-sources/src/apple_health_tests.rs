@@ -100,11 +100,12 @@ fn only_the_read_list_is_read_and_everything_else_is_counted_and_named() {
         "HKQuantityTypeIdentifierMadeUpKind",
         "ActivitySummary",
         "WorkoutRoute",
-        "ExportDate",
         "Me",
     ] {
         assert_eq!(export.not_read.get(name), Some(&1), "{name}");
     }
+    // The export's own date stamp isn't data, so it isn't a kind left out.
+    assert_eq!(export.not_read.get("ExportDate"), None);
     assert_eq!(export.refused["end_before_start"], 2);
     assert_eq!(export.refused["time"], 1);
     assert_eq!(export.refused["event_time"], 1);

@@ -4573,6 +4573,14 @@ function runAppleImportEndsInItsOwnWords() {
   const bound = vm.runInNewContext(workspace.match(/const MAX_UPLOAD_BYTES = ([^;]+);/)[1]);
   const tooBig = workspace.match(/too_big: '([^']+)'/)[1];
   assert.ok(tooBig.includes(`larger than ${(bound / 1e9).toFixed(1)} GB`), tooBig);
+  // Refused or stopped: the row's words, not "error:" or "couldn't be confirmed".
+  vm.runInContext(`showProgressView('a1', ${JSON.stringify({ import_id: 'a1', event: 'error', status: 'failed',
+    body_state: 'failed', body_words: 'the facet chosen for it is muted or gone, so nothing was brought in.', error: 'importer said no' })})`, context);
+  assert.ok(guideSteps.innerHTML.includes('not brought in') && guideSteps.innerHTML.includes('the facet chosen for it'), guideSteps.innerHTML);
+  assert.ok(!guideSteps.innerHTML.includes('error:') && !guideSteps.innerHTML.includes('importer said no'), guideSteps.innerHTML);
+  vm.runInContext(`showProgressView('a1', ${JSON.stringify({ import_id: 'a1', status: 'unconfirmed', body_state: 'stopped',
+    body_words: 'it stopped before it finished. import the export again to finish.' })})`, context);
+  assert.ok(guideSteps.innerHTML.includes('import the export again') && !guideSteps.innerHTML.includes("couldn't be confirmed"), guideSteps.innerHTML);
   // The import's own page reads as its row does, not "start status unknown".
   const ImportDetail = loadImportDetailModule();
   const stopped = { timestamp: '20261109_225511', status: 'noted', body_state: 'stopped',

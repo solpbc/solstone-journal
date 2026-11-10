@@ -301,6 +301,8 @@ fn scan_elements(
                 b"HealthData" => closed = is_empty,
                 b"Correlation" => {}
                 b"MetadataEntry" => {}
+                // The export's own date stamp: not data, so not a kind left out.
+                b"ExportDate" => {}
                 _ => {
                     visit(AppleItem::NotRead(
                         String::from_utf8_lossy(name).into_owned(),

@@ -141,7 +141,7 @@ const SOURCES: &[SourceMetadata] = &[
         icon: "heart-pulse",
         description: "import your workouts, sleep and readings from an Apple Health export",
         input_type: "file",
-        upload_prompt: "upload export.zip from the Health app on your iPhone",
+        upload_prompt: "upload export.zip from the Health app on your iphone",
         has_guide: true,
         accept: ".zip",
     },
@@ -368,6 +368,9 @@ pub(crate) async fn sources(State(state): State<AppState>) -> Response {
         "description": item.description, "input_type": item.input_type, "upload_prompt": item.upload_prompt,
         "has_guide": item.has_guide, "accept": item.accept, "icon_svg": ICONS.get(item.icon),
         });
+        if item.name == "apple_health" {
+            value["too_big_words"] = json!(solstone_core_import_sources::body_status::too_big_to_upload_words());
+        }
         if item.name == "audio_archive" {
             value["time_zones"] = json!(chrono_tz::TZ_VARIANTS.iter().map(|zone| zone.name()).collect::<Vec<_>>());
         }

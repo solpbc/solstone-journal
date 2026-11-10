@@ -2824,7 +2824,8 @@ function setupGuidedUploadArea() {
   const setFile = file => {
     if (!file || guidedFolderBusy || fileInput.disabled) return;
     if (currentGuideSource === 'apple_health' && file.size > MAX_UPLOAD_BYTES) {
-      if (window.showError) showError(APPLE_WORDS.too_big);
+      // The server's words, which say where this platform's owner types the command.
+      if (window.showError) showError(sourceMetadataByName.apple_health?.too_big_words || APPLE_WORDS.too_big);
       return;
     }
     currentGuidedFile = file || null;
@@ -3238,7 +3239,7 @@ function applePreviewText(size, space) {
   const left = Object.keys(held.not_read || {}).length;
   if (left) parts.push(`${count(left, 'other kind', 'other kinds')} left out, named in the summary`);
   if (size.listed_moves?.count) {
-    parts.push(`a yes can move up to ${count(size.listed_moves.count, 'record', 'records')} already listed on the activities page to this import's facet`);
+    parts.push(`saying yes can move up to ${count(size.listed_moves.count, 'record', 'records')} already listed on the activities page to this import's facet`);
   }
   let text = parts.join(' · ');
   if (space) {
@@ -3584,6 +3585,17 @@ function showProgressView(importId, eventData = null) {
         <div class="import-action-row">
           <a class="import-primary-btn" href="/app/body/">see it in the body app →</a>
           <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(done.processed_timestamp || importId)}#content">browse what was imported →</a>
+          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+        </div>
+      </div>
+    `;
+  } else if (apple && appleEnded) {
+    // Stopped, refused or not started: the row's own words say why and what next.
+    const words = currentEvent?.body_words || importInfo?.body_words || currentEvent?.error || importInfo?.error || '';
+    completionHtml = `
+      <div class="import-completion-summary">
+        ${words ? `<div>${escapeHtml(words)}</div>` : ''}
+        <div class="import-action-row">
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>
       </div>

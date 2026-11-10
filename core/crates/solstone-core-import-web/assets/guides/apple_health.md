@@ -1,9 +1,9 @@
 ### get your Apple Health export
 
-1. on your iPhone, open the **Health** app
+1. on your iphone, open the **Health** app
 2. tap **Summary**, then your picture or initials at the top right
 3. tap **Export All Health Data**, then **Export**. a long history can take a while, so leave the app open until it finishes
-4. send **export.zip** to this computer. AirDrop to a Mac, or saving it to Files and copying it across, both work
+4. send **export.zip** to this computer. AirDrop to a mac, or saving it to Files and copying it across, both work
 5. upload it here
 
 if the export finishes almost at once and the file is tiny, it didn't work. export it again.

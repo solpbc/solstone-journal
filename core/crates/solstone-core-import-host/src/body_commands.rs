@@ -41,12 +41,7 @@ pub(crate) struct BodyCommand<'a> {
     pub save: bool,
 }
 
-/// Where an owner on this platform can type the command.
-const WHERE_TO_RUN: &str = if cfg!(target_os = "macos") {
-    "in the journal app's journal menu, choose open admin terminal, and run"
-} else {
-    "from a terminal on the computer your journal runs on, run"
-};
+use solstone_core_import_sources::body_status::WHERE_TO_RUN;
 
 fn apple_confirm_words() -> String {
     format!(
