@@ -163,7 +163,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         true,
         focus(FocusGroup::Keeps, 4),
         "sleep, workouts and heart readings",
-        "brought in on the import page",
+        "from what you import",
         &[
             "health", "sleep", "workout", "strava", "oura", "apple", "heart",
         ],

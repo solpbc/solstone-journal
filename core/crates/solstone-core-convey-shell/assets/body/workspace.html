@@ -1062,7 +1062,7 @@ a.body-day-cell:focus-visible {
     if (!hasDays && !asArray(imports?.new).length && !asArray(imports?.old).length) {
       return html([
         renderHeader("body", "your body, brought into your journal.", false),
-        '<p class="body-subtitle">nothing here yet. bring in your workouts from a Strava download on the <a href="/app/import/">import page</a>. a journal on a computer can bring in workouts, sleep and readings from an Apple Health export there too. Oura data comes in from the command line. <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">read about body imports</a>.</p>',
+        '<p class="body-subtitle">nothing here yet. bring in your workouts from a Strava download on the <a href="/app/import/">import page</a>. if your journal runs on a computer, you can bring in workouts, sleep and readings from an Apple Health export there too. Oura data comes in from the command line. <a href="https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md" target="_blank" rel="noopener noreferrer">read about body imports</a>.</p>',
       ]);
     }
     return html([
