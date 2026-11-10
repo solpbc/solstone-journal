@@ -5547,6 +5547,26 @@
     setText('thinkingDevicesInviteLink', `${link} →`);
   }
 
+  // The reads after the first paint are independent, except that the providers
+  // read names the selected local model, so it follows the model list. Each one
+  // draws its own part when it answers; the first failure is reported once all
+  // have settled.
+  async function loadAfterFirstPaint() {
+    const loads = [refreshKeys(), refreshChatGpt()];
+    if (bundledLocalUnavailable()) {
+      loads.push(refreshProviders());
+    } else {
+      loads.push(refreshLocalModels().then(() => Promise.all([
+        refreshInstallStatus({autoResume: true}),
+        refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'}),
+        refreshLocalAvailability(),
+        refreshProviders(),
+      ])));
+    }
+    const failed = (await Promise.allSettled(loads)).find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
+  }
+
   async function init() {
     const loaded = await loadInitialState();
     if (!loaded) return;
@@ -5562,13 +5582,7 @@
     reportThinkingReady('content');
     refreshDevicesInvite();
     try {
-      if (!bundledLocalUnavailable()) {
-        await refreshLocalModels();
-        await refreshInstallStatus({autoResume: true});
-        await refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'});
-        await refreshLocalAvailability();
-      }
-      await Promise.all([refreshProviders(), refreshKeys(), refreshChatGpt()]);
+      await loadAfterFirstPaint();
       if (state.chatgpt.status?.signed_in) {
         loadChatGptModels().catch(() => {});
       }

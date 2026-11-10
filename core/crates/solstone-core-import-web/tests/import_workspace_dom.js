@@ -3598,6 +3598,43 @@ async function runThinkingRefreshKeepsControlsAndFocus() {
   cases += 1;
 }
 
+// The history read goes out beside the source list, and the history is drawn
+// only once the list (which names its sources) is in.
+async function runHistoryReadStartsBesideTheSourceList() {
+  const requests = [];
+  let sourcesDone;
+  const sources = new Promise(resolve => { sourcesDone = resolve; });
+  const nodes = { importListContent: { innerHTML: '' }, importSourceFilter: {} };
+  const context = makeContext({
+    document: { getElementById: id => nodes[id] || null, querySelector: () => ({ insertAdjacentHTML() {} }) },
+    window: { createViewReady: () => () => {},
+      apiJson: url => new Promise(resolve => requests.push({ url, resolve })),
+      SurfaceState: { replaceLoading() { throw new Error('unexpected read error'); }, error: x => x, serverMessageFrom: () => '' },
+      CONVEY_COPY: {},
+    },
+    loadSourceGrid: () => sources, clearImportListErrors() {}, pruneImportGenerationFloor() {},
+    buildHistoryHeader: () => '', renderImportRow: () => '', sourceFilterOptionsHtml: () => '',
+    trackPendingImport() {}, clearPendingImport() {},
+    importPick: { on: false, ids: new Set(), notes: new Map() }, importPickHeadHtml: () => '', paintImportPick() {},
+  });
+  vm.runInContext(`let currentPage = 1, historyRequestGeneration = 0, loadingMoreGeneration = null;
+    let historyLoading = false, currentSourceFilter = '', importsCache = [], importSourceOptions = [], totalImports = 0;
+    const IMPORT_PAGE_SIZE = 100;`, context);
+  vm.runInContext(functionSource(workspace, 'loadImports'), context);
+  const loading = context.loadImports();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepStrictEqual(requests.map(r => r.url), ['/app/import/api/list?page=1&per_page=100&source='],
+    'the history read is out while the source list is still loading');
+  requests[0].resolve({ imports: [{ timestamp: 'one', source_type: 'text', status: 'success' }],
+    source_options: ['text'], total: 1, pages: 1, page: 1 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.strictEqual(vm.runInContext('importsCache.length', context), 0, 'nothing is drawn before the source list');
+  sourcesDone();
+  await loading;
+  assert.strictEqual(vm.runInContext('importsCache.map(row => row.timestamp).join()', context), 'one');
+  cases += 1;
+}
+
 async function runHistoryFilterPaginationRaces() {
   const requests = [];
   const nodes = {
@@ -4410,6 +4447,7 @@ Promise.resolve()
   .then(async () => { cases += await require('./source_connections_dom.js')(crateDir); })
   .then(async () => { cases += await require('./saved_start_dom.js')(crateDir); })
   .then(runHistoryFilterPaginationRaces)
+  .then(runHistoryReadStartsBesideTheSourceList)
   .then(runNativeFolderSelectionAndReturnRead)
   .then(runFileAndFolderChoicesUseTheSameSourceCard)
   .then(runFileChoicePreservesCancelAndRetiresFolderSelection)

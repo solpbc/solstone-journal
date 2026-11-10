@@ -229,6 +229,7 @@ async function main() {
   source = source.replace(
     '  init();\n})();',
     `  window.__thinkingRuns = {
+    loadAfterFirstPaint,
     state,
     localCopy,
     localIsReady,
@@ -4232,6 +4233,43 @@ async function main() {
     assert.strictEqual(checks, 0, 'a superseded poll cannot request a check');
     thinking.state.providers = previousProviders;
     window.apiJson = baseApiJson;
+  }
+
+  {
+    // After the first paint, the independent reads go out together; only the
+    // providers read waits for the model list, whose selection it names. (The
+    // ChatGPT status reads providers too, at once, with no model.)
+    executedCases += 1;
+    const base = window.apiJson;
+    const asked = [];
+    const answers = [];
+    window.apiJson = (url) => {
+      asked.push(url);
+      const pending = deferred();
+      answers.push([url, pending]);
+      return pending.promise;
+    };
+    const providerReads = () => asked.filter((url) => url.startsWith('api/providers')).length;
+    const loading = thinking.loadAfterFirstPaint();
+    await settle();
+    assert(asked.some((url) => url.startsWith('api/keys')), 'keys right away');
+    assert(asked.some((url) => url.startsWith('api/local/models')), 'models right away');
+    assert(!asked.some((url) => url.startsWith('api/local/runtime')), 'local reads wait for the model list');
+    const providersBefore = providerReads();
+    answers.find(([url]) => url.startsWith('api/local/models'))[1].resolve([{name: 'local/a'}]);
+    await settle();
+    await settle();
+    for (const prefix of ['api/local/bootstrap/status', 'api/local/runtime', 'api/local/availability']) {
+      assert(asked.some((url) => url.startsWith(prefix)), `${prefix} goes out once the model list is in`);
+    }
+    assert.strictEqual(providerReads(), providersBefore + 1, 'the providers read goes out with them, not before');
+    for (let round = 0; round < 3; round += 1) {
+      for (const [url, pending] of answers) pending.resolve(url.startsWith('api/local/availability') ? {available: true} : {});
+      await settle();
+    }
+    await loading.catch(() => {});
+    window.apiJson = base;
+    passedCases += 1;
   }
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);
