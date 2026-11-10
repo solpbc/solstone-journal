@@ -787,18 +787,18 @@ testCase('rail and dock follow the resolved pin list', () => {
   renderChrome(pinned, 'home');
   const rail = pinned.document.querySelector('#app-rail');
   assert.strictEqual(rail.getAttribute('aria-label'), 'views');
-  assert.strictEqual(rail.children.length, 12);
-  assert.deepStrictEqual(namedApps(rail), ['home', 'map', 'search', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.strictEqual(rail.children.length, 13);
+  assert.deepStrictEqual(namedApps(rail), ['home', 'map', 'search', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
   assert.ok(!namedApps(rail).includes('entities'));
   assert.ok(!namedApps(rail).includes('thinking'));
   assert.ok(rail.children[4].classList.contains('app-rail-spacer'));
   assert.strictEqual(rail.children[5].id, 'status-instrument');
   assert.ok(rail.children[6].classList.contains('app-rail-divider'));
   assert.deepStrictEqual(
-    ['import', 'settings', 'network', 'agents'],
-    rail.children.slice(7, 11).map((element) => element.getAttribute('data-app-name'))
+    ['import', 'settings', 'network', 'sources', 'agents'],
+    rail.children.slice(7, 12).map((element) => element.getAttribute('data-app-name'))
   );
-  assert.ok(rail.children[11].classList.contains('journal-about-link'));
+  assert.ok(rail.children[12].classList.contains('journal-about-link'));
   const desktopDock = pinned.document.querySelector('#app-dock');
   assert.deepStrictEqual(namedApps(desktopDock), ['home', 'map', 'search', 'more']);
   assert.strictEqual(desktopDock.children.length, 4);
@@ -814,8 +814,8 @@ testCase('rail and dock follow the resolved pin list', () => {
   const empty = createHarness({ pinned: [] });
   renderChrome(empty, 'home');
   const emptyRail = empty.document.querySelector('#app-rail');
-  assert.strictEqual(emptyRail.children.length, 10);
-  assert.deepStrictEqual(namedApps(emptyRail), ['home', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.strictEqual(emptyRail.children.length, 11);
+  assert.deepStrictEqual(namedApps(emptyRail), ['home', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
   assert.deepStrictEqual(namedApps(empty.document.querySelector('#app-dock')), ['home', 'more']);
 
   const emptyPhone = createHarness({ pinned: [], mobile: true });
@@ -894,7 +894,7 @@ asyncCase('more page groups every served view except more', async () => {
     .map((card) => card.getAttribute('data-app-name'));
   assert.deepStrictEqual(groupNames('keeps'), ['home', 'activities', 'transcripts', 'map', 'body', 'search']);
   assert.deepStrictEqual(groupNames('shape'), ['entities', 'speakers', 'curation']);
-  assert.deepStrictEqual(groupNames('runs'), ['thinking', 'health', 'network', 'agents', 'backup', 'import', 'stats', 'settings', 'support']);
+  assert.deepStrictEqual(groupNames('runs'), ['thinking', 'health', 'network', 'sources', 'agents', 'backup', 'import', 'stats', 'settings', 'support']);
   const names = root.querySelectorAll('.more-card').map((card) => card.getAttribute('data-app-name'));
   assert.strictEqual(new Set(names).size, names.length);
   assert.ok(!names.includes('more'));
@@ -982,7 +982,7 @@ asyncCase('successful pin toggle updates rail and dock from the returned list', 
   await pending;
   await settle();
   await settle();
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
   assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-dock')), ['home', 'entities', 'more']);
   assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('map'));
   assert.ok(!namedApps(harness.document.querySelector('#app-rail')).includes('search'));
@@ -1008,7 +1008,7 @@ asyncCase('failed pin save restores the previous list and says so', async () => 
   await settle();
   await settle();
   assert.strictEqual(shellReads, 1);
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'search', 'more', 'import', 'settings', 'network', 'agents']);
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'search', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
   assert.strictEqual(root.querySelector('.more-live').textContent, "couldn't save that. try again.");
   assert.strictEqual(root.querySelector('[data-pin-view="map"]').getAttribute('aria-pressed'), 'false');
 });
