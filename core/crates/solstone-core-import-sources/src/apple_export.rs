@@ -74,6 +74,22 @@ pub fn detect_apple_source(source: &Path) -> Result<bool, BodyIngestError> {
     Ok(names.iter().any(|name| is_export_member(name)))
 }
 
+/// Whether a file is an Apple Health export zip, whatever it's named: an upload
+/// waits under a temporary name before it's staged.
+pub fn detect_apple_zip_any_name(source: &Path) -> bool {
+    let Ok(mut file) = open_nofollow(source) else {
+        return false;
+    };
+    if preflight_zip(&mut file).is_err() {
+        return false;
+    }
+    let Ok(archive) = zip::ZipArchive::new(file) else {
+        return false;
+    };
+    crate::zip_names::prove_open_zip(archive)
+        .is_ok_and(|(_, names)| names.iter().any(|name| is_export_member(name)))
+}
+
 /// Why a read of the export stopped. XML that ends partway through a tag is an
 /// export that was cut off, which is said apart from XML the reader can't get past.
 fn read_failure(xml: &Reader<EventCappedReader<'_>>, error: &quick_xml::Error) -> BodyIngestError {

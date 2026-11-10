@@ -597,8 +597,11 @@ fn staged_by_source_hash(root: &Path, source_hash: &SourceHash) -> Option<Import
         .filter_map(|entry| entry.file_name().into_string().ok())
         .find_map(|timestamp| {
             let metadata = read_import_metadata(root, &timestamp).ok()?;
-            (metadata.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str()))
-                .then_some(metadata)
+            // An Apple Health import that has run isn't offered again: the same
+            // export uploaded now is a new import.
+            (metadata.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str())
+                && !apple_card_already_ran(root, &timestamp, false))
+            .then_some(metadata)
         })
 }
 
@@ -1025,7 +1028,13 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
     }
     // Importing the same Strava download again is how a deleted import is brought
     // back, and it re-places only what is missing, so it is never refused as a repeat.
-    if !strava_card && manifest_exists(&state.root, &source_hash) {
+    // An Apple Health export is the same: importing it again is how a stopped or
+    // partly saved import finishes, and the same data changes nothing.
+    let apple_upload = text_value(&data, "source_hint").trim() == APPLE_SOURCE
+        || (text_value(&data, "source_hint").trim().is_empty()
+            && state.route.is_none()
+            && solstone_core_import_sources::apple_export::detect_apple_zip_any_name(&source_path));
+    if !strava_card && !apple_upload && manifest_exists(&state.root, &source_hash) {
         return invalid_state(
             "content already imported",
             Some(ImportErrorKind::AlreadyImported),
@@ -2873,6 +2882,56 @@ mod tests {
             hash_source(&directory).unwrap().as_str(),
             format!("{:x}", Sha256::digest(b"nested/a.txt:3\nz.txt:1"))
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn the_same_apple_health_export_uploaded_again_is_a_new_import_not_a_refusal() {
+        use std::io::Write as _;
+        let zip_bytes = {
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            writer
+                .start_file("apple_health_export/export.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"<HealthData></HealthData>").unwrap();
+            writer.finish().unwrap();
+            cursor.into_inner()
+        };
+        let post = |hint: &str, item: &str| {
+            let boundary = "again";
+            let mut body = format!("--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n{item}\r\n").into_bytes();
+            if !hint.is_empty() {
+                body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"source_hint\"\r\n\r\n{hint}\r\n").as_bytes());
+            }
+            body.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"export.zip\"\r\nContent-Type: application/zip\r\n\r\n").as_bytes());
+            body.extend_from_slice(&zip_bytes);
+            body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+            Request::post("/app/import/api/save")
+                .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+                .body(Body::from(body))
+                .unwrap()
+        };
+        let root = TempDir::new().unwrap();
+        let response = crate::routes(root.path().to_path_buf()).oneshot(post("apple_health", "one")).await.unwrap();
+        let (_, first) = response_json(response).await;
+        let first_id = first["timestamp"].as_str().unwrap().to_owned();
+        // It ran: its manifest names these bytes, and it stopped with a reason.
+        let metadata = read_import_metadata(root.path(), &first_id).unwrap();
+        fs::write(
+            root.path().join("imports").join(&first_id).join("manifest.json"),
+            json!({"import_id": first_id, "source_type": "apple_health", "source_hash": metadata["source_hash"]}).to_string(),
+        )
+        .unwrap();
+        solstone_core_import_sources::body_status::record(root.path(), &first_id, "disk_full", 1);
+        for (hint, item) in [("apple_health", "two"), ("", "three")] {
+            let response = crate::routes(root.path().to_path_buf()).oneshot(post(hint, item)).await.unwrap();
+            let (status, again) = response_json(response).await;
+            assert_eq!(status, StatusCode::OK, "{hint:?}: {again}");
+            assert_ne!(again["timestamp"], first_id, "{hint:?}: a new import, not the one that ran: {again}");
+            assert_eq!(again["replay"], false, "{again}");
+            assert_eq!(again["metadata"]["source_hint"], "apple_health", "{again}");
+        }
     }
 
     #[cfg(all(test, feature = "full-tests"))]
