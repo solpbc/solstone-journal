@@ -23,7 +23,7 @@ use crate::area::{AreaTier, AreaTierError};
 pub const AREA_TIER_ASSET: &str = "geo/area-tier.bin";
 /// sha256 of the bundled area tier (GeoNames cities500 and Natural Earth).
 pub const AREA_TIER_SHA256: &str =
-    "96ac28b88fa338bec678e8ab1456d0f28322840eab66d36ad5d4d9c5acdc34ab";
+    "19b02aba8c8c898b02e2893b89f9f39153beaee6ee1596c06feccc48d5cc9ecc";
 
 const SOURCE_ASSETS_RELATIVE: &str = "core/models/assets";
 const INSTALLED_ASSETS_RELATIVE: &str = "lib/solstone_journal_models/assets";
