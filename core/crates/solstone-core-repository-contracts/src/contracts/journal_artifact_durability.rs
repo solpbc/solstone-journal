@@ -10,7 +10,7 @@ use solstone_core_journal_io::durability::{ArtifactId, DurabilityClass, artifact
 /// Journal files read under their owning module's policy instead of the
 /// shared durable readers. Other crates may observe these paths without
 /// performing a durable read or repair.
-const OWNER_MANAGED_PATHS: [&str; 2] = [
+const OWNER_MANAGED_PATHS: [&str; 3] = [
     // Provider install status: the installer reads it strictly and leaves a
     // damaged record in place; the thinking status reads it only to tell
     // whether a local model download is under way, and an unreadable record
@@ -20,6 +20,11 @@ const OWNER_MANAGED_PATHS: [&str; 2] = [
     // empty under its lock. Losing it can repeat a notice; no owner intent
     // or journal content is lost.
     "health/owner-notices.json",
+    // Kept copy of the signed security advisory: every read re-verifies the
+    // signature and expiry, and an unreadable copy reads as no advisory until
+    // the next daily fetch replaces it. Losing it flags nothing for a while;
+    // no owner intent or journal content is lost.
+    "health/security-advisory.json",
 ];
 
 const NO_SEMANTIC_VARIANTS: [ArtifactId; 12] = [
