@@ -8,8 +8,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- when your journal runs on a computer, once a day it reads a short notice, signed by sol pbc, that names the versions missing a security fix. if your journal, or the solstone app on a computer paired with it, is on one of them, you get a notification and a banner on your journal's home page that says which version to update to and links to what it fixes. the check is a plain request for a public file, like visiting a web page, and nothing about you, your journal or your devices goes with it.
 - you can now bring an Apple Health export in from the Apple Health card on the import page, when your journal runs on a computer. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
-- you can bring Oura into your journal with `solstone journal importer --connect oura` and then `--sync oura --save`. its workouts, sleep and readings land on their own days, the same way as Apple Health's.
+- you can bring Oura into your journal through an app you register with Oura yourself. `solstone journal importer --connect oura` asks for the app's client ID and secret the first time, then `--sync oura --save` brings Oura in. its workouts, sleep and readings land on their own days, the same way as Apple Health's. how to register it: [connecting Oura](https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md#connecting-oura).
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -25,8 +26,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
+- security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
 - security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
+- restoring an older backup while you set up a new journal on a computer now keeps the backups made after it. before, the restored journal's own backups could push them out, the newest first.
+- a stopped Apple Health import now says when the disk on the computer running your journal is full. the body page's empty state also makes clear that Apple Health and Oura imports need a journal running on a computer.
 - a stopped Apple Health import's own page now says what its row in your import history says, in place of "import failed".
+- the backup and health pages now say when another copy of your journal took over encrypted backup, in place of only "backup is off."
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
@@ -35,6 +40,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - local speech-to-text takes less time in the android and iphone development journals. the iphone development journal uses less memory when working through speech.
+- some recordings transcribed by early versions of the journal read as never transcribed, so that day's daily briefing was never made. they now count as transcribed, and that day's daily briefing is made.
 - the iphone development journal can save its recovery key and journal exports through the native share sheet.
 - home and health now show daily processing status in the iphone development journal.
 - fixed another android permission error when downloading a journal archive.
@@ -56,10 +62,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
-
-### Removed
-
-- importing Apple Health or Oura no longer needs an approval file set up first.
 
 ## [2.0.74] - 2026-11-10
 

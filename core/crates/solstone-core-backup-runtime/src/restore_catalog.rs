@@ -80,6 +80,13 @@ pub(crate) fn select_journal_snapshot(
 fn is_archive(entry: &Map<String, Value>) -> Result<bool, CatalogError> {
     match entry.get("tags") {
         None => Ok(false),
+        // A backup kept through an older restore is still a journal to restore.
+        Some(Value::Array(tags))
+            if tags.len() == 1
+                && tags[0].as_str() == Some(crate::engine::KEPT_BEFORE_RESTORE_TAG) =>
+        {
+            Ok(false)
+        }
         // Archives and offloaded media share the repository with journal
         // snapshots; neither is a journal to restore.
         Some(Value::Array(tags))
@@ -194,6 +201,18 @@ mod tests {
     }
 
     #[test]
+    fn a_backup_kept_through_an_older_restore_can_be_restored() {
+        let mut kept = snapshot(SECOND_ID, "2026-02-01T00:00:00Z");
+        kept["tags"] = json!([crate::engine::KEPT_BEFORE_RESTORE_TAG]);
+        let catalog = json!([snapshot(FIRST_ID, "2026-01-01T00:00:00Z"), kept]);
+        assert_eq!(
+            select_journal_snapshot(Some(&catalog)).unwrap().id,
+            SECOND_ID
+        );
+        assert_eq!(journal_snapshots(Some(&catalog)).unwrap().len(), 2);
+    }
+
+    #[test]
     fn catalog_rejects_all_other_tag_shapes() {
         for tags in [
             Value::Null,
@@ -202,6 +221,7 @@ mod tests {
             json!(["different"]),
             json!([ARCHIVE_TAG, "different"]),
             json!([ARCHIVE_TAG, OFFLOAD_ARCHIVE_TAG]),
+            json!([crate::engine::KEPT_BEFORE_RESTORE_TAG, ARCHIVE_TAG]),
             json!(ARCHIVE_TAG),
         ] {
             let mut entry = snapshot(FIRST_ID, "2026-01-01T00:00:00Z");

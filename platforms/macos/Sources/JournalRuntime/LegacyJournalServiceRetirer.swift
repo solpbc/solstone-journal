@@ -57,7 +57,7 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
     private let commandTimeout: Duration
     // `launchctl bootout` returns at once; the job stays loaded until it has
     // exited. launchd kills it 5 s after SIGTERM, or after the plist's
-    // ExitTimeOut when it sets one (20 s for launchd's own default stop).
+    // ExitTimeOut when it sets one (20 s in the plist the service install writes).
     private let absenceTimeout: Duration
     // The journal's own shutdown is budgeted at 15 s.
     private let gracefulStopTimeout: Duration
@@ -258,9 +258,10 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
 
     /// Asks a running job to stop and waits for it, before bootout unloads it.
     /// bootout sends SIGTERM and, unless the plist sets ExitTimeOut (the
-    /// service install does not), SIGKILLs the job 5 seconds later: shorter than
-    /// the journal's own shutdown. The journal exits 0 on a signal, so KeepAlive
-    /// (SuccessfulExit = false) leaves it stopped. If it is not gone in time,
+    /// service install now writes 20 s; older installs did not), SIGKILLs the
+    /// job 5 seconds later: shorter than the journal's own shutdown. The
+    /// journal exits 0 on a signal, so KeepAlive (SuccessfulExit = false)
+    /// leaves it stopped. If it is not gone in time,
     /// bootout below still unloads it.
     private func stopRunningJob(pid: pid_t) async {
         let output = LockedLegacyServiceOutput()

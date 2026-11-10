@@ -20,9 +20,8 @@ pub use plist::{
     render_launchd_plist,
 };
 pub use systemd::{
-    LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS, SERVICE_STOP_TIMEOUT_SECONDS,
-    is_exact_legacy_systemd_unit, render_systemd_unit, systemd_unit_port,
-    systemd_unit_start_program,
+    SERVICE_STOP_TIMEOUT_SECONDS, is_exact_legacy_systemd_unit, render_systemd_unit,
+    systemd_unit_port, systemd_unit_start_program,
 };
 pub use windows_task::{
     WINDOWS_TASK_RECOVERY_INTERVAL, WindowsRegistrationProfile, WindowsTaskInput,

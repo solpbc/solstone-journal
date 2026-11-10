@@ -2005,6 +2005,33 @@
       realtimeWired = true;
     }
 
+    // A security update the journal's advisory check found, for this journal
+    // or a paired app. The banner stays until the status says the install is
+    // no longer below its floor; a failed read leaves it as it was.
+    function securityLineHtml(flag) {
+      const fixedIn = typeof flag.fixed_in === 'string' ? flag.fixed_in : '';
+      const text = flag.subject === 'journal'
+        ? 'your journal is missing a security fix. update it to ' + fixedIn + ' or later.'
+        : 'the solstone app on ' + (typeof flag.device === 'string' && flag.device ? flag.device : 'one of your devices')
+          + ' is missing a security fix. update it to ' + fixedIn + ' or later.';
+      const notes = typeof flag.notes === 'string' && flag.notes.startsWith('https://') ? flag.notes : null;
+      const link = notes ? ' <a href="' + esc(notes) + '" target="_blank" rel="noreferrer" referrerpolicy="no-referrer">what it fixes ↗</a>' : '';
+      return '<p>' + esc(text) + link + '</p>';
+    }
+
+    function renderSecurity(status) {
+      const banner = document.getElementById('security-banner');
+      if (!banner || !isPlainObject(status)) return;
+      const flags = Array.isArray(status.security?.flags) ? status.security.flags.filter(isPlainObject) : [];
+      banner.innerHTML = flags.map(securityLineHtml).join('');
+      banner.hidden = flags.length === 0;
+    }
+
+    function readSecurity() {
+      if (typeof ctx.read !== 'function') return;
+      ctx.read('/api/system/status', { noAuthRedirect: true }).then(renderSecurity, function () {});
+    }
+
     function initHome() {
       if (homeInitialized) return;
       root = document.querySelector('[data-home-root]');
@@ -2033,6 +2060,8 @@
       loadPulse();
       readFirstMinutes();
       readAgents();
+      readSecurity();
+      ctx.visibleInterval(readSecurity, 60000);
     }
 
     ctx.on(document, 'visibilitychange', function () {

@@ -54,6 +54,9 @@ final class JournalAppModel {
             startSupervisor: { [supervisor] root in
                 await supervisor.start(journalRoot: root)
             },
+            stopSupervisor: { [supervisor] in
+                _ = await supervisor.stop()
+            },
             browserLink: { try await local.browserLink(path: $0) },
             windowModel: windowModel,
             supervisorIsLive: { [supervisor] root in
@@ -267,7 +270,7 @@ private struct JournalWindowSceneRoot: View {
         Group {
             if firstRunModel.route == .home {
                 ZStack(alignment: .top) {
-                    JournalSettingsWindow(model: model, updateController: updateController)
+                    JournalSettingsWindow(model: model, updateController: updateController, firstRunModel: firstRunModel)
                         .task(id: model.supervisor.state == .running) {
                             await model.loadForWindowOpen()
                         }

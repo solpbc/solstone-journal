@@ -6,15 +6,14 @@ use std::path::Path;
 
 const SERVICE_START_TIMEOUT_SECONDS: u32 = 120;
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
-/// How long systemd lets a stop run before it SIGKILLs the whole control
-/// group. The supervisor's own standard shutdown is budgeted well under it
-/// (`solstone_core_system::lifecycle::STANDARD_SHUTDOWN_BUDGET`; a test in
-/// `solstone-core` pins the margin), so this is the manager's backstop, not
-/// the shape of a normal stop. Matches launchd's default at 20 seconds.
+/// How long a service manager lets a stop run before it SIGKILLs the
+/// supervisor: systemd's `TimeoutStopSec` and launchd's `ExitTimeOut` both
+/// render this value. The supervisor's own standard shutdown is budgeted well
+/// under it (`solstone_core_system::lifecycle::STANDARD_SHUTDOWN_BUDGET`; a
+/// test in `solstone-core` pins the margin), so this is the manager's
+/// backstop, not the shape of a normal stop. launchd must be told: without
+/// `ExitTimeOut`, a `bootout` SIGKILLs the job 5 seconds after SIGTERM.
 pub const SERVICE_STOP_TIMEOUT_SECONDS: u32 = 20;
-/// launchd's documented default `ExitTimeOut`; the generated plist does not
-/// set one, so the supervisor's budget has to clear this too.
-pub const LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS: u32 = 20;
 
 /// Render the systemd user unit for the Solstone supervisor.
 pub fn render_systemd_unit(

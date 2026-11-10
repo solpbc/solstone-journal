@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- you can now start a new journal from the location pane and restore from a backup during setup. your current journal stops and stays in its folder, unchanged, and you can switch back to it there.
+
 ## [2.0.74 (build 126)] - 2026-11-10
 
 ### Changed

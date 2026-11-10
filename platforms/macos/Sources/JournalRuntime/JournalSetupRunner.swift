@@ -63,6 +63,7 @@ public struct JournalSetupRunner: Sendable {
         journalRoot rawJournalRoot: URL,
         skipService: Bool = true,
         skipModelInstall: Bool = false,
+        force: Bool = false,
         progress: @escaping @Sendable (JournalSetupProgressEvent) async -> Void = { _ in }
     ) async throws -> JournalSetupResult {
         let journalRoot = rawJournalRoot.standardizedFileURL
@@ -113,7 +114,9 @@ public struct JournalSetupRunner: Sendable {
             result = try await withTaskCancellationHandler {
                 try await subprocessRunner.run(
                     executable: runtime.layout.solstoneBinary,
-                    arguments: ["journal"] + JournalSetupCommand.setupArguments(journalURL: journalRoot, skipService: skipService),
+                    arguments: ["journal"] + JournalSetupCommand.setupArguments(
+                        journalURL: journalRoot, skipService: skipService, force: force
+                    ),
                     environment: setupEnvironment,
                     timeout: setupTimeout,
                     stdoutHandler: { [output, progressContinuation] data in

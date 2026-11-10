@@ -6,6 +6,8 @@ use std::path::Path;
 
 use plist::{Dictionary, Value};
 
+use crate::systemd::SERVICE_STOP_TIMEOUT_SECONDS;
+
 const SERVICE_LABEL: &str = "org.solpbc.solstone";
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 
@@ -107,6 +109,12 @@ pub fn render_launchd_plist(
     );
     plist.insert("RunAtLoad".into(), Value::Boolean(true));
     plist.insert("KeepAlive".into(), Value::Dictionary(keep_alive));
+    // launchd's bootout SIGKILLs 5 s after SIGTERM unless the plist says
+    // otherwise, which would cut the supervisor's standard shutdown short.
+    plist.insert(
+        "ExitTimeOut".into(),
+        Value::Integer(i64::from(SERVICE_STOP_TIMEOUT_SECONDS).into()),
+    );
     plist.insert(
         "SoftResourceLimits".into(),
         Value::Dictionary(resource_limits),
@@ -170,6 +178,7 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([
                 "EnvironmentVariables",
+                "ExitTimeOut",
                 "KeepAlive",
                 "Label",
                 "ProgramArguments",
@@ -177,6 +186,7 @@ mod tests {
                 "SoftResourceLimits",
             ])
         );
+        assert_eq!(dictionary["ExitTimeOut"], Value::Integer(20_i64.into()));
         assert_eq!(dictionary["Label"].as_string(), Some("org.solpbc.solstone"));
         assert_eq!(
             dictionary["ProgramArguments"].as_array(),

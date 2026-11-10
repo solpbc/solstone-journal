@@ -634,11 +634,9 @@ mod tests {
         );
         // Stopped on a full disk, for this attempt.
         body_status::record(root, "20261010_120000", "disk_full", 1);
-        assert!(
-            row(root, "20261010_120000")
-                .unwrap()
-                .1
-                .starts_with("the disk filled up")
+        assert_eq!(
+            row(root, "20261010_120000").unwrap().1,
+            body_status::stopped_words("disk_full")
         );
         // A reason from another generation is ignored.
         body_status::record(root, "20261010_120000", "export_incomplete", 2);

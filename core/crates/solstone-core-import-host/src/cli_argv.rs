@@ -16,7 +16,7 @@ use solstone_core_segment::{
 };
 
 use solstone_core_import::cli_render::{self, CliRun};
-use solstone_core_import::connect::{OuraConnectRequest, connect_oura};
+use solstone_core_import::connect::{OuraConnectRequest, connect_oura, needs_oura_app};
 use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest, SyncSaveRequest};
 use solstone_core_import::detect::{
     ManifestSummary, RegistrySource, ResolutionOptions, ResolutionOutcome, ResolutionSeams,
@@ -614,15 +614,43 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
             1,
         );
     }
-    match connect_oura(&OuraConnectRequest {
-        journal_root: journal_path.to_path_buf(),
-        timeout_seconds: 300,
-    }) {
+    let connect = |app| {
+        connect_oura(&OuraConnectRequest {
+            journal_root: journal_path.to_path_buf(),
+            timeout_seconds: 300,
+            app,
+        })
+    };
+    let result = match connect(None) {
+        Err(error) if needs_oura_app(&error) => {
+            if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+                return failure("", &crate::oura_app_question::app_needed_words(), 1);
+            }
+            let asked = crate::oura_app_question::ask_oura_app(
+                &mut std::io::stdin().lock(),
+                &mut std::io::stdout(),
+            );
+            let Some(app) = asked else {
+                return failure(
+                    "",
+                    "Oura needs both the client ID and the client secret, so nothing was saved.\n",
+                    1,
+                );
+            };
+            connect(Some(app))
+        }
+        other => other,
+    };
+    match result {
         Ok(outcome) => success(format!(
-            "Oura authorization saved to journal config.\nAuthorized scopes: {}\n",
+            "Oura is connected, and the connection is saved in this journal's settings.\npermissions asked for: {}\n",
             outcome.report.scopes().join(" ")
         )),
-        Err(error) => failure("", &format!("{error}\n"), 1),
+        Err(error) => failure(
+            "",
+            &crate::oura_app_question::connect_failed_words(&error),
+            1,
+        ),
     }
 }
 

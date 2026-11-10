@@ -257,6 +257,7 @@ window.whenShellReady(() => {
           if (statusPaneOpen) {
             renderCaptureSection(data.capture);
             renderVersionSection(data.version);
+            renderSecuritySection(data.security);
           }
         } else {
           lastCaptureStatusForPane = 'unknown';
@@ -434,6 +435,31 @@ window.whenShellReady(() => {
       text.textContent = 'update status unknown';
       text.style.color = '';
     }
+  }
+
+  // What the security advisory check found. Nothing shows while it checks
+  // or when nothing is behind; an advisory it couldn't confirm says so.
+  function renderSecuritySection(security) {
+    const text = document.getElementById('security-text');
+    if (!text) return;
+    const flags = Array.isArray(security?.flags) ? security.flags : [];
+    text.textContent = '';
+    text.style.color = '';
+    if (flags.length) {
+      text.style.color = 'var(--warn-ink)';
+      flags.forEach(function (flag) {
+        const line = document.createElement('div');
+        line.textContent = (flag?.subject === 'journal'
+          ? 'your journal is missing a security fix'
+          : 'the solstone app on ' + (flag?.device || 'one of your devices') + ' is missing a security fix')
+          + ' (update to ' + (flag?.fixed_in || '?') + ').';
+        text.appendChild(line);
+      });
+    } else if (security?.state === 'unconfirmed') {
+      text.textContent = "couldn't check for security updates.";
+      text.style.color = 'var(--ink-faint)';
+    }
+    text.style.display = text.textContent ? '' : 'none';
   }
 
 	  function renderQuietNotifs() {

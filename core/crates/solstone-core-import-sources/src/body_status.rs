@@ -187,7 +187,9 @@ pub fn stopped_words(code: &str) -> String {
 #[must_use]
 pub fn words(code: &str) -> &'static str {
     match code {
-        "disk_full" => "the disk filled up before it finished.",
+        "disk_full" => {
+            "the disk on the computer your journal runs on filled up before it finished."
+        }
         "permission" => "the journal wasn't allowed to open the export.",
         "windows_not_saving" => {
             "too many parts of your journal in a row couldn't be saved, so it stopped."

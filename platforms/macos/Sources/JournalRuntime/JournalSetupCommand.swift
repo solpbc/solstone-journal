@@ -4,7 +4,9 @@
 import Foundation
 
 public enum JournalSetupCommand {
-    public static func setupArguments(journalURL: URL, skipService: Bool) -> [String] {
+    /// `force` re-runs every step. Setup otherwise skips the steps its last run finished, and a
+    /// skipped run leaves this installation bound to whichever journal it last set up.
+    public static func setupArguments(journalURL: URL, skipService: Bool, force: Bool = false) -> [String] {
         var arguments = [
             "setup",
             "--jsonl",
@@ -17,6 +19,9 @@ public enum JournalSetupCommand {
         ]
         if skipService {
             arguments.append("--skip-service")
+        }
+        if force {
+            arguments.append("--force")
         }
         return arguments
     }

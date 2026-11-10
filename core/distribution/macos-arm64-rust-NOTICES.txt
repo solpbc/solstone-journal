@@ -3798,45 +3798,6 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 
-SHA-256: 2820e89ad265d81d8478348c5c51ee10d3a447532f597e47409b1593673e80fc
-
-/* #include <assert.h> */
-/************** Include sqlcipher.h in the middle of sqlcipher.c *************/
-/************** Begin file sqlcipher.h ***************************************/
-/*
-** SQLCipher
-** sqlcipher.h developed by Stephen Lombardo (Zetetic LLC)
-** sjlombardo at zetetic dot net
-** http://zetetic.net
-**
-** Copyright (c) 2008, ZETETIC LLC
-** All rights reserved.
-**
-** Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are met:
-**     * Redistributions of source code must retain the above copyright
-**       notice, this list of conditions and the following disclaimer.
-**     * Redistributions in binary form must reproduce the above copyright
-**       notice, this list of conditions and the following disclaimer in the
-**       documentation and/or other materials provided with the distribution.
-**     * Neither the name of the ZETETIC LLC nor the
-**       names of its contributors may be used to endorse or promote products
-**       derived from this software without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
-** EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-** WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
-** DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-** (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-** LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-** ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
-*/
-/* BEGIN SQLCIPHER */
-
 SHA-256: 29e9fe5074bd27e0e5d5d110394fbbcd841baee2651a3c4b4560a632702cede4
 
 Copyright (c) 2018-2025 The rust-random Project Developers
@@ -11184,44 +11145,6 @@ SHA-256: 7abd9b6960dcf7d4d0a48606a5b71bfe37d472db68d70637f3a58a56785f1621
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 
-SHA-256: 7b054e5b480a7ea3d32387f7cd2814ceaf453853e1e5078076003077b9b86277
-
-/* END SQLCIPHER */
-
-/************** End of crypto_openssl.c **************************************/
-/************** Begin file crypto_cc.c ***************************************/
-/*
-** SQLCipher
-** http://sqlcipher.net
-**
-** Copyright (c) 2008 - 2013, ZETETIC LLC
-** All rights reserved.
-**
-** Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are met:
-**     * Redistributions of source code must retain the above copyright
-**       notice, this list of conditions and the following disclaimer.
-**     * Redistributions in binary form must reproduce the above copyright
-**       notice, this list of conditions and the following disclaimer in the
-**       documentation and/or other materials provided with the distribution.
-**     * Neither the name of the ZETETIC LLC nor the
-**       names of its contributors may be used to endorse or promote products
-**       derived from this software without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
-** EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-** WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
-** DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-** (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-** LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-** ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
-*/
-/* BEGIN SQLCIPHER */
-
 SHA-256: 7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0
 
 Copyright (c) 2015 The Rust Project Developers
@@ -18081,44 +18004,6 @@ SHA-256: c57b08e1be2c53dc513687a7cc45db108a387856f35541a7828a7819626d9e11
  * // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-SHA-256: c5c3c1a1de48536e34ae3c2dfe73473d5b241865874a7dd4f2cad1916997d554
-
-/* END SQLCIPHER */
-
-/************** End of sqlcipher.c *******************************************/
-/************** Begin file crypto_libtomcrypt.c ******************************/
-/*
-** SQLCipher
-** http://sqlcipher.net
-**
-** Copyright (c) 2008 - 2013, ZETETIC LLC
-** All rights reserved.
-**
-** Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are met:
-**     * Redistributions of source code must retain the above copyright
-**       notice, this list of conditions and the following disclaimer.
-**     * Redistributions in binary form must reproduce the above copyright
-**       notice, this list of conditions and the following disclaimer in the
-**       documentation and/or other materials provided with the distribution.
-**     * Neither the name of the ZETETIC LLC nor the
-**       names of its contributors may be used to endorse or promote products
-**       derived from this software without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
-** EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-** WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
-** DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-** (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-** LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-** ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
-*/
-/* BEGIN SQLCIPHER */
-
 SHA-256: c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08
 
                                  Apache License
@@ -18679,42 +18564,6 @@ FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
-
-SHA-256: cac05413adf4ccdb1a8aa0f609eb3338a48be811569e91ae743f04d408b26077
-
-/************** End of memjournal.c ******************************************/
-/************** Begin file sqlcipher.c ***************************************/
-/*
-** SQLCipher
-** http://zetetic.net
-**
-** Copyright (c) 2008-2024, ZETETIC LLC
-** All rights reserved.
-**
-** Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are met:
-**     * Redistributions of source code must retain the above copyright
-**       notice, this list of conditions and the following disclaimer.
-**     * Redistributions in binary form must reproduce the above copyright
-**       notice, this list of conditions and the following disclaimer in the
-**       documentation and/or other materials provided with the distribution.
-**     * Neither the name of the ZETETIC LLC nor the
-**       names of its contributors may be used to endorse or promote products
-**       derived from this software without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
-** EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-** WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
-** DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-** (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-** LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-** ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
-*/
-/* BEGIN SQLCIPHER */
 
 SHA-256: cb46be9fcc2a1ebdf2ffe5fec6eea9adcb1e0798360cfa88f06927a0a449ebb2
 
@@ -20226,44 +20075,6 @@ SHA-256: db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a
 
 MIT OR Apache-2.0
 
-SHA-256: dbdc422df4baf9a8739d6e0392b7fad30ce647ef4acdf38533f500c9cfdca87e
-
-/* END SQLCIPHER */
-
-/************** End of crypto_libtomcrypt.c **********************************/
-/************** Begin file crypto_openssl.c **********************************/
-/*
-** SQLCipher
-** http://sqlcipher.net
-**
-** Copyright (c) 2008 - 2013, ZETETIC LLC
-** All rights reserved.
-**
-** Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are met:
-**     * Redistributions of source code must retain the above copyright
-**       notice, this list of conditions and the following disclaimer.
-**     * Redistributions in binary form must reproduce the above copyright
-**       notice, this list of conditions and the following disclaimer in the
-**       documentation and/or other materials provided with the distribution.
-**     * Neither the name of the ZETETIC LLC nor the
-**       names of its contributors may be used to endorse or promote products
-**       derived from this software without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
-** EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-** WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
-** DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-** (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-** LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-** ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
-*/
-/* BEGIN SQLCIPHER */
-
 SHA-256: dbe1fff0fb1314b6af94f161511406275cf01c5a32441fbf24528a57a051d599
 
 Minimal-lexical is dual licensed under the Apache 2.0 license as well as the MIT
@@ -21105,34 +20916,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-
-SHA-256: ea4fcb309f14a22065e1ea45362d494d320012249ed865fe9c7c0946db754131
-
-Copyright (c) 2008-2020 Zetetic LLC
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the ZETETIC LLC nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
-EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 
 SHA-256: eae6ac089cd32010ffacb4b2f0f8cbac03ad2623e115386af53bfc93e04d1903
 

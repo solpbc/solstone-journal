@@ -1923,6 +1923,20 @@ asyncCase('general backup summary replaces a reassuring result after failed poll
   assert.strictEqual(reloaded.root.querySelector('[data-backup-summary]').dataset.tone, 'neutral');
 });
 
+asyncCase('a copy whose encrypted backup was taken over says why backup is off', async () => {
+  const plain = createHarness({ statusQueue: [{ ...status(), enabled: false, last_backup: null }] });
+  await ready(plain);
+  const off = plain.root.querySelector('[data-backup-summary]');
+  assert.strictEqual(off.dataset.tone, 'neutral');
+  const taken = createHarness({ statusQueue: [{ ...status(), enabled: false, last_backup: {
+    status: 'cleared_superseded', time: 1770000000, error_reason: 'binding_superseded' } }] });
+  await ready(taken);
+  const summary = taken.root.querySelector('[data-backup-summary]');
+  assert.strictEqual(summary.dataset.tone, 'attention', 'nobody chose this, so it needs the owner');
+  assert.ok(summary.textContent.startsWith(off.textContent) && summary.textContent !== off.textContent,
+    'it still says backup is off, and gives the reason');
+});
+
 asyncCase('a malformed fresh status cannot borrow successful facts from the previous status', async () => {
   const success = { status: 'ok', time: 1770000000, snapshot_id: 'copy-a' };
   for (const malformed of [{ success: true }, { success: true, enabled: true }]) {
