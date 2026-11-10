@@ -13,6 +13,39 @@ use serde_json::{Value, json};
 
 static NEXT_ROOT: AtomicUsize = AtomicUsize::new(0);
 
+/// A refusal after an admitted request may log its one bounded failure-timing
+/// observation to stderr; the wire client reads only stdout on exit 0. Nothing
+/// else may reach stderr, and the observation carries only timing fields.
+fn assert_stderr_only_failure_timing(stderr: &[u8]) {
+    let stderr = std::str::from_utf8(stderr).expect("UTF-8 stderr");
+    let marker = "solstone_core_local] local_inference_failure ";
+    for line in stderr.lines() {
+        let (_, timing) = line
+            .split_once(marker)
+            .unwrap_or_else(|| panic!("unexpected stderr line: {line}"));
+        let timing: Value = serde_json::from_str(timing).expect("failure timing JSON");
+        let mut keys: Vec<&str> = timing
+            .as_object()
+            .expect("failure timing object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "admission_slot",
+                "attempt",
+                "client_total_ms",
+                "deadline_ms",
+                "phase",
+                "queue_wait_ms",
+                "timed_out"
+            ]
+        );
+    }
+}
+
 fn root(name: &str) -> PathBuf {
     let suffix = NEXT_ROOT.fetch_add(1, Ordering::Relaxed);
     let stamp = SystemTime::now()
@@ -164,7 +197,7 @@ fn generate_binary_keeps_refusal_stdout_json_only() {
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write local port");
     let output = run(&input(&journal));
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stderr, b"");
+    assert_stderr_only_failure_timing(&output.stderr);
     assert_eq!(
         output.stdout.iter().filter(|byte| **byte == b'\n').count(),
         1

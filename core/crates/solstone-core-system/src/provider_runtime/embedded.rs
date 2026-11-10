@@ -265,6 +265,9 @@ pub(super) fn start_embedded(
         Ok(engine) => engine,
         Err(_) => return outcome(LaunchOutcomeStatus::LaunchFailed, "launch-failed"),
     };
+    // Windows file locks are Send, but the retained shared holder also needs Sync.
+    #[cfg(windows)]
+    let model_hold = std::sync::Mutex::new(model_hold);
     let authority = LocalAuthority::Embedded {
         engine,
         startup_permit,
