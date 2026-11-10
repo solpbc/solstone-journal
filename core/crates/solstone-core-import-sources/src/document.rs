@@ -1294,6 +1294,40 @@ pub fn prepare_document_import(
     }
 }
 
+/// Install prepared documents into their segments without an import record.
+///
+/// The caller lists the segments on its own import. This writes no content
+/// manifest and does not publish.
+pub fn install_document_segments(
+    prepared_import: &PreparedDocumentImport,
+    journal_root: &Path,
+    publication: &dyn PublicationOperations,
+) -> Result<Vec<CreatedSegment>, String> {
+    let mut created = Vec::new();
+    for item in &prepared_import.items {
+        if !solstone_core_import::work_continues() {
+            break;
+        }
+        install_artifacts(
+            &item.source,
+            &item.segment_dir,
+            &item.prepared,
+            item.claim.binding.as_deref(),
+            journal_root,
+            &item.claim.day,
+            publication,
+        )
+        .map_err(|error| error.to_string())?;
+        created.push(CreatedSegment {
+            day: item.claim.day.clone(),
+            segment: item.claim.segment.clone(),
+            stream: STREAM.to_owned(),
+            hints: StreamHints::default(),
+        });
+    }
+    Ok(created)
+}
+
 pub fn install_and_publish_document(
     prepared_import: &PreparedDocumentImport,
     request: &DocumentImportRequest<'_>,

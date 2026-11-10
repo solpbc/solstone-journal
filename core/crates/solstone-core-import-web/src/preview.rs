@@ -311,6 +311,9 @@ fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
     if let Some(size) = crate::audio_archive::size(&size) {
         return Ok(size);
     }
+    if size.get("schema").and_then(Value::as_str) == Some("solstone.import.evernote.preview.v1") {
+        return Ok(size);
+    }
     if size.get("schema").and_then(Value::as_str) != Some("solstone.import.size.v1") {
         return Err(PreviewError::PlanFailed(
             "this source does not provide a recording preview".to_owned(),

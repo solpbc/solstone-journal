@@ -89,6 +89,12 @@ pub const IMPORTERS: &[ImporterRow] = &[
         file_patterns: &["*.zip", "*.csv"],
         description: "Workouts from a Strava download (only its activities.csv is read)",
     },
+    ImporterRow {
+        name: "evernote",
+        display_name: "Evernote",
+        file_patterns: &["*.enex"],
+        description: "Notes from an Evernote export",
+    },
 ];
 
 pub const BACKENDS: &[&str] = &["plaud", "audio", "oura"];

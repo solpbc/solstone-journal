@@ -136,6 +136,16 @@ const SOURCES: &[SourceMetadata] = &[
         accept: ".zip,.csv",
     },
     SourceMetadata {
+        name: "evernote",
+        display_name: "Evernote",
+        icon: "file",
+        description: "bring in notes from an Evernote export",
+        input_type: "file",
+        upload_prompt: "upload an Evernote export",
+        has_guide: false,
+        accept: ".enex",
+    },
+    SourceMetadata {
         name: "quick",
         display_name: "quick import",
         icon: "zap",
@@ -309,6 +319,12 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
             .as_ref()
             .map_or(Value::Null, |stage| json!(stage)),
     );
+    if let Ok(finish) = std::fs::read_to_string(directory.join("finish.txt")) {
+        let finish = finish.trim();
+        if !finish.is_empty() {
+            values.insert("finish".into(), json!(finish));
+        }
+    }
     if values.get("source_type").is_none_or(Value::is_null) && source(&proj.source_type).is_some() {
         values.insert("source_type".into(), json!(proj.source_type));
         values.insert("source_display".into(), json!(proj.source_display));
