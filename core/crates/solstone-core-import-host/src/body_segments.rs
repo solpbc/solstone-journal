@@ -2027,6 +2027,9 @@ fn run_segments_bound(
         }
     };
     admitted.set(true);
+    if source.source == APPLE.source {
+        solstone_core_import_sources::body_runs::stamp(journal, &import_id);
+    }
     let run = Run {
         journal,
         source,

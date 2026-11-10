@@ -6,8 +6,10 @@
 //!
 //! It reads the import's own record (its attempt, its publication record and
 //! any `body-stop.json`) and where it stands among the journal's other Apple
-//! Health imports, by when each started. It reads no run state. Earlier imports
-//! take the same reading; a row it can't place keeps the import page's own.
+//! Health imports, in the order this journal admitted their runs
+//! (`body_runs`), never by the clock. It reads no run state. An import that
+//! didn't run here, such as a merged one, is never ordered, so no later run
+//! reads as having saved it. A row it can't place keeps the import page's own.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -18,6 +20,7 @@ use solstone_core_import::publish::{
     DayMarkerStatus, SegmentBindingOutcome, read_publication_record,
 };
 use solstone_core_import::{ProjectionStatus, read_import_metadata};
+use solstone_core_import_sources::body_runs;
 use solstone_core_import_sources::body_status::{self, StopClass};
 
 const APPLE: &str = "apple_health";
@@ -27,6 +30,9 @@ const APPLE: &str = "apple_health";
 pub(crate) struct Seen {
     id: String,
     started_ms: Option<u64>,
+    /// Its place in this journal's order of runs; a live start not yet
+    /// admitted comes after every admitted one.
+    order: Option<u64>,
     running: bool,
     /// `Completed` with a readable record listing no failing window.
     clean: bool,
@@ -37,6 +43,7 @@ pub(crate) fn apple_imports(root: &Path) -> Vec<Seen> {
     let Ok(entries) = std::fs::read_dir(root.join("imports")) else {
         return Vec::new();
     };
+    let order = body_runs::Order::read(root);
     entries
         .flatten()
         .filter_map(|entry| {
@@ -60,9 +67,13 @@ pub(crate) fn apple_imports(root: &Path) -> Vec<Seen> {
                 solstone_core_import::project_import_result(root, &id).status == ProjectionStatus::Running;
             let clean = matches!(&attempt, AttemptRead::Present(facts) if facts.state == AttemptState::Completed)
                 && failing_windows(root, &id) == Some(0);
+            let order = order
+                .of(root, &id)
+                .or_else(|| running.then_some(u64::MAX));
             Some(Seen {
                 id,
                 started_ms,
+                order,
                 running,
                 clean,
             })
@@ -174,16 +185,10 @@ pub(crate) fn apple_row(
     ) {
         return None;
     }
-    let started = match &attempt {
-        AttemptRead::Present(facts) => Some(facts.started_at_ms),
-        _ => metadata
-            .get("task_id")
-            .and_then(Value::as_str)
-            .and_then(|task| task.parse::<u64>().ok()),
-    };
+    let ours = body_runs::Order::read(root).of(root, import_id);
     let later = |seen: &&Seen| {
         seen.id != import_id
-            && match (seen.started_ms, started) {
+            && match (seen.order, ours) {
                 (Some(theirs), Some(ours)) => theirs > ours,
                 _ => false,
             }
@@ -212,7 +217,7 @@ pub(crate) fn apple_row(
         .iter()
         .filter(later)
         .filter(|seen| seen.clean || seen.running)
-        .min_by_key(|seen| seen.started_ms);
+        .min_by_key(|seen| seen.order);
     let words = match after {
         Some(seen) if seen.clean => format!(
             "stopped before it finished. your import of {} ran after it.",
@@ -295,6 +300,7 @@ mod tests {
         staged(root, id);
         let facts =
             solstone_core_import::admit_running_attempt(root, id, started, Some(APPLE)).unwrap();
+        body_runs::stamp(root, id);
         if let Some(record) = record {
             write_publication_record(Some(&root.join("imports").join(id)), &record).unwrap();
         }
@@ -457,6 +463,9 @@ mod tests {
         let journal = journal();
         let root = journal.path();
         let failed = || SegmentBindingOutcome::FailedAtMarkerWrite { error: "x".into() };
+        // A clean import that ran here before it, though its clock reads later
+        // and its id sorts later: the clock went back between the two runs.
+        ran(root, "20261010_130000", 9_000, true, Some(clean()));
         ran(
             root,
             "20261010_120000",
@@ -468,9 +477,34 @@ mod tests {
                 vec![],
             )),
         );
-        // An import with a later id that started earlier doesn't count.
-        ran(root, "20261010_130000", 4_000, true, Some(clean()));
         assert_eq!(row(root, "20261010_120000").unwrap().0, "partly_saved");
+        // A clean import merged in from another journal, started later, its
+        // own mark copied with it: it didn't run here, so it carried nothing.
+        // Its number there is higher than anything here, so only the journal
+        // it carries tells them apart.
+        let other = super::tests::journal();
+        for earlier in ["20261010_131000", "20261010_132000", "20261010_133000"] {
+            ran(other.path(), earlier, 6_000, true, Some(clean()));
+        }
+        ran(other.path(), "20261010_135000", 6_500, true, Some(clean()));
+        let merged = root.join("imports/20261010_135000");
+        fs::create_dir_all(&merged).unwrap();
+        for entry in fs::read_dir(other.path().join("imports/20261010_135000")).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_file() {
+                fs::copy(entry.path(), merged.join(entry.file_name())).unwrap();
+            }
+        }
+        assert_eq!(
+            row(root, "20261010_135000").unwrap().0,
+            "saved",
+            "merged in whole"
+        );
+        assert_eq!(
+            row(root, "20261010_120000").unwrap().0,
+            "partly_saved",
+            "a merged clean import saves nothing here"
+        );
         // A later one that itself left hours doesn't either.
         ran(
             root,
