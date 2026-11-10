@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 
 use crate::BodyIngestError;
+pub use crate::oura_connect::{OuraApp, needs_oura_app};
 use crate::oura_connect::{
     OuraConnectOptions, OuraConnectReport, connect_oura as body_connect_oura,
 };
@@ -15,6 +16,9 @@ use crate::oura_connect::{
 pub struct OuraConnectRequest {
     pub journal_root: PathBuf,
     pub timeout_seconds: u64,
+    /// The owner's own Oura app, typed at the terminal, or `None` for the one
+    /// this journal holds.
+    pub app: Option<OuraApp>,
 }
 
 /// Data returned by the native authorization owner.
@@ -27,6 +31,7 @@ pub struct OuraConnectOutcome {
 pub fn connect_oura(request: &OuraConnectRequest) -> Result<OuraConnectOutcome, BodyIngestError> {
     let options = OuraConnectOptions {
         timeout_seconds: request.timeout_seconds,
+        app: request.app.clone(),
     };
     body_connect_oura(&request.journal_root, &options).map(|report| OuraConnectOutcome { report })
 }

@@ -63,6 +63,17 @@ New Apple Health and Oura entries use the import's chosen or remembered facet, e
 
 **The phone.** The embedded importer refuses Apple Health and every Oura connect and sync, and the phone's import page has no Apple Health card.
 
+### Connecting Oura
+
+Oura connects only through an app you register with Oura yourself. sol pbc registers no Oura app: your app's client ID and secret, its tokens and your Oura data stay in your journal, and the journal talks only to Oura.
+
+1. Sign in at [cloud.ouraring.com/oauth/applications](https://cloud.ouraring.com/oauth/applications) with your Oura account and create an application.
+2. Give it the redirect URI `http://localhost:8765/callback`, exactly as written.
+3. On the computer your journal runs on, run `solstone journal importer --connect oura` in a terminal. The first time, it asks for the client ID and client secret shown on your app's page at Oura, then opens Oura's own sign-in in your browser. Allow the permissions Oura asks for there.
+4. Run `solstone journal importer --sync oura --save` to bring Oura in.
+
+The client ID and secret are saved in the journal's settings, with the tokens, only once Oura says yes, so a mistyped one leaves nothing saved: run the connect again. Without a terminal (from a script, say), a first connect saves nothing and says what it needs. The connect opens Oura's sign-in in a browser on the journal's computer and waits for it, so run it at that computer, not over a remote session.
+
 ## Earlier body imports
 
 An earlier release saved Apple Health and Oura data, and before it Python saved those and Dexcom Clarity, as bundles under `imports/`: a directory with `normalized/` and neither `body-touched.jsonl` nor `body-progress.json`. They stay on disk, untouched, and nothing reads their rows. So do `imports/health-dedupe.sqlite`, `imports/oura.json` as a cursor, and `imports/_approvals/`.

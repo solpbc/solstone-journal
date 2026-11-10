@@ -9,7 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - you can now bring an Apple Health export in from the Apple Health card on the import page, when your journal runs on a computer. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
-- you can bring Oura into your journal with `solstone journal importer --connect oura` and then `--sync oura --save`. its workouts, sleep and readings land on their own days, the same way as Apple Health's.
+- you can bring Oura into your journal through an app you register with Oura yourself. `solstone journal importer --connect oura` asks for the app's client ID and secret the first time, then `--sync oura --save` brings Oura in. its workouts, sleep and readings land on their own days, the same way as Apple Health's. how to register it: [connecting Oura](https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md#connecting-oura).
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -58,10 +58,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
-
-### Removed
-
-- importing Apple Health or Oura no longer needs an approval file set up first.
 
 ## [2.0.74] - 2026-11-10
 
