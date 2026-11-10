@@ -643,12 +643,14 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
     // A page start's import is checked before anything else, so a start aimed at
     // an import that already ran never changes it.
     let page_import = options.import_id.clone();
+    // A dry run (the preview the desktop command runs before every import)
+    // names the same import, and writes and removes nothing.
+    let dry_run = options.dry_run;
     if let Some(id) = page_import.as_deref() {
         // Only an Apple Health card's save names its import. Anything else that
         // names one is refused here, and nothing is written or removed.
-        let apple_save = !options.dry_run
-            && options.source.as_deref() == Some("apple_health")
-            && options.media.is_some();
+        let apple_save =
+            options.source.as_deref() == Some("apple_health") && options.media.is_some();
         if !apple_save {
             return rendered(failure(
                 "",
@@ -665,7 +667,7 @@ fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> 
         }
     }
     let outcome = run_import_accepted(options, journal_path, dispatch);
-    if let Some(id) = page_import.as_deref() {
+    if let Some(id) = page_import.as_deref().filter(|_| !dry_run) {
         let failed = match &outcome {
             CliOutcome::Rendered(run) | CliOutcome::Imported { run, .. } if run.exit_code != 0 => {
                 Some(run.stderr.trim_end())

@@ -522,13 +522,14 @@ mod page_start {
             solstone_core_import::snapshot::fingerprint(&root.join("imports").join(P)).unwrap(),
             before
         );
-        // Holding another export, a dry run, or anything but an Apple save: refused,
-        // and the named import is exactly as it was, its upload included.
+        // Holding another export, as a run or as a dry run, or anything but an
+        // Apple save: refused, and the named import is exactly as it was, its
+        // upload included.
         let other = "20261012_150000";
         let held = page_record(root, other, &[heart("2026-10-09 06:40:00 -0600")]);
         let untouched =
             solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap();
-        let mut dry = page_args(&held, other, true);
+        let mut dry = page_args(elsewhere.path(), other, true);
         dry.push("--dry-run".to_owned());
         let mut not_apple = page_args(&held, other, true);
         let at = not_apple
@@ -547,6 +548,20 @@ mod page_start {
             );
         }
         assert!(held.exists(), "its upload stays");
+        // The desktop command's own preview of the card's save: a dry run of the
+        // same arguments, which goes through, writes nothing, and leaves the
+        // upload for the save that follows it.
+        let mut preview = page_args(&held, other, true);
+        preview.push("--dry-run".to_owned());
+        let run = run_page(root, &preview);
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert_eq!(
+            solstone_core_import::snapshot::fingerprint(&root.join("imports").join(other)).unwrap(),
+            untouched,
+            "the preview writes nothing"
+        );
+        let run = run_page(root, &page_args(&held, other, true));
+        assert_eq!(run.exit_code, 0, "the save after it: {}", run.stderr);
     }
 
     #[test]
