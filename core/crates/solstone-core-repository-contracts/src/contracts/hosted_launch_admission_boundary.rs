@@ -447,6 +447,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "security_advisory",
+        include_str!("../../../solstone-core-convey-shell/src/security_advisory.rs"),
+    ),
+    (
+        "convey",
         "service_handoffs",
         include_str!("../../../solstone-core-convey-shell/src/service_handoffs.rs"),
     ),
