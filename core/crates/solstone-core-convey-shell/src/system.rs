@@ -13,7 +13,7 @@ use solstone_core_home::readers::get_capture_health;
 /// What this journal understands from a linked device, beyond the ingest
 /// protocol itself. A device sends a kind of content only to a journal that
 /// lists it here.
-const CAPABILITIES: &[&str] = &["calendar_notes", "obsidian_notes"];
+const CAPABILITIES: &[&str] = &["calendar_notes", "obsidian_notes", "screenshots"];
 
 /// What the journal's own update check last learned. The status route reads
 /// only this, so no page or device reading it causes a request to the update
@@ -414,7 +414,9 @@ mod tests {
         ] {
             let body = status_body(version.clone(), capture.clone());
             let capabilities = body["capabilities"].as_array().unwrap();
-            assert!(capabilities.iter().any(|value| value == "calendar_notes"));
+            for capability in ["calendar_notes", "obsidian_notes", "screenshots"] {
+                assert!(capabilities.iter().any(|value| value == capability));
+            }
             assert_eq!(body["version"], version);
             assert_eq!(body["capture"], capture);
             assert_eq!(body["ok"], true);
