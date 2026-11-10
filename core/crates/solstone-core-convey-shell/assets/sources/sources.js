@@ -31,6 +31,8 @@
     { label: 'location', keys: ['location'] },
     { label: 'calendar', keys: ['calendar'] },
     { label: 'camera', keys: ['camera'] },
+    // S1 / J4 in the design system's screenshots copy file.
+    { label: 'screenshots', keys: ['screenshots'] },
     { label: 'watch', keys: ['watch', 'watch-audio'] },
   ];
 

@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "15.2.0";
+const BUNDLE_SEMVER: &str = "15.3.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -24,11 +24,12 @@ const AUTHORITY_PATH: &str =
 /// this bundle. Regenerate committed contract artifacts with
 /// `cargo test --manifest-path core/Cargo.toml -p solstone-core-repository-contracts --lib client_ingest_contract_bundle::regenerate_client_ingest_contract_bundle -- --ignored`.
 const CLIENT_INGEST_AUTHORITY: &str = include_str!("client_ingest_authority.json");
-const ARTIFACTS: [&str; 5] = [
+const ARTIFACTS: [&str; 6] = [
     "manifest.json",
     "projection.openapi.json",
     "vectors.json",
     "fixtures/wire-behavior.json",
+    "fixtures/screenshots-golden.jsonl",
     "consumer-audit.json",
 ];
 const OPERATION_SPECS: [(&str, &str, &str); 3] = [
@@ -54,7 +55,7 @@ const COMPONENT_CLOSURE: [&str; 6] = [
 ];
 /// Upload refusals a device must handle for content it sends, each with an
 /// example detail.
-const UPLOAD_REFUSALS: [(&str, &str); 3] = [
+const UPLOAD_REFUSALS: [(&str, &str); 4] = [
     ("browser_record_invalid", "row=1 field=blocks cause=limit"),
     (
         "calendar_note_invalid",
@@ -63,6 +64,10 @@ const UPLOAD_REFUSALS: [(&str, &str); 3] = [
     (
         "obsidian_note_invalid",
         "line 2: changed_at falls outside the segment window",
+    ),
+    (
+        "screenshot_invalid",
+        "meta.screenshot.captured_at must be RFC 3339 with an offset",
     ),
 ];
 const INGEST_STATUSES: [&str; 5] = ["ok", "duplicate", "collision", "conflict", "failed"];
@@ -543,12 +548,31 @@ fn generate_bundle(authority: &Value, authority_bytes: &[u8]) -> ArtifactMap {
     );
     artifacts.insert("vectors.json", render_json(&behavior_vectors()));
     artifacts.insert("fixtures/wire-behavior.json", render_json(&wire_behavior()));
+    artifacts.insert(
+        "fixtures/screenshots-golden.jsonl",
+        screenshots_golden(authority),
+    );
     artifacts.insert("consumer-audit.json", render_json(&consumer_audit()));
     artifacts.insert(
         "manifest.json",
         render_json(&manifest(authority_bytes, openapi_spec_version, &artifacts)),
     );
     artifacts
+}
+
+/// The screenshots source's golden envelopes, one compact line each, so a
+/// client builds to the same lines the journal admits.
+fn screenshots_golden(authority: &Value) -> Vec<u8> {
+    let golden = authority
+        .pointer("/paths/~1app~1devices~1ingest/post/x-sources/screenshots/golden")
+        .and_then(Value::as_array)
+        .expect("screenshots golden envelopes");
+    let mut bytes = Vec::new();
+    for envelope in golden {
+        bytes.extend(serde_json::to_vec(&canonicalize(envelope)).expect("serialize envelope"));
+        bytes.push(b'\n');
+    }
+    bytes
 }
 
 fn expected_bundle() -> ArtifactMap {
@@ -609,6 +633,7 @@ fn content_refusals_are_enumerated_in_authority_and_bundle() {
         "browser_record_invalid",
         "calendar_note_invalid",
         "obsidian_note_invalid",
+        "screenshot_invalid",
     ] {
         assert_refusal_enumerated(reason_code);
     }

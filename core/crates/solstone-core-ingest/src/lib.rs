@@ -29,6 +29,7 @@ mod obsidian;
 mod read_routes;
 mod rejection_notice;
 mod router;
+mod screenshots;
 mod stream_identity;
 mod validation;
 

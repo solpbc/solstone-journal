@@ -116,6 +116,17 @@ pub fn match_handler(journal: &Path, path: &Path, registry: &[HandlerSpec]) -> O
     if day.len() != 8 || !day.bytes().all(|c| c.is_ascii_digit()) {
         return None;
     }
+    // A screenshot is read the way a screen is, not depicted as a photo.
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+    {
+        return registry
+            .iter()
+            .find(|spec| spec.name == "describe")
+            .cloned();
+    }
     let suffix = path.extension()?.to_str()?.to_ascii_lowercase();
     registry
         .iter()
@@ -195,6 +206,23 @@ mod tests {
             .is_none()
         );
     }
+    #[test]
+    fn a_screenshot_is_described_and_any_other_still_is_depicted() {
+        let root = Path::new("/j");
+        let registry = default_registry(10);
+        let handler = |file: &str| {
+            match_handler(
+                root,
+                &Path::new("/j/chronicle/20261103/phone_screenshots/143207_1").join(file),
+                &registry,
+            )
+            .map(|spec| spec.name)
+        };
+        assert_eq!(handler("screenshot_screen.png"), Some("describe"));
+        assert_eq!(handler("screenshot_screen.jpeg"), Some("describe"));
+        assert_eq!(handler("photo.png"), Some("depict"));
+    }
+
     #[test]
     fn named_and_default_stream_paths_require_a_valid_day_and_segment() {
         let root = Path::new("/j");

@@ -13,6 +13,7 @@ pub mod matcher;
 pub mod objects;
 pub mod obsidian;
 pub mod paths;
+pub mod screenshots;
 pub mod segment;
 
 #[cfg(test)]

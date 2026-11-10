@@ -1178,12 +1178,16 @@ fn inspect_day(
     let mut recorded_seconds = 0_u64;
     let mut set_aside_seconds = 0_u64;
     let mut owed_segments = Vec::new();
-    // A vault's notes from before the last week are history arriving, and take
-    // the ladder's import place, as an equally large import would.
-    let note_history = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
-        .is_ok_and(|date| today.signed_duration_since(date).num_days() > 7);
-    let is_note_stream =
-        |stream: &str| note_history && solstone_core_segment::is_obsidian_stream(journal, stream);
+    // A vault's notes from before the last week, and screenshots from before
+    // today, are history arriving, and take the ladder's import place, as an
+    // equally large import would.
+    let age_days = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+        .map(|date| today.signed_duration_since(date).num_days())
+        .unwrap_or(0);
+    let is_note_stream = |stream: &str| {
+        (age_days > 7 && solstone_core_segment::is_obsidian_stream(journal, stream))
+            || (age_days > 0 && solstone_core_segment::is_screenshots_stream(journal, stream))
+    };
     let mut day_holds_note_history = false;
     for segment in &segments {
         if is_mcp_audit_segment(Some(&segment.stream)) {
@@ -3689,6 +3693,28 @@ mod tests {
             "## a\nSource: a.md\n\nwords\n",
         )
         .unwrap();
+        let (mut report, _queue) = inventory_after_a_pass(root.path());
+        let import = report.band(WorkBand::Import).segments_owed
+            + report.band(WorkBand::Import).segments_complete;
+        assert!(import > 0, "{report:?}");
+        let completing = report.band(WorkBand::Completing).segments_owed;
+        assert_eq!(completing, 0, "{report:?}");
+    }
+
+    #[test]
+    fn screenshots_from_before_today_take_the_import_place_on_the_ladder() {
+        let root = fixture("local");
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join("streams/phone_screenshots.json"),
+            r#"{"name":"phone_screenshots","kind":"observer","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source":"screenshots"}"#,
+        )
+        .unwrap();
+        let shot = root
+            .path()
+            .join("chronicle/19990101/phone_screenshots/094000_1");
+        std::fs::create_dir_all(&shot).unwrap();
+        std::fs::write(shot.join("screenshot_screen.png"), b"png").unwrap();
         let (mut report, _queue) = inventory_after_a_pass(root.path());
         let import = report.band(WorkBand::Import).segments_owed
             + report.band(WorkBand::Import).segments_complete;

@@ -27,6 +27,7 @@ required-features = ["test-hooks"]
 workspace = true
 
 [dependencies]
+image.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 chrono-tz.workspace = true

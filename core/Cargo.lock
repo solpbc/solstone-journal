@@ -5397,6 +5397,7 @@ version = "2.0.74"
 dependencies = [
  "axum",
  "chrono",
+ "image",
  "log",
  "serde",
  "serde_json",
@@ -6952,6 +6953,7 @@ dependencies = [
  "chrono-tz",
  "filetime",
  "getrandom 0.3.4",
+ "image",
  "jsonschema",
  "log",
  "nix 0.30.1",

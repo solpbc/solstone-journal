@@ -14,6 +14,17 @@ use crate::{HashedFrame, WinnowConfig, WinnowCounters, WinnowState, WinnowVerdic
 /// Demuxers this call site reads; every other demuxer compiled into FFmpeg is refused.
 const INPUT_FORMATS: &str = "matroska,mov";
 
+/// Still images describe reads as one frame: a screenshot.
+const STILL_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+
+fn is_still(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            STILL_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+        })
+}
+
 /// Opens a local media file, restricted to [`INPUT_FORMATS`] and the `file` protocol.
 fn open_input(path: &Path) -> Result<ffmpeg::format::context::Input, ffmpeg::Error> {
     let mut options = ffmpeg::Dictionary::new();
@@ -180,6 +191,9 @@ impl FramePull {
         config: WinnowConfig,
         encode: bool,
     ) -> Result<Self, DescribeResult> {
+        if is_still(path) {
+            return Self::open_still(path, config, encode);
+        }
         let mut result = DescribeResult::default();
         if ffmpeg::init().is_err() {
             result.decode_failed = true;
@@ -228,6 +242,63 @@ impl FramePull {
             finished: false,
             raw: 0,
             winnow: Some(WinnowState::new(config)),
+            retain_pngs: None,
+        })
+    }
+
+    /// One screenshot is one frame: decoded whole, kept, and done.
+    #[allow(clippy::result_large_err)]
+    fn open_still(path: &Path, config: WinnowConfig, encode: bool) -> Result<Self, DescribeResult> {
+        let mut result = DescribeResult::default();
+        let Some(image) = std::fs::read(path)
+            .ok()
+            .and_then(|bytes| image::load_from_memory(&bytes).ok())
+        else {
+            return Err(decode_failed(result));
+        };
+        let image = image.into_rgb8();
+        let (width, height) = image.dimensions();
+        let Some(frame) = RgbFrame::new(width, height, image.into_raw()) else {
+            return Err(decode_failed(result));
+        };
+        let hash = dhash(&frame);
+        let mut winnow = WinnowState::new(config);
+        winnow.decide(HashedFrame {
+            timestamp: 0.0,
+            hash,
+        });
+        let png = if encode {
+            match encode_png(&frame) {
+                Some(png) => png,
+                None => return Err(decode_failed(result)),
+            }
+        } else {
+            Vec::new()
+        };
+        result.width = Some(width);
+        result.height = Some(height);
+        result.first_hash = Some(hash);
+        result.last_hash = Some(hash);
+        result.qualified_frames.push(QualifiedFrame {
+            frame_id: 1,
+            timestamp: 0.0,
+            png: Vec::new(),
+        });
+        result.qualified_count = 1;
+        result.winnow = Some(metrics(1, winnow.counters()));
+        Ok(Self {
+            encode,
+            state: None,
+            result,
+            pending: VecDeque::from([QualifiedFrame {
+                frame_id: 1,
+                timestamp: 0.0,
+                png,
+            }]),
+            failed: false,
+            finished: true,
+            raw: 1,
+            winnow: Some(winnow),
             retain_pngs: None,
         })
     }
@@ -604,6 +675,25 @@ mod image_tests {
     fn pixels(dimensions: Option<(u32, u32)>, original: (u32, u32)) -> u64 {
         let (width, height) = dimensions.unwrap_or(original);
         u64::from(width) * u64::from(height)
+    }
+
+    #[test]
+    fn a_screenshot_is_one_kept_frame_at_its_own_size() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("screenshot_screen.png");
+        ImageBuffer::<Rgb<u8>, Vec<u8>>::from_pixel(9, 19, Rgb([10, 20, 30]))
+            .save(&path)
+            .expect("write png");
+        let result = super::process_video(&path, crate::WinnowConfig::default());
+        assert!(!result.decode_failed);
+        assert_eq!((result.width, result.height), (Some(9), Some(19)));
+        assert_eq!(result.qualified_count, 1);
+        assert_eq!(result.qualified_frames[0].frame_id, 1);
+        let decoded = image::load_from_memory(&result.qualified_frames[0].png).expect("png");
+        assert_eq!((decoded.width(), decoded.height()), (9, 19));
+        let png = std::fs::read(&path).expect("read");
+        std::fs::write(&path, &png[..png.len() / 2]).expect("truncate");
+        assert!(super::process_video(&path, crate::WinnowConfig::default()).decode_failed);
     }
 
     #[test]

@@ -313,7 +313,7 @@ pub(crate) fn detect_data_state(
         .collect::<Vec<_>>();
     let screen_raw_paths: Vec<&PathBuf> = files
         .iter()
-        .filter(|path| media_kind_for(path) == Some(MediaKind::Video))
+        .filter(|path| media_kind_for(path) == Some(MediaKind::Video) || is_screenshot(path))
         .collect();
     let screen_analyzed = screen_jsonl
         .iter()
@@ -323,7 +323,7 @@ pub(crate) fn detect_data_state(
         "screen",
         screen_analyzed,
         !screen_jsonl.is_empty(),
-        has_raw_media(&files, MediaKind::Video),
+        has_raw_media(&files, MediaKind::Video) || files.iter().any(|path| is_screenshot(path)),
         read_processing_record(&screen_jsonl).as_ref(),
         now,
     );
@@ -521,6 +521,11 @@ pub fn is_audio_jsonl(path: &Path) -> bool {
     }) || (!is_screen_jsonl(path) && is_transcribe_output(path))
 }
 
+/// A screenshot is a screen, read as one frame, never a photo.
+fn is_screenshot(path: &Path) -> bool {
+    file_name(path).is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+}
+
 fn is_screen_jsonl(path: &Path) -> bool {
     file_name(path).is_some_and(|name| name == "screen.jsonl" || name.ends_with("_screen.jsonl"))
 }
@@ -544,7 +549,9 @@ pub fn unclaimed_image_state(
     let raw_paths = files
         .into_iter()
         .filter(|path| {
-            media_kind_for(path) == Some(MediaKind::Image) && !claimed_by_non_depict_handler(path)
+            media_kind_for(path) == Some(MediaKind::Image)
+                && !is_screenshot(path)
+                && !claimed_by_non_depict_handler(path)
         })
         .collect::<Vec<_>>();
     let state = aggregate_image_state(segment_path, &raw_paths, now);

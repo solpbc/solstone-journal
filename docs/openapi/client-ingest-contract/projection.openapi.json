@@ -136,7 +136,9 @@
               "talent_run_pending",
               "tos_changed",
               "unknown_service",
-              "voice_unavailable"
+              "voice_unavailable",
+              "screenshot_ahead",
+              "screenshot_invalid"
             ],
             "type": "string"
           }
@@ -311,7 +313,7 @@
   "info": {
     "description": "Generated from client_ingest_authority.json. Covers only the three Rust-served linked-device devices/ingest operations: upload, segment listing and the Obsidian vault list.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "15.2.0",
+    "version": "15.3.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -480,7 +482,8 @@
               "multipart_part_too_large",
               "browser_record_invalid",
               "calendar_note_invalid",
-              "obsidian_note_invalid"
+              "obsidian_note_invalid",
+              "screenshot_invalid"
             ]
           },
           "403": {
@@ -504,13 +507,14 @@
                 }
               }
             },
-            "description": "Held sidecar bytes conflict, the device's stream binding is refused, or a note window is later than the journal's today (held on the device and sent again later).",
+            "description": "Held sidecar bytes conflict, the device's stream binding is refused, or a note window or screenshot is later than the journal's today (held on the device and sent again later).",
             "x-reason-codes": [
               "content_conflict",
               "pairing_identity_unavailable",
               "foreign_stream_binding",
               "malformed_evidence_row",
-              "obsidian_note_ahead"
+              "obsidian_note_ahead",
+              "screenshot_ahead"
             ]
           },
           "413": {
@@ -549,12 +553,199 @@
             "x-reason-codes": [
               "segment_removed"
             ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "The journal can't take this upload right now (body `status: retryable`). Hold it and send it again later."
           }
         },
         "summary": "Upload one capture segment from a linked device",
         "tags": [
           "client"
-        ]
+        ],
+        "x-sources": {
+          "screenshots": {
+            "accepted_types": [
+              {
+                "extension": "png",
+                "media_type": "image/png"
+              },
+              {
+                "extension": "jpg",
+                "media_type": "image/jpeg"
+              },
+              {
+                "extension": "jpeg",
+                "media_type": "image/jpeg"
+              },
+              {
+                "extension": "webp",
+                "media_type": "image/webp"
+              }
+            ],
+            "accepted_types_rule": "The bytes must be the type the extension names. HEIC, HEIF, TIFF, GIF, PDF and every other type are refused: the journal can't decode them. A device does not convert one, because conversion changes the screenshot's identity.",
+            "answers": [
+              {
+                "client_action": "Mark it delivered and never send it again. It counts toward the in-your-journal total.",
+                "http_status": 200,
+                "meaning": "Kept, at the requested segment.",
+                "status": "ok"
+              },
+              {
+                "client_action": "As `ok`.",
+                "http_status": 200,
+                "meaning": "Kept, at a nearby segment because the requested one was taken (`segment` names it).",
+                "status": "collision"
+              },
+              {
+                "client_action": "Mark it delivered and never send it again. It counts toward the in-your-journal total.",
+                "http_status": 200,
+                "meaning": "Already in this journal, from this device or another, or received before and since deleted by the owner.",
+                "status": "duplicate"
+              },
+              {
+                "client_action": "Don't send it again. It reaches its final state on the device: counted, with the string that says it couldn't come in.",
+                "http_status": 400,
+                "meaning": "The upload breaks this contract, or the image can't be read: wrong name or type, bytes that aren't the named type, over the pixel limit, missing or inconsistent `meta.screenshot`.",
+                "reason_code": "screenshot_invalid"
+              },
+              {
+                "client_action": "As `screenshot_invalid`.",
+                "http_status": 400,
+                "meaning": "Over 64 MiB.",
+                "reason_code": "multipart_part_too_large"
+              },
+              {
+                "client_action": "Hold it and send it again once the journal's day has reached it.",
+                "http_status": 409,
+                "meaning": "Its day is later than the journal's today.",
+                "reason_code": "screenshot_ahead"
+              },
+              {
+                "client_action": "Hold it and send it again later, with backoff.",
+                "http_status": 503,
+                "meaning": "The journal can't take it right now, including when it can't read what this source has received.",
+                "status": "retryable"
+              },
+              {
+                "client_action": "Hold it and send it again later, with backoff. A resend of the same bytes is never kept twice.",
+                "http_status": 500,
+                "meaning": "The journal couldn't finish the write.",
+                "status": "failed"
+              },
+              {
+                "client_action": "As for every other source: hold it and follow the pairing contract.",
+                "http_status": "403, 409 (stream binding), 426",
+                "meaning": "The linked-device and protocol answers every upload shares."
+              }
+            ],
+            "capability": "screenshots",
+            "capability_rule": "Send only to a journal whose `GET /api/system/status` lists `screenshots` in `capabilities`. Below that, hold every screenshot on the device and send it once the paired journal lists it.",
+            "capture_time": "`meta.screenshot.captured_at` is the moment it was taken, RFC 3339 with the UTC offset in force where it was taken (`Z` means `+00:00`). It comes from the platform's own record of the screenshot or from the file (its embedded date or modification time), never from a model, and `meta.screenshot.taken_from` says which (`platform` or `file`). The envelope's `day` (`YYYYMMDD`) and `segment` (`HHMMSS_1`) are that moment's date and clock time in its own offset, so the screenshot lands at the minute it was taken.",
+            "deleted": "The journal remembers every screenshot this source has received, and that memory outlives a delete. A screenshot the owner deleted from the journal is answered `duplicate` when a device sends it again, from any device and after any re-scan. The owner bringing the same file in through the Import page or a share is a re-import and arrives as new data; that path is not this source.",
+            "description": "A screenshot the owner took, sent by the solstone app on the device that holds it. One upload carries one screenshot. It lands at its capture second in the sending device's screenshots stream, is made searchable the way a screen is, and is kept once across the owner's devices.",
+            "device": "The device is the linked device that sends the upload, by its mTLS identity; no field names it. The screenshot lands in that device's screenshots stream and is labelled with the device's name as the journal shows it. A screenshot already received from another device keeps the label of the device that sent it first.",
+            "files": "Exactly one file per upload, named `screenshot_screen.<extension>` with an accepted extension in lowercase. No other file goes with it, and that name is refused under any other source.",
+            "golden": [
+              {
+                "day": "20261103",
+                "files": [
+                  {
+                    "submitted": "screenshot_screen.png"
+                  }
+                ],
+                "meta": {
+                  "screenshot": {
+                    "captured_at": "2026-11-03T14:32:07-07:00",
+                    "taken_from": "platform",
+                    "v": 1
+                  }
+                },
+                "segment": "143207_1",
+                "source": "screenshots"
+              },
+              {
+                "day": "20261104",
+                "files": [
+                  {
+                    "submitted": "screenshot_screen.jpg"
+                  }
+                ],
+                "meta": {
+                  "screenshot": {
+                    "captured_at": "2026-11-04T09:15:02+01:00",
+                    "taken_from": "file",
+                    "v": 1
+                  }
+                },
+                "segment": "091502_1",
+                "source": "screenshots"
+              },
+              {
+                "day": "20261105",
+                "files": [
+                  {
+                    "submitted": "screenshot_screen.webp"
+                  }
+                ],
+                "meta": {
+                  "screenshot": {
+                    "captured_at": "2026-11-05T00:00:00Z",
+                    "taken_from": "platform",
+                    "v": 1
+                  }
+                },
+                "segment": "000000_1",
+                "source": "screenshots"
+              }
+            ],
+            "identity": "A screenshot is the SHA-256 of its exact bytes, computed by the journal; the device sends no id. Send the file exactly as the platform saved it: never re-encode, resize, crop, rotate or strip its metadata. iCloud Photos and synced folders hand each of the owner's devices the same bytes, so the same screenshot from a second device, or sent again after a re-scan, a turn-back-on or a re-pair, is the same screenshot and is answered `duplicate`.",
+            "meta_schema": {
+              "properties": {
+                "screenshot": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "captured_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "taken_from": {
+                      "enum": [
+                        "platform",
+                        "file"
+                      ]
+                    },
+                    "v": {
+                      "const": 1
+                    }
+                  },
+                  "required": [
+                    "v",
+                    "captured_at",
+                    "taken_from"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "screenshot"
+              ],
+              "type": "object"
+            },
+            "size_limit": {
+              "max_bytes": 67108864,
+              "max_pixels": 100000000,
+              "rule": "At most 64 MiB, the part limit for every upload (larger is refused with `multipart_part_too_large`), and at most 100,000,000 pixels by the image's own header (larger is refused with `screenshot_invalid`)."
+            },
+            "source": "screenshots"
+          }
+        }
       }
     },
     "/app/devices/ingest/obsidian/vaults": {

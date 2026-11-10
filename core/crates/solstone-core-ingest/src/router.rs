@@ -27,6 +27,7 @@ use solstone_core_format::calendar::{
 use solstone_core_format::obsidian::{
     NOTE_TRANSCRIPT_FILE, NoteChange, OBSIDIAN_SOURCE, names_obsidian_file, validate_obsidian_file,
 };
+use solstone_core_format::screenshots::SCREENSHOTS_SOURCE;
 use solstone_core_ingest_contract::{
     CONNECTION_BODY_LIMIT, MAX_PART_BYTES, validate_browser_jsonl,
 };
@@ -96,12 +97,13 @@ impl IngestNotifier for CallosumIngestNotifier {
             "files".to_owned(),
             Value::Array(notice.files.iter().cloned().map(Value::String).collect()),
         );
-        // A note from an earlier day is history arriving, not something
-        // happening now: the daily catch-up takes it, as it does an import's.
+        // A note or a screenshot from an earlier day is history arriving, not
+        // something happening now: the daily catch-up takes it, as it does an
+        // import's.
         extra.insert(
             "batch".to_owned(),
             Value::Bool(
-                notice.source == OBSIDIAN_SOURCE
+                (notice.source == OBSIDIAN_SOURCE || notice.source == SCREENSHOTS_SOURCE)
                     && notice.day < today(&self.journal, now_ms()).as_str(),
             ),
         );
@@ -443,6 +445,8 @@ struct Envelope {
     files: Vec<IncomingFile>,
     /// The checked lines of an Obsidian upload.
     note_changes: Option<Vec<NoteChange>>,
+    /// The checked screenshot of a screenshots upload.
+    screenshot: Option<crate::screenshots::CheckedScreenshot>,
 }
 
 fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (ReasonCode, String)> {
@@ -579,6 +583,8 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
         validate_calendar_upload(&source, &day, &segment, file)?;
     }
     let note_changes = validate_obsidian_upload(&source, &day, &segment, &files)?;
+    let screenshot =
+        crate::screenshots::validate_screenshot_upload(&source, &day, &segment, &meta, &files)?;
     Ok(Envelope {
         day,
         segment,
@@ -586,6 +592,7 @@ fn parse_envelope(text: String, raw_files: Vec<RawFile>) -> Result<Envelope, (Re
         meta,
         files,
         note_changes,
+        screenshot,
     })
 }
 
@@ -768,6 +775,8 @@ fn write_envelope(state: &IngestState, cid: &str, envelope: Envelope) -> Respons
     let source = Some(envelope.source.clone());
     let completion = if envelope.note_changes.is_some() {
         write_note_changes(state, cid, envelope)
+    } else if envelope.screenshot.is_some() {
+        write_screenshot(state, cid, envelope)
     } else {
         write_envelope_inner(state, cid, envelope)
     }
@@ -842,6 +851,84 @@ fn write_note_changes(state: &IngestState, cid: &str, mut envelope: Envelope) ->
     if let Err(error) = prepared.commit(&state.journal_root, cid) {
         log::warn!("obsidian note state not saved: {error}");
         return write_failed("cannot save note state");
+    }
+    completion
+}
+
+/// Keep one screenshot, once. The caller holds the screenshots source lock, so
+/// uploads from every device apply one at a time against the source's record
+/// of what it received.
+fn write_screenshot(state: &IngestState, cid: &str, mut envelope: Envelope) -> IngestCompletion {
+    // Nothing may be dated after the journal's today. The device holds the
+    // screenshot and sends it again once the journal's day has caught up.
+    if envelope.day > today(&state.journal_root, (state.now_ms)()) {
+        return IngestCompletion::rejected(
+            ReasonCode::ScreenshotAhead,
+            refusal(
+                ReasonCode::ScreenshotAhead,
+                StatusCode::CONFLICT,
+                "this screenshot is later than the journal's today; send it again later",
+            ),
+        );
+    }
+    let Some(screenshot) = envelope.screenshot.take() else {
+        return write_envelope_inner(state, cid, envelope);
+    };
+    match crate::screenshots::lookup(&state.journal_root, &screenshot.id) {
+        Ok(Some(received)) => {
+            // Already taken in, from this device or another, and still in the
+            // journal or not: the owner may have deleted it, and a sync never
+            // brings that back.
+            let body = json!({
+                "status": "duplicate",
+                "existing_segment": received.segment,
+                "message": "This screenshot is already in the journal",
+                "file_descriptors": [],
+                "meta": envelope.meta,
+            });
+            return IngestCompletion::accepted(
+                envelope.day,
+                envelope.segment,
+                Json(body).into_response(),
+            );
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log::warn!("screenshots received record unreadable: {error}");
+            return IngestCompletion::rejected(
+                ReasonCode::JournalReadFailed,
+                outcome_error(
+                    "retryable",
+                    ReasonCode::JournalReadFailed,
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "cannot read what this source has received; try again",
+                ),
+            );
+        }
+    }
+    let completion = write_envelope_inner(state, cid, envelope);
+    // Remember it only once it is durably in the journal. A crash in between
+    // is answered by the segment's own duplicate on the resend, which then
+    // records it here.
+    let IngestActivity::Accepted(landed) = &completion.activity else {
+        return completion;
+    };
+    let received = crate::screenshots::Received {
+        day: landed.day.clone(),
+        segment: landed.name.clone(),
+        received_at: activity_timestamp((state.now_ms)()),
+    };
+    if let Err(error) = crate::screenshots::record(&state.journal_root, &screenshot.id, &received) {
+        log::warn!("screenshots received record not saved: {error}");
+        return IngestCompletion::rejected(
+            ReasonCode::JournalWriteFailed,
+            outcome_error(
+                "failed",
+                ReasonCode::JournalWriteFailed,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot record what this source has received",
+            ),
+        );
     }
     completion
 }
@@ -1924,6 +2011,7 @@ mod tests {
                 descriptor_extra: Map::new(),
             }],
             note_changes: None,
+            screenshot: None,
         }
     }
 
@@ -6154,5 +6242,269 @@ mod tests {
         assert_eq!(notice.event, "raise");
         assert_eq!(notice.extra["key"], format!("ingest_rejected:{CID_A}"));
         assert_eq!(notice.extra["action"], "/app/health/#registeredClientsCard");
+    }
+
+    mod screenshots_admission {
+        use super::*;
+
+        const PHONE: &str =
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        const TABLET: &str =
+            "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+        pub(super) fn png(width: u32, height: u32, shade: u8) -> Vec<u8> {
+            let image = image::RgbImage::from_pixel(width, height, image::Rgb([shade, 40, 90]));
+            let mut bytes = std::io::Cursor::new(Vec::new());
+            image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+            bytes.into_inner()
+        }
+
+        fn shot(captured_at: &str) -> Value {
+            let at = chrono::DateTime::parse_from_rfc3339(captured_at).unwrap();
+            let (day, segment) = solstone_core_format::screenshots::placement(&at);
+            json!({
+                "day": day,
+                "segment": segment,
+                "source": "screenshots",
+                "files": [{"submitted": "screenshot_screen.png"}],
+                "meta": {"screenshot": {"v": 1, "captured_at": captured_at, "taken_from": "platform"}},
+            })
+        }
+
+        fn journal() -> TempDir {
+            let directory = TempDir::new().unwrap();
+            seed_authorized_client_with_label(directory.path(), PHONE, "jer's iphone");
+            seed_authorized_client_with_label(directory.path(), TABLET, "jer's ipad");
+            directory
+        }
+
+        fn erase_segment(root: &Path, day: &str, segment: &str) {
+            for stream in fs::read_dir(root.join("chronicle").join(day)).unwrap() {
+                let path = stream.unwrap().path().join(segment);
+                if path.is_dir() {
+                    fs::remove_dir_all(path).unwrap();
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn a_screenshot_lands_at_its_capture_second_in_its_devices_stream() {
+            let dir = journal();
+            let app = router(dir.path());
+            let bytes = png(9, 19, 10);
+            let (status, body) = call_upload_as(
+                &app,
+                PHONE,
+                shot("2026-11-03T14:32:07-07:00"),
+                "screenshot_screen.png",
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "ok");
+            assert_eq!(body["segment"], "143207_1");
+            let stream = stream_record(dir.path(), "jer_s_iphone_screenshots");
+            assert_eq!(stream["source"], "screenshots");
+            let kept = dir
+                .path()
+                .join("chronicle/20261103/jer_s_iphone_screenshots/143207_1/screenshot_screen.png");
+            assert_eq!(fs::read(kept).unwrap(), bytes, "kept exactly as sent");
+            assert!(!dir.path().join("imports").exists(), "no import copy");
+        }
+
+        #[tokio::test]
+        async fn each_published_golden_envelope_is_admitted_as_sent() {
+            let dir = journal();
+            let app = router(dir.path());
+            let golden = include_str!(
+                "../../../../docs/openapi/client-ingest-contract/fixtures/screenshots-golden.jsonl"
+            );
+            for (shade, line) in golden.lines().enumerate() {
+                let envelope: Value = serde_json::from_str(line).unwrap();
+                let name = envelope["files"][0]["submitted"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
+                let format = match name.rsplit_once('.').unwrap().1 {
+                    "png" => image::ImageFormat::Png,
+                    "webp" => image::ImageFormat::WebP,
+                    _ => image::ImageFormat::Jpeg,
+                };
+                let mut bytes = std::io::Cursor::new(Vec::new());
+                image::RgbImage::from_pixel(8, 8, image::Rgb([shade as u8, 1, 2]))
+                    .write_to(&mut bytes, format)
+                    .unwrap();
+                let (status, body) =
+                    call_upload_as(&app, PHONE, envelope.clone(), &name, &bytes.into_inner()).await;
+                assert_eq!(status, StatusCode::OK, "{line} {body}");
+                assert_eq!(body["status"], "ok", "{body}");
+                assert_eq!(body["segment"], envelope["segment"]);
+            }
+        }
+
+        #[tokio::test]
+        async fn a_second_devices_copy_is_already_there() {
+            let dir = journal();
+            let app = router(dir.path());
+            let bytes = png(16, 9, 20);
+            let first = shot("2026-11-03T09:00:01-07:00");
+            assert_eq!(
+                call_upload_as(&app, PHONE, first.clone(), "screenshot_screen.png", &bytes)
+                    .await
+                    .1["status"],
+                "ok"
+            );
+            // iCloud hands the tablet the same bytes; its clock may differ.
+            let (status, body) = call_upload_as(
+                &app,
+                TABLET,
+                shot("2026-11-03T09:00:03-07:00"),
+                "screenshot_screen.png",
+                &bytes,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "duplicate");
+            assert_eq!(body["existing_segment"], "090001_1");
+            assert!(
+                !dir.path()
+                    .join("chronicle/20261103/jer_s_ipad_screenshots")
+                    .exists(),
+                "the tablet wrote nothing"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_sync_never_brings_back_a_deleted_screenshot() {
+            let dir = journal();
+            let app = router(dir.path());
+            let bytes = png(9, 19, 30);
+            let upload = shot("2026-11-02T22:10:00-07:00");
+            assert_eq!(
+                call_upload_as(&app, PHONE, upload.clone(), "screenshot_screen.png", &bytes)
+                    .await
+                    .1["status"],
+                "ok"
+            );
+            erase_segment(dir.path(), "20261102", "221000_1");
+            for cid in [PHONE, TABLET] {
+                let (status, body) =
+                    call_upload_as(&app, cid, upload.clone(), "screenshot_screen.png", &bytes)
+                        .await;
+                assert_eq!(status, StatusCode::OK, "{body}");
+                assert_eq!(body["status"], "duplicate", "{body}");
+            }
+            assert!(
+                !dir.path()
+                    .join("chronicle/20261102/jer_s_iphone_screenshots/221000_1")
+                    .exists()
+            );
+        }
+
+        #[tokio::test]
+        async fn an_unreadable_record_refuses_rather_than_taking_it_in_again() {
+            let dir = journal();
+            let app = router(dir.path());
+            let bytes = png(9, 19, 40);
+            let upload = shot("2026-11-02T08:00:00-07:00");
+            call_upload_as(&app, PHONE, upload.clone(), "screenshot_screen.png", &bytes).await;
+            erase_segment(dir.path(), "20261102", "080000_1");
+            let id = format!("{:x}", sha2::Sha256::digest(&bytes));
+            fs::write(
+                dir.path()
+                    .join("config/screenshots/received")
+                    .join(&id[..2])
+                    .join(format!("{id}.json")),
+                b"not json",
+            )
+            .unwrap();
+            let (status, body) =
+                call_upload_as(&app, PHONE, upload, "screenshot_screen.png", &bytes).await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+            assert_eq!(body["reason_code"], "journal_read_failed");
+            assert!(
+                !dir.path()
+                    .join("chronicle/20261102/jer_s_iphone_screenshots/080000_1")
+                    .exists()
+            );
+        }
+
+        #[tokio::test]
+        async fn a_resend_after_a_crash_before_the_record_heals_it() {
+            let dir = journal();
+            let app = router(dir.path());
+            let bytes = png(9, 19, 50);
+            let upload = shot("2026-11-02T08:30:00-07:00");
+            call_upload_as(&app, PHONE, upload.clone(), "screenshot_screen.png", &bytes).await;
+            fs::remove_dir_all(dir.path().join("config/screenshots")).unwrap();
+            let (_, body) =
+                call_upload_as(&app, PHONE, upload.clone(), "screenshot_screen.png", &bytes).await;
+            assert_eq!(body["status"], "duplicate", "{body}");
+            // Now remembered: another device's copy is already there.
+            let (_, body) =
+                call_upload_as(&app, TABLET, upload, "screenshot_screen.png", &bytes).await;
+            assert_eq!(body["status"], "duplicate", "{body}");
+            assert!(
+                !dir.path()
+                    .join("chronicle/20261102/jer_s_ipad_screenshots")
+                    .exists()
+            );
+        }
+
+        #[tokio::test]
+        async fn a_screenshot_later_than_today_waits_on_the_device() {
+            let dir = journal();
+            let app = router(dir.path());
+            let (status, body) = call_upload_as(
+                &app,
+                PHONE,
+                shot("2099-01-01T00:00:00Z"),
+                "screenshot_screen.png",
+                &png(4, 4, 1),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CONFLICT, "{body}");
+            assert_eq!(body["reason_code"], "screenshot_ahead");
+        }
+
+        #[tokio::test]
+        async fn uploads_that_break_the_contract_are_refused_whole() {
+            let dir = journal();
+            let app = router(dir.path());
+            let good = png(4, 4, 2);
+            let mut wrong_place = shot("2026-11-03T14:32:07-07:00");
+            wrong_place["segment"] = json!("143208_1");
+            let mut no_meta = shot("2026-11-03T14:32:07-07:00");
+            no_meta.as_object_mut().unwrap().remove("meta");
+            let mut heic = shot("2026-11-03T14:32:07-07:00");
+            heic["files"] = json!([{"submitted": "screenshot_screen.heic"}]);
+            let mut jpeg_named = shot("2026-11-03T14:32:07-07:00");
+            jpeg_named["files"] = json!([{"submitted": "screenshot_screen.jpg"}]);
+            let mut other_source = shot("2026-11-03T14:32:07-07:00");
+            other_source["source"] = json!("camera");
+            let cases: Vec<(Value, &str, &[u8])> = vec![
+                (wrong_place, "screenshot_screen.png", &good),
+                (no_meta, "screenshot_screen.png", &good),
+                (heic, "screenshot_screen.heic", &good),
+                (jpeg_named, "screenshot_screen.jpg", &good),
+                (other_source, "screenshot_screen.png", &good),
+                (
+                    shot("2026-11-03T14:32:07-07:00"),
+                    "screenshot_screen.png",
+                    b"not an image",
+                ),
+            ];
+            for (envelope, name, bytes) in cases {
+                let (status, body) = call_upload_as(&app, PHONE, envelope, name, bytes).await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{name} {body}");
+                assert_eq!(body["reason_code"], "screenshot_invalid", "{body}");
+            }
+            let mut photo = shot("2026-11-03T14:32:07-07:00");
+            photo["files"] = json!([{"submitted": "photo.png"}]);
+            let (status, body) = call_upload_as(&app, PHONE, photo, "photo.png", &good).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(body["reason_code"], "screenshot_invalid");
+            assert!(!dir.path().join("chronicle").exists(), "nothing was kept");
+        }
     }
 }

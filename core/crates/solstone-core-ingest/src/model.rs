@@ -53,11 +53,13 @@ pub enum ReasonCode {
     CalendarNoteInvalid,
     ObsidianNoteInvalid,
     ObsidianNoteAhead,
+    ScreenshotInvalid,
+    ScreenshotAhead,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 47] = [
+    const ALL: [Self; 49] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -105,6 +107,8 @@ impl ReasonCode {
         Self::CalendarNoteInvalid,
         Self::ObsidianNoteInvalid,
         Self::ObsidianNoteAhead,
+        Self::ScreenshotInvalid,
+        Self::ScreenshotAhead,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -156,6 +160,8 @@ impl ReasonCode {
             Self::CalendarNoteInvalid => "calendar_note_invalid",
             Self::ObsidianNoteInvalid => "obsidian_note_invalid",
             Self::ObsidianNoteAhead => "obsidian_note_ahead",
+            Self::ScreenshotInvalid => "screenshot_invalid",
+            Self::ScreenshotAhead => "screenshot_ahead",
         }
     }
 }

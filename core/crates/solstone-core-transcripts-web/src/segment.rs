@@ -430,6 +430,7 @@ fn prepare_segment(
     {
         data_state.insert("browser".into(), DataState::Analyzed.as_str().into());
     }
+    screenshot_entry(&mut chunks, &mut media, &context, &files, &data_state);
     let mut md_files = talent_projection_map(&dir.join("talents"), "").unwrap_or_default();
     if data_state.contains_key("audio") {
         md_files.remove("audio");
@@ -485,6 +486,106 @@ fn prepare_segment(
         }
     }
     Ok(payload)
+}
+
+/// A screenshot is one entry at its second: the image at its own shape, its
+/// text once searchable, and until then where its text stands. The `text`
+/// word is `searchable`, `waiting` (on its way), `unreadable` (its text could
+/// not be made searchable) or `no_processing` (nothing is set up to do it).
+fn screenshot_entry(
+    chunks: &mut Vec<Value>,
+    media: &mut SegmentMedia,
+    context: &SegmentContext<'_>,
+    files: &[std::path::PathBuf],
+    data_state: &BTreeMap<String, String>,
+) {
+    let Some(raw) = files.iter().find(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(solstone_core_format::screenshots::is_screenshot_file_name)
+    }) else {
+        return;
+    };
+    let Some(raw_name) = raw.file_name().and_then(|name| name.to_str()) else {
+        return;
+    };
+    let dimensions = image::ImageReader::open(raw)
+        .and_then(|reader| reader.with_guessed_format())
+        .ok()
+        .and_then(|reader| reader.into_dimensions().ok());
+    let searchable = chunks.iter().any(|chunk| {
+        chunk.get("type").and_then(Value::as_str) == Some("screen")
+            && chunk
+                .get("markdown")
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.trim().is_empty())
+    });
+    let state = data_state.get("screen").map(String::as_str);
+    let text = if searchable {
+        "searchable"
+    } else if matches!(state, Some("failed_final" | "empty")) {
+        "unreadable"
+    } else if !processing_set_up(context.root) {
+        "no_processing"
+    } else {
+        "waiting"
+    };
+    let screenshot = json!({
+        "width": dimensions.map(|(width, _)| width),
+        "height": dimensions.map(|(_, height)| height),
+        "text": text,
+    });
+    let mut annotated = false;
+    for chunk in chunks.iter_mut() {
+        if chunk.get("type").and_then(Value::as_str) == Some("screen") {
+            chunk["screenshot"] = screenshot.clone();
+            annotated = true;
+        }
+    }
+    if annotated {
+        return;
+    }
+    let kind = media.register_screen(
+        context.day,
+        context.stream,
+        context.key,
+        context.dir,
+        raw_name,
+        "screenshot_screen.jsonl",
+    );
+    let time = wall_time(context.key, 0.0);
+    chunks.push(json!({
+        "type": "screen",
+        "time": time,
+        "timestamp": day_timestamp(context.zone, context.day, &time, 0),
+        "markdown": "",
+        "source_ref": {
+            "frame_id": 1,
+            "filename": "screenshot_screen.jsonl",
+            "raw": raw_name,
+            "media_kind": kind,
+            "monitor": "screenshot",
+            "offset": 0.0,
+        },
+        "basic": false,
+        "screenshot": screenshot,
+    }));
+}
+
+/// Whether the owner has chosen a way to process what comes in.
+fn processing_set_up(root: &Path) -> bool {
+    solstone_core_journal_config::read_journal_config(root)
+        .ok()
+        .and_then(|read| read.config)
+        .and_then(|config| {
+            config
+                .get("providers")?
+                .get("active")?
+                .get("provider")?
+                .as_str()
+                .map(|provider| !provider.trim().is_empty())
+        })
+        .unwrap_or(false)
 }
 
 fn extract_modality_reason_codes(

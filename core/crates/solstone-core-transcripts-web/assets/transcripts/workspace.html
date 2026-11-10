@@ -1250,6 +1250,21 @@
   border: 1px solid var(--hairline-2);
 }
 
+/* A moment holding only screenshots: a short mark in screen's gold with the
+   screenshot glyph, tall enough to see. */
+.tr-zoom-pill-shot {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+}
+
+.tr-zoom-pill-shot svg {
+  width: 13px;
+  height: 13px;
+}
+
 .tr-zoom-pill-image {
   background: color-mix(in srgb, var(--ink-faint) 24%, var(--paper));
   border: 1px solid var(--ink-faint);
@@ -1983,6 +1998,60 @@
 .tr-entry-thumb:hover {
   box-shadow: 0 2px 8px rgba(0,0,0,.12);
   border-color: var(--hairline-2);
+}
+
+/* A screenshot is kept by the owner's choice, so it shows at its own shape
+   and a size you can recognise: a phone's tall, a computer's wide. */
+.tr-entry-screenshot .tr-entry-content {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+/* The text sits beside a tall screenshot and wraps below a wide one. */
+.tr-entry-screenshot .tr-entry-desc {
+  flex: 1 1 240px;
+  min-width: 240px;
+}
+
+.tr-entry-shot {
+  flex-shrink: 0;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 440px);
+  max-height: 360px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--cream-bright);
+  cursor: zoom-in;
+  object-fit: contain;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.tr-entry-shot:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  border-color: var(--hairline-2);
+}
+
+.tr-shot-label {
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.tr-shot-waiting {
+  color: var(--ink-faint);
+}
+
+.tr-shot-final .tr-shot-action {
+  margin-top: 6px;
+}
+
+.tr-shot-action a {
+  color: var(--orange-text-aa);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .tr-entry-thumb.loading {

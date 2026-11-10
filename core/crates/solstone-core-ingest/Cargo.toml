@@ -17,6 +17,7 @@ solstone-core-format.workspace = true
 solstone-core-indexer-todo.workspace = true
 axum = { workspace = true }
 chrono.workspace = true
+image.workspace = true
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

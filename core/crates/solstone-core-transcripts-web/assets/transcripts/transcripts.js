@@ -239,6 +239,32 @@
     const BTN_TITLE = modality => modality === 'image'
       ? "describe this segment's photos and add the descriptions to your journal."
       : `Process this segment's raw ${modality} observed data and generate analyzed content.`;
+    // The screenshots source's owner strings, keyed to their ids in the design
+    // system's screenshots copy file. Owner copy: voice-checked there.
+    const SCREENSHOT_COPY = Object.freeze({
+      J1: 'screenshot',
+      J3: "the text in this screenshot isn't searchable yet. today's screenshots come first, then earlier ones.",
+      J4: 'screenshots',
+      J5: 'screenshot',
+      J6: "thinking isn't set up yet, so the text in this screenshot can't be made searchable.",
+      J6_ACTION: 'set up thinking',
+      J7: "the text in this screenshot couldn't be made searchable. the screenshot stays in your journal.",
+    });
+    const SCREENSHOT_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5V5.5A1.5 1.5 0 0 1 5.5 4h3M15.5 4h3A1.5 1.5 0 0 1 20 5.5v3M20 15.5v3a1.5 1.5 0 0 1-1.5 1.5h-3M8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-3"/><circle cx="12" cy="12" r="2.2"/></svg>';
+
+    // A screenshots stream, by what its label says.
+    function isScreenshotsStream(stream) {
+      return Boolean(stream) && window.JournalFormat.streamSays(stream).what === SCREENSHOT_COPY.J4;
+    }
+
+    // The device a screenshot came from, by the name the journal already
+    // shows for its stream, without the stream's own "· screenshots".
+    function screenshotDevice(stream) {
+      const label = humanizeStreamName(stream);
+      const suffix = ' · ' + SCREENSHOT_COPY.J4;
+      return label.endsWith(suffix) ? label.slice(0, -suffix.length) : label;
+    }
+
     const ANALYZE_POLL_INTERVAL_MS = 3000;
     const ANALYZE_POLL_MAX_MS = 30 * 60 * 1000;
 
@@ -1596,6 +1622,7 @@
         const hasBrowser = seg.types.includes('browser');
         const hasImage = seg.types.includes('image');
         const isPhotoOnly = hasImage && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser;
+        const isShotOnly = isScreenshotsStream(seg.stream);
         const isActivityOnly = seg.types.includes('desktop_activity') && !hasAudio && !hasScreen && !hasMarkdown && !hasBrowser && !hasImage;
         const dataState = seg.data_state || {};
         const hasPendingAdvertised = (seg.types || []).some(
@@ -1626,7 +1653,11 @@
         } else if (seg.think === 'awaiting') {
           pill.classList.add('tr-zoom-pill-awaiting');
         }
-        const typeLabel = (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
+        if (isShotOnly) {
+          pill.classList.add('tr-zoom-pill-shot');
+          pill.innerHTML = SCREENSHOT_GLYPH;
+        }
+        const typeLabel = isShotOnly ? SCREENSHOT_COPY.J4 : (hasAudio && hasScreen) ? 'audio and screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
 
         // In select mode the ring marks what is chosen, not what is open.
         if (segPick.on) {
@@ -1638,9 +1669,9 @@
         }
 
         pill.style.top = zoomY(visStart) + 'px';
-        pill.style.height = Math.max(4, zoomY(visEnd) - zoomY(visStart)) + 'px';
+        pill.style.height = Math.max(isShotOnly ? 18 : 4, zoomY(visEnd) - zoomY(visStart)) + 'px';
         const duration = Math.round(visEnd - visStart);
-        const typeDesc = (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
+        const typeDesc = isShotOnly ? SCREENSHOT_COPY.J4 : (hasAudio && hasScreen) ? 'audio + screen' : hasAudio ? 'audio' : hasMarkdown ? 'import' : hasBrowser ? 'pages' : isPhotoOnly ? 'photos' : isActivityOnly ? 'desktop activity' : 'screen';
         const segmentStatusLabel = hasAnalyzingAdvertised ? 'analyzing' : hasPendingAdvertised ? 'pending' : seg.think === 'awaiting' ? AWAITING_THINKING_LABEL : '';
         const statusSuffix = segmentStatusLabel ? ' · ' + segmentStatusLabel : '';
         const ariaStatusSuffix = segmentStatusLabel ? ', ' + segmentStatusLabel : '';
@@ -2197,6 +2228,8 @@
 
     function renderLoadedSegmentData(data, requestedTabId = null) {
       segmentData = data;
+      // Still images need no decoding, so any tab can show them at once.
+      currentImageFiles = data.image_files || {};
       selectedSegmentZone = data.capture_zone || null;
       TR_COPY = data.transcripts_copy || {};
       updateRangeText();
@@ -3388,6 +3421,8 @@
           }
           html += '</div>';
           html += '</div></div>';
+        } else if (item.type === 'screen' && item.screenshot) {
+          html += renderScreenshotEntry(item, idx);
         } else if (item.type === 'screen') {
           if (textOnlyScreen) {
             const timeStr = item.time || '';
@@ -3648,7 +3683,7 @@
       let currentGroup = null;
 
       for (const chunk of chunks) {
-        const isBasicScreen = chunk.type === 'screen' && chunk.basic === true;
+        const isBasicScreen = chunk.type === 'screen' && chunk.basic === true && !chunk.screenshot;
 
         if (isBasicScreen) {
           // Add to current group or start new one
@@ -3748,6 +3783,45 @@
       html += '</div>';
 
       html += '</div>';
+      return html;
+    }
+
+    // A screenshot in its moment: the image at its own shape beside its text,
+    // or, until its text is searchable, where that stands.
+    function renderScreenshotEntry(chunk, idx) {
+      const shot = chunk.screenshot || {};
+      const timeStr = chunk.time || '';
+      const imageUrl = getImageUrlForChunk(chunk);
+      const frameIdx = findFrameIndex(chunk);
+      const device = screenshotDevice(selectedSegment && selectedSegment.stream);
+      const label = device ? `${SCREENSHOT_COPY.J1} · ${device}` : SCREENSHOT_COPY.J1;
+      const searchable = shot.text === 'searchable';
+      const description = searchable ? (chunk.source_ref?.analysis?.visual_description || '') : '';
+      const alt = description || SCREENSHOT_COPY.J5;
+      const size = shot.width && shot.height ? ` width="${Number(shot.width)}" height="${Number(shot.height)}"` : '';
+
+      let html = `<div class="tr-entry tr-entry-screen tr-entry-screenshot" data-idx="${idx}" data-frame-idx="${frameIdx}" data-type="screen" role="listitem">`;
+      html += `<div class="tr-entry-time">${timeStr}</div>`;
+      html += '<div class="tr-entry-content">';
+      html += `<span class="sr-only">${escapeHtml(SCREENSHOT_COPY.J1)}: </span>`;
+      if (imageUrl) {
+        html += `<img class="tr-entry-thumb tr-entry-shot" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}"${size} loading="lazy">`;
+      }
+      html += '<div class="tr-entry-desc">';
+      html += `<div class="tr-shot-label">${escapeHtml(label)}</div>`;
+      if (searchable) {
+        html += renderScreenChunkMarkdown(chunk.markdown);
+      } else if (shot.text === 'no_processing') {
+        html += `<div class="tr-shot-final"><p>${escapeHtml(SCREENSHOT_COPY.J6)}</p>`
+          + `<p class="tr-shot-action"><a href="/app/thinking">${escapeHtml(SCREENSHOT_COPY.J6_ACTION)}</a></p></div>`;
+      } else if (shot.text === 'unreadable') {
+        html += `<div class="tr-shot-final"><p>${escapeHtml(SCREENSHOT_COPY.J7)}</p>`
+          + `<p class="tr-shot-action"><button type="button" class="tr-analyze-action" data-modality="screen">${escapeHtml(BTN_LABEL_FAILED)}</button></p></div>`;
+      } else {
+        html += `<p class="tr-shot-waiting">${escapeHtml(SCREENSHOT_COPY.J3)}</p>`;
+      }
+      html += '</div>';
+      html += '</div></div>';
       return html;
     }
 
@@ -3929,12 +4003,41 @@
       });
     }
 
+    // The day's screen frames and screenshots in time order, one segment at a
+    // time: the open segment's, then its neighbours' as the viewer reaches them.
+    function screenSegmentsInDayOrder() {
+      return allSegments
+        .filter(seg => (seg.types || []).includes('screen') || (seg.types || []).includes('image'))
+        .slice()
+        .sort((a, b) => (parseTime(a.start) - parseTime(b.start)) || String(a.stream).localeCompare(String(b.stream)));
+    }
+
+    function viewerFrame(chunk, files, seg) {
+      const raw = chunk.source_ref?.raw;
+      const filename = chunk.source_ref?.filename;
+      return {
+        chunk,
+        seg,
+        image: raw ? (files.image_files || {})[raw] || null : null,
+        video: filename ? (files.video_files || {})[filename] || null : null,
+      };
+    }
+
     function openImageModal(frameIndex) {
       if (frameIndex < 0 || frameIndex >= allScreenFrames.length) return;
 
       currentFrameIndex = frameIndex;
       const triggerElement = document.activeElement;
       const prevOverflow = document.body.style.overflow;
+      const openSegment = selectedSegment;
+      const frames = allScreenFrames.map(chunk => viewerFrame(
+        chunk,
+        { image_files: currentImageFiles, video_files: currentVideoFiles },
+        openSegment
+      ));
+      let index = frameIndex;
+      let loadingNeighbour = false;
+      const exhausted = { '-1': false, '1': false };
 
       const modal = document.createElement('div');
       modal.className = 'tr-screenshot-modal';
@@ -3943,18 +4046,69 @@
       modal.setAttribute('aria-modal', 'true');
       modal.setAttribute('aria-label', 'screenshot viewer');
 
-      const drawFrame = (canvas, f) => {
-        const videoUrl = getVideoUrlForChunk(f);
+      // Where the next segment holding frames sits, from the frames at this end.
+      const neighbourPosition = (order, direction) => {
+        const edge = direction > 0 ? frames[frames.length - 1].seg : frames[0].seg;
+        if (!edge) return -1;
+        const at = order.findIndex(seg => seg.key === edge.key && seg.stream === edge.stream);
+        if (at >= 0) return at;
+        const start = parseTime(edge.start);
+        const after = order.findIndex(seg => parseTime(seg.start) > start);
+        if (direction > 0) return after < 0 ? order.length - 1 : after - 1;
+        return after < 0 ? order.length : after;
+      };
+
+      const hasNeighbour = direction => {
+        if (exhausted[String(direction)]) return false;
+        const order = screenSegmentsInDayOrder();
+        const next = neighbourPosition(order, direction) + direction;
+        return next >= 0 && next < order.length;
+      };
+
+      // Load the frames of the nearest segment that has any, in this direction.
+      const extend = async direction => {
+        const order = screenSegmentsInDayOrder();
+        let position = neighbourPosition(order, direction);
+        for (let step = 0; step < 50; step += 1) {
+          position += direction;
+          if (position < 0 || position >= order.length) break;
+          const seg = order[position];
+          let data;
+          try {
+            const response = await dayFetch(`/app/transcripts/api/segment/${day}/${seg.stream}/${seg.key}`);
+            if (!response.ok) continue;
+            data = await response.json();
+          } catch (_) {
+            continue;
+          }
+          const found = (data.chunks || [])
+            .filter(chunk => chunk.type === 'screen' || chunk.type === 'image')
+            .map(chunk => viewerFrame(chunk, data, seg))
+            .filter(frame => frame.image || frame.video);
+          if (found.length === 0) continue;
+          if (direction > 0) {
+            frames.push(...found);
+          } else {
+            frames.unshift(...found);
+            index += found.length;
+          }
+          return true;
+        }
+        exhausted[String(direction)] = true;
+        return false;
+      };
+
+      const drawFrame = (canvas, frame) => {
+        const f = frame.chunk;
         const frameId = f.source_ref?.frame_id;
         const boxCoords = f.source_ref?.box_2d;
         const participants = f.source_ref?.participants || [];
         const objects = f.source_ref?.objects;
-        const imageUrl = getImageUrlForChunk(f);
 
-        if (imageUrl) {
-          frameCapture.drawStill(canvas, imageUrl, { objects });
-        } else if (videoUrl && frameId) {
-          frameCapture.drawFull(canvas, videoUrl, frameId, {
+        if (frame.image) {
+          frameCapture.drawStill(canvas, frame.image, { objects });
+        } else if (frame.video && frameId) {
+          frameCapture.drawFull(canvas, frame.video, frameId, {
             boxCoords,
             participants,
             objects
@@ -3965,16 +4119,21 @@
       };
 
       const updateModalContent = () => {
-        const f = allScreenFrames[currentFrameIndex];
-        const monitor = f.source_ref?.monitor || '';
+        const frame = frames[index];
+        const f = frame.chunk;
+        const shot = f.screenshot;
+        const monitor = shot ? '' : (f.source_ref?.monitor || '');
         const monitorPos = getMonitorPosition(monitor);
         const analysis = f.source_ref?.analysis || {};
         const category = analysis.primary || '';
-        const description = f.type === 'image' ? (f.markdown || '') : (analysis.visual_description || '');
-        const imageUrl = getImageUrlForChunk(f);
-        const altText = description || (f.type === 'image' ? 'photo' : 'screen image');
-        const hasPrev = currentFrameIndex > 0;
-        const hasNext = currentFrameIndex < allScreenFrames.length - 1;
+        const searchableShot = !shot || shot.text === 'searchable';
+        const description = f.type === 'image' ? (f.markdown || '') : (searchableShot ? (analysis.visual_description || '') : '');
+        const imageUrl = frame.image;
+        const altText = description || (shot ? SCREENSHOT_COPY.J5 : f.type === 'image' ? 'photo' : 'screen image');
+        const device = shot ? screenshotDevice(frame.seg && frame.seg.stream) : '';
+        const shotLabel = shot ? (device ? `${SCREENSHOT_COPY.J1} · ${device}` : SCREENSHOT_COPY.J1) : '';
+        const hasPrev = index > 0 || hasNeighbour(-1);
+        const hasNext = index < frames.length - 1 || hasNeighbour(1);
 
         modal.innerHTML = `
           <div class="tr-modal-nav${hasPrev ? '' : ' disabled'}" data-dir="prev" title="previous frame (left arrow)" role="button" tabindex="${hasPrev ? '0' : '-1'}">
@@ -3982,6 +4141,8 @@
           </div>
           <div class="tr-modal-center">
             <div class="tr-modal-header">
+              ${shotLabel ? `<span class="tr-modal-badge">${escapeHtml(shotLabel)}</span>` : ''}
+              ${f.time && frame.seg !== openSegment ? `<span class="tr-modal-badge">${escapeHtml(f.time)}</span>` : ''}
               ${monitorPos ? `<span class="tr-modal-badge tr-modal-badge-monitor">${monitorPos}</span>` : ''}
               ${category ? `<span class="tr-modal-badge tr-modal-badge-category">${escapeHtml(category)}</span>` : ''}
               <button class="tr-modal-close" title="close (esc)" aria-label="close">&times;</button>
@@ -4002,14 +4163,27 @@
         // Other still images are loaded directly.
         const canvas = modal.querySelector('#trModalCanvas');
         if (canvas) {
-          drawFrame(canvas, f);
+          drawFrame(canvas, frame);
         }
       };
 
-      const navigateFrame = (delta) => {
-        const newIndex = currentFrameIndex + delta;
-        if (newIndex >= 0 && newIndex < allScreenFrames.length) {
-          currentFrameIndex = newIndex;
+      const navigateFrame = async (delta) => {
+        if (loadingNeighbour) return;
+        let newIndex = index + delta;
+        if (newIndex < 0 || newIndex >= frames.length) {
+          loadingNeighbour = true;
+          const grew = await extend(delta);
+          loadingNeighbour = false;
+          if (!document.contains(modal)) return;
+          if (!grew) {
+            updateModalContent();
+            return;
+          }
+          newIndex = index + delta;
+        }
+        if (newIndex >= 0 && newIndex < frames.length) {
+          index = newIndex;
+          currentFrameIndex = frames[index].seg === openSegment ? allScreenFrames.indexOf(frames[index].chunk) : -1;
           updateModalContent();
           modal.querySelector('.tr-modal-close')?.focus();
         }

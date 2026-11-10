@@ -123,6 +123,22 @@
       }
     },
     {
+      "id": "declared.client.ingestUpload.refusal.screenshot_invalid",
+      "kind": "declared",
+      "payload": {
+        "detail": "meta.screenshot.captured_at must be RFC 3339 with an offset",
+        "error": "Ingest request failed",
+        "reason_code": "screenshot_invalid"
+      },
+      "provenance": {
+        "http_status": 400,
+        "reason_code": "screenshot_invalid"
+      },
+      "schema_validation": {
+        "valid": true
+      }
+    },
+    {
       "consumer_decision": {
         "accepted": true,
         "selected": [
