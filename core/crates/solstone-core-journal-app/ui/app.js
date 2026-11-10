@@ -165,24 +165,41 @@ const COPY = {
     checkNow: 'check now',
     checkAgain: 'check again',
     checking: 'checking…',
+    checkingWithDownloaded: downloaded => `version ${downloaded} is downloaded. checking for a newer one…`,
     neverChecked: 'never checked for updates',
     justNow: 'just now',
-    upToDate: relative => `last checked ${relative} · journal is up to date`,
+    upToDate: 'the journal is up to date',
     lastChecked: relative => `last checked ${relative}`,
-    availableTitle: version => `version ${version} is available`,
-    availableSubtitle: version => `journal ${version} is ready to download.`,
+    availableTitle: target => `version ${target} is available`,
+    availableSubtitle: 'the journal app will download it in the background when this connection allows it.',
+    deferral: {
+      metered: 'this connection is metered, so the download is waiting.',
+      roaming: 'this connection is roaming, so the download is waiting.',
+      restricted: 'this connection does not allow a background download, so it is waiting.',
+      unknown: 'the connection is not known to allow a background download, so it is waiting.',
+    },
     download: 'download',
-    downloadingTitle: version => `downloading ${version}`,
-    readyTitle: version => `ready to install ${version}`,
-    readySubtitle: 'the update is downloaded and ready when you are.',
-    install: 'install',
-    installingTitle: version => `installing ${version}`,
-    installingSubtitle: 'journal is handing off to the installer.',
-    errorTitle: 'update check failed',
-    errorMessage: "we couldn't check right now.",
-    retry: 'retry',
-    unavailableTitle: 'updates unavailable',
-    unavailableSubtitle: "this build can't check for updates on its own. download the latest from solstone.app.",
+    downloadingTitle: target => `downloading ${target}`,
+    downloadingRetainsDownloaded: downloaded => `version ${downloaded} stays downloaded until the new one finishes.`,
+    readyTitle: downloaded => `version ${downloaded} is downloaded. the journal installs it the next time the journal app starts.`,
+    install: 'install now',
+    installingTitle: downloaded => `installing ${downloaded}`,
+    installingSubtitle: 'the journal app is applying the update.',
+    failureCheckTitle: 'the check failed',
+    failureCheckBody: 'the journal could not finish the check.',
+    failureCheckRemains: 'the downloaded update is still here.',
+    retryCheck: 'retry check',
+    failureDownloadTitle: 'the download failed',
+    failureDownloadBody: 'the download did not finish.',
+    failureDownloadRetained: downloaded => `version ${downloaded} is still downloaded.`,
+    retryDownload: 'retry download',
+    failureStopTitle: 'the update did not start',
+    failureStopBody: 'the update could not start. the downloaded update is still here.',
+    failureInstallTitle: 'the update did not finish',
+    failureInstallBody: 'the downloaded update is still here. the journal installs it the next time the journal app starts.',
+    failureInstallMissing: 'the downloaded update is no longer available. check for an update again.',
+    unavailableTitle: 'updates are unavailable',
+    unavailableSubtitle: 'this build cannot check for updates on its own.',
     automatic: 'automatic updates',
     autoCheck: 'check for updates automatically',
     autoDownload: 'download updates in the background',
@@ -190,7 +207,7 @@ const COPY = {
     day: 'every day',
     week: 'every week',
     month: 'every month',
-    privacy: 'no usage data is ever sent. update checks fetch the version list, then download the update itself in the background.',
+    privacy: 'no usage data is sent. a check fetches the version list. a background download runs only on an unrestricted connection.',
   },
 };
 
@@ -2209,44 +2226,142 @@ function renderUpdates() {
   const view = state.update;
   const body = [el('h1', {}, COPY.panes.updates)];
   if (!view) return body;
-  if (view.phase === 'unavailable') {
-    body.push(el('h2', {}, u.unavailableTitle), el('p', { class: 'muted' }, u.unavailableSubtitle));
-    return body;
-  }
+
   const action = (label, act, primary) => el('button', {
     type: 'button', class: primary ? 'primary' : null,
     on: { click: () => call('update', { action: act }).catch(() => {}) },
   }, label);
-  const checked = view.last_checked_at
-    ? (view.up_to_date ? u.upToDate(relative(view.last_checked_at)) : u.lastChecked(relative(view.last_checked_at)))
-    : u.neverChecked;
-  body.push(el('h2', {}, u.header(view.current ?? state.init.app_version)), el('p', { class: 'muted' }, checked));
-  const v = view.version;
-  switch (view.phase) {
-    case 'checking':
-      body.push(el('p', {}, u.checking));
-      break;
-    case 'available':
-      body.push(el('h2', {}, u.availableTitle(v)), el('p', { class: 'muted' }, u.availableSubtitle(v)),
-        el('div', { class: 'actions' }, action(u.download, 'download', true)));
-      break;
-    case 'downloading':
-      body.push(el('h2', {}, u.downloadingTitle(v)), el('progress', { max: 100, value: view.percent ?? 0 }));
-      break;
-    case 'ready':
-      body.push(el('h2', {}, u.readyTitle(v)), el('p', { class: 'muted' }, u.readySubtitle),
-        el('div', { class: 'actions' }, action(u.install, 'install', true)));
-      break;
-    case 'installing':
-      body.push(el('h2', {}, u.installingTitle(v)), el('p', { class: 'muted' }, u.installingSubtitle));
-      break;
-    case 'failed':
-      body.push(el('h2', {}, u.errorTitle), el('p', { class: 'muted' }, u.errorMessage),
-        el('div', { class: 'actions' }, action(u.retry, v ? 'download' : 'check')));
-      break;
-    default:
-      body.push(el('div', { class: 'actions' }, action(view.last_checked_at ? u.checkAgain : u.checkNow, 'check')));
+
+  // 1. Installed version
+  body.push(el('h2', {}, u.header(view.current ?? state.init?.app_version ?? '')));
+
+  // 2. Last completed check line in every phase including unavailable when last_checked_at is set
+  if (view.last_checked_at || view.phase !== 'unavailable') {
+    const checked = view.last_checked_at
+      ? u.lastChecked(relative(view.last_checked_at))
+      : u.neverChecked;
+    body.push(el('p', { class: 'muted' }, checked));
   }
+  if (view.up_to_date) {
+    body.push(el('p', { class: 'muted' }, u.upToDate));
+  }
+
+  // 3. Status, progress, actions by phase
+  switch (view.phase) {
+    case 'unavailable':
+      body.push(el('h2', {}, u.unavailableTitle), el('p', { class: 'muted' }, u.unavailableSubtitle));
+      break;
+
+    case 'checking':
+      if (view.downloaded_version) {
+        body.push(el('p', {}, u.checkingWithDownloaded(view.downloaded_version)));
+      } else {
+        body.push(el('p', {}, u.checking));
+      }
+      break;
+
+    case 'available': {
+      const target = view.target_version ?? '';
+      body.push(el('h2', {}, u.availableTitle(target)));
+      if (view.downloaded_version && view.downloaded_version !== target) {
+        body.push(el('p', { class: 'muted' }, u.downloadingRetainsDownloaded(view.downloaded_version)));
+      }
+      if (view.auto_download && !view.deferral) {
+        body.push(el('p', { class: 'muted' }, u.availableSubtitle));
+      } else if (view.deferral) {
+        body.push(el('p', { class: 'muted' }, u.deferral[view.deferral] || u.deferral.unknown));
+      }
+      const actions = [
+        action(u.download, 'download', true),
+        action(view.last_checked_at ? u.checkAgain : u.checkNow, 'check', false),
+      ];
+      if (view.downloaded_version && view.next_start) {
+        actions.push(action(u.install, 'install', false));
+      }
+      body.push(el('div', { class: 'actions' }, ...actions));
+      break;
+    }
+
+    case 'downloading': {
+      const target = view.target_version ?? '';
+      body.push(el('h2', {}, u.downloadingTitle(target)));
+      if (view.downloaded_version && view.downloaded_version !== target) {
+        body.push(el('p', { class: 'muted' }, u.downloadingRetainsDownloaded(view.downloaded_version)));
+      }
+      const pct = view.percent ?? 0;
+      body.push(el('progress', {
+        'aria-label': u.downloadingTitle(target),
+        'aria-valuemin': '0',
+        'aria-valuemax': '100',
+        'aria-valuenow': String(pct),
+        max: 100,
+        value: pct,
+      }));
+      break;
+    }
+
+    case 'ready':
+      body.push(el('h2', {}, u.readyTitle(view.downloaded_version ?? '')));
+      body.push(el('div', { class: 'actions' },
+        action(u.install, 'install', true),
+        action(view.last_checked_at ? u.checkAgain : u.checkNow, 'check', false),
+      ));
+      break;
+
+    case 'installing':
+      body.push(el('h2', {}, u.installingTitle(view.downloaded_version ?? '')));
+      body.push(el('p', { class: 'muted' }, u.installingSubtitle));
+      break;
+
+    case 'failed': {
+      if (view.failure === 'stop') {
+        body.push(el('h2', {}, u.failureStopTitle), el('p', { class: 'muted' }, u.failureStopBody));
+        body.push(el('div', { class: 'actions' }, action(u.install, 'install', true)));
+      } else if (view.failure === 'install') {
+        const retained = view.downloaded_version && view.next_start;
+        body.push(el('h2', {}, u.failureInstallTitle), el('p', { class: 'muted' }, retained ? u.failureInstallBody : u.failureInstallMissing));
+        body.push(el('div', { class: 'actions' }, retained ? action(u.install, 'install', true) : action(u.checkAgain, 'check', true)));
+      } else if (view.failure === 'download') {
+        body.push(el('h2', {}, u.failureDownloadTitle));
+        let bodyMsg = u.failureDownloadBody;
+        if (view.downloaded_version) {
+          bodyMsg += ' ' + u.failureDownloadRetained(view.downloaded_version);
+        }
+        body.push(el('p', { class: 'muted' }, bodyMsg));
+        const actions = [action(u.retryDownload, 'download', true)];
+        if (view.downloaded_version && view.next_start) {
+          actions.push(action(u.install, 'install', false));
+        }
+        body.push(el('div', { class: 'actions' }, ...actions));
+      } else {
+        body.push(el('h2', {}, u.failureCheckTitle));
+        let bodyMsg = u.failureCheckBody;
+        if (view.downloaded_version) {
+          bodyMsg += ' ' + u.failureCheckRemains;
+        }
+        body.push(el('p', { class: 'muted' }, bodyMsg));
+        const actions = [action(u.retryCheck, 'check', true)];
+        if (view.downloaded_version && view.next_start) {
+          actions.push(action(u.install, 'install', false));
+        }
+        body.push(el('div', { class: 'actions' }, ...actions));
+      }
+      break;
+    }
+
+    default: // idle
+      if (view.downloaded_version && view.next_start) {
+        body.push(el('h2', {}, u.readyTitle(view.downloaded_version)));
+        body.push(el('div', { class: 'actions' },
+          action(u.install, 'install', true),
+          action(view.last_checked_at ? u.checkAgain : u.checkNow, 'check', false)
+        ));
+      } else {
+        body.push(el('div', { class: 'actions' }, action(view.last_checked_at ? u.checkAgain : u.checkNow, 'check')));
+      }
+      break;
+  }
+
   const prefs = (changes) => call('update', { action: 'prefs',
     auto_check: view.auto_check, auto_download: view.auto_download, interval: view.interval, ...changes })
     .then(next => { state.update = next; render(); });

@@ -645,6 +645,11 @@ function createHarness(options = {}) {
   }
   vm.runInContext(read('date_format.js'), context, { filename: 'date_format.js' });
   vm.runInContext(read('mount-workspace.js'), context, { filename: 'mount-workspace.js' });
+  // The bundle's read store, view contract and router, in its order: the
+  // shell's boot takes an undated address's day through the router.
+  for (const name of ['store.js', 'views.js', 'router.js']) {
+    vm.runInContext(read(name), context, { filename: name });
+  }
   if (options.boot) {
     vm.runInContext(read('convey_copy.js'), context, { filename: 'convey_copy.js' });
   }

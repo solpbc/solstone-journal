@@ -72,6 +72,7 @@ window.SurfaceState = (() => {
   // from the start and shown by the stylesheet at ten seconds; until then it
   // is hidden from assistive technology as well as from sight.
   const STILL_WORKING_HTML = '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>';
+  const STILL_WORKING_QUIET_HTML = '<span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>';
   const HEADING_LEVELS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
   const ERROR_ICON = window.ConveyIcons.svg('triangle-alert');
   // X-19 turned the em-dash that used to introduce this tail into a period or
@@ -265,11 +266,15 @@ window.SurfaceState = (() => {
       return hasValue(err.message) ? String(err.message) : '';
     },
 
-    loading({ text = '' } = {}) {
-      return `<div class="surface-state surface-state--loading" role="status" aria-busy="true">`
+    // `busy: false` is a view on the view contract: its loading state is
+    // announced as it appears, and the page itself says "still working" once
+    // (the visual line stays out of the accessibility tree, so it isn't said
+    // twice).
+    loading({ text = '', busy = true } = {}) {
+      return `<div class="surface-state surface-state--loading" role="status"${busy ? ' aria-busy="true"' : ''}>`
         + `<div class="surface-state-spinner" aria-hidden="true"></div>`
         + `${text ? `<span class="surface-state-text" data-role="loading-status">${escapeHtml(text)}</span>` : ''}`
-        + STILL_WORKING_HTML
+        + (busy ? STILL_WORKING_HTML : STILL_WORKING_QUIET_HTML)
         + `</div>`;
     },
 

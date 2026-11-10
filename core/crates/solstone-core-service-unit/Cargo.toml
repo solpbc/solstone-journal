@@ -15,10 +15,11 @@ workspace = true
 [dependencies]
 quick-xml = "0.41.0"
 plist.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 solstone-core-installation-identity.workspace = true
 unicode-general-category.workspace = true
 
 [dev-dependencies]
 base64 = "0.22.1"
-serde_json.workspace = true
 solstone-core-service-legacy-evidence = { path = "../solstone-core-service-legacy-evidence" }

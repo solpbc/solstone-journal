@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { runtime: viewRuntime } = require('./view_runtime');
 
 const crateDir = process.argv[2] || path.resolve(__dirname, '..');
 const weekJsPath = path.join(crateDir, 'assets/week.js');
@@ -598,6 +599,11 @@ function createEnvironment(pathname = '/app/home/week/20260308', evalWeek = true
     },
     addEventListener: (type, listener) => doc.addEventListener(type, listener),
     removeEventListener: () => {},
+    // Home's mount sets its once-a-minute pulse read; nothing here runs it.
+    setTimeout: setTimeout,
+    clearTimeout: clearTimeout,
+    setInterval: () => 0,
+    clearInterval: () => {},
     CustomEvent: CustomEvent,
     Element: Element,
     HTMLElement: Element,
@@ -1092,6 +1098,7 @@ async function runTests() {
     const removalsJsCode = fs.readFileSync(removalsJsPath, 'utf8');
 
     // 1. home.js
+    vm.runInContext(viewRuntime, sandbox, { filename: 'view-runtime.js' });
     vm.runInContext(homeJsCode, sandbox, { filename: 'home.js' });
     // 2. week.js
     vm.runInContext(weekJsCode, sandbox, { filename: 'week.js' });
@@ -1099,11 +1106,7 @@ async function runTests() {
     vm.runInContext(removalsJsCode, sandbox, { filename: 'removals.js' });
 
     // 4. workspace:mounted
-    doc.dispatchEvent(
-      new CustomEvent('workspace:mounted', {
-        detail: { appName: 'home', url: '/app/home/' }
-      })
-    );
+    vm.runInContext("window.SolViews.mount('home');", sandbox);
 
     await new Promise((r) => setTimeout(r, 10));
 
@@ -1139,6 +1142,7 @@ async function runTests() {
     };
 
     // 1. home.js
+    vm.runInContext(viewRuntime, envHome.sandbox, { filename: 'view-runtime.js' });
     vm.runInContext(homeJsCode, envHome.sandbox, { filename: 'home.js' });
     // 2. week.js
     vm.runInContext(weekJsCode, envHome.sandbox, { filename: 'week.js' });
@@ -1146,11 +1150,7 @@ async function runTests() {
     vm.runInContext(removalsJsCode, envHome.sandbox, { filename: 'removals.js' });
 
     // 4. workspace:mounted
-    envHome.doc.dispatchEvent(
-      new CustomEvent('workspace:mounted', {
-        detail: { appName: 'home', url: '/app/home/' }
-      })
-    );
+    vm.runInContext("window.SolViews.mount('home');", envHome.sandbox);
 
     await new Promise((r) => setTimeout(r, 10));
 
@@ -1175,14 +1175,11 @@ async function runTests() {
       apiCalls3.push(url);
       return Promise.resolve({ items: [] });
     };
+    vm.runInContext(viewRuntime, envOriginals.sandbox, { filename: 'view-runtime.js' });
     vm.runInContext(homeJsCode, envOriginals.sandbox, { filename: 'home.js' });
     vm.runInContext(weekJsCode, envOriginals.sandbox, { filename: 'week.js' });
     vm.runInContext(removalsJsCode, envOriginals.sandbox, { filename: 'removals.js' });
-    envOriginals.doc.dispatchEvent(
-      new CustomEvent('workspace:mounted', {
-        detail: { appName: 'home', url: '/app/home/originals/' }
-      })
-    );
+    vm.runInContext("window.SolViews.mount('home');", envOriginals.sandbox);
     envOriginals.doc.dispatchEvent(new CustomEvent('visibilitychange', {}));
     await new Promise((r) => setTimeout(r, 10));
     assert.ok(envOriginals.doc.querySelector('[data-removals-card]'), 'originals card mounted on its page');

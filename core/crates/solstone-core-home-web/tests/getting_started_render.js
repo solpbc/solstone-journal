@@ -5,6 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withViewRuntime, EXPORT_ANCHOR } = require('./view_runtime');
 
 const manifestDir = process.argv[2];
 if (!manifestDir) throw new Error('manifest directory required');
@@ -362,7 +363,7 @@ class DOMDocument extends DOMNode {
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.selectAccountSide = selectAccountSide;\n',
+  EXPORT_ANCHOR,
   `  window.__home_test = {
     renderPulse,
     renderVitals,
@@ -399,13 +400,12 @@ source = source.replace(
       if ('speechRetryInFlight' in st) speechRetryInFlight = st.speechRetryInFlight;
     },
   };
-  window.selectAccountSide = selectAccountSide;\n`,
+${EXPORT_ANCHOR}`,
 );
 
 const doc = new DOMDocument();
 const rootEl = doc.createElement('div');
 rootEl.setAttribute('data-home-root', '');
-doc.appendChild(rootEl);
 const surface = doc.createElement('div');
 surface.setAttribute('data-pulse-surface', '');
 rootEl.appendChild(surface);
@@ -472,7 +472,7 @@ const win = { createViewReady: () => () => {},
 win.window = win;
 doc.defaultView = win;
 
-vm.runInNewContext(source, {
+vm.runInNewContext(withViewRuntime(source), {
   window: win,
   document: doc,
   console,
@@ -481,6 +481,9 @@ vm.runInNewContext(source, {
   setTimeout: (fn, delay) => win.setTimeout(fn, delay),
   clearTimeout: (id) => win.clearTimeout(id),
 }, { filename: 'home.js' });
+// Home is mounted with no page of its own to draw on: each case hands it
+// the root it draws into.
+doc.appendChild(rootEl);
 const {
   renderPulse,
   renderVitals,

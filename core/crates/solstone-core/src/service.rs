@@ -118,7 +118,10 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
     // Refused before the platform probe, so the reason is always this one.
     if matches!(
         action,
-        ServiceAction::AppStatus | ServiceAction::SignIn { .. }
+        ServiceAction::AppStatus
+            | ServiceAction::SignIn { .. }
+            | ServiceAction::StopForUpdate
+            | ServiceAction::RestoreUpdateIntent
     ) {
         return Err(WINDOWS_ONLY.to_owned());
     }
@@ -160,7 +163,10 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
         // Only the Windows installer's update hook runs this.
         ServiceAction::ResumeAfterUpdate => Ok(ExitCode::SUCCESS),
         ServiceAction::BeforeUninstall => Ok(ExitCode::SUCCESS),
-        ServiceAction::AppStatus | ServiceAction::SignIn { .. } => Err(WINDOWS_ONLY.to_owned()),
+        ServiceAction::AppStatus
+        | ServiceAction::SignIn { .. }
+        | ServiceAction::StopForUpdate
+        | ServiceAction::RestoreUpdateIntent => Err(WINDOWS_ONLY.to_owned()),
         ServiceAction::Logs { .. } => unreachable!("logs dispatch is handled by main"),
     }
 }
@@ -2901,5 +2907,17 @@ mod tests {
             };
             assert_eq!(run_inner(action), Err(WINDOWS_ONLY.to_owned()));
         }
+    }
+
+    #[test]
+    fn stop_for_update_is_refused_on_non_windows() {
+        assert_eq!(
+            run_inner(ServiceAction::StopForUpdate),
+            Err(WINDOWS_ONLY.to_owned())
+        );
+        assert_eq!(
+            run_inner(ServiceAction::RestoreUpdateIntent),
+            Err(WINDOWS_ONLY.to_owned())
+        );
     }
 }

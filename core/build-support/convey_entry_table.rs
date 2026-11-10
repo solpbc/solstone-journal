@@ -11,12 +11,15 @@
 //     <!-- first-read: /app/home/ -> /app/home/api/pulse /app/home/api/briefing -->
 //     <!-- first-read: /app/transcripts/{day} -> /app/transcripts/api/day/{day} -->
 //     <!-- open-day: /app/transcripts/ -> /app/transcripts/api/open-day -->
+//     <!-- view-contract -->
 //
 // A route is a whole path, whose only variable is `{day}`, eight digits. A read
 // names only what the view would ask for at that route with no other state, so
 // the journal's own clock decides any date a path doesn't carry. `open-day` is
 // a read that names the day of an undated route; the page takes that address
-// before the view mounts.
+// before the view mounts. `view-contract` says the view's code registers a
+// mount and a dispose, so the page can move to and from it without loading a
+// new document.
 
 /// One script a fragment loads.
 #[allow(dead_code)]
@@ -42,6 +45,7 @@ pub struct FragmentFacts {
     pub styles: Vec<String>,
     pub reads: Vec<FragmentReads>,
     pub open_day: Option<FragmentReads>,
+    pub contract: bool,
 }
 
 /// The marker in the shell page the generated table replaces. Standing alone
@@ -127,6 +131,14 @@ pub fn fragment_facts(name: &str, fragment: &str) -> Result<FragmentFacts, Strin
         if rest.starts_with("<!--") {
             let end = skip_to(start, "-->", "comment")?;
             let text = fragment[start + 4..end - 3].trim();
+            if text == "view-contract" {
+                if facts.contract {
+                    return Err(format!("{name}: more than one view-contract declaration"));
+                }
+                facts.contract = true;
+                cursor = end;
+                continue;
+            }
             if let Some((open_day, reads)) = parse_declaration(name, text)? {
                 if open_day {
                     if facts.open_day.replace(reads).is_some() {
@@ -208,6 +220,9 @@ pub fn entry_row(
         "styles": styles,
         "reads": reads(&facts.reads.iter().collect::<Vec<_>>()),
     });
+    if facts.contract {
+        row["contract"] = serde_json::Value::Bool(true);
+    }
     if let Some(open_day) = &facts.open_day {
         row["openDay"] = serde_json::json!({ "route": open_day.route, "url": open_day.urls[0] });
     }

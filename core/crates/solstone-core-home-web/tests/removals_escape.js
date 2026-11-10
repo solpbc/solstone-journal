@@ -5,6 +5,14 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { runtime: viewRuntime } = require('./view_runtime');
+
+// The originals page is part of home, which is on the view contract: home's
+// mount hands the list its context. The harness stands in for home's mount.
+const HOME_STANDIN = "window.SolViews.register('home', { mount(ctx) { window.HomeOriginals.mount(ctx); } });";
+function mountView(window, document, appName) {
+  vm.runInNewContext(appName === 'home' ? "window.SolViews.mount('home');" : 'window.SolViews.dispose();', { window, document });
+}
 
 class Control {
   constructor(action, markId) {
@@ -172,8 +180,8 @@ async function boot(source, lists, responses, labels = null) {
   if (labels) window.JournalFormat.installStreamLabels({ status: 'complete', labels });
   const load = () => vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
   load();
-  // The shell mounts a workspace's scripts, then announces it; the card mounts on that event.
-  for (const listener of listeners['workspace:mounted'] || []) listener({ detail: { appName: 'home' } });
+  vm.runInNewContext(`${viewRuntime}\n${HOME_STANDIN}`, { window, document, Set, Map, Promise }, { filename: 'view-runtime.js' });
+  mountView(window, document, 'home');
   await settle();
   const card = root.children[0];
   assert(card, 'card mounted');
@@ -188,14 +196,14 @@ async function boot(source, lists, responses, labels = null) {
     root = appName === 'home' ? new Element() : null;
     window.location.pathname = appName === 'home' ? '/app/home/originals/' : '/app/' + appName;
     if (replay) load();
-    for (const listener of (listeners['workspace:mounted'] || []).slice()) listener({ detail: { appName } });
+    mountView(window, document, appName);
     await settle();
     const next = root?.children[0];
     if (next) { next.calls = calls; next.timerCount = card.timerCount; next.tick = card.tick; }
     return next;
   };
   card.refresh = async function () {
-    for (const listener of listeners['workspace:mounted'] || []) listener({ detail: { appName: 'home' } });
+    window.HomeOriginals.refresh();
     await settle();
   };
   return card;
@@ -334,7 +342,8 @@ async function assertStaysOff(source, pathname) {
     querySelector(selector) { return selector === '[data-home-root]' ? root : null; }
   };
   vm.runInNewContext(source, { document, Promise, setImmediate, window, Set }, { filename: 'removals.js' });
-  for (const listener of listeners['workspace:mounted'] || []) listener({ detail: { appName: 'home' } });
+  vm.runInNewContext(`${viewRuntime}\n${HOME_STANDIN}`, { window, document, Set, Map, Promise }, { filename: 'view-runtime.js' });
+  mountView(window, document, 'home');
   await settle();
   assert.strictEqual(root.children.length, 0, `nothing mounts on ${pathname}`);
   assert.deepStrictEqual(calls, [], `nothing is read on ${pathname}`);

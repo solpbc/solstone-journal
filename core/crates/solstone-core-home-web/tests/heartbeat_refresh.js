@@ -8,15 +8,16 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withViewRuntime, EXPORT_ANCHOR } = require('./view_runtime');
 
 const manifestDir = process.argv[2];
 if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.selectAccountSide = selectAccountSide;\n',
+  EXPORT_ANCHOR,
   `  window.__home = { wireRealtime, seedPulse: (data) => { lastPulse = data; } };
-  window.selectAccountSide = selectAccountSide;\n`,
+${EXPORT_ANCHOR}`,
 );
 // No DOM here: drawing is out of scope, only what is read.
 for (const name of ['renderVitals', 'renderPair', 'renderNarrative', 'renderPulse']) {
@@ -46,7 +47,7 @@ const window = {
 };
 window.window = window;
 window.document.defaultView = window;
-vm.runInNewContext(source, { window, document: window.document, console, Map, JSON }, { filename: 'home.js' });
+vm.runInNewContext(withViewRuntime(source), { window, document: window.document, console, Map, JSON }, { filename: 'home.js' });
 
 const send = (tract, msg) => (listeners[tract] || []).forEach((fn) => fn({ tract, ...msg }));
 const settle = () => new Promise((resolve) => setImmediate(resolve));
