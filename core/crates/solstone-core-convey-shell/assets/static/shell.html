@@ -129,6 +129,10 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>journal</title>
+  <!-- In the page, not only in the stylesheet. A new page can be revealed
+       after that sheet is parsed and before it is active, and the browser
+       then rejects the transition with no object for the page to catch. -->
+  <style>@view-transition { navigation: auto; }</style>
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/tokens-dark.css" media="(prefers-color-scheme: dark)">
   <link rel="stylesheet" href="/static/app.css">
