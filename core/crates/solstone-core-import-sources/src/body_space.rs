@@ -18,14 +18,17 @@ use crate::body_stream::APPLE;
 const GIB: u64 = 1024 * 1024 * 1024;
 /// Kept free beyond what the import needs.
 pub const RESERVE: u64 = GIB;
-/// Peak staging, per byte of `export.xml`: 0.91 measured on a synthetic six-year
-/// history (2.34 GB of `export.xml`, 2.09 million rows) on Linux.
-pub const STAGING_PER_XML_BYTE: f64 = 0.92;
-/// What a first import leaves in the journal, per byte of `export.xml`: 1.29
-/// measured on the same history.
+/// Peak staging, per byte of `export.xml`, measured on a synthetic six-year
+/// history (2.34 GB of `export.xml`, 2.09 million rows): 1.13 on a Mac (APFS),
+/// 0.91 on Linux. The larger is used.
+pub const STAGING_PER_XML_BYTE: f64 = 1.13;
+/// What a first import leaves in the journal, per byte of `export.xml`, on the
+/// same history: 1.29 on Linux, 0.78 on a Mac. The larger is used.
 pub const GROWTH_PER_XML_BYTE: f64 = 1.30;
-/// Headroom over the measured factors until they are measured on a Mac too.
-pub const MARGIN: f64 = 1.5;
+/// The most the disk held above where it began during that import, per byte of
+/// `export.xml`: 1.83 on Linux, 1.32 on a Mac. Staging plus growth covers both.
+#[cfg(test)]
+const MEASURED_PEAKS: [f64; 2] = [1.83, 1.32];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Space {
@@ -83,7 +86,6 @@ pub fn need(xml_bytes: u64, first: bool, staging_now: u64) -> u64 {
     if first {
         need += xml * GROWTH_PER_XML_BYTE;
     }
-    need *= MARGIN;
     ((need as u64).saturating_add(RESERVE)).saturating_sub(staging_now)
 }
 
@@ -151,6 +153,12 @@ mod tests {
     fn a_first_import_counts_what_it_leaves_and_staging_already_there_is_taken_off() {
         let xml = 10 * GIB;
         assert!(need(xml, true, 0) > need(xml, false, 0));
+        for peak in MEASURED_PEAKS {
+            assert!(
+                need(xml, true, 0) as f64 >= xml as f64 * peak + RESERVE as f64,
+                "a first import's need covers the measured peak {peak}, with the reserve kept"
+            );
+        }
         assert_eq!(need(xml, false, GIB), need(xml, false, 0) - GIB);
         assert_eq!(need(0, false, 5 * GIB), 0);
         let journal = tempfile::tempdir().unwrap();
