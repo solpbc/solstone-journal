@@ -477,6 +477,7 @@ impl<'a> DayPlacement<'a> {
     ) -> Result<String, String> {
         let filings = &plan.filings;
         let reserved_unfiled = &plan.reserved_unfiled;
+        let sibling_only = chosen.is_none() && filing.is_some();
         let journal = self.journal;
         let source = self.source;
         // A run authorized to move may reuse the original segment as before.
@@ -485,19 +486,13 @@ impl<'a> DayPlacement<'a> {
                 .get(original)
                 .and_then(|held| held.filing.as_deref())
         });
-        let empty_unselected = chosen.is_none()
-            && !placed.contains_key(original)
-            && stream_dir(journal, source, &self.day)
-                .join(original)
-                .symlink_metadata()
-                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound);
         if !reserved_unfiled.contains(original)
             && filings
                 .get(original)
                 .is_none_or(|planned| Some(planned.as_str()) == filing)
             && (may_refile
                 || (original_filing.is_none()
-                    && (filing == chosen || empty_unselected)
+                    && filing == chosen
                     && !solstone_core_segment::holds_foreign_content(
                         &stream_dir(journal, source, &self.day).join(original),
                     )))
@@ -509,6 +504,7 @@ impl<'a> DayPlacement<'a> {
             .iter()
             .find(|(key, held)| {
                 same_grid(key, original)
+                    && !(sibling_only && key.as_str() == original)
                     && !reserved_unfiled.contains(*key)
                     && filings
                         .get(*key)
@@ -523,7 +519,11 @@ impl<'a> DayPlacement<'a> {
             .or_else(|| {
                 filings
                     .iter()
-                    .find(|(key, value)| same_grid(key, original) && Some(value.as_str()) == filing)
+                    .find(|(key, value)| {
+                        same_grid(key, original)
+                            && !(sibling_only && key.as_str() == original)
+                            && Some(value.as_str()) == filing
+                    })
                     .map(|(key, _)| key.clone())
             })
             .or_else(|| {

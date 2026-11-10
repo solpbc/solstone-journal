@@ -2114,8 +2114,22 @@ fn a_move_under_an_import_naming_no_facet_keeps_the_record_readable_under_its_fa
                 outcome.summary
             );
         } else {
-            // Every window of its new tiling, its first and its tiles.
-            for key in ["090000_300", "090500_300", "091000_300", "091500_300"] {
+            // The first row retains the legacy raw placement. Inherited
+            // synthetic tiles use siblings, leaving original slots available
+            // for independent no-facet readings in either source-id order.
+            let destinations = stored(root)
+                .into_iter()
+                .filter(|(_, rows)| {
+                    rows.iter().any(|row| {
+                        row.kind != RowKind::Moved
+                            && (row.id == experience.2.id
+                                || row.of.as_deref() == Some(experience.2.id.as_str()))
+                    })
+                })
+                .map(|((_, key), _)| key)
+                .collect::<Vec<_>>();
+            assert_eq!(destinations.len(), 4);
+            for key in &destinations {
                 assert_eq!(facet_of(key), health, "{key}");
             }
             assert!(

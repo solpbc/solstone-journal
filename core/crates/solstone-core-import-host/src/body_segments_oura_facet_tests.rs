@@ -355,6 +355,58 @@ fn a_no_facet_extension_never_files_an_unrelated_unfiled_workout() {
 }
 
 #[test]
+fn a_no_facet_extension_keeps_new_heart_readings_out_of_its_inherited_tiles() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = stage(
+        &scratch.path().join("first"),
+        &[(
+            "workout",
+            vec![workout(
+                "private",
+                "running",
+                "2026-01-05T06:00:00-07:00",
+                "2026-01-05T06:04:00-07:00",
+            )],
+        )],
+    );
+    run(root, &first, "20261104_120000", Some("other"));
+    let next = stage(
+        &scratch.path().join("next"),
+        &[
+            (
+                "workout",
+                vec![workout(
+                    "private",
+                    "running",
+                    "2026-01-05T06:00:00-07:00",
+                    "2026-01-05T06:20:00-07:00",
+                )],
+            ),
+            (
+                "heartrate",
+                vec![heart("2026-01-05T06:12:00-07:00", 8333, "awake")],
+            ),
+        ],
+    );
+    run(root, &next, "20261104_130000", None);
+    let other = entries(root, OTHER, "20260105", "Oura · imported").join("\n");
+    assert!(
+        other.contains("running") && !other.contains("8333"),
+        "{other}"
+    );
+    let original = window(root, "20260105", "061000_300");
+    assert!(!original.join("talents/facets.json").exists());
+    assert!(
+        fs::read_to_string(original.join(BODY_RECORDS_FILE))
+            .unwrap()
+            .contains("8333")
+    );
+}
+
+#[test]
 fn a_new_oura_experience_tile_cannot_reveal_its_label_or_span_under_the_run_facet() {
     let journal = journal();
     let root = journal.path();

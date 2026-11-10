@@ -196,3 +196,54 @@ fn an_orphan_unfiled_tile_never_lends_its_window_to_a_run_facet() {
         }
     }
 }
+
+#[test]
+fn a_no_facet_tile_never_claims_an_absent_original_before_or_after_a_reading() {
+    for (tile_id, reading_id) in [("a-tile", "z-reading"), ("z-tile", "a-reading")] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        crate::apple_health::read_or_create_zone(root, &APPLE).unwrap();
+        let mut parent = BodyRow::new(
+            RowKind::Experience,
+            "parent".into(),
+            "Watch",
+            "workout",
+            "private workout".into(),
+        );
+        parent.start = Some("2026-10-10 05:00:00 -0600".into());
+        parent.end = Some("2026-10-10 07:00:00 -0600".into());
+        put(root, "050000_3600", &[parent.clone()], Some("other"));
+        let mut tile = parent;
+        tile.kind = RowKind::ExperienceTile;
+        tile.id = tile_id.into();
+        tile.of = Some("parent".into());
+        let incoming = BTreeMap::from([
+            (tile_id.to_owned(), tile),
+            (reading_id.to_owned(), row(reading_id, "06", "8333")),
+        ]);
+        let filed = DayPlacement::load(root, &APPLE, "20261010")
+            .unwrap()
+            .file(
+                vec![(("20261010".into(), "060000_3600".into()), incoming)],
+                None,
+                false,
+            )
+            .unwrap();
+        let destination = |id: &str| {
+            &filed
+                .windows
+                .iter()
+                .find(|(_, rows)| rows.contains_key(id))
+                .unwrap()
+                .0
+                .1
+        };
+        assert_eq!(destination(reading_id), "060000_3600");
+        assert!(!filed.filings.contains_key("060000_3600"));
+        assert_ne!(destination(tile_id), "060000_3600");
+        assert_eq!(
+            filed.filings[destination(tile_id)],
+            facet_file_text("other")
+        );
+    }
+}
