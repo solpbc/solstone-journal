@@ -4569,6 +4569,10 @@ function runAppleImportEndsInItsOwnWords() {
     stage: 'initialization', elapsed_ms: 300 })})`, context);
   assert.ok(!guideSteps.innerHTML.includes('initialization') && !guideSteps.innerHTML.includes('elapsed'), guideSteps.innerHTML);
   assert.ok(guideSteps.innerHTML.includes('Apple Health'), guideSteps.innerHTML);
+  // The too-large refusal names the page's own bound, in the GB the card uses.
+  const bound = vm.runInNewContext(workspace.match(/const MAX_UPLOAD_BYTES = ([^;]+);/)[1]);
+  const tooBig = workspace.match(/too_big: '([^']+)'/)[1];
+  assert.ok(tooBig.includes(`larger than ${(bound / 1e9).toFixed(1)} GB`), tooBig);
   // The import's own page reads as its row does, not "start status unknown".
   const ImportDetail = loadImportDetailModule();
   const stopped = { timestamp: '20261109_225511', status: 'noted', body_state: 'stopped',
