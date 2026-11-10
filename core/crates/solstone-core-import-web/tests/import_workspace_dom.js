@@ -4564,6 +4564,11 @@ function runAppleImportEndsInItsOwnWords() {
   html = guideSteps.innerHTML;
   assert.ok(html.includes('partly saved'), html);
   assert.ok(html.includes('2 parts of your journal didn'), 'its row words: ' + html);
+  // While it runs: no generic stage or elapsed time that would stand still.
+  vm.runInContext(`showProgressView('a1', ${JSON.stringify({ import_id: 'a1', event: 'status', status: 'running',
+    stage: 'initialization', elapsed_ms: 300 })})`, context);
+  assert.ok(!guideSteps.innerHTML.includes('initialization') && !guideSteps.innerHTML.includes('elapsed'), guideSteps.innerHTML);
+  assert.ok(guideSteps.innerHTML.includes('Apple Health'), guideSteps.innerHTML);
   done({ body_state: 'saved', entries_written: 0, duration_ms: 1000 });
   assert.ok(guideSteps.innerHTML.includes('nothing new'), 'the same export again: ' + guideSteps.innerHTML);
   // The run's phase is said while it runs, and not once it has ended.

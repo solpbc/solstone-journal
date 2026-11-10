@@ -238,6 +238,17 @@ pub(crate) fn apple_row(
 /// Put the reading on a list or detail row: its state, its words, and the
 /// generic status the page already knows how to draw.
 pub(crate) fn overlay(root: &Path, import_id: &str, values: &mut Map<String, Value>, all: &[Seen]) {
+    // An Apple Health upload is named for what it is in every state, running and
+    // pending included, not by the generic kind its upload was saved as.
+    if values.get("source_hint").and_then(Value::as_str) == Some(APPLE) {
+        values.insert("source_type".into(), json!(APPLE));
+        values.insert(
+            "source_display".into(),
+            json!(
+                crate::imports::source_display(APPLE).unwrap_or_else(|| "Apple Health".to_owned())
+            ),
+        );
+    }
     let Some((state, words)) = apple_row(root, import_id, all) else {
         return;
     };
@@ -626,6 +637,24 @@ mod tests {
             body_status::record(root, id, code, 1);
             assert_eq!(row(root, id).unwrap().0, state, "{id}");
         }
+    }
+
+    #[test]
+    fn an_apple_upload_is_named_for_what_it_is_while_it_runs_or_waits() {
+        let journal = journal();
+        let root = journal.path();
+        staged(root, "20261010_120000");
+        let mut values = serde_json::Map::new();
+        values.insert("source_hint".into(), json!(APPLE));
+        values.insert("source_type".into(), json!("text"));
+        values.insert("source_display".into(), json!("Text"));
+        overlay(root, "20261010_120000", &mut values, &apple_imports(root));
+        assert_eq!(values["source_type"], APPLE);
+        assert_eq!(values["source_display"], "Apple Health");
+        assert!(
+            values.get("body_state").is_none(),
+            "pending keeps the page's own reading"
+        );
     }
 
     #[test]

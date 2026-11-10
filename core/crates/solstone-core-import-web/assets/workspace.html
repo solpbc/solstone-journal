@@ -3541,9 +3541,13 @@ function showProgressView(importId, eventData = null) {
     ? 'Apple Health'
     : currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
 
+  // A running Apple Health import says its phase on the line below; it sends
+  // no importer stages, so the generic stage and elapsed time would stand still.
   const stageLabel = appleEnded
     ? bodyStateLabel(bodyState) || (isConfirmedSuccess ? bodyStateLabel('saved') : bodyStateLabel('stopped'))
-    : isStalled
+    : apple
+      ? ''
+      : isStalled
     ? 'stalled: no updates in 10 minutes'
     : isConfirmedSuccess
       ? 'recordings saved'
@@ -3685,7 +3689,7 @@ function showProgressView(importId, eventData = null) {
       <div class="import-step-number">progress</div>
       <h3 class="import-progress-title">${escapeHtml(displayName)}</h3>
       <p class="import-progress-message">${escapeHtml(stageLabel)}</p>
-      ${currentEvent?.elapsed_ms ? `<div class="progress-detail">${escapeHtml(formatElapsed(currentEvent.elapsed_ms))} elapsed</div>` : ''}
+      ${currentEvent?.elapsed_ms && !apple ? `<div class="progress-detail">${escapeHtml(formatElapsed(currentEvent.elapsed_ms))} elapsed</div>` : ''}
       <div id="progressReconcileError" role="alert" aria-live="polite" style="display:none; color:var(--danger); margin-top:0.5rem; font-size:0.9rem;"></div>
       ${progressHtml}
       <div class="import-thinking-progress" role="status" aria-live="polite">${renderThinkingProgress(currentEvent?.thinking)}</div>
