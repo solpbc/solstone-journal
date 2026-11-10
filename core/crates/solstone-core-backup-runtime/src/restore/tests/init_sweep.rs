@@ -120,7 +120,9 @@ impl ToolRunner for SetupRestic {
         };
         match argv.first().map(String::as_str) {
             Some("snapshots") => Ok(output(0, &catalog())),
-            Some("check") => Ok(output(0, "")),
+            // Bookkeeping around the restore (repository unlock, tagging newer backups)
+            // has nothing to report here.
+            Some("check" | "unlock" | "tag") => Ok(output(0, "")),
             Some("restore") if is_dry_run(request) => {
                 let mut report = String::new();
                 if argv.iter().any(|arg| arg == "--delete") {
