@@ -412,6 +412,10 @@ struct PendingWindow {
     #[serde(default)]
     units: u64,
     facet: bool,
+    /// Whether this window counted toward the run's `refiled`. A state from
+    /// before this field says nothing, so it's taken as counted, as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    refiled: Option<bool>,
     publish: bool,
     /// Under a run that names no facet, the facet a document this window now
     /// holds had where it was before it moved here.
@@ -1051,6 +1055,7 @@ impl Run<'_, '_> {
                         written_sha: decision.contents.as_deref().map(text_sha),
                         units: decision.units,
                         facet: decision.facet_changed,
+                        refiled: Some(decision.refiled),
                         publish,
                         taken,
                     });
@@ -1623,14 +1628,26 @@ fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut Run
     let day = pending.day.clone();
     let mut kept = 0;
     for window in pending.windows.iter_mut().filter(|window| window.facet) {
-        let file = window_dir(journal, source, &(day.clone(), window.key.clone()))
-            .join("talents/facets.json");
-        if fs::read_to_string(&file).is_ok_and(|held| held != target) {
-            window.facet = false;
+        let dir = window_dir(journal, source, &(day.clone(), window.key.clone()));
+        if !fs::read_to_string(dir.join("talents/facets.json")).is_ok_and(|held| held != target) {
+            continue;
+        }
+        window.facet = false;
+        if window.refiled != Some(false) {
             kept += 1;
+        }
+        // Its facet was the only reason to publish it: its rows are unchanged
+        // and it's already bound, so the summary counts it unchanged.
+        if window.publish && !window.write && window.taken.is_none() && dir.join("stream.json").exists() {
+            window.publish = false;
+            pending.counts.published = pending.counts.published.saturating_sub(1);
+            pending.counts.unchanged += 1;
         }
     }
     pending.counts.refiled = pending.counts.refiled.saturating_sub(kept);
+    if !pending.windows.iter().any(|window| window.publish) {
+        pending.counts.days.remove(&day);
+    }
 }
 
 /// The summary's counts, with facets named by their titles.

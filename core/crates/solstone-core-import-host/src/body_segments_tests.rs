@@ -3244,3 +3244,139 @@ fn an_apple_runs_state_holds_nothing_of_moves_and_its_tiles_keep_their_index_ids
     }
     assert!(tiles > 0);
 }
+
+/// The first line's counts, in order: written, unchanged, stayed deleted, unreadable.
+fn first_line_counts(summary: &str) -> [u64; 4] {
+    let line = summary
+        .lines()
+        .find(|line| line.contains(" written, "))
+        .unwrap_or_else(|| panic!("no counts line: {summary}"));
+    let numbers: Vec<u64> = line
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .take(4)
+        .map(|part| part.parse().unwrap())
+        .collect();
+    [numbers[0], numbers[1], numbers[2], numbers[3]]
+}
+
+fn listed_windows(root: &Path, import: &str) -> u64 {
+    fs::read_to_string(root.join("imports").join(import).join("body-touched.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["windows"]
+                .as_array()
+                .map_or(0, Vec::len) as u64
+        })
+        .sum()
+}
+
+#[test]
+fn a_refused_resumes_half_done_day_still_adds_up_in_the_summary() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    // The same export under another facet: its rows are unchanged, and only the
+    // facet would publish them. It stops with the second day half done.
+    let stop = stopping_at("pending", 2);
+    let mut told = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    run_apple_health_segments(root, &told).unwrap_err();
+    add_listed_elsewhere(root, "20261001", "later");
+    let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    // A refiled window is counted on its own line, so with it the counts cover
+    // every window the import listed.
+    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(&outcome.summary);
+    let refiled = outcome
+        .summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"))
+        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert_eq!(
+        written + unchanged + stayed_deleted + unreadable + refiled,
+        listed_windows(root, "20261012_130000"),
+        "{}",
+        outcome.summary
+    );
+    // What's still under work on the kept day isn't counted as refiled.
+    let kept: u64 = fs::read_dir(root.join("chronicle/20261011").join(STREAM))
+        .unwrap()
+        .flatten()
+        .filter(|entry| {
+            fs::read_to_string(entry.path().join("talents/facets.json"))
+                .is_ok_and(|held| held == facet_file_text("work"))
+        })
+        .count() as u64;
+    assert!(kept > 0, "{}", outcome.summary);
+    let refiled_line = outcome
+        .summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"));
+    let refiled_windows: u64 = fs::read_dir(root.join("chronicle"))
+        .unwrap()
+        .flatten()
+        .filter_map(|day| fs::read_dir(day.path().join(STREAM)).ok())
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            fs::read_to_string(entry.path().join("talents/facets.json"))
+                .is_ok_and(|held| held == facet_file_text("body"))
+        })
+        .count() as u64;
+    match refiled_line {
+        Some(line) => assert!(
+            line.starts_with(&format!("{refiled_windows} part")),
+            "{line} against {refiled_windows}"
+        ),
+        None => assert_eq!(refiled_windows, 0, "{}", outcome.summary),
+    }
+}
+
+#[test]
+fn a_refused_resume_lowers_refiled_only_for_windows_that_counted() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    // A window that carries a facet and no records yet: a new reading there takes
+    // a facet without ever having been refiled.
+    let bare = root.join("chronicle/20261011").join(STREAM).join("200000_3600/talents");
+    fs::create_dir_all(&bare).unwrap();
+    fs::write(bare.join("facets.json"), facet_file_text("work")).unwrap();
+    let more = export(
+        &scratch.path().join("2"),
+        &[workout(10), workout(11), heart("2026-10-11 20:10:00 -0600", "70")],
+    );
+    // Stopped once its new reading is written: the day's tiles have taken the new
+    // facet and the bare window hasn't.
+    let stop = stopping_at("written", 1);
+    let mut told = AppleSegmentsRequest::new(&more, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    run_apple_health_segments(root, &told).unwrap_err();
+    add_listed_elsewhere(root, "20261001", "later");
+    let quiet = AppleSegmentsRequest::new(&more, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(&outcome.summary);
+    let refiled = outcome
+        .summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"))
+        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert_eq!(
+        written + unchanged + stayed_deleted + unreadable + refiled,
+        listed_windows(root, "20261012_130000"),
+        "{}",
+        outcome.summary
+    );
+}
