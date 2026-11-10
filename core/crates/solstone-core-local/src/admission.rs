@@ -678,14 +678,11 @@ mod tests {
             let path = root.path().to_owned();
             let sent = sent.clone();
             workers.push(thread::spawn(move || {
-                let permit = acquire_local_slot(
-                    &path,
-                    1,
-                    Some(Duration::from_secs(10)),
-                    false,
-                    input.parse().unwrap(),
-                )
-                .unwrap();
+                // The parent intentionally holds the slot until every ticket
+                // is published. A worker must not expire during that setup;
+                // the receives below bound the handoffs after release.
+                let permit =
+                    acquire_local_slot(&path, 1, None, false, input.parse().unwrap()).unwrap();
                 sent.send(index).unwrap();
                 drop(permit);
             }));
