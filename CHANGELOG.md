@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- photos from your android phone's camera now show in a segment's transcript and on its photos tab as soon as you open it. before, they showed only after you opened that segment's screen tab, so in a segment with no screen tab they never showed.
 - on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
 - security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
 - security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
