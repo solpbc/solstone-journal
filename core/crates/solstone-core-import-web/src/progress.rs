@@ -14,11 +14,31 @@ use solstone_core_system_health as health;
 use std::{collections::BTreeMap, path::Path};
 
 pub(crate) fn read(root: &Path, import_id: &str) -> Value {
+    if let Some(body) = body_progress(root, import_id) {
+        return body;
+    }
     match read_counts(root, import_id) {
         Ok(Some(counts)) => counts,
         Ok(None) => json!({"status": "not_published"}),
         Err(_) => json!({"status": "unavailable"}),
     }
+}
+
+/// An Apple Health import's own progress. Its windows owe no thinking, so
+/// counting them as recordings waiting for it would be wrong: the page shows how
+/// far the run has got, and whether it's still going.
+fn body_progress(root: &Path, import_id: &str) -> Option<Value> {
+    let metadata = solstone_core_import::read_import_metadata(root, import_id).ok()?;
+    if !crate::lifecycle::is_apple_card(&metadata) {
+        return None;
+    }
+    let progress = std::fs::read(root.join("imports").join(import_id).join("body-progress.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .unwrap_or(Value::Null);
+    let live = solstone_core_import::project_import_result(root, import_id).status
+        == solstone_core_import::ProjectionStatus::Running;
+    Some(json!({"status": "body", "live": live, "body": progress}))
 }
 
 fn read_counts(root: &Path, import_id: &str) -> Result<Option<Value>, String> {
@@ -237,6 +257,26 @@ mod tests {
         assert_eq!(held["ready"], 0);
         fs::remove_dir_all(directory).unwrap();
         assert_eq!(read(root.path(), ID)["unreadable"], 1);
+    }
+    #[test]
+    fn an_apple_import_reports_its_runs_progress_and_no_recordings() {
+        let root = fixture();
+        // The fixture's publication holds one bound window, which the other tests
+        // count as a recording. Under the Apple Health card it isn't one.
+        let mut metadata = solstone_core_import::ImportMetadata::new();
+        metadata.insert("source_hint".to_owned(), json!("apple_health"));
+        solstone_core_import::write_import_metadata(root.path(), ID, &metadata).unwrap();
+
+        fs::write(
+            root.path().join("imports").join(ID).join("body-progress.json"),
+            br#"{"phase":"write","days_done":3,"days_total":9}"#,
+        )
+        .unwrap();
+        let progress = read(root.path(), ID);
+        assert_eq!(progress["status"], "body", "{progress}");
+        assert!(progress.get("recordings").is_none(), "{progress}");
+        assert_eq!(progress["body"]["days_done"], 3);
+        assert_eq!(progress["live"], false);
     }
     #[test]
     fn malformed_publication_is_unavailable_instead_of_zero_complete() {
