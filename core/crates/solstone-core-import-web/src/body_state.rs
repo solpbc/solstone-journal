@@ -131,7 +131,11 @@ pub(crate) fn failing_windows(root: &Path, import_id: &str) -> Option<usize> {
 fn when(root: &Path, started_ms: u64) -> String {
     let zone = solstone_core_journal_config::owner_zone(root);
     chrono::DateTime::from_timestamp_millis(i64::try_from(started_ms).unwrap_or(i64::MAX))
-        .map(|at| at.with_timezone(&zone).format("%Y-%m-%d %H:%M").to_string())
+        .map(|at| {
+            at.with_timezone(&zone)
+                .format("%b %-d, %-I:%M %p")
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
@@ -334,6 +338,18 @@ mod tests {
             .unwrap();
         }
         solstone_core_import::metadata::release_attempt(root, id);
+    }
+
+    /// "your import of Mon D, H:MM AM ran after it", with no ISO date in it.
+    fn names_the_import_as_history_does(words: &str) -> bool {
+        let date = words
+            .split("your import of ")
+            .nth(1)
+            .and_then(|rest| rest.split(" ran after it").next())
+            .unwrap_or_default();
+        !date.contains('-')
+            && (date.ends_with(" AM") || date.ends_with(" PM"))
+            && date.contains(", ")
     }
 
     fn segment(day: &str, key: &str, outcome: SegmentBindingOutcome) -> SegmentPublicationOutcome {
@@ -614,6 +630,8 @@ mod tests {
         let (state, words) = row(root, "20261010_120000").unwrap();
         assert_eq!(state, "stopped");
         assert!(words.contains("ran after it"), "{words}");
+        // In the form the history's own column uses.
+        assert!(names_the_import_as_history_does(&words), "{words}");
         // Refused after it was admitted: failed, in the refusal's words.
         ran(root, "20261010_140000", 7_000, false, None);
         body_status::record(root, "20261010_140000", "export_incomplete", 1);
