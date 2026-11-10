@@ -639,7 +639,33 @@ fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     }
 }
 
-fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> CliOutcome {
+fn run_import(options: Options, journal_path: &Path, dispatch: Dispatch<'_>) -> CliOutcome {
+    // A page start's import is checked before anything else, so a start aimed at
+    // an import that already ran never changes it.
+    let page_import = options.import_id.clone();
+    if let (Some(id), Some(media)) = (page_import.as_deref(), options.media.as_deref())
+        && let Err(run) = crate::body_commands::accept_page_import(journal_path, id, media)
+    {
+        return rendered(run);
+    }
+    let outcome = run_import_accepted(options, journal_path, dispatch);
+    if let Some(id) = page_import.as_deref() {
+        let failed = match &outcome {
+            CliOutcome::Rendered(run) | CliOutcome::Imported { run, .. } if run.exit_code != 0 => {
+                Some(run.stderr.trim_end())
+            }
+            _ => None,
+        };
+        crate::body_commands::settle_page_import(journal_path, id, failed);
+    }
+    outcome
+}
+
+fn run_import_accepted(
+    mut options: Options,
+    journal_path: &Path,
+    dispatch: Dispatch<'_>,
+) -> CliOutcome {
     let owner_instant = match owner_instant(&mut options, journal_path) {
         Ok(instant) => instant,
         Err(run) => return rendered(run),
@@ -889,6 +915,7 @@ fn asked_import_facet(
 
 fn body_command(options: &Options) -> crate::body_commands::BodyCommand<'_> {
     crate::body_commands::BodyCommand {
+        import_id: options.import_id.as_deref(),
         facet: import_facet(options),
         listed_moves_shown: options.listed_moves_shown,
         scheduled: options.scheduled,
@@ -913,6 +940,9 @@ fn import_facet(options: &Options) -> ImportFacet {
 
 /// An import filed under a facet the journal would not route to would land somewhere the
 /// owner did not choose, so it never starts.
+/// What a refused facet's words always say.
+pub(crate) const FACET_REFUSAL_MARKER: &str = "is not one of your unmuted facets";
+
 pub(crate) fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), String> {
     let inventory = solstone_core_facets::observe_declared_facet_inventory(journal)
         .map_err(|error| format!("could not read your facets, so nothing was imported: {error}"))?;
@@ -920,7 +950,7 @@ pub(crate) fn require_enabled_facet(facet: &str, journal: &Path) -> Result<(), S
         return Ok(());
     }
     Err(format!(
-        "\"{facet}\" is not one of your unmuted facets, so nothing was imported. your unmuted facets: {}",
+        "\"{facet}\" {FACET_REFUSAL_MARKER}, so nothing was imported. your unmuted facets: {}",
         inventory.enabled.join(", ")
     ))
 }
@@ -2061,6 +2091,8 @@ struct Options {
     facet: Option<String>,
     no_facet: bool,
     listed_moves_shown: Option<usize>,
+    /// The import a page start runs under; only an Apple Health card sends it.
+    import_id: Option<String>,
     setting: Option<String>,
     auto: Option<Option<String>>,
     window_days: Option<u64>,
@@ -2286,6 +2318,7 @@ fn takes_value(argument: &str) -> bool {
             | "--timestamp"
             | "--facet"
             | "--listed-moves-shown"
+            | "--import-id"
             | "--setting"
             | "--source"
             | "--sync"
@@ -2333,6 +2366,7 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
             })?);
         }
         "--setting" => options.setting = Some(value.to_owned()),
+        "--import-id" => options.import_id = Some(value.to_owned()),
         "--audio-archive" => options.audio_archive = Some(PathBuf::from(value)),
         "--archive-identity" => {
             if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {

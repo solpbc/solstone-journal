@@ -107,27 +107,75 @@ pub(crate) fn is_apple_card(metadata: &ImportMetadata) -> bool {
     source_hint(metadata).as_deref() == Some(APPLE_SOURCE)
 }
 
+/// Whether an Apple Health card import has run, or (with `stopped_only`) has a
+/// recorded stop.
+fn apple_card_already_ran(root: &Path, import_id: &str, stopped_only: bool) -> bool {
+    let Ok(metadata) = read_import_metadata(root, import_id) else {
+        return false;
+    };
+    if !is_apple_card(&metadata) {
+        return false;
+    }
+    let dir = root.join("imports").join(import_id);
+    let latest = match solstone_core_import::metadata::read_attempt_facts(&metadata) {
+        solstone_core_import::metadata::AttemptRead::Present(facts) => Some(facts.generation),
+        solstone_core_import::metadata::AttemptRead::Absent => None,
+        _ => Some(0),
+    };
+    if stopped_only {
+        // A recorded stop for the attempt as it stands, on an import that hasn't
+        // finished: a finished one replays as it always has.
+        let applies = solstone_core_import_sources::body_status::read(root, import_id)
+            .is_some_and(|(_, generation)| match latest {
+                Some(latest) => generation == latest,
+                None => generation == 1,
+            });
+        return applies
+            && solstone_core_import::project_import_result(root, import_id).status
+                != solstone_core_import::ProjectionStatus::Success;
+    }
+    if dir.join(solstone_core_import_sources::body_status::STOP_FILE).exists() {
+        return true;
+    }
+    let has_attempt = latest.is_some();
+    has_attempt
+        || ["body-touched.jsonl", "body-progress.json", "summary.md", "manifest.json"]
+            .iter()
+            .any(|name| dir.join(name).exists())
+}
+
+fn already_ran() -> Response {
+    json_response(
+        StatusCode::CONFLICT,
+        json!({
+            "error": "this import has already run. start a new one from the Apple Health card.",
+            "reason_code": "body_already_ran",
+        }),
+    )
+}
+
 /// The arguments an Apple Health card start adds: the go-ahead, only when the
 /// start carries the preview token the card showed.
 #[cfg(test)]
 pub(crate) fn apple_card_arguments_for_tests(data: &Value, metadata: &ImportMetadata) -> Vec<String> {
-    apple_card_arguments(data, metadata)
+    apple_card_arguments(data, metadata, "20261010_120000")
 }
 
-fn apple_card_arguments(data: &Value, metadata: &ImportMetadata) -> Vec<String> {
+fn apple_card_arguments(data: &Value, metadata: &ImportMetadata, record_id: &str) -> Vec<String> {
     if !is_apple_card(metadata) {
         return Vec::new();
     }
+    // The run takes exactly this import, whatever the upload's detected time.
+    let mut arguments = vec!["--import-id".to_owned(), record_id.to_owned()];
     let shown = metadata
         .get("preview")
         .and_then(|preview| preview.get("token"))
         .and_then(Value::as_str);
     let confirmed = data.get("body_confirmed").and_then(Value::as_str);
     if shown.is_some() && confirmed == shown {
-        vec!["--confirm-body-save".to_owned()]
-    } else {
-        Vec::new()
+        arguments.push("--confirm-body-save".to_owned());
     }
+    arguments
 }
 
 /// How long a Strava upload may wait to be started before it is removed.
@@ -1426,6 +1474,13 @@ pub(crate) async fn run_start(
     {
         return replay_body(root, id);
     }
+    // An Apple Health import whose importer has already said why it stopped is
+    // never started again, even while its queued task still reads as running.
+    if let Some(id) = resolved_id.as_deref()
+        && apple_card_already_ran(root, id, true)
+    {
+        return already_ran();
+    }
     if !force && let Some(id) = resolved_id.as_deref() {
         if let Ok(metadata) = read_import_metadata(root, id) {
             match crate::audio_archive::completed_run(root, &data, &metadata) {
@@ -1459,6 +1514,13 @@ pub(crate) async fn run_start(
         if should_replay {
             return replay_body(root, id);
         }
+    }
+    // Any other Apple Health import that has run is never started again: a new
+    // start is a new import from the card.
+    if let Some(id) = resolved_id.as_deref()
+        && apple_card_already_ran(root, id, false)
+    {
+        return already_ran();
     }
     // An Apple Health import that no longer fits isn't started: the page may
     // have previewed it when there was room.
@@ -2071,7 +2133,7 @@ where
     }
 
     let mut cmd = command(&plan.command_path, timestamp, &plan.metadata, force);
-    cmd.extend(apple_card_arguments(data, &plan.metadata));
+    cmd.extend(apple_card_arguments(data, &plan.metadata, &plan.record_id));
     let previous_task_id = plan
         .metadata
         .get("task_id")

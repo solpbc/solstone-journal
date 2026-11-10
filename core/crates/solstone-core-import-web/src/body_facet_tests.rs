@@ -425,3 +425,53 @@ fn a_card_preview_carries_space_beside_its_size_and_a_small_one_fits() {
     crate::apple_card::add_space(root.path(), &strava, &mut other);
     assert!(other.get("space").is_none());
 }
+
+async fn post_start(root: &Path, id: &str, path: &str) -> (StatusCode, Value) {
+    call(
+        root,
+        "POST",
+        crate::mobile_import_contract::START_PATH,
+        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown"})),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn an_apple_import_that_has_run_is_never_started_again_but_a_finished_one_replays() {
+    let root = journal(&[]);
+    // Refused before it ran, while its queued task would still read as running.
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let mut metadata = solstone_core_import::read_import_metadata(root.path(), &id).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    metadata.insert("task_id".into(), json!(now.to_string()));
+    solstone_core_import::write_import_metadata(root.path(), &id, &metadata).unwrap();
+    solstone_core_import_sources::body_status::record(root.path(), &id, "go_ahead", 1);
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "body_already_ran");
+
+    // Stopped after it ran: an attempt that didn't finish.
+    let root = journal(&[]);
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let facts = solstone_core_import::admit_running_attempt(root.path(), &id, 1, Some("apple_health")).unwrap();
+    solstone_core_import::record_unconfirmed_attempt(root.path(), &id, facts.generation, 2, None).unwrap();
+    solstone_core_import::metadata::release_attempt(root.path(), &id);
+    let before = fs::read(root.path().join("imports").join(&id).join("import.json")).unwrap();
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(fs::read(root.path().join("imports").join(&id).join("import.json")).unwrap(), before);
+
+    // Finished, with a stop file beside it: a double post replays as it always has.
+    let root = journal(&[]);
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let facts = solstone_core_import::admit_running_attempt(root.path(), &id, 1, Some("apple_health")).unwrap();
+    solstone_core_import::record_completed_attempt(root.path(), &id, facts.generation, 2, None, None).unwrap();
+    solstone_core_import::metadata::release_attempt(root.path(), &id);
+    solstone_core_import_sources::body_status::record(root.path(), &id, "other", facts.generation);
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["replay"], true, "{body}");
+}

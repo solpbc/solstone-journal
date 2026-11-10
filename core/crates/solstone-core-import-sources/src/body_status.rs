@@ -85,6 +85,53 @@ pub fn code_for_error_text(text: &str) -> &'static str {
     "other"
 }
 
+/// What the stop for 64 windows in a row says; the run's message carries it.
+pub const STUCK_MARKER: &str = "in a row couldn't be finished";
+
+/// The code for a body run's own error text: a refused export by its stage, the
+/// stuck stop by its marker, a full disk by its number.
+#[must_use]
+pub fn code_for_run_error(text: &str) -> &'static str {
+    if text.contains(STUCK_MARKER) {
+        return "windows_not_saving";
+    }
+    if let Some(stage) = text
+        .split("body-ingest source: ")
+        .nth(1)
+        .map(|rest| rest.split_whitespace().next().unwrap_or_default())
+    {
+        return code_for_source_stage(stage);
+    }
+    code_for_error_text(text)
+}
+
+/// Record why the attempt `generation` of import `import_id` ended, before the
+/// write that ends it. Best effort: a file that can't be written leaves the
+/// owner the general words.
+pub fn record(journal: &std::path::Path, import_id: &str, code: &str, generation: u64) {
+    let path = journal.join("imports").join(import_id).join(STOP_FILE);
+    if !path.parent().is_some_and(std::path::Path::is_dir) {
+        return;
+    }
+    let body = serde_json::json!({"reason": code, "generation": generation}).to_string();
+    let _ = solstone_core_journal_io::atomic_replace(
+        &path,
+        body.as_bytes(),
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    );
+}
+
+/// The recorded reason and the generation it explains, if any.
+#[must_use]
+pub fn read(journal: &std::path::Path, import_id: &str) -> Option<(String, u64)> {
+    let bytes = std::fs::read(journal.join("imports").join(import_id).join(STOP_FILE)).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    Some((
+        value.get("reason")?.as_str()?.to_owned(),
+        value.get("generation")?.as_u64()?,
+    ))
+}
+
 /// What the owner reads for a code: what happened, without the system's own words.
 #[must_use]
 pub fn words(code: &str) -> &'static str {
@@ -118,6 +165,27 @@ mod tests {
             }
         }
         assert_eq!(class_of("something_new"), StopClass::Stopped);
+    }
+
+    #[test]
+    fn a_runs_own_error_is_known_by_its_stage_its_marker_or_its_number() {
+        assert_eq!(code_for_run_error("body-ingest source: permission"), "permission");
+        assert_eq!(code_for_run_error("body-ingest source: archive"), "export_unreadable");
+        assert_eq!(
+            code_for_run_error(&format!("stopped: 64 segments {STUCK_MARKER}; import again")),
+            "windows_not_saving"
+        );
+        assert_eq!(code_for_run_error("something else"), "other");
+    }
+
+    #[test]
+    fn a_stop_is_recorded_beside_its_import_and_read_back() {
+        let journal = tempfile::tempdir().unwrap();
+        record(journal.path(), "20261010_120000", "busy", 1);
+        assert_eq!(read(journal.path(), "20261010_120000"), None, "no import, nothing written");
+        std::fs::create_dir_all(journal.path().join("imports/20261010_120000")).unwrap();
+        record(journal.path(), "20261010_120000", "busy", 1);
+        assert_eq!(read(journal.path(), "20261010_120000"), Some(("busy".to_owned(), 1)));
     }
 
     #[test]
