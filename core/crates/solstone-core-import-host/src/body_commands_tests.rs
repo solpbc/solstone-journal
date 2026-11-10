@@ -660,6 +660,12 @@ mod page_start {
             json!(["20261011"]),
             "the page's import claims only the day it wrote, not the stopped run's: {manifest}"
         );
+        // A command-line run names its source as the card's upload does, so the
+        // row states and the space line count it as an Apple Health import.
+        assert_eq!(
+            solstone_core_import::read_import_metadata(root, "20261012_120000").unwrap()["source_hint"],
+            "apple_health"
+        );
         // Each run took its place in this journal's order as it was admitted.
         let order = solstone_core_import_sources::body_runs::Order::read(root);
         assert_eq!(order.of(root, "20261012_120000"), Some(1));
