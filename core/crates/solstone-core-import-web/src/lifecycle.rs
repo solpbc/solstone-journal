@@ -1348,11 +1348,15 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
     if import_is_running_or_successful(&state.root, timestamp, &metadata) {
         return invalid_state("import already started or processed", None);
     }
-    if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE)
-        && metadata
-            .get("source_hash")
-            .and_then(Value::as_str)
-            .is_some_and(|hash| manifest_exists(&state.root, &SourceHash::new(hash.to_owned())))
+    // A card's upload is a new import of bytes already brought in: Strava and
+    // Apple Health each read the whole export again and change nothing twice.
+    if !matches!(
+        source_hint(&metadata).as_deref(),
+        Some(STRAVA_SOURCE | APPLE_SOURCE)
+    ) && metadata
+        .get("source_hash")
+        .and_then(Value::as_str)
+        .is_some_and(|hash| manifest_exists(&state.root, &SourceHash::new(hash.to_owned())))
     {
         return invalid_state("content already imported", None);
     }
@@ -2153,11 +2157,15 @@ where
             ));
         }
     };
-    if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE)
-        && metadata
-            .get("source_hash")
-            .and_then(Value::as_str)
-            .is_some_and(|hash| manifest_exists(root, &SourceHash::new(hash.to_owned())))
+    // A card's upload is a new import of bytes already brought in: Strava and
+    // Apple Health each read the whole export again and change nothing twice.
+    if !matches!(
+        source_hint(&metadata).as_deref(),
+        Some(STRAVA_SOURCE | APPLE_SOURCE)
+    ) && metadata
+        .get("source_hash")
+        .and_then(Value::as_str)
+        .is_some_and(|hash| manifest_exists(root, &SourceHash::new(hash.to_owned())))
     {
         return invalid_state(
             "content already imported; will not start",
@@ -2990,6 +2998,7 @@ mod tests {
         )
         .unwrap();
         solstone_core_import_sources::body_status::record(root.path(), &first_id, "disk_full", 1);
+        let mut last = Value::Null;
         for (hint, item) in [("apple_health", "two"), ("", "three")] {
             let response = crate::routes(root.path().to_path_buf())
                 .oneshot(post(hint, item))
@@ -3003,7 +3012,44 @@ mod tests {
             );
             assert_eq!(again["replay"], false, "{again}");
             assert_eq!(again["metadata"]["source_hint"], "apple_health", "{again}");
+            last = again;
         }
+        // And it goes on: its details save, and a start isn't refused as
+        // already imported (found walking the card in a browser).
+        let path = read_import_metadata(root.path(), last["timestamp"].as_str().unwrap()).unwrap()
+            ["file_path"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let meta = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/meta")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"path": path})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, meta) = response_json(meta).await;
+        assert_eq!(status, StatusCode::OK, "{meta}");
+        let start = start_with(
+            root.path(),
+            &json!({"path": path, "timestamp": last["timestamp"]}),
+            |_, _, _| Ok(()),
+            write_import_metadata,
+            |_, _, _, _, _, _| {},
+            |_, _| {},
+            None,
+        );
+        let (_, start) = response_json(start).await;
+        assert!(
+            !start["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("already imported")),
+            "{start}"
+        );
     }
 
     #[cfg(all(test, feature = "full-tests"))]
