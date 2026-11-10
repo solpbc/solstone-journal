@@ -49,3 +49,9 @@ bool journal_ios_backup_admit(void);
 char *journal_ios_backup_admission_diagnostic(void);
 char *journal_ios_backup_private_root(void);
 void journal_ios_backup_private_root_free(char *result);
+
+// Containing signed app root, shared by host and JournalWorker. Fixed resources:
+// QwenRuntime/manifest.json and Frameworks/JournalMobileQwen.framework/JournalMobileQwen.
+bool journal_ios_qwen_host_process(void);
+char *journal_ios_qwen_package_root(void);
+void journal_ios_qwen_package_root_free(char *result);

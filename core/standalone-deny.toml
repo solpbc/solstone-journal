@@ -3,6 +3,10 @@
 [advisories]
 yanked = "deny"
 ignore = [
+    # 2026-11-10: the android and ios native runtimes, mobile-audio and
+    # mobile-serving carry the same libsqlite3-sys 0.38.2 and open the same
+    # journal-owned databases. See deny.toml for the call-site rationale and revisit rule.
+    { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.38.2 opens only the journal's own databases; patched 0.39 waits on a Windows notice-text review; next Journal cut takes rusqlite 0.41" },
     # 2026-10-26: mobile-serving and the android and ios native runtimes reach the
     # same bounded hostname precheck as the workspace. See deny.toml for the call-site rationale and revisit rule.
     { id = "RUSTSEC-2026-0119", reason = "hickory-proto 0.24.4 only encodes bounded single-question stub lookups in the shared hostname precheck; revisit on resolver or query-surface changes" },

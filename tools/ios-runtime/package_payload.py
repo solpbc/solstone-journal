@@ -44,3 +44,14 @@ if directory := os.environ.get('AUDIO_MODELS_DIR'):
                  'wespeaker-resnet34-256.onnx', 'pyannote-segmentation-3.0.onnx', ced['filename']):
         shutil.copyfile(Path(directory) / name, models / name)
     package_mobile_media.verify_sound_tag_resources(repo, models)
+
+qwen = adapter / 'Resources/QwenRuntime'
+if directory := os.environ.get('QWEN_PACKAGE_DIR'):
+    import finalize
+    finalize.stage_qwen_resources(Path(directory), qwen)
+elif os.environ.get('REQUIRE_QWEN_RUNTIME') == '1':
+    raise ValueError('owner builds require QWEN_PACKAGE_DIR')
+elif qwen.exists():
+    if qwen.is_symlink():
+        raise ValueError('Qwen resource destination is a symlink')
+    shutil.rmtree(qwen)

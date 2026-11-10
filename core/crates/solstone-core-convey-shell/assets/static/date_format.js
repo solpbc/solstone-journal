@@ -122,6 +122,7 @@
     journal_archive: 'another journal',
     kindle: 'Kindle',
     obsidian: 'notes',
+    evernote: 'Evernote',
   };
 
   // The journal's provenance table (`/api/streams/labels`). A name the table

@@ -16,3 +16,7 @@ libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
+
+# Keep host build dependencies loadable with the pinned Rust on macOS 27.
+[profile.release.build-override]
+strip = "none"

@@ -23,8 +23,11 @@ target = "x86_64-pc-windows-msvc"
 # adds one member and one library (143/136 -> 144/137).
 # Re-derived on 2026-11-08 with the same metadata join: solstone-core-trash
 # adds one member and one library (144/137 -> 145/138).
-workspace_packages = 145
-library_packages = 138
+# Re-derived on 2026-11-09 with the same metadata join: removing the old body
+# bundle writers drops solstone-core-body-source, -body-store, -body-rebuild
+# and -body-ingest, four members and four libraries (145/138 -> 141/134).
+workspace_packages = 141
+library_packages = 134
 
 [[exclusions]]
 package = "ring"

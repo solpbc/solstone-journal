@@ -108,7 +108,7 @@ def validate_output(work):
     record = validate_record(data)
     for step in record["steps"]:
         path = work / "receipts" / (step["name"] + ".log")
-        if Path(step["log"]) != path or sha(read_regular(path, 64 * 1024 * 1024)) != step["log_sha256"]:
+        if Path(step["log"]).name != path.name or sha(read_regular(path, 64 * 1024 * 1024)) != step["log_sha256"]:
             raise ValueError("backup recipe log differs from measured record")
     archive = read_regular(work / "artifacts/librestic_bridge.a", 256 * 1024 * 1024)
     header = read_regular(work / "artifacts/librestic_bridge.h", 1024 * 1024)

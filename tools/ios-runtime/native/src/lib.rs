@@ -345,6 +345,39 @@ fn hold_ready_journal(
     })
 }
 
+#[cfg(all(target_os = "ios", feature = "qwen-native"))]
+fn register_packaged_qwen() -> Result<(), String> {
+    static REGISTRATION: OnceLock<Result<(), String>> = OnceLock::new();
+    REGISTRATION
+        .get_or_init(|| {
+            unsafe extern "C" {
+                fn journal_ios_qwen_host_process() -> bool;
+                fn journal_ios_qwen_package_root() -> *mut c_char;
+                fn journal_ios_qwen_package_root_free(value: *mut c_char);
+            }
+            // The extension links the same code image for its ordinary bridge,
+            // but only the foreground app may admit a model-loading factory.
+            if !unsafe { journal_ios_qwen_host_process() } {
+                return Ok(());
+            }
+            let raw = unsafe { journal_ios_qwen_package_root() };
+            if raw.is_null() {
+                return Err("the signed app's local engine package root is unavailable".into());
+            }
+            let app = unsafe { CStr::from_ptr(raw) }
+                .to_str()
+                .map(PathBuf::from)
+                .map_err(|_| "the signed app's package path is not UTF-8".to_owned());
+            unsafe { journal_ios_qwen_package_root_free(raw) };
+            let app = app?;
+            journal_mobile_qwen_engine::register_bundled_runtime(
+                &app.join("QwenRuntime/manifest.json"),
+                &app.join("Frameworks/JournalMobileQwen.framework/JournalMobileQwen"),
+            )
+        })
+        .clone()
+}
+
 fn run(v: Value) -> Result<Value, String> {
     let op = v["op"].as_str().ok_or("missing operation")?;
     if op == "serve-suspend" {
@@ -376,6 +409,12 @@ fn run(v: Value) -> Result<Value, String> {
         return Ok(json!({"cancel_requested":true}));
     }
     let mut guard = ROOT.lock().map_err(|e| e.to_string())?;
+    #[cfg(all(target_os = "ios", feature = "qwen-native"))]
+    if matches!(op, "open" | "creator-recovery") {
+        // Register immutable app bytes before opening or creating journal state.
+        // Selection and model provisioning still belong to the shared owner path.
+        register_packaged_qwen()?;
+    }
     if matches!(op, "open" | "creator-recovery") {
         let requested = PathBuf::from(v["root"].as_str().ok_or("missing helper-owned root")?);
         if let Some(current) = guard.as_ref() {
@@ -589,6 +628,7 @@ fn run(v: Value) -> Result<Value, String> {
             let current = serving.as_mut().ok_or("serving is stopped")?;
             let host = current.processing.as_ref().ok_or("processing is stopped")?;
             host.enable_audio(models.clone(), model, scratch)?;
+            current.serving.bind_packaged_speech(host)?;
             Ok(current.status())
         }
         #[cfg(feature = "audio")]

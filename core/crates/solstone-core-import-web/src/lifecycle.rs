@@ -702,6 +702,15 @@ fn payload_too_large(detail: impl Into<String>) -> Response {
     )
 }
 
+fn evernote_upload_refusal(data: &Value, bytes: Option<u64>) -> Option<&'static str> {
+    if text_value(data, "source_hint").trim() != "evernote" {
+        return None;
+    }
+    let bytes = bytes?;
+    solstone_core_import_sources::evernote::exceeds_export_ceiling(bytes)
+        .then_some(solstone_core_import_sources::evernote::copy::TOO_BIG)
+}
+
 fn stream_error_response(error: save_stream::SaveStreamError) -> Response {
     match error {
         save_stream::SaveStreamError::CeilingExceeded => {
@@ -1015,6 +1024,19 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
             );
         }
     };
+    let evernote_bytes = match &incoming {
+        Incoming::File { counted, .. } => Some(counted.bytes()),
+        Incoming::Paste { .. } => None,
+    };
+    if let Some(sentence) = evernote_upload_refusal(&data, evernote_bytes) {
+        return error(
+            StatusCode::BAD_REQUEST,
+            sentence,
+            "evernote_export_too_big",
+            sentence.to_owned(),
+            None,
+        );
+    }
     let is_strava = match &incoming {
         Incoming::File {
             original_filename,
@@ -1383,6 +1405,26 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
         if metadata.get(key) != Some(&value) {
             metadata.insert(key.to_owned(), value.clone());
             changed.insert(key.to_owned(), value);
+        }
+    }
+    // The notebook name the owner confirmed for this Evernote export. An empty
+    // name keeps the name the file proposed, decided when the import runs.
+    if let Some(value) = data.get("notebook")
+        && source_hint(&metadata).as_deref() == Some("evernote")
+    {
+        let text = value.as_str().unwrap_or("").trim().to_owned();
+        let stored = if text.is_empty() {
+            Value::Null
+        } else {
+            Value::String(text)
+        };
+        if metadata.get("notebook") != Some(&stored) {
+            if stored.is_null() {
+                metadata.remove("notebook");
+            } else {
+                metadata.insert("notebook".to_owned(), stored.clone());
+            }
+            changed.insert("notebook".to_owned(), stored);
         }
     }
     // The facet the Strava card chose for this import alone. It is the
@@ -6267,5 +6309,32 @@ mod tests {
         assert_eq!(b_spai["reason_code"], "invalid_operation_for_state");
         assert_eq!(b_spai["kind"], "already_imported");
         assert_eq!(b_spai["detail"], "content already imported");
+    }
+
+    #[test]
+    fn an_evernote_export_over_two_gigabytes_is_refused_on_this_route() {
+        use solstone_core_import_sources::evernote::{MAX_EXPORT_BYTES, exceeds_export_ceiling};
+        let evernote = json!({"source_hint": "evernote"});
+        let other = json!({"source_hint": "image"});
+        assert_eq!(
+            super::evernote_upload_refusal(&evernote, Some(MAX_EXPORT_BYTES + 1)),
+            Some(solstone_core_import_sources::evernote::copy::TOO_BIG)
+        );
+        assert_eq!(
+            super::evernote_upload_refusal(&evernote, Some(MAX_EXPORT_BYTES)),
+            None
+        );
+        assert_eq!(
+            super::evernote_upload_refusal(&evernote, Some(64 * 1024 * 1024 + 1)),
+            None
+        );
+        assert_eq!(
+            super::evernote_upload_refusal(&other, Some(MAX_EXPORT_BYTES + 1)),
+            None
+        );
+        assert!(!exceeds_export_ceiling(
+            crate::multipart::MAX_PART_BYTES as u64 + 1
+        ));
+        assert!((crate::multipart::MAX_PART_BYTES as u64) < MAX_EXPORT_BYTES);
     }
 }

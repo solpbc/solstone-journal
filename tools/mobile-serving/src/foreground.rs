@@ -652,18 +652,37 @@ pub struct ProductionGenerateExecutor {
 }
 impl GenerateExecutor for ProductionGenerateExecutor {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+        self.execute_talent_request(request, None)
+    }
+
+    fn execute_with_mobile_local_timeout(
+        &self,
+        request: &GenerateRequest,
+        timeout: Duration,
+    ) -> Result<GenerateResponse, ClientError> {
+        self.execute_talent_request(request, Some(timeout))
+    }
+}
+
+impl ProductionGenerateExecutor {
+    fn execute_talent_request(
+        &self,
+        request: &GenerateRequest,
+        mobile_local_timeout: Option<Duration>,
+    ) -> Result<GenerateResponse, ClientError> {
         let cancellation = solstone_core_generate::Cancellation::from_fn(self.cancelled.as_ref());
         let runtime = solstone_core_generate_wire::EndpointRuntime::default()
             .with_brain_observation(self.observation.clone());
-        solstone_core_generate_wire::respond_with_context(
+        solstone_core_generate_wire::respond_with_mobile_local_timeout(
             request,
             &runtime,
             self.root.canonical_path(),
-            |_| None,
+            crate::local_provider::authority,
             &solstone_core_generate_wire::GenerateCallContext {
                 priority: self.priority,
                 cancellation: &cancellation,
             },
+            mobile_local_timeout,
         )
         .map_err(ClientError::Decode)
     }
@@ -711,7 +730,7 @@ impl WireClient for HostWireClient<'_> {
             &solstone_core_generate_wire::EndpointRuntime::default()
                 .with_brain_observation(self.generator.observation.clone()),
             self.generator.root.canonical_path(),
-            |_| None,
+            crate::local_provider::authority,
             &solstone_core_generate_wire::GenerateCallContext {
                 priority: self.priority,
                 cancellation: &cancellation,
@@ -814,7 +833,7 @@ impl DescribeSession for InProcessDescribeSession<'_> {
                 &solstone_core_generate_wire::EndpointRuntime::default()
                     .with_brain_observation(self.generator.observation.clone()),
                 self.generator.root.canonical_path(),
-                |_| None,
+                crate::local_provider::authority,
                 &solstone_core_generate_wire::GenerateCallContext {
                     priority: self.priority,
                     cancellation: &cancellation,
@@ -1502,10 +1521,12 @@ impl SenseExecutor for HostSenseExecutor {
                     let config = self.audio_state.lock().unwrap().clone();
                     match config {
                         Some(config) => {
-                            match config
-                                .worker
-                                .process_host_input(input, attempt, &checkpoint)
-                            {
+                            match config.worker.process_host_input(
+                                input,
+                                attempt,
+                                priority,
+                                &checkpoint,
+                            ) {
                                 Ok(true) => SenseJobResult::Finished(0),
                                 Ok(false) => SenseJobResult::Hold,
                                 Err(_) => SenseJobResult::Finished(1),
@@ -2741,6 +2762,25 @@ impl ForegroundProcessingHost {
     }
     pub fn queue(&self) -> &TaskQueue {
         &self.queue
+    }
+    #[cfg(feature = "audio")]
+    pub(crate) fn packaged_speech_setup(
+        &self,
+        root: &solstone_core_journal_io::JournalRoot,
+    ) -> Result<Arc<dyn solstone_core_convey_shell::PackagedSpeechSetup>, String> {
+        if self.root.identity() != root.identity()
+            || self.root.canonical_path() != root.canonical_path()
+        {
+            return Err("speech setup journal binding changed".into());
+        }
+        root.revalidate_canonical_binding()
+            .map_err(|error| error.to_string())?;
+        self.audio_state
+            .lock()
+            .map_err(|_| "speech setup owner unavailable")?
+            .as_ref()
+            .and_then(|config| config.worker.packaged_speech_setup())
+            .ok_or_else(|| "packaged speech has not been configured".into())
     }
     #[cfg(feature = "audio")]
     pub fn enable_audio(

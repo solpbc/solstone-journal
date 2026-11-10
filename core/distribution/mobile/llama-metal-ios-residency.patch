@@ -1,0 +1,15 @@
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -1269,7 +1269,11 @@ ggml_metal_device_t ggml_metal_device_init(int device, int n_devices) {
+ 
+                 dev->props.use_residency_sets = true;
+ #if defined(GGML_METAL_HAS_RESIDENCY_SETS)
++#if defined(GGML_METAL_RESIDENCY_DISABLED) && GGML_METAL_RESIDENCY_DISABLED
++                dev->props.use_residency_sets = false;
++#else
+                 dev->props.use_residency_sets = getenv("GGML_METAL_NO_RESIDENCY") == nil;
++#endif
+ #endif
+ 
+                 dev->props.use_shared_buffers = dev->props.has_unified_memory;

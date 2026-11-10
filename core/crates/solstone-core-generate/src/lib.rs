@@ -41,6 +41,16 @@ pub use types::{
 /// and app-owned provider dispatch preserve the same typed request and reply.
 pub trait GenerateExecutor: Send + Sync {
     fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError>;
+
+    /// Trusted in-process talent allowance. Process clients keep the base request;
+    /// the mobile provider boundary selects this only after resolving its lane.
+    fn execute_with_mobile_local_timeout(
+        &self,
+        request: &GenerateRequest,
+        _timeout: std::time::Duration,
+    ) -> Result<GenerateResponse, ClientError> {
+        self.execute(request)
+    }
 }
 
 impl GenerateExecutor for OneShotClient {

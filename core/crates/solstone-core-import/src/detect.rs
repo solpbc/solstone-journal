@@ -24,6 +24,7 @@ pub const ORDERED_FILE_IMPORTER_NAMES: &[&str] = &[
     "apple_health",
     "oura",
     "strava",
+    "evernote",
 ];
 
 pub const OURA_SYNC_REMEDY: &str =
@@ -47,6 +48,7 @@ pub enum RegistrySource {
     AppleHealth,
     Oura,
     Strava,
+    Evernote,
 }
 
 impl RegistrySource {
@@ -63,6 +65,7 @@ impl RegistrySource {
             "apple_health" => Self::AppleHealth,
             "oura" => Self::Oura,
             "strava" => Self::Strava,
+            "evernote" => Self::Evernote,
             _ => return None,
         })
     }
@@ -80,6 +83,7 @@ impl RegistrySource {
             Self::AppleHealth => "apple_health",
             Self::Oura => "oura",
             Self::Strava => "strava",
+            Self::Evernote => "evernote",
         }
     }
 }

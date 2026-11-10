@@ -4,10 +4,14 @@ settings:
   base:
     JOURNAL_BUNDLE_IDENTIFIER: app.solstone.journal.owner.dev
     JOURNAL_APP_GROUP: group.app.solstone.journal.owner.dev
+    JOURNAL_OWNER_ENTITLEMENTS: Shared/Serving.entitlements
     SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) JOURNAL_OWNER_APP
 targets:
   JournalRuntimeDev:
     sources:
+      - path: Resources/QwenRuntime
+        type: folder
+        buildPhase: resources
       - folder-copy
       - path: Resources/JournalWebHost.json
         buildPhase: resources
@@ -16,3 +20,13 @@ targets:
     settings:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: your journal
+        CODE_SIGN_ENTITLEMENTS: $(JOURNAL_OWNER_ENTITLEMENTS)
+        FRAMEWORK_SEARCH_PATHS: $(inherited) $(QWEN_PACKAGE_DIR)
+        OTHER_LDFLAGS: $(inherited) -framework JournalMobileQwen
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks
+  JournalWorker:
+    settings:
+      base:
+        FRAMEWORK_SEARCH_PATHS: $(inherited) $(QWEN_PACKAGE_DIR)
+        OTHER_LDFLAGS: $(inherited) -framework JournalMobileQwen
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/../../Frameworks

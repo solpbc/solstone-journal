@@ -448,6 +448,10 @@ impl AndroidServiceToolsAdmitted {
     }
 
     pub fn revalidate(&self) -> Result<(), AndroidServiceToolsRefusal> {
+        self.revalidate_members(read_member, |_, _, _| {})
+    }
+
+    fn revalidate_roots(&self) -> Result<(), AndroidServiceToolsRefusal> {
         let current_native = RootIdentity::inspect(&self.native_library_dir).map_err(|_| {
             AndroidServiceToolsRefusal::RootSubstituted {
                 root: AndroidFileRoot::NativeLibrary,
@@ -469,6 +473,15 @@ impl AndroidServiceToolsAdmitted {
                 root: AndroidFileRoot::Resource,
             });
         }
+        Ok(())
+    }
+
+    fn revalidate_members(
+        &self,
+        mut read: impl FnMut(&Path, &str) -> Result<Vec<u8>, InstalledPayloadRefusal>,
+        mut inspect: impl FnMut(&AndroidServiceToolFile, &Path, &[u8]),
+    ) -> Result<(), AndroidServiceToolsRefusal> {
+        self.revalidate_roots()?;
 
         for file in &self.manifest.files {
             let root = match file.root {
@@ -477,7 +490,7 @@ impl AndroidServiceToolsAdmitted {
             };
             let full_path = resolve_member(root, &file.path)
                 .map_err(|e| map_payload_refusal(e, &file.path, file.role))?;
-            let bytes = read_member(&full_path, &file.path)
+            let bytes = read(&full_path, &file.path)
                 .map_err(|e| map_payload_refusal(e, &file.path, file.role))?;
             if !digest_matches(&bytes, file.bytes, &file.sha256) {
                 return Err(AndroidServiceToolsRefusal::MemberChanged {
@@ -485,8 +498,49 @@ impl AndroidServiceToolsAdmitted {
                     role: file.role,
                 });
             }
+            inspect(file, &full_path, &bytes);
         }
-        Ok(())
+        self.revalidate_roots()
+    }
+
+    fn verifier_paths(&self) -> Result<AndroidVerifierPaths, AndroidServiceToolsRefusal> {
+        self.verifier_paths_with(read_member)
+    }
+
+    fn verifier_paths_with(
+        &self,
+        read: impl FnMut(&Path, &str) -> Result<Vec<u8>, InstalledPayloadRefusal>,
+    ) -> Result<AndroidVerifierPaths, AndroidServiceToolsRefusal> {
+        let mut cli = None;
+        let mut library = None;
+        self.revalidate_members(read, |file, path, bytes| match file.role {
+            Some(AndroidServiceToolRole::Nvattest) => {
+                cli = Some((path.to_owned(), parse_closure_elf(bytes, &file.path)));
+            }
+            Some(AndroidServiceToolRole::Nvat) => {
+                library = Some((path.to_owned(), parse_closure_elf(bytes, &file.path)));
+            }
+            _ => {}
+        })?;
+        validate_android_loader_directory(&self.native_library_dir)?;
+        let (binary, cli) = cli.ok_or_else(|| AndroidServiceToolsRefusal::MemberMissing {
+            path: ANDROID_NVATTEST_FILENAME.to_owned(),
+            role: Some(AndroidServiceToolRole::Nvattest),
+        })?;
+        let (library, library_info) =
+            library.ok_or_else(|| AndroidServiceToolsRefusal::MemberMissing {
+                path: ANDROID_NVAT_FILENAME.to_owned(),
+                role: Some(AndroidServiceToolRole::Nvat),
+            })?;
+        verifier_load_closure(&cli?, &library_info?)?;
+        let ca_bundle = resolve_member(&self.resource_root, ANDROID_CA_BUNDLE_FILENAME)
+            .map_err(|err| map_payload_refusal(err, ANDROID_CA_BUNDLE_FILENAME, None))?;
+        Ok(AndroidVerifierPaths {
+            binary,
+            library,
+            lib_dir: self.native_library_dir.clone(),
+            ca_bundle,
+        })
     }
 }
 
@@ -1504,6 +1558,11 @@ pub struct AndroidVerifierPaths {
 
 /// Revalidates the process authority and returns the admitted verifier closure.
 ///
+/// Every member is read and hashed afresh. The verifier's ELF facts are parsed
+/// from those same bytes, retaining only the facts between members. This is a
+/// per-call check, not an atomic snapshot: a returned path can change after its
+/// bytes were read, and there is no later duplicate verifier hash.
+///
 /// The native-library directory is absolute, contains no path separator, and
 /// does not shadow an OS library. Caller must not take `lib_dir` from Binder
 /// or Intent extras.
@@ -1514,36 +1573,7 @@ pub fn admitted_android_verifier() -> Result<AndroidVerifierPaths, AndroidServic
             role: Some(AndroidServiceToolRole::Nvattest),
         });
     };
-    tools.revalidate()?;
-    validate_android_loader_directory(&tools.native_library_dir)?;
-    let binary = tools.resolve_tool(AndroidServiceToolRole::Nvattest)?;
-    let library = tools.resolve_tool(AndroidServiceToolRole::Nvat)?;
-    let cli_bytes = read_member(&binary, ANDROID_NVATTEST_FILENAME).map_err(|err| {
-        map_payload_refusal(
-            err,
-            ANDROID_NVATTEST_FILENAME,
-            Some(AndroidServiceToolRole::Nvattest),
-        )
-    })?;
-    let lib_bytes = read_member(&library, ANDROID_NVAT_FILENAME).map_err(|err| {
-        map_payload_refusal(
-            err,
-            ANDROID_NVAT_FILENAME,
-            Some(AndroidServiceToolRole::Nvat),
-        )
-    })?;
-    verifier_load_closure(
-        &parse_closure_elf(&cli_bytes, ANDROID_NVATTEST_FILENAME)?,
-        &parse_closure_elf(&lib_bytes, ANDROID_NVAT_FILENAME)?,
-    )?;
-    let ca_bundle = resolve_member(&tools.resource_root, ANDROID_CA_BUNDLE_FILENAME)
-        .map_err(|err| map_payload_refusal(err, ANDROID_CA_BUNDLE_FILENAME, None))?;
-    Ok(AndroidVerifierPaths {
-        binary,
-        library,
-        lib_dir: tools.native_library_dir.clone(),
-        ca_bundle,
-    })
+    tools.verifier_paths()
 }
 
 /// Private appraisal staging directory under the admitted resource root.
@@ -1911,6 +1941,87 @@ mod tests {
             temp_native.path().join(ANDROID_RCLONE_FILENAME)
         );
         admitted.revalidate().unwrap();
+    }
+
+    #[cfg(all(feature = "full-tests", unix))]
+    #[test]
+    fn verifier_reads_every_member_once_per_operation() {
+        let native = tempdir().unwrap();
+        let resources = tempdir().unwrap();
+        setup_fixture_roots(native.path(), resources.path());
+        let (manifest, receipt) = rendered(native.path(), resources.path());
+        let admitted =
+            admit_android_service_tools(native.path(), resources.path(), &manifest, &receipt)
+                .unwrap();
+        let mut reads = Vec::new();
+        let paths = admitted
+            .verifier_paths_with(|path, relative| {
+                reads.push(path.to_owned());
+                read_member(path, relative)
+            })
+            .unwrap();
+        let expected: Vec<_> = admitted
+            .manifest()
+            .files
+            .iter()
+            .map(|file| {
+                match file.root {
+                    AndroidFileRoot::NativeLibrary => native.path(),
+                    AndroidFileRoot::Resource => resources.path(),
+                }
+                .join(&file.path)
+            })
+            .collect();
+        assert_eq!(reads, expected);
+        assert_eq!(paths.binary, native.path().join(ANDROID_NVATTEST_FILENAME));
+        assert_eq!(paths.library, native.path().join(ANDROID_NVAT_FILENAME));
+        assert_eq!(paths.lib_dir, native.path());
+        assert_eq!(
+            paths.ca_bundle,
+            resources.path().join(ANDROID_CA_BUNDLE_FILENAME)
+        );
+    }
+
+    #[cfg(all(feature = "full-tests", unix))]
+    #[test]
+    fn verifier_rechecks_all_members_after_same_size_writes_with_restored_mtime() {
+        let native = tempdir().unwrap();
+        let resources = tempdir().unwrap();
+        setup_fixture_roots(native.path(), resources.path());
+        let (manifest, receipt) = rendered(native.path(), resources.path());
+        let admitted =
+            admit_android_service_tools(native.path(), resources.path(), &manifest, &receipt)
+                .unwrap();
+        admitted.verifier_paths().unwrap();
+        for file in &admitted.manifest().files {
+            let root = match file.root {
+                AndroidFileRoot::NativeLibrary => native.path(),
+                AndroidFileRoot::Resource => resources.path(),
+            };
+            let path = root.join(&file.path);
+            let before = fs::read(&path).unwrap();
+            let mtime = fs::metadata(&path).unwrap().modified().unwrap();
+            let mut changed = before.clone();
+            *changed.last_mut().unwrap() ^= 1;
+            fs::write(&path, &changed).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(mtime))
+                .unwrap();
+            assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), mtime);
+            let refusal = admitted.verifier_paths().unwrap_err();
+            assert_eq!(
+                refusal,
+                AndroidServiceToolsRefusal::MemberChanged {
+                    path: file.path.clone(),
+                    role: file.role,
+                }
+            );
+            fs::write(&path, before).unwrap();
+            admitted.verifier_paths().unwrap();
+        }
     }
 
     #[test]
@@ -2499,6 +2610,10 @@ mod tests {
 
         let err_reval = admitted.revalidate().unwrap_err();
         assert_eq!(err_reval.code(), "root-substituted");
+        assert_eq!(
+            admitted.verifier_paths().unwrap_err().code(),
+            "root-substituted"
+        );
     }
 
     // Root identity is the directory's device and inode, which only Unix
@@ -2531,6 +2646,10 @@ mod tests {
 
         let err_reval = admitted.revalidate().unwrap_err();
         assert_eq!(err_reval.code(), "root-substituted");
+        assert_eq!(
+            admitted.verifier_paths().unwrap_err().code(),
+            "root-substituted"
+        );
     }
 
     #[test]
@@ -2566,6 +2685,7 @@ mod tests {
             .resolve_tool(AndroidServiceToolRole::Restic)
             .unwrap_err();
         assert_eq!(err_sym.code(), "unsafe-path");
+        assert_eq!(admitted.verifier_paths().unwrap_err().code(), "unsafe-path");
 
         // Truncate file to a proper prefix
         fs::remove_file(temp_native.path().join(ANDROID_RESTIC_FILENAME)).unwrap();
@@ -2580,6 +2700,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(err_trunc.code(), "member-changed");
         assert_eq!(err_trunc.role(), Some(AndroidServiceToolRole::Restic));
+        assert_eq!(admitted.verifier_paths().unwrap_err(), err_trunc);
     }
 
     #[test]

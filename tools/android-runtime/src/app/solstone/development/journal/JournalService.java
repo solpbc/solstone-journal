@@ -27,6 +27,7 @@ public class JournalService extends Service {
     SavedFolderServiceProvider savedFolderProvider;
     long savedFolderProviderIdentity;
     String serviceToolAdmission;
+    String qwenRuntimeAdmission;
     Messenger incoming;
     final Handler setupHandler=new Handler(Looper.getMainLooper());
     final SetupForeground setupForeground=new SetupForeground(SystemClock::elapsedRealtime);
@@ -43,6 +44,10 @@ public class JournalService extends Service {
             serviceToolAdmission = "{\"ok\":false,\"packaged\":true,\"error\":" + JSONObject.quote(error.toString()) + "}";
         }
         evidence("service_tools_admission_finished", Long.toString(SystemClock.elapsedRealtime() - admissionStarted));
+        try { qwenRuntimeAdmission = QwenRuntimeAssets.install(this); }
+        catch (Exception error) {
+            qwenRuntimeAdmission = "{\"ok\":false,\"error\":" + JSONObject.quote(error.toString()) + "}";
+        }
         folderRequests = new OwnerFolderServiceEndpoint(this,ownerRequests,() -> destroyed,
             (target,id,result) -> respond(target,id,result,0));
         creatorRecovery=new CreatorRecoveryEndpoint(this);
@@ -215,6 +220,7 @@ public class JournalService extends Service {
                             if (isToolStatus) {
                                 JSONObject diagnostic = new JSONObject(result);
                                 diagnostic.put("startup", new JSONObject(serviceToolAdmission));
+                                diagnostic.put("local_runtime", new JSONObject(qwenRuntimeAdmission));
                                 result = diagnostic.toString();
                             }
                             if (isStart && new JSONObject(result).optBoolean("ok")) {

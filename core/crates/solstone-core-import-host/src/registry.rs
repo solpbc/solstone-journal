@@ -9,7 +9,8 @@ use std::time::SystemTime;
 
 use crate::cli_argv::RegistryDispatch;
 use crate::import_publication::{
-    ImportFinish, ImportTerminalInput, finish_import_attempt, finish_import_attempt_indexing,
+    ImportFinish, ImportTerminalInput, ImportTerminalSeams, finish_import_attempt,
+    finish_import_attempt_indexing, finish_import_attempt_with,
 };
 use serde_json::Map;
 use solstone_core_import::cli_render::CliRun;
@@ -22,7 +23,7 @@ use solstone_core_import_sources::archive::{
     merge_journal_archive, validate_archive_preflight,
 };
 use solstone_core_import_sources::{
-    ImportSourcesError, MergeMutationState, document, image, save, strava,
+    ImportSourcesError, MergeMutationState, document, evernote, image, save, strava,
 };
 use solstone_core_journal_io::{DEFAULT_LOCK_TIMEOUT, LockOptions, hold_lock};
 
@@ -71,6 +72,15 @@ pub(crate) fn run_with_seams(
         return (failure("import stopped\n".to_owned()), None);
     }
     if dispatch.dry_run {
+        if dispatch.source == RegistrySource::Evernote {
+            return (
+                match evernote_preview(&dispatch) {
+                    Ok(body) => success(body),
+                    Err(error) => failure(format!("import preview failed: {error}\n")),
+                },
+                None,
+            );
+        }
         return (
             match preview_size(&dispatch, journal, seams) {
                 Ok(size) => success(size.render(dispatch.json)),
@@ -89,6 +99,7 @@ pub(crate) fn run_with_seams(
         RegistrySource::Image => run_image(dispatch, journal, &mut selected, seams),
         RegistrySource::JournalArchive => run_archive(dispatch, journal, &mut selected, seams),
         RegistrySource::Strava => run_strava(dispatch, journal, &mut selected),
+        RegistrySource::Evernote => run_evernote(dispatch, journal, &mut selected, seams),
         RegistrySource::AppleHealth | RegistrySource::Oura => {
             unreachable!("resolver preempts body")
         }
@@ -459,6 +470,374 @@ fn write_save_manifest(
     })
     .map(|_| ())
     .map_err(|error| error.to_string())
+}
+
+fn evernote_preview(dispatch: &RegistryDispatch) -> Result<String, String> {
+    let preview = evernote::preview_path(&dispatch.media)?;
+    let mut value = serde_json::json!({
+        "schema": "solstone.import.evernote.preview.v1",
+        "notebook": preview.notebook,
+        "lines": preview.lines,
+        "ready": preview.ready,
+    });
+    if let Some(refusal) = preview.refusal {
+        value["page_refusal"] = serde_json::json!(refusal);
+    }
+    Ok(format!("{value}\n"))
+}
+
+fn evernote_notebook(journal: &Path, dispatch: &RegistryDispatch) -> String {
+    let meta = std::fs::read(
+        journal
+            .join("imports")
+            .join(&dispatch.timestamp)
+            .join("import.json"),
+    )
+    .ok()
+    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    if let Some(name) = meta
+        .as_ref()
+        .and_then(|value| value.get("notebook"))
+        .and_then(|value| value.as_str())
+    {
+        let name = name.trim();
+        if !name.is_empty() {
+            return name.to_owned();
+        }
+    }
+    let filename = meta
+        .as_ref()
+        .and_then(|value| value.get("original_filename"))
+        .and_then(|value| value.as_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            dispatch
+                .media
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    evernote::proposed_notebook(&filename)
+}
+
+fn run_evernote(
+    mut dispatch: RegistryDispatch,
+    journal: &Path,
+    selected: &mut Option<String>,
+    seams: &SourceSeams<'_>,
+) -> CliRun {
+    let source = dispatch.source;
+    let name = source.name();
+    if !dispatch.force && already_saved(journal, &dispatch.media) {
+        return success(cli_render::resolution_skipped(
+            solstone_core_import::SkipReason::AlreadyImported,
+        ));
+    }
+    if let Err(error) = claim_dispatch_id(journal, &mut dispatch, selected) {
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+    if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, source) {
+        return refused;
+    }
+    let import_id = dispatch.timestamp.clone();
+    let generation = match solstone_core_import::admit_running_attempt(
+        journal,
+        &import_id,
+        now_ms(),
+        Some(name),
+    ) {
+        Ok(facts) => facts.generation,
+        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+    };
+    let fail = |detail: String| {
+        let _ = finish_import_attempt(
+            journal,
+            &import_id,
+            generation,
+            name,
+            ImportTerminalInput::Failed(&[]),
+        );
+        failure(detail)
+    };
+    let source_hash = match solstone_core_import::hash_source(&dispatch.media) {
+        Ok(hash) => hash,
+        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+    };
+    let zone = solstone_core_journal_config::owner_zone(journal);
+    let today = chrono::Utc::now().with_timezone(&zone).date_naive();
+    let notebook = evernote_notebook(journal, &dispatch);
+    let planned = match evernote::plan(journal, &dispatch.media, &notebook, &zone, today) {
+        Ok(plan) => plan,
+        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+    };
+    if let Some(refusal) = planned.refusal {
+        return fail(format!("{refusal}\n"));
+    }
+
+    let mut held = Vec::new();
+    let (attachment_segments, attachment_files) = match install_evernote_attachments(
+        journal, &import_id, &zone, seams, &planned, &mut held,
+    ) {
+        Ok(installed) => installed,
+        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+    };
+
+    let rendered = evernote_rendered(&planned);
+    let written = save::write_rendered(journal, Some(&import_id), &rendered);
+    if let Some(error) = written.error {
+        return fail(format!("{name} import failed: {error}\n"));
+    }
+
+    let note_segments = written.created.clone();
+    let extra_segments = attachment_segments.clone();
+    let extra_files = attachment_files.clone();
+    let publish = |input: solstone_core_import::PublicationInput<'_>,
+                   ops: &dyn solstone_core_import::PublicationOperations| {
+        let mut segments = input.segments.to_vec();
+        segments.extend(extra_segments.iter().cloned());
+        let mut files = input.files_created.to_vec();
+        files.extend(extra_files.iter().cloned());
+        solstone_core_import::publish_with_operations(
+            solstone_core_import::PublicationInput {
+                journal: input.journal,
+                import_dir: input.import_dir,
+                import_id: input.import_id,
+                importer: input.importer,
+                revision: input.revision,
+                segments: &segments,
+                files_created: &files,
+                index_only: input.index_only,
+                may_write_record: input.may_write_record,
+            },
+            ops,
+        )
+    };
+    let finished = finish_import_attempt_with(
+        journal,
+        &import_id,
+        generation,
+        name,
+        ImportTerminalInput::Success(&note_segments),
+        ImportTerminalSeams {
+            publish_fn: Some(&publish),
+            ..ImportTerminalSeams::default()
+        },
+    );
+    match finished {
+        Err(error) => return failure(format!("{name} import failed: {error}\n")),
+        Ok(ImportFinish::Stale) => {
+            return failure(format!(
+                "{name} import failed: attempt {import_id}:{generation} was superseded\n"
+            ));
+        }
+        Ok(ImportFinish::Applied) => {}
+    }
+    if let Err(error) =
+        solstone_core_segment::record_unbound_source(journal, "import.evernote", "evernote")
+    {
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+    let mut days = written
+        .created
+        .iter()
+        .map(|file| file.day.clone())
+        .chain(
+            attachment_segments
+                .iter()
+                .map(|segment| segment.day.clone()),
+        )
+        .collect::<Vec<_>>();
+    days.sort();
+    days.dedup();
+    let mut files_created = written
+        .created
+        .iter()
+        .map(|file| file.path.display().to_string())
+        .chain(
+            attachment_files
+                .iter()
+                .map(|path| path.display().to_string()),
+        )
+        .collect::<Vec<_>>();
+    files_created.sort();
+    if let Err(error) =
+        solstone_core_import::write_manifest(&solstone_core_import::ManifestWriteRequest {
+            journal_root: journal,
+            import_id: &import_id,
+            source_type: "evernote",
+            source_hash: &source_hash,
+            entry_count: written.entries,
+            days_affected: &days,
+            files_created: &files_created,
+            imported_via: "native",
+            link_id: None,
+            observer_handle: None,
+            raw_retention: None,
+            span: None,
+        })
+    {
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+    let finish_path = journal.join("imports").join(&import_id).join("finish.txt");
+    if let Err(error) = solstone_core_journal_io::atomic_replace(
+        &finish_path,
+        written.summary.as_bytes(),
+        solstone_core_journal_io::AtomicWriteOptions { mode: Some(0o600) },
+    ) {
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+    if let Err(error) = evernote::commit(journal, &planned.updates) {
+        return failure(format!("{name} import failed: {error}\n"));
+    }
+    let projection = solstone_core_import::project_import_result(journal, &import_id);
+    success(cli_render::source_import_complete(
+        source,
+        &ImportResult {
+            entries_written: written.entries,
+            entities_seeded: 0,
+            files_created,
+            errors: Vec::new(),
+            summary: written.summary,
+            hard_failures: Vec::new(),
+            segments: None,
+            date_range: projection.date_range,
+            merge_summary: None,
+            principal_collision: None,
+            merge_log_path: None,
+            merge_staging_path: None,
+            raw_retention: None,
+        },
+    ))
+}
+
+fn evernote_rendered(plan: &evernote::Plan) -> save::RenderedImport {
+    save::RenderedImport {
+        skipped: 0,
+        source: RegistrySource::Evernote,
+        files: plan
+            .files
+            .iter()
+            .map(|file| save::SegmentFile {
+                day: file.day.clone(),
+                segment: file.segment.clone(),
+                name: solstone_core_format::obsidian::NOTE_TRANSCRIPT_FILE.to_owned(),
+                contents: file.contents.clone(),
+                units: file.units,
+                calendar: false,
+            })
+            .collect(),
+        items: plan
+            .files
+            .iter()
+            .map(|file| {
+                serde_json::json!({
+                    "title": "Note",
+                    "date": file.day,
+                    "type": "note",
+                    "preview": file.contents.chars().take(200).collect::<String>(),
+                    "segments": [{"day": file.day, "key": file.segment}],
+                })
+            })
+            .collect(),
+        entries: plan.entries,
+        summary: plan.summary.clone(),
+        calendar_counts: Default::default(),
+    }
+}
+
+fn install_evernote_attachments(
+    journal: &Path,
+    import_id: &str,
+    zone: &chrono_tz::Tz,
+    seams: &SourceSeams<'_>,
+    plan: &evernote::Plan,
+    held: &mut Vec<tempfile::NamedTempFile>,
+) -> Result<(Vec<solstone_core_import::CreatedSegment>, Vec<PathBuf>), String> {
+    let mut segments = Vec::new();
+    let mut files = Vec::new();
+    for image_file in &plan.images {
+        let path = hold_bytes(held, &image_file.file_name, &image_file.bytes)?;
+        let prepared = image::prepare_image(
+            &path,
+            seams.image,
+            *zone,
+            Some(&image_file.owner_timestamp),
+            None,
+        )
+        .map_err(|error| error.to_string())?;
+        let start = prepared.timestamp.naive_local();
+        let installed =
+            image::install_image_at(&prepared, journal, start, &NativePublicationOperations)
+                .map_err(|error| error.to_string())?;
+        files.extend(installed.files_created);
+        segments.push(installed.created_segment);
+    }
+    if plan.pdfs.is_empty() {
+        return Ok((segments, files));
+    }
+    seams.pdf.prepare()?;
+    let import_dir = journal.join("imports").join(import_id);
+    for pdf in &plan.pdfs {
+        let path = hold_bytes(held, &pdf.file_name, &pdf.bytes)?;
+        let request = document::DocumentImportRequest {
+            source: &path,
+            journal_root: journal,
+            import_dir: &import_dir,
+            import_id,
+            revision: None,
+            password: None,
+            force: false,
+            now: SystemTime::now(),
+            owner_timestamp: Some(&pdf.owner_timestamp),
+        };
+        let prepared = document::prepare_document_import(&request, seams.pdf, seams.model);
+        if !prepared.hard_failures.is_empty() {
+            return Err(prepared.hard_failures.join("\n"));
+        }
+        if prepared.items.is_empty() {
+            return Err(prepared
+                .errors
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "the document did not come in".to_owned()));
+        }
+        let created =
+            document::install_document_segments(&prepared, journal, &NativePublicationOperations)?;
+        for segment in &created {
+            files.push(
+                journal
+                    .join("chronicle")
+                    .join(&segment.day)
+                    .join(&segment.stream)
+                    .join(&segment.segment)
+                    .join("document_transcript.md"),
+            );
+        }
+        segments.extend(created);
+    }
+    Ok((segments, files))
+}
+
+fn hold_bytes(
+    held: &mut Vec<tempfile::NamedTempFile>,
+    file_name: &str,
+    bytes: &[u8],
+) -> Result<PathBuf, String> {
+    let suffix = Path::new(file_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| format!(".{ext}"))
+        .unwrap_or_else(|| ".bin".to_owned());
+    let mut temporary = tempfile::Builder::new()
+        .suffix(&suffix)
+        .tempfile()
+        .map_err(|error| error.to_string())?;
+    std::io::Write::write_all(&mut temporary, bytes).map_err(|error| error.to_string())?;
+    let path = temporary.path().to_path_buf();
+    held.push(temporary);
+    Ok(path)
 }
 
 pub(crate) fn now_ms() -> u64 {
@@ -1743,6 +2122,10 @@ pub fn run_bound(dispatch: RegistryDispatch, journal: &Path) -> (CliRun, Option<
 #[cfg(test)]
 #[path = "strava_run_tests.rs"]
 mod strava_run_tests;
+
+#[cfg(test)]
+#[path = "evernote_run_tests.rs"]
+mod evernote_run_tests;
 
 #[cfg(test)]
 mod tests {

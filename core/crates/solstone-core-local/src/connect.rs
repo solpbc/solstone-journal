@@ -25,6 +25,8 @@ pub struct ConnectInput {
 }
 
 pub type RefreshAuthorityFn = Box<dyn FnMut(Instant) -> Result<(u64, u16, String), String> + Send>;
+pub type RefreshEmbeddedAuthorityFn =
+    Box<dyn FnMut(Instant) -> Result<crate::embedded::InferenceCredentials, String> + Send>;
 
 pub struct LocalInferenceAuthority {
     pub generation: u64,
@@ -32,6 +34,8 @@ pub struct LocalInferenceAuthority {
     pub token: String,
     pub refresh: Option<RefreshAuthorityFn>,
     pub refreshed: bool,
+    embedded_refresh: Option<RefreshEmbeddedAuthorityFn>,
+    pub(crate) retirement: Option<std::sync::Arc<crate::embedded::InferenceRetirement>>,
     deadline: Instant,
 }
 
@@ -41,7 +45,10 @@ impl std::fmt::Debug for LocalInferenceAuthority {
             .field("generation", &self.generation)
             .field("port", &self.port)
             .field("token_len", &self.token.len())
-            .field("has_refresh", &self.refresh.is_some())
+            .field(
+                "has_refresh",
+                &(self.refresh.is_some() || self.embedded_refresh.is_some()),
+            )
             .field("refreshed", &self.refreshed)
             .finish()
     }
@@ -72,8 +79,16 @@ impl LocalInferenceAuthority {
             token,
             refresh,
             refreshed: false,
+            embedded_refresh: None,
+            retirement: None,
             deadline: Instant::now() + Duration::from_secs(120),
         }
+    }
+
+    pub fn new_embedded(refresh: RefreshEmbeddedAuthorityFn) -> Self {
+        let mut authority = Self::new(0, 0, String::new(), None);
+        authority.embedded_refresh = Some(refresh);
+        authority
     }
 
     pub fn token(&self) -> &str {
@@ -92,7 +107,17 @@ impl LocalInferenceAuthority {
     pub fn begin_operation(&mut self, deadline: Instant) -> Result<(), String> {
         self.deadline = deadline;
         self.refreshed = false;
-        if let Some(refresh) = self.refresh.as_mut() {
+        self.retirement = None;
+        if let Some(refresh) = self.embedded_refresh.as_mut() {
+            self.token.clear();
+            self.port = 0;
+            self.retirement = None;
+            let snapshot = refresh(deadline)?;
+            self.generation = snapshot.generation;
+            self.port = snapshot.port;
+            self.token = String::from_utf8(snapshot.token).map_err(|error| error.to_string())?;
+            self.retirement = Some(snapshot.retirement);
+        } else if let Some(refresh) = self.refresh.as_mut() {
             self.token.clear();
             self.port = 0;
             let (generation, port, token) = refresh(deadline)?;
@@ -109,6 +134,11 @@ impl LocalInferenceAuthority {
     pub fn refresh_if_needed(&mut self) -> Result<bool, String> {
         if self.refreshed {
             return Ok(false);
+        }
+        if self.embedded_refresh.is_some() {
+            self.begin_operation(self.deadline)?;
+            self.refreshed = true;
+            return Ok(true);
         }
         if let Some(refresh_fn) = self.refresh.as_mut() {
             self.refreshed = true;
@@ -235,7 +265,7 @@ pub(crate) fn connect_with_transport_and_authority(
             reason: "unsupported connect input schema".into(),
         };
     }
-    if input.platform == Platform::Windows
+    if input.platform.requires_runtime_authority()
         && authority
             .as_ref()
             .is_none_or(|auth| auth.port == 0 || auth.token.is_empty())
@@ -261,7 +291,19 @@ pub(crate) fn connect_with_transport_and_authority(
     };
     let mut base_url = format!("http://{}:{port}", input.bind_address);
 
-    let health = transport.get(&base_url, "/health", None);
+    let mut health = transport.get(
+        &base_url,
+        "/health",
+        authority.as_ref().map(|auth| auth.token.as_str()),
+    );
+    if let Ok((401 | 403, _)) = health
+        && let Some(auth) = authority.as_mut()
+        && auth.refresh_if_needed().unwrap_or(false)
+    {
+        port = auth.port;
+        base_url = format!("http://{}:{port}", input.bind_address);
+        health = transport.get(&base_url, "/health", Some(auth.token.as_str()));
+    }
     let served_model_id = match health {
         Ok((200, text)) => match serde_json::from_str::<Value>(&text).ok() {
             Some(Value::Object(body)) => match body.get("loaded_model") {
@@ -288,7 +330,7 @@ pub(crate) fn connect_with_transport_and_authority(
         Err(reason) => return ConnectOutcome::Failed { reason },
     };
 
-    let capacity = if input.platform == Platform::Windows {
+    let capacity = if input.platform.requires_runtime_authority() {
         let mut auth_token = authority.as_ref().map(|a| a.token.clone());
         let mut props_res = transport.get(&base_url, "/props", auth_token.as_deref());
         if let Ok((401 | 403, _)) = props_res
@@ -602,9 +644,49 @@ mod tests {
         assert_eq!(auth.token, "secret-token-2");
         assert!(auth.refreshed);
         let tokens = transport.tokens.borrow();
-        assert_eq!(tokens[0], None);
+        assert_eq!(tokens[0], Some("secret-token-1".into()));
         assert_eq!(tokens[1], Some("secret-token-1".into()));
         assert_eq!(tokens[2], Some("secret-token-2".into()));
+    }
+
+    #[test]
+    fn mobile_health_and_capacity_use_the_same_live_generation_credential() {
+        for platform in [Platform::Android, Platform::Ios] {
+            let transport = scripted(vec![
+                Ok((401, "unauthorized".into())),
+                Ok((200, "{}".into())),
+                Ok((200, r#"{"total_slots":1}"#.into())),
+            ]);
+            let mut request = input(Path::new("unused"));
+            request.platform = platform;
+            let mut authority = LocalInferenceAuthority::new(
+                1,
+                8080,
+                "old-credential".into(),
+                Some(Box::new(|_| Ok((2, 9090, "new-credential".into())))),
+            );
+            let server = ready(connect_with_transport_and_authority(
+                request.clone(),
+                &transport,
+                Some(&mut authority),
+            ));
+            assert_eq!(server.port, 9090);
+            assert_eq!(server.parallel_slots, 1);
+            assert_eq!(
+                *transport.tokens.borrow(),
+                vec![
+                    Some("old-credential".into()),
+                    Some("new-credential".into()),
+                    Some("new-credential".into())
+                ]
+            );
+            let no_credentials = scripted(vec![]);
+            assert!(matches!(
+                connect_with_transport_and_authority(request, &no_credentials, None),
+                ConnectOutcome::NotReady { .. }
+            ));
+            assert!(no_credentials.calls.borrow().is_empty());
+        }
     }
 
     #[test]

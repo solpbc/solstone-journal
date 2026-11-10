@@ -9,6 +9,7 @@ use solstone_core_journal_config::is_path_shaped_name;
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
 };
+use solstone_core_system::stt_backend_choice::{SttRuntimeKind, stt_host_policy};
 
 use crate::{
     http::{
@@ -138,21 +139,10 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
         _ => return invalid_config_value(format!("Unknown section: {section}")),
     };
     if section == "transcribe" {
-        if data
-            .get("backend")
-            .is_some_and(|value| !matches!(value.as_str(), Some("parakeet" | "parakeet-cpp")))
-        {
-            let backend = data["backend"].as_str().unwrap_or_default();
-            return invalid_config_value(format!(
-                "Invalid backend: {backend}. Must be one of: parakeet, parakeet-cpp"
-            ));
-        }
-        if let Some(detail) = data
-            .get("backend")
-            .and_then(Value::as_str)
-            .and_then(|backend| backend_refusal_on(backend, std::env::consts::OS))
-        {
-            return invalid_config_value(detail);
+        if let Some(error) = data.get("backend").and_then(|value| {
+            backend_validation_error_on(value, std::env::consts::OS, std::env::consts::ARCH)
+        }) {
+            return invalid_config_value(error);
         }
         if let Some(device) = data
             .get("parakeet-cpp")
@@ -433,7 +423,41 @@ fn backend_refusal_on(backend: &str, os: &str) -> Option<&'static str> {
         .then_some("Invalid backend: parakeet-cpp can't run on a mac. Use parakeet.")
 }
 
+fn embedded_speech_on(os: &str, arch: &str) -> bool {
+    stt_host_policy(os, arch).runtime_kind == Some(SttRuntimeKind::MobileEmbeddedCpp)
+}
+
+fn backend_validation_error_on(value: &Value, os: &str, arch: &str) -> Option<String> {
+    let backend = value.as_str().unwrap_or_default();
+    let embedded = embedded_speech_on(os, arch);
+    if !matches!(backend, "parakeet" | "parakeet-cpp") && !(embedded && backend == "confidential") {
+        let allowed = if embedded {
+            "parakeet, parakeet-cpp, confidential"
+        } else {
+            "parakeet, parakeet-cpp"
+        };
+        return Some(format!(
+            "Invalid backend: {backend}. Must be one of: {allowed}"
+        ));
+    }
+    backend_refusal_on(backend, os).map(ToOwned::to_owned)
+}
+
 pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Value {
+    project_transcribe_on(
+        value,
+        include_confidential_audio,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    )
+}
+
+fn project_transcribe_on(
+    value: Value,
+    include_confidential_audio: bool,
+    os: &str,
+    arch: &str,
+) -> Value {
     let Some(values) = value.as_object() else {
         return json!({});
     };
@@ -473,10 +497,14 @@ pub fn project_transcribe(value: Value, include_confidential_audio: bool) -> Val
             _ => {}
         }
     }
-    if !matches!(
-        projected.get("backend").and_then(Value::as_str),
-        Some("parakeet" | "parakeet-cpp")
-    ) {
+    // A mobile owner can choose confidential speech explicitly. An unset backend
+    // must stay unset so the page does not present a manufactured local choice.
+    if !embedded_speech_on(os, arch)
+        && !matches!(
+            projected.get("backend").and_then(Value::as_str),
+            Some("parakeet" | "parakeet-cpp")
+        )
+    {
         projected.insert("backend".to_owned(), Value::String("parakeet".to_owned()));
     }
     if include_confidential_audio {
@@ -507,6 +535,115 @@ mod tests {
         assert!(super::backend_refusal_on("parakeet", "macos").is_none());
         assert!(super::backend_refusal_on("parakeet-cpp", "linux").is_none());
         assert!(super::backend_refusal_on("parakeet-cpp", "windows").is_none());
+    }
+
+    #[test]
+    fn only_embedded_mobile_hosts_admit_the_confidential_speech_backend() {
+        for os in ["android", "ios"] {
+            for arch in ["aarch64", "arm64"] {
+                for backend in ["parakeet", "parakeet-cpp", "confidential"] {
+                    assert!(
+                        super::backend_validation_error_on(&json!(backend), os, arch).is_none(),
+                        "{os}/{arch}: {backend}"
+                    );
+                }
+                for value in [json!("unknown"), json!(null), json!(true), json!(1)] {
+                    assert!(
+                        super::backend_validation_error_on(&value, os, arch).is_some(),
+                        "{os}/{arch}: {value}"
+                    );
+                }
+            }
+        }
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+            ("macos", "aarch64"),
+            ("android", "x86_64"),
+            ("ios", "x86_64"),
+        ] {
+            assert!(
+                super::backend_validation_error_on(&json!("confidential"), os, arch).is_some(),
+                "{os}/{arch}"
+            );
+            assert!(
+                super::backend_validation_error_on(&json!("parakeet"), os, arch).is_none(),
+                "{os}/{arch}"
+            );
+            assert_eq!(
+                super::backend_validation_error_on(&json!("parakeet-cpp"), os, arch).is_some(),
+                os == "macos",
+                "{os}/{arch}"
+            );
+        }
+    }
+
+    #[test]
+    fn mobile_speech_projection_preserves_the_optional_backend_without_changing_input() {
+        for os in ["android", "ios"] {
+            for arch in ["aarch64", "arm64"] {
+                for include_confidential_audio in [false, true] {
+                    for backend in [
+                        None,
+                        Some("parakeet"),
+                        Some("parakeet-cpp"),
+                        Some("confidential"),
+                    ] {
+                        let mut raw = json!({});
+                        if let Some(backend) = backend {
+                            raw["backend"] = json!(backend);
+                        }
+                        let projected = super::project_transcribe_on(
+                            raw.clone(),
+                            include_confidential_audio,
+                            os,
+                            arch,
+                        );
+                        assert_eq!(projected.get("backend"), raw.get("backend"), "{os}/{arch}");
+                        assert!(raw.get("confidential_audio").is_none());
+                        assert_eq!(
+                            projected.get("confidential_audio"),
+                            include_confidential_audio.then_some(&json!(true)),
+                            "{os}/{arch}"
+                        );
+                    }
+                    let projected = super::project_transcribe_on(
+                        json!({"backend":"confidential", "confidential_audio":false}),
+                        include_confidential_audio,
+                        os,
+                        arch,
+                    );
+                    assert_eq!(projected["backend"], "confidential");
+                    assert_eq!(projected["confidential_audio"], false);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn desktop_speech_projection_keeps_its_existing_local_backend_default() {
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("windows", "x86_64"),
+            ("windows", "aarch64"),
+            ("macos", "aarch64"),
+        ] {
+            for include_confidential_audio in [false, true] {
+                for (raw, expected) in [
+                    (json!({}), "parakeet"),
+                    (json!({"backend":"confidential"}), "parakeet"),
+                    (json!({"backend":"parakeet"}), "parakeet"),
+                    (json!({"backend":"parakeet-cpp"}), "parakeet-cpp"),
+                ] {
+                    let projected =
+                        super::project_transcribe_on(raw, include_confidential_audio, os, arch);
+                    assert_eq!(projected["backend"], expected, "{os}/{arch}");
+                }
+            }
+        }
     }
 
     #[tokio::test]

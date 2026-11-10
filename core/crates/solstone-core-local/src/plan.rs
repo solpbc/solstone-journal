@@ -28,6 +28,18 @@ pub enum Platform {
     Linux,
     Darwin,
     Windows,
+    Android,
+    Ios,
+}
+
+impl Platform {
+    pub const fn is_embedded(self) -> bool {
+        matches!(self, Self::Android | Self::Ios)
+    }
+
+    pub const fn requires_runtime_authority(self) -> bool {
+        matches!(self, Self::Windows | Self::Android | Self::Ios)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -199,6 +211,9 @@ pub fn plan(input: PlanInput) -> PlanOutcome {
         Platform::Darwin => rejected("backend override is unavailable on macos"),
         Platform::Linux => plan_linux(input),
         Platform::Windows => plan_windows(input),
+        Platform::Android | Platform::Ios => {
+            rejected("this platform runs the local engine inside its app")
+        }
     }
 }
 

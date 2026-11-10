@@ -448,7 +448,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "695646bbc07b00d5f83309e9cab44e3693910472d5737c683acf5f15f6b6e832",
+        "body_sha256": "041279e5983db1fa353652617a3756e3a8e87d748bbfc52f7a59994d3518b911",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -1174,6 +1174,17 @@
               "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5\" /> <path d=\"M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27\" /> </svg>"
             },
             {
+              "accept": ".enex",
+              "description": "bring in notes from an Evernote export",
+              "display_name": "Evernote",
+              "has_guide": false,
+              "icon": "file",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> </svg>",
+              "input_type": "file",
+              "name": "evernote",
+              "upload_prompt": "upload an Evernote export"
+            },
+            {
               "accept": "",
               "description": "paste text or drop any file for quick import",
               "display_name": "quick import",
@@ -1185,7 +1196,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 12
+          "total": 13
         },
         "method": "GET",
         "normalized_fields": [],
@@ -1488,7 +1499,7 @@
         "why": "per-app static script"
       },
       {
-        "body_sha256": "695646bbc07b00d5f83309e9cab44e3693910472d5737c683acf5f15f6b6e832",
+        "body_sha256": "041279e5983db1fa353652617a3756e3a8e87d748bbfc52f7a59994d3518b911",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
@@ -2214,6 +2225,17 @@
               "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5\" /> <path d=\"M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27\" /> </svg>"
             },
             {
+              "accept": ".enex",
+              "description": "bring in notes from an Evernote export",
+              "display_name": "Evernote",
+              "has_guide": false,
+              "icon": "file",
+              "icon_svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" /> <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" /> </svg>",
+              "input_type": "file",
+              "name": "evernote",
+              "upload_prompt": "upload an Evernote export"
+            },
+            {
               "accept": "",
               "description": "paste text or drop any file for quick import",
               "display_name": "quick import",
@@ -2225,7 +2247,7 @@
               "upload_prompt": "paste text or drag and drop a file"
             }
           ],
-          "total": 12
+          "total": 13
         },
         "method": "GET",
         "normalized_fields": [],

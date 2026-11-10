@@ -865,6 +865,23 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## app-bundled mobile local thinking engine
+
+The Android and iOS apps bundle a native llama.cpp runtime for Qwen local
+thinking, built from revision `8642541b255bfb5dc39cd351a178be09013a55d6`.
+The Android image is `libjournal_mobile_qwen.so`; the iOS image is
+`JournalMobileQwen.framework/JournalMobileQwen`.
+
+The runtime includes llama.cpp and ggml under the MIT license, and OpenSSL
+3.6.5 under the Apache License 2.0. Their complete license texts accompany
+the app in `assets/qwen-runtime/llama-LICENSE.txt` and
+`assets/qwen-runtime/openssl-LICENSE.txt` on Android, and
+`QwenRuntime/llama-LICENSE.txt` and `QwenRuntime/openssl-LICENSE.txt` on iOS.
+Additional dependency notices accompany those files as
+`qwen-THIRD_PARTY_NOTICES.txt`, including cpp-httplib 0.62.0 and nlohmann/json
+3.12.0 from the same pinned source.
+The package's `manifest.json` records the pinned source and native image.
+
 ## runtime-downloaded provider artifacts (llama.cpp CUDA)
 
 These artifacts are downloaded on demand into the journal provider cache for

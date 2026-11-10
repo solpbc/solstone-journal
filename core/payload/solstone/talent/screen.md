@@ -9,6 +9,7 @@
   "output": "json",
   "schema": "screen.schema.json",
   "max_output_tokens": 9216,
+  "mobile_local_timeout_s": 1200,
   "load": {"transcripts": true, "percepts": "required", "talents": false}
 
 }

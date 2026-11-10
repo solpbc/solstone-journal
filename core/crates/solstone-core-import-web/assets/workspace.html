@@ -1491,7 +1491,7 @@ const IMPORT_DELETE_COPY = {
 const IMPORT_SOURCE_NAMES = {
   ics: 'calendar', chatgpt: 'ChatGPT', claude: 'Claude', gemini: 'Gemini', journal_archive: 'journal',
   audio_archive: 'audio archive', recording: 'meeting audio', document: 'document', image: 'image',
-  strava: 'Strava', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
+  strava: 'Strava', evernote: 'Evernote', quick: 'quick import', plaud: 'Plaud', audio: 'audio folder', text: 'text',
   obsidian: 'Obsidian', apple_health: 'Apple Health', oura: 'Oura',
 };
 const IMPORT_TRASH_PAGE = '/app/settings#trash';
@@ -2488,7 +2488,7 @@ function updateImportRow(importId, eventData, options = {}) {
     if (statsCell) {
       statsCell.textContent = formatImportStats(eventData.entries_written, eventData.entities_seeded);
     }
-    setTimeout(() => loadImports(), 1000);
+    setTimeout(() => { loadImports().then(() => refreshInlineProgress(importId)); }, 1000);
   } else if (eventData.event === 'error' || status === 'failed') {
     // An Apple Health import's end names its own state, which the row then reads.
     const bodyLabel = bodyStateLabel(eventData.body_state || eventData.stage);
@@ -3300,6 +3300,24 @@ async function prepareImportPreview(kind, payload, setting, button, sourceName =
   if (!response.ok) throw new Error(importErrorMessage(data, 'could not preview this import'));
   if (revision !== previewRevisions[kind]) return null;
   const size = data.size;
+  if (size?.schema === 'solstone.import.evernote.preview.v1') {
+    const ready = size.ready === true;
+    importPreviews[kind] = { key, token: data.preview_token, ready };
+    const panel = document.getElementById(`${kind}SizePreview`);
+    if (panel) panel.textContent = Array.isArray(size.lines) ? size.lines.join(' ') : '';
+    let notebook = document.getElementById('evernoteNotebook');
+    if (!notebook && panel) {
+      notebook = document.createElement('input');
+      notebook.id = 'evernoteNotebook';
+      notebook.type = 'text';
+      notebook.setAttribute('aria-label', 'notebook');
+      notebook.autocomplete = 'off';
+      panel.after(notebook);
+    }
+    if (notebook && notebook.value === '') notebook.value = size.notebook || '';
+    restoreImportButton(kind, button);
+    return null;
+  }
   if (size?.schema === 'solstone.import.audio-archive.size.v1') {
     if (!['members', 'source_bytes', 'days', 'tiles'].every(key => Number.isSafeInteger(size[key]) && size[key] >= 0)
         || !size.left_out || !Object.values(size.left_out).every(value => Number.isSafeInteger(value) && value >= 0) || !data.preview_token) throw new Error('could not read the archive size');
@@ -3382,6 +3400,10 @@ async function startGuidedImport(source) {
     if (['strava', 'apple_health'].includes(source.name)) {
       const bodyFacet = stravaFacetChoice();
       if (bodyFacet) metaBody.body_facet = bodyFacet;
+    }
+    if (source.name === 'evernote') {
+      const notebook = document.getElementById('evernoteNotebook');
+      if (notebook) metaBody.notebook = notebook.value;
     }
 
     const metaResponse = await fetch('/app/import/api/meta', {
@@ -3619,6 +3641,7 @@ function showProgressView(importId, eventData = null) {
       const pageLabel = unavailPages === 1 ? '1 page unavailable' : `${unavailPages} pages unavailable`;
       gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">partially extracted (${pageLabel})</div>`;
     }
+    const finish = importInfo?.finish || '';
     const sourceName = currentGuideSource || source?.name || completedInfo.source_type || importInfo?.source_type || '';
     const repeatBtn = ['image', 'document'].includes(sourceName) ? `
       <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${escapeHtml(['image', 'document'].includes(sourceName) ? 'import another ' + (source?.display_name || sourceName) : 'import another source')}</button>
@@ -3629,6 +3652,7 @@ function showProgressView(importId, eventData = null) {
         <div><strong>entities seeded:</strong> ${formatStatValue(entitiesSeeded)}</div>
         <div><strong>date range:</strong> ${escapeHtml(formatDateRange(range) || '—')}</div>
         <div><strong>duration:</strong> ${durationMs !== null && durationMs !== undefined ? formatElapsed(durationMs) : '—'}</div>
+        ${finish ? `<div class="import-finish" style="white-space: pre-line">${escapeHtml(finish)}</div>` : ''}
         ${gapHtml}
         <div class="import-action-row">
           <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(completedInfo.processed_timestamp || importId)}#content">browse what was imported →</a>

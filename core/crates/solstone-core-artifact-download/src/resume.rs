@@ -8,13 +8,83 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, install_retained_file,
+    AtomicWriteOptions, LockOptions, atomic_replace, hold_lock, hold_lock_checked,
+    install_retained_file,
 };
 
 use super::{
     ArchiveError, DownloadHostPolicy, MAX_REDIRECT_HOPS, resolve_location, validate_url,
-    verify_sha256,
+    verify_sha256_with_cancel,
 };
+
+pub(super) fn checkpoint(cancelled: Option<&dyn Fn() -> bool>) -> Result<(), ArchiveError> {
+    if cancelled.is_some_and(|cancelled| cancelled()) {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "download cancelled").into());
+    }
+    Ok(())
+}
+
+// ureq's receive-body timeout covers the complete transfer, not an idle read.
+// Bound each transport wait while retaining its default TLS/proxy connector.
+#[derive(Debug)]
+struct IdleBound;
+
+#[derive(Debug)]
+struct IdleTransport<T>(T);
+
+fn idle_timeout(
+    mut timeout: ureq::unversioned::transport::NextTimeout,
+) -> ureq::unversioned::transport::NextTimeout {
+    if *timeout.after > Duration::from_secs(2) {
+        timeout.after = ureq::unversioned::transport::time::Duration::from_secs(2);
+    }
+    timeout
+}
+
+impl<T: ureq::unversioned::transport::Transport> ureq::unversioned::transport::Connector<T>
+    for IdleBound
+{
+    type Out = IdleTransport<T>;
+
+    fn connect(
+        &self,
+        _: &ureq::unversioned::transport::ConnectionDetails,
+        chained: Option<T>,
+    ) -> Result<Option<Self::Out>, ureq::Error> {
+        Ok(chained.map(IdleTransport))
+    }
+}
+
+impl<T: ureq::unversioned::transport::Transport> ureq::unversioned::transport::Transport
+    for IdleTransport<T>
+{
+    fn buffers(&mut self) -> &mut dyn ureq::unversioned::transport::Buffers {
+        self.0.buffers()
+    }
+
+    fn transmit_output(
+        &mut self,
+        amount: usize,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<(), ureq::Error> {
+        self.0.transmit_output(amount, idle_timeout(timeout))
+    }
+
+    fn await_input(
+        &mut self,
+        timeout: ureq::unversioned::transport::NextTimeout,
+    ) -> Result<bool, ureq::Error> {
+        self.0.await_input(idle_timeout(timeout))
+    }
+
+    fn is_open(&mut self) -> bool {
+        self.0.is_open()
+    }
+
+    fn is_tls(&self) -> bool {
+        self.0.is_tls()
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Binding {
@@ -88,23 +158,49 @@ fn read_binding(path: &Path) -> Option<Binding> {
 /// Bytes already allocated to this exact artifact. Completed files receive
 /// credit only after digest proof; incomplete files need their exact binding.
 pub fn retained_prefix_bytes(destination: &Path, sha256: &str, size: u64) -> u64 {
+    retained_prefix_bytes_with_cancel(destination, sha256, size, None).unwrap_or(0)
+}
+
+pub fn retained_prefix_bytes_with_cancel(
+    destination: &Path,
+    sha256: &str,
+    size: u64,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<u64, ArchiveError> {
+    checkpoint(cancelled)?;
     if regular_length(destination).ok().flatten() == Some(size)
-        && verify_sha256(destination, sha256).is_ok()
+        && verified_or_mismatch(destination, sha256, cancelled)?
     {
-        return size;
+        return Ok(size);
     }
     let Ok((partial, metadata, mut binding)) = partial_paths(destination, sha256) else {
-        return 0;
+        return Ok(0);
     };
     binding.size_bytes = Some(size);
     if read_binding(&metadata).as_ref() != Some(&binding) {
-        return 0;
+        return Ok(0);
     }
-    regular_length(&partial)
+    Ok(regular_length(&partial)
         .ok()
         .flatten()
         .filter(|length| *length <= size)
-        .unwrap_or(0)
+        .unwrap_or(0))
+}
+
+// Missing or changed cached bytes are reusable only after a fresh download.
+// Cancellation is distinct: it must stop the operation without deleting them.
+pub(super) fn verified_or_mismatch(
+    path: &Path,
+    sha256: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<bool, ArchiveError> {
+    match verify_sha256_with_cancel(path, sha256, cancelled) {
+        Ok(_) => Ok(true),
+        Err(ArchiveError::Io(error)) if error.kind() == io::ErrorKind::Interrupted => {
+            Err(error.into())
+        }
+        Err(_) => Ok(false),
+    }
 }
 
 fn sync_file(file: &fs::File) -> io::Result<()> {
@@ -173,14 +269,16 @@ fn publish(
     metadata: &Path,
     destination: &Path,
     sha256: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
 ) -> Result<(), ArchiveError> {
-    if let Err(error) = verify_sha256(partial, sha256) {
+    if let Err(error) = verify_sha256_with_cancel(partial, sha256, cancelled) {
         if matches!(error, ArchiveError::DigestMismatch { .. }) {
             remove_file(partial)?;
             remove_file(metadata)?;
         }
         return Err(error);
     }
+    checkpoint(cancelled)?;
     install_retained_file(partial, destination, AtomicWriteOptions::default())
         .map_err(|error| ArchiveError::Download(error.to_string()))?;
     remove_file(metadata)?;
@@ -194,26 +292,38 @@ pub(super) fn download_verified_url_internal(
     destination: &Path,
     policy: &DownloadHostPolicy<'_>,
     progress: &mut dyn FnMut(u64, Option<u64>),
+    cancelled: Option<&dyn Fn() -> bool>,
 ) -> Result<bool, ArchiveError> {
+    checkpoint(cancelled)?;
     let mut current = validate_url(url, policy)?;
     let (partial, metadata, mut binding) = partial_paths(destination, sha256)?;
     binding.size_bytes = expected_size;
     fs::create_dir_all(destination.parent().expect("validated destination parent"))?;
     // Serialize different pins as well as retries of the same pin. The stable
     // sidecar is outside the temporary file being renamed at publication.
-    let _lock = hold_lock(
-        destination,
-        LockOptions {
-            timeout: Duration::from_secs(1800),
-            ..LockOptions::default()
-        },
-    )
-    .map_err(|error| ArchiveError::Download(error.to_string()))?;
+    let options = LockOptions {
+        timeout: Duration::from_secs(1800),
+        ..LockOptions::default()
+    };
+    let _lock = if cancelled.is_some() {
+        hold_lock_checked(destination, options, &|| {
+            checkpoint(cancelled).map_err(|error| error.to_string())
+        })
+    } else {
+        hold_lock(destination, options)
+    }
+    .map_err(|error| {
+        checkpoint(cancelled)
+            .err()
+            .unwrap_or_else(|| ArchiveError::Download(error.to_string()))
+    })?;
+    checkpoint(cancelled)?;
     if regular_length(destination)?
         .is_some_and(|size| expected_size.is_none_or(|expected| size == expected))
     {
-        match verify_sha256(destination, &binding.sha256) {
+        match verify_sha256_with_cancel(destination, &binding.sha256, cancelled) {
             Ok(_) => {
+                checkpoint(cancelled)?;
                 progress(regular_length(destination)?.unwrap_or(0), expected_size);
                 return Ok(false);
             }
@@ -244,7 +354,7 @@ pub(super) fn download_verified_url_internal(
     if expected_size == Some(prefix)
         || (expected_size.is_none()
             && prefix > 0
-            && verify_sha256(&partial, &binding.sha256).is_ok())
+            && verified_or_mismatch(&partial, &binding.sha256, cancelled)?)
     {
         // A zero-byte artifact still needs a file to verify and publish.
         if regular_length(&partial)?.is_none() {
@@ -253,32 +363,55 @@ pub(super) fn download_verified_url_internal(
                 .create_new(true)
                 .open(&partial)?;
         }
-        publish(&partial, &metadata, destination, &binding.sha256)?;
+        checkpoint(cancelled)?;
+        publish(&partial, &metadata, destination, &binding.sha256, cancelled)?;
+        checkpoint(cancelled)?;
         progress(prefix, expected_size);
         return Ok(true);
     }
-    let agent = ureq::agent();
+    let agent = if cancelled.is_some() {
+        use ureq::unversioned::transport::{Connector, DefaultConnector};
+        ureq::Agent::with_parts(
+            ureq::config::Config::default(),
+            DefaultConnector::default().chain(IdleBound),
+            ureq::unversioned::resolver::DefaultResolver::default(),
+        )
+    } else {
+        ureq::agent()
+    };
     let mut followed = 0_u8;
     let response = loop {
+        checkpoint(cancelled)?;
         let mut request = agent
             .get(current.as_str())
             .config()
             .max_redirects(0)
             .http_status_as_error(false)
-            .timeout_connect(Some(Duration::from_secs(30)))
-            .timeout_recv_response(Some(Duration::from_secs(30)))
+            .timeout_resolve(cancelled.map(|_| Duration::from_secs(5)))
+            .timeout_connect(Some(Duration::from_secs(if cancelled.is_some() {
+                5
+            } else {
+                30
+            })))
+            .timeout_recv_response(Some(Duration::from_secs(if cancelled.is_some() {
+                5
+            } else {
+                30
+            })))
             .timeout_recv_body(Some(Duration::from_secs(1800)))
             .build()
             .header("accept-encoding", "identity");
         if prefix > 0 {
             request = request.header("range", &format!("bytes={prefix}-"));
         }
-        let response = request
-            .call()
-            .map_err(|error| ArchiveError::OriginUnavailable {
-                host: current.host.clone(),
-                message: error.to_string(),
-            })?;
+        let response = request.call().map_err(|error| {
+            checkpoint(cancelled)
+                .err()
+                .unwrap_or_else(|| ArchiveError::OriginUnavailable {
+                    host: current.host.clone(),
+                    message: error.to_string(),
+                })
+        })?;
         if !response.status().is_redirection() {
             break response;
         }
@@ -376,11 +509,22 @@ pub(super) fn download_verified_url_internal(
     let mut checkpoint_at = Instant::now();
     let mut checkpoint_bytes = start;
     loop {
+        if let Err(error) = checkpoint(cancelled) {
+            sync_file(&out)?;
+            return Err(error);
+        }
         let count = match body.read(&mut buffer) {
             Ok(count) => count,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => {
                 sync_file(&out)?;
+                checkpoint(cancelled)?;
+                if cancelled.is_some() {
+                    // The short idle bound exists to observe cancellation.
+                    // Without a stop request this remains a resumable network
+                    // failure, eligible for the installer's bounded retries.
+                    return Err(refused(error.to_string()));
+                }
                 return Err(error.into());
             }
         };
@@ -419,6 +563,7 @@ pub(super) fn download_verified_url_internal(
     }
     sync_file(&out)?;
     drop(out);
+    checkpoint(cancelled)?;
     if frame_size.is_some_and(|size| body_received != size)
         || expected_size.is_some_and(|size| received != size)
     {
@@ -428,7 +573,8 @@ pub(super) fn download_verified_url_internal(
             actual: received,
         });
     }
-    publish(&partial, &metadata, destination, &binding.sha256)?;
+    checkpoint(cancelled)?;
+    publish(&partial, &metadata, destination, &binding.sha256, cancelled)?;
     Ok(true)
 }
 
@@ -481,7 +627,7 @@ mod tests {
         fs::write(&meta, serde_json::to_vec(&binding).unwrap()).unwrap();
         fs::create_dir(&target).unwrap();
         fs::write(target.join("owner-file"), b"preserve").unwrap();
-        assert!(publish(&part, &meta, &target, &digest).is_err());
+        assert!(publish(&part, &meta, &target, &digest, None).is_err());
         assert_eq!(fs::read(&part).unwrap(), b"abcd");
         assert_eq!(fs::read(target.join("owner-file")).unwrap(), b"preserve");
         fs::remove_file(target.join("owner-file")).unwrap();
@@ -497,7 +643,8 @@ mod tests {
                 Some(4),
                 &target,
                 &policy,
-                &mut |_, _| {}
+                &mut |_, _| {},
+                None,
             )
             .unwrap()
         );
@@ -525,12 +672,71 @@ mod tests {
                 &target,
                 &policy,
                 &mut |_, _| {},
+                None,
             );
             assert_eq!(result.is_ok(), good);
             assert!(!part.exists());
             assert!(!meta.exists());
         }
         assert_eq!(fs::read(target).unwrap(), b"abcd");
+    }
+
+    #[test]
+    fn cancellation_during_publication_keeps_complete_partial_and_binding_for_offline_retry() {
+        use std::cell::Cell;
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("model");
+        let bytes = vec![41_u8; 2 * 1024 * 1024 + 1];
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let (part, meta, mut binding) = partial_paths(&target, &digest).unwrap();
+        binding.size_bytes = Some(bytes.len() as u64);
+        fs::write(&part, &bytes).unwrap();
+        let binding_bytes = serde_json::to_vec(&binding).unwrap();
+        fs::write(&meta, &binding_bytes).unwrap();
+        let checkpoints = Cell::new(0);
+        let error = publish(
+            &part,
+            &meta,
+            &target,
+            &digest,
+            Some(&|| {
+                checkpoints.set(checkpoints.get() + 1);
+                checkpoints.get() >= 3
+            }),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ArchiveError::Io(error) if error.kind() == io::ErrorKind::Interrupted)
+        );
+        assert!(!target.exists());
+        assert_eq!(fs::read(&part).unwrap(), bytes);
+        assert_eq!(fs::read(&meta).unwrap(), binding_bytes);
+        let policy = DownloadHostPolicy {
+            allowed_hosts: &["example.com"],
+            allow_http: false,
+        };
+        assert!(
+            download_verified_url_internal(
+                "https://example.com/model",
+                &digest,
+                binding.size_bytes,
+                &target,
+                &policy,
+                &mut |_, _| {},
+                Some(&|| false)
+            )
+            .unwrap()
+        );
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        assert!(!part.exists() && !meta.exists());
+        let checkpoints = Cell::new(0);
+        assert!(
+            matches!(retained_prefix_bytes_with_cancel(&target, &digest, bytes.len() as u64, Some(&|| {
+            checkpoints.set(checkpoints.get() + 1);
+            checkpoints.get() >= 4
+        })), Err(ArchiveError::Io(error)) if error.kind() == io::ErrorKind::Interrupted)
+        );
+        assert_eq!(fs::read(&target).unwrap(), bytes);
     }
 }
 

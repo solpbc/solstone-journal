@@ -18,7 +18,8 @@
       "journal_archive",
       "apple_health",
       "oura",
-      "strava"
+      "strava",
+      "evernote"
     ],
     "file_patterns_are_NOT_the_predicate": "file_patterns is DISPLAY metadata shown by --list-importers. detect() is the predicate and they disagree: six importers advertise *.zip but discriminate by ARCHIVE CONTENT. A native port that built detection from file_patterns would be wrong for every importer.",
     "zip_claimants": [

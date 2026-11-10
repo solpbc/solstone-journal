@@ -243,9 +243,25 @@ fn project_download(
 /// Setup's download progress together with whether this computer can run local thinking.
 pub fn read_setup_progress(journal: &Path) -> Result<SetupProgress, SetupProgressError> {
     let downloads = read_setup_downloads(journal)?;
-    let inputs = gather_host_inputs(journal, env!("CARGO_PKG_VERSION"));
-    let report = build_check_report(&inputs);
-    let capability = crate::http::local_capability(&report).overall;
+    read_setup_progress_with_downloads(journal, downloads)
+}
+
+/// Keep the shared capability projection when a host supplies its setup evidence.
+pub fn read_setup_progress_with_downloads(
+    journal: &Path,
+    downloads: SetupDownloads,
+) -> Result<SetupProgress, SetupProgressError> {
+    let key = solstone_core_local::install::pins::platform_key();
+    let capability = if solstone_core_local::embedded::supports_key(&key) {
+        if solstone_core_local::embedded::identity_for_key(&key).is_some() {
+            "ok"
+        } else {
+            "blocked"
+        }
+    } else {
+        let inputs = gather_host_inputs(journal, env!("CARGO_PKG_VERSION"));
+        crate::http::local_capability(&build_check_report(&inputs)).overall
+    };
 
     Ok(SetupProgress {
         downloads,
@@ -258,30 +274,16 @@ pub fn read_setup_progress(journal: &Path) -> Result<SetupProgress, SetupProgres
 /// Setup's speech and thinking download progress. It does not run this
 /// computer's capability checks.
 pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgressError> {
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
     let speech_status =
         status::read_observed_status(journal, "parakeet").map_err(|err| SetupProgressError {
             code: "status_unreadable",
             detail: err.to_string(),
         })?;
 
-    let thinking_status =
-        status::read_observed_status(journal, "local").map_err(|err| SetupProgressError {
-            code: "status_unreadable",
-            detail: err.to_string(),
-        })?;
-
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
     let speech_held =
         solstone_core_local::install::lease::is_held(journal, "parakeet").map_err(|e| {
-            SetupProgressError {
-                code: "lease_unavailable",
-                detail: e.to_string(),
-            }
-        })?;
-
-    let thinking_held =
-        solstone_core_local::install::lease::is_held(journal, "local").map_err(|e| {
             SetupProgressError {
                 code: "lease_unavailable",
                 detail: e.to_string(),
@@ -310,7 +312,7 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
     };
 
     #[cfg(all(
-        not(target_os = "windows"),
+        not(any(target_os = "windows", target_os = "android", target_os = "ios")),
         not(all(target_os = "macos", target_arch = "aarch64"))
     ))]
     let speech_verified = solstone_core_local::install::parakeet_manifests_ready(
@@ -319,7 +321,7 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
         std::env::consts::ARCH,
     );
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
     let speech_catalog_total: Option<u64> = {
         let platform = match std::env::consts::OS {
             "macos" => Some(solstone_core_thinking_copy::Platform::MacosArm64),
@@ -336,7 +338,7 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
         )
     };
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "android", target_os = "ios")))]
     let speech = project_speech(
         Some(&speech_status),
         speech_held,
@@ -344,6 +346,36 @@ pub fn read_setup_downloads(journal: &Path) -> Result<SetupDownloads, SetupProgr
         speech_catalog_total,
     );
 
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let speech = project_packaged_speech(Err("packaged speech proof unavailable".into()));
+    read_setup_downloads_with_speech(journal, speech)
+}
+
+/// The embedded host supplies actual app-model verification, not an owner flag
+/// or a desktop installer manifest.
+pub fn read_setup_downloads_with_packaged_speech(
+    journal: &Path,
+    verification: Result<(), String>,
+) -> Result<SetupDownloads, SetupProgressError> {
+    read_setup_downloads_with_speech(journal, project_packaged_speech(verification))
+}
+
+fn read_setup_downloads_with_speech(
+    journal: &Path,
+    speech: SetupDownloadTask,
+) -> Result<SetupDownloads, SetupProgressError> {
+    let thinking_status =
+        status::read_observed_status(journal, "local").map_err(|err| SetupProgressError {
+            code: "status_unreadable",
+            detail: err.to_string(),
+        })?;
+    let thinking_held =
+        solstone_core_local::install::lease::is_held(journal, "local").map_err(|e| {
+            SetupProgressError {
+                code: "lease_unavailable",
+                detail: e.to_string(),
+            }
+        })?;
     let thinking_verified = solstone_core_local::install::local_thinking_present(journal);
     let thinking_total = solstone_core_local::install::local_thinking_catalog_plan(journal, None)
         .and_then(|rows| {

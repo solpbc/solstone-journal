@@ -27,7 +27,7 @@ static bool saved_environment(JavaVM *vm,JNIEnv **env,bool *attached) {
     jint state=(*vm)->GetEnv(vm,(void **)env,JNI_VERSION_1_6);
     if (state == JNI_OK) return true;
     if (state != JNI_EDETACHED) return false;
-    if ((*vm)->AttachCurrentThread(vm,(void **)env,NULL) != JNI_OK) return false;
+    if ((*vm)->AttachCurrentThread(vm,env,NULL) != JNI_OK) return false;
     *attached=true;
     return true;
 }

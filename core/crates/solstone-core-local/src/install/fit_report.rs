@@ -221,7 +221,22 @@ pub fn build_local_fit_report(
     force_cpu: bool,
 ) -> FitReport {
     let artifact_key = local_artifact_key(os_name, arch);
-    let platform = if os_name == "darwin" {
+    let platform = if crate::embedded::supports_key(&artifact_key) {
+        let ready = crate::embedded::identity_for_key(&artifact_key).is_some();
+        FitCheck {
+            name: "platform",
+            severity: if ready {
+                FitSeverity::Ok
+            } else {
+                FitSeverity::Blocked
+            },
+            detail: if ready {
+                "local runtime is included in the journal app".into()
+            } else {
+                "the journal app does not provide this local runtime".into()
+            },
+        }
+    } else if os_name == "darwin" {
         let supported = matches!(arch, "arm64" | "aarch64");
         FitCheck {
             name: "platform",
@@ -322,7 +337,7 @@ pub fn build_local_fit_report(
             }
         }
     }
-    let unknown = if matches!(os_name, "windows" | "darwin") {
+    let unknown = if matches!(os_name, "windows" | "darwin" | "android" | "ios") {
         Vec::new()
     } else if os_name == "linux" && backend_choice.backend == Backend::Cuda {
         match pins::cuda_pin(&artifact_key) {

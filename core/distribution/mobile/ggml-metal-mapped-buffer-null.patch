@@ -1,0 +1,37 @@
+diff --git a/src/ggml-metal/ggml-metal.cpp b/src/ggml-metal/ggml-metal.cpp
+--- a/src/ggml-metal/ggml-metal.cpp
++++ b/src/ggml-metal/ggml-metal.cpp
+@@ -721,6 +721,9 @@
+     ggml_metal_device_t ctx_dev = (ggml_metal_device_t)dev->context;
+ 
+     ggml_metal_buffer_t res = ggml_metal_buffer_map(ctx_dev, ptr, size, max_tensor_size);
++    if (res == nullptr) {
++        return nullptr;
++    }
+ 
+     const ggml_metal_device_props * props_dev = ggml_metal_device_get_props(ctx_dev);
+ 
+diff --git a/src/ggml-metal/ggml-metal-device.m b/src/ggml-metal/ggml-metal-device.m
+--- a/src/ggml-metal/ggml-metal-device.m
++++ b/src/ggml-metal/ggml-metal-device.m
+@@ -1562,6 +1562,9 @@
+ 
+                 if (res->buffers[res->n_buffers].metal == nil) {
+                     GGML_LOG_ERROR("%s: error: failed to allocate buffer, size = %8.2f MiB\n", __func__, size_step_aligned / 1024.0 / 1024.0);
++                    for (int j = 0; j < res->n_buffers; ++j) {
++                        [res->buffers[j].metal release];
++                    }
+                     free(res);
+                     return NULL;
+                 }
+@@ -1581,6 +1584,10 @@
+ 
+     if (!ggml_metal_buffer_rset_init(res)) {
+         GGML_LOG_ERROR("%s: error: failed to initialize residency set\n", __func__);
++        for (int j = 0; j < res->n_buffers; ++j) {
++            [res->buffers[j].metal release];
++        }
++        [res->rset release];
+         free(res);
+         return NULL;
+     }
