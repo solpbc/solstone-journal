@@ -1095,6 +1095,7 @@ async function runRepeatSourceFocus() {
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'navigateTo'), context);
   vm.runInContext(functionSource(workspace, 'repeatSource'), context);
@@ -1199,6 +1200,7 @@ async function runStallCallsReconcile() {
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
   vm.runInContext(functionSource(workspace, 'markRowStalled'), context);
@@ -1253,6 +1255,7 @@ function runGenerationComparisonInRowUpdates() {
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Older generation (1) is ignored against non-terminal state (m2 test)
@@ -1442,6 +1445,7 @@ async function runNavigateToProgressIssuesOnlyOneGet() {
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
@@ -1569,6 +1573,7 @@ async function runRepeatSourceThenDelayedOldGenCompleted() {
   vm.runInContext(functionSource(workspace, 'navigateTo'), context);
   vm.runInContext(functionSource(workspace, 'repeatSource'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Call repeatSource('image')
@@ -1618,6 +1623,7 @@ function runAuthoritativeUpdateBypassesGenerationFloor() {
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Non-authoritative update with null generation is ignored
@@ -1644,6 +1650,7 @@ function runLiveEventClearsStalled() {
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   // Live status event arrives without fromStall
@@ -1987,7 +1994,8 @@ function runRepaintSeesTheFactsThatWereStored() {
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
     vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
     vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
-    vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
+    vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
+  vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
     vm.runInContext("showProgressView('1700000075')", context);
     assert.ok(
@@ -2150,6 +2158,7 @@ async function runAuthoritativeRunningReadKeepsACompletedImportComplete() {
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
 
@@ -2193,6 +2202,7 @@ function runRunningReadKeepsKnownFacts() {
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   vm.runInContext(
@@ -2454,6 +2464,7 @@ async function runCanonicalReadOutranksTheGenerationFloor() {
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
 
@@ -2493,6 +2504,7 @@ function runTerminalStateCoversEveryEndState() {
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   for (const state of ['completed', 'success', 'failed', 'error', 'unconfirmed', 'unavailable']) {
@@ -2541,6 +2553,7 @@ function runGenerationFloorIsRaisedByEveryEvent() {
   context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
 
   vm.runInContext(
@@ -2642,7 +2655,7 @@ function runEveryOwnerSinkEscapes() {
   vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, rowContext);
   for (const name of [
     'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatProgressStats',
-    'renderSourceDisplay', 'formatImportStats', 'isTerminalState', 'statusElapsedDetail', 'updateImportRow',
+    'renderSourceDisplay', 'formatImportStats', 'isTerminalState', 'statusElapsedDetail', 'bodyStateLabel', 'updateImportRow',
   ]) {
     vm.runInContext(functionSource(workspace, name), rowContext);
   }
@@ -2662,6 +2675,13 @@ function runEveryOwnerSinkEscapes() {
   assert.ok(!statusCell.innerHTML.includes('<b>'), 'the status row escapes its progress detail');
   assert.ok(statusCell.innerHTML.includes('&lt;b&gt;'), 'and renders the detail as text');
 
+  // An Apple Health import's end is labelled by its own state, not "failed".
+  rowContext.loadImports = () => {};
+  vm.runInContext(
+    "updateImportRow('a9', { import_id: 'a9', event: 'error', stage: 'stopped', error: 'it stopped before it finished.' })",
+    rowContext
+  );
+  assert.ok(statusCell.innerHTML.includes('>stopped<') && !statusCell.innerHTML.includes('>failed<'), statusCell.innerHTML);
   vm.runInContext(
     `updateImportRow('r3', { import_id: 'r3', event: 'error', error: ${JSON.stringify(ESCAPE_PAYLOAD)} })`,
     rowContext
@@ -3293,6 +3313,7 @@ function runImportIdSelectorsEscapeQuotes() {
 
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'markRowStalled'), context);
 
@@ -3489,7 +3510,8 @@ async function runCheckStatusFocusLandsOnThePanel() {
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
     vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
     vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
-    vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
+    vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
+  vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
     vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
 
     await vm.runInContext(`reconcileImportState(${JSON.stringify(importId)})`, context);

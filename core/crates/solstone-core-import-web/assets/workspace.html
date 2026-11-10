@@ -2490,9 +2490,12 @@ function updateImportRow(importId, eventData, options = {}) {
     }
     setTimeout(() => loadImports(), 1000);
   } else if (eventData.event === 'error' || status === 'failed') {
+    // An Apple Health import's end names its own state, which the row then reads.
+    const bodyLabel = bodyStateLabel(eventData.body_state || eventData.stage);
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status failed">failed</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`;
+      statusCell.innerHTML = `<span class="import-status failed">${escapeHtml(bodyLabel || 'failed')}</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`;
     }
+    if (bodyLabel) setTimeout(() => loadImports(), 1000);
   }
 
   refreshInlineProgress(importId, cleanEventData);
