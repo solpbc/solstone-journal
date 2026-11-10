@@ -127,6 +127,13 @@ fn the_served_shell_page_loads_the_two_bundles_and_keeps_its_inline_scripts() {
     assert_eq!(page.matches("rel=\"stylesheet\"").count(), 1, "{page}");
     assert!(page.contains(&format!("<script src=\"{script}\" defer></script>")));
     assert!(page.contains(&format!("<link rel=\"stylesheet\" href=\"{style}\">")));
+    // The cross-document opt-in stays in the document, ahead of the bundled
+    // sheet. A sheet that is parsed but not yet active is not seen when the
+    // new page is revealed, and the transition then rejects with no object.
+    let opt_in = page.find("@view-transition { navigation: auto; }").unwrap();
+    let sheet = page.find("rel=\"stylesheet\"").unwrap();
+    assert!(page[..opt_in].contains("<style>"));
+    assert!(opt_in < sheet);
     let source = source("/static/shell.html");
     assert_eq!(
         page.matches("<script>").count(),
