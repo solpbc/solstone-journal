@@ -417,6 +417,9 @@ pub(crate) async fn list(
         {
             continue;
         }
+        // An Apple Health row is named and read as one before anything below
+        // looks at its kind.
+        crate::body_state::overlay(&state.root, &timestamp, &mut info.values, &apple);
         let source_type = info
             .values
             .get("source_type")
@@ -446,11 +449,10 @@ pub(crate) async fn list(
         {
             let status = info.values.get("status").and_then(Value::as_str);
             let deletable = !matches!(status, Some("running" | "pending"))
-                && source_type
-                    .as_deref()
-                    .is_none_or(solstone_core_import::import_trash::deletes_here);
+                && solstone_core_import::import_trash::deletes_here(
+                    &solstone_core_import::import_trash::source_of(&state.root, &timestamp),
+                );
             info.values.insert("deletable".into(), json!(deletable));
-            crate::body_state::overlay(&state.root, &timestamp, &mut info.values, &apple);
             rows.push(info);
         }
     }
@@ -593,7 +595,9 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
                 projection.status,
                 solstone_core_import::ProjectionStatus::Running
                     | solstone_core_import::ProjectionStatus::Pending
-            ) && solstone_core_import::import_trash::deletes_here(&projection.source_type)
+            ) && solstone_core_import::import_trash::deletes_here(
+                &solstone_core_import::import_trash::source_of(&state.root, &timestamp)
+            )
         ),
     );
     let active = state
@@ -777,6 +781,50 @@ mod tests {
             serde_json::to_vec(&metadata).unwrap(),
         )
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_apple_card_upload_that_stopped_early_is_listed_as_one_and_not_offered_for_delete() {
+        // Saved as a generic upload, stopped by the journal before it wrote a
+        // manifest: found walking the card in a browser, where it read "Text",
+        // the filter offered "text", and the whole-import delete was offered.
+        let dir = tempdir().unwrap();
+        let id = "20261109_225511";
+        let import = dir.path().join("imports").join(id);
+        fs::create_dir_all(&import).unwrap();
+        let metadata = json!({
+            "original_filename": "export.zip",
+            "source": "text",
+            "source_hint": "apple_health",
+            "task_id": id,
+            "attempt": {"attempt_id": format!("{id}:1"), "generation": 1, "state": "unconfirmed",
+                "started_at_ms": 1_000, "finished_at_ms": 2_000, "failure_reason": "import failed"},
+        });
+        fs::write(
+            import.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+        let state = AppState {
+            root: dir.path().to_path_buf(),
+            route: None,
+        };
+        let response = list(State(state.clone()), Query(HashMap::new())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        let row = &body["imports"][0];
+        assert_eq!(row["source_display"], "Apple Health", "{row}");
+        assert_eq!(row["body_state"], "stopped", "{row}");
+        assert_eq!(row["deletable"], false, "{row}");
+        assert_eq!(body["source_options"], json!(["apple_health"]), "{body}");
+        let detail = detail(State(state), axum::extract::Path(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(detail.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let detail: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(detail["deletable"], false, "{detail}");
     }
 
     #[tokio::test]

@@ -255,7 +255,9 @@ fn archive_selections(journal: &Path, id: &str) -> Vec<String> {
 }
 
 /// What kind of import `id` is, from its records.
-fn source_of(journal: &Path, id: &str) -> String {
+/// The kind of import `id` is, as deleting reads it, and as the Import page
+/// asks before offering a delete.
+pub fn source_of(journal: &Path, id: &str) -> String {
     // A record that names its kind says so; the Import page reads the same.
     let dir = journal.join(IMPORTS_DIR).join(id);
     for name in ["manifest.json", "imported.json"] {
@@ -264,6 +266,14 @@ fn source_of(journal: &Path, id: &str) -> String {
         {
             return source;
         }
+    }
+    // A body card's upload that stopped before it wrote either record keeps the
+    // card's own kind: its upload was saved as a generic one.
+    if let Some(hint) = read_json(&dir.join("import.json"))
+        .and_then(|record| str_of(&record, "source_hint").map(str::to_owned))
+        .filter(|hint| matches!(hint.as_str(), "strava" | "apple_health" | "oura"))
+    {
+        return hint;
     }
     let projection = crate::projection::project_import_result(journal, id);
     let source = projection.source_type.trim();
@@ -1139,6 +1149,32 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(left, vec!["live".to_owned(), "trashed".to_owned()]);
+    }
+
+    #[test]
+    fn a_body_cards_upload_that_stopped_early_is_still_its_cards_kind() {
+        // Saved as a generic upload, stopped before it wrote a manifest or a
+        // publication record: the card's hint says what it is.
+        let journal = tempfile::tempdir().unwrap();
+        let dir = journal.path().join(IMPORTS_DIR).join("20261109_225511");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (hint, kind) in [
+            ("apple_health", "apple_health"),
+            ("oura", "oura"),
+            ("", "text"),
+        ] {
+            let mut record = serde_json::json!({"source": "text"});
+            if !hint.is_empty() {
+                record["source_hint"] = serde_json::json!(hint);
+            }
+            std::fs::write(dir.join("import.json"), record.to_string()).unwrap();
+            let source = source_of(journal.path(), "20261109_225511");
+            assert!(
+                source == kind || (hint.is_empty() && deletes_here(&source)),
+                "{hint:?}: {source}"
+            );
+            assert_eq!(deletes_here(&source), hint.is_empty(), "{hint:?}");
+        }
     }
 
     #[test]
