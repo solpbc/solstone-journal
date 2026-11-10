@@ -17,6 +17,7 @@ pub enum SttRuntimeKind {
     MacosCoreml,
     LinuxCpp,
     WindowsCpp,
+    MobileEmbeddedCpp,
 }
 
 /// Local STT host facts, independent of memory probes and backend overrides.
@@ -48,12 +49,15 @@ pub fn stt_host_policy(os: &str, arch: &str) -> SttHostPolicy {
         Err(_) if matches!((os, arch), ("windows", "x86_64" | "aarch64")) => {
             Some(SttRuntimeKind::WindowsCpp)
         }
+        Err(_) if matches!((os, arch), ("android" | "ios", "aarch64" | "arm64")) => {
+            Some(SttRuntimeKind::MobileEmbeddedCpp)
+        }
         Err(_) => None,
     };
     SttHostPolicy {
         local_backend: runtime_kind.map(|_| "parakeet"),
         local_floor_bytes: runtime_kind.map(|runtime| match runtime {
-            SttRuntimeKind::MacosCoreml => 0,
+            SttRuntimeKind::MacosCoreml | SttRuntimeKind::MobileEmbeddedCpp => 0,
             SttRuntimeKind::LinuxCpp | SttRuntimeKind::WindowsCpp => 4 * 1024 * 1024 * 1024,
         }),
         runtime_kind,

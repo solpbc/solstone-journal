@@ -11,14 +11,18 @@ pub struct OwnerHostCapabilities {
     pub same_computer_pairing: bool,
 }
 
-pub const fn capabilities() -> OwnerHostCapabilities {
+pub fn capabilities() -> OwnerHostCapabilities {
     let desktop = cfg!(any(
         target_os = "linux",
         target_os = "macos",
         target_os = "windows"
     ));
     OwnerHostCapabilities {
-        bundled_local_thinking: desktop,
+        bundled_local_thinking: desktop
+            || solstone_core_local::embedded::identity_for_key(
+                &solstone_core_local::install::pins::platform_key(),
+            )
+            .is_some(),
         desktop_capture: desktop,
         terminal_speech_setup: cfg!(any(target_os = "linux", target_os = "macos")),
         same_computer_pairing: desktop,

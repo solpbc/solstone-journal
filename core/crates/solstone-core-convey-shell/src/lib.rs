@@ -176,6 +176,7 @@ mod service_handoffs;
 pub mod session;
 pub mod session_gate;
 mod setup_host;
+pub use setup_host::PackagedSpeechSetup;
 #[cfg(test)]
 mod shell_bundle_tests;
 pub mod source_link;
@@ -210,6 +211,10 @@ mod thinking;
 #[cfg(all(test, feature = "full-tests"))]
 mod thinking_chatgpt_route_tests;
 mod thinking_install;
+pub use thinking_install::{
+    prepare_mobile_local_installer, request_stop_mobile_local_installer,
+    stop_mobile_local_installer,
+};
 #[cfg(feature = "host")]
 mod thinking_sol_reads;
 #[cfg(all(test, feature = "host"))]
@@ -406,6 +411,7 @@ pub struct EmbeddedConveyStop {
 /// receives signals only; the constructor retains the actual serving owner.
 #[cfg(feature = "host")]
 pub struct EmbeddedStartup {
+    pub packaged_speech: Option<Arc<dyn PackagedSpeechSetup>>,
     pub brain_startup: Option<Arc<solstone_core_callosum::BrainStartupCapture>>,
     pub backup_offload_dispatch: Option<solstone_core_backup_web::OffloadDispatchProbe>,
     pub backup_verification: Option<solstone_core_backup_web::VerificationSubmitter>,
@@ -606,6 +612,7 @@ pub async fn bind_embedded_device_door_with_root(
         roots,
         Some(backup_deps.clone()),
         import_route,
+        startup.packaged_speech.clone(),
     );
     root.revalidate_canonical_binding()
         .map_err(ConveyServeError::EmbeddedRoot)?;
@@ -639,6 +646,9 @@ async fn bind_embedded_with_dependencies(
         roots,
         Some(backup_deps.clone()),
         import_route,
+        startup
+            .as_ref()
+            .and_then(|startup| startup.packaged_speech.clone()),
     );
     bind_embedded_router(journal_root, address, app, backup_deps, startup).await
 }
@@ -1444,7 +1454,15 @@ fn router_with_hosted_parent(
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
     agents_routes: Option<Router>,
 ) -> Router {
-    router_with_roots(journal_root, hosted_parent, agents_routes, None, None, None)
+    router_with_roots(
+        journal_root,
+        hosted_parent,
+        agents_routes,
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 /// Compose the production routes with an explicitly packaged app payload.
@@ -1460,6 +1478,7 @@ pub fn router_with_payload_root(
         Some(roots),
         None,
         None,
+        None,
     ))
 }
 
@@ -1470,6 +1489,7 @@ fn router_with_roots(
     payload_roots: Option<thinking_sol_reads::TalentRoots>,
     backup_deps: Option<solstone_core_backup_web::BackupWebDeps>,
     import_route: Option<Arc<solstone_core_import_web::ImportRouteSlot>>,
+    packaged_speech: Option<Arc<dyn PackagedSpeechSetup>>,
 ) -> Router {
     let include_agents = agents_routes.is_some();
     let shell = Arc::new(if include_agents {
@@ -1494,7 +1514,33 @@ fn router_with_roots(
     let backup_deps = backup_deps
         .unwrap_or_else(|| solstone_core_backup_web::BackupWebDeps::new(journal_root.clone()));
     let target_use = backup_deps.target_use_owner();
-    let setup_host = Arc::new(setup_host::ConveySetupHost::new(backup_deps.clone()));
+    let setup_host = Arc::new(
+        setup_host::ConveySetupHost::new(backup_deps.clone())
+            .with_packaged_speech(packaged_speech.clone()),
+    );
+    let home_setup_reader = packaged_speech.map(|_| {
+        let host = Arc::clone(&setup_host);
+        let reader: solstone_core_home::first_minutes::SetupProgressReader =
+            Arc::new(move |journal| {
+                let downloads = solstone_core_sol_link::http::SetupHost::project_downloads(
+                    host.as_ref(),
+                    journal,
+                )?;
+                solstone_core_sol_link::setup_progress::read_setup_progress_with_downloads(
+                    journal, downloads,
+                )
+            });
+        reader
+    });
+    let home_routes = solstone_core_home_web::routes_with_backup_deps(
+        backup_deps.clone(),
+        solstone_core_home_web::Clock::system(),
+        source_link::reference_is_moment,
+    );
+    let home_routes = match home_setup_reader {
+        Some(reader) => home_routes.layer(Extension(reader)),
+        None => home_routes,
+    };
     let mut routes = Router::new()
         .route("/", get(root))
         .route("/favicon.ico", get(favicon))
@@ -1818,11 +1864,7 @@ fn router_with_roots(
                 .as_ref()
                 .map(|roots| roots.config_directories()),
         ))
-        .merge(solstone_core_home_web::routes_with_backup_deps(
-            backup_deps.clone(),
-            solstone_core_home_web::Clock::system(),
-            source_link::reference_is_moment,
-        ))
+        .merge(home_routes)
         .merge(solstone_core_backup_web::routes_with_deps(backup_deps))
         .route("/app/body/", get(body::shell))
         .route("/app/body/trends", get(body::trends))

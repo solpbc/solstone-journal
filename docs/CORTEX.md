@@ -268,6 +268,13 @@ The JSON frontmatter for a talent can include:
   - `"daily"`: Run automatically at the configured daily scheduler time
     (`00:15` for a newly initialized schedule configuration)
 - `temperature`: The talent's sampling temperature (default 0.3); a request cannot change it
+- `mobile_local_timeout_s`: An optional positive generation timeout in seconds for
+  the bundled local model on Android and iOS. Generate selects it after resolving
+  the current lane; desktop, cloud providers and configured endpoints retain their
+  existing deadlines. Requests and owner overrides cannot change it. Sense and
+  Screen declare 1,200 seconds initially. This is an allowance for their mobile
+  work, not a guarantee that every input and full reply fit on every phone.
+  Foreground Stop and an explicit whole-job runtime cap still cancel the work.
 - `priority`: Execution order for scheduled prompts (integer, **required** for scheduled prompts)
   - Lower numbers run first (e.g., priority 10 runs before priority 40)
   - See [Execution Order](#execution-order) for priority bands

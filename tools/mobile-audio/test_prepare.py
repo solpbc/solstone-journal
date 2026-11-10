@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from prepare import main, verify_audio_pins, sound_ced_input, digest, stage_copy
+from prepare import main, verify_audio_pins, sound_ced_input, retained_onnx_input, digest, stage_copy
 
 
 def legacy_receipt():
@@ -16,6 +16,15 @@ def legacy_receipt():
 
 def shared_receipt():
     captured = legacy_receipt()
+    repo = Path(__file__).resolve().parents[2]
+    loader = 'core/distribution/mobile/parakeet-mapped-weights.patch'
+    guard = 'core/distribution/mobile/ggml-metal-mapped-buffer-null.patch'
+    failure = 'core/distribution/mobile/parakeet-graph-failure.patch'
+    weights = 'core/distribution/mobile/parakeet-weight-failure.patch'
+    loading = 'core/distribution/mobile/parakeet-load-lifecycle.patch'
+    retirement = 'core/distribution/mobile/parakeet-error-retirement.patch'
+    captured['patches'] = [dict(component='parakeet', path=name, sha256=digest(repo / name))
+                           for name in (loader, failure, weights, loading, retirement)]
     current = copy.deepcopy(captured['inputs'])
     pins = json.loads((Path(__file__).resolve().parents[2] /
                        'core/distribution/mobile/inputs.json').read_text())['inputs']
@@ -31,6 +40,7 @@ def shared_receipt():
              'sha256': 'b' * 64},
             {'source_component': 'rfdetr', 'path': 'third_party/ggml-patches/detector.patch',
              'sha256': 'c' * 64},
+            {'source_component': 'mobile', 'path': guard, 'sha256': digest(repo / guard)},
         ],
     }
     captured['inputs']['media-shared-ggml'] = binding
@@ -39,6 +49,60 @@ def shared_receipt():
 
 
 class AudioPins(unittest.TestCase):
+    def test_pinned_onnx_reuse_binds_original_producer_and_retained_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'receipts').mkdir()
+            library = root / 'libonnxruntime.a'
+            library.write_bytes(b'ONNX retention contract fixture; not target binary proof')
+            checksum = digest(library)
+            artifact = dict(component='onnx-runtime', path='/original/work/libonnxruntime.a',
+                            sha256=checksum, size_bytes=library.stat().st_size)
+            receipt = dict(status='passed', exit=0, platform='ios', source_commit='original-source',
+                           artifacts=[artifact])
+            kept = dict(artifact, retained_path=str(library))
+            receipt_path = root / 'receipts/mobile-native-build.json'
+            retention_path = root / 'retention.json'
+            def save(producer, retained):
+                receipt_path.write_text(json.dumps(producer))
+                retention_path.write_text(json.dumps({'artifacts': retained}))
+            save(receipt, [kept])
+            source, binding = retained_onnx_input(root, checksum)
+            self.assertEqual(source, library)
+            self.assertEqual(binding['source_commit'], 'original-source')
+            self.assertEqual(binding['reused_from'], str(root))
+            self.assertEqual(binding['producer_receipt_sha256'], digest(receipt_path))
+            mutations = [
+                lambda r, k: r.update(status='failed'),
+                lambda r, k: r.update(exit=2),
+                lambda r, k: r.update(platform='android'),
+                lambda r, k: r.update(artifacts=[]),
+                lambda r, k: r['artifacts'].append(copy.deepcopy(r['artifacts'][0])),
+                lambda r, k: k[0].update(path='/different/work/libonnxruntime.a'),
+                lambda r, k: k[0].update(sha256='0' * 64),
+                lambda r, k: k[0].update(size_bytes=1),
+            ]
+            for mutate in mutations:
+                producer, retained = copy.deepcopy(receipt), [copy.deepcopy(kept)]
+                mutate(producer, retained)
+                save(producer, retained)
+                with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+            save(receipt, [kept])
+            with self.assertRaises(ValueError): retained_onnx_input(root, '0' * 64)
+            alias = root / 'renamed.a'
+            alias.write_bytes(library.read_bytes())
+            save(receipt, [dict(kept, retained_path=str(alias))])
+            with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+            link_directory = root / 'linked'
+            link_directory.mkdir()
+            linked = link_directory / library.name
+            linked.symlink_to(library)
+            save(receipt, [dict(kept, retained_path=str(linked))])
+            with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+            save(receipt, [kept])
+            library.write_bytes(b'tampered retained binary')
+            with self.assertRaises(ValueError): retained_onnx_input(root, checksum)
+
     def test_staging_refuses_links_before_overwriting_their_target(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -117,6 +181,50 @@ class AudioPins(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         verify_audio_pins(captured, changed)
 
+    def test_unchecked_graph_receipt_is_refused(self):
+        captured, current = shared_receipt()
+        failure = 'core/distribution/mobile/parakeet-graph-failure.patch'
+        for checksum in (None, '0' * 64):
+            changed = copy.deepcopy(captured)
+            changed['patches'] = [row for row in changed['patches'] if row['path'] != failure]
+            if checksum is not None:
+                changed['patches'].append(dict(component='parakeet', path=failure, sha256=checksum))
+            with self.assertRaisesRegex(ValueError, 'checked Parakeet graph failures'):
+                verify_audio_pins(changed, current)
+
+    def test_unchecked_weight_preparation_receipt_is_refused(self):
+        captured, current = shared_receipt()
+        weights = 'core/distribution/mobile/parakeet-weight-failure.patch'
+        for checksum in (None, '0' * 64):
+            changed = copy.deepcopy(captured)
+            changed['patches'] = [row for row in changed['patches'] if row['path'] != weights]
+            if checksum is not None:
+                changed['patches'].append(dict(component='parakeet', path=weights, sha256=checksum))
+            with self.assertRaisesRegex(ValueError, 'checked Parakeet weight preparation'):
+                verify_audio_pins(changed, current)
+
+    def test_unowned_load_failure_receipt_is_refused(self):
+        captured, current = shared_receipt()
+        loading = 'core/distribution/mobile/parakeet-load-lifecycle.patch'
+        for checksum in (None, '0' * 64):
+            changed = copy.deepcopy(captured)
+            changed['patches'] = [row for row in changed['patches'] if row['path'] != loading]
+            if checksum is not None:
+                changed['patches'].append(dict(component='parakeet', path=loading, sha256=checksum))
+            with self.assertRaisesRegex(ValueError, 'owned Parakeet load failure cleanup'):
+                verify_audio_pins(changed, current)
+
+    def test_unretired_backend_receipt_is_refused(self):
+        captured, current = shared_receipt()
+        retirement = 'core/distribution/mobile/parakeet-error-retirement.patch'
+        for checksum in (None, '0' * 64):
+            changed = copy.deepcopy(captured)
+            changed['patches'] = [row for row in changed['patches'] if row['path'] != retirement]
+            if checksum is not None:
+                changed['patches'].append(dict(component='parakeet', path=retirement, sha256=checksum))
+            with self.assertRaisesRegex(ValueError, 'failed Parakeet backend retirement'):
+                verify_audio_pins(changed, current)
+
     def test_matching_shared_closure_is_returned_without_mutating_receipt(self):
         captured, current = shared_receipt()
         before = copy.deepcopy(captured)
@@ -152,13 +260,25 @@ class AudioPins(unittest.TestCase):
                     verify_audio_pins(captured, current)
 
     def test_both_patch_families_are_required(self):
-        for family in ('parakeet', 'rfdetr'):
+        for family in ('parakeet', 'rfdetr', 'mobile'):
             with self.subTest(family=family):
                 captured, current = shared_receipt()
                 binding = captured['inputs']['media-shared-ggml']
                 binding['patches'] = [p for p in binding['patches'] if p['source_component'] != family]
                 with self.assertRaises(ValueError):
                     verify_audio_pins(captured, current)
+
+    def test_old_loader_or_guard_cannot_satisfy_current_audio_admission(self):
+        for missing, stale in ((True, False), (False, True)):
+            captured, current = shared_receipt()
+            if missing:
+                captured['patches'] = []
+            if stale:
+                captured['patches'][0]['sha256'] = 'd' * 64
+            with self.assertRaises(ValueError): verify_audio_pins(captured, current)
+        captured, current = shared_receipt()
+        captured['inputs']['media-shared-ggml']['patches'][-1]['sha256'] = 'd' * 64
+        with self.assertRaises(ValueError): verify_audio_pins(captured, current)
 
     def test_malformed_or_ambiguous_patch_records_are_refused(self):
         mutations = [

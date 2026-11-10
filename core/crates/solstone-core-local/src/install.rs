@@ -25,6 +25,7 @@ pub mod metal_candidate;
 pub mod migration;
 pub mod mlx_candidate;
 mod mlx_install;
+pub mod mobile;
 mod model_cache;
 pub mod onnx_readiness;
 pub mod parakeet_readiness;
@@ -520,6 +521,19 @@ fn fetch_runtime_member(
     progress: impl FnMut(u64, Option<u64>),
     fallback_reason_code: &str,
 ) -> Result<bool, DispatchError> {
+    fetch_runtime_member_with_cancel(query, destination, progress, fallback_reason_code, None)
+}
+
+fn fetch_runtime_member_with_cancel(
+    query: &solstone_core_assets::RuntimeFetchQuery<'_>,
+    destination: &Path,
+    progress: impl FnMut(u64, Option<u64>),
+    fallback_reason_code: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<bool, DispatchError> {
+    if let Some(cancelled) = cancelled {
+        mobile::checkpoint(cancelled)?;
+    }
     #[cfg(any(test, feature = "test-hooks"))]
     TEST_FETCH_RUNTIME_MEMBER_COUNT.with(|count| count.set(count.get() + 1));
     #[cfg(any(test, feature = "test-hooks"))]
@@ -531,16 +545,27 @@ fn fetch_runtime_member(
 
     let handle = solstone_core_assets::mint_runtime_fetch(query)
         .map_err(|err| failure("package", err.reason_code(), err, 65))?;
-    solstone_core_artifact_download::download_runtime_fetch(&handle, destination, progress).map_err(
-        |error| {
-            failure(
-                "download",
-                download_artifact_reason_code(&error, fallback_reason_code),
-                error,
-                74,
-            )
-        },
-    )
+    let result = if let Some(cancelled) = cancelled {
+        solstone_core_artifact_download::download_runtime_fetch_cancellable(
+            &handle,
+            destination,
+            progress,
+            cancelled,
+        )
+    } else {
+        solstone_core_artifact_download::download_runtime_fetch(&handle, destination, progress)
+    };
+    result.map_err(|error| {
+        if cancelled.is_some_and(|cancelled| cancelled()) {
+            return failure("cancelled", "install_cancelled", "install_cancelled", 74);
+        }
+        failure(
+            "download",
+            download_artifact_reason_code(&error, fallback_reason_code),
+            error,
+            74,
+        )
+    })
 }
 
 fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, DispatchError> {
@@ -585,15 +610,19 @@ fn write_manifest(kind: &str, object: &Map<String, Value>) -> Result<Value, Disp
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RunKind {
+#[derive(Clone, Copy)]
+enum RunKind<'a> {
     Local,
     Parakeet,
+    Mobile {
+        identity: &'a crate::embedded::RuntimeIdentity,
+        cancelled: &'a dyn Fn() -> bool,
+    },
 }
-impl RunKind {
+impl RunKind<'_> {
     fn status_provider(self) -> &'static str {
         match self {
-            Self::Local => "local",
+            Self::Local | Self::Mobile { .. } => "local",
             Self::Parakeet => "parakeet",
         }
     }
@@ -837,6 +866,24 @@ pub fn run_local_with_gpu_admission(
 
 fn run_local(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
+    let key = pins::platform_key();
+    if crate::embedded::supports_key(&key) {
+        let identity = crate::embedded::identity_for_key(&key).ok_or_else(|| {
+            failure(
+                "package",
+                "embedded_runtime_unavailable",
+                "the journal app does not provide this local runtime",
+                65,
+            )
+        })?;
+        return run(
+            object,
+            RunKind::Mobile {
+                identity: &identity,
+                cancelled: &|| false,
+            },
+        );
+    }
     let mut admission = observe_local_hardware_admission(&journal)?;
     if let LocalHardwareAdmission::GpuHost { override_index, .. } = &mut admission {
         let config = solstone_core_journal_config::read_journal_config(&journal)
@@ -956,7 +1003,7 @@ pub fn install_parakeet_with_lease(
     install_parakeet_with_lease_admitted(journal, os_name, arch, lease, |_| {})
 }
 
-fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchError> {
+fn run(object: &Map<String, Value>, kind: RunKind<'_>) -> Result<Value, DispatchError> {
     let journal = journal(object)?;
     let provider = kind.status_provider();
     let Some(lease) = lease::acquire(&journal, provider)
@@ -974,7 +1021,7 @@ fn run(object: &Map<String, Value>, kind: RunKind) -> Result<Value, DispatchErro
 
 fn run_with_lease(
     object: &Map<String, Value>,
-    kind: RunKind,
+    kind: RunKind<'_>,
     journal: PathBuf,
     lease: lease::InstallLease,
     parakeet_platform: Option<(&str, &str)>,
@@ -990,6 +1037,10 @@ fn run_with_lease(
                 local_backend(object)?,
             )?,
             RunKind::Parakeet => parakeet_target_for_install(&journal, parakeet_platform)?,
+            RunKind::Mobile { identity, .. } => mobile::target_for_identity(
+                &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".into()),
+                identity,
+            )?,
         };
         resolved_fingerprint(fingerprint)
     })();
@@ -1035,6 +1086,12 @@ fn run_with_lease(
     let result = match kind {
         RunKind::Local => run_local_install(object, &mut state, start),
         RunKind::Parakeet => run_parakeet_install(&journal, &mut state),
+        RunKind::Mobile { cancelled, .. } => mobile::install_model(
+            &journal,
+            &string(object, "model_id").unwrap_or_else(|| "local/qwen3.5-4b".into()),
+            &mut state,
+            cancelled,
+        ),
     };
     match result {
         Ok(result) => {
@@ -1148,6 +1205,9 @@ fn local_target_for_key_with_probe(
     key: &str,
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> Result<Value, DispatchError> {
+    if crate::embedded::supports_key(key) {
+        return mobile::target_for_key(model_id, key);
+    }
     if backend == LocalBackend::Metal && key != "aarch64-apple-darwin" {
         return Err(failure(
             "platform",
@@ -1449,6 +1509,21 @@ pub fn local_thinking_catalog_plan(
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> Option<Vec<pins::ThinkingDownloadRow>> {
     let key = pins::platform_key();
+    if crate::embedded::supports_key(&key) {
+        crate::embedded::identity_for_key(&key)?;
+        return Some(
+            solstone_core_assets::catalog()
+                .iter()
+                .filter(|artifact| artifact.unit == "local-model")
+                .map(|artifact| pins::ThinkingDownloadRow {
+                    unit: artifact.unit,
+                    platform: None,
+                    filename: Some(artifact.filename),
+                    packaged: false,
+                })
+                .collect(),
+        );
+    }
     if key == "aarch64-apple-darwin" {
         return Some(
             solstone_core_assets::catalog()
@@ -2348,6 +2423,42 @@ fn install_model(
     completed_bytes: u64,
     total_bytes: u64,
 ) -> Result<(), DispatchError> {
+    install_model_with_cancel(
+        journal,
+        model_id,
+        status_value,
+        completed_bytes,
+        total_bytes,
+        None,
+    )
+}
+
+fn model_verification_failure(
+    reason: &str,
+    error: solstone_core_artifact_download::ArchiveError,
+) -> DispatchError {
+    if matches!(&error, solstone_core_artifact_download::ArchiveError::Io(error)
+        if error.kind() == std::io::ErrorKind::Interrupted)
+    {
+        failure("cancelled", "install_cancelled", "install_cancelled", 74)
+    } else {
+        failure("io", reason, error, 74)
+    }
+}
+
+fn install_model_with_cancel(
+    journal: &Path,
+    model_id: &str,
+    status_value: &mut status::InstallStatus,
+    completed_bytes: u64,
+    total_bytes: u64,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<(), DispatchError> {
+    let checkpoint = || match cancelled {
+        Some(cancelled) => mobile::checkpoint(cancelled),
+        None => Ok(()),
+    };
+    checkpoint()?;
     #[cfg(any(test, feature = "test-hooks"))]
     TEST_INSTALL_MODEL_COUNT.with(|count| count.set(count.get() + 1));
 
@@ -2379,12 +2490,28 @@ fn install_model(
     let mut cumulative_bytes = completed_bytes;
 
     for name in &files {
+        checkpoint()?;
         status::assert_current(journal, status_value)
             .map_err(|error| failure("state", "attempt_superseded", error, 74))?;
         let artifact = select_artifact("local-model", None, None, None, Some(name))?;
         let dest = fetch_root.join(name);
-        if solstone_core_artifact_download::verify_sha256(&root.join(name), artifact.sha256).is_ok()
-        {
+        let installed = match solstone_core_artifact_download::verify_sha256_with_cancel(
+            &root.join(name),
+            artifact.sha256,
+            cancelled,
+        ) {
+            Ok(_) => true,
+            Err(solstone_core_artifact_download::ArchiveError::Io(error))
+                if error.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                return Err(model_verification_failure(
+                    "model_verify_failed",
+                    error.into(),
+                ));
+            }
+            Err(_) => false,
+        };
+        if installed {
             cumulative_bytes += artifact.size_bytes;
             continue;
         }
@@ -2393,7 +2520,9 @@ fn install_model(
             .iter()
             .find(|m| m.file == *name)
             .expect("pinned model member");
-        if let Some(source) = pins::reusable_model_member(journal, model_id, member)
+        if let Some(source) =
+            pins::reusable_model_member_with_cancel(journal, model_id, member, cancelled)
+                .map_err(|error| model_verification_failure("model_verify_failed", error))?
             && fs::hard_link(source, root.join(name)).is_ok()
         {
             cumulative_bytes += artifact.size_bytes;
@@ -2402,11 +2531,13 @@ fn install_model(
         // Admission may have credited a reusable member. If hardlinks are not
         // supported, recheck the allocation needed by the download fallback.
         let remaining = artifact.size_bytes.saturating_sub(
-            solstone_core_artifact_download::retained_prefix_bytes(
+            solstone_core_artifact_download::retained_prefix_bytes_with_cancel(
                 &dest,
                 artifact.sha256,
                 artifact.size_bytes,
-            ),
+                cancelled,
+            )
+            .map_err(|error| model_verification_failure("model_verify_failed", error))?,
         );
         if fit_report::free_bytes(&fetch_root).is_ok_and(|free| free < remaining) {
             return Err(failure(
@@ -2419,24 +2550,46 @@ fn install_model(
         retry_transient_fetch(
             status_value,
             |status_value| {
-                fetch_install_member(
+                fetch_install_member_with(
                     journal,
                     status_value,
                     artifact,
                     &dest,
                     cumulative_bytes,
                     total_bytes,
-                    "model_download_failed",
+                    |query, destination, progress| {
+                        fetch_runtime_member_with_cancel(
+                            query,
+                            destination,
+                            progress,
+                            "model_download_failed",
+                            cancelled,
+                        )
+                    },
                 )
             },
             |status_value| {
+                checkpoint()?;
                 status::assert_current(journal, status_value)
                     .map(|_| ())
                     .map_err(|error| failure("state", "attempt_superseded", error, 74))
             },
             &MODEL_FETCH_RETRY_WAITS,
-            std::thread::sleep,
+            |duration| {
+                if cancelled.is_none() {
+                    std::thread::sleep(duration);
+                    return;
+                }
+                let deadline = Instant::now() + duration;
+                while !cancelled.is_some_and(|cancelled| cancelled()) && Instant::now() < deadline {
+                    std::thread::sleep(
+                        Duration::from_millis(50)
+                            .min(deadline.saturating_duration_since(Instant::now())),
+                    );
+                }
+            },
         )?;
+        checkpoint()?;
         solstone_core_journal_io::install_retained_file(
             &dest,
             root.join(name),
@@ -2447,6 +2600,7 @@ fn install_model(
     }
 
     // Verification begins only after every pinned file has completed its fetch.
+    checkpoint()?;
     // Preserve the exact final byte count even if the last callback was coalesced.
     status_value.progress_bytes_received = Some(cumulative_bytes);
     status_value.progress_bytes_total = Some(total_bytes);
@@ -2466,9 +2620,10 @@ fn install_model(
 
     if root == generation.directory(&pins::cache_root(journal).join("models")) {
         generation
-            .seal(&root)
-            .map_err(|e| failure("io", "model_publish_failed", e, 74))?;
+            .seal_with_cancel(&root, cancelled)
+            .map_err(|error| model_verification_failure("model_publish_failed", error))?;
     }
+    checkpoint()?;
     let built = manifest::build_manifest(
         "local",
         "local-model",
@@ -2477,16 +2632,20 @@ fn install_model(
             .as_deref()
             .unwrap_or(""),
         json!({"pin_identity":identity}),
-        manifest::inventory_for_members(&root, &files, "model")
-            .map_err(|error| failure("io", "manifest_inventory_failed", error, 74))?,
+        manifest::inventory_for_members_with_cancel(&root, &files, "model", cancelled)
+            .map_err(|error| model_verification_failure("manifest_inventory_failed", error))?,
         None,
         status_value.attempt_id.as_deref(),
     )
     .map_err(|error| failure("io", "manifest_build_failed", error, 74))?;
+    checkpoint()?;
     manifest::write_manifest(&manifest::artifact_manifest_path(&root), &built)
         .map_err(|error| failure("io", "manifest_write_failed", error, 74))?;
+    checkpoint()?;
     drop(_write);
-    pins::collect_model_generations_under_install_lease(journal);
+    pins::collect_model_generations_with_cancel(journal, cancelled)
+        .map_err(|error| model_verification_failure("model_collection_failed", error.into()))?;
+    checkpoint()?;
     Ok(())
 }
 

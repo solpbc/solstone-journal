@@ -26,6 +26,35 @@ use solstone_core_system::process::{
 #[path = "thinking_install_windows.rs"]
 mod windows;
 
+#[path = "thinking_install_mobile.rs"]
+mod mobile;
+
+/// Reopen app-owned installation for a canonical journal only after prior
+/// workers joined. The serving owner checks its Start cancellation before and
+/// after this hook, before exposing listeners or dispatching bootstrap work.
+pub fn prepare_mobile_local_installer(journal: &Path) -> Result<(), String> {
+    mobile::prepare(journal)
+}
+
+/// Close admission and signal cooperative cancellation without joining on the UI path.
+pub fn request_stop_mobile_local_installer(journal: &Path) {
+    mobile::request_stop(journal);
+}
+
+/// Join retained app-owned installers. A pending result retains the actual
+/// thread and journal authority; the serving owner must keep them and retry.
+pub fn stop_mobile_local_installer(journal: &Path) -> Result<(), String> {
+    mobile::stop(journal)
+}
+
+pub(crate) fn start_mobile(
+    root: std::sync::Arc<solstone_core_journal_io::JournalRoot>,
+    model: &str,
+    automatic: bool,
+) -> Result<Value, String> {
+    mobile::start(root, model, automatic)
+}
+
 static ADMISSION: Mutex<()> = Mutex::new(());
 #[cfg(any(windows, all(test, unix, feature = "full-tests")))]
 const ADMISSION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -389,6 +418,11 @@ pub(crate) fn stop(owner: &Value) -> Result<(), String> {
 }
 
 pub(crate) fn cancel(journal: &Path, attempt: &str) -> Result<status::InstallStatus, String> {
+    if solstone_core_local::embedded::supports_key(
+        &solstone_core_local::install::pins::platform_key(),
+    ) {
+        return mobile::cancel(journal, attempt);
+    }
     let _guard = ADMISSION
         .lock()
         .map_err(|_| "installer admission unavailable")?;

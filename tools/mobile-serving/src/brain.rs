@@ -67,6 +67,9 @@ fn action(envelope: &CallosumEnvelope) -> Option<Action> {
         ["refresh", "--json", "--expect-active-fingerprint-absent"] => {
             options.expect_active_fingerprint_absent = true;
         }
+        ["refresh", "--json", "--expected-fingerprint", fingerprint] if !fingerprint.is_empty() => {
+            options.expected_fingerprint = Some((*fingerprint).into());
+        }
         [
             "refresh",
             "--json",
@@ -108,6 +111,8 @@ fn execute(
     let probe = RespondWithConfigProbe {
         runtime: solstone_core_generate_wire::EndpointRuntime::default(),
     };
+    #[cfg(feature = "processing")]
+    let probe = MobileOwnerProbe { inner: probe };
     let outcome = match action {
         Action::Refresh(options) => solstone_core_brain_owner::refresh_observed(
             root.canonical_path(),
@@ -144,6 +149,52 @@ fn execute(
         | OwnerRefreshOutcome::LostFence { view } => {
             i32::from(solstone_core_brain_owner::owner_exit_code(&view))
         }
+    }
+}
+
+#[cfg(feature = "processing")]
+struct MobileOwnerProbe {
+    inner: RespondWithConfigProbe,
+}
+
+#[cfg(feature = "processing")]
+impl solstone_core_brain_owner::OwnerProbe for MobileOwnerProbe {
+    fn process_overrides(&self) -> bool {
+        self.inner.process_overrides()
+    }
+
+    fn bundled_runtime_fingerprint(
+        &self,
+        journal: &std::path::Path,
+        config: &Map<String, Value>,
+    ) -> Option<String> {
+        self.inner.bundled_runtime_fingerprint(journal, config)
+    }
+
+    fn assess_bundled_runtime(
+        &self,
+        journal: &std::path::Path,
+        expected: Option<&str>,
+    ) -> solstone_core_brain_owner::BundledRuntimePrerequisiteAssessment {
+        self.inner.assess_bundled_runtime(journal, expected)
+    }
+
+    fn execute_generate(
+        &self,
+        request: &solstone_core_generate::GenerateRequest,
+        journal: &std::path::Path,
+        config: &Map<String, Value>,
+        cancellation: &solstone_core_generate::Cancellation,
+    ) -> Result<solstone_core_generate::GenerateResponse, solstone_core_generate::ClientError> {
+        solstone_core_generate_wire::respond_with_config(
+            request,
+            &self.inner.runtime,
+            journal,
+            config,
+            crate::local_provider::authority,
+            cancellation,
+        )
+        .map_err(solstone_core_generate::ClientError::Decode)
     }
 }
 

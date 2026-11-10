@@ -119,6 +119,7 @@ pub fn prepare(
         };
         composed.insert("destination_id".to_owned(), Value::String(destination_id));
     }
+    mobile_local_timeout(&composed, &name)?;
     let (provider, model) = configured_brain(&context.journal);
     composed.insert("provider".to_owned(), Value::String(provider));
     composed.insert("model".to_owned(), Value::String(model));
@@ -506,6 +507,26 @@ fn configured_brain(journal: &Path) -> (String, String) {
     (provider, model)
 }
 
+pub(crate) fn mobile_local_timeout(
+    composed: &Map<String, Value>,
+    name: &str,
+) -> Result<Option<std::time::Duration>, PrepareFailure> {
+    let Some(value) = composed.get("mobile_local_timeout_s") else {
+        return Ok(None);
+    };
+    let duration = value
+        .as_f64()
+        .filter(|seconds| *seconds > 0.0)
+        .and_then(|seconds| std::time::Duration::try_from_secs_f64(seconds).ok())
+        .filter(|duration| !duration.is_zero())
+        .ok_or_else(|| {
+            PrepareFailure::Refusal(format!(
+                "configuration '{name}' declares an invalid mobile_local_timeout_s"
+            ))
+        })?;
+    Ok(Some(duration))
+}
+
 fn talent_overrides(journal: &Path) -> Option<Map<String, Value>> {
     read_journal_config(journal)
         .and_then(|configured| configured.get("talent_overrides").cloned())
@@ -551,6 +572,7 @@ fn reject_request_fields(
     for field in [
         "max_output_tokens",
         "timeout_s",
+        "mobile_local_timeout_s",
         "thinking_budget",
         "context_window",
         "temperature",
@@ -733,16 +755,84 @@ mod tests {
     #[test]
     fn request_timeout_cannot_override_the_talent_budget() {
         let config = TalentConfig {
-            key: "sense".to_owned(),
+            key: "declared".to_owned(),
             file: String::new(),
             body: String::new(),
-            metadata: Map::from_iter([("timeout_s".to_owned(), json!(480))]),
+            metadata: Map::from_iter([
+                ("timeout_s".to_owned(), json!(480)),
+                ("mobile_local_timeout_s".to_owned(), json!(1200)),
+            ]),
         };
-        for timeout in [480, 900] {
-            let request = Map::from_iter([("timeout_s".to_owned(), json!(timeout))]);
-            assert!(reject_request_fields(&config, &request, "sense").is_err());
+        for field in ["timeout_s", "mobile_local_timeout_s"] {
+            for timeout in [1, 480, 1200, 1800] {
+                let request = Map::from_iter([(field.to_owned(), json!(timeout))]);
+                assert!(reject_request_fields(&config, &request, "declared").is_err());
+            }
         }
-        assert!(reject_request_fields(&config, &Map::new(), "sense").is_ok());
+        assert!(reject_request_fields(&config, &Map::new(), "declared").is_ok());
+        let mut configs = vec![config];
+        merge(
+            &mut configs,
+            Some(
+                json!({"talent.system.declared": {
+                    "timeout_s": 1, "mobile_local_timeout_s": 1
+                }})
+                .as_object()
+                .unwrap(),
+            ),
+        );
+        assert_eq!(configs[0].metadata["timeout_s"], 480);
+        assert_eq!(configs[0].metadata["mobile_local_timeout_s"], 1200);
+    }
+
+    #[test]
+    fn mobile_timeout_preserves_the_base_request_on_every_preparation_lane() {
+        for provider in ["local", "google", "openai", "anthropic"] {
+            for original in [None, Some(json!(480.5))] {
+                let mut config = json!({
+                    "provider": provider,
+                    "max_output_tokens": 512,
+                    "prompt": "Read the supplied source.",
+                    "mobile_local_timeout_s": 1200.5
+                })
+                .as_object()
+                .unwrap()
+                .clone();
+                if let Some(original) = &original {
+                    config.insert("timeout_s".into(), original.clone());
+                }
+                assert_eq!(
+                    mobile_local_timeout(&config, "declared").unwrap(),
+                    Some(std::time::Duration::from_secs_f64(1200.5))
+                );
+                let request =
+                    crate::native_generate_request(&PreparedTalent::new("declared".into(), config))
+                        .unwrap();
+                assert_eq!(request.timeout_s, original.as_ref().and_then(Value::as_f64));
+            }
+        }
+        assert_eq!(
+            mobile_local_timeout(&Map::new(), "undeclared").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn mobile_timeout_refuses_invalid_declarations() {
+        for value in [
+            Value::Null,
+            json!("1200"),
+            json!(true),
+            json!([]),
+            json!({}),
+            json!(0),
+            json!(-1),
+            json!(1e30),
+            json!(1e-30),
+        ] {
+            let config = Map::from_iter([("mobile_local_timeout_s".into(), value)]);
+            assert!(mobile_local_timeout(&config, "invalid").is_err());
+        }
     }
 
     #[test]

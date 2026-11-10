@@ -113,3 +113,14 @@
              if (cur->ne[1] % 4 == 0) {
                  return &q1_0_4x4_q8_0;
              }
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -49,7 +49,7 @@
+ 
+     // if output is NULL, init from the input tok embed
+     if (output == NULL) {
+-        output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, TENSOR_DUPLICATED);
++        output = tok_embd;
+     }
+ 
+     auto load_block_trunk = [&](int il, int flags) {

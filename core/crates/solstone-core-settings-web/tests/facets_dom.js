@@ -507,6 +507,117 @@ async function testCase(name, fn) {
 }
 
 (async () => {
+  await testCase('speech processing preserves untouched journal defaults and stays hidden on desktop', async () => {
+    const h = createHarness();
+    await run(h, `populateFields({identity: {timezone: 'UTC'}, transcribe: {}})`);
+    const field = h.document.getElementById('transcribeProcessingField');
+    const select = h.document.getElementById('field-transcribe-processing');
+    assert.strictEqual(field.hidden, true);
+    assert.strictEqual(select.disabled, true);
+    assert.strictEqual(select.value, 'default');
+    await run(h, `saveTranscribeProcessing('local')`);
+    await run(h, 'parakeetEmbedded = true; renderTranscribeProcessing()');
+    assert.strictEqual(field.hidden, false);
+    assert.strictEqual(select.disabled, false);
+    assert.strictEqual(select.value, 'default');
+    assert.strictEqual(h.document.getElementById('transcribeBackendField').hidden, true);
+    assert.strictEqual(h.requests.filter((request) => request.method === 'PUT').length, 0);
+  });
+
+  await testCase('speech choice UI saves an explicit local route and renders the stored result', async () => {
+    const h = createHarness();
+    const writes = [];
+    h.context.fetch = async (url, options) => {
+      writes.push({ url: String(url), body: JSON.parse(options.body) });
+      return response({ success: true, config: { transcribe: { backend: 'parakeet-cpp', confidential_audio: false } } });
+    };
+    await run(h, `parakeetEmbedded = true; populateFields({identity: {timezone: 'UTC'}, transcribe: {backend: 'parakeet-cpp'}})`);
+    const select = h.document.getElementById('field-transcribe-processing');
+    select.value = 'local';
+    select.dispatchEvent(event('change', { bubbles: true }));
+    await settle();
+    assert.deepStrictEqual(writes, [{ url: 'api/config', body: { section: 'transcribe', data: { backend: 'parakeet-cpp', confidential_audio: false } } }]);
+    assert.strictEqual(select.value, 'local');
+    assert.strictEqual(select.disabled, false);
+    assert.strictEqual(await run(h, 'configData.transcribe.backend'), 'parakeet-cpp');
+    assert.strictEqual(h.document.getElementById('transcribeProcessingHelp').classList.contains('status-saved'), true);
+    await run(h, `saveTranscribeProcessing('unexpected')`);
+    assert.strictEqual(writes.length, 1);
+  });
+
+  await testCase('speech choice serializes writes without claiming a stored route while saving', async () => {
+    const h = createHarness();
+    let finish;
+    let writes = 0;
+    h.context.fetch = (url, options) => {
+      writes += 1;
+      assert.deepStrictEqual(JSON.parse(options.body), { section: 'transcribe', data: { backend: 'confidential', confidential_audio: true } });
+      return new Promise((resolve) => { finish = resolve; });
+    };
+    await run(h, `parakeetEmbedded = true; populateFields({identity: {timezone: 'UTC'}, transcribe: {confidential_audio: false}}); void saveTranscribeProcessing('confidential')`);
+    const select = h.document.getElementById('field-transcribe-processing');
+    assert.strictEqual(select.disabled, true);
+    assert.strictEqual(select.value, '');
+    assert.strictEqual(select.getAttribute('aria-busy'), 'true');
+    await run(h, `saveTranscribeProcessing('local')`);
+    assert.strictEqual(writes, 1);
+    finish(response({ success: true, config: { transcribe: { backend: 'confidential', confidential_audio: true } } }));
+    await settle();
+    assert.strictEqual(select.disabled, false);
+    assert.strictEqual(select.value, 'confidential');
+  });
+
+  await testCase('interrupted speech save re-reads a write that landed without claiming confirmation', async () => {
+    const h = createHarness();
+    h.context.fetch = async () => { throw new Error('connection interrupted'); };
+    h.window.apiJson = async () => ({ transcribe: { backend: 'parakeet', confidential_audio: false } });
+    await run(h, `parakeetEmbedded = true; populateFields({identity: {timezone: 'UTC'}, transcribe: {}}); saveTranscribeProcessing('local')`);
+    const select = h.document.getElementById('field-transcribe-processing');
+    assert.strictEqual(select.value, 'local');
+    assert.strictEqual(select.disabled, false);
+    assert.strictEqual(h.document.getElementById('transcribeProcessingHelp').classList.contains('status-error'), true);
+    assert.strictEqual(await run(h, 'transcribeProcessing.known'), true);
+  });
+
+  await testCase('unreadable speech save leaves no assumed choice or enabled mutation', async () => {
+    const h = createHarness();
+    h.context.fetch = async () => response({ success: true, config: { transcribe: { confidential_audio: false } } }, 500);
+    h.window.apiJson = async () => { throw new Error('read unavailable'); };
+    await run(h, `parakeetEmbedded = true; populateFields({identity: {timezone: 'UTC'}, transcribe: {}}); saveTranscribeProcessing('local')`);
+    const select = h.document.getElementById('field-transcribe-processing');
+    assert.strictEqual(select.value, '');
+    assert.strictEqual(select.disabled, true);
+    assert.strictEqual(await run(h, 'transcribeProcessing.known'), false);
+    assert.strictEqual(h.document.getElementById('transcribeProcessingHelp').classList.contains('status-error'), true);
+  });
+
+  await testCase('speech save refuses a successful envelope that did not store the requested choice', async () => {
+    const h = createHarness();
+    h.context.fetch = async () => response({ success: true, config: { transcribe: {} } });
+    h.window.apiJson = async () => ({ transcribe: {} });
+    await run(h, `parakeetEmbedded = true; populateFields({identity: {timezone: 'UTC'}, transcribe: {}}); saveTranscribeProcessing('local')`);
+    assert.strictEqual(h.document.getElementById('field-transcribe-processing').value, 'default');
+    assert.strictEqual(h.document.getElementById('transcribeProcessingHelp').classList.contains('status-error'), true);
+  });
+
+  await testCase('speech choice honors explicit local precedence and strict audio flag semantics', async () => {
+    const h = createHarness();
+    await run(h, 'parakeetEmbedded = true');
+    const select = h.document.getElementById('field-transcribe-processing');
+    for (const [transcribe, expected] of [
+      [{ backend: 'parakeet', confidential_audio: true }, 'local'],
+      [{ backend: 'parakeet-cpp', confidential_audio: true }, 'local'],
+      [{ backend: 'confidential', confidential_audio: true }, 'confidential'],
+      [{ backend: 'confidential', confidential_audio: false }, 'local'],
+      [{ confidential_audio: 'true' }, 'local'],
+      [{ backend: 'not-a-backend' }, ''],
+      [{}, 'default'],
+    ]) {
+      await run(h, `readTranscribeProcessing(${JSON.stringify({ transcribe })}); renderTranscribeProcessing()`);
+      assert.strictEqual(select.value, expected, JSON.stringify(transcribe));
+    }
+  });
+
   await testCase('facet log dates keep local days after UTC midnight', async () => {
     const previousZone = process.env.TZ;
     process.env.TZ = 'America/Denver';

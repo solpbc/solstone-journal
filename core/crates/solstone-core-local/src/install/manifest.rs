@@ -7,7 +7,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 use super::fingerprint;
 
@@ -78,9 +77,18 @@ pub fn inventory_for_members(
     names: &[&str],
     role: &str,
 ) -> Result<Vec<Value>, String> {
+    inventory_for_members_with_cancel(root, names, role, None).map_err(|error| error.to_string())
+}
+
+pub(super) fn inventory_for_members_with_cancel(
+    root: &Path,
+    names: &[&str],
+    role: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<Vec<Value>, solstone_core_artifact_download::ArchiveError> {
     names
         .iter()
-        .map(|name| inventory_entry(&root.join(name), (*name).into(), role))
+        .map(|name| inventory_entry_with_cancel(&root.join(name), (*name).into(), role, cancelled))
         .collect()
 }
 
@@ -269,19 +277,22 @@ pub fn cuda_trust(artifact: &Path, declared: &[String]) -> Value {
 }
 
 fn inventory_entry(path: &Path, relative_path: String, role: &str) -> Result<Value, String> {
+    inventory_entry_with_cancel(path, relative_path, role, None).map_err(|error| error.to_string())
+}
+
+fn inventory_entry_with_cancel(
+    path: &Path,
+    relative_path: String,
+    role: &str,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<Value, solstone_core_artifact_download::ArchiveError> {
     Ok(
-        json!({"relative_path":relative_path,"role":role,"size":fs::metadata(path).map_err(|error|error.to_string())?.len(),"sha256":sha256_file(path)?}),
+        json!({"relative_path":relative_path,"role":role,"size":fs::metadata(path)?.len(),"sha256":solstone_core_artifact_download::sha256_file_with_cancel(path, cancelled)?}),
     )
 }
 pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|error| error.to_string())?;
-    let mut digest = Sha256::new();
-    std::io::copy(&mut file, &mut digest).map_err(|error| error.to_string())?;
-    Ok(digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    solstone_core_artifact_download::sha256_file_with_cancel(path, None)
+        .map_err(|error| error.to_string())
 }
 pub(crate) fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), String> {
     let actual = sha256_file(path)?;

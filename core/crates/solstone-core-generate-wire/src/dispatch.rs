@@ -6,6 +6,7 @@
 use serde_json::{Value, json};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_local::LocalInferenceAuthority;
+use std::borrow::Cow;
 use std::path::Path;
 
 /// Admission and cancellation belonging to one hosted call, never process globals.
@@ -40,6 +41,7 @@ pub fn respond(
         acquire_local_inference_authority,
         true,
         true,
+        None,
         &GenerateCallContext {
             priority: solstone_core_journal_config::work_priority::WorkPriority::from_environment(
             )?,
@@ -72,6 +74,7 @@ pub fn respond_with_config(
         acquire_local_inference_authority,
         false,
         true,
+        None,
         &GenerateCallContext {
             priority: solstone_core_journal_config::work_priority::WorkPriority::from_environment(
             )?,
@@ -91,6 +94,34 @@ pub fn respond_with_context(
     acquire_local_inference_authority: impl FnOnce(&Path) -> Option<LocalInferenceAuthority>,
     context: &GenerateCallContext<'_>,
 ) -> Result<solstone_core_generate::GenerateResponse, String> {
+    respond_with_mobile_local_timeout(
+        request,
+        endpoint_runtime,
+        journal,
+        acquire_local_inference_authority,
+        context,
+        None,
+    )
+}
+
+/// Carry a trusted talent allowance to the actual lane selection. The wire
+/// request retains its base timeout and exposes no allowance field.
+///
+/// # Errors
+/// Returns invalid-allowance, configuration and provider-dispatch errors.
+pub fn respond_with_mobile_local_timeout(
+    request: &solstone_core_generate::GenerateRequest,
+    endpoint_runtime: &crate::EndpointRuntime,
+    journal: &Path,
+    acquire_local_inference_authority: impl FnOnce(&Path) -> Option<LocalInferenceAuthority>,
+    context: &GenerateCallContext<'_>,
+    mobile_local_timeout: Option<std::time::Duration>,
+) -> Result<solstone_core_generate::GenerateResponse, String> {
+    if mobile_local_timeout.is_some_and(|timeout| {
+        timeout.is_zero() || std::time::Duration::try_from_secs_f64(timeout.as_secs_f64()).is_err()
+    }) {
+        return Err("mobile local timeout is outside the supported range".to_owned());
+    }
     let config = read_journal_config(journal)
         .map_err(|error| format!("could not read journal config: {error}"))?
         .config
@@ -103,6 +134,7 @@ pub fn respond_with_context(
         acquire_local_inference_authority,
         false,
         true,
+        mobile_local_timeout,
         context,
     )
 }
@@ -116,6 +148,7 @@ fn respond_config(
     acquire_local_inference_authority: impl FnOnce(&Path) -> Option<LocalInferenceAuthority>,
     process_overrides: bool,
     admit_content: bool,
+    mobile_local_timeout: Option<std::time::Duration>,
     context: &GenerateCallContext<'_>,
 ) -> Result<solstone_core_generate::GenerateResponse, String> {
     let cancellation = context.cancellation;
@@ -134,13 +167,20 @@ fn respond_config(
     } else {
         crate::lane::resolve_lane_with(config, |_| None)
     };
+    let routed_request = request_for_lane(request, &outcome, mobile_local_timeout);
+    let request = routed_request.as_ref();
     if !matches!(outcome, crate::LaneOutcome::ConfidentialEndpoint(_)) {
         endpoint_runtime.drain_idle_pool();
     }
     let response = match outcome {
         crate::LaneOutcome::BundledLocal => {
             let mut authority = acquire_local_inference_authority(journal);
-            match crate::bundled_generate_with_authority(request, journal, authority.as_mut()) {
+            match crate::bundled::bundled_generate_with_context(
+                request,
+                journal,
+                authority.as_mut(),
+                context,
+            ) {
                 Ok(solstone_core_local::GenerateResult::Success(mut success)) => {
                     if cancellation.is_cancelled() {
                         return Ok(solstone_core_generate::GenerateResponse::Cancelled);
@@ -182,6 +222,9 @@ fn respond_config(
                     }
                 }
                 Ok(solstone_core_local::GenerateResult::Failure(failure)) => {
+                    if cfg!(target_os = "ios") && cancellation.is_cancelled() {
+                        return Ok(solstone_core_generate::GenerateResponse::Cancelled);
+                    }
                     solstone_core_generate::GenerateResponse::Refused(crate::refusal_for(
                         &crate::LaneOutcome::BundledFailure(Box::new(failure)),
                         &provider,
@@ -471,6 +514,22 @@ fn respond_config(
     Ok(response)
 }
 
+fn request_for_lane<'a>(
+    request: &'a solstone_core_generate::GenerateRequest,
+    lane: &crate::LaneOutcome,
+    mobile_local_timeout: Option<std::time::Duration>,
+) -> Cow<'a, solstone_core_generate::GenerateRequest> {
+    if let Some(timeout) = mobile_local_timeout
+        && matches!(lane, crate::LaneOutcome::BundledLocal)
+    {
+        let mut selected = request.clone();
+        selected.timeout_s = Some(timeout.as_secs_f64());
+        Cow::Owned(selected)
+    } else {
+        Cow::Borrowed(request)
+    }
+}
+
 fn endpoint_result_response(
     result: crate::EndpointResult,
     request: &solstone_core_generate::GenerateRequest,
@@ -741,9 +800,9 @@ fn log_schema_validation(validation: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn anthropic_generated_response_preserves_thinking_blocks() {
-        let request = solstone_core_generate::GenerateRequest {
+
+    fn request() -> solstone_core_generate::GenerateRequest {
+        solstone_core_generate::GenerateRequest {
             id: Some("request".into()),
             context: "context".into(),
             contents: Vec::new(),
@@ -757,7 +816,140 @@ mod tests {
             exclusive_admission: false,
             overflow_text: None,
             transport_retries: None,
+        }
+    }
+
+    #[test]
+    fn actual_lane_selects_the_mobile_allowance_and_keeps_the_base_request() {
+        let credential = "test-credential";
+        let confidential = json!({
+            "providers": {
+                "active": {"provider":"local", "model":"selected"},
+                "local": {
+                    "endpoint_url":"https://processing.example/v1",
+                    "served_model_id":"served",
+                    "credential":credential
+                }
+            },
+            "services": {"confidential": {
+                "endpoint_url":"https://processing.example",
+                "served_model_id":"served",
+                "credential_fingerprint_sha256":solstone_core_brain::fingerprint_sha256(credential)
+            }}
+        });
+        assert_eq!(
+            solstone_core_brain::derive_active_brain_lane(confidential.as_object().unwrap())
+                .lane
+                .as_deref(),
+            Some("spp")
+        );
+        let configurations = [
+            (
+                json!({"providers":{"active":{"provider":"local"}}}),
+                "bundled",
+            ),
+            (
+                json!({"providers":{"active":{"provider":"google"}}}),
+                "cloud",
+            ),
+            (
+                json!({"providers":{"active":{"provider":"local"},"local":{
+                    "endpoint_url":"https://endpoint", "served_model_id":"served"
+                }}}),
+                "endpoint",
+            ),
+            (confidential, "confidential"),
+            (json!({}), "none"),
+        ];
+        for base in [None, Some(480.5)] {
+            let mut request = request();
+            request.timeout_s = base;
+            for allowance in [None, Some(std::time::Duration::from_secs(1200))] {
+                for (config, expected_lane) in &configurations {
+                    let (_, actual_lane) =
+                        crate::lane::resolve_lane_with(config.as_object().unwrap(), |_| None);
+                    let actual_kind = match &actual_lane {
+                        crate::LaneOutcome::BundledLocal => "bundled",
+                        crate::LaneOutcome::Google => "cloud",
+                        crate::LaneOutcome::ByoEndpoint(_) => "endpoint",
+                        crate::LaneOutcome::ConfidentialEndpoint(_) => "confidential",
+                        crate::LaneOutcome::NoEngine => "none",
+                        lane => panic!("unexpected lane: {lane:?}"),
+                    };
+                    assert_eq!(actual_kind, *expected_lane);
+                    let selected = request_for_lane(&request, &actual_lane, allowance);
+                    let mut expected = request.clone();
+                    if *expected_lane == "bundled" && allowance.is_some() {
+                        expected.timeout_s = Some(1200.0);
+                    }
+                    assert_eq!(selected.as_ref(), &expected);
+                    assert_eq!(request.timeout_s, base);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mobile_allowance_keeps_the_no_provider_refusal_unchanged() {
+        let mut request = request();
+        request.timeout_s = Some(480.5);
+        let runtime = crate::EndpointRuntime::default();
+        let context = GenerateCallContext {
+            priority: solstone_core_journal_config::work_priority::WorkPriority::default(),
+            cancellation: &solstone_core_generate::Cancellation::never(),
         };
+        let dispatch = |allowance| {
+            respond_config(
+                &request,
+                &runtime,
+                Path::new("unused"),
+                &serde_json::Map::new(),
+                |_| panic!("no provider must not acquire local authority"),
+                false,
+                false,
+                allowance,
+                &context,
+            )
+            .unwrap()
+        };
+        let without_allowance = dispatch(None);
+        assert!(matches!(
+            &without_allowance,
+            solstone_core_generate::GenerateResponse::Refused(refusal)
+                if refusal.reason == solstone_core_generate::RefusalReason::NoEngineConfigured
+        ));
+        assert_eq!(
+            dispatch(Some(std::time::Duration::from_secs(1200))),
+            without_allowance
+        );
+        assert_eq!(request.timeout_s, Some(480.5));
+    }
+
+    #[test]
+    fn trusted_mobile_allowance_refuses_zero_and_unrepresentable_durations() {
+        let request = request();
+        let context = GenerateCallContext {
+            priority: solstone_core_journal_config::work_priority::WorkPriority::default(),
+            cancellation: &solstone_core_generate::Cancellation::never(),
+        };
+        for duration in [std::time::Duration::ZERO, std::time::Duration::MAX] {
+            assert!(
+                respond_with_mobile_local_timeout(
+                    &request,
+                    &crate::EndpointRuntime::default(),
+                    Path::new("unused"),
+                    |_| panic!("invalid allowance must be refused before local admission"),
+                    &context,
+                    Some(duration),
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn anthropic_generated_response_preserves_thinking_blocks() {
+        let request = request();
         let response = anthropic_generated_response(
             &request,
             crate::AnthropicGenerated {
