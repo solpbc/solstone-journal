@@ -35,8 +35,8 @@ serves, in order, so the agents app appears only where its routes are
 mounted), `version`, `clock`, and `pinned`, the resolved
 `convey.pinned_views` list from `config/journal.json`. The side rail's top
 group is home, then those pins, then `more`. The bottom group is the
-management rail (import, settings, network, and agents when agent routes are
-mounted), ordered by `rail_rank`. `/app/more/` lists every served view except
+management rail (import, settings, network, sources, and agents when agent
+routes are mounted), ordered by `rail_rank`. `/app/more/` lists every served view except
 more: what it shows, where its contents come from, and, for some views, a state
 line read from that view's own endpoint, and a pin control for each pinnable
 view.

@@ -101,19 +101,20 @@ const fn content_date_nav(one: &'static str, other: &'static str, none: &'static
 }
 
 /// Agents are how an owner puts their journal to work, and nothing else in
-/// the journal links to them, so they keep a management rail slot.
+/// the journal links to them, so they keep a management rail slot. Their rank
+/// stays reserved when their routes are not mounted.
 pub static AGENTS_APP: AppDefinition = view(
     "agents",
     "🤖",
     "agents",
     "bot",
     false,
-    focus(FocusGroup::Runs, 3),
+    focus(FocusGroup::Runs, 4),
     "connect an agent to read and search your journal, within what you choose",
     "agents you connect",
     &["claude", "chatgpt", "mcp", "connect", "solstone.me"],
     Some(RailGroup::Management),
-    3,
+    4,
     None,
 );
 
@@ -146,7 +147,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "backup",
         "history",
         true,
-        focus(FocusGroup::Runs, 4),
+        focus(FocusGroup::Runs, 5),
         "an encrypted copy of your journal that only you can read",
         "your own storage, or storage sol pbc operates",
         &["restore", "key", "encrypted", "copy"],
@@ -239,7 +240,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "import",
         "import",
         false,
-        focus(FocusGroup::Runs, 5),
+        focus(FocusGroup::Runs, 6),
         "bring in chats, calendars, notes, audio and workouts",
         "files you bring in",
         &[
@@ -313,7 +314,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "settings",
         "settings",
         false,
-        focus(FocusGroup::Runs, 7),
+        focus(FocusGroup::Runs, 8),
         "your profile, keys, transcription, storage and facets",
         "",
         &[
@@ -326,6 +327,20 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         ],
         Some(RailGroup::Management),
         1,
+        None,
+    ),
+    view(
+        "sources",
+        "▦",
+        "sources",
+        "layout-grid",
+        false,
+        focus(FocusGroup::Runs, 3),
+        "when your devices last added something to your journal.",
+        "your paired devices",
+        &["sources", "devices", "audio", "screen", "added"],
+        Some(RailGroup::Management),
+        3,
         None,
     ),
     view(
@@ -348,7 +363,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "stats",
         "chart-column",
         true,
-        focus(FocusGroup::Runs, 6),
+        focus(FocusGroup::Runs, 7),
         "how much your journal holds, and how much processing it has done",
         "your journal's own counts",
         &["usage", "tokens", "disk", "hours", "numbers"],
@@ -362,7 +377,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         "support",
         "life-buoy",
         true,
-        focus(FocusGroup::Runs, 8),
+        focus(FocusGroup::Runs, 9),
         "make a report, or track one you made",
         "",
         &["help", "report", "bug", "problem"],
@@ -522,7 +537,8 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        APP_REGISTRY, FocusGroup, RailGroup, known_app, shell_payload, shell_payload_with_agents,
+        APP_REGISTRY, FocusGroup, RailGroup, known_app, served_apps, shell_payload,
+        shell_payload_with_agents,
     };
 
     #[test]
@@ -577,7 +593,34 @@ mod tests {
             .collect();
         management_apps.sort_by_key(|app| app.rail_rank);
         let names: Vec<&str> = management_apps.iter().map(|app| app.name).collect();
-        assert_eq!(names, &["import", "settings", "network"]);
+        assert_eq!(names, &["import", "settings", "network", "sources"]);
+
+        let mut served: Vec<_> = served_apps(true)
+            .filter(|app| matches!(app.rail_group, Some(RailGroup::Management)))
+            .collect();
+        served.sort_by_key(|app| app.rail_rank);
+        let served_names: Vec<&str> = served.iter().map(|app| app.name).collect();
+        assert_eq!(
+            served_names,
+            &["import", "settings", "network", "sources", "agents"]
+        );
+        assert_eq!(
+            served_apps(true)
+                .find(|app| app.name == "agents")
+                .expect("agents")
+                .rail_rank,
+            4
+        );
+        let sources = APP_REGISTRY
+            .iter()
+            .find(|app| app.name == "sources")
+            .expect("sources");
+        assert!(!sources.pinnable);
+        assert_eq!(sources.focus.map(|focus| focus.rank), Some(3));
+        assert_eq!(
+            sources.focus.map(|focus| focus.group),
+            Some(FocusGroup::Runs)
+        );
 
         let network = APP_REGISTRY
             .iter()
@@ -650,8 +693,8 @@ mod tests {
             (
                 "runs",
                 &[
-                    "thinking", "health", "network", "agents", "backup", "import", "stats",
-                    "settings", "support",
+                    "thinking", "health", "network", "sources", "agents", "backup", "import",
+                    "stats", "settings", "support",
                 ][..],
             ),
         ] {

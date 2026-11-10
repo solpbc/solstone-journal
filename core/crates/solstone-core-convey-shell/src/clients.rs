@@ -594,6 +594,7 @@ fn source_delivery_json(client: &ClientAssessment) -> Value {
                     json!({
                         "state": source_delivery_state(row.state),
                         "elapsed_ms": row.elapsed_ms,
+                        "last_accepted_ingest_at": row.last_accepted_ingest_at,
                         "ingest_rejection": row
                             .ingest_rejection
                             .as_ref()
@@ -1112,6 +1113,114 @@ mod tests {
         assert!(row["source_delivery"]["audio"]["state"].is_string());
         assert!(row["source_delivery"]["location"]["state"].is_string());
         assert!(row["source_delivery"]["audio"]["ingest_rejection"].is_null());
+        assert_eq!(
+            row["source_delivery"]["audio"]["last_accepted_ingest_at"],
+            "2026-08-13T00:02:00Z"
+        );
+        assert_eq!(
+            row["source_delivery"]["location"]["last_accepted_ingest_at"],
+            "2026-08-13T00:00:00Z"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_clients_projects_each_source_time_separately_from_the_device_time() {
+        let named = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let empty = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(named, "studio"), client(empty, "spare")]));
+        let rejection = json!({
+            "reason_code": "event_append_failed",
+            "first": "2026-08-13T00:04:00Z",
+            "latest": "2026-08-13T00:05:00Z",
+            "active_count": 2
+        });
+        journal.write_activity(json!({
+            empty: { "last_seen_at": "2026-08-13T00:01:00Z" },
+            named: {
+                "last_seen_at": "2026-08-13T00:01:00Z",
+                "last_accepted_ingest_at": "2026-08-13T00:02:00Z",
+                "sources": {
+                    "": {"last_accepted_ingest_at": "2026-08-13T00:02:00Z"},
+                    "browser": {"last_accepted_ingest_at": "2026-08-13T00:01:00Z"},
+                    "calendar": {"last_accepted_ingest_at": "2026-08-13T00:03:00Z"},
+                    "audio": {"ingest_rejection": rejection},
+                    "location": {
+                        "last_accepted_ingest_at": "2026-08-13T00:01:00Z",
+                        "ingest_rejection": rejection
+                    }
+                }
+            }
+        }));
+        let (status, body) = request(
+            crate::router(journal.0.path().to_path_buf()),
+            Request::get("/app/network/api/clients")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = body["clients"].as_array().expect("clients");
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0]["source_delivery"].is_null());
+        let row = &rows[1];
+        assert_eq!(row["last_accepted_ingest_at"], "2026-08-13T00:02:00Z");
+        assert_eq!(
+            row.as_object()
+                .expect("client row")
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
+            CLIENT_ENTRY_FIELDS.into_iter().collect::<BTreeSet<_>>()
+        );
+        let delivery = row["source_delivery"].as_object().expect("sources");
+        assert!(delivery.get("screen").is_none());
+        assert!(delivery.get("audio").is_some());
+        let keys = [
+            "state",
+            "elapsed_ms",
+            "last_accepted_ingest_at",
+            "ingest_rejection",
+        ];
+        for source in ["", "browser", "calendar", "audio", "location"] {
+            let object = delivery[source].as_object().expect(source);
+            assert_eq!(
+                object.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+                keys.into_iter().collect::<BTreeSet<_>>()
+            );
+        }
+        assert_eq!(
+            delivery[""]["last_accepted_ingest_at"],
+            "2026-08-13T00:02:00Z"
+        );
+        assert_eq!(
+            delivery["browser"]["last_accepted_ingest_at"],
+            "2026-08-13T00:01:00Z"
+        );
+        assert_eq!(
+            delivery["calendar"]["last_accepted_ingest_at"],
+            "2026-08-13T00:03:00Z"
+        );
+        assert!(delivery["audio"]["last_accepted_ingest_at"].is_null());
+        assert_eq!(
+            delivery["audio"]["ingest_rejection"]["reason_code"],
+            "event_append_failed"
+        );
+        assert!(delivery["audio"]["state"].is_string());
+        assert!(delivery["audio"]["elapsed_ms"].is_null());
+        assert_eq!(
+            delivery["location"]["last_accepted_ingest_at"],
+            "2026-08-13T00:01:00Z"
+        );
+        assert_eq!(
+            delivery["location"]["ingest_rejection"]["reason_code"],
+            "event_append_failed"
+        );
+        assert!(delivery["browser"]["ingest_rejection"].is_null());
+        assert!(
+            delivery["browser"]["elapsed_ms"].is_number()
+                || delivery["browser"]["elapsed_ms"].is_null()
+        );
     }
 
     #[tokio::test]
