@@ -950,15 +950,24 @@ impl AudioProcessingCompleter {
         let chronicle = journal.join("chronicle");
         let worker = thread::spawn(move || {
             while !worker_stop.load(Ordering::Acquire) {
-                if let Some(audio) = find_named_file(&chronicle, "imported_audio.m4a") {
-                    let input_size = fs::metadata(&audio).expect("imported audio metadata").len();
-                    fs::write(
+                // The import can move the segment between finding the file and
+                // reading it; the next pass finds it where it went.
+                if let Some(audio) = find_named_file(&chronicle, "imported_audio.m4a")
+                    && let Ok(metadata) = fs::metadata(&audio)
+                {
+                    let input_size = metadata.len();
+                    if let Err(error) = fs::write(
                         audio.with_extension("jsonl"),
                         format!(
                             "{{\"_solstone_processing\":{{\"schema\":\"solstone.processing.v1\",\"state\":\"analyzed\",\"handler\":\"transcribe\",\"input_size\":{input_size}}}}}\n"
                         ),
-                    )
-                    .expect("write completed processing record");
+                    ) {
+                        assert_eq!(
+                            error.kind(),
+                            std::io::ErrorKind::NotFound,
+                            "write completed processing record: {error}"
+                        );
+                    }
                 }
                 thread::sleep(Duration::from_millis(10));
             }
