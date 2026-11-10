@@ -382,6 +382,7 @@
           applyStylesheets(fragment);
           target.replaceChildren(contractMarkup(fragment));
           performance.mark('workspace:inserted');
+          window.solRouter?.placed?.(target);
           window.solRouter?.watchLoading?.(target);
           mounted = window.SolViews.mount(options.appName, { reportReady });
           // The swap waits for the view's first synchronous drawing only.
