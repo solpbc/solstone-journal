@@ -23,16 +23,10 @@
     // drops the animation when it can't run it (a page replaced mid-way, or
     // one that doesn't allow it), and says so by rejecting the transition's
     // promises. The page itself is unaffected, so that rejection is expected.
-    // The page's own reloads and loads of another page (a stale build, the
-    // router's whole page loads) set `__solLeaving` first: those don't
-    // animate from this page, since the load replaces it mid-way.
     (function () {
       function expectAbort(event) {
         var transition = event && event.viewTransition;
         if (!transition) return;
-        if (event.type === 'pageswap' && window.__solLeaving && typeof transition.skipTransition === 'function') {
-          try { transition.skipTransition(); } catch (_) {}
-        }
         ['ready', 'finished', 'updateCallbackDone'].forEach(function (name) {
           if (transition[name] && typeof transition[name].catch === 'function') {
             transition[name].catch(function () {});

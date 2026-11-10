@@ -90,24 +90,14 @@
     }
   }
 
-  // The page's own whole page loads don't animate from this page: the
-  // browser would start a transition the load then aborts (the page's head
-  // skips it on `pageswap`).
-  function leave(go) {
-    window.__solLeaving = true;
-    go();
-  }
-
   function fullLoad(url, stampKey, mode) {
     if (stampKey) {
       try {
         window.sessionStorage.setItem(stampKey, String(Date.now()));
       } catch (_) {}
     }
-    leave(() => {
-      if (mode === 'pop') window.location.reload();
-      else window.location.assign(url.href);
-    });
+    if (mode === 'pop') window.location.reload();
+    else window.location.assign(url.href);
     return true;
   }
 
@@ -306,6 +296,8 @@
       window.settleEarly?.();
       const reportReady = window.beginViewReady(name, { update: true });
       window.SolViews.update(params, { reportReady });
+      // A day still loading at ten seconds says so, as a new view's does.
+      watchLoading();
       performance.mark('view:update', { detail: { view: name } });
       settleAfterMove(mode, null);
       return true;
@@ -491,7 +483,6 @@
     viewEntry,
     watchLoading,
     keepFragment,
-    leave,
     isActive: () => active,
     // For tests and the leak check.
     held: () => ({ scrolls: scrolls.size, fragments: fragments.size, active, mountedPath, entryId })

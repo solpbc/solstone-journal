@@ -244,7 +244,6 @@
     } catch (_) {
       return false;
     }
-    window.__solLeaving = true;
     window.location.reload();
     return true;
   }

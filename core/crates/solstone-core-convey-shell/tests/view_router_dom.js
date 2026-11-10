@@ -889,7 +889,6 @@ asyncCase('router: a page that learned a new build loads the destination as a ne
   assert.deepStrictEqual(page.record.assigned, ['/app/transcripts/']);
   assert.ok(page.view('home'), 'no new code mounted into this page');
   assert.ok(page.writes.includes('solstone.serverBuildReloadAt'));
-  assert.ok(page.record.skipped >= 1, 'the outgoing cross-document transition is skipped');
   // A view this page's code doesn't know is a page load too.
   const unknown = makePage();
   unknown.answerAll();
@@ -1068,6 +1067,16 @@ asyncCase('accessibility: a view still loading at ten seconds is announced as st
   announcer.textContent = '';
   await page.clock.advance(20000);
   assert.strictEqual(announcer.textContent, '', 'said once');
+  // A day step still loading at ten seconds says so too.
+  page.server.pending('/app/transcripts/api/day/20260101').forEach((call) => dayAnswer('20260101')(call));
+  await page.clock.advance(1000);
+  announcer.textContent = '';
+  page.window.solRouter.navigate('/app/transcripts/20260102');
+  await page.clock.advance(9500);
+  assert.strictEqual(announcer.textContent, '', 'nothing said for a day step before ten seconds');
+  await page.clock.advance(1000);
+  assert.strictEqual(announcer.textContent, 'still working\u2026', 'a slow day step is announced as still working');
+  page.server.pending('/app/transcripts/api/day/20260102').forEach((call) => dayAnswer('20260102')(call));
   // A view ready before ten seconds is never announced as still working.
   page.server.pending('/app/transcripts/api/day/20260101').forEach((call) => dayAnswer('20260101')(call));
   page.click('/app/home/');
