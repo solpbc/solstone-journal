@@ -293,9 +293,11 @@ fn format_next_due(
         return "now".to_owned();
     }
     let epoch_millis = compute_next_run(entry, state, config, now);
+    let retrying = super::due::retry_at(entry, state, config, now).is_some();
     local_from_epoch(epoch_millis as f64 / 1_000.0, now.zone)
         .map(|value| match entry.every.as_str() {
             "hourly" => value.format("%H:%M").to_string(),
+            "daily" if retrying => value.format("%H:%M").to_string(),
             "daily" => config
                 .daily_time
                 .as_deref()

@@ -73,6 +73,12 @@ pub(crate) fn record_completion_checked(
         .cloned()
         .unwrap_or_default();
     let mut current = current;
+    // The run before this one tells the due check whether this run was the
+    // first of its period, which is the only kind a failure retries.
+    match current.get("last_run").cloned() {
+        Some(previous) => current.insert("previous_run".to_owned(), previous),
+        None => current.remove("previous_run"),
+    };
     current.insert("last_run".to_owned(), json!(ended_at));
     current.insert("last_status".to_owned(), json!(exit_status));
     current.insert("last_ref".to_owned(), json!(reference));

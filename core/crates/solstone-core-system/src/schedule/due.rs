@@ -59,8 +59,78 @@ pub fn weekly_mark(
     }
 }
 
-/// Match Python `_is_due`: marks are strict, elapsed minute windows are inclusive.
+/// How long after a failed daily or weekly run its one retry waits.
+pub const FAILED_RUN_RETRY_DELAY_SECONDS: i64 = 60 * 60;
+
+/// Marks are strict and elapsed minute windows are inclusive. A daily or weekly
+/// entry whose first run in its current period recorded a failure (any status
+/// but `ok` or the no-input `empty`) is due again once, [`FAILED_RUN_RETRY_DELAY_SECONDS`] after that run
+/// ended.
 pub fn is_due(
+    entry: &ScheduleEntry,
+    state_entry: Option<&Value>,
+    config: &ScheduleConfig,
+    now: ScheduleNow,
+) -> bool {
+    is_mark_due(entry, state_entry, config, now)
+        || retry_at(entry, state_entry, config, now).is_some_and(|at| now.local >= at)
+}
+
+/// When a failed daily or weekly run's single retry falls due, if it has one.
+///
+/// Only the first run of a period earns a retry: completion keeps the run
+/// before it as `previous_run`, so a retry that fails again (its previous run
+/// is inside the period) waits for the next mark. Hourly and minute entries
+/// already run again within the hour, so they never retry.
+pub(crate) fn retry_at(
+    entry: &ScheduleEntry,
+    state_entry: Option<&Value>,
+    config: &ScheduleConfig,
+    now: ScheduleNow,
+) -> Option<NaiveDateTime> {
+    let mark = period_mark(entry, config, now.local)?;
+    let state = state_entry?.as_object()?;
+    if state
+        .get("last_status")
+        .and_then(Value::as_str)
+        .is_none_or(|status| matches!(status, "ok" | "empty"))
+    {
+        return None;
+    }
+    let last = local_from_epoch(state.get("last_run")?.as_f64()?, now.zone)?;
+    if last < mark {
+        return None;
+    }
+    let previous = state
+        .get("previous_run")
+        .and_then(Value::as_f64)
+        .and_then(|value| local_from_epoch(value, now.zone));
+    if previous.is_some_and(|previous| previous >= mark) {
+        return None;
+    }
+    last.checked_add_signed(ChronoDuration::seconds(FAILED_RUN_RETRY_DELAY_SECONDS))
+}
+
+fn period_mark(
+    entry: &ScheduleEntry,
+    config: &ScheduleConfig,
+    now: NaiveDateTime,
+) -> Option<NaiveDateTime> {
+    match entry.every.as_str() {
+        "daily" => Some(daily_mark(now, config.daily_time.as_deref())),
+        "weekly" => {
+            let day = config
+                .weekly_day
+                .as_deref()
+                .and_then(parse_weekly_day)
+                .unwrap_or(6);
+            Some(weekly_mark(now, day, config.weekly_time.as_deref()))
+        }
+        _ => None,
+    }
+}
+
+fn is_mark_due(
     entry: &ScheduleEntry,
     state_entry: Option<&Value>,
     config: &ScheduleConfig,
@@ -102,7 +172,10 @@ pub(crate) fn compute_next_run(
     config: &ScheduleConfig,
     now: ScheduleNow,
 ) -> i64 {
-    let due = is_due(entry, state_entry, config, now);
+    let due = is_mark_due(entry, state_entry, config, now);
+    if !due && let Some(retry) = retry_at(entry, state_entry, config, now) {
+        return local_to_epoch_millis(retry, now.zone).unwrap_or(now.unix_millis);
+    }
     let next = match entry.every.as_str() {
         "hourly" => {
             let mark = hour_mark(now.local);

@@ -68,6 +68,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - security fix: updated a library used by journals on phones to address a memory-safety flaw.
 - you can choose a file on the import screen in the android and ios owner apps and save it.
 - journals running on a phone now start their local agent connections and close them when you stop the journal. the agents page already offered these connections, but they did not start on phones.
+- if one of your journal's daily or weekly jobs fails, such as the weekly reflection, it now tries once more an hour later, or when your journal next starts if that is later, instead of waiting a whole day or week. if that try fails too, the job waits for its usual time.
 
 ## [2.0.74] - 2026-11-10
 

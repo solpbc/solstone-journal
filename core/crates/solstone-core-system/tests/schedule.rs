@@ -761,3 +761,154 @@ fn scheduled_caps_follow_each_loaded_entry_without_changing_partition_baselines(
     let indexer = partition_for(&["journal".to_owned(), "indexer".to_owned()]);
     assert_eq!(resolver.cap_for(&indexer), Duration::from_secs(7200));
 }
+
+#[test]
+fn a_failed_weekly_run_is_retried_once_an_hour_later_and_then_waits_for_its_mark() {
+    // Sunday 2026-03-22 is a weekly mark day; the default weekly time is 03:15.
+    let bed = Bed::new("failed-weekly");
+    bed.write_config(json!({
+        "weekly_time": "03:15",
+        "weekly-agents": {"cmd": ["journal", "think", "--weekly"], "every": "weekly"},
+        "ok-weekly": {"cmd": ["journal", "heartbeat"], "every": "weekly"},
+        "empty-weekly": {"cmd": ["journal", "facet-candidates"], "every": "weekly"}
+    }));
+    let (engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 3, 30)).expect("init");
+    engine
+        .record_completion(
+            "weekly-agents",
+            local_epoch(now(2026, 3, 22, 3, 20)),
+            "error",
+            "first",
+        )
+        .expect("failed run");
+    engine
+        .record_completion(
+            "ok-weekly",
+            local_epoch(now(2026, 3, 22, 3, 20)),
+            "ok",
+            "ok",
+        )
+        .expect("ok run");
+    engine
+        .record_completion(
+            "empty-weekly",
+            local_epoch(now(2026, 3, 22, 3, 20)),
+            "empty",
+            "nothing to do",
+        )
+        .expect("empty run");
+
+    // A start-up inside the hour leaves the failure alone; one after it retries.
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 4, 0)).expect("init");
+    assert!(
+        engine
+            .catch_up(now(2026, 3, 22, 4, 0), &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 4, 20)).expect("init");
+    let caught = engine.catch_up(now(2026, 3, 22, 4, 20), &sink, &BTreeSet::new());
+    assert_eq!(caught.submitted, vec!["weekly-agents".to_owned()]);
+
+    // The running scheduler retries on the minute once the hour has passed,
+    // and does not submit the retry again while it is still running.
+    let sink = Sink {
+        accepted: true,
+        ..Sink::default()
+    };
+    let (mut engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 4, 0)).expect("init");
+    engine
+        .check(now(2026, 3, 22, 4, 19), &sink)
+        .expect("inside the hour");
+    assert!(sink.names().is_empty());
+    let report = engine.check(now(2026, 3, 22, 4, 20), &sink).expect("retry");
+    assert_eq!(report.retried, vec!["weekly-agents".to_owned()]);
+    engine
+        .check(now(2026, 3, 22, 4, 21), &sink)
+        .expect("in flight");
+    assert_eq!(sink.names(), vec!["weekly-agents"]);
+
+    // The retry fails too: the entry now waits for next week's mark.
+    engine
+        .record_completion(
+            "weekly-agents",
+            local_epoch(now(2026, 3, 22, 4, 25)),
+            "error",
+            "retry",
+        )
+        .expect("failed retry");
+    for minute in [(5, 26), (6, 0), (23, 59)] {
+        engine
+            .check(now(2026, 3, 22, minute.0, minute.1), &sink)
+            .expect("same week");
+    }
+    let (mut restarted, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 25, 9, 0)).expect("init");
+    assert!(
+        restarted
+            .catch_up(now(2026, 3, 25, 9, 0), &sink, &BTreeSet::new())
+            .submitted
+            .is_empty()
+    );
+    assert_eq!(sink.names(), vec!["weekly-agents"]);
+
+    // Next week's first run fails as well, and earns its own single retry.
+    engine
+        .check(now(2026, 3, 29, 3, 15), &sink)
+        .expect("next mark");
+    assert_eq!(
+        sink.names(),
+        vec![
+            "weekly-agents",
+            "empty-weekly",
+            "ok-weekly",
+            "weekly-agents"
+        ]
+    );
+    engine
+        .record_completion(
+            "weekly-agents",
+            local_epoch(now(2026, 3, 29, 3, 20)),
+            "timeout",
+            "next",
+        )
+        .expect("next failure");
+    let report = engine
+        .check(now(2026, 3, 29, 4, 20), &sink)
+        .expect("next retry");
+    assert_eq!(report.retried, vec!["weekly-agents".to_owned()]);
+}
+
+#[test]
+fn a_failed_daily_run_shows_its_retry_as_the_next_run() {
+    let bed = Bed::new("failed-daily");
+    bed.write_config(json!({
+        "daily_time": "00:15",
+        "heartbeat": {"cmd": ["journal", "heartbeat"], "every": "daily"}
+    }));
+    let (engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 0, 30)).expect("init");
+    engine
+        .record_completion(
+            "heartbeat",
+            local_epoch(now(2026, 3, 22, 0, 20)),
+            "shutdown",
+            "r",
+        )
+        .expect("failed run");
+    let (engine, _) =
+        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 0, 30)).expect("init");
+    let status = engine.collect_status(now(2026, 3, 22, 0, 30));
+    assert!(!status[0].due);
+    assert_eq!(status[0].next_run, now(2026, 3, 22, 1, 20).unix_millis);
+    let status = engine.collect_status(now(2026, 3, 22, 1, 20));
+    assert!(status[0].due);
+}

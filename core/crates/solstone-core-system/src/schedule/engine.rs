@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -12,7 +12,7 @@ use crate::request::{ScheduledArgv, ScheduledRequest};
 
 use super::completion::{load_runtime_state, record_completion, record_completion_checked};
 use super::config::{ConfigDiagnostic, load_runtime, minute_interval, register_default_entries};
-use super::due::{compute_next_run, current_marks, effective_every, is_due, state_entry};
+use super::due::{compute_next_run, current_marks, effective_every, is_due, retry_at, state_entry};
 use super::status::ScheduleStatus;
 use super::{ScheduleConfig, ScheduleError, ScheduleNow, ScheduleSubmissionSink};
 
@@ -41,6 +41,9 @@ pub struct ScheduleEngine {
     last_daily_mark: NaiveDateTime,
     last_weekly_mark: NaiveDateTime,
     pending_retry: BTreeSet<String>,
+    /// The failed `last_run` each entry's retry was submitted for, so a retry
+    /// still running is not submitted again on the next minute.
+    failure_retried: BTreeMap<String, u64>,
     completion_lock: Mutex<()>,
 }
 
@@ -73,6 +76,7 @@ impl ScheduleEngine {
                 last_daily_mark,
                 last_weekly_mark,
                 pending_retry: BTreeSet::new(),
+                failure_retried: BTreeMap::new(),
                 completion_lock: Mutex::new(()),
             },
             loaded.diagnostics,
@@ -151,15 +155,23 @@ impl ScheduleEngine {
         }
 
         for (name, entry) in self.config.entries.clone() {
-            if attempted.contains(&name)
-                || !matches_boundary(
-                    &entry.every,
-                    hour_changed,
-                    daily_changed,
-                    weekly_changed,
-                    minute_changed,
-                )
-            {
+            if attempted.contains(&name) {
+                continue;
+            }
+            if !matches_boundary(
+                &entry.every,
+                hour_changed,
+                daily_changed,
+                weekly_changed,
+                minute_changed,
+            ) {
+                if minute_changed && self.failure_retry_due(&name, &entry, now) {
+                    attempted.insert(name.clone());
+                    if submit(&name, &entry, now, sink) {
+                        self.note_failure_retry(&name);
+                        report.retried.push(name);
+                    }
+                }
                 continue;
             }
             if !is_due(&entry, state_entry(&self.state, &name), &self.config, now) {
@@ -194,10 +206,30 @@ impl ScheduleEngine {
             if is_due(&entry, state_entry(&self.state, &name), &self.config, now)
                 && submit(&name, &entry, now, sink)
             {
+                self.note_failure_retry(&name);
                 report.submitted.push(name);
             }
         }
         report
+    }
+
+    /// A failed run's single retry is due and not already submitted.
+    fn failure_retry_due(
+        &self,
+        name: &str,
+        entry: &super::ScheduleEntry,
+        now: ScheduleNow,
+    ) -> bool {
+        let state = state_entry(&self.state, name);
+        retry_at(entry, state, &self.config, now).is_some_and(|at| now.local >= at)
+            && self.failure_retried.get(name) != failed_run_key(state).as_ref()
+    }
+
+    /// Remember which failed run a submission retried, when it retried one.
+    fn note_failure_retry(&mut self, name: &str) {
+        if let Some(key) = failed_run_key(state_entry(&self.state, name)) {
+            self.failure_retried.insert(name.to_owned(), key);
+        }
     }
 
     /// Project loaded schedule state for callers that publish status.
@@ -279,6 +311,14 @@ impl ScheduleEngine {
             checkpoint,
         )
     }
+}
+
+fn failed_run_key(state: Option<&Value>) -> Option<u64> {
+    state?
+        .as_object()?
+        .get("last_run")?
+        .as_f64()
+        .map(f64::to_bits)
 }
 
 fn matches_boundary(every: &str, hour: bool, daily: bool, weekly: bool, minute: bool) -> bool {
