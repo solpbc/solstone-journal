@@ -3223,7 +3223,7 @@ const APPLE_WORDS = {
 
 function applePreviewText(size, space) {
   const held = size.apple_health;
-  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const count = (n, one, many) => `${Number(n).toLocaleString()} ${n === 1 ? one : many}`;
   const parts = [];
   if (held.span) parts.push(`${held.span[0]} to ${held.span[1]}`);
   parts.push(count(held.workouts, 'workout', 'workouts'));

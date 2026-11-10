@@ -463,7 +463,8 @@ async function runAppleCardCarriesItsGoAheadAndRefusesWhatWontFit() {
   await fits.context.startGuidedImport(apple);
   const panel = fits.elements.guidedSizePreview.textContent;
   assert.ok(panel.includes('2020-11-01 to 2026-11-04'), panel);
-  assert.ok(panel.includes('2190 nights put together from sleep stages'), panel);
+  assert.ok(panel.includes('2,190 nights put together from sleep stages'), panel);
+  assert.ok(panel.includes('2,000,000 readings'), 'large counts are grouped: ' + panel);
   assert.ok(panel.includes('needs about 3.0 GB free, and 400.0 GB is free'), panel);
   assert.ok(!fits.requests.some(request => request.url.endsWith('/start')), 'the first click only previews');
   await fits.context.startGuidedImport(apple);
