@@ -3952,6 +3952,83 @@ mod tests {
     }
 
     #[test]
+    fn a_listed_evernote_note_from_today_takes_the_import_place() {
+        use solstone_core_import::publish::*;
+        let root = fixture("local");
+        let today = chrono::Utc::now().format("%Y%m%d").to_string();
+        let notes = root
+            .path()
+            .join("chronicle")
+            .join(&today)
+            .join("import.evernote")
+            .join("120000_300");
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::write(
+            notes.join("note_transcript.md"),
+            "## a\nSource: a.md\n\nwords\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join("streams/import.evernote.json"),
+            r#"{"name":"import.evernote","kind":"import","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"source":"evernote"}"#,
+        )
+        .unwrap();
+        assert!(!solstone_core_segment::is_obsidian_stream(
+            root.path(),
+            "import.evernote"
+        ));
+        let directory = root.path().join("imports/fixture");
+        std::fs::create_dir_all(&directory).unwrap();
+        let record = PublicationRecord {
+            schema: PUBLICATION_SCHEMA.into(),
+            status: PublicationStatus::Success,
+            segments: vec![SegmentPublicationOutcome {
+                day: today.clone(),
+                stream: "import.evernote".into(),
+                segment: "120000_300".into(),
+                outcome: SegmentBindingOutcome::Bound {
+                    prev_day: None,
+                    prev_segment: None,
+                    seq: 1,
+                },
+                body_only: false,
+            }],
+            indexing: IndexPublicationOutcomes::default(),
+            day_markers: Vec::new(),
+        };
+        write_publication_record(Some(&directory), &record).unwrap();
+        let (mut report, _) = inventory_after_a_pass(root.path());
+        let import = report.band(WorkBand::Import).segments_owed
+            + report.band(WorkBand::Import).segments_complete;
+        assert!(import > 0, "{report:?}");
+    }
+
+    #[test]
+    fn an_old_evernote_note_is_not_obsidian_history() {
+        let root = fixture("local");
+        let notes = root
+            .path()
+            .join("chronicle/19990101/import.evernote/094000_300");
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::write(
+            notes.join("note_transcript.md"),
+            "## a\nSource: a.md\n\nwords\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.path().join("streams")).unwrap();
+        std::fs::write(
+            root.path().join("streams/import.evernote.json"),
+            r#"{"name":"import.evernote","kind":"import","host":null,"platform":null,"created_at":0,"last_day":null,"last_segment":null,"seq":1,"source":"evernote"}"#,
+        )
+        .unwrap();
+        let (mut report, _) = inventory_after_a_pass(root.path());
+        let import = report.band(WorkBand::Import).segments_owed
+            + report.band(WorkBand::Import).segments_complete;
+        assert_eq!(import, 0, "{report:?}");
+    }
+
+    #[test]
     fn import_priority_does_not_authorize_an_unrelated_segment_on_the_same_day() {
         use solstone_core_import::publish::*;
         let root = fixture("openai");

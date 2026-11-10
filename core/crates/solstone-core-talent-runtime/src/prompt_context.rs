@@ -444,6 +444,7 @@ fn stream_content_description(
             "import.gemini" => return "an imported Gemini conversation".to_owned(),
             "import.ics" => return "an imported calendar event".to_owned(),
             "import.obsidian" => return "an imported note from Obsidian".to_owned(),
+            "import.evernote" => return "an imported note from Evernote".to_owned(),
             "import.document" => return "an imported document (PDF)".to_owned(),
             "import.kindle" => return "imported Kindle reading highlights".to_owned(),
             _ => {
@@ -465,6 +466,7 @@ const UNSPOKEN_IMPORTS: &[&str] = &[
     "gemini",
     "ics",
     "obsidian",
+    "evernote",
     "document",
     "kindle",
     "image",
@@ -532,7 +534,7 @@ fn stream_import_guidance(
                 )
                 .to_owned();
             }
-            "import.obsidian" => {
+            "import.obsidian" | "import.evernote" => {
                 return concat!(
                     "## Content Guidance\n\n",
                     "This is a note. Summarize the key ideas, references, and connections. What was the ",
@@ -777,11 +779,25 @@ mod tests {
             Some("import.chatgpt"),
             Some("import.document"),
             Some("import.obsidian"),
+            Some("import.evernote"),
             Some("import.image"),
         ] {
             assert!(imported_recording_rule(stream, None, None).is_empty());
         }
         assert!(imported_recording_rule(Some("import.audio"), Some("browser"), None).is_empty());
+    }
+
+    #[test]
+    fn an_imported_evernote_note_reads_as_a_note() {
+        assert_eq!(
+            stream_content_description(Some("import.evernote"), None, None),
+            "an imported note from Evernote"
+        );
+        assert_eq!(
+            stream_import_guidance(Some("import.evernote"), None, None),
+            stream_import_guidance(Some("import.obsidian"), None, None)
+        );
+        assert!(imported_recording_rule(Some("import.evernote"), None, None).is_empty());
     }
 
     #[test]

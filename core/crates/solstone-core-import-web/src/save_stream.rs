@@ -181,4 +181,31 @@ mod tests {
             SaveStreamError::LengthLimited
         ));
     }
+
+    #[tokio::test]
+    async fn a_save_past_64_mib_fits_under_the_evernote_ceiling() {
+        let directory = TempDir::new_in("/var/tmp").expect("temp");
+        let payload = vec![b'x'; 64 * 1024 * 1024 + 1];
+        let (content_type, body) = multipart_body(&payload);
+        let mut request = Request::builder()
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .expect("request");
+        // The save route lifts the extractor limit to the shared 4 GiB ceiling.
+        // This test only checks that stream_field itself accepts a part past 64 MiB.
+        DefaultBodyLimit::disable().apply(&mut request);
+        let mut multipart = Multipart::from_request(request, &())
+            .await
+            .expect("multipart");
+        let field = multipart
+            .next_field()
+            .await
+            .expect("field")
+            .expect("present");
+        let ceiling = solstone_core_import_sources::evernote::MAX_EXPORT_BYTES;
+        let counted = stream_field(field, directory.path(), ceiling)
+            .await
+            .expect("a part past 64 MiB streams on this route");
+        assert_eq!(counted.bytes(), payload.len() as u64);
+    }
 }

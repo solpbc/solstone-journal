@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- you can bring an Evernote export into your journal from the import page. each note lands on the day it was last changed in Evernote, and a later export adds only what changed. scans, PDFs and images come in with the note. a part of a note that is encrypted in Evernote stays there, and the note says so.
 - the journal dashboard now has sources. it shows when your devices last added something, and the source when the device named one.
 - you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. workouts, sleep and readings land on their own days, and show in the body app and to your agents. workouts and sleep show in search too. the import asks once which facet to file them under.
 - agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health or Oura and says where it holds nothing, and `get_transcript` pages through those readings.
