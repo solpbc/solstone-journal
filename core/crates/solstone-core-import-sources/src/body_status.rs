@@ -135,6 +135,16 @@ pub fn read(journal: &std::path::Path, import_id: &str) -> Option<(String, u64)>
     ))
 }
 
+/// The size bound in the units the card shows sizes in. `too_large_words` keeps
+/// it in step with the bound itself.
+const TOO_LARGE: &str = "this export unpacks to more than 68.7 GB, the most one import reads.";
+
+/// What a too-large export is told, at the terminal as on the page.
+#[must_use]
+pub fn too_large_words() -> String {
+    TOO_LARGE.trim_end_matches('.').to_owned()
+}
+
 /// The incomplete-export words as a sentence beside the others.
 const EXPORT_INCOMPLETE_SENTENCE: &str = "this export looks incomplete, so none of it was saved. export it from Apple Health again and import the new copy.";
 
@@ -143,7 +153,6 @@ const EXPORT_INCOMPLETE_SENTENCE: &str = "this export looks incomplete, so none 
 pub fn remedy(code: &str) -> Option<&'static str> {
     match code {
         "disk_full" => Some("free up space, then import the export again."),
-        "permission" => Some("let the journal open the export, then import it again."),
         _ => None,
     }
 }
@@ -159,7 +168,7 @@ pub fn words(code: &str) -> &'static str {
         }
         "busy" => "another Apple Health import was running, so this one didn't start.",
         "export_incomplete" => EXPORT_INCOMPLETE_SENTENCE,
-        "export_too_large" => "this export unpacks to more than 64 GiB, the most one import reads.",
+        "export_too_large" => TOO_LARGE,
         "export_unreadable" => {
             "this export couldn't be read. export it from Apple Health again and import the new copy."
         }
@@ -170,7 +179,7 @@ pub fn words(code: &str) -> &'static str {
             "an Apple Health import always reads the whole export, so nothing was brought in."
         }
         "preview_again" => {
-            "it changed since its preview, so nothing was brought in. preview it again on the Apple Health card."
+            "the facet, the time zone or the export changed after its preview, so nothing was brought in. import the export again from the Apple Health card."
         }
         "not_started" => "it didn't start, so nothing was brought in.",
         _ => "it stopped before it finished.",
@@ -225,6 +234,13 @@ mod tests {
             read(journal.path(), "20261010_120000"),
             Some(("busy".to_owned(), 1))
         );
+    }
+
+    #[test]
+    fn the_too_large_words_name_the_bound_the_reader_uses() {
+        let bound = crate::body_space::size_words(crate::apple_export::apple_scan_byte_bound());
+        assert!(TOO_LARGE.contains(&bound), "{TOO_LARGE} against {bound}");
+        assert_eq!(code_for_error_text(&too_large_words()), "export_too_large");
     }
 
     #[test]

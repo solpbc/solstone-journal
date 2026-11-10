@@ -2081,11 +2081,7 @@ fn run_segments_bound(
 /// What a run's failure says, in plain words where the export is why.
 fn refusal_text(error: &str) -> String {
     if error.contains("export_size_limit") {
-        format!(
-            "this export is larger than {} GiB, the most one import reads",
-            solstone_core_import_sources::apple_export::apple_scan_byte_bound()
-                / (1024 * 1024 * 1024)
-        )
+        solstone_core_import_sources::body_status::too_large_words()
     } else if error.contains(solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE) {
         solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT.to_owned()
     } else {

@@ -595,3 +595,11 @@ mod page_start {
         );
     }
 }
+
+#[test]
+fn a_large_count_reads_with_its_thousands_marked() {
+    assert_eq!(grouped(0), "0");
+    assert_eq!(grouped(999), "999");
+    assert_eq!(grouped(1_000), "1,000");
+    assert_eq!(grouped(2_000_000), "2,000,000");
+}

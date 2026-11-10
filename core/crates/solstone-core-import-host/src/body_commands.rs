@@ -195,6 +195,19 @@ pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path)
     }
 }
 
+/// A count as a person reads a large one: 2,000,000.
+fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
 /// What an Apple export holds, counted in one pass that stages and writes
 /// nothing. With a facet named, it also says how many records already listed
 /// elsewhere a run could move: an upper bound, because what an export touches
@@ -261,8 +274,9 @@ pub(crate) fn preview_apple(
         APPLE_READS[APPLE_READS.len() - 1]
     );
     if let Some((first, last)) = &preview.span {
-        let count =
-            |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        let count = |n: u64, one: &str, many: &str| {
+            format!("{} {}", grouped(n), if n == 1 { one } else { many })
+        };
         text.push_str(&format!(
             "it runs from {first} to {last}: {}, {} put together from sleep stages, {}, {}, {} and {}.\n",
             count(preview.workouts, "workout", "workouts"),

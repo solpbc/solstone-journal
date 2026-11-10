@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::{ImportPreview, ImportResult, RegistrySource};
 
 /// What the phone says of an import that stays on the desktop importer.
-pub const EMBEDDED_BODY_REFUSAL: &str = "Apple Health exports and Oura are brought in by a journal on a computer for now, so nothing was brought in.";
+pub const EMBEDDED_BODY_REFUSAL: &str = "Apple Health exports and Oura data are brought in by a journal on a computer, so nothing was brought in.";
 
 /// Observable result of a library-hosted journal importer invocation.
 #[derive(Debug, Eq, PartialEq)]
