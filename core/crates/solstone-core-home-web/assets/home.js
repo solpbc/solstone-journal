@@ -1818,20 +1818,23 @@
 
   // Events sent while the stream is down are not replayed, so the first
   // connected state after a disconnect re-reads what those events would have
-  // refreshed. The state reported at subscription is the baseline, not a
-  // reconnect; a page that subscribed while still connecting recovers on connect,
-  // unless `firstConnectCovered` says the page's first read is still being
-  // answered, so that answer already reaches past this connect.
-  function connectionRecovery(refresh, firstConnectCovered) {
-    let lastConnected = null;
+  // refreshed. Only a connect after a loss counts: the stream's first connect is
+  // never a reconnect, whatever the page subscribed during, because the page's
+  // own first read is what that connect would otherwise refresh.
+  function connectionRecovery(refresh) {
     let everConnected = false;
+    let lost = false;
     return function (state) {
       const connected = !!(state && state.connected);
-      const recovered = connected && lastConnected === false;
-      const first = connected && !everConnected;
-      if (connected) everConnected = true;
-      lastConnected = connected;
-      if (recovered && !(first && firstConnectCovered && firstConnectCovered())) refresh();
+      if (!connected) {
+        if (everConnected) lost = true;
+        return;
+      }
+      everConnected = true;
+      if (lost) {
+        lost = false;
+        refresh();
+      }
     };
   }
 
@@ -1941,7 +1944,7 @@
     const recover = connectionRecovery(function () {
       refreshChangedPulse();
       refreshBriefing();
-    }, function () { return !!pulseRequest; });
+    });
     window.appEvents.onConnectionState?.(function (state) {
       if (!state?.connected) {
         pulseAppliedVersion = ++pulseReadVersion;
