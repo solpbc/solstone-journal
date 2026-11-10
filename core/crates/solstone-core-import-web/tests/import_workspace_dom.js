@@ -323,7 +323,7 @@ function makeHarness(ids) {
     'const loadImports = () => { if (Array.isArray(window.__listReads)) window.__listReads.push(1); };',
     'const navigateTo = view => navigations.push(view);',
     'const closeDetectModal = () => {};',
-    'const showDetect = () => {};',
+    'const showDetect = () => { if (Array.isArray(window.__detected)) window.__detected.push(1); };',
   ].join('\n'), context);
   return { context, elements, requests, navigations, pending };
 }
@@ -488,6 +488,36 @@ async function runAppleCardCarriesItsGoAheadAndRefusesWhatWontFit() {
   await notes.context.startGuidedImport({ name: 'notes', display_name: 'Notes' });
   const other = notes.requests.find(request => request.url.endsWith('/start'));
   assert.ok(!Object.prototype.hasOwnProperty.call(JSON.parse(other.options.body), 'body_confirmed'));
+  cases += 1;
+}
+
+// An Apple Health export dropped on quick import goes to its own card with that
+// upload, and is never asked for a date.
+async function runQuickImportSendsAnAppleExportToItsCard() {
+  const harness = makeHarness({
+    dropArea: '',
+    fileLabel: '',
+    importForm: '',
+    fileInput: '',
+    validateBtn: '',
+    quickSettingInput: '',
+    pasteText: '',
+    guidedFileLabel: '',
+  });
+  const saved = { path: '/saved/export.zip', timestamp: '20261010_120000', metadata: { source_hint: 'apple_health', original_filename: 'export.zip' } };
+  harness.context.fetch = async (url, options) => {
+    harness.requests.push({ url, options });
+    return { ok: true, async json() { return saved; } };
+  };
+  harness.context.window.__detected = [];
+  vm.runInContext(functionSource(workspace, 'setupQuickImportForm'), harness.context);
+  vm.runInContext('setupQuickImportForm()', harness.context);
+  vm.runInContext("currentFile = { name: 'export.zip', size: 1 };", harness.context);
+  await harness.elements.importForm.onsubmit({ preventDefault() {} });
+  assert.deepStrictEqual(harness.navigations, ['guide/apple_health']);
+  assert.strictEqual(harness.context.window.__detected.length, 0, 'no date is asked for');
+  assert.strictEqual(vm.runInContext('currentGuidedSaved', harness.context), saved, 'the card keeps this upload');
+  assert.strictEqual(harness.elements.guidedFileLabel.textContent, 'export.zip');
   cases += 1;
 }
 
@@ -4523,6 +4553,7 @@ Promise.resolve()
   .then(runGuidedSubmit)
   .then(runStravaFacetTravelsWithTheImport)
   .then(runAppleCardCarriesItsGoAheadAndRefusesWhatWontFit)
+  .then(runQuickImportSendsAnAppleExportToItsCard)
   .then(runStravaFacetSaysWhatANoMeansFirst)
   .then(runStravaFacetAnswerNamesItsQuestion)
   .then(runConfirmSubmit)

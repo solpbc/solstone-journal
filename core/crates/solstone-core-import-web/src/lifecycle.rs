@@ -1128,6 +1128,16 @@ pub(crate) async fn save(State(state): State<AppState>, mut multipart: Multipart
         metadata.insert("owner_timestamp".to_owned(), json!(semantic));
     }
     metadata.insert("file_size".to_owned(), json!(file_size));
+    // An Apple Health export dropped anywhere but its own card goes to that card:
+    // it isn't dated like a document, and only the card can bring it in.
+    if source_hint(&metadata).is_none()
+        && state.route.is_none()
+        && solstone_core_import_sources::apple_export::detect_apple_source(&file_path)
+            .is_ok_and(|apple| apple)
+    {
+        metadata.insert("source_hint".to_owned(), json!(APPLE_SOURCE));
+        metadata.insert("source_inference".to_owned(), json!(APPLE_SOURCE));
+    }
     metadata.insert(
         "timestamp_detection_no_match_reason".to_owned(),
         no_match_reason.map_or(Value::Null, |reason| json!(reason)),
@@ -2863,6 +2873,48 @@ mod tests {
             hash_source(&directory).unwrap().as_str(),
             format!("{:x}", Sha256::digest(b"nested/a.txt:3\nz.txt:1"))
         );
+    }
+
+    #[cfg(all(test, feature = "full-tests"))]
+    #[tokio::test]
+    async fn an_apple_health_export_dropped_without_a_card_goes_to_the_apple_card() {
+        use std::io::Write as _;
+        let zip_bytes = {
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            writer
+                .start_file("apple_health_export/export.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"<HealthData></HealthData>").unwrap();
+            writer.finish().unwrap();
+            cursor.into_inner()
+        };
+        let post = |filename: &str, bytes: &[u8]| {
+            let boundary = "apple";
+            let mut body = format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"client_item_id\"\r\n\r\n{filename}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\nContent-Type: application/zip\r\n\r\n"
+            )
+            .into_bytes();
+            body.extend_from_slice(bytes);
+            body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+            Request::post("/app/import/api/save")
+                .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+                .body(Body::from(body))
+                .unwrap()
+        };
+        let root = TempDir::new().unwrap();
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(post("export.zip", &zip_bytes))
+            .await
+            .unwrap();
+        let (_, body) = response_json(response).await;
+        assert_eq!(body["metadata"]["source_hint"], "apple_health", "{body}");
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(post("notes.zip", b"PK not an export"))
+            .await
+            .unwrap();
+        let (_, body) = response_json(response).await;
+        assert!(body["metadata"]["source_hint"].is_null(), "{body}");
     }
 
     #[cfg(all(test, feature = "full-tests"))]

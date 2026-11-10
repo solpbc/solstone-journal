@@ -2969,6 +2969,15 @@ function setupQuickImportForm() {
         }
         return;
       }
+      // An Apple Health export goes to its own card, with this upload, and is
+      // never asked for a date.
+      if (data?.metadata?.source_hint === 'apple_health') {
+        await navigateTo('guide/apple_health');
+        currentGuidedSaved = data;
+        const label = document.getElementById('guidedFileLabel');
+        if (label) label.textContent = data.metadata.original_filename || '';
+        return;
+      }
       showDetect(data);
     } catch (_err) {
       validateBtn.disabled = false;
