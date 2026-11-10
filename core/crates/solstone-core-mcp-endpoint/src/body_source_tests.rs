@@ -20,6 +20,77 @@ const DAY: &str = "20261010";
 const STREAM: &str = "import.apple_health";
 const LABEL: &str = "Apple Health · imported";
 
+#[cfg(feature = "full-tests")]
+#[test]
+fn facet_siblings_page_unique_rows_and_cover_only_their_civil_hour() {
+    let journal = journal();
+    let root = journal.path();
+    window(
+        root,
+        DAY,
+        "060000_3600",
+        &[reading("work-only", "2026-10-10 06:11:00 -0600", "9111")],
+        Some("work"),
+    );
+    window(
+        root,
+        DAY,
+        "060000_3602",
+        &many_readings("first", 6, 31, 60),
+        Some("health"),
+    );
+    window(
+        root,
+        DAY,
+        "060000_3603",
+        &many_readings("second", 6, 41, 60),
+        Some("health"),
+    );
+    grant(
+        root,
+        ReadScope::Facets {
+            ids: vec![HEALTH.to_owned()],
+        },
+    );
+    let args =
+        json!({"day": DAY, "source": LABEL, "time_from": "06:00", "time_to": "08:00", "limit": 1});
+    let first = call(root, "list_transcripts", args.clone());
+    assert_eq!(first["gaps"], json!([{"from": "07:00", "to": "08:00"}]));
+    assert_eq!(first["transcripts"].as_array().unwrap().len(), 1);
+    let mut next_args = args;
+    next_args["cursor"] = first["next_cursor"].clone();
+    let second = call(root, "list_transcripts", next_args);
+    assert_eq!(second["gaps"], first["gaps"]);
+    let (entries, pages) = every_entry(root, first["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 120);
+    assert_eq!(pages, [100, 20]);
+    assert!(entries.iter().all(|entry| !entry.contains("9111")));
+    let after = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "07:00", "time_to": "07:05"}),
+    );
+    assert!(
+        after["transcripts"].as_array().unwrap().is_empty(),
+        "{after}"
+    );
+    assert_eq!(after["gaps"], json!([{"from": "07:00", "to": "07:05"}]));
+    grant(
+        root,
+        ReadScope::Facets {
+            ids: vec![WORK.to_owned()],
+        },
+    );
+    let work = call(
+        root,
+        "list_transcripts",
+        json!({"day": DAY, "source": LABEL, "time_from": "06:00", "time_to": "07:00"}),
+    );
+    let (entries, _) = every_entry(root, work["span_reference"].as_str().unwrap());
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].contains("9111"));
+}
+
 fn journal() -> tempfile::TempDir {
     let journal = tempfile::Builder::new()
         .prefix("solstone-mcp-body-")

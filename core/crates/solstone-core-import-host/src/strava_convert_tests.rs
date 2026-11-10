@@ -722,7 +722,7 @@ fn only_a_record_now_in_the_facet_counts_as_moved() {
     workout(root, Some("a"));
     add_line(root, "a", DAY, sense(json!({})));
     run(root);
-    let counted = vec![(WORKOUT.to_string(), "a".to_owned())];
+    let counted = vec![(WORKOUT.to_string(), BTreeSet::from(["a".to_owned()]))];
     let none = BTreeSet::new();
     assert_eq!(listed_moved_now(root, &counted, "b", &none), None);
     assert_eq!(

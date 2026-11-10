@@ -838,18 +838,13 @@ pub(crate) fn tile_experience(
     let mut first = experience.clone();
     if source.span == SpanPolicy::Union {
         let first_window = window_id(floor_to_window(start, zone, length), length);
-        let stored_at = (
-            first_window.0.clone(),
-            resolve_key(journal, source, &first_window.0, &first_window.1),
-        );
         // A file that can't be read says nothing of what's stored, and a shorter end
         // staged on that silence would stand once it reads again.
-        let stored_rows = match stored_rows(journal, source, &stored_at) {
-            Ok(stored) => stored.map_or_else(Vec::new, |(_, rows)| rows),
-            Err(StoredRowsError::NotRows) => Vec::new(),
-            Err(StoredRowsError::Read(error)) => return Err(error),
-        };
-        if let Some(stored) = stored_rows.iter().find(|row| row.id == experience.id)
+        let family = stored_grid_rows(journal, source, &first_window)?;
+        if let Some(stored) = family
+            .iter()
+            .flat_map(|(_, rows)| rows)
+            .find(|row| row.id == experience.id && row.kind != RowKind::Moved)
             && let Some(stored_end) = stored.end.as_deref().and_then(parse_source_time)
             && stored_end > end
         {
@@ -976,16 +971,44 @@ pub(crate) fn stored_rows(
     Ok(Some((text, rows)))
 }
 
-fn facet_file_holds(
+/// Read the live copies on one civil slot in reader preference order.
+pub(crate) fn stored_grid_rows(
     journal: &Path,
     source: &BodySource,
-    (day, key): &WindowId,
-    facet: &str,
-) -> bool {
-    let path = stream_dir(journal, source, day)
-        .join(key)
-        .join("talents/facets.json");
-    fs::read_to_string(path).is_ok_and(|text| text == facet_file_text(facet))
+    (day, grid): &WindowId,
+) -> Result<Vec<(String, Vec<BodyRow>)>, String> {
+    use solstone_core_format::content::body_records::{copy_rank, same_grid};
+    let dir = stream_dir(journal, source, day);
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(Vec::new());
+        }
+        Err(error) => return Err(format!("{}: {error}", dir.display())),
+    };
+    let mut family = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let key = entry.file_name().to_string_lossy().into_owned();
+        if !same_grid(grid, &key)
+            || owner_deleted(&entry.path()).map_err(|error| error.to_string())?
+        {
+            continue;
+        }
+        match stored_rows(journal, source, &(day.clone(), key.clone())) {
+            Ok(Some((_, rows))) => family.push((key, rows)),
+            Ok(None) | Err(StoredRowsError::NotRows) => {}
+            Err(StoredRowsError::Read(error)) => return Err(error),
+        }
+    }
+    family
+        .sort_by(|left, right| (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0)));
+    Ok(family)
 }
 
 /// The facet a window belongs to, in the form the classifier reads.
@@ -1036,7 +1059,7 @@ fn at_instants(value: &mut Value) {
 
 /// Whether two rows state the same thing. An export rendering another offset states
 /// the same times, so what's stored stays as it is.
-fn same_row(new: &BodyRow, stored: &BodyRow) -> bool {
+pub(crate) fn same_row(new: &BodyRow, stored: &BodyRow) -> bool {
     if new == stored {
         return true;
     }
@@ -1077,6 +1100,29 @@ pub fn decide(
     window: &WindowId,
     rows: BTreeMap<String, BodyRow>,
     facet: Option<&str>,
+    may_refile: bool,
+    run: Option<&str>,
+) -> Result<Decision, String> {
+    let filing = facet.map(facet_file_text);
+    decide_filing(
+        journal,
+        source,
+        window,
+        rows,
+        filing.as_deref(),
+        may_refile,
+        run,
+    )
+}
+
+/// Merge a window under an exact facet assignment, or keep its assignment.
+/// The day placer can carry an existing assignment through a source time move.
+pub fn decide_filing(
+    journal: &Path,
+    source: &BodySource,
+    window: &WindowId,
+    rows: BTreeMap<String, BodyRow>,
+    filing: Option<&str>,
     may_refile: bool,
     run: Option<&str>,
 ) -> Result<Decision, String> {
@@ -1125,7 +1171,9 @@ pub fn decide(
         .filter(|row| row.kind != RowKind::Moved)
     {
         decision.new_rows += 1;
-        new.run = run.map(str::to_owned);
+        if new.run.is_none() {
+            new.run = run.map(str::to_owned);
+        }
         merged_rows.push(new);
     }
     if stored_text.is_none() && merged_rows.is_empty() {
@@ -1139,12 +1187,17 @@ pub fn decide(
     let already_filed = dir.join("talents/facets.json").exists();
     decision.facet_changed = !marks_only
         && (may_refile || !already_filed)
-        && facet.is_some_and(|facet| !facet_file_holds(journal, source, window, facet));
+        && filing.is_some_and(|filing| {
+            fs::read_to_string(dir.join("talents/facets.json"))
+                .ok()
+                .as_deref()
+                != Some(filing)
+        });
     let unbound = !dir.join("stream.json").exists();
     decision.refiled = decision.facet_changed && stored_text.is_some();
     // A window carries one facet, so its rows share whichever it has.
     decision.kept_facet =
-        !marks_only && facet.is_none() && rows_changed && dir.join("talents/facets.json").exists();
+        !marks_only && filing.is_none() && rows_changed && dir.join("talents/facets.json").exists();
     decision.units = merged_rows.len() as u64;
     if rows_changed {
         decision.contents = Some(contents);
@@ -1159,12 +1212,9 @@ pub type DayRows = Vec<(WindowId, BTreeMap<String, BodyRow>)>;
 
 /// The length a window's key states, its step-around key included.
 fn key_length(key: &str) -> Option<i64> {
-    let length = key.split_once('_')?.1.parse::<i64>().ok()?;
-    match length {
-        WINDOW_SECONDS | 301 => Some(WINDOW_SECONDS),
-        HOUR_SECONDS | 3_601 => Some(HOUR_SECONDS),
-        _ => None,
-    }
+    solstone_core_format::content::body_records::grid_length(key)
+        .and_then(|length| i64::try_from(length).ok())
+        .filter(|length| matches!(*length, WINDOW_SECONDS | HOUR_SECONDS))
 }
 
 /// Settle where a day's readings go before the day is decided.
@@ -1215,6 +1265,20 @@ pub fn settle_readings_noting(
         if let Some(known) = stored.get(key) {
             return Ok(known.clone());
         }
+        for (sibling, rows) in stored_grid_rows(journal, source, &(day.to_owned(), key.to_owned()))?
+        {
+            stored.insert(
+                sibling,
+                Ok(rows
+                    .into_iter()
+                    .filter(|row| row.kind != RowKind::Moved)
+                    .map(|row| row.id)
+                    .collect()),
+            );
+        }
+        if let Some(known) = stored.get(key) {
+            return Ok(known.clone());
+        }
         let found = match stored_rows(journal, source, &(day.to_owned(), key.to_owned())) {
             Ok(rows) => Ok(rows.map_or_else(BTreeSet::new, |(_, rows)| {
                 rows.into_iter().map(|row| row.id).collect()
@@ -1253,7 +1317,19 @@ pub fn settle_readings_noting(
                 .entry(raw.clone())
                 .or_insert_with(|| resolve_key(journal, source, day, &raw))
                 .clone();
-            match holds(&mut stored, &other)? {
+            let other_holds = holds(&mut stored, &other)?;
+            if let Some(sibling) = stored
+                .iter()
+                .find(|(sibling, ids)| {
+                    solstone_core_format::content::body_records::same_grid(sibling, &other)
+                        && ids.as_ref().is_ok_and(|ids| ids.contains(id))
+                })
+                .map(|(key, _)| key.clone())
+            {
+                moves.push((key.clone(), id.clone(), Some(sibling), false));
+                continue;
+            }
+            match other_holds {
                 Ok(ids) if ids.contains(id) => {
                     moves.push((key.clone(), id.clone(), Some(other), false));
                     continue;
@@ -1525,6 +1601,10 @@ pub struct SummaryCounts {
     pub held_back: u64,
     pub unreadable: u64,
     pub kept_facet: u64,
+    #[serde(default)]
+    pub split_rows: u64,
+    #[serde(default)]
+    pub retained_revisions: BTreeMap<String, u64>,
     pub refiled: u64,
     /// Activity records created for workouts, nights and mindfulness sessions.
     #[serde(default)]
@@ -1583,6 +1663,8 @@ impl SummaryCounts {
             held_back: 0,
             unreadable: plan.unreadable,
             kept_facet: plan.kept_facet,
+            split_rows: 0,
+            retained_revisions: BTreeMap::new(),
             refiled: plan.refiled,
             activities: 0,
             activities_no_facet: 0,
@@ -1714,11 +1796,33 @@ pub fn summary_text(
     );
     match facet {
         Some(facet) => {
-            let _ = writeln!(text, "filed under the {facet} facet.\n");
+            let _ = writeln!(text, "new entries are filed under the {facet} facet.\n");
         }
         None => text.push_str(
             "filed under no facet: an agent that can read your whole journal reads it, and one limited to chosen facets doesn't.\n\n",
         ),
+    }
+    if counts.split_rows > 0 {
+        let subject = if counts.split_rows == 1 {
+            "1 new entry was".to_owned()
+        } else {
+            format!("{} new entries were", counts.split_rows)
+        };
+        let _ = writeln!(
+            text,
+            "{subject} saved separately from earlier entries in the same time span, so each keeps its own facet.\n"
+        );
+    }
+    for (facets, count) in &counts.retained_revisions {
+        let (noun, earlier) = if *count == 1 {
+            ("entry", "it was")
+        } else {
+            ("entries", "they were")
+        };
+        let _ = writeln!(
+            text,
+            "{count} updated {noun} stayed under {facets}, where {earlier} already filed.\n"
+        );
     }
     if counts.took_facet > 0 {
         let _ = writeln!(

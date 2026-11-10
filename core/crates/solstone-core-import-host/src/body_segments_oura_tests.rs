@@ -14,6 +14,10 @@ use super::*;
 
 const STREAM: &str = "import.oura";
 
+#[cfg(feature = "full-tests")]
+#[path = "body_segments_oura_facet_tests.rs"]
+mod facet_tests;
+
 fn journal() -> tempfile::TempDir {
     let journal = tempfile::tempdir().unwrap();
     let root = journal.path();

@@ -6,18 +6,18 @@
 //! A run is given a facet, none, or nothing. With nothing (a command line
 //! without `--facet`, or an import page that sent no facet) it uses the
 //! remembered default while that facet is still enabled, and otherwise none;
-//! it never makes a facet and never asks. With a facet, every live tile of the
-//! download's workouts, written or unchanged, gets it in `talents/facets.json`
-//! wherever it has another, so a facet chosen later replaces the earlier one.
-//! Only an owner's answer moves a workout already listed: an unattended run
-//! keeps its tiles' facet, as does one whose day file can't be read to tell.
-//! With none, no file is touched.
+//! it never makes a facet and never asks. Genuinely new workouts use that facet
+//! in `talents/facets.json`. Only an owner's answer moves an earlier filing,
+//! including one surviving solely on a tile. Otherwise existing tiles keep
+//! their assignments and missing assignments inherit the workout's earlier
+//! filing, even when this run has no facet. A workout whose day file can't be
+//! read keeps its tiles' facet.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use solstone_core_format::content::strava_body::{STRAVA_STREAM, STRAVA_TILE_FILE};
 use solstone_core_import_sources::apple_health::facet_file_text;
 use solstone_core_import_sources::apple_health_run::sync_folder;
@@ -165,6 +165,20 @@ fn tile_dir(journal: &Path, day: &str, segment: &str) -> std::path::PathBuf {
         .join(segment)
 }
 
+pub(crate) fn validate_assignments(journal: &Path, workouts: &LiveWorkouts) -> Result<(), String> {
+    for (_, tiles) in workouts.values() {
+        for tile in tiles {
+            let path = tile_dir(journal, &tile.day, &tile.segment).join("talents/facets.json");
+            match fs::read_to_string(&path) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("{}: {error}", path.display())),
+            }
+        }
+    }
+    Ok(())
+}
+
 /// What filing the download's workouts under a facet did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Filing {
@@ -176,6 +190,8 @@ pub(crate) struct Filing {
     /// reading of their tiles or an earlier import, which keep their tiles'
     /// facet beside that record, so a listing and its workout never split.
     pub kept_sensed: u64,
+    /// Earlier tile filings retained even when the activity record is absent.
+    pub kept_filed: BTreeMap<String, u64>,
     /// Workouts whose day file couldn't be read to tell, which keep their
     /// tiles' facet.
     pub kept_unreadable: u64,
@@ -187,22 +203,22 @@ pub(crate) struct Filing {
 /// is written; an error stops the filing.
 pub(crate) type BeforeRefile<'a> = &'a mut dyn FnMut(&[(String, String)]) -> Result<(), String>;
 
-/// File every live tile of the download's workouts under `facet` wherever it
-/// has another, except one whose day can't be read, and, unless the owner chose
-/// this facet for this import, a workout already listed with their activities. `before_write` is given every tile that
-/// is about to change before any is written, so a run stopped part way still
-/// knows which tiles to publish again.
-/// Call it before the record writer, so a new workout's record goes in `facet`.
+/// File new workouts under `facet`, preserving earlier tile assignments unless
+/// the owner permits a move. Missing tile assignments inherit the workout's
+/// known filing. A workout whose day can't be read stays unchanged.
+/// `before_write` receives every changing tile before any assignment is written,
+/// so an interrupted run still knows which tiles to publish again. Call before
+/// the record writer, so its new record uses the workout's actual facet.
 pub(crate) fn file_strava_workouts(
     journal: &Path,
     workouts: &LiveWorkouts,
-    facet: &str,
+    facet: Option<&str>,
     may_move_listed: bool,
     before_write: BeforeRefile<'_>,
 ) -> Result<Filing, String> {
     let mut filing = Filing::default();
     let mut sensed = Sensed::default();
-    let wanted = json!([{ "facet": facet }]);
+    let wanted = facet.map(facet_file_text);
     // Per workout to file: whether a tile had another facet, and its tiles
     // that change.
     let mut planned = Vec::new();
@@ -221,70 +237,104 @@ pub(crate) fn file_strava_workouts(
             .clone()
             .unwrap_or_else(|| (lowest.day.clone(), lowest.segment.clone()));
         let listed = sensed
-            .check(journal, &day, &window, &row)
+            .facet(journal, &day, &window, &row)
             .and_then(|sensed| {
-                if sensed {
-                    return Ok(true);
+                if sensed.is_some() {
+                    return Ok(sensed);
                 }
-                crate::body_activity::has_record(
+                crate::body_activity::record_facet(
                     journal,
                     &day,
                     &crate::body_activity::account_key(STRAVA_STREAM, &activity_id.to_string()),
                 )
             });
-        match listed {
-            Ok(false) => {}
-            // Only the owner's answer moves a workout that's already listed.
-            Ok(true) if may_move_listed => {}
-            Ok(true) => {
-                filing.kept_sensed += 1;
-                continue;
-            }
+        let listed = match listed {
+            Ok(facet) => facet,
             Err(_) => {
                 filing.kept_unreadable += 1;
                 continue;
             }
-        }
-        let mut had_other = false;
-        let mut changing = Vec::new();
+        };
+        let mut current_tiles = Vec::new();
+        let mut previous: Option<(usize, String)> = None;
         for tile in tiles {
             let path = tile_dir(journal, &tile.day, &tile.segment).join("talents/facets.json");
-            let current = fs::read_to_string(&path)
-                .ok()
-                .and_then(|text| serde_json::from_str::<Value>(&text).ok());
-            if current.as_ref() == Some(&wanted) {
+            let current = match fs::read_to_string(&path) {
+                Ok(text) => Some(text),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(format!("{}: {error}", path.display())),
+            };
+            if let Some(text) = &current
+                && previous
+                    .as_ref()
+                    .is_none_or(|(index, _)| tile.index < *index)
+            {
+                previous = Some((tile.index, text.clone()));
+            }
+            current_tiles.push((tile, current));
+        }
+        let kept = !may_move_listed && (listed.is_some() || previous.is_some());
+        let target = if kept {
+            previous
+                .map(|(_, text)| text)
+                .or_else(|| listed.as_deref().map(facet_file_text))
+        } else {
+            wanted.clone()
+        };
+        let Some(target) = target else {
+            continue;
+        };
+        if kept && listed.is_some() {
+            filing.kept_sensed += 1;
+        } else if kept && Some(target.as_str()) != wanted.as_deref() {
+            *filing
+                .kept_filed
+                .entry(crate::body_segments::filing_words(journal, &target))
+                .or_default() += 1;
+        }
+        let counts_as_filed = facet.is_some()
+            && (!kept || (listed.is_none() && Some(target.as_str()) == wanted.as_deref()));
+        let target_value = serde_json::from_str::<Value>(&target).ok();
+        let mut had_other = false;
+        let mut changing = Vec::new();
+        for (tile, current) in current_tiles {
+            if kept && current.is_some() {
                 continue;
             }
-            had_other |= path.exists();
+            if current
+                .as_deref()
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                == target_value
+                && current.is_some()
+            {
+                continue;
+            }
+            had_other |= current.is_some();
             changing.push((tile.day.clone(), tile.segment.clone()));
         }
         if !changing.is_empty() {
-            planned.push((had_other, changing));
+            planned.push((counts_as_filed, had_other, target, changing));
         }
     }
     let tiles = planned
         .iter()
-        .flat_map(|(_, changing)| changing.iter().cloned())
+        .flat_map(|(_, _, _, changing)| changing.iter().cloned())
         .collect::<Vec<_>>();
     if tiles.is_empty() {
         return Ok(filing);
     }
     before_write(&tiles)?;
-    for (had_other, changing) in planned {
+    for (counts_as_filed, had_other, target, changing) in planned {
         for (day, segment) in changing {
             let dir = tile_dir(journal, &day, &segment);
             fs::create_dir_all(dir.join("talents")).map_err(|error| error.to_string())?;
-            atomic_replace(
-                dir.join("talents/facets.json"),
-                facet_file_text(facet).as_bytes(),
-                PRIVATE,
-            )
-            .map_err(|error| error.to_string())?;
+            atomic_replace(dir.join("talents/facets.json"), target.as_bytes(), PRIVATE)
+                .map_err(|error| error.to_string())?;
             sync_folder(&dir)?;
             filing.refiled_tiles.push((day, segment));
         }
-        filing.filed += 1;
-        if had_other {
+        filing.filed += u64::from(counts_as_filed);
+        if counts_as_filed && had_other {
             filing.moved += 1;
         }
     }

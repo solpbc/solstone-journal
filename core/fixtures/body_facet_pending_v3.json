@@ -1,0 +1,13 @@
+{
+  "day": "20261010",
+  "windows": [{
+    "key": "060000_3600", "write": true, "written_sha": "fixture-sha", "units": 2,
+    "facet": false, "publish": true
+  }],
+  "counts": {
+    "written": 1, "unchanged": 0, "stayed_deleted": 0, "unreadable": 0,
+    "kept_facet": 0, "refiled": 0, "published": 1, "entries": 2,
+    "days": ["20261010"]
+  },
+  "listing": [["060000_3600", 1, 0, 1]]
+}

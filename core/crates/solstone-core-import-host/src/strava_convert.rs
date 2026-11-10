@@ -1035,7 +1035,7 @@ pub(crate) fn listed_moves(
 }
 
 /// A workout a choice would move, and the facet it's in now.
-pub(crate) type ListedMove = (String, String);
+pub(crate) type ListedMove = (String, BTreeSet<String>);
 
 /// Of the workouts counted before a run, the ones whose record is now in
 /// `facet`, summed as [`listed_moves`] sums them. A workout whose group waited
@@ -1057,10 +1057,18 @@ pub(crate) fn listed_moved_now(
         .filter(|(activity, _)| !held_back.contains(&account_key(STRAVA_STREAM, activity)))
         .filter(|(activity, _)| {
             workouts.get(activity).is_some_and(|workout| {
-                find_code_record(journal, &workout.candidate_days(), &workout.account())
-                    .ok()
-                    .flatten()
-                    .is_some_and(|(place, _)| place.facet == facet)
+                let record =
+                    find_code_record(journal, &workout.candidate_days(), &workout.account());
+                match record {
+                    Ok(Some((place, _))) => place.facet == facet,
+                    Ok(None) => false,
+                    Err(_) => false,
+                }
+            }) && workouts.get(activity).is_some_and(|workout| {
+                workout
+                    .tiles
+                    .iter()
+                    .all(|tile| tile.facet.as_deref() == Some(facet))
             })
         })
         .cloned()
@@ -1071,7 +1079,7 @@ pub(crate) fn listed_moved_now(
 fn summed_moves(journal: &Path, moves: &[ListedMove]) -> Option<(usize, Vec<String>)> {
     let from = moves
         .iter()
-        .map(|(_, facet)| facet_title(journal, facet))
+        .flat_map(|(_, facets)| facets.iter().map(|facet| facet_title(journal, facet)))
         .collect::<BTreeSet<_>>();
     (!moves.is_empty()).then(|| (moves.len(), from.into_iter().collect()))
 }
@@ -1103,14 +1111,17 @@ pub(crate) fn listed_moves_by_workout(
             .flatten();
         let current = match &code {
             Some((place, _)) => Some(place.facet.clone()),
-            None => named
-                .get(&at)
-                .and_then(|lines| target_facet(journal, workout, lines)),
+            None => target_facet(journal, workout, named.get(&at).map_or(&[], Vec::as_slice)),
         };
-        if let Some(current) = current
-            && current != facet
-        {
-            moves.push((workout.activity.clone(), current));
+        let mut from = workout
+            .tiles
+            .iter()
+            .filter_map(|tile| tile.facet.clone())
+            .collect::<BTreeSet<_>>();
+        from.extend(current);
+        from.remove(facet);
+        if !from.is_empty() {
+            moves.push((workout.activity.clone(), from));
         }
     }
     moves

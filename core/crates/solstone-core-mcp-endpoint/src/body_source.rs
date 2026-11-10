@@ -142,7 +142,12 @@ fn readable_windows(
             continue;
         }
         let name = identity.name.to_owned();
-        let Some(clock) = segment_clock(&name) else {
+        let grid = solstone_core_format::content::body_records::grid_length(&name);
+        let grid_key = grid.and_then(|length| {
+            name.split_once('_')
+                .map(|(clock, _)| format!("{clock}_{length}"))
+        });
+        let Some(clock) = grid_key.as_deref().and_then(segment_clock) else {
             continue;
         };
         let probe = segment_assignment_probe_path(day, stream, &name);

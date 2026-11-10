@@ -59,6 +59,9 @@ pub struct AttemptFacts {
     /// Inputs of a multi-input import that could not be imported while the rest were.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_failures: Option<u64>,
+    /// The import that explicitly took over this unfinished attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continued_by: Option<String>,
 }
 
 /// One entity set aside during a journal-archive merge.
@@ -361,6 +364,7 @@ fn admit_held_attempt(
         failure_reason: None,
         unavailable_description: None,
         input_failures: None,
+        continued_by: None,
     };
     let value = serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
         path: import_metadata_path(journal_root, import_id)
@@ -495,12 +499,59 @@ pub fn record_unconfirmed_attempt_unlocked(
     finished_at_ms: u64,
     failure_reason: Option<String>,
 ) -> Result<AttemptFacts, ImportError> {
+    record_unconfirmed_or_continued_unlocked(
+        journal_root,
+        import_id,
+        expected_generation,
+        finished_at_ms,
+        failure_reason,
+        None,
+    )
+}
+
+/// Close a body attempt and record its actual successor in that same atomic
+/// terminal write. The caller holds this import's lock. An already stopped
+/// attempt keeps its recorded stop time and reason.
+pub fn record_continued_attempt_unlocked(
+    journal_root: &Path,
+    import_id: &str,
+    expected_generation: u64,
+    finished_at_ms: u64,
+    successor: &str,
+) -> Result<AttemptFacts, ImportError> {
+    let _ = crate::staging::import_directory(journal_root, successor)?;
+    if successor == import_id {
+        return Err(ImportError::InvalidAttemptState {
+            message: "an import cannot continue itself".to_owned(),
+        });
+    }
+    record_unconfirmed_or_continued_unlocked(
+        journal_root,
+        import_id,
+        expected_generation,
+        finished_at_ms,
+        Some("replaced by a later import before it finished".to_owned()),
+        Some(successor),
+    )
+}
+
+fn record_unconfirmed_or_continued_unlocked(
+    journal_root: &Path,
+    import_id: &str,
+    expected_generation: u64,
+    finished_at_ms: u64,
+    failure_reason: Option<String>,
+    successor: Option<&str>,
+) -> Result<AttemptFacts, ImportError> {
     let mut metadata = read_import_metadata(journal_root, import_id)?;
     let mut facts =
         get_attempt_facts(&metadata).ok_or_else(|| ImportError::InvalidAttemptState {
             message: format!("no active attempt found for {import_id}"),
         })?;
-    if facts.generation != expected_generation || facts.state != AttemptState::Running {
+    if facts.generation != expected_generation
+        || !(facts.state == AttemptState::Running
+            || (successor.is_some() && facts.state == AttemptState::Unconfirmed))
+    {
         return Err(ImportError::InvalidAttemptState {
             message: format!(
                 "attempt generation mismatch for {import_id}: expected running gen {expected_generation}, found state {:?} gen {}",
@@ -508,11 +559,16 @@ pub fn record_unconfirmed_attempt_unlocked(
             ),
         });
     }
-    let duration = Some(finished_at_ms.saturating_sub(facts.started_at_ms));
-    facts.state = AttemptState::Unconfirmed;
-    facts.finished_at_ms = Some(finished_at_ms);
-    facts.duration_ms = duration;
-    facts.failure_reason = failure_reason;
+    if facts.state == AttemptState::Running {
+        let duration = Some(finished_at_ms.saturating_sub(facts.started_at_ms));
+        facts.state = AttemptState::Unconfirmed;
+        facts.finished_at_ms = Some(finished_at_ms);
+        facts.duration_ms = duration;
+        facts.failure_reason = failure_reason;
+    }
+    if let Some(successor) = successor {
+        facts.continued_by = Some(successor.to_owned());
+    }
 
     let value = serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
         path: import_metadata_path(journal_root, import_id)
@@ -597,6 +653,7 @@ pub fn settle_exited_import(
         failure_reason,
         unavailable_description: None,
         input_failures: None,
+        continued_by: None,
     };
     let value = serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
         path: import_metadata_path(journal_root, import_id)
@@ -797,6 +854,43 @@ pub(crate) fn import_metadata_path(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn a_continuation_is_terminal_generation_bound_and_keeps_an_existing_stop() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let id = "20260408_120000";
+        let successor = "20260408_130000";
+        admit_running_attempt(root, id, 1000, None).unwrap();
+        let _lock = hold_import_lock(root, id).unwrap();
+        assert!(record_continued_attempt_unlocked(root, id, 2, 2000, successor).is_err());
+        assert!(record_continued_attempt_unlocked(root, id, 1, 2000, id).is_err());
+        assert!(record_continued_attempt_unlocked(root, id, 1, 2000, "../elsewhere").is_err());
+        let facts = record_continued_attempt_unlocked(root, id, 1, 2000, successor).unwrap();
+        assert_eq!(facts.state, AttemptState::Unconfirmed);
+        assert_eq!(facts.continued_by.as_deref(), Some(successor));
+        assert_eq!(facts.finished_at_ms, Some(2000));
+        assert_eq!(
+            get_attempt_facts(&read_import_metadata(root, id).unwrap()),
+            Some(facts.clone())
+        );
+        let later = record_continued_attempt_unlocked(root, id, 1, 3000, successor).unwrap();
+        assert_eq!(later, facts, "recovery preserves the original stop");
+        drop(_lock);
+        admit_running_attempt(root, id, 4000, None).unwrap();
+        let completed = record_completed_attempt(root, id, 2, 5000, None, None).unwrap();
+        assert_eq!(
+            completed.continued_by, None,
+            "a new attempt has no old successor"
+        );
+        let _lock = hold_import_lock(root, id).unwrap();
+        assert!(record_continued_attempt_unlocked(root, id, 2, 6000, successor).is_err());
+        assert_eq!(
+            get_attempt_facts(&read_import_metadata(root, id).unwrap()),
+            Some(completed)
+        );
+    }
 
     #[test]
     fn record_running_attempt_creates_and_fails_closed_on_corrupt() {

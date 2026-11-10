@@ -7,6 +7,8 @@
 //! read and changed in one place. It holds counts and the facet's name, never
 //! a workout's words or a name read from them.
 
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use crate::body_activity::RecordCounts;
@@ -97,7 +99,7 @@ impl StravaRunSummary {
                 if let Some((count, from)) = &self.listed_moved {
                     let _ = writeln!(
                         text,
-                        "{} already listed on the activities page moved to this import's facet, from {}.\n",
+                        "{} moved to this import's facet, from {}.\n",
                         plural(*count as u64, "workout", "workouts"),
                         solstone_core_import_sources::apple_health::facets_words(from)
                     );
@@ -105,7 +107,7 @@ impl StravaRunSummary {
                 if let Some((shown, count)) = self.listed_over {
                     let _ = writeln!(
                         text,
-                        "nothing already listed moved: {} would have, and you {}.\n",
+                        "nothing already filed moved: {} would have, and you {}.\n",
                         plural(count as u64, "workout", "workouts"),
                         if shown == 0 {
                             "weren't shown any".to_owned()
@@ -118,7 +120,7 @@ impl StravaRunSummary {
             (Some(facet), _) => {
                 let _ = writeln!(
                     text,
-                    "filed under the {facet} facet, the one you chose for Strava imports.\n"
+                    "new workouts are filed under the {facet} facet, the one you chose for Strava imports.\n"
                 );
             }
             (None, FacetBasis::ChosenNone) => {
@@ -130,15 +132,14 @@ impl StravaRunSummary {
             (None, _) => {
                 let _ = writeln!(
                     text,
-                    "filed under no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted or gone: {NO_FACET_MEANS}\n"
+                    "new workouts have no facet, because none was chosen for this import and none is set for Strava imports, or the one set is muted or gone: {NO_FACET_MEANS}\n"
                 );
             }
         }
-        let Some(facet) = self.shown_facet() else {
-            return;
-        };
         let filing = &self.filing;
-        if filing.filed > 0 {
+        if let Some(facet) = self.shown_facet()
+            && filing.filed > 0
+        {
             let _ = writeln!(
                 text,
                 "{} now filed under {facet}.{}\n",
@@ -148,6 +149,14 @@ impl StravaRunSummary {
                     1 if filing.filed == 1 => " it moved from another facet.".to_owned(),
                     moved => format!(" {moved} of them moved from another facet."),
                 }
+            );
+        }
+        for (earlier, count) in &filing.kept_filed {
+            let _ = writeln!(
+                text,
+                "{} stayed under {earlier}, where {} already filed.\n",
+                plural(*count, "workout", "workouts"),
+                either(*count, "it was", "they were")
             );
         }
         if filing.kept_sensed > 0 {
@@ -313,7 +322,7 @@ impl StravaRunSummary {
     #[must_use]
     pub(crate) fn count_keys(&self) -> String {
         format!(
-            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_elsewhere={} names_unfiled={} names_set_aside={} names_created={}",
+            "facet={} records_written={} records_kept={} records_no_facet={} records_refused={} filed={} moved={} kept_sensed={} kept_filed={} kept_unreadable={} names_calls={} names_failed={} names_cached={} names_waiting={} names_elsewhere={} names_unfiled={} names_set_aside={} names_created={}",
             self.facet.facet.as_deref().unwrap_or("none"),
             self.records.written,
             self.records.sensed,
@@ -322,6 +331,7 @@ impl StravaRunSummary {
             self.filing.filed,
             self.filing.moved,
             self.filing.kept_sensed,
+            self.filing.kept_filed.values().sum::<u64>(),
             self.filing.kept_unreadable,
             self.names.calls,
             self.names.failed,
@@ -356,6 +366,7 @@ mod tests {
                 filed: 2,
                 moved: 1,
                 kept_sensed: 1,
+                kept_filed: BTreeMap::new(),
                 kept_unreadable: 1,
                 refiled_tiles: Vec::new(),
             },
@@ -395,12 +406,12 @@ mod tests {
         assert_eq!(facet_paragraphs(&text), 4, "{text}");
         assert_eq!(
             chosen.count_keys(),
-            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_elsewhere=0 names_unfiled=0 names_set_aside=0 names_created=1"
+            "facet=body records_written=2 records_kept=1 records_no_facet=0 records_refused=0 filed=2 moved=1 kept_sensed=1 kept_filed=0 kept_unreadable=1 names_calls=3 names_failed=1 names_cached=4 names_waiting=2 names_elsewhere=0 names_unfiled=0 names_set_aside=0 names_created=1"
         );
-        // With no facet, nothing was filed, whatever the counts say.
+        // With no facet, new workouts are unfiled and earlier filings are still disclosed.
         let none = summary(None, FacetBasis::NoDefault).text();
         assert_eq!(none.matches("\n## ").count(), 3, "{none}");
-        assert_eq!(facet_paragraphs(&none), 1, "{none}");
+        assert_eq!(facet_paragraphs(&none), 3, "{none}");
     }
 
     /// The people and gear section's paragraphs for `names`.

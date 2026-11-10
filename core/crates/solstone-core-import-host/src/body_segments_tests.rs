@@ -16,6 +16,10 @@ use super::*;
 
 const SOURCE: &str = r#"sourceName="Synthetic Watch" creationDate="2026-10-10 08:00:00 -0600""#;
 
+#[cfg(feature = "full-tests")]
+#[path = "body_segments_facet_tests.rs"]
+pub(super) mod facet_tests;
+
 fn heart(at: &str, value: &str) -> String {
     format!(
         r#"<Record type="HKQuantityTypeIdentifierHeartRate" {SOURCE} unit="count/min" startDate="{at}" endDate="{at}" value="{value}"/>"#
@@ -2649,6 +2653,19 @@ fn a_resumed_run_counts_again_and_moves_no_more_than_the_owner_was_told() {
     told.stop_at = Some(&stop);
     run_apple_health_segments(root, &told).unwrap_err();
     assert_eq!(records_in(root, "body", "20261010"), 1);
+    let Read::Trusted(prior) = read_state(root, &APPLE) else {
+        panic!("no saved run");
+    };
+    let mut kept = (*prior).clone();
+    keep_half_done_day_filed(root, &APPLE, &mut kept);
+    for window in &kept.pending.as_ref().unwrap().windows {
+        assert!(!window.publish);
+        let counts = window.counts.as_ref().unwrap();
+        assert_eq!(
+            (counts.refiled, counts.published, counts.unchanged),
+            (0, 0, 1)
+        );
+    }
     // Something else lands elsewhere while it's stopped, and the re-run is unattended.
     add_listed_elsewhere(root, "20261001", "later");
     let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
@@ -2659,12 +2676,30 @@ fn a_resumed_run_counts_again_and_moves_no_more_than_the_owner_was_told() {
         "{}",
         outcome.summary
     );
+    assert_ne!(
+        outcome.import_id, prior.import_id,
+        "a lost move bound takes over"
+    );
+    let earlier_summary = fs::read_to_string(
+        root.join("imports")
+            .join(&prior.import_id)
+            .join("summary.md"),
+    )
+    .unwrap();
     assert!(
-        outcome.summary.contains(
+        earlier_summary.contains(
             "the rest of what's already listed stayed where it was: 3 records would have moved in all, and you were told 2."
         ),
         "{}",
-        outcome.summary
+        earlier_summary
+    );
+    let metadata = read_provenance(root, &prior.import_id).unwrap().unwrap();
+    let AttemptRead::Present(facts) = read_attempt_facts(&metadata) else {
+        panic!("no former attempt");
+    };
+    assert_eq!(
+        facts.continued_by.as_deref(),
+        Some(outcome.import_id.as_str())
     );
     // The half-done day was decided with moving on, and still stays where it is.
     let stream = root.join("chronicle/20261011").join(STREAM);
@@ -3275,6 +3310,21 @@ fn listed_windows(root: &Path, import: &str) -> u64 {
         .sum()
 }
 
+fn assert_summary_covers_its_listing(root: &Path, import: &str, summary: &str) -> u64 {
+    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(summary);
+    let refiled = summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"))
+        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert_eq!(
+        written + unchanged + stayed_deleted + unreadable + refiled,
+        listed_windows(root, import),
+        "{import}: {summary}"
+    );
+    refiled
+}
+
 #[test]
 fn a_refused_resumes_half_done_day_still_adds_up_in_the_summary() {
     let journal = journal();
@@ -3290,24 +3340,23 @@ fn a_refused_resumes_half_done_day_still_adds_up_in_the_summary() {
     told.listed = ListedMoves::MoveAtMost(2);
     told.stop_at = Some(&stop);
     run_apple_health_segments(root, &told).unwrap_err();
+    let Read::Trusted(prior) = read_state(root, &APPLE) else {
+        panic!("no saved run");
+    };
     add_listed_elsewhere(root, "20261001", "later");
     let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
     let outcome = run_apple_health_segments(root, &quiet).unwrap();
-    // A refiled window is counted on its own line, so with it the counts cover
-    // every window the import listed.
-    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(&outcome.summary);
-    let refiled = outcome
-        .summary
-        .lines()
-        .find(|line| line.contains("now filed under this facet instead"))
-        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
-        .unwrap_or(0);
-    assert_eq!(
-        written + unchanged + stayed_deleted + unreadable + refiled,
-        listed_windows(root, "20261012_130000"),
-        "{}",
-        outcome.summary
-    );
+    assert_ne!(outcome.import_id, prior.import_id);
+    let previous = fs::read_to_string(
+        root.join("imports")
+            .join(&prior.import_id)
+            .join("summary.md"),
+    )
+    .unwrap();
+    // The bound change takes over. Each attempt answers for its own listing;
+    // only their combined refilings describe the facets now on disk.
+    let refiled = assert_summary_covers_its_listing(root, &prior.import_id, &previous)
+        + assert_summary_covers_its_listing(root, &outcome.import_id, &outcome.summary);
     // What's still under work on the kept day isn't counted as refiled.
     let kept: u64 = fs::read_dir(root.join("chronicle/20261011").join(STREAM))
         .unwrap()
@@ -3318,10 +3367,6 @@ fn a_refused_resumes_half_done_day_still_adds_up_in_the_summary() {
         })
         .count() as u64;
     assert!(kept > 0, "{}", outcome.summary);
-    let refiled_line = outcome
-        .summary
-        .lines()
-        .find(|line| line.contains("now filed under this facet instead"));
     let refiled_windows: u64 = fs::read_dir(root.join("chronicle"))
         .unwrap()
         .flatten()
@@ -3333,13 +3378,7 @@ fn a_refused_resumes_half_done_day_still_adds_up_in_the_summary() {
                 .is_ok_and(|held| held == facet_file_text("body"))
         })
         .count() as u64;
-    match refiled_line {
-        Some(line) => assert!(
-            line.starts_with(&format!("{refiled_windows} part")),
-            "{line} against {refiled_windows}"
-        ),
-        None => assert_eq!(refiled_windows, 0, "{}", outcome.summary),
-    }
+    assert_eq!(refiled, refiled_windows, "{previous}\n{}", outcome.summary);
 }
 
 #[test]
@@ -3373,22 +3412,21 @@ fn a_refused_resume_lowers_refiled_only_for_windows_that_counted() {
     told.listed = ListedMoves::MoveAtMost(2);
     told.stop_at = Some(&stop);
     run_apple_health_segments(root, &told).unwrap_err();
+    let Read::Trusted(prior) = read_state(root, &APPLE) else {
+        panic!("no saved run");
+    };
     add_listed_elsewhere(root, "20261001", "later");
     let quiet = AppleSegmentsRequest::new(&more, "20261012_130000", Some("body"));
     let outcome = run_apple_health_segments(root, &quiet).unwrap();
-    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(&outcome.summary);
-    let refiled = outcome
-        .summary
-        .lines()
-        .find(|line| line.contains("now filed under this facet instead"))
-        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
-        .unwrap_or(0);
-    assert_eq!(
-        written + unchanged + stayed_deleted + unreadable + refiled,
-        listed_windows(root, "20261012_130000"),
-        "{}",
-        outcome.summary
-    );
+    assert_ne!(outcome.import_id, prior.import_id);
+    let previous = fs::read_to_string(
+        root.join("imports")
+            .join(&prior.import_id)
+            .join("summary.md"),
+    )
+    .unwrap();
+    assert_summary_covers_its_listing(root, &prior.import_id, &previous);
+    assert_summary_covers_its_listing(root, &outcome.import_id, &outcome.summary);
 }
 
 // The import page reads an import that left hours as saved once a later Apple

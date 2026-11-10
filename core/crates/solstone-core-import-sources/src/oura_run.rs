@@ -331,7 +331,14 @@ impl Lookup<'_> {
                 continue;
             }
             if owner_deleted(&dir).map_err(io_text)? {
-                index.deleted |= is_body_only_dir(self.source.stream, &dir);
+                let base = solstone_core_format::content::body_records::grid_length(&key);
+                let length = key
+                    .split_once('_')
+                    .and_then(|(_, length)| length.parse::<u64>().ok());
+                let original = base
+                    .zip(length)
+                    .is_some_and(|(base, length)| length <= base + 1);
+                index.deleted |= original && is_body_only_dir(self.source.stream, &dir);
                 continue;
             }
             let rows = match stored_rows(self.journal, self.source, &(day.to_owned(), key.clone()))
@@ -592,7 +599,16 @@ impl Lookup<'_> {
             }
             // Moving into a first window the owner deleted: it stays deleted, and
             // nothing of it is staged anywhere.
-            if self.window_deleted(start, length)? {
+            let logical_first = self.tiling(id, row)?[0].0.clone();
+            let live_sibling = firsts.iter().any(|(day, placed)| {
+                day == &logical_first.0
+                    && solstone_core_format::content::body_records::same_grid(
+                        &placed.key,
+                        &logical_first.1,
+                    )
+                    && solstone_core_format::content::body_records::copy_rank(&placed.key) > 1
+            });
+            if !live_sibling && self.window_deleted(start, length)? {
                 return Ok(Verdict::StayedDeleted);
             }
         }
@@ -610,15 +626,30 @@ impl Lookup<'_> {
             return Ok(Verdict::Stage(None));
         }
         let tiling = self.tiling(id, row)?;
-        let resolve = |(day, key): &WindowId| {
+        let resolve = |(day, key): &WindowId, row_id: &str| {
             (
                 day.clone(),
-                resolve_key(self.journal, self.source, day, key),
+                live.iter()
+                    .filter(|((old_day, old_key), id)| {
+                        old_day == day
+                            && id == row_id
+                            && solstone_core_format::content::body_records::same_grid(old_key, key)
+                    })
+                    .min_by_key(|((_, key), _)| {
+                        (
+                            solstone_core_format::content::body_records::copy_rank(key),
+                            key,
+                        )
+                    })
+                    .map_or_else(
+                        || resolve_key(self.journal, self.source, day, key),
+                        |((_, key), _)| key.clone(),
+                    ),
             )
         };
         let tiled: BTreeSet<(WindowId, String)> = tiling
             .iter()
-            .map(|(window, tile)| (resolve(window), tile.clone()))
+            .map(|(window, tile)| (resolve(window, tile), tile.clone()))
             .collect();
         // The trigger is the difference: a move, a changed span, or tiles named by
         // an older scheme.
@@ -627,7 +658,7 @@ impl Lookup<'_> {
             return Ok(Verdict::Stage(None));
         }
         let first = tiling[0].0.clone();
-        let placed_first = resolve(&first);
+        let placed_first = resolve(&first, id);
         let now = instants(row.start.as_deref(), row.end.as_deref());
         // A revision Oura made, rather than a copy left by a stopped run or tiles
         // named by an older scheme: no first row is already where and when it is.
@@ -644,7 +675,13 @@ impl Lookup<'_> {
                     .into_iter()
                     .map(|(day, placed)| (day, placed.key))
                     .collect(),
-                first,
+                first: if solstone_core_format::content::body_records::copy_rank(&placed_first.1)
+                    > 1
+                {
+                    placed_first
+                } else {
+                    first
+                },
                 revised,
                 holes: holes_of([row], HoleReason::Converging),
             },
@@ -697,6 +734,9 @@ pub fn converging_dropped(
         }
     }
     let (day, key) = &converging.first;
+    if solstone_core_format::content::body_records::copy_rank(key) > 1 {
+        return deleted(day, key);
+    }
     let beside = key
         .split_once('_')
         .and_then(|(clock, length)| Some(format!("{clock}_{}", length.parse::<u64>().ok()? + 1)));

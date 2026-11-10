@@ -35,7 +35,7 @@ use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
 use solstone_core_import::metadata::{
     AttemptRead, AttemptState, hold_import_lock, read_attempt_facts, read_provenance,
-    record_unconfirmed_attempt_unlocked,
+    record_continued_attempt_unlocked, record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::oura_http::OuraHttp;
 use solstone_core_import::publish::{
@@ -45,12 +45,13 @@ use solstone_core_import::publish::{
 };
 use solstone_core_import::text::TextCreated;
 use solstone_core_import_sources::apple_health::{
-    DayRows, Decision, SummaryCounts, WindowId, decide, facet_file_text, read_or_create_zone,
-    settle_readings_noting, stored_windows_of_day, stream_days, summary_text,
+    DayRows, Decision, SummaryCounts, WindowId, decide_filing, facet_file_text,
+    read_or_create_zone, settle_readings_noting, stored_windows_of_day, stream_days, summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
     DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan, sync_folder,
 };
+use solstone_core_import_sources::body_placement::{DayPlacement, FiledDay};
 use solstone_core_import_sources::body_stream::{APPLE, BodySource, OURA};
 use solstone_core_import_sources::oura::{Hole, HoleReason, holes_of};
 use solstone_core_import_sources::oura_run::{
@@ -353,6 +354,12 @@ struct Totals {
     held_back: u64,
     unreadable: u64,
     kept_facet: u64,
+    #[serde(default)]
+    split_rows: u64,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    split_source_ids: BTreeSet<String>,
+    #[serde(default)]
+    retained_revisions: BTreeMap<String, u64>,
     refiled: u64,
     published: u64,
     entries: u64,
@@ -389,6 +396,16 @@ impl Totals {
         self.held_back += other.held_back;
         self.unreadable += other.unreadable;
         self.kept_facet += other.kept_facet;
+        self.split_rows += other.split_rows.saturating_sub(
+            self.split_source_ids
+                .intersection(&other.split_source_ids)
+                .count() as u64,
+        );
+        self.split_source_ids
+            .extend(other.split_source_ids.iter().cloned());
+        for (facet, count) in &other.retained_revisions {
+            *self.retained_revisions.entry(facet.clone()).or_default() += count;
+        }
         self.refiled += other.refiled;
         self.published += other.published;
         self.activities += other.activities;
@@ -414,6 +431,9 @@ struct PendingWindow {
     /// the run it took over got that far.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     written_sha: Option<String>,
+    /// A first-pass write before the old first row becomes a moved mark.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    first_sha: Option<String>,
     /// How many entries the file will hold.
     #[serde(default)]
     units: u64,
@@ -427,12 +447,25 @@ struct PendingWindow {
     /// holds had where it was before it moved here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     taken: Option<String>,
+    /// Exact assignment selected for this physical destination.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    filing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    counts: Option<Totals>,
+    /// Incoming live identities assigned to this physical key before any write.
+    #[serde(default)]
+    row_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    row_runs: BTreeMap<String, String>,
 }
 
 /// The day being written: its decisions, made before any of its files.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct Pending {
     day: String,
+    /// Physical destinations and their exact filings were selected by the day placer.
+    #[serde(default)]
+    filing_plan: bool,
     windows: Vec<PendingWindow>,
     counts: Totals,
     /// Per window: key, rows new, updated and unchanged.
@@ -866,8 +899,8 @@ impl Run<'_, '_> {
     }
 
     /// Give windows their facet, the run's or one a moved document takes with it,
-    /// where they hold records: a folder holding only a facet would stop being
-    /// body-only.
+    /// where they hold records or an earlier assignment. A new folder gets no
+    /// facet before its records: that would stop it being body-only.
     fn write_facets(
         &self,
         day: &str,
@@ -875,6 +908,22 @@ impl Run<'_, '_> {
         facet: Option<&str>,
     ) -> Result<(), String> {
         for window in windows {
+            if let Some(filing) = &window.filing {
+                let dir = window_dir(
+                    self.journal,
+                    self.source,
+                    &(day.to_owned(), window.key.clone()),
+                );
+                let path = dir.join("talents/facets.json");
+                if dir.join(BODY_RECORDS_FILE).is_file() || path.is_file() {
+                    fs::create_dir_all(path.parent().expect("facets file has a parent"))
+                        .map_err(|error| error.to_string())?;
+                    atomic_replace(&path, filing.as_bytes(), PRIVATE)
+                        .map_err(|error| error.to_string())?;
+                    sync_folder(&dir)?;
+                }
+                continue;
+            }
             let chosen = facet.filter(|_| window.facet);
             let Some(facet) = chosen.or(window.taken.as_deref()) else {
                 continue;
@@ -915,6 +964,17 @@ impl Run<'_, '_> {
     ) -> Result<(), Stop> {
         let facet = self.request.facet;
         let redo = state.pending.take().filter(|pending| pending.day == day);
+        let filed = if let Some(pending) = &redo {
+            replay_filing(pending, windows)
+        } else {
+            DayPlacement::load(self.journal, self.source, &day)?.file_for_import(
+                windows,
+                facet,
+                state.move_listed,
+                Some(&self.import_id),
+            )?
+        };
+        let windows = filed.windows;
         // Before any of the day's files: a document moving from or into a window
         // the owner has deleted since the scan is dropped, here and on every later
         // day. A redone day keeps what was decided.
@@ -949,13 +1009,51 @@ impl Run<'_, '_> {
         let mut early: BTreeMap<WindowId, Decision> = BTreeMap::new();
         let mut unfinished = BTreeSet::new();
         let mut taken: BTreeMap<WindowId, String> = BTreeMap::new();
+        let mut planned_rows = BTreeMap::new();
+        let mut planned_sources = BTreeMap::new();
+        let mut planned_runs = BTreeMap::new();
         for (window, mut rows) in windows {
+            let filing = filed.filings.get(&window.1).map(String::as_str);
+            if let Some(filing) = filing.filter(|_| !state.move_listed) {
+                let dir = window_dir(self.journal, self.source, &window);
+                if fs::read_to_string(dir.join("talents/facets.json"))
+                    .is_ok_and(|held| held != filing)
+                {
+                    return Err(Stop::Failed("a part of your journal is now filed elsewhere. the entries waiting to be saved were left unwritten.".to_owned()));
+                }
+            }
             if !dropped.is_empty() {
                 rows.retain(|_, row| document(row).is_none_or(|id| !dropped.contains(id.as_str())));
                 if rows.is_empty() {
                     continue;
                 }
             }
+            planned_rows.insert(
+                window.clone(),
+                rows.values()
+                    .filter(|row| row.kind != RowKind::Moved)
+                    .map(|row| row.id.clone())
+                    .collect::<Vec<_>>(),
+            );
+            planned_sources.insert(
+                window.clone(),
+                rows.values()
+                    .filter(|row| row.kind != RowKind::Moved)
+                    .map(|row| {
+                        if row.kind == RowKind::ExperienceTile {
+                            row.of.clone().unwrap_or_else(|| row.id.clone())
+                        } else {
+                            row.id.clone()
+                        }
+                    })
+                    .collect::<BTreeSet<_>>(),
+            );
+            planned_runs.insert(
+                window.clone(),
+                rows.values()
+                    .filter_map(|row| row.run.as_ref().map(|run| (row.id.clone(), run.clone())))
+                    .collect::<BTreeMap<_, _>>(),
+            );
             // A window left alone as unreadable is a hole for what its rows say.
             let unwritten = holes_of(rows.values(), HoleReason::Unreadable);
             let touched: BTreeSet<String> = rows.values().filter_map(document).collect();
@@ -984,24 +1082,24 @@ impl Run<'_, '_> {
                     .map(|(id, row)| (id.clone(), row.clone()))
                     .collect();
                 if !before.is_empty() {
-                    let decision = decide(
+                    let decision = decide_filing(
                         self.journal,
                         self.source,
                         &window,
                         before,
-                        facet,
+                        filing,
                         state.move_listed,
                         Some(&self.import_id),
                     )?;
                     early.insert(window.clone(), decision);
                 }
             }
-            let decision = decide(
+            let decision = decide_filing(
                 self.journal,
                 self.source,
                 &window,
                 rows,
-                facet,
+                filing,
                 state.move_listed,
                 Some(&self.import_id),
             )?;
@@ -1032,20 +1130,37 @@ impl Run<'_, '_> {
                     if decision.stayed_deleted || decision.unreadable {
                         continue;
                     }
+                    let mut window_counts = Totals::default();
                     let taken = taken.remove(window);
-                    counts.took_facet += u64::from(taken.is_some());
+                    window_counts.took_facet = u64::from(taken.is_some());
                     // Search reclassifies a window that takes a facet.
                     let publish = decision.publish || taken.is_some();
-                    counts.kept_facet += u64::from(decision.kept_facet);
-                    counts.refiled += u64::from(decision.refiled);
-                    counts.unchanged += u64::from(!publish);
+                    window_counts.kept_facet = u64::from(facet.is_none() && decision.kept_facet);
                     if decision.contents.is_some() {
-                        counts.written += 1;
-                        counts.entries += decision.units;
+                        if let Some(ids) = filed.split_rows.get(&window.1) {
+                            window_counts.split_source_ids = ids
+                                .intersection(&planned_sources[window])
+                                .cloned()
+                                .collect();
+                            window_counts.split_rows = window_counts.split_source_ids.len() as u64;
+                        }
+                        for (filing, ids) in filed.revisions.get(&window.1).into_iter().flatten() {
+                            *window_counts
+                                .retained_revisions
+                                .entry(filing.clone())
+                                .or_default() +=
+                                ids.intersection(&planned_sources[window]).count() as u64;
+                        }
+                    }
+                    window_counts.refiled = u64::from(decision.refiled);
+                    window_counts.unchanged = u64::from(!publish);
+                    if decision.contents.is_some() {
+                        window_counts.written = 1;
+                        window_counts.entries = decision.units;
                     }
                     if publish {
-                        counts.published += 1;
-                        counts.days.insert(day.clone());
+                        window_counts.published = 1;
+                        window_counts.days.insert(day.clone());
                     }
                     listing.push((
                         window.1.clone(),
@@ -1060,15 +1175,27 @@ impl Run<'_, '_> {
                         key: window.1.clone(),
                         write: decision.contents.is_some(),
                         written_sha: decision.contents.as_deref().map(text_sha),
+                        first_sha: early
+                            .get(window)
+                            .and_then(|decision| decision.contents.as_deref())
+                            .map(text_sha),
                         units: decision.units,
-                        facet: decision.facet_changed,
+                        facet: false,
                         refiled: Some(decision.refiled),
                         publish,
                         taken,
+                        filing: decision
+                            .facet_changed
+                            .then(|| filed.filings[&window.1].clone()),
+                        counts: Some(window_counts.clone()),
+                        row_ids: planned_rows.remove(window).unwrap_or_default(),
+                        row_runs: planned_runs.remove(window).unwrap_or_default(),
                     });
+                    counts.add(&window_counts);
                 }
                 Pending {
                     day: day.clone(),
+                    filing_plan: true,
                     windows: recorded,
                     counts,
                     listing,
@@ -1260,6 +1387,70 @@ impl Run<'_, '_> {
     }
 }
 
+/// Replay the saved physical plan, rather than allocating again against a
+/// partly written day. Marks keep the exact former physical key they replace.
+fn replay_filing(pending: &Pending, windows: DayRows) -> FiledDay {
+    let destinations: BTreeMap<&str, &str> = pending
+        .windows
+        .iter()
+        .flat_map(|window| {
+            window
+                .row_ids
+                .iter()
+                .map(|id| (id.as_str(), window.key.as_str()))
+        })
+        .collect();
+    let planned_keys: BTreeSet<&str> = pending
+        .windows
+        .iter()
+        .map(|window| window.key.as_str())
+        .collect();
+    let mut filed = FiledDay::default();
+    let mut placed: BTreeMap<WindowId, BTreeMap<String, BodyRow>> = BTreeMap::new();
+    for ((day, key), rows) in windows {
+        for (id, mut row) in rows {
+            let target = if row.kind == RowKind::Moved {
+                if !planned_keys.contains(key.as_str()) {
+                    continue;
+                }
+                key.as_str()
+            } else {
+                // A window refused as unreadable or deleted was not planned.
+                // Its later repair cannot turn this replay into an unfiled
+                // write; the next fresh import decides it against that repair.
+                let Some(target) = destinations.get(id.as_str()).copied() else {
+                    continue;
+                };
+                target
+            };
+            let target_rows = placed.entry((day.clone(), target.to_owned())).or_default();
+            if let Some(run) = pending
+                .windows
+                .iter()
+                .find(|window| window.key == target)
+                .and_then(|window| window.row_runs.get(&id))
+            {
+                row.run = Some(run.clone());
+            }
+            if row.kind != RowKind::Moved || !target_rows.contains_key(&id) {
+                target_rows.insert(id, row);
+            }
+        }
+    }
+    filed.windows = placed.into_iter().collect();
+    filed.filings = pending
+        .windows
+        .iter()
+        .filter_map(|window| {
+            window
+                .filing
+                .as_ref()
+                .map(|filing| (window.key.clone(), filing.clone()))
+        })
+        .collect();
+    filed
+}
+
 /// A day as a person reads a date.
 fn readable_day(day: &str) -> String {
     match (day.get(..4), day.get(4..6), day.get(6..8)) {
@@ -1449,6 +1640,8 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         joined_hidden: state.totals.joined_hidden,
         earlier_waiting: 0,
         kept_facet: state.totals.kept_facet,
+        split_rows: state.totals.split_rows,
+        retained_revisions: state.totals.retained_revisions.clone(),
         refiled: state.totals.refiled,
         activities: state.totals.activities,
         activities_no_facet: state.totals.activities_no_facet,
@@ -1501,7 +1694,13 @@ fn summary_of(state: &RunState) -> SummaryCounts {
 }
 
 /// Close an earlier import whose run another export replaced, as unconfirmed.
-fn close_superseded(journal: &Path, source: &BodySource, state: &RunState, zone: chrono_tz::Tz) {
+fn close_superseded(
+    journal: &Path,
+    source: &BodySource,
+    state: &RunState,
+    zone: chrono_tz::Tz,
+    successor: Option<&str>,
+) {
     let Ok(_lock) = hold_import_lock(journal, &state.import_id) else {
         return;
     };
@@ -1528,7 +1727,21 @@ fn close_superseded(journal: &Path, source: &BodySource, state: &RunState, zone:
             .as_bytes(),
         PRIVATE,
     );
-    close_attempt_unlocked(journal, &state.import_id);
+    if let Some(successor) = successor {
+        if let Ok(Some(metadata)) = read_provenance(journal, &state.import_id)
+            && let AttemptRead::Present(facts) = read_attempt_facts(&metadata)
+        {
+            let _ = record_continued_attempt_unlocked(
+                journal,
+                &state.import_id,
+                facts.generation,
+                now_ms(),
+                successor,
+            );
+        }
+    } else {
+        close_attempt_unlocked(journal, &state.import_id);
+    }
 }
 
 /// An earlier run's import still reading as running, when this run is taking over
@@ -1634,17 +1847,30 @@ fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut Run
     let target = facet_file_text(&facet);
     let day = pending.day.clone();
     let mut kept = 0;
-    for window in pending.windows.iter_mut().filter(|window| window.facet) {
+    for window in pending
+        .windows
+        .iter_mut()
+        .filter(|window| window.facet || window.filing.is_some())
+    {
         let dir = window_dir(journal, source, &(day.clone(), window.key.clone()));
         if !fs::read_to_string(dir.join("talents/facets.json")).is_ok_and(|held| held != target) {
             continue;
         }
         window.facet = false;
-        if window.refiled != Some(false) {
+        window.filing = None;
+        if window
+            .counts
+            .as_ref()
+            .map_or(window.refiled != Some(false), |counts| counts.refiled > 0)
+        {
             kept += 1;
         }
-        // Its facet was the only reason to publish it: its rows are unchanged
-        // and it's already bound, so the summary counts it unchanged.
+        window.refiled = Some(false);
+        if let Some(counts) = &mut window.counts {
+            counts.refiled = 0;
+        }
+        // Its facet was the only reason to publish it; keep per-window and
+        // day counts aligned when takeover later sums reached windows.
         if window.publish
             && !window.write
             && window.taken.is_none()
@@ -1653,6 +1879,11 @@ fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut Run
             window.publish = false;
             pending.counts.published = pending.counts.published.saturating_sub(1);
             pending.counts.unchanged += 1;
+            if let Some(counts) = &mut window.counts {
+                counts.published = 0;
+                counts.unchanged = 1;
+                counts.days.clear();
+            }
         }
     }
     pending.counts.refiled = pending.counts.refiled.saturating_sub(kept);
@@ -1672,7 +1903,28 @@ fn summary_counts(journal: &Path, state: &RunState) -> SummaryCounts {
     };
     counts.listed_moved_from = titles(&counts.listed_moved_from);
     counts.activities_refused = titles(&counts.activities_refused);
+    let mut revisions = BTreeMap::new();
+    for (filing, count) in counts.retained_revisions {
+        *revisions.entry(filing_words(journal, &filing)).or_default() += count;
+    }
+    counts.retained_revisions = revisions;
     counts
+}
+
+pub(crate) fn filing_words(journal: &Path, filing: &str) -> String {
+    let facets = serde_json::from_str::<serde_json::Value>(filing)
+        .ok()
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| item.get("facet").and_then(serde_json::Value::as_str))
+        .map(|facet| crate::strava_convert::facet_title(journal, facet))
+        .collect::<Vec<_>>();
+    if facets.is_empty() {
+        "no facet".to_owned()
+    } else {
+        solstone_core_import_sources::apple_health::facets_words(&facets)
+    }
 }
 
 fn owner_day(day: &str) -> String {
@@ -1707,7 +1959,10 @@ fn reached_windows(journal: &Path, source: &BodySource, pending: &Pending) -> BT
             (Some(sha), true) => {
                 let id = (pending.day.clone(), window.key.clone());
                 fs::read_to_string(window_dir(journal, source, &id).join(BODY_RECORDS_FILE))
-                    .is_ok_and(|text| text_sha(&text) == *sha)
+                    .is_ok_and(|text| {
+                        let actual = text_sha(&text);
+                        actual == *sha || window.first_sha.as_deref() == Some(actual.as_str())
+                    })
             }
             _ => true,
         })
@@ -1944,12 +2199,24 @@ fn run_segments_bound(
 
     // The run state is read before any binding, so the same export resumes under
     // the import it began as, whatever timestamp this request carries.
-    let previous = read_state(journal, source);
+    let mut previous = read_state(journal, source);
+    let replan = if let Read::Trusted(state) = &mut previous {
+        let allowed = state.move_listed;
+        recount_listed(journal, source, state);
+        (allowed && !state.move_listed)
+            || state
+                .pending
+                .as_ref()
+                .is_some_and(|pending| !pending.filing_plan)
+    } else {
+        false
+    };
     let resumable = match &previous {
         // A page start never carries on another import: it takes over.
         _ if request.exact_import.is_some() => None,
         Read::Trusted(state)
-            if state.facet.as_deref() == request.facet
+            if !replan
+                && state.facet.as_deref() == request.facet
                 && matches!(
                     state.phase,
                     Phase::Fetch | Phase::Scan | Phase::Place | Phase::Write
@@ -2049,7 +2316,14 @@ fn run_segments_bound(
         )
     };
     let resume = resumable.is_some();
-    let outcome = run_phases(&run, previous, resume, (&source_hash, &export_hash), zone);
+    let outcome = run_phases(
+        &run,
+        previous,
+        resume,
+        replan,
+        (&source_hash, &export_hash),
+        zone,
+    );
     match outcome {
         Ok(outcome) => Ok(outcome),
         Err(Stop::Injected(point)) => {
@@ -2109,6 +2383,7 @@ fn run_phases(
     run: &Run<'_, '_>,
     previous: Read,
     resume: bool,
+    replan: bool,
     (source_hash, export_hash): (&str, &str),
     zone: chrono_tz::Tz,
 ) -> Result<RunOutcome, Stop> {
@@ -2160,9 +2435,49 @@ fn run_phases(
             // Its half-done day's windows are on disk as far as they got; what it
             // owed them is publication, which is all this does.
             if let Some(mut pending) = old.pending.take() {
-                run.write_facets(&pending.day, &pending.windows, old.facet.as_deref())?;
-                let windows: Vec<WindowId> = pending
+                // Only actual writes may be finalized under the former run.
+                // An unreached old decision may need a different physical key
+                // now, particularly after a move answer loses its bound.
+                let reached = reached_windows(journal, source, &pending);
+                let reached_windows = pending
                     .windows
+                    .iter()
+                    .filter(|window| reached.contains(&window.key))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !pending.filing_plan
+                    && let Some(facet) = old.facet.as_deref()
+                {
+                    let wanted = facet_file_text(facet);
+                    for window in &reached_windows {
+                        let dir =
+                            window_dir(journal, source, &(pending.day.clone(), window.key.clone()));
+                        let filing =
+                            fs::read_to_string(dir.join("talents/facets.json")).unwrap_or_default();
+                        if filing != wanted {
+                            let count = fs::read_to_string(dir.join(BODY_RECORDS_FILE))
+                                .ok()
+                                .and_then(|text| decode_rows(&text).ok())
+                                .unwrap_or_default()
+                                .iter()
+                                .filter(|row| {
+                                    row.kind != RowKind::Moved
+                                        && row.run.as_deref() == Some(old.import_id.as_str())
+                                })
+                                .count();
+                            if count > 0 {
+                                let (subject, remain) = if count == 1 {
+                                    ("1 entry was".to_owned(), "it remains")
+                                } else {
+                                    (format!("{count} entries were"), "they remain")
+                                };
+                                old.notes.push(format!("{subject} saved under {} by this earlier attempt; {remain} there.", filing_words(journal, &filing)));
+                            }
+                        }
+                    }
+                }
+                run.write_facets(&pending.day, &reached_windows, old.facet.as_deref())?;
+                let windows: Vec<WindowId> = reached_windows
                     .iter()
                     .filter(|window| window.publish)
                     .map(|window| (pending.day.clone(), window.key.clone()))
@@ -2172,17 +2487,50 @@ fn run_phases(
                 sync_day_folders(journal, source, &pending.day)?;
                 // That day's rows name the old import, so its listing has to, for the
                 // windows it got to and no others.
-                let reached = reached_windows(journal, source, &pending);
                 pending.listing.retain(|(key, ..)| reached.contains(key));
-                for window in pending
-                    .windows
-                    .iter()
-                    .filter(|w| w.write && !reached.contains(&w.key))
-                {
-                    pending.counts.written = pending.counts.written.saturating_sub(1);
-                    pending.counts.entries = pending.counts.entries.saturating_sub(window.units);
+                if pending.filing_plan {
+                    let mut counts = Totals {
+                        held_back: pending.counts.held_back,
+                        stayed_deleted: pending.counts.stayed_deleted,
+                        unreadable: pending.counts.unreadable,
+                        ..Totals::default()
+                    };
+                    for window in &reached_windows {
+                        if let Some(window_counts) = &window.counts {
+                            counts.add(window_counts);
+                        }
+                    }
+                    pending.counts = counts;
+                } else {
+                    for window in pending.windows.iter().filter(|w| !reached.contains(&w.key)) {
+                        if window.write {
+                            pending.counts.written = pending.counts.written.saturating_sub(1);
+                            pending.counts.entries =
+                                pending.counts.entries.saturating_sub(window.units);
+                        }
+                        pending.counts.published = pending
+                            .counts
+                            .published
+                            .saturating_sub(u64::from(window.publish));
+                    }
+                    if pending.counts.published == 0 {
+                        pending.counts.days.clear();
+                    }
                 }
-                pending.moved.retain(|(key, _)| reached.contains(key));
+                pending.moved.retain(|(key, _)| {
+                    pending
+                        .windows
+                        .iter()
+                        .find(|window| &window.key == key)
+                        .and_then(|window| window.written_sha.as_ref())
+                        .is_some_and(|sha| {
+                            fs::read_to_string(
+                                window_dir(journal, source, &(pending.day.clone(), key.clone()))
+                                    .join(BODY_RECORDS_FILE),
+                            )
+                            .is_ok_and(|text| text_sha(&text) == *sha)
+                        })
+                });
                 let import = journal.join("imports").join(&old.import_id);
                 if import.is_dir() {
                     if !pending.listing.is_empty() {
@@ -2204,7 +2552,17 @@ fn run_phases(
             }
             run.retry_failed(&mut old.failed)?;
             if old.phase != Phase::Retry && old.import_id != run.import_id {
-                close_superseded(journal, source, &old, zone);
+                let continued = replan
+                    && old.facet.as_deref() == request.facet
+                    && old.source_hash == source_hash
+                    && old.export_hash == export_hash;
+                close_superseded(
+                    journal,
+                    source,
+                    &old,
+                    zone,
+                    continued.then_some(run.import_id.as_str()),
+                );
             }
             fresh(std::mem::take(&mut old.failed), Vec::new(), holes)
         }

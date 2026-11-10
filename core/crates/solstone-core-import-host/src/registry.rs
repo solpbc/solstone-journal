@@ -1670,6 +1670,12 @@ fn run_strava_internal(
         written_keys.contains(&key) && !skipped_keys.contains(&key)
     };
     let live = crate::strava_filing::live_tiles(journal, &placement, &is_written);
+    if let Err(error) = crate::strava_filing::validate_assignments(journal, &live) {
+        let _ = finish(ImportTerminalInput::Failed(&publish_slice));
+        return failure(format!(
+            "{name} import failed: the workouts couldn't be filed: {error}\n"
+        ));
+    }
     // Records an earlier reading filed become code records first, and every
     // record of a workout in the download goes where its workout now is. Only
     // the owner's answer for this import moves one to another facet.
@@ -1700,32 +1706,25 @@ fn run_strava_internal(
         chrono::Utc::now(),
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
-    // Counted from where the records are now: a group that waited didn't move.
-    let listed_moved = owner_chose.and_then(|facet| {
-        crate::strava_convert::listed_moved_now(journal, &would_move, facet, &held_back)
-    });
     conversion.moves_open = solstone_core_facets::open_body_moves(journal)
         .map_or(1, |open| u64::try_from(open.len()).unwrap_or(u64::MAX));
     let mut list_refiles = |tiles: &[(String, String)]| {
         solstone_core_import::strava_refile::add_strava_refiles(journal, tiles, &_source_lock)
     };
-    let filing = match run_facet.facet.as_deref() {
-        Some(facet) => match crate::strava_filing::file_strava_workouts(
-            journal,
-            &live,
-            facet,
-            owner_chose.is_some(),
-            &mut list_refiles,
-        ) {
-            Ok(filing) => filing,
-            Err(error) => {
-                let _ = finish(ImportTerminalInput::Failed(&publish_slice));
-                return failure(format!(
-                    "{name} import failed: the workouts couldn't be filed under {facet}: {error}\n"
-                ));
-            }
-        },
-        None => crate::strava_filing::Filing::default(),
+    let filing = match crate::strava_filing::file_strava_workouts(
+        journal,
+        &live,
+        run_facet.facet.as_deref(),
+        owner_chose.is_some(),
+        &mut list_refiles,
+    ) {
+        Ok(filing) => filing,
+        Err(error) => {
+            let _ = finish(ImportTerminalInput::Failed(&publish_slice));
+            return failure(format!(
+                "{name} import failed: the workouts couldn't be filed: {error}\n"
+            ));
+        }
     };
     // Tiles an earlier run refiled but was stopped before publishing, while
     // they're still live.
@@ -1869,6 +1868,9 @@ fn run_strava_internal(
 
     // 16. The people and gear in the workouts' own words, once the Strava lock
     // is released: model calls hold no lock, and each store write takes it.
+    let listed_moved = owner_chose.and_then(|facet| {
+        crate::strava_convert::listed_moved_now(journal, &would_move, facet, &held_back)
+    });
     drop(_source_lock);
     #[cfg(test)]
     let names = crate::strava_names::record_strava_names(

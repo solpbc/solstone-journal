@@ -62,6 +62,7 @@ tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 ureq = { workspace = true, features = ["rustls"] }
 
 [dev-dependencies]
+solstone-core-mcp-endpoint.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 solstone-core-import-web.workspace = true
