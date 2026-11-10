@@ -99,6 +99,12 @@ licence/notice files and indexed notice texts must all remain identical,
 and rendering the NOTICES must reproduce its bytes. No closure promotion or
 removal, git pin move, or other external addition/removal may accompany it.
 Changed texts or expressions still require acquisition and licence review.
+An upgrade that removes notice-bearing source files may name each reviewed
+member with `--admit-removed-notice-source NAME@VERSION:MEMBER`, using the new
+version. The member must be indexed in the prior acquired source and absent
+from the new crate, and none of its indexed texts may survive elsewhere in
+that crate. Retained licence texts, headers and copyright statements remain
+checked. Only texts left unreferenced by every noticed package leave NOTICES.
 
 The same shapes may come with a **new workspace crate**, such as a new Windows
 inventory binary root. It is admitted only when `core/Cargo.toml` declares it
@@ -126,8 +132,8 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
   * a workspace member changed by more than its own version or its
     dependency edges to existing, unchanged packages, or a workspace crate was
     added that `core/Cargo.toml` does not declare.
-  * a re-vendored package's licence text changed. Outside the named additions
-    and named text removals above, the notices file is an input here, not an
+  * a re-vendored package's licence text changed. Outside the named additions,
+    text removals and reviewed absent notice sources above, the notices file is an input here, not an
     output; a changed licence needs the notices regenerated, which this script
     deliberately does not do.
   * a git pin move removed vendored files (other than the members of registry
@@ -153,6 +159,7 @@ Usage:
         [--admit-closure-addition NAME@VERSION ...] \\
         [--admit-closure-removal NAME@VERSION ...] \\
         [--admit-notice-text-removal SHA256 ...] \\
+        [--admit-removed-notice-source NAME@VERSION:MEMBER ...] \\
         [--out /path/to/output/dir]
 """
 
@@ -1653,6 +1660,7 @@ def acquire_registry_upgrade(row: dict[str, Any], vendor: Path, fetch: Any = htt
 def source_header_references(
     old_row: dict[str, Any], old_files: dict[str, bytes], new_files: dict[str, bytes],
     new_lock_row: dict[str, Any],
+    check_copyrights: bool = False,
 ) -> list[dict[str, Any]]:
     """Carry each indexed source-file header across an upgrade whose bytes did not move.
 
@@ -1662,7 +1670,7 @@ def source_header_references(
     changed a copyright statement, so nothing new needs a notice.
     """
     headers = [ref for ref in old_row["notice_references"] if "byte_end_exclusive" in ref]
-    if not headers:
+    if not headers and not check_copyrights:
         return []
     identity = old_row["identity"]
 
@@ -1698,12 +1706,36 @@ def source_header_references(
     return carried
 
 
+def reviewed_notice_source_removal(
+    row: dict[str, Any], old_files: dict[str, bytes], new_files: dict[str, bytes],
+    removed: frozenset[str],
+) -> dict[str, Any]:
+    """Drop only reviewed, acquired sources whose indexed texts are absent."""
+    references = row["notice_references"]
+    for member in sorted(removed):
+        selected = [ref for ref in references if ref["source"]["member"] == member]
+        if not selected or member not in old_files or member in new_files:
+            raise RefreshError(f"removed notice source must be indexed and absent: {member}")
+        raw = old_files[member]
+        for ref in selected:
+            data = raw[ref.get("byte_start_inclusive", 0):ref.get("byte_end_exclusive", len(raw))]
+            if (not data or len(data) != ref["bytes"] or sha256_bytes(data) != ref["sha256"]
+                    or ("source_sha256" in ref and sha256_bytes(raw) != ref["source_sha256"])):
+                raise RefreshError(f"removed notice source fails prior indexed span: {member}")
+            if any(data in content for content in new_files.values()):
+                raise RefreshError(f"removed notice text survives in the new crate: {member}")
+    return {**row, "notice_references": [
+        ref for ref in references if ref["source"]["member"] not in removed
+    ]}
+
+
 def upgraded_package_rows(
     prior: Path, index: dict[str, Any],
     upgrades: list[tuple[dict[str, Any], dict[str, Any]]],
     fetch: Any = http_fetch,
+    notice_source_removals: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
-    """Replace sources only after proving the expression and all licence texts identical."""
+    """Keep licence texts identical except explicitly reviewed absent sources."""
     rows, members = [], {}
     with tempfile.TemporaryDirectory(prefix="windows-rust-upgrade-") as scratch, tarfile.open(prior) as archive:
         vendor = Path(scratch)
@@ -1736,6 +1768,11 @@ def upgraded_package_rows(
                 require_permissive_additions(metadata, [right])
             new_files = {p.relative_to(directory).as_posix(): p.read_bytes()
                          for p in directory.rglob("*") if p.is_file()}
+            removed_sources = frozenset(
+                member for name, version, member in notice_source_removals
+                if (name, version) == (right["name"], right["version"])
+            )
+            old_row = reviewed_notice_source_removal(old_row, old_files, new_files, removed_sources)
 
             def licence_files(files: dict[str, bytes], package: dict[str, Any]) -> dict[str, bytes]:
                 selected = {name: data for name, data in files.items()
@@ -1747,7 +1784,8 @@ def upgraded_package_rows(
                     selected[declared] = files[declared]
                 return selected
 
-            if licence_files(old_files, old_manifest) != licence_files(new_files, manifest):
+            retained_files = {name: data for name, data in old_files.items() if name not in removed_sources}
+            if licence_files(retained_files, old_manifest) != licence_files(new_files, manifest):
                 raise RefreshError(f"upgraded package licence/notice texts changed: {identity}")
             generated, acquired, _texts = added_package_rows(
                 [right], {(right["name"], right["version"]): manifest}, vendor,
@@ -1756,7 +1794,15 @@ def upgraded_package_rows(
             )
             row = generated[0]
             row["notice_references"] = sorted(
-                row["notice_references"] + source_header_references(old_row, old_files, new_files, right),
+                row["notice_references"] + source_header_references(
+                    old_row,
+                    # Deleted unindexed sources carry no retained attribution;
+                    # check every surviving and newly introduced source even
+                    # when the review removed the last indexed header.
+                    {name: data for name, data in retained_files.items() if name in new_files}
+                    if removed_sources else old_files,
+                    new_files, right, check_copyrights=bool(removed_sources),
+                ),
                 key=lambda reference: reference["source"]["member"],
             )
             def references(package: dict[str, Any]) -> list[tuple[str, str, int]]:
@@ -1935,6 +1981,18 @@ def parse_text_removals(values: list[str]) -> frozenset[str]:
     return frozenset(values)
 
 
+def parse_notice_source_removals(values: list[str]) -> frozenset[tuple[str, str, str]]:
+    result = set()
+    for value in values:
+        identity, separator, member = value.partition(":")
+        if (not separator or not member or Path(member).is_absolute()
+                or ".." in Path(member).parts or member != Path(member).as_posix()):
+            raise SystemExit(f"--admit-removed-notice-source takes NAME@VERSION:MEMBER, not {value!r}")
+        name, version = next(iter(parse_admissions([identity])))
+        result.add((name, version, member))
+    return frozenset(result)
+
+
 def parse_admissions(values: list[str]) -> frozenset[tuple[str, str]]:
     """`NAME@VERSION` operands of `--admit-closure-addition`."""
     admitted = set()
@@ -1959,6 +2017,7 @@ def refresh(
     standard_apache: frozenset[tuple[str, str]] = frozenset(),
     removals: frozenset[tuple[str, str]] = frozenset(),
     text_removals: frozenset[str] = frozenset(),
+    notice_source_removals: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> dict[str, Any]:
     old = load_index(repo)
 
@@ -2007,6 +2066,8 @@ def refresh(
     upgrades = split_registry_upgrades(old_external, new_external)
     upgrade_old = {(row["name"], row["version"]) for row, _ in upgrades}
     upgrade_new = {(row["name"], row["version"]) for _, row in upgrades}
+    if any((name, version) not in upgrade_new for name, version, _ in notice_source_removals):
+        raise RefreshError("removed notice source must name a registry upgrade's new version")
     surviving_external, removed_external = split_registry_removals(
         [row for row in old_external if (row["name"], row["version"]) not in upgrade_old],
         [row for row in new_external if (row["name"], row["version"]) not in upgrade_new],
@@ -2167,7 +2228,33 @@ def refresh(
     removed_identities = removed_index_identities(
         old, removed_external, lost, set(committed_texts), text_removals
     )
-    upgraded_rows, upgraded_members = upgraded_package_rows(prior_archive_path, old, upgrades)
+    upgraded_rows, upgraded_members = upgraded_package_rows(
+        prior_archive_path, old, upgrades, notice_source_removals=notice_source_removals,
+    )
+    if notice_source_removals:
+        upgraded_by_identity = {
+            upgrade_backward[normalize_identity(row["identity"])]: row for row in upgraded_rows
+        }
+        reviewed_members = {
+            (left["name"], left["version"], member)
+            for left, right in upgrades for name, version, member in notice_source_removals
+            if (name, version) == (right["name"], right["version"])
+        }
+        reviewed_texts = {
+            ref["sha256"] for row in old["packages"]
+            if normalize_identity(row["identity"]) in upgraded_by_identity
+            for ref in row["notice_references"]
+            if (row["name"], row["version"], ref["source"]["member"]) in reviewed_members
+        }
+        retained_references = {
+            ref["sha256"]
+            for row in old["packages"] + old.get("path_dependencies", [])
+            if row["windows_notice_population"]
+            for ref in upgraded_by_identity.get(normalize_identity(row["identity"]), row)["notice_references"]
+        }
+        # All other texts were proven identical; only the reviewed sources
+        # can have lost references. Shared texts stay in the rendered file.
+        text_removals = text_removals | ((reviewed_texts & committed_texts.keys()) - retained_references)
     if upgrades:
         regenerated, _spans = render_notices(committed_texts)
         if regenerated != notices:
@@ -2507,9 +2594,14 @@ def refresh(
     report = {
         "workspace_version_or_existing_dependency_edge_changes": workspace_delta,
         "revendored_git_packages": revendored,
+        "reviewed_removed_notice_sources": [
+            f"{name}@{version}:{member}" for name, version, member in sorted(notice_source_removals)
+        ],
         "licence_identical_registry_upgrades": [
             {"from": added_identity(left), "to": added_identity(right),
              "archive_sha256": right["checksum"]} for left, right in upgrades
+            if not any((name, version) == (right["name"], right["version"])
+                       for name, version, _ in notice_source_removals)
         ],
         "added_packages_outside_windows_notice_closure": [
             {
@@ -2650,6 +2742,10 @@ def main(argv: list[str] | None = None) -> int:
             "Any orphaned text not named here refuses."
         ),
     )
+    parser.add_argument(
+        "--admit-removed-notice-source", action="append", default=[], metavar="NAME@VERSION:MEMBER",
+        help="reviewed indexed source removed by a registry upgrade; name the new version and each absent member",
+    )
     args = parser.parse_args(argv)
 
     repo = args.repo.resolve()
@@ -2680,6 +2776,7 @@ def main(argv: list[str] | None = None) -> int:
             parse_admissions(args.admit_standard_apache_text),
             parse_admissions(args.admit_closure_removal),
             parse_text_removals(args.admit_notice_text_removal),
+            parse_notice_source_removals(args.admit_removed_notice_source),
         )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)

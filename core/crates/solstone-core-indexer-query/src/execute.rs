@@ -663,11 +663,14 @@ impl OwnerIndex {
 #[cfg(test)]
 impl OwnerIndex {
     pub(crate) fn trace_v2(
-        &self,
+        &mut self,
         flags: rusqlite::trace::TraceEventCodes,
         callback: Option<fn(rusqlite::trace::TraceEvent<'_>)>,
     ) {
-        self.connection.connection.trace_v2(flags, callback);
+        self.connection
+            .connection
+            .trace_v2(flags, callback)
+            .expect("set the statement trace");
     }
 }
 

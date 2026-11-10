@@ -1047,6 +1047,7 @@ class RegistryUpgrade(unittest.TestCase):
     def crate(self, version="1.0.1", expression="MIT", text=b"same licence\n", extra=None):
         files = {"Cargo.toml": f'[package]\nname="digest"\nversion="{version}"\nlicense="{expression}"\n'.encode(),
                  "LICENSE": text, "src/lib.rs": version.encode(), **(extra or {})}
+        files = {name: data for name, data in files.items() if data is not None}
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
             for name, data in files.items():
@@ -1085,9 +1086,9 @@ class RegistryUpgrade(unittest.TestCase):
             with self.assertRaises(refresh.RefreshError):
                 refresh.require_explained_notice_closure(left, right, ["app"])
 
-    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False, old_header=None):
+    def fixture(self, root, expression="MIT", new_expression=None, new_text=b"same licence\n", extra=None, git_move=False, old_header=None, old_extra=None):
         data, files = self.crate(expression=new_expression or expression, text=new_text, extra=extra)
-        old_data, old_files = self.crate("1.0.0", expression, extra={"src/lib.rs": old_header + b"fn old() {}\n"} if old_header else None)
+        old_data, old_files = self.crate("1.0.0", expression, extra={**({"src/lib.rs": old_header + b"fn old() {}\n"} if old_header else {}), **(old_extra or {})})
         old, new = self.row(checksum=refresh.sha256_bytes(old_data)), self.row("1.0.1", refresh.sha256_bytes(data))
         outside = {**package("outside", source=SOURCE), "checksum": "b" * 64}
         git_old = package("transport", source="git+https://example.invalid/transport#" + "a" * 40)
@@ -1121,6 +1122,15 @@ class RegistryUpgrade(unittest.TestCase):
                 p.write_bytes(content)
             (directory / ".cargo-checksum.json").write_text(json.dumps({"package": row["checksum"], "files": {n: refresh.sha256_bytes(b) for n, b in source_files.items()}}))
         rows, members, texts = refresh.added_package_rows([old], {(old["name"], old["version"]): {"license": expression}}, vendor, frozenset({("digest", "1.0.0")}))
+        for member, content in (old_extra or {}).items():
+            if Path(member).name.startswith("LICENSE"):
+                digest = refresh.sha256_bytes(content)
+                rows[0]["notice_references"].append({
+                    "bytes": len(content), "sha256": digest,
+                    "source": {"archive_sha256": old["checksum"], "kind": "cargo-registry-archive",
+                               "member": member, "source_url": "https://static.crates.io/crates/digest/digest-1.0.0.crate"},
+                })
+                texts[digest] = content
         if old_header:
             digest = refresh.sha256_bytes(old_header)
             rows[0]["notice_references"].append({
@@ -1157,7 +1167,7 @@ class RegistryUpgrade(unittest.TestCase):
             return 200, data
         with patch.object(refresh, "query_cargo_metadata", return_value=metadata), \
              patch.object(refresh, "run_cargo_vendor", side_effect=AssertionError("full vendor forbidden")), \
-             patch.object(refresh, "upgraded_package_rows", side_effect=lambda *args: original(*args, fetch=fetch)):
+             patch.object(refresh, "upgraded_package_rows", side_effect=lambda *args, **kw: original(*args, fetch=fetch, **kw)):
             result = refresh.refresh(root, archive, None, root / "out", **kwargs)
         self.assertEqual(len(fetches), 1)
         return result
@@ -1263,6 +1273,134 @@ class RegistryUpgrade(unittest.TestCase):
             archive, metadata, data, _ = self.fixture(root, git_move=True)
             with self.assertRaisesRegex(refresh.RefreshError, "cannot mix git moves"):
                 self.run_refresh(root, archive, metadata, data)
+
+    def removal_fixture(self, root, **kwargs):
+        return self.fixture(
+            root, old_header=b"// Copyright native authors\n\n",
+            old_extra={"native/LICENSE": b"native redistribution terms\n", **kwargs.pop("old_extra", {})},
+            extra={"src/lib.rs": None, **kwargs.pop("extra", {})}, **kwargs,
+        )
+
+    def source_removals(self):
+        return frozenset(("digest", "1.0.1", name) for name in ("src/lib.rs", "native/LICENSE"))
+
+    def test_reviewed_removed_sources_drop_only_orphaned_texts(self):
+        for shared in (False, True):
+            with self.subTest(shared=shared), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.removal_fixture(root)
+                path = root / refresh.INDEX_RELATIVE_PATH
+                index = json.loads(path.read_text())
+                native = next(ref for ref in index["packages"][0]["notice_references"]
+                              if ref["source"]["member"] == "native/LICENSE")
+                if shared:
+                    index["path_dependencies"] = [{"name": "shared", "identity": "shared@1.0.0",
+                        "windows_notice_population": True, "notice_references": [
+                            {**native, "source": {"kind": "shipped-license", "path": "shared/LICENSE"}}
+                        ]}]
+                    path.write_text(json.dumps(index))
+                result = self.run_refresh(root, archive, metadata, data,
+                                          notice_source_removals=self.source_removals())
+                row = next(row for row in result["new_index"]["packages"] if row["name"] == "digest")
+                self.assertEqual([ref["source"]["member"] for ref in row["notice_references"]], ["LICENSE"])
+                self.assertEqual(row["notice_references"][0]["source"]["archive_sha256"], row["archive_sha256"])
+                expected = {refresh.sha256_bytes(b"same licence\n")}
+                if shared:
+                    expected.add(native["sha256"])
+                self.assertEqual({row["sha256"] for row in result["new_index"]["notice_texts"]}, expected)
+                self.assertEqual(set(result["report"]["removed_notice_texts"]),
+                                 {row["sha256"] for row in index["notice_texts"]} - expected)
+                self.assertEqual(result["report"]["licence_identical_registry_upgrades"], [])
+
+    def test_removed_source_admission_refuses_stale_retained_or_relocated_material(self):
+        for extra, admissions, message in (
+            ({}, frozenset(), "licence/notice texts changed"),
+            ({}, self.source_removals() | {("digest", "1.0.0", "missing")}, "new version"),
+            ({}, self.source_removals() | {("digest", "1.0.1", "missing")}, "indexed and absent"),
+            ({"src/lib.rs": b"retained"}, self.source_removals(), "indexed and absent"),
+            ({"renamed.c": b"// Copyright native authors\n\n"}, self.source_removals(), "survives"),
+            ({"native/NOTICE": b"new terms"}, self.source_removals(), "licence/notice texts changed"),
+            ({"new.rs": b"// Copyright new author\n"}, self.source_removals(), "copyright statements changed"),
+        ):
+            with self.subTest(extra=extra, admissions=admissions), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.removal_fixture(root, extra=extra)
+                with self.assertRaisesRegex(refresh.RefreshError, message):
+                    self.run_refresh(root, archive, metadata, data, notice_source_removals=admissions)
+
+    def test_removed_sources_do_not_bypass_retained_licence_or_prior_span_checks(self):
+        for change in ("licence", "span", "checksum"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.removal_fixture(
+                    root, **({"new_text": b"changed terms"} if change == "licence" else {}))
+                if change == "span":
+                    path = root / refresh.INDEX_RELATIVE_PATH
+                    index = json.loads(path.read_text())
+                    ref = next(ref for ref in index["packages"][0]["notice_references"]
+                               if "byte_end_exclusive" in ref)
+                    ref["byte_start_inclusive"] += 1
+                    path.write_text(json.dumps(index))
+                if change == "checksum":
+                    data += b"corrupt"
+                with self.assertRaises(refresh.RefreshError):
+                    self.run_refresh(root, archive, metadata, data, notice_source_removals=self.source_removals())
+
+    def test_source_review_still_checks_retained_headers_and_copyrights(self):
+        header = b"// Copyright retained authors\n// retained terms\n\n"
+        for changed in (header, b"// Copyright other authors\n", header.replace(b"retained terms", b"modified terms")):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                old_source = header + b"fn old() {}\n"
+                archive, metadata, data, _ = self.removal_fixture(
+                    root, old_extra={"kept.rs": old_source}, extra={"kept.rs": changed + b"fn new() {}\n"})
+                path = root / refresh.INDEX_RELATIVE_PATH
+                index = json.loads(path.read_text())
+                index["packages"][0]["notice_references"].append({
+                    "bytes": len(header), "sha256": refresh.sha256_bytes(header),
+                    "byte_start_inclusive": 0, "byte_end_exclusive": len(header),
+                    "source_sha256": refresh.sha256_bytes(old_source),
+                    "source": {"kind": "cargo-registry-archive", "member": "kept.rs",
+                               "archive_sha256": index["packages"][0]["archive_sha256"]},
+                })
+                notices_path = root / refresh.NOTICES_RELATIVE_PATH
+                old_notices = notices_path.read_bytes()
+                texts = {row["sha256"]: old_notices[row["byte_start_inclusive"]:row["byte_end_exclusive"]]
+                         for row in index["notice_texts"]}
+                texts[refresh.sha256_bytes(header)] = header
+                notices, index["notice_texts"] = refresh.render_notices(texts)
+                index["notices_sha256"] = refresh.sha256_bytes(notices)
+                notices_path.write_bytes(notices)
+                path.write_text(json.dumps(index))
+                if changed == header:
+                    self.run_refresh(root, archive, metadata, data, notice_source_removals=self.source_removals())
+                else:
+                    with self.assertRaisesRegex(refresh.RefreshError, "copyright statements changed|source header changed"):
+                        self.run_refresh(root, archive, metadata, data, notice_source_removals=self.source_removals())
+
+    def test_removed_source_cli_publishes_only_after_verification(self):
+        original = refresh.upgraded_package_rows
+        for corrupt in (False, True):
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                archive, metadata, data, _ = self.removal_fixture(root)
+                paths = [root / refresh.INDEX_RELATIVE_PATH, root / refresh.NOTICES_RELATIVE_PATH]
+                before = [path.read_bytes() for path in paths]
+                def fetch(_url):
+                    return 200, data + (b"corrupt" if corrupt else b"")
+                args = ["--repo", str(root), "--prior-archive", str(archive), "--out", str(root / "out")]
+                for name, version, member in self.source_removals():
+                    args += ["--admit-removed-notice-source", f"{name}@{version}:{member}"]
+                with patch.object(refresh, "query_cargo_metadata", return_value=metadata), \
+                     patch.object(refresh, "upgraded_package_rows", side_effect=lambda *a, **kw: original(*a, fetch=fetch, **kw)), \
+                     patch("sys.stdout", new=io.StringIO()), patch("sys.stderr", new=io.StringIO()):
+                    code = refresh.main(args)
+                self.assertEqual(code, 1 if corrupt else 0)
+                after = [path.read_bytes() for path in paths]
+                if corrupt:
+                    self.assertEqual(after, before)
+                else:
+                    self.assertTrue(all(a != b for a, b in zip(after, before)))
 
     def test_archive_duplicate_paths_links_and_traversal_refuse(self):
         for name, kind in (("digest-1.0.1/../escaped", tarfile.REGTYPE),
