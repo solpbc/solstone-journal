@@ -257,6 +257,7 @@
   // always simply mounted again.
   function retryAfter(chain, again) {
     if (chain.ran && !chain.contract) {
+      window.__solLeaving = true;
       window.location.reload();
       return;
     }

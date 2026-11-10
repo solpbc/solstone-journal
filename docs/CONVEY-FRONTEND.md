@@ -84,7 +84,8 @@ serving path.
 3. The workspace fragment for the current app is fetched and mounted.
 4. The fragment's script(s) run; each app makes **at most one initial-state
    fetch** before first meaningful paint (see below), then subscribes to its
-   events.
+   events. A view on the view contract (below) is mounted instead, after its
+   scripts register it.
 
 Facet selection is workspace-local and uses the owning workspace's URL/query
 contract. The day, where an app is day-scoped, lives in the URL path
@@ -124,6 +125,66 @@ type (a `502`, `503` or `504` spends one of the ordinary retries). A view's
 mount owns the early reads: a different view or a later mount ends them, and
 `view:ready` ends whatever nothing took. Nothing is kept: early answers stay in
 memory, and reads stay `no-store`.
+
+## The view contract and moving between views
+
+**A view on the contract** declares it in its fragment with
+`<!-- view-contract -->`, and its script only registers:
+
+```js
+window.SolViews.register('transcripts', {
+  mount(ctx) {
+    // draw into the fragment's markup, read, subscribe
+    return { update(params) { /* a new day in place */ }, dispose() {} };
+  }
+});
+```
+
+`mount(ctx)` returns its dispose function, or `{ dispose, update }` when the
+view takes a change of parameters in place. A view's scripts run once in the
+life of the page (they only register); the view starts each time it is
+mounted. Home (with its week and originals pages) and transcripts are on the
+contract; every other view is not, and keeps its full page loads.
+
+**Everything a view adds outside its own markup goes through `ctx`**, and is
+taken back when the view goes: `ctx.on(target, type, fn, options)` for the
+document, the window or any other target that outlives the markup;
+`ctx.setTimeout`/`setInterval`/`visibleInterval`; `ctx.observe(observer)`;
+`ctx.listen` and `ctx.onConnectionState` for the live stream;
+`ctx.global(name, value)`; `ctx.bodyClass(name, on)`; `ctx.title(text)`;
+`ctx.history.push/replace(url)` for the view's own entries;
+`ctx.onDispose(fn)`. `ctx.signal` aborts when the view goes. A mount that
+throws part-way takes back what it had added, so "try again" mounts the view
+again in place. A view's stylesheets stay in the page, switched off while
+another view is shown.
+
+**Reads go through `ctx.read(url, opts)` (JSON, through `apiJson`) and
+`ctx.fetch`** (`static/store.js`). One read of an address is in flight per
+mount: a second ask while it is out shares it. A read asked because something
+changed passes `fresh: true` and is asked of its own. A view's reads are
+aborted when it goes and never answer after that, so a view that has gone
+can't draw. Writes go out unchanged and are never cut short. Memory only.
+
+**Moving between two contract views stays in the page** (`static/router.js`).
+A click on a link, or a day step, between two contract views swaps `<main>`;
+the rail, the status mark, the sun arc and the live stream stay. Anything else
+is a whole page load: to or from another view, out of the journal, or when
+the page has learned the journal is another build (`appEvents.buildChanged()`)
+or doesn't know the destination's app. Each history entry has one owner: an
+entry that changes the address path is the router's; one that keeps the path
+and changes only the query or the hash is the view's (a transcript segment),
+and the router leaves it to the view. A move starts the next view's declared
+first reads at once, in a table of their own, adopted as the head's are. The
+swap runs in a view transition once those reads answer or 300 ms pass. Focus
+moves to the new view's first heading, `#view-announcer` says the view's name,
+and scroll is restored per history entry. Code is fetched ahead on a press or
+a hover on a rail entry; data never is. A view whose first load ended in its
+error state reads again when the live stream next connects, once per connect.
+
+**Loading states in a contract view** don't set `aria-busy`
+(`SurfaceState.loading({ text, busy: false })`), so they are announced as they
+appear. Their "still working…" line is hidden from assistive technology; the
+page says it instead, once, when the view's first load passes ten seconds.
 
 ## `GET /api/shell` (contract sketch)
 
