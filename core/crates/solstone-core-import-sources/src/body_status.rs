@@ -151,7 +151,7 @@ pub const WHERE_TO_RUN: &str = if cfg!(target_os = "macos") {
 #[must_use]
 pub fn too_big_to_upload_words() -> String {
     format!(
-        "this export is larger than 4.3 GB, the most this page uploads. to bring it in instead, {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save"
+        "this export is larger than 4.3 GB, the most this page uploads. instead, {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save"
     )
 }
 
