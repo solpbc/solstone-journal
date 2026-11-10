@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_apple_card_upload_that_stopped_early_is_listed_as_one_and_not_offered_for_delete() {
+    async fn an_apple_card_upload_that_stopped_early_is_listed_as_one_and_offered_for_delete() {
         // Saved as a generic upload, stopped by the journal before it wrote a
         // manifest: found walking the card in a browser, where it read "Text",
         // the filter offered "text", and the whole-import delete was offered.
@@ -836,14 +836,14 @@ mod tests {
         let row = &body["imports"][0];
         assert_eq!(row["source_display"], "Apple Health", "{row}");
         assert_eq!(row["body_state"], "stopped", "{row}");
-        assert_eq!(row["deletable"], false, "{row}");
+        assert_eq!(row["deletable"], true, "{row}");
         assert_eq!(body["source_options"], json!(["apple_health"]), "{body}");
         let detail = detail(State(state), axum::extract::Path(id.to_owned())).await;
         let bytes = axum::body::to_bytes(detail.into_body(), usize::MAX)
             .await
             .unwrap();
         let detail: Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(detail["deletable"], false, "{detail}");
+        assert_eq!(detail["deletable"], true, "{detail}");
     }
 
     #[tokio::test]

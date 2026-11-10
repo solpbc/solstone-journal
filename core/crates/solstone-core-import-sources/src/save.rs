@@ -190,7 +190,9 @@ pub fn render(
 ///
 /// Chat, calendar and notes saves place by a fixed key, and what arrives again
 /// there is new data: a removed key's tombstone gives way and the file is
-/// written. Strava and body writers keep their own deletion rules here.
+/// written. So does a Strava download, whose probe chose that key. Body writers
+/// say for each run, through [`write_rendered_with`]: a re-import takes the key,
+/// an ordinary Oura sync doesn't.
 fn reclaims_removed_keys(source: RegistrySource) -> bool {
     matches!(
         source,
@@ -199,6 +201,7 @@ fn reclaims_removed_keys(source: RegistrySource) -> bool {
             | RegistrySource::Gemini
             | RegistrySource::Ics
             | RegistrySource::Evernote
+            | RegistrySource::Strava
     )
 }
 
@@ -257,13 +260,29 @@ pub fn write_rendered(
     import_id: Option<&str>,
     rendered: &RenderedImport,
 ) -> WriteOutcome {
+    write_rendered_with(
+        journal,
+        import_id,
+        rendered,
+        reclaims_removed_keys(rendered.source),
+    )
+}
+
+/// [`write_rendered`], saying whether a key the owner removed is taken
+/// (`reclaims`): a re-import's writer brings it back, a sync's leaves it.
+#[must_use]
+pub fn write_rendered_with(
+    journal: &Path,
+    import_id: Option<&str>,
+    rendered: &RenderedImport,
+    reclaims: bool,
+) -> WriteOutcome {
     let stream = rendered.stream();
     let mut created = Vec::with_capacity(rendered.files.len());
     let mut calendar_files = Vec::new();
     let mut skipped_deleted = Vec::new();
     let mut written_files = Vec::with_capacity(rendered.files.len());
     let mut written_segments = std::collections::BTreeSet::new();
-    let reclaims = reclaims_removed_keys(rendered.source);
 
     for file in &rendered.files {
         if !solstone_core_import::work_continues() {
@@ -694,7 +713,7 @@ mod tests {
         assert!(!manifest_content.contains("item-no-segments"));
         assert!(manifest_content.contains("item-c"));
 
-        // A Strava save keeps its own rule: a removed key stays skipped.
+        // A Strava save takes a removed key its probe chose: the workout comes back.
         let temp_strava = tempdir().unwrap();
         let strava_root = temp_strava.path();
         let strava_removed = strava_root.join("chronicle/20260804/import.strava/seg_a");
@@ -708,11 +727,29 @@ mod tests {
         };
         let strava_outcome = write_rendered(strava_root, None, &strava);
         assert!(strava_outcome.error.is_none());
+        assert!(strava_outcome.skipped_deleted.is_empty());
+        assert!(!strava_removed.join("tombstone.json").exists());
+
+        // A body writer says for each run: a sync leaves a removed key, a
+        // re-import takes it.
+        let temp_body = tempdir().unwrap();
+        let body_root = temp_body.path();
+        let body_removed = body_root.join("chronicle/20260804/import.apple_health/seg_a");
+        fs::create_dir_all(&body_removed).unwrap();
+        fs::write(body_removed.join("tombstone.json"), b"{}").unwrap();
+        let body = RenderedImport {
+            source: RegistrySource::AppleHealth,
+            ..strava.clone()
+        };
+        let kept = write_rendered_with(body_root, None, &body, false);
         assert_eq!(
-            strava_outcome.skipped_deleted,
+            kept.skipped_deleted,
             vec![("20260804".to_owned(), "seg_a".to_owned())]
         );
-        assert_eq!(dir_listing(&strava_removed), ["tombstone.json"]);
+        assert_eq!(dir_listing(&body_removed), ["tombstone.json"]);
+        let back = write_rendered_with(body_root, None, &body, true);
+        assert!(back.skipped_deleted.is_empty());
+        assert!(!body_removed.join("tombstone.json").exists());
 
         // Control: nothing deleted
         let temp_control = tempdir().unwrap();

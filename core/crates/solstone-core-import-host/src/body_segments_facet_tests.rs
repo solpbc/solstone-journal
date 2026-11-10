@@ -288,9 +288,16 @@ fn orphan_night_tiles_stay_unfiled_while_new_readings_get_the_run_facet() {
         denied(root);
         saving.stop_at = None;
         run_apple_health_segments(root, &saving).unwrap();
-        denied(root);
-        assert_eq!(fs::read(original.join(BODY_RECORDS_FILE)).unwrap(), before);
         let body = entries(root, BODY_ID, "20261011", "Apple Health · imported").join("\n");
+        if deleted && repeat {
+            // The export brings the deleted night again: a re-import brings it
+            // back as new data, under this run's facet, and its unfiled tile is
+            // repaired into that facet's sibling, leaving its mark.
+            assert!(body.contains("night"), "{body}");
+        } else {
+            denied(root);
+            assert_eq!(fs::read(original.join(BODY_RECORDS_FILE)).unwrap(), before);
+        }
         assert!(body.contains("7333"), "{body}");
     }
 }

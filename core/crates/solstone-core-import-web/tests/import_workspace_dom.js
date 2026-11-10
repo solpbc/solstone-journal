@@ -4327,13 +4327,13 @@ function runImportDetailDeleteButton() {
   for (const status of ['running', 'pending']) {
     assert.ok(!has({ ...done, status }), `a ${status} import has no delete`);
   }
-  for (const source of ['journal_archive', 'apple_health', 'oura']) {
-    assert.ok(!has({ ...done, source_type: source }), `${source} has no delete`);
+  assert.ok(!has({ ...done, source_type: 'journal_archive' }), 'a journal archive merge has no delete');
+  for (const source of ['strava', 'apple_health', 'oura']) {
+    const html = ImportDetail.renderDetail({ ...done, source_type: source });
+    assert.ok(html.includes('data-import-delete='), `${source} deletes as one import`);
+    assert.ok(!html.includes('data-strava-import-delete='), `${source} has no delete of its own`);
   }
   assert.ok(!has({ ...done, deletable: false }), 'the server saying no wins');
-  const strava = ImportDetail.renderDetail({ ...done, source_type: 'strava' });
-  assert.ok(!strava.includes('data-import-delete='), 'strava gets no new delete');
-  assert.ok(strava.includes('data-strava-import-delete='), 'strava keeps its own delete');
   const html = ImportDetail.renderDetail(done);
   assert.ok(html.indexOf('data-import-delete=') > html.indexOf('class="drawer"'), 'the button sits after the bookkeeping drawer');
   assert.ok(/class="import-secondary-btn" data-import-delete=/.test(html), 'it is the secondary button, not danger');

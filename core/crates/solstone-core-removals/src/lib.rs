@@ -206,8 +206,14 @@ pub enum Unit {
         segment: String,
         file: String,
     },
-    /// A workout from a connected source, by the source's own id.
-    Workout { source: String, id: String },
+    /// A workout from a connected source, by the source's own id, and the day
+    /// it began on, a date with no content, for the history's row.
+    Workout {
+        source: String,
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        day: Option<String>,
+    },
     /// An import, by the journal's import id.
     Import { source: String, id: String },
     /// An entity. Its name is the owner's words, so it is not kept.

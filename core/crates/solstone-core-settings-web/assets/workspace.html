@@ -2767,7 +2767,7 @@ button:focus:not(:focus-visible) {
     <!-- Trash Section: what waits before it's erased, the setting, and the removal history -->
     <section class="settings-section" id="section-trash" role="tabpanel" aria-labelledby="tab-trash">
       <h2 id="trashHeading">trash</h2>
-      <p class="settings-section-desc">segments, imports and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
+      <p class="settings-section-desc">segments, imports, workouts and memories you delete wait here until the date beside them, then they're erased. recovering one puts it back exactly as it was.</p>
       <div class="log-panel trash-panel">
         <div class="trash-bar" id="trashBar" tabindex="-1" hidden>
           <div class="trash-bar-group" id="trashBarIdle">
@@ -7134,6 +7134,8 @@ const TRASH_COPY = {
   erasingSoon: 'erasing soon',
   returned: 'the same segment is back in your journal. recovering replaces that copy.',
   returnedImport: 'some of what it brought in is back in your journal. recovering replaces those copies.',
+  returnedWorkout: 'the same workout is back in your journal. recovering replaces that copy.',
+  bodySpan: '{first} to {last}',
   segmentOne: '{n} segment',
   segmentMany: '{n} segments',
   range: 'choose a number from 1 to 30.',
@@ -7162,8 +7164,8 @@ const TRASH_COPY = {
   staysMany: "summaries made from them elsewhere in your journal aren't erased and may still mention them.",
   agentOne: 'anything an agent already read stays with it.',
   agentMany: 'anything an agent already read stays with them.',
-  madeOne: "summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
-  madeMany: "summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
+  madeOne: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
+  madeMany: "activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
 };
 const TRASH_KIND_LABEL = { segment: 'segment', memory: 'memory an agent saved', import: 'import', workout: 'workout' };
 const TRASH_WORDS = { segment: ['segment', 'segments'], memory: ['memory', 'memories'], import: ['import', 'imports'], workout: ['workout', 'workouts'] };
@@ -7199,6 +7201,24 @@ function trashEraseDate(eraseAt, now) {
   return { text: trashFill(TRASH_COPY.erasesOn, { date: day }), soon: day === 'today' || day === 'tomorrow' };
 }
 
+const TRASH_BODY_SOURCES = new Set(['strava', 'apple_health', 'oura']);
+
+// A body import's own days, first to last; nothing when it took none.
+function trashSpan(days) {
+  const [first, last] = Array.isArray(days) ? days : [];
+  if (!first) return null;
+  if (!last || first === last) return removalDay(first);
+  return trashFill(TRASH_COPY.bodySpan, { first: removalDay(first), last: removalDay(last) });
+}
+
+// A workout's start, "HH:MM" on its own clock, as the page writes a time of day.
+function trashClock(start) {
+  const match = /^(\d{2}):(\d{2})$/.exec(start || '');
+  if (!match) return null;
+  const at = new Date(2000, 0, 1, Number(match[1]), Number(match[2]));
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(at);
+}
+
 function trashRow(item) {
   const row = removalEl('label', 'trash-row');
   const box = document.createElement('input');
@@ -7215,23 +7235,32 @@ function trashRow(item) {
   const isImport = item.kind === 'import';
   // An import shows the owner's own file name: two imports of one source on one
   // day are otherwise the same row. It comes from the item's own record.
+  // A workout shows its day and the time it began, and no title: those tell two apart.
+  // A body import shows the days of its own it holds: every Apple and Strava
+  // file has the same kind of name, and Oura's has none.
+  const bodyImport = isImport && TRASH_BODY_SOURCES.has(item.source);
   const qualifiers = isImport
-    ? [removalSourceName(item.source), item.label, item.imported_day && REMOVAL_IMPORTED.replace('{day}', removalDay(item.imported_day))]
-    : [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
+    ? [removalSourceName(item.source), bodyImport ? trashSpan(item.days) : item.label, item.imported_day && REMOVAL_IMPORTED.replace('{day}', removalDay(item.imported_day))]
+    : item.kind === 'workout'
+      ? [item.day && removalDay(item.day), trashClock(item.start), removalSourceName(item.source)]
+      : [item.day && removalDay(item.day), removalSegmentTime(item.segment)];
   if (item.kind === 'segment' && item.stream) qualifiers.push(window.JournalFormat.stream(item.stream));
   qualifiers.filter(Boolean).forEach(text => what.append(removalEl('span', 'removal-qual', text)));
   const when = removalEl('span', 'removal-how');
   const date = trashEraseDate(item.erase_at, new Date());
   when.append(removalEl('span', date.soon ? 'trash-soon' : '', date.text));
   const extra = [];
-  if (isImport && Number.isInteger(item.segments)) {
+  if (isImport && !bodyImport && Number.isInteger(item.segments)) {
     extra.push(trashFill(item.segments === 1 ? TRASH_COPY.segmentOne : TRASH_COPY.segmentMany, { n: item.segments }));
   }
   const size = item.kind === 'segment' || isImport ? trashSize(item.bytes) : '';
   if (size) extra.push(size);
   if (extra.length) when.append(document.createTextNode(` · ${extra.join(' · ')}`));
   body.append(what, when);
-  if (item.replaces) body.append(removalEl('span', 'trash-returned', isImport ? TRASH_COPY.returnedImport : TRASH_COPY.returned));
+  if (item.replaces) {
+    const back = isImport ? TRASH_COPY.returnedImport : item.kind === 'workout' ? TRASH_COPY.returnedWorkout : TRASH_COPY.returned;
+    body.append(removalEl('span', 'trash-returned', back));
+  }
   row.append(box, body);
   return row;
 }

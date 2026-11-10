@@ -1916,13 +1916,6 @@ impl ManifestLookup for FilesystemManifestLookup<'_> {
         .and_then(|scan| scan.found)
         .is_some()
     }
-
-    fn import_exists(&self, source_hash: &str) -> bool {
-        solstone_core_import::dedupe::import_of_source_exists(
-            self.journal_path,
-            &solstone_core_import::SourceHash::new(source_hash.to_owned()),
-        )
-    }
 }
 
 /// The owner's Plaud token, as Settings stores it, or from the environment.

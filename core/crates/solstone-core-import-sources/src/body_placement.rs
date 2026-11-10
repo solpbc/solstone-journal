@@ -62,9 +62,19 @@ pub struct DayPlacement<'a> {
     day: String,
     held: BTreeMap<String, Stored>,
     ids: BTreeMap<String, Vec<(String, usize)>>,
+    /// A re-import's: a window the owner deleted, where only its tombstone
+    /// stands, is a place its rows go back to.
+    comes_back: bool,
 }
 
 impl<'a> DayPlacement<'a> {
+    /// Place as a re-import does: a window the owner deleted takes its rows again.
+    #[must_use]
+    pub fn coming_back(mut self, comes_back: bool) -> Self {
+        self.comes_back = comes_back;
+        self
+    }
+
     pub fn load(journal: &'a Path, source: &'a BodySource, day: &str) -> Result<Self, String> {
         let mut held = BTreeMap::new();
         let mut ids: BTreeMap<String, Vec<(String, usize)>> = BTreeMap::new();
@@ -123,6 +133,7 @@ impl<'a> DayPlacement<'a> {
             day: day.to_owned(),
             held,
             ids,
+            comes_back: false,
         })
     }
 
@@ -264,7 +275,10 @@ impl<'a> DayPlacement<'a> {
         for ((day, key), rows) in firsts.into_iter().chain(rest) {
             debug_assert_eq!(day, self.day);
             let original = stream_dir(journal, source, &day).join(&key);
-            let blocked = owner_deleted(&original).map_err(|error| error.to_string())?
+            let blocked = (owner_deleted(&original).map_err(|error| error.to_string())?
+                && !(self.comes_back
+                    && solstone_core_segment::reclaimable(&original)
+                        .map_err(|error| error.to_string())?))
                 || matches!(
                     stored_rows(journal, source, &(day, key.clone())),
                     Err(StoredRowsError::NotRows)

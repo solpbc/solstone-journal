@@ -1177,82 +1177,6 @@ fn parse_numeric_key(day: &str, key: &str) -> Option<(u64, u64, u64)> {
     Some((day_num, time_num, len_num))
 }
 
-/// The tombstone reason a piece carries when its whole import run was deleted.
-pub const RELEASE_REASON: &str = "import_run_release";
-
-/// Whether a deleted key holds a piece that was released with its import run.
-///
-/// Deleting a whole import run releases its pieces: importing its download again
-/// brings them back, one key past where they were. Only a readable tombstone whose
-/// reason is exactly [`RELEASE_REASON`] counts, and only with no removal still under
-/// way at that key. Any other tombstone, including one that doesn't parse or names
-/// another reason, keeps the probe stopped there, so a piece the owner deleted on its
-/// own stays deleted. A tombstone that can't be read is an error, never a release.
-/// Nothing ever writes into or removes a released key.
-fn released_with_import(segment_dir: &Path) -> Result<bool, String> {
-    let (Some(parent), Some(name)) = (segment_dir.parent(), segment_dir.file_name()) else {
-        return Ok(false);
-    };
-    let mut staged = std::ffi::OsString::from(".removing_");
-    staged.push(name);
-    match fs::symlink_metadata(parent.join(staged)) {
-        Ok(_) => return Ok(false),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            return Err(format!(
-                "reading the removal beside this deleted piece: {e}"
-            ));
-        }
-    }
-    let bytes = match fs::read(segment_dir.join("tombstone.json")) {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(format!("reading this deleted piece's tombstone: {e}")),
-    };
-    let reason = serde_json::from_slice::<serde_json::Value>(&bytes)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("reason")
-                .and_then(|r| r.as_str())
-                .map(str::to_owned)
-        });
-    Ok(reason.as_deref() == Some(RELEASE_REASON))
-}
-
-/// The key an owner's deletion holds where an earlier version misplaced this piece.
-///
-/// Walks the candidates for the misplaced key as the placement probe does: a piece
-/// released with its import is stepped past, any other deletion is the answer, and
-/// the first absent key ends the walk.
-fn misread_deletion(journal: &Path, old: &TileSlice) -> Result<Option<String>, StravaError> {
-    let unreadable = |key: &str, detail: String| StravaError::ProbeUnreadable {
-        day: old.natural_day.clone(),
-        key: key.to_owned(),
-        detail,
-    };
-    let candidates = segment_key_candidates(&old.natural_key)
-        .map_err(|e| unreadable(&old.natural_key, e.to_string()))?;
-    for cand in candidates {
-        let dir = journal
-            .join("chronicle")
-            .join(&old.natural_day)
-            .join("import.strava")
-            .join(&cand);
-        match fs::symlink_metadata(&dir) {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(unreadable(&cand, e.to_string())),
-        }
-        if owner_deleted(&dir).map_err(|e| unreadable(&cand, e.to_string()))?
-            && !released_with_import(&dir).map_err(|detail| unreadable(&cand, detail))?
-        {
-            return Ok(Some(cand));
-        }
-    }
-    Ok(None)
-}
-
 pub fn place(
     journal: &Path,
     workouts: &[StravaWorkout],
@@ -1692,18 +1616,6 @@ pub fn place(
             canonical_tiles
         };
 
-        // What an earlier version recorded for a workout the owner deleted sits at the
-        // key it misplaced it to. Read those keys too, or the right key looks free and
-        // importing the same download again brings the workout back.
-        let misread_slices: Vec<TileSlice> = if canonical_tiles.is_empty() && !misplaced {
-            workout
-                .misread_start_in(workout_zone)
-                .map(|start| tile_from(start, workout.elapsed_seconds))
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
         if !canonical_tiles.is_empty() {
             let timing_changed = canonical_tiles.iter().any(|t| {
                 let workout_start_instant = workout.start_in(workout_zone).map(|dt| dt.timestamp());
@@ -1913,23 +1825,6 @@ pub fn place(
                 };
 
                 let mut placed_candidate = None;
-                if let Some(old) = misread_slices.get(slice.index)
-                    && (old.natural_day != slice.natural_day
-                        || old.natural_key != slice.natural_key)
-                    && let Some(segment) = misread_deletion(journal, old)?
-                {
-                    placed_candidate = Some(TileAction::StayedDeleted {
-                        day: old.natural_day.clone(),
-                        segment,
-                        activity_id: workout.activity_id,
-                        slice: slice.clone(),
-                    });
-                }
-                let candidates = if placed_candidate.is_some() {
-                    Vec::new()
-                } else {
-                    candidates
-                };
                 for cand in candidates {
                     let cand_dir = journal
                         .join("chronicle")
@@ -1955,8 +1850,42 @@ pub fn place(
 
                     match owner_deleted(&cand_dir) {
                         Ok(true) => {
-                            match released_with_import(&cand_dir) {
-                                Ok(true) => continue,
+                            // What the owner deleted comes back when its download is
+                            // imported again: a key that holds only its removal's
+                            // tombstone is free, and the writer's tombstone gives
+                            // way. A removal still under way, or a tombstone beside
+                            // other files, isn't a place to write.
+                            match solstone_core_segment::reclaimable(&cand_dir).map_err(|e| e.to_string()) {
+                                // A different workout's tile waits in the trash to come
+                                // back to this key: step past it.
+                                Ok(true)
+                                    if solstone_core_import::body_trash::held_for_another_workout(
+                                        journal,
+                                        &format!(
+                                            "chronicle/{}/import.strava/{cand}",
+                                            slice.natural_day
+                                        ),
+                                        &workout.activity_id.to_string(),
+                                    ) =>
+                                {
+                                    continue;
+                                }
+                                Ok(true) => {
+                                    if !claimed_keys
+                                        .contains(&(slice.natural_day.clone(), cand.clone()))
+                                    {
+                                        claimed_keys
+                                            .insert((slice.natural_day.clone(), cand.clone()));
+                                        placed_candidate = Some(TileAction::Created {
+                                            day: slice.natural_day.clone(),
+                                            segment: cand,
+                                            slice: slice.clone(),
+                                            workout: workout.clone(),
+                                        });
+                                        break;
+                                    }
+                                    continue;
+                                }
                                 Ok(false) => {}
                                 Err(detail) => {
                                     return Err(StravaError::ProbeUnreadable {

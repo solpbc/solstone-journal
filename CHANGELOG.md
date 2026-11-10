@@ -19,6 +19,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- you can now delete a Strava, Apple Health or Oura import, from its page or by selecting several on the import page. it waits in the trash like any other import, and erase removes it. this now covers every import except journal archives. a delete takes only what that import was the first to bring in, and anything an earlier import brought in stays.
+- deleting a Strava workout on the body page now moves it to the trash, where you can recover it, in place of a delete you could cancel for 10 seconds.
+- importing an Apple Health export or a Strava download again brings back what you deleted from it. each Apple Health export holds your whole history, so a newer one brings back days you deleted too.
+- a sync no longer brings back what you deleted. an Oura sync leaves out what you deleted, and an audio folder file or Plaud recording you deleted no longer comes back at the next sync. asking Oura for a range of days brings those days back, and importing a file again brings it back.
 - when you delete an Evernote import after this update, the note text kept only for it goes to the trash too, and erase removes it. deleting a note on its own takes its kept text the same way.
 - notes you deleted now come back in a later Evernote export. if you deleted the whole import, you can bring the same file in again.
 - the journal app on windows checks for a journal update once a day, downloads it in the background on an unrestricted connection, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.

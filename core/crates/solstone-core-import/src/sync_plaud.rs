@@ -305,12 +305,6 @@ pub fn sync_plaud_save(
     })
 }
 
-/// Whether the import a recording was filed as is still in the journal.
-fn import_still_here(journal_root: &std::path::Path, import_id: &str) -> bool {
-    crate::validate_timestamp(import_id).is_ok()
-        && journal_root.join("imports").join(import_id).is_dir()
-}
-
 struct CataloguedPlaud {
     state: SyncState,
     available: Vec<PlaudFile>,
@@ -328,10 +322,17 @@ fn catalogue<M>(
         .catalogue
         .list_files(token)
         .map_err(PlaudSyncError::Operation)?;
+    // The record is the sync's memory of what it brought in: one it can't read
+    // would forget every recording the owner deleted, so nothing syncs until it reads.
     let mut state = match read_sync_state(&request.journal_root, BackendName::Plaud) {
         SyncStateRead::Loaded(state) => state,
-        SyncStateRead::Absent | SyncStateRead::Unreadable { .. } => {
-            SyncState::empty(BackendName::Plaud)
+        SyncStateRead::Absent => SyncState::empty(BackendName::Plaud),
+        SyncStateRead::Unreadable { .. } => {
+            return Err(PlaudSyncError::State {
+                message:
+                    "the record of what this sync brought in can't be read, so nothing was synced"
+                        .to_owned(),
+            });
         }
     };
     let needs_matching = remote
@@ -365,20 +366,9 @@ fn catalogue<M>(
         object.insert("filename".to_owned(), Value::String(file.filename.clone()));
         object.insert("filesize".to_owned(), Value::from(file.filesize));
         if existed {
-            // What the sync recorded as imported is checked against the journal: once
-            // the owner deletes that import, the recording comes back as new data.
-            if object.get("status") == Some(&Value::String("imported".to_owned()))
-                && !object
-                    .get("import_timestamp")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| import_still_here(&request.journal_root, id))
-            {
-                object.insert("status".to_owned(), Value::String("available".to_owned()));
-                object.remove("import_timestamp");
-                object.remove("import_timestamp_fallback");
-                object.remove("imported_at");
-                object.remove("matched_at");
-            }
+            // What the sync recorded as imported stays imported, whatever the owner has
+            // since deleted: a sync never brings it back. Importing the downloaded file
+            // again does.
             if object.get("status") == Some(&Value::String("available".to_owned()))
                 && let Some(timestamp) = matches.get(&file.id)
             {

@@ -204,9 +204,10 @@ pub trait Kind {
         files: &[String],
     ) -> Result<(), String>;
 
-    /// The thing's paths as they are now, for a thing chosen earlier and moved
-    /// later (a set the owner confirmed). `None` keeps the paths it was chosen
-    /// with.
+    /// The thing's paths as they are now, worked out under its hold when it
+    /// moves: for a thing chosen earlier and moved later (a set the owner
+    /// confirmed), and for one moved at once, so what changed since it was chosen
+    /// is what moves. `None` keeps the paths it was chosen with.
     fn current_paths(&self, _journal: &Path, _unit: &Unit) -> Option<Vec<String>> {
         None
     }
@@ -333,9 +334,17 @@ fn detach_as(
         refs: Vec::new(),
         label,
     };
-    item.refs = kind.refs(journal, &item.unit);
     let hold = kind.hold(journal, &item).map_err(TrashError::Held)?;
     hold.check().map_err(TrashError::Held)?;
+    // What the thing holds is worked out again under its hold, so a writer that
+    // changed it since it was chosen can't have its own work taken with it.
+    if let Some(paths) = kind.current_paths(journal, &item.unit) {
+        if paths.is_empty() {
+            return Err(TrashError::Missing(describe(&item.unit).to_owned()));
+        }
+        item.paths = paths;
+    }
+    item.refs = kind.refs(journal, &item.unit);
     let _lock = lock(journal)?;
     let companions = kind.companions(journal, &item).map_err(TrashError::Io)?;
     item.paths.extend(companions);
@@ -484,6 +493,26 @@ pub fn unfinished(journal: &Path) -> Result<usize, TrashError> {
         .iter()
         .filter(|item| item.state != State::Trashed)
         .count())
+}
+
+/// Items moving now, or stopped part way and waiting for the sweep: on their
+/// way into the trash or back out of it. A writer that would write where one
+/// of them moves waits for it.
+pub fn moving(journal: &Path) -> Result<Vec<Item>, TrashError> {
+    // An item whose record can't be read could be one of them.
+    Ok(every_item(journal, true)?
+        .into_iter()
+        .filter(|item| matches!(item.state, State::Detaching | State::Attaching))
+        .collect())
+}
+
+/// Where an item keeps its own copy of journal-relative `path`, for a kind that
+/// needs to read or settle it before it moves back. Inside the trash.
+pub fn held_file(journal: &Path, id: &str, path: &str) -> Result<PathBuf, TrashError> {
+    if !valid_id(id) {
+        return Err(TrashError::NotInTrash);
+    }
+    trash_entry(journal, &files_rel(id, path))
 }
 
 /// The journal-relative paths of everything that could still come back out of
@@ -1386,6 +1415,12 @@ fn read_item(journal: &Path, id: &str) -> Result<Option<Item>, TrashError> {
 }
 
 fn all_items(journal: &Path) -> Result<Vec<Item>, TrashError> {
+    every_item(journal, false)
+}
+
+/// Every item, an unreadable record an error when `strict`: for a reader whose
+/// answer must not miss one.
+fn every_item(journal: &Path, strict: bool) -> Result<Vec<Item>, TrashError> {
     let dir = trash_root(journal);
     let listing = match std::fs::read_dir(&dir) {
         Ok(listing) => listing,
@@ -1406,6 +1441,7 @@ fn all_items(journal: &Path) -> Result<Vec<Item>, TrashError> {
             // A folder with no record is a detach that stopped before its
             // record was published: nothing has moved into it.
             Ok(None) => {}
+            Err(error) if strict => return Err(error),
             Err(error) => log::warn!("trash: {error}"),
         }
     }

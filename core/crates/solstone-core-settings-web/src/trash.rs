@@ -66,6 +66,9 @@ fn view(journal_root: &Path, item: &Item) -> Value {
             segment.clone(),
         ),
         (Unit::Import { source, id }, _) => return import_view(journal_root, item, source, id),
+        (Unit::Workout { source, day, .. }, _) => {
+            return workout_view(journal_root, item, source, day.as_deref());
+        }
         _ => ("other", String::new(), None, String::new()),
     };
     json!({
@@ -82,6 +85,25 @@ fn view(journal_root: &Path, item: &Item) -> Value {
     })
 }
 
+/// A workout as the page shows it: its day and the time it began, from where
+/// its tiles were, never what they hold.
+fn workout_view(journal_root: &Path, item: &Item, source: &str, day: Option<&str>) -> Value {
+    let start = solstone_core_import::body_trash::workout_start(&item.paths);
+    let clock = start.as_ref().map(|(_, clock)| clock.as_str());
+    json!({
+        "id": item.id,
+        "kind": "workout",
+        "source": source,
+        "day": day.or(start.as_ref().map(|(day, _)| day.as_str())),
+        "start": clock.and_then(|clock| Some(format!("{}:{}", clock.get(..2)?, clock.get(2..4)?))),
+        "trashed_at": item.trashed_at,
+        "erase_at": item.erase_at,
+        "bytes": item.bytes,
+        "surface": item.surface,
+        "replaces": replaces(journal_root, item),
+    })
+}
+
 /// An import as the page shows it: its source, its import, and how much of
 /// the journal it took with it.
 fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Value {
@@ -90,8 +112,18 @@ fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Valu
         .iter()
         .filter_map(|path| solstone_core_retention::layout::parse_segment_rel(path))
         .collect();
-    let days: std::collections::BTreeSet<&str> =
-        segments.iter().map(|(day, _, _)| day.as_str()).collect();
+    // A body import's rows split out of a window it shared count toward its days.
+    let split_days: Vec<String> = item
+        .paths
+        .iter()
+        .filter_map(|path| solstone_core_import::body_trash::split_of(path))
+        .filter_map(|(window, _)| window.split('/').nth(1).map(str::to_owned))
+        .collect();
+    let days: std::collections::BTreeSet<&str> = segments
+        .iter()
+        .map(|(day, _, _)| day.as_str())
+        .chain(split_days.iter().map(String::as_str))
+        .collect();
     json!({
         "id": item.id,
         "kind": "import",
@@ -113,6 +145,11 @@ fn import_view(journal_root: &Path, item: &Item, source: &str, id: &str) -> Valu
 /// item was, so recovering it would replace that.
 fn replaces(journal_root: &Path, item: &Item) -> bool {
     item.paths.iter().any(|path| {
+        // Rows a body import split out of a window it shared: back if the
+        // window holds any of them again.
+        if solstone_core_import::body_trash::split_of(path).is_some() {
+            return solstone_core_import::body_trash::split_returned(journal_root, &item.id, path);
+        }
         let place = journal_root.join(path);
         match std::fs::read_dir(&place) {
             Ok(entries) => entries
@@ -153,6 +190,7 @@ fn page_surface(page: Option<&str>) -> Surface {
         Some("transcripts") => Page::Transcripts,
         Some("agents") => Page::Agents,
         Some("import") => Page::Import,
+        Some("body") => Page::Body,
         _ => Page::Settings,
     };
     Surface::Web { page }

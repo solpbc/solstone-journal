@@ -48,7 +48,7 @@ fn apple_confirm_words() -> String {
         "saving an Apple Health export needs your go-ahead, so nothing from it was brought in. {WHERE_TO_RUN}: solstone journal importer <your export> --confirm-body-save\n"
     )
 }
-const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, and importing it again changes nothing, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
+const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
 
 /// What a page start of an import that already ran is told; the page shows
 /// its own words for it.
@@ -372,6 +372,7 @@ pub(crate) fn sync_oura(command: &BodyCommand<'_>, journal: &Path) -> CliRun {
     let mut transport = LiveOuraTransport::default();
     let mut request = OuraImportRequest::new(&timestamp, facet.as_deref(), &mut transport);
     request.range = range;
+    request.scheduled = command.scheduled;
     request.listed = listed;
     request.earlier_waiting = earlier_waiting;
     match import_oura(journal, request) {

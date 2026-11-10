@@ -79,7 +79,8 @@ pub fn router(journal_root: PathBuf, clock: Clock, shared_shell: fn() -> Respons
     router_with_delete_window(journal_root, clock, shared_shell, Duration::from_secs(10))
 }
 
-/// Build the transcript routes with an injectable cancellation window.
+/// Build the transcript routes. Deletes go to the trash and nothing waits on a
+/// window any more; the parameter stays for the callers that pass one.
 pub fn router_with_delete_window(
     journal_root: PathBuf,
     clock: Clock,
@@ -99,12 +100,10 @@ fn router_with_dependencies(
     journal_root: PathBuf,
     clock: Clock,
     shared_shell: fn() -> Response,
-    delete_window: Duration,
+    _delete_window: Duration,
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
 ) -> Router {
-    let deferred_deletes = solstone_core_serving::held_delete::Registry::new();
     delete::sweep_trash(&journal_root);
-    strava_delete::resume_pending(&journal_root, &deferred_deletes);
     Router::new()
         .route("/app/transcripts/", get(shell::root))
         .route("/app/transcripts/workspace", get(shell::workspace))
@@ -143,23 +142,7 @@ fn router_with_dependencies(
         )
         .route(
             "/app/transcripts/api/strava/workout/{activity_id}",
-            get(strava_delete::preview_workout).delete(strava_delete::delete_workout),
-        )
-        .route(
-            "/app/transcripts/api/strava/import/{import_id}",
-            get(strava_delete::preview_import).delete(strava_delete::delete_import),
-        )
-        .route(
-            "/app/transcripts/api/strava/cancel-delete/{pending_id}",
-            post(strava_delete::cancel),
-        )
-        .route(
-            "/app/transcripts/api/strava/delete-status/{pending_id}",
-            get(strava_delete::status),
-        )
-        .route(
-            "/app/transcripts/api/strava/delete-outcomes",
-            get(strava_delete::outcomes),
+            axum::routing::delete(strava_delete::delete_workout),
         )
         .route(
             "/app/transcripts/api/serve_file/{day}/{*rel_path}",
@@ -169,8 +152,6 @@ fn router_with_dependencies(
             journal_root: Arc::new(journal_root),
             clock,
             shared_shell,
-            deferred_deletes,
-            delete_window,
             sense_spawner,
         }))
 }
@@ -196,8 +177,6 @@ struct AppState {
     journal_root: Arc<PathBuf>,
     clock: Clock,
     shared_shell: fn() -> Response,
-    deferred_deletes: solstone_core_serving::held_delete::Registry,
-    delete_window: Duration,
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
 }
 

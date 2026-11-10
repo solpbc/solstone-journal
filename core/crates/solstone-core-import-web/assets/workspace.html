@@ -792,7 +792,7 @@ function importErrorMessage(data, fallback) {
     switch (data.detail) {
       case 'content already imported':
       case 'content already imported; will not start':
-        return "you've already imported this file.";
+        return "you've already imported this file. if you deleted part of it, recover that from the trash, or delete the whole import and import the file again.";
       case 'import already started or processed':
         return 'this import has already started. check its progress in your imports.';
       default:
@@ -1401,8 +1401,14 @@ const IMPORT_DELETE_COPY = {
     reachMany: "they leave your journal now and wait in the trash, then they're erased. you can recover each one until then.",
     lead: "this moves the import's own:",
     ownMany: "this moves each import's own segments, any original file it kept, and its row in your import history.",
-    stays: 'summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.',
-    staysMany: 'summaries and entities made from them elsewhere in your journal stay where they are and may still mention them.',
+    stays: 'activities, summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.',
+    staysMany: 'activities, summaries and entities made from them elsewhere in your journal stay where they are and may still mention them.',
+    sharedOne: 'on 1 day, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
+    sharedMany: 'on {n} days, some of what it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
+    sharedUnknown: 'some of what it brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.',
+    sharedSet: 'some of what they brought in may stay, because an earlier import in your journal brought it in first. it goes with that import.',
+    tookNothing: 'everything it brought in stays, because an earlier import in your journal brought it in first. it goes with that import.',
+    verb: 'deletes',
     size: 'total size: {size}',
   },
   erase: {
@@ -1412,10 +1418,30 @@ const IMPORT_DELETE_COPY = {
     reachMany: "they leave your journal now and can't be recovered.",
     lead: "this erases the import's own:",
     ownMany: "this erases each import's own segments, any original file it kept, and its row in your import history.",
-    stays: "summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
-    staysMany: "summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
+    stays: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
+    staysMany: "activities, summaries and entities made from them elsewhere in your journal aren't erased and may still mention them.",
+    sharedOne: "on 1 day, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
+    sharedMany: "on {n} days, some of what it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
+    sharedUnknown: 'some of what it brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.',
+    sharedSet: 'some of what they brought in may stay and not be erased, because an earlier import in your journal brought it in first. it goes with that import.',
+    tookNothing: "everything it brought in stays and isn't erased, because an earlier import in your journal brought it in first. it goes with that import.",
+    verb: 'erases',
+  },
+  // What brings back what a body import deletes or erases ({verb}).
+  again: {
+    apple_health: 'each Apple Health export holds your whole history, so importing one again brings back what this {verb}.',
+    strava: 'importing a Strava download again brings back the workouts this {verb}.',
+    oura: 'an Oura sync leaves out what this {verb}. one you ask for the days it covered brings it back.',
   },
   list: {
+    bodySpan: 'body data from {first} to {last}',
+    bodyDay: 'body data from {day}',
+    bodyUnknown: 'the body data it brought in',
+    workoutSpanOne: '{n} workout from {first} to {last}',
+    workoutSpanMany: '{n} workouts from {first} to {last}',
+    workoutDayOne: '{n} workout from {day}',
+    workoutDayMany: '{n} workouts from {day}',
+    workoutsUnknown: 'the workouts it brought in',
     spanOne: '{n} segment from {first} to {last}',
     spanMany: '{n} segments from {first} to {last}',
     dayOne: '{n} segment from {day}',
@@ -1546,31 +1572,77 @@ function importSourceName(sourceType, display) {
 }
 
 function importDeleteItem(imp) {
-  return { id: imp.timestamp, source: importSourceName(imp.source_type, imp.source_display) };
+  return { id: imp.timestamp, kind: imp.source_type || '', source: importSourceName(imp.source_type, imp.source_display) };
 }
 
 // What one import's dialog lists, from its preview: nothing yet while it loads,
 // words without counts if it couldn't load, and only lines that are true.
-function importOneListLines(preview) {
+function importOneListLines(preview, kind) {
   const L = IMPORT_DELETE_COPY.list;
-  if (preview === null) return [L.segmentsUnknown, L.originalUnknown, L.row];
+  const body = kind === 'apple_health' || kind === 'oura';
+  if (preview === null) {
+    if (body) return [L.bodyUnknown, L.row];
+    if (kind === 'strava') return [L.workoutsUnknown, L.row];
+    return [L.segmentsUnknown, L.originalUnknown, L.row];
+  }
   if (!preview) return [];
   const lines = [];
-  const segments = Number(preview.segments) || 0;
-  if (segments > 0) {
-    const [first, last] = Array.isArray(preview.days) ? preview.days : [];
-    if (first && last && first !== last) {
-      lines.push(importDeleteFill(segments === 1 ? L.spanOne : L.spanMany, { n: segments, first: importDeleteDay(first), last: importDeleteDay(last) }));
-    } else if (first) {
-      lines.push(importDeleteFill(segments === 1 ? L.dayOne : L.dayMany, { n: segments, day: importDeleteDay(first) }));
-    } else {
-      lines.push(L.segmentsUnknown);
+  const [first, last] = Array.isArray(preview.days) ? preview.days : [];
+  if (body) {
+    // What an owner knows a body import by: the days of its own it holds.
+    if (first && last && first !== last) lines.push(importDeleteFill(L.bodySpan, { first: importDeleteDay(first), last: importDeleteDay(last) }));
+    else if (first) lines.push(importDeleteFill(L.bodyDay, { day: importDeleteDay(first) }));
+  } else if (kind === 'strava') {
+    // A Strava import is its workouts; their pieces aren't counted beside them.
+    const workouts = Number(preview.workouts) || 0;
+    if (workouts > 0 && first && last && first !== last) {
+      lines.push(importDeleteFill(workouts === 1 ? L.workoutSpanOne : L.workoutSpanMany, { n: workouts, first: importDeleteDay(first), last: importDeleteDay(last) }));
+    } else if (workouts > 0 && first) {
+      lines.push(importDeleteFill(workouts === 1 ? L.workoutDayOne : L.workoutDayMany, { n: workouts, day: importDeleteDay(first) }));
+    }
+  } else {
+    const segments = Number(preview.segments) || 0;
+    if (segments > 0) {
+      if (first && last && first !== last) {
+        lines.push(importDeleteFill(segments === 1 ? L.spanOne : L.spanMany, { n: segments, first: importDeleteDay(first), last: importDeleteDay(last) }));
+      } else if (first) {
+        lines.push(importDeleteFill(segments === 1 ? L.dayOne : L.dayMany, { n: segments, day: importDeleteDay(first) }));
+      } else {
+        lines.push(L.segmentsUnknown);
+      }
     }
   }
   const originals = Number(preview.originals) || 0;
   if (originals === 1) lines.push(L.originalOne);
   else if (originals > 1) lines.push(importDeleteFill(L.originalMany, { n: originals }));
   lines.push(L.row);
+  return lines;
+}
+
+// Whether the page lists a live import of this source that began before
+// `id` and isn't one of `outside`: something of `id` may then stay with it.
+function importEarlierOfSource(kind, id, outside = new Set()) {
+  return (importsCache || []).some(imp => imp.source_type === kind && imp.timestamp < id && !outside.has(imp.timestamp));
+}
+
+// The lines after the list for a body import: what an earlier import keeps,
+// and what brings it back.
+function importBodyLines(step, item, preview, kind) {
+  const copy = IMPORT_DELETE_COPY[step];
+  const lines = [];
+  if (kind === 'apple_health' || kind === 'oura') {
+    if (preview === null) {
+      if (importEarlierOfSource(kind, item.id)) lines.push(copy.sharedUnknown);
+    } else if (preview && !Array.isArray(preview.days) && Number(preview.shared_days) > 0) {
+      lines.push(copy.tookNothing);
+    } else if (preview && Number(preview.shared_days) > 0) {
+      const n = Number(preview.shared_days);
+      lines.push(n === 1 ? copy.sharedOne : importDeleteFill(copy.sharedMany, { n }));
+    }
+  }
+  const again = IMPORT_DELETE_COPY.again[kind];
+  const strava = kind === 'strava' && (preview === null || Number(preview && preview.workouts) > 0);
+  if (again && (kind !== 'strava' || strava)) lines.push(importDeleteFill(again, { verb: copy.verb }));
   return lines;
 }
 
@@ -1585,15 +1657,21 @@ function importMetaLine(item) {
 // step its size once the preview has it.
 function importOneBody(step, item, preview) {
   const copy = IMPORT_DELETE_COPY[step];
+  const kind = (preview && preview.source) || item.kind || '';
   const list = importDeleteEl('ul', 'import-delete-list');
-  importOneListLines(preview).forEach(line => list.append(importDeleteEl('li', null, line)));
+  importOneListLines(preview, kind).forEach(line => list.append(importDeleteEl('li', null, line)));
+  const body = importBodyLines(step, item, preview, kind);
   const nodes = [
     importMetaLine(item),
     importDeleteEl('p', 'import-delete-reach', copy.reach),
     importDeleteEl('p', 'import-delete-lead', copy.lead),
     list,
-    importDeleteEl('p', 'import-delete-stays', copy.stays),
   ];
+  // The earlier import's line comes before what stays; what brings it back after.
+  const again = body.length && IMPORT_DELETE_COPY.again[kind] ? body.pop() : null;
+  body.forEach(line => nodes.push(importDeleteEl('p', 'import-delete-shared', line)));
+  nodes.push(importDeleteEl('p', 'import-delete-stays', copy.stays));
+  if (again) nodes.push(importDeleteEl('p', 'import-delete-again', again));
   const size = step === 'move' && preview ? importDeleteSize(preview.bytes) : '';
   if (size) nodes.push(importDeleteEl('p', 'import-delete-size', importDeleteFill(copy.size, { size })));
   return nodes;
@@ -1612,12 +1690,20 @@ function importSetBody(step, items) {
   if (items.length > IMPORT_SET_SHOWN) {
     list.append(importDeleteEl('li', 'trash-set-more', importDeleteFill(IMPORT_DELETE_COPY.more, { n: items.length - IMPORT_SET_SHOWN })));
   }
-  return [
+  const nodes = [
     list,
     importDeleteEl('p', 'import-delete-reach', copy.reachMany),
     importDeleteEl('p', 'import-delete-own', copy.ownMany),
-    importDeleteEl('p', 'import-delete-stays', copy.staysMany),
   ];
+  // Some of a body import may stay with an earlier one the page lists outside the set.
+  const inSet = new Set(items.map(item => item.id));
+  if (items.some(item => (item.kind === 'apple_health' || item.kind === 'oura') && importEarlierOfSource(item.kind, item.id, inSet))) {
+    nodes.push(importDeleteEl('p', 'import-delete-shared', copy.sharedSet));
+  }
+  nodes.push(importDeleteEl('p', 'import-delete-stays', copy.staysMany));
+  const kinds = [...new Set(items.map(item => item.kind))].filter(kind => IMPORT_DELETE_COPY.again[kind]);
+  kinds.forEach(kind => nodes.push(importDeleteEl('p', 'import-delete-again', importDeleteFill(IMPORT_DELETE_COPY.again[kind], { verb: copy.verb }))));
+  return nodes;
 }
 
 function importDialogNodes() {

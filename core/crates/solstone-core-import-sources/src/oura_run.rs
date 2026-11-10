@@ -236,8 +236,6 @@ struct DayIndex {
     firsts: HashMap<String, Vec<Placed>>,
     /// Live tiles by the id of their experience: each one's window and id.
     tiles: HashMap<String, Vec<(String, String)>>,
-    /// The owner deleted a body window here.
-    deleted: bool,
     /// A window here can't be read as rows.
     unparseable: bool,
     /// Body records filed on this day, by account key: the account's stored
@@ -264,9 +262,6 @@ enum Verdict {
     Hold,
     /// The owner deleted its stored experience, or where it would go.
     StayedDeleted,
-    /// Not stored anywhere it could be, with no record to say whether the owner
-    /// deleted it, beside a body window the owner deleted on these days.
-    Refused(Vec<String>),
 }
 
 /// A span's two ends as instants, for telling a revised time from a rendering.
@@ -283,6 +278,13 @@ struct Lookup<'a> {
     source: &'a BodySource,
     zone: Tz,
     days: HashMap<String, DayIndex>,
+    /// A re-import's (an explicit range): what the owner deleted is no reason to
+    /// leave a document out. An ordinary sync's lookup keeps it out.
+    comes_back: bool,
+    /// An ordinary sync's record of what Oura runs brought in: a document in it
+    /// that the journal no longer holds anywhere it could be is one the owner
+    /// deleted, and stays out with its tiles, a revision of it too.
+    fetched: Option<&'a solstone_core_import::oura_fetched::Fetched>,
 }
 
 fn day_key(date: NaiveDate) -> String {
@@ -331,14 +333,6 @@ impl Lookup<'_> {
                 continue;
             }
             if owner_deleted(&dir).map_err(io_text)? {
-                let base = solstone_core_format::content::body_records::grid_length(&key);
-                let length = key
-                    .split_once('_')
-                    .and_then(|(_, length)| length.parse::<u64>().ok());
-                let original = base
-                    .zip(length)
-                    .is_some_and(|(base, length)| length <= base + 1);
-                index.deleted |= original && is_body_only_dir(self.source.stream, &dir);
                 continue;
             }
             let rows = match stored_rows(self.journal, self.source, &(day.to_owned(), key.clone()))
@@ -447,6 +441,9 @@ impl Lookup<'_> {
         start: chrono::DateTime<chrono::FixedOffset>,
         length: i64,
     ) -> Result<bool, String> {
+        if self.comes_back {
+            return Ok(false);
+        }
         let (day, key) = window_id(floor_to_window(start, self.zone, length), length);
         let clock = key.split_once('_').map_or(key.as_str(), |(clock, _)| clock);
         let stream = stream_dir(self.journal, self.source, &day);
@@ -559,6 +556,9 @@ impl Lookup<'_> {
         let new_day = day_key(start.with_timezone(&self.zone).date_naive());
         let account = format!("{}\u{1f}{id}", self.source.stream);
         if firsts.is_empty() {
+            if self.fetched.is_some_and(|fetched| fetched.contains(id)) {
+                return Ok(Verdict::StayedDeleted);
+            }
             // Its own window is one the owner deleted: it stays deleted, as any new
             // row does there.
             if self.window_deleted(start, length)? {
@@ -572,17 +572,6 @@ impl Lookup<'_> {
                         return Ok(Verdict::StayedDeleted);
                     }
                 }
-            }
-            // Not stored live anywhere it could be, and nothing says whether the
-            // owner deleted it. Beside a body window the owner deleted, it's left
-            // out rather than brought back.
-            let deleted: Vec<String> = days
-                .iter()
-                .filter(|day| index(day).deleted)
-                .cloned()
-                .collect();
-            if !deleted.is_empty() {
-                return Ok(Verdict::Refused(deleted));
             }
         } else {
             // A start that crosses the owner's midnight, or a place or a record on
@@ -757,7 +746,13 @@ fn readable_day(day: &str) -> String {
 
 /// Read staged pages into sorted runs under `dir`. `progress` hears the row count
 /// now and then. A window the lookup can't read at all stops the scan, which the
-/// next run with the same pages does again.
+/// next run with the same pages does again. `fetched` is an ordinary sync's
+/// record of what it brought in, and keeps out what the owner deleted; a
+/// re-import passes none, and what the owner deleted comes back.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the scan of one run's pages; each argument is a fact about the run"
+)]
 pub fn scan_pages(
     journal: &Path,
     source: &BodySource,
@@ -765,6 +760,7 @@ pub fn scan_pages(
     pages: &Path,
     dir: &Path,
     spill_bytes: usize,
+    fetched: Option<&solstone_core_import::oura_fetched::Fetched>,
     progress: &mut dyn FnMut(u64),
 ) -> Result<(ScanCounts, ScanFindings), String> {
     let entries = read_index(pages)?;
@@ -796,6 +792,8 @@ pub fn scan_pages(
         source,
         zone,
         days: HashMap::new(),
+        comes_back: fetched.is_none(),
+        fetched,
     };
     for (page, entry) in entries.iter().enumerate() {
         let endpoint = entry.endpoint.as_str();
@@ -891,15 +889,6 @@ pub fn scan_pages(
                 }
                 Verdict::StayedDeleted => {
                     findings.stayed_deleted += 1;
-                    continue;
-                }
-                // Re-reading never fills it, so it is no hole.
-                Verdict::Refused(days) => {
-                    let days: Vec<String> = days.iter().map(|day| readable_day(day)).collect();
-                    *findings
-                        .unsure
-                        .entry(format!("{endpoint}{UNSURE_SEPARATOR}{}", days.join(",")))
-                        .or_default() += 1;
                     continue;
                 }
             };

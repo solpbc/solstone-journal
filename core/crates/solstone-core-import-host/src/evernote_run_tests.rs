@@ -437,15 +437,28 @@ fn erased_evernote_note_takes_kept_text_and_changed_export_returns() {
     solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
     assert_eq!(kept_notes(root.path()), vec![live_path.clone()]);
     assert_eq!(fs::read(&live_path).unwrap(), live_bytes);
-    // A single-note deletion leaves its import live: identical bytes remain
-    // refused at the file level, before note comparison.
+    // A single-note deletion leaves its import live, and Evernote places by fixed
+    // keys: the identical file comes through and brings back only the deleted
+    // note, leaving the live one byte-identical.
     let (same, claimed) = run_bound(
         dispatch(&path, "20200104_120000", false, false),
         root.path(),
     );
     assert_eq!(same.exit_code, 0, "{}", same.stderr);
-    assert!(claimed.is_none());
+    assert!(claimed.is_some(), "{}", same.stdout);
     assert!(root.path().join("imports").join(id).is_dir());
+    assert_eq!(fs::read(&live_path).unwrap(), live_bytes);
+    assert!(
+        fs::read_to_string(
+            root.path()
+                .join("chronicle/20200101/import.evernote/120000_300/note_transcript.md"),
+        )
+        .is_ok_and(|text| text.contains("old private marker")),
+        "the deleted note is back"
+    );
+    // Deleted again, for what follows.
+    let item = trash_note(root.path(), "20200101", "import.evernote");
+    solstone_core_trash::erase(root.path(), &item.id, Action::Erase, surface()).unwrap();
     let changed = note(
         "River",
         "20200101T120000Z",
@@ -485,7 +498,7 @@ fn erased_evernote_note_takes_kept_text_and_changed_export_returns() {
     .unwrap();
     assert!(text.contains("new private marker"));
     println!(
-        "single-note demo: old kept text erased; only the deleted note returned, the live note stayed byte-identical, and identical-file refusal stayed intact"
+        "single-note demo: old kept text erased; the identical file brought back only the deleted note; the live note stayed byte-identical"
     );
 }
 

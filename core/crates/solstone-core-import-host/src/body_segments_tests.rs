@@ -134,7 +134,7 @@ fn an_export_publishes_windows_that_ask_for_no_thinking() {
 }
 
 #[test]
-fn the_same_export_changes_nothing_an_edit_updates_and_a_deletion_stays() {
+fn the_same_export_changes_nothing_an_edit_updates_and_a_deletion_comes_back() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -183,7 +183,8 @@ fn the_same_export_changes_nothing_an_edit_updates_and_a_deletion_stays() {
             .is_file()
     );
 
-    // Deleted through the owner's door, it stays deleted and the summary survives.
+    // Deleted through the owner's door, importing the export again brings it
+    // back where it was, as new data.
     let outcome = door::remove_segments(
         root,
         &[solstone_core_retention::Target {
@@ -199,18 +200,31 @@ fn the_same_export_changes_nothing_an_edit_updates_and_a_deletion_stays() {
     let tombstoned = window(root, "20261010", "060000_3600");
     assert!(solstone_core_segment::is_body_only_dir(STREAM, &tombstoned));
     let after = run(root, &source, "20261012_120004", None);
-    assert_eq!(after.published, 0);
+    assert_eq!(after.published, 1, "{}", after.summary);
+    assert_eq!(
+        first_line_counts(&after.summary),
+        [1, 1, 0, 0],
+        "{}",
+        after.summary
+    );
     assert!(
-        after.summary.contains("1 stayed deleted"),
+        !after.summary.contains("stayed deleted"),
         "{}",
         after.summary
     );
     assert!(after.summary.contains("heart rate: 2"), "{}", after.summary);
-    assert!(!tombstoned.join(BODY_RECORDS_FILE).exists());
+    assert!(!tombstoned.join("tombstone.json").exists());
+    let rows =
+        decode_rows(&String::from_utf8(body_bytes(root, "20261010", "060000_3600")).unwrap())
+            .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].value.as_deref(), Some("70"));
+    // And once back, the same export changes nothing again.
+    assert_eq!(run(root, &source, "20261012_120005", None).published, 0);
 }
 
 #[test]
-fn a_deleted_card_stays_deleted_and_new_rows_land_beside_it() {
+fn a_deleted_card_stays_deleted_and_rows_beside_it_come_back_after_their_own_delete() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -253,7 +267,7 @@ fn a_deleted_card_stays_deleted_and_new_rows_land_beside_it() {
     let first = run(root, &source, "20261012_120000", None);
     assert_eq!(first.published, 1);
     assert!(
-        first.summary.contains("0 stayed deleted"),
+        !first.summary.contains("stayed deleted"),
         "{}",
         first.summary
     );
@@ -271,18 +285,23 @@ fn a_deleted_card_stays_deleted_and_new_rows_land_beside_it() {
     assert_eq!(again.published, 0);
     assert!(!card.join(BODY_RECORDS_FILE).exists());
 
-    // The window beside it, once deleted, stays deleted too.
+    // The window beside it held only rows: once deleted, importing again brings
+    // them back there, and the card's deletion still holds.
     delete("000000_301");
     assert!(solstone_core_segment::is_body_only_dir(STREAM, &beside));
-    let gone = run(root, &source, "20261012_120002", None);
-    assert_eq!(gone.published, 0);
-    assert!(
-        gone.summary.contains("1 stayed deleted"),
-        "{}",
-        gone.summary
+    let back = run(root, &source, "20261012_120002", None);
+    assert_eq!(back.published, 1, "{}", back.summary);
+    assert!(!back.summary.contains("stayed deleted"), "{}", back.summary);
+    assert!(!beside.join("tombstone.json").exists());
+    assert_eq!(
+        decode_rows(&fs::read_to_string(beside.join(BODY_RECORDS_FILE)).unwrap())
+            .unwrap()
+            .len(),
+        3
     );
-    assert!(!beside.join(BODY_RECORDS_FILE).exists());
     assert!(!card.join(BODY_RECORDS_FILE).exists());
+    assert!(card.join("tombstone.json").is_file());
+    assert!(!window(root, "20261010", "000000_302").exists());
 }
 
 #[test]
@@ -1212,7 +1231,7 @@ fn a_session_dropped_later_leaves_its_series_on_its_tiles_and_makes_no_empty_hou
 }
 
 #[test]
-fn a_reading_whose_tile_the_owner_deleted_stays_out_when_its_session_goes() {
+fn a_reading_whose_tile_the_owner_deleted_comes_back_in_its_hour_when_its_session_goes() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -1227,23 +1246,25 @@ fn a_reading_whose_tile_the_owner_deleted_stays_out_when_its_session_goes() {
     );
     delete(root, TEN, "063500_300");
 
+    // Saved in neither of its places now, it lands where it goes: its hour. The
+    // deleted tile is no reason to hold it back.
     let two = run(
         root,
         &export(&scratch.path().join("2"), &readings),
         "20261012_120001",
         None,
     );
+    assert!(!two.summary.contains("added"), "{}", two.summary);
+    assert_eq!(holding(root, TEN, "81"), ["060000_3600"]);
     assert!(
-        two.summary.contains("1 reading wasn't added"),
-        "{}",
-        two.summary
+        window(root, TEN, "063500_300")
+            .join("tombstone.json")
+            .is_file()
     );
-    assert!(holding(root, TEN, "81").is_empty());
-    assert!(!window(root, TEN, "060000_3600").exists());
 }
 
 #[test]
-fn readings_in_an_hour_the_owner_deleted_stay_out_when_a_session_arrives() {
+fn readings_in_an_hour_the_owner_deleted_come_back_on_the_tiles_of_a_session_that_arrives() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -1267,24 +1288,25 @@ fn readings_in_an_hour_the_owner_deleted_stay_out_when_a_session_arrives() {
         "20261012_120001",
         None,
     );
-    assert!(
-        two.summary.contains("2 readings weren't added"),
-        "{}",
-        two.summary
-    );
-    for value in ["81", "82"] {
-        assert!(holding(root, TEN, value).is_empty(), "{value}");
-    }
-    // The session itself lands on its tiles.
+    // Saved nowhere now, they land where they go: on the session's tiles, beside
+    // the session itself. The hour stays as the owner left it.
+    assert!(!two.summary.contains("added"), "{}", two.summary);
+    assert_eq!(holding(root, TEN, "81"), ["063500_300"]);
+    assert_eq!(holding(root, TEN, "82"), ["064000_300"]);
     assert!(
         window(root, TEN, "063000_300")
             .join(BODY_RECORDS_FILE)
             .is_file()
     );
+    assert!(
+        window(root, TEN, "060000_3600")
+            .join("tombstone.json")
+            .is_file()
+    );
 }
 
 #[test]
-fn deleting_a_workouts_tile_keeps_what_was_saved_and_holds_back_what_is_new_inside_it() {
+fn deleting_a_workouts_tile_keeps_what_was_saved_beside_it_and_importing_again_brings_it_back() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -1304,7 +1326,8 @@ fn deleting_a_workouts_tile_keeps_what_was_saved_and_holds_back_what_is_new_insi
     let hour = body_bytes(root, TEN, "060000_3600");
     delete(root, TEN, "064000_300");
 
-    // The same export: the phone's readings are where they were, nothing held back.
+    // The same export again: the phone's readings stay where they were saved, and
+    // the deleted tile comes back with the watch's reading on it.
     let again = run(
         root,
         &export(&scratch.path().join("1"), &records),
@@ -1312,10 +1335,20 @@ fn deleting_a_workouts_tile_keeps_what_was_saved_and_holds_back_what_is_new_insi
         None,
     );
     assert_eq!(body_bytes(root, TEN, "060000_3600"), hour);
-    assert!(holding(root, TEN, "81").is_empty(), "{}", again.summary);
+    assert_eq!(
+        holding(root, TEN, "81"),
+        ["064000_300"],
+        "{}",
+        again.summary
+    );
+    assert!(!again.summary.contains("added"), "{}", again.summary);
+    assert!(
+        !window(root, TEN, "064000_300")
+            .join("tombstone.json")
+            .exists()
+    );
 
-    // The reading saved on the deleted tile was one the export still holds, so it's
-    // counted there; a new phone reading inside the deleted slot is held back too.
+    // A new phone reading inside the slot lands with the others in its hour.
     let mut more = records.to_vec();
     more.push(phone("2026-10-10 06:42:10 -0600", "93"));
     let three = run(
@@ -1324,12 +1357,8 @@ fn deleting_a_workouts_tile_keeps_what_was_saved_and_holds_back_what_is_new_insi
         "20261012_120002",
         None,
     );
-    assert!(
-        three.summary.contains("1 reading wasn't added"),
-        "{}",
-        three.summary
-    );
-    assert!(holding(root, TEN, "93").is_empty());
+    assert!(!three.summary.contains("added"), "{}", three.summary);
+    assert_eq!(holding(root, TEN, "93"), ["060000_3600"]);
 }
 
 #[test]
@@ -1398,7 +1427,8 @@ fn a_run_over_an_earlier_import_stopped_anywhere_resumes_to_the_same_bytes() {
     let first = export(&scratch.path().join("1"), &days_records(false));
     let second = days_export(&scratch.path().join("2"));
     // The earlier import, then the owner deletes one morning's hour, so the runs
-    // arriving with the second export find readings both saved and deleted.
+    // arriving with the second export find readings both saved and deleted, and
+    // bring the deleted ones back.
     let earlier = |root: &Path| {
         run_apple_health_segments(root, &request(&first, "20261104_110000")).unwrap();
         delete(root, "20261011", "060000_3600");
@@ -1408,11 +1438,8 @@ fn a_run_over_an_earlier_import_stopped_anywhere_resumes_to_the_same_bytes() {
     let done =
         run_apple_health_segments(whole.path(), &request(&second, "20261104_120000")).unwrap();
     assert!(done.finished);
-    assert!(
-        done.summary.contains("readings weren't added"),
-        "{}",
-        done.summary
-    );
+    assert!(!done.summary.contains("added"), "{}", done.summary);
+    assert!(!done.summary.contains("stayed deleted"), "{}", done.summary);
     // A tombstone carries the moment of its delete, which each journal did apart.
     let settled = |root: &Path| {
         let mut files = snapshot(root);
@@ -1465,7 +1492,7 @@ fn strava_workout(day: u32) -> String {
 }
 
 #[test]
-fn a_reading_whose_tile_was_deleted_stays_out_though_another_sources_session_covers_it() {
+fn a_deleted_reading_comes_back_in_its_hour_though_another_sources_session_covers_it() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
@@ -1489,15 +1516,15 @@ fn a_reading_whose_tile_was_deleted_stays_out_though_another_sources_session_cov
         "20261012_120001",
         None,
     );
+    // Importing again brings it back: not onto Strava's session, which takes the
+    // deleted slot back for its own tile, but where a reading of its own source
+    // goes with its own session gone, its hour.
+    assert_eq!(holding(root, TEN, "81"), ["060000_3600"]);
+    assert!(!two.summary.contains("added"), "{}", two.summary);
     assert!(
-        holding(root, TEN, "81").is_empty(),
-        "a reading the owner deleted came back in {:?}",
-        holding(root, TEN, "81")
-    );
-    assert!(
-        two.summary.contains("1 reading wasn't added"),
-        "{}",
-        two.summary
+        window(root, TEN, "064000_300")
+            .join(BODY_RECORDS_FILE)
+            .is_file()
     );
 }
 
@@ -3284,18 +3311,34 @@ fn an_apple_runs_state_holds_nothing_of_moves_and_its_tiles_keep_their_index_ids
 }
 
 /// The first line's counts, in order: written, unchanged, stayed deleted, unreadable.
+/// Stayed deleted is said only when it isn't 0.
 fn first_line_counts(summary: &str) -> [u64; 4] {
     let line = summary
         .lines()
         .find(|line| line.contains(" written, "))
         .unwrap_or_else(|| panic!("no counts line: {summary}"));
-    let numbers: Vec<u64> = line
+    let count = |label: &str| -> u64 {
+        line.split(", ")
+            .flat_map(|part| part.split(". "))
+            .find_map(|part| {
+                let part = part.trim_start_matches(|c: char| !c.is_ascii_digit());
+                let (number, rest) = part.split_once(' ')?;
+                rest.starts_with(label)
+                    .then(|| number.parse().ok())
+                    .flatten()
+            })
+            .unwrap_or(0)
+    };
+    let written = line
         .split(|c: char| !c.is_ascii_digit())
-        .filter(|part| !part.is_empty())
-        .take(4)
-        .map(|part| part.parse().unwrap())
-        .collect();
-    [numbers[0], numbers[1], numbers[2], numbers[3]]
+        .find(|part| !part.is_empty())
+        .map_or(0, |part| part.parse().unwrap());
+    [
+        written,
+        count("unchanged"),
+        count("stayed deleted"),
+        count("unreadable"),
+    ]
 }
 
 fn listed_windows(root: &Path, import: &str) -> u64 {

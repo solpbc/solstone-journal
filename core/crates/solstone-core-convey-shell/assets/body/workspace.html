@@ -769,9 +769,158 @@ a.body-day-cell:focus-visible {
   cursor: pointer;
 }
 
-.body-workout-delete[data-confirming] {
-  border-color: var(--danger);
+/* The workout's delete is stage 2's dialog: the same rules as the transcripts page's. */
+.body-trash-dialog {
+  width: min(520px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.body-trash-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.body-trash-dialog::backdrop {
+  background: color-mix(in srgb, var(--surface-dark) 55%, transparent);
+}
+
+.body-trash-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.body-trash-head h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.body-trash-erase .body-trash-head h3 {
   color: var(--danger);
+}
+
+.body-trash-close {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.body-trash-close:hover {
+  color: var(--ink-soft);
+}
+
+.body-trash-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.body-trash-note {
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--cream);
+  border-left: 4px solid var(--hairline-2);
+  color: var(--ink);
+}
+
+.body-trash-erase .body-trash-note {
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+
+.body-trash-note p {
+  margin: 0 0 12px;
+}
+
+.body-trash-note p:last-child {
+  margin-bottom: 0;
+}
+
+.body-trash-meta {
+  font-size: 14px;
+}
+
+.body-trash-meta strong {
+  white-space: nowrap;
+}
+
+.body-trash-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  padding: 0 24px 24px;
+}
+
+.body-trash-right {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5em;
+}
+
+.body-trash-btn {
+  border-radius: 10px;
+  padding: 10px 18px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.body-trash-secondary {
+  border: 0;
+  background: var(--cream-bright);
+  color: var(--ink-soft);
+}
+
+.body-trash-secondary:hover {
+  background: var(--hairline);
+}
+
+.body-trash-danger {
+  border: 1px solid var(--danger);
+  background: var(--paper);
+  color: var(--danger);
+}
+
+.body-trash-danger-fill {
+  border: 0;
+  background: var(--danger);
+  color: var(--ink-on-danger);
+}
+
+.body-trash-primary {
+  border: 0;
+  background: var(--orange);
+  color: var(--ink-on-brand);
+}
+
+@media (max-width: 480px) {
+  .body-trash-foot button {
+    min-height: 44px;
+    padding-left: 12px;
+    padding-right: 12px;
+    white-space: nowrap;
+  }
 }
 
 .body-table-wrap {
@@ -1118,92 +1267,173 @@ a.body-day-cell:focus-visible {
     const id = escapeHtml(workout.strava_activity_id);
     const details = asArray(workout.details);
     const more = asArray(workout.more_from_strava);
-    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>more from Strava &middot; <span class="body-num">${escapeHtml(more.length)}</span></summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
+    return `<li class="body-workout-strava" data-strava-row="${id}"><span class="body-workout-name">${escapeHtml(workout.name)}</span><span class="body-num">${workout.start ? escapeHtml(workout.start) : ""}${workout.duration ? ` &middot; ${escapeHtml(workout.duration)}` : ""}${workout.metrics_label ? ` &middot; ${escapeHtml(workout.metrics_label)}` : ""} &middot; Strava</span><button type="button" class="body-workout-delete" data-strava-delete="${id}" data-strava-start="${workout.start ? escapeHtml(workout.start) : ""}" aria-label="delete ${escapeHtml(workout.name)}">delete</button>${details.length ? `<span class="body-workout-details">Strava's figures: ${details.map(escapeHtml).join(" &middot; ")}</span>` : ""}${more.length ? `<details class="body-workout-more"><summary>more from Strava &middot; <span class="body-num">${escapeHtml(more.length)}</span></summary><dl>${more.map((field) => `<dt>${escapeHtml(String(field.label ?? "").toLowerCase())}</dt><dd>${escapeHtml(field.value)}</dd>`).join("")}</dl></details>` : ""}</li>`;
   }
 
-  // Deleting a Strava workout takes every piece of it, on every day it covers.
-  // The first press asks; the second deletes, with ten seconds to cancel. The
-  // outcome is read back from the journal, never assumed.
+  // Deleting a Strava workout moves every piece of it, on every day it covers, to
+  // the trash as one thing. The dialog asks once, with erase now as its own step;
+  // the receipt can recover it.
   const STRAVA_API = "/app/transcripts/api/strava";
+  const TRASH_PAGE = "/app/settings#trash";
+  const WORKOUT_COPY = {
+    move: {
+      title: "delete this workout?",
+      reach: "it leaves your journal now and waits in the trash, then it's erased. you can recover it until then.",
+      stays: "activities, summaries and entities made from it elsewhere in your journal stay where they are and may still mention it.",
+    },
+    erase: {
+      title: "erase this workout now?",
+      reach: "it leaves your journal now and can't be recovered.",
+      stays: "activities, summaries and entities made from it elsewhere in your journal aren't erased and may still mention it.",
+    },
+    again: "importing a Strava download again brings this workout back.",
+    buttons: { eraseNow: "erase now", cancel: "cancel", moveToTrash: "move to trash", back: "back", recover: "recover", openTrash: "open trash" },
+    receipt: {
+      moved: { title: "moved to the trash", message: "erases {date} unless you recover it." },
+      recovered: { title: "workout recovered", message: "it's back in your journal." },
+      erased: { title: "workout erased from your journal" },
+      recoverFailed: { title: "couldn't recover that workout", message: "it's still in the trash. you can try again from there." },
+      moveRefused: { title: "couldn't move that to the trash", message: "it's still in your journal." },
+      eraseRefused: { title: "couldn't erase that workout", message: "it's still in your journal." },
+      eraseFailed: { title: "couldn't erase that workout", message: "it's in the trash. you can try again from there." },
+      noAnswerMove: { title: "your journal didn't answer", message: "it may already be in the trash. reload to check." },
+      noAnswerErase: { title: "your journal didn't answer", message: "it may already be erased. reload to check." },
+      noAnswerRecover: { title: "your journal didn't answer", message: "it may already be back in your journal. reload to check." },
+    },
+  };
   function bodyToast(options) {
     const notifications = window.AppServices && window.AppServices.notifications;
     return notifications ? notifications.show({ app: "body", ...options }) : null;
   }
-  function resetStravaButton(button) {
-    button.removeAttribute("data-confirming");
-    button.textContent = "delete";
-    button.parentElement?.querySelector("[data-strava-note]")?.remove();
+  function workoutDayLabel(day) {
+    return day && window.JournalFormat && window.JournalFormat.day ? window.JournalFormat.day(day).toLowerCase() : String(day || "");
   }
-  async function watchStravaDelete(pending, rows, button, waitMs) {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? waitMs : 1000));
-      const response = await fetch(`${STRAVA_API}/delete-status/${encodeURIComponent(pending)}`).catch(() => null);
-      if (!response || !response.ok) continue;
-      const status = await response.json().catch(() => ({}));
-      if (status.state === "pending") continue;
-      if (status.state === "deleted") {
-        bodyToast({ icon: "trash-2", title: "workout deleted", autoDismiss: 4000 });
-      } else if (status.state !== "cancelled") {
-        rows.forEach((row) => { row.hidden = false; });
-        resetStravaButton(button);
-        bodyToast({ icon: "alert-triangle", title: status.state === "incomplete" ? "workout only partly deleted" : "workout not deleted", message: status.reason || "", autoDismiss: 8000 });
-      }
+  function trashEraseDate(eraseAt) {
+    const instant = new Date(eraseAt);
+    if (!eraseAt || Number.isNaN(instant.getTime())) return "";
+    const key = window.JournalClock && window.JournalClock.dayKey
+      ? window.JournalClock.dayKey(instant)
+      : `${instant.getFullYear()}${String(instant.getMonth() + 1).padStart(2, "0")}${String(instant.getDate()).padStart(2, "0")}`;
+    return workoutDayLabel(key);
+  }
+  function workoutReceipt(kind, fill = {}, buttons = []) {
+    const copy = WORKOUT_COPY.receipt[kind];
+    const put = (value) => value.replace("{date}", fill.date || "");
+    const settled = kind === "moved" || kind === "recovered" || kind === "erased";
+    const notice = { icon: settled ? (kind === "recovered" ? "undo-2" : "trash-2") : "triangle-alert", title: put(copy.title), dismissible: true, buttons };
+    if (copy.message && (kind !== "moved" || fill.date)) notice.message = put(copy.message);
+    // A refused or failed card stays until the owner dismisses it.
+    if (settled) notice.autoDismiss = 10000;
+    bodyToast(notice);
+  }
+  function openTrashButton() {
+    return { label: WORKOUT_COPY.buttons.openTrash, onClick: () => { window.location.href = TRASH_PAGE; } };
+  }
+  function reloadBodyDay() {
+    const { day } = window.solPathContext();
+    if (day) loadBodyDay(day);
+  }
+  async function recoverWorkout(trashId) {
+    let answer = null;
+    try {
+      const response = await fetch("/app/settings/api/trash/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [trashId], page: "body" }),
+      });
+      answer = await response.json().catch(() => null);
+      if (!response.ok) answer = { done: [] };
+    } catch (_) {
+      workoutReceipt("noAnswerRecover");
       return;
     }
-    bodyToast({ icon: "clock", title: "this delete hasn't finished yet", message: "reload in a minute to see whether it's gone.", autoDismiss: 8000 });
+    if (!(answer && Array.isArray(answer.done) && answer.done.includes(trashId))) {
+      workoutReceipt("recoverFailed", {}, [openTrashButton()]);
+      return;
+    }
+    reloadBodyDay();
+    workoutReceipt("recovered");
+  }
+  async function deleteWorkout(id, erase) {
+    const rows = Array.from(document.querySelectorAll(`[data-strava-row="${CSS.escape(id)}"]`));
+    let response;
+    try {
+      response = await fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(erase ? { erase: true } : {}),
+      });
+    } catch (_) {
+      workoutReceipt(erase ? "noAnswerErase" : "noAnswerMove");
+      return;
+    }
+    const answer = await response.json().catch(() => null);
+    if (!answer) {
+      workoutReceipt(erase ? "noAnswerErase" : "noAnswerMove");
+      return;
+    }
+    if (!response.ok) {
+      workoutReceipt(erase ? "eraseRefused" : "moveRefused");
+      return;
+    }
+    // The row leaves the day at once, and with the day's last one its card goes.
+    rows.forEach((row) => {
+      const list = row.parentElement;
+      row.remove();
+      if (list && !list.querySelector("[data-strava-row]")) list.closest(".body-card, section")?.remove();
+    });
+    if (answer.erased === true) { workoutReceipt("erased"); return; }
+    if (answer.erase_failed === true) { workoutReceipt("eraseFailed", {}, [openTrashButton()]); return; }
+    const trashId = answer.trash && answer.trash.id;
+    workoutReceipt("moved", { date: trashEraseDate(answer.trash && answer.trash.erase_at) }, [
+      { label: WORKOUT_COPY.buttons.recover, onClick: () => recoverWorkout(trashId) },
+      openTrashButton(),
+    ]);
+  }
+  function workoutDialog(button) {
+    const id = button.getAttribute("data-strava-delete");
+    const { day } = window.solPathContext();
+    const start = button.getAttribute("data-strava-start") || "";
+    const meta = [workoutDayLabel(day), start, "Strava"].filter(Boolean).join(" · ");
+    const dialog = document.createElement("dialog");
+    dialog.className = "body-trash-dialog";
+    dialog.setAttribute("aria-modal", "true");
+    let step = "move";
+    const paint = () => {
+      const copy = WORKOUT_COPY[step];
+      const erasing = step === "erase";
+      dialog.classList.toggle("body-trash-erase", erasing);
+      dialog.setAttribute("aria-label", copy.title);
+      dialog.innerHTML = html([
+        `<div class="body-trash-head"><h3>${escapeHtml(copy.title)}</h3><button type="button" class="body-trash-close" data-workout-cancel aria-label="close">&times;</button></div>`,
+        `<div class="body-trash-body"><div class="body-trash-note" data-workout-step="${step}"><p class="body-trash-meta"><strong>${escapeHtml(meta)}</strong></p><p>${escapeHtml(copy.reach)}</p><p>${escapeHtml(copy.stays)}</p><p>${escapeHtml(WORKOUT_COPY.again)}</p></div></div>`,
+        erasing
+          ? `<div class="body-trash-foot"><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-back>${escapeHtml(WORKOUT_COPY.buttons.back)}</button><button type="button" class="body-trash-btn body-trash-danger-fill" data-workout-erase>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button></span></div>`
+          : `<div class="body-trash-foot"><button type="button" class="body-trash-btn body-trash-danger" data-workout-erase-step>${escapeHtml(WORKOUT_COPY.buttons.eraseNow)}</button><span class="body-trash-right"><button type="button" class="body-trash-btn body-trash-secondary" data-workout-cancel>${escapeHtml(WORKOUT_COPY.buttons.cancel)}</button><button type="button" class="body-trash-btn body-trash-primary" data-workout-move>${escapeHtml(WORKOUT_COPY.buttons.moveToTrash)}</button></span></div>`,
+      ]);
+      dialog.querySelector(erasing ? "[data-workout-back]" : "[data-workout-move]")?.focus();
+    };
+    const close = () => { dialog.close(); dialog.remove(); button.focus(); };
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog || event.target.closest("[data-workout-cancel]")) { close(); return; }
+      if (event.target.closest("[data-workout-erase-step]")) { step = "erase"; paint(); return; }
+      if (event.target.closest("[data-workout-back]")) { step = "move"; paint(); return; }
+      if (event.target.closest("[data-workout-move]")) { close(); deleteWorkout(id, false); return; }
+      if (event.target.closest("[data-workout-erase]")) { close(); deleteWorkout(id, true); }
+    });
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+    document.body.appendChild(dialog);
+    paint();
+    dialog.showModal();
+    // Opening a dialog moves focus to its first control; the step's own goes first.
+    dialog.querySelector("[data-workout-move]")?.focus();
   }
   if (!window.__bodyStravaDeleteBound) {
-  window.__bodyStravaDeleteBound = true;
-  document.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-strava-delete]");
-    if (!button) return;
-    if (!button.hasAttribute("data-confirming")) {
-      button.setAttribute("data-confirming", "");
-      button.textContent = "delete this workout?";
-      const note = document.createElement("span");
-      note.className = "body-workout-details";
-      note.setAttribute("data-strava-note", "");
-      note.innerHTML = "this deletes the whole workout from your journal, on every day it covers. importing a Strava download again won't bring it back, unless its start time or length has changed on Strava. <details><summary>what stays</summary>the start time and length of each of its pieces stay, marked as a Strava workout you deleted and when, so a later import skips this workout. a delete doesn't reach copies made before it, in encrypted backup or wherever your journal folder was copied.</details>";
-      button.insertAdjacentElement("afterend", note);
-      return;
-    }
-    button.parentElement?.querySelector("[data-strava-note]")?.remove();
-    const id = button.getAttribute("data-strava-delete");
-    const rows = Array.from(document.querySelectorAll(`[data-strava-row="${CSS.escape(id)}"]`));
-    try {
-      const response = await fetch(`${STRAVA_API}/workout/${encodeURIComponent(id)}`, { method: "DELETE" });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error((data && data.error) || "that workout couldn't be deleted.");
-      rows.forEach((row) => { row.hidden = true; });
-      const waitMs = ((data.ttl_seconds || 10) + 1) * 1000;
-      let toast = null;
-      toast = bodyToast({
-        icon: "trash-2",
-        title: "deleting workout…",
-        message: "you can cancel for 10 seconds",
-        dismissible: true,
-        autoDismiss: 10000,
-        buttons: [{
-          label: "cancel",
-          dismiss: false,
-          onClick: async () => {
-            const cancel = await fetch(`${STRAVA_API}/cancel-delete/${encodeURIComponent(data.pending)}`, { method: "POST" }).catch(() => null);
-            const result = cancel && cancel.ok ? await cancel.json().catch(() => ({})) : {};
-            if (result.cancelled) {
-              rows.forEach((row) => { row.hidden = false; });
-              resetStravaButton(button);
-              window.AppServices?.notifications?.dismiss(toast);
-              bodyToast({ icon: "rotate-ccw", title: "delete cancelled", autoDismiss: 4000 });
-            }
-          },
-        }],
-      });
-      watchStravaDelete(data.pending, rows, button, waitMs);
-    } catch (error) {
-      resetStravaButton(button);
-      bodyToast({ icon: "alert-triangle", title: "workout not deleted", message: String(error.message || error), autoDismiss: 6000 });
-    }
-  });
+    window.__bodyStravaDeleteBound = true;
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-strava-delete]");
+      if (button) workoutDialog(button);
+    });
   }
 
   function renderExperience(item) {

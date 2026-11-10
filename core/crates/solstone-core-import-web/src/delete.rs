@@ -78,7 +78,7 @@ fn preview_of(root: &Path, id: &str, things: &ImportThings) -> Value {
         .map(|path| tree_bytes(&root.join(path)))
         .sum();
     let days = things.days();
-    json!({
+    let mut preview = json!({
         "id": id,
         "source": things.source,
         "imported_at": imported_at(root, id),
@@ -88,7 +88,15 @@ fn preview_of(root: &Path, id: &str, things: &ImportThings) -> Value {
         "shared": things.shared.len(),
         "bytes": bytes,
         "deletes_here": deletes_here(&things.source),
-    })
+    });
+    // A Strava import is its workouts; an Apple Health or Oura import can leave
+    // some of what it wrote on days another import here also wrote to.
+    if things.source == solstone_core_import::body_trash::STRAVA {
+        preview["workouts"] = json!(things.workouts.len());
+    } else if solstone_core_import::body_trash::is_body_source(&things.source) {
+        preview["shared_days"] = json!(things.shared_days);
+    }
+    preview
 }
 
 fn tree_bytes(path: &Path) -> u64 {
@@ -287,6 +295,11 @@ pub(crate) async fn delete_set(
                 Some(things) if !deletes_here(&things.source) => failed.push(
                     json!({"id": id, "key": "other", "reason": "this import can't be deleted here."}),
                 ),
+                Some(things) if things.unreadable > 0 => failed.push(json!({
+                    "id": id,
+                    "key": "other",
+                    "reason": solstone_core_import::import_trash::PART_UNREADABLE,
+                })),
                 Some(things) => {
                     chosen.push(Chosen {
                         unit: Unit::Import {
@@ -550,13 +563,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_strava_import_deletes_on_its_own_page_for_now() {
+    async fn a_strava_import_moves_its_own_workouts_and_a_merge_stays_out() {
         let root = journal();
         write(
             root.path(),
             &format!("imports/{ID}/manifest.json"),
             br#"{"source_type": "strava"}"#,
         );
+        // Its own tile, and one an earlier import wrote that this one listed.
+        let own = "chronicle/20260801/import.strava/070000_300";
+        let earlier = "chronicle/20260801/import.strava/080000_300";
+        write(
+            root.path(),
+            &format!("{own}/workout.json"),
+            json!({"import_id": ID, "activity_id": 11})
+                .to_string()
+                .as_bytes(),
+        );
+        write(
+            root.path(),
+            &format!("{earlier}/workout.json"),
+            json!({"import_id": "20260701_090000", "activity_id": 12})
+                .to_string()
+                .as_bytes(),
+        );
+        let (_, preview) = call(
+            root.path(),
+            Method::GET,
+            &format!("/app/import/api/imports/{ID}/delete"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(preview["workouts"], 1, "{preview}");
+        assert_eq!(preview["segments"], 1, "{preview}");
         let (status, body) = call(
             root.path(),
             Method::DELETE,
@@ -564,8 +603,26 @@ mod tests {
             json!({}),
         )
         .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(!root.path().join("imports").join(ID).exists());
+        assert!(root.path().join(own).join("tombstone.json").is_file());
+        assert!(root.path().join(earlier).join("workout.json").is_file());
+
+        // A journal archive merge still isn't one thing.
+        let merged = "20260803_090000";
+        write(
+            root.path(),
+            &format!("imports/{merged}/manifest.json"),
+            br#"{"source_type": "journal_archive"}"#,
+        );
+        let (status, body) = call(
+            root.path(),
+            Method::DELETE,
+            &format!("/app/import/api/imports/{merged}"),
+            json!({}),
+        )
+        .await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
         assert_eq!(body["reason_code"], "import_delete_elsewhere");
-        assert!(root.path().join("imports").join(ID).is_dir());
     }
 }

@@ -26,6 +26,15 @@ const TOMBSTONE: &str = "tombstone.json";
 const TALENTS: &str = "talents";
 const FACETS: &str = "facets.json";
 
+/// One import's own rows, split out of a window it shares while the trash
+/// moves them (`body.<import>.jsonl`). In passing, never content of its own.
+#[must_use]
+pub fn is_split_rows_name(name: &OsStr) -> bool {
+    name.to_str().is_some_and(|name| {
+        name != BODY_RECORDS_FILE && name.starts_with("body.") && name.ends_with(".jsonl")
+    })
+}
+
 /// What a segment's tombstone says was removed, from its manifest of top-level
 /// names. The tombstone is the only thing that survives a delete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,7 +176,10 @@ pub fn is_body_only_listing(
             if !allowed {
                 return false;
             }
-        } else if name != OsStr::new(STREAM_MARKER) && !is_incidental_file_name(name) {
+        } else if name != OsStr::new(STREAM_MARKER)
+            && !is_incidental_file_name(name)
+            && !is_split_rows_name(name)
+        {
             return false;
         }
     }
@@ -196,6 +208,7 @@ pub fn holds_foreign_content(dir: &Path) -> bool {
             name != OsStr::new(BODY_RECORDS_FILE)
                 && name != OsStr::new(STREAM_MARKER)
                 && !is_incidental_file_name(&name)
+                && !is_split_rows_name(&name)
         })
     })
 }

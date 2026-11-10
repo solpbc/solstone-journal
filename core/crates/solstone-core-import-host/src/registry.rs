@@ -291,6 +291,11 @@ fn already_saved(journal: &Path, media: &Path) -> bool {
         .ok()
         .and_then(|hash| solstone_core_import::find_manifest_by_hash(journal, &hash).ok())
         .and_then(|scan| scan.found)
+        // A fixed-key import with part of it deleted takes the same file again:
+        // it brings back what was deleted, with no copies.
+        .filter(|found| {
+            !solstone_core_import::import_trash::reimport_brings_back(journal, &found.path)
+        })
         .and_then(|found| {
             found
                 .manifest
@@ -1555,6 +1560,12 @@ fn run_strava_internal(
         Ok(lock) => lock,
         Err(_) => return failure(format!("{name} import failed: strava_lock_unavailable\n")),
     };
+    // Nothing of Strava is written while a delete or recovery of a Strava import
+    // or workout is part way: what that moves must not meet this run's tiles.
+    if let Some(words) = solstone_core_import::body_trash::source_trash_held(journal, "strava", "")
+    {
+        return failure(format!("{name} import failed: {words}\n"));
+    }
 
     #[cfg(test)]
     if let Some(after_lock) = hook.and_then(|h| h.after_lock) {
@@ -3680,23 +3691,8 @@ mod tests {
             .join(format!("imports/{id1}/content_manifest.jsonl"));
         let run1_manifest_bytes = fs::read(&run1_manifest_path).unwrap();
 
-        // The owner removes the segment under chronicle/20260101/: only its
-        // tombstone stands.
-        let day1_dir = journal.path().join("chronicle/20260101/import.chatgpt");
-        for entry in fs::read_dir(&day1_dir).unwrap() {
-            let seg_dir = entry.unwrap().path();
-            if seg_dir.is_dir() {
-                for child in fs::read_dir(&seg_dir).unwrap() {
-                    let child_path = child.unwrap().path();
-                    if child_path.is_file() {
-                        fs::remove_file(&child_path).unwrap();
-                    }
-                }
-                fs::write(seg_dir.join("tombstone.json"), b"{}").unwrap();
-            }
-        }
-
-        // The same file again is skipped, and touches nothing, unless forced.
+        // The same file again, while all of its import is here, is skipped and
+        // touches nothing.
         let imports_before = fs::read_dir(journal.path().join("imports"))
             .unwrap()
             .count();
@@ -3716,14 +3712,25 @@ mod tests {
             imports_before
         );
 
-        // Run 2
-        let (run2, id2) = run_bound(
-            RegistryDispatch {
-                force: true,
-                ..chat_dispatch(&zip_path, "20260104_110000")
-            },
-            journal.path(),
-        );
+        // The owner removes the segment under chronicle/20260101/: only its
+        // tombstone stands.
+        let day1_dir = journal.path().join("chronicle/20260101/import.chatgpt");
+        for entry in fs::read_dir(&day1_dir).unwrap() {
+            let seg_dir = entry.unwrap().path();
+            if seg_dir.is_dir() {
+                for child in fs::read_dir(&seg_dir).unwrap() {
+                    let child_path = child.unwrap().path();
+                    if child_path.is_file() {
+                        fs::remove_file(&child_path).unwrap();
+                    }
+                }
+                fs::write(seg_dir.join("tombstone.json"), b"{}").unwrap();
+            }
+        }
+
+        // Run 2: part of its import is deleted, so the same file comes through
+        // unforced: a fixed-key import brings back what was deleted, no copies.
+        let (run2, id2) = run_bound(chat_dispatch(&zip_path, "20260104_110000"), journal.path());
         assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
         let id2 = id2.unwrap();
 
@@ -4861,7 +4868,8 @@ mod tests {
             "2026-10-04T23:00:00-06:00",
             "2026-10-04T23:05:00-06:00",
         );
-        // 703 was deleted by the owner at the key it was misplaced to.
+        // 703 was deleted by the owner at the key it was misplaced to. Importing
+        // its download again brings it back, at its right key.
         let day5 = journal.path().join("chronicle/20261005/import.strava");
         fs::create_dir_all(day5.join("020000_300")).unwrap();
         fs::write(
@@ -4884,7 +4892,7 @@ mod tests {
         );
         assert_eq!(run1.exit_code, 0, "{}", run1.stdout);
         assert!(run1.stdout.contains(" replaced=2"), "{}", run1.stdout);
-        assert!(run1.stdout.contains("new=0 "), "{}", run1.stdout);
+        assert!(run1.stdout.contains("new=1 "), "{}", run1.stdout);
         // Right times: 13:02 UTC is 07:02 in Denver, 23:00 UTC is 17:00.
         let day_dir = journal.path().join("chronicle/20261004/import.strava");
         let moved: serde_json::Value =
@@ -4905,10 +4913,20 @@ mod tests {
             .unwrap();
             assert_eq!(stone["reason"], "import_run_release");
         }
-        // 703 stays deleted: nothing at its right key (20:00 on the 4th).
-        assert!(!day_dir.join("200000_300").exists());
+        // 703 comes back at its right key (02:00 UTC on the 5th is 20:00 on the
+        // 4th), and the misplaced key's tombstone is left as the owner left it.
+        let back: serde_json::Value =
+            serde_json::from_slice(&fs::read(day_dir.join("200000_300/workout.json")).unwrap())
+                .unwrap();
+        assert_eq!(back["activity_id"], 703);
         assert!(!day_dir.join("200000_301").exists());
-        assert!(run1.stdout.contains(" deleted=1 "), "{}", run1.stdout);
+        assert!(run1.stdout.contains(" deleted=0 "), "{}", run1.stdout);
+        assert!(run1.stdout.contains("stayed_deleted=0 "), "{}", run1.stdout);
+        let names: Vec<_> = fs::read_dir(day5.join("020000_300"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["tombstone.json"]);
 
         // The same download again changes nothing.
         let (run2, _) = run_bound(
@@ -4918,14 +4936,15 @@ mod tests {
         assert_eq!(run2.exit_code, 0, "{}", run2.stdout);
         assert!(!run2.stdout.contains("replaced="), "{}", run2.stdout);
         assert!(
-            run2.stdout.contains("present_unchanged=2"),
+            run2.stdout.contains("present_unchanged=3"),
             "{}",
             run2.stdout
         );
         assert!(!day_dir.join("070200_301").exists());
-        assert!(!day_dir.join("200000_300").exists());
+        assert!(!day_dir.join("200000_301").exists());
 
-        // And a workout the owner deletes afterwards stays deleted too.
+        // And a workout the owner deletes afterwards comes back at its own key,
+        // not one over.
         release_tile(
             &day_dir.join("070200_300"),
             br#"{"reason":"owner_segment_delete","cid":"x"}"#,
@@ -4935,6 +4954,8 @@ mod tests {
             journal.path(),
         );
         assert_eq!(run3.exit_code, 0, "{}", run3.stdout);
+        assert!(day_dir.join("070200_300/workout.json").is_file());
+        assert!(!day_dir.join("070200_300/tombstone.json").exists());
         assert!(!day_dir.join("070200_301").exists());
     }
 
@@ -4969,7 +4990,7 @@ mod tests {
     }
 
     #[test]
-    fn strava_steps_past_a_released_piece_and_stops_at_every_other_deletion() {
+    fn strava_brings_a_deleted_workout_back_at_its_key_and_stops_at_a_removal_under_way() {
         let journal = tempfile::tempdir().unwrap();
         write_utc_zone(journal.path());
         let csv_file = journal.path().join("activities.csv");
@@ -4993,31 +5014,56 @@ mod tests {
             &day.join("090000_300"),
             br#"{"reason":"owner_segment_delete","cid":"x"}"#,
         );
-        let released_before = fs::read(day.join("070000_300/tombstone.json")).unwrap();
 
+        // Importing the download again brings both back where they were: each key
+        // holds only its tombstone, which gives way.
         let (run2, _) = run_bound(
             strava_dispatch(&csv_file, "20260810_110000"),
             journal.path(),
         );
         assert_eq!(run2.exit_code, 0, "{}", run2.stdout);
-        // The released workout comes back one key over; the owner's delete holds.
-        assert!(day.join("070000_301/workout.json").is_file());
+        for (key, id) in [("070000_300", 101), ("090000_300", 102)] {
+            let tile: serde_json::Value =
+                serde_json::from_slice(&fs::read(day.join(key).join("workout.json")).unwrap())
+                    .unwrap();
+            assert_eq!(tile["activity_id"], id, "{key}");
+            assert!(!day.join(key).join("tombstone.json").exists(), "{key}");
+        }
+        assert!(!day.join("070000_301").exists());
         assert!(!day.join("090000_301").exists());
-        assert_eq!(
-            fs::read(day.join("070000_300/tombstone.json")).unwrap(),
-            released_before
+        assert!(run2.stdout.contains(" deleted=0 "), "{}", run2.stdout);
+        assert!(run2.stdout.contains("entries_written=2"), "{}", run2.stdout);
+
+        // Deleted again and imported again, it is back at the same key: keys don't
+        // climb with each round.
+        release_tile(
+            &day.join("090000_300"),
+            br#"{"reason":"owner_segment_delete","cid":"x"}"#,
         );
-        assert_eq!(
-            fs::read_dir(day.join("070000_300")).unwrap().count(),
-            1,
-            "nothing is written into a released key"
+        let (run3, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_120000"),
+            journal.path(),
         );
-        assert!(run2.stdout.contains(" deleted=1 "), "{}", run2.stdout);
-        assert!(run2.stdout.contains("entries_written=1"), "{}", run2.stdout);
+        assert_eq!(run3.exit_code, 0, "{}", run3.stdout);
+        assert!(day.join("090000_300/workout.json").is_file());
+        assert!(!day.join("090000_301").exists());
+
+        // A removal still under way at the key, staged aside and not yet
+        // tombstoned, is no place to write: the probe stops there and the
+        // workout stays out.
+        fs::rename(day.join("090000_300"), day.join(".removing_090000_300")).unwrap();
+        let (run4, _) = run_bound(
+            strava_dispatch(&csv_file, "20260810_130000"),
+            journal.path(),
+        );
+        assert_eq!(run4.exit_code, 0, "{}{}", run4.stdout, run4.stderr);
+        assert!(run4.stdout.contains("stayed_deleted=1 "), "{}", run4.stdout);
+        assert!(!day.join("090000_300").exists());
+        assert!(!day.join("090000_301").exists());
     }
 
     #[test]
-    fn strava_stops_at_a_release_look_alike_and_fails_on_an_unreadable_tombstone() {
+    fn strava_takes_back_a_key_holding_only_a_tombstone_and_fails_on_an_unreadable_one() {
         for reason in [
             &br#"{"reason":"import_run_release "}"#[..],
             br#"{"reason":5}"#,
@@ -5042,11 +5088,15 @@ mod tests {
                 journal.path(),
             );
             assert_eq!(run2.exit_code, 0);
+            // Whatever its tombstone says, a key that holds only it is free: the
+            // workout comes back there, not one over.
             assert!(
-                !day.join("070000_301").exists(),
-                "stopped at {:?}",
+                day.join("070000_300/workout.json").is_file(),
+                "{:?}",
                 String::from_utf8_lossy(reason)
             );
+            assert!(!day.join("070000_300/tombstone.json").exists());
+            assert!(!day.join("070000_301").exists());
         }
 
         // A tombstone that exists but can't be read fails the run, writing nothing.
@@ -5747,12 +5797,10 @@ mod tests {
         );
         assert!(outcome.halted.is_none());
 
+        // A later download holding only a new workout: what the owner deleted
+        // isn't in it, so it stays deleted (one that holds it brings it back).
         let csv_file2 = journal.path().join("activities2.csv");
-        let content2 = make_en_csv_103(&[
-            ("101", "Aug 10, 2026, 07:00:00 AM", "Run", 300, 5000.0),
-            ("102", "Aug 10, 2026, 08:00:00 AM", "Run", 300, 5000.0),
-            ("103", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 5000.0),
-        ]);
+        let content2 = make_en_csv_103(&[("103", "Aug 10, 2026, 09:00:00 AM", "Run", 300, 5000.0)]);
         fs::write(&csv_file2, content2.as_bytes()).unwrap();
 
         let (run2, _) = run_bound(
@@ -5790,8 +5838,8 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        // The new recording still enters paced discovery, even though older
-        // coordinates in this import were deleted by the owner.
+        // The new recording still enters paced discovery, even though the
+        // stream's head before it was deleted by the owner.
         assert_eq!(pub_record.day_markers.len(), 1);
         assert_eq!(pub_record.day_markers[0].day, "20260810");
         assert!(pub_record.segments.iter().any(|row| {

@@ -191,6 +191,22 @@ pub fn remove_strava_names(
     Ok(removed)
 }
 
+/// Remove the lines of `activity_ids`, for the trash, whose move holds the
+/// Strava lock for its whole length. Returns how many were removed.
+pub fn remove_strava_names_held(
+    journal: &Path,
+    activity_ids: &BTreeSet<String>,
+) -> Result<usize, StravaNamesError> {
+    let mut lines = read_strava_names(journal)?;
+    let before = lines.len();
+    lines.retain(|id, _| !activity_ids.contains(id));
+    let removed = before - lines.len();
+    if removed > 0 {
+        save_lines(journal, &lines)?;
+    }
+    Ok(removed)
+}
+
 /// Take the Strava lock, as Strava's import and its delete do.
 pub fn hold_strava_lock(journal: &Path) -> Result<FileLock, StravaNamesError> {
     hold_strava_lock_within(journal, DEFAULT_LOCK_TIMEOUT)

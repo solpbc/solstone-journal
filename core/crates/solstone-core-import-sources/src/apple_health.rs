@@ -1113,11 +1113,18 @@ pub fn decide(
         filing.as_deref(),
         may_refile,
         run,
+        false,
     )
 }
 
 /// Merge a window under an exact facet assignment, or keep its assignment.
 /// The day placer can carry an existing assignment through a source time move.
+/// `comes_back` is a re-import's: a window the owner deleted takes its rows
+/// again. A sync's leaves it deleted.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the writer's one decision for a window; each argument is a fact about it"
+)]
 pub fn decide_filing(
     journal: &Path,
     source: &BodySource,
@@ -1126,10 +1133,17 @@ pub fn decide_filing(
     filing: Option<&str>,
     may_refile: bool,
     run: Option<&str>,
+    comes_back: bool,
 ) -> Result<Decision, String> {
     let dir = stream_dir(journal, source, &window.0).join(&window.1);
     let mut decision = Decision::default();
-    if owner_deleted(&dir).map_err(|error| error.to_string())? {
+    // A re-import brings back a window the owner deleted: where only its
+    // tombstone stands, the window is empty, and the writer's tombstone gives way.
+    // An ordinary sync leaves it deleted.
+    if owner_deleted(&dir).map_err(|error| error.to_string())?
+        && !(comes_back
+            && solstone_core_segment::reclaimable(&dir).map_err(|error| error.to_string())?)
+    {
         decision.stayed_deleted = true;
         return Ok(decision);
     }
@@ -1223,12 +1237,11 @@ fn key_length(key: &str) -> Option<i64> {
 /// A reading has two places on its day: its hour, and the grid slot of a session
 /// from its own source that covers it. Which one depends on the export, so it can
 /// change between imports. A reading already saved in its other place stays
-/// there, so no reading is ever in two windows. One not saved anywhere whose other
-/// place the owner deleted isn't added, because a tombstone says which files it
-/// removed, not which readings, and a deleted reading must not come back. That
-/// holds back a new reading in a deleted slot too, and the count says so. An other
-/// place whose file can't be read as rows holds the reading back too, as `decide`
-/// leaves such a window alone. A place the journal can't be asked about at all
+/// there, so no reading is ever in two windows. One not saved anywhere stays
+/// where it lands, whatever the owner deleted: what arrives again is new data,
+/// and an ordinary Oura sync leaves out what it fetched before from its own
+/// record. An other place whose file can't be read as rows holds the reading
+/// back, as `decide` leaves such a window alone. A place the journal can't be asked about at all
 /// stops the day, as a write there would. Returns the windows, without any this
 /// left with nothing, and how many readings were held back.
 pub fn settle_readings(
@@ -1244,7 +1257,7 @@ pub fn settle_readings(
 
 /// [`settle_readings`], also returning the readings it held back because their
 /// other place couldn't be read as rows. Those can be written once it reads
-/// again; one held back beside an owner's delete never can.
+/// again.
 pub fn settle_readings_noting(
     journal: &Path,
     source: &BodySource,
@@ -1258,7 +1271,6 @@ pub fn settle_readings_noting(
         .collect();
     let mut resolved: BTreeMap<String, String> = BTreeMap::new();
     let mut stored: BTreeMap<String, Result<BTreeSet<String>, ()>> = BTreeMap::new();
-    let mut deleted: BTreeMap<String, bool> = BTreeMap::new();
     // The ids a window holds; `Err(())` when its file can't be read as rows.
     let holds = |stored: &mut BTreeMap<String, Result<BTreeSet<String>, ()>>,
                  key: &str|
@@ -1341,23 +1353,6 @@ pub fn settle_readings_noting(
                     continue;
                 }
             }
-            let gone = match deleted.get(&other) {
-                Some(gone) => *gone,
-                None => {
-                    let gone = owner_deleted(&stream_dir(journal, source, day).join(&other))
-                        .map_err(|error| error.to_string())?;
-                    deleted.insert(other.clone(), gone);
-                    gone
-                }
-            };
-            if !gone {
-                continue;
-            }
-            // Saved where it's bound already, it stays there.
-            if holds(&mut stored, key)?.is_ok_and(|ids| ids.contains(id)) {
-                continue;
-            }
-            moves.push((key.clone(), id.clone(), None, false));
         }
     }
     let mut held_back = 0_u64;
@@ -1799,16 +1794,21 @@ pub fn summary_text(
     zone: Tz,
 ) -> String {
     let source = source_words(source.source);
+    // What stayed deleted is said only when something did: a re-import brings
+    // back what the owner deleted, so for it this is 0.
+    let stayed = match counts.stayed_deleted {
+        0 => String::new(),
+        n => format!("{n} stayed deleted, "),
+    };
     let mut text = format!(
-        "# {source} import\n\n{} written, {} unchanged, {} stayed deleted, {} unreadable and left alone.{} Days and times placed using {}.\n\n",
+        "# {source} import\n\n{} written, {} unchanged, {stayed}{} unreadable and left alone.{} Days and times placed using {}.\n\n",
         count_of_windows(counts.written),
         counts.unchanged,
-        counts.stayed_deleted,
         counts.unreadable,
         match counts.held_back {
             0 => String::new(),
-            1 => " 1 reading wasn't added, because the part of the journal it belongs to was deleted or couldn't be read.".to_owned(),
-            n => format!(" {n} readings weren't added, because the part of the journal they belong to was deleted or couldn't be read."),
+            1 => " 1 reading wasn't added, because the part of the journal it belongs to couldn't be read.".to_owned(),
+            n => format!(" {n} readings weren't added, because the part of the journal they belong to couldn't be read."),
         },
         zone.name()
     );

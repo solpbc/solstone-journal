@@ -242,7 +242,7 @@ fn available_entry_is_promoted_when_a_later_manifest_match_appears() {
 }
 
 #[test]
-fn a_recording_comes_back_once_its_import_is_deleted_and_not_before() {
+fn a_sync_never_brings_back_a_recording_whose_import_was_deleted() {
     let tree = TempDir::new().unwrap();
     let credential = Credential;
     let clock = Clock;
@@ -287,8 +287,9 @@ fn a_recording_comes_back_once_its_import_is_deleted_and_not_before() {
             .clone()
     };
     assert_eq!(preview(true), "imported");
-    // The owner deletes the import: the recording is new data again.
-    assert_eq!(preview(false), "available");
+    // The owner deletes the import: the sync remembers it fetched the recording
+    // and leaves it out; importing the downloaded file again brings it back.
+    assert_eq!(preview(false), "imported");
 }
 
 #[test]

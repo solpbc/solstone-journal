@@ -243,8 +243,11 @@ fn every_move_within_the_owners_day_converges_to_its_new_tiling_and_its_one_reco
 
 /// Name every tile as an earlier build did, by its index. A journal holding those,
 /// imported again with the same pages, ends with tiles named by their windows,
-/// every index tile moved, one record, and nothing stale that reads.
+/// every index tile moved, one record, and nothing stale that reads. That build
+/// kept no record of what Oura runs fetched, so the next sync starts one from the
+/// rows the journal holds.
 fn to_index_tiles(root: &Path) {
+    fs::remove_file(root.join(solstone_core_import::oura_fetched::FETCHED_REL)).unwrap();
     for ((day, key), rows) in stored(root) {
         let mut rows: Vec<BodyRow> = rows
             .into_iter()
@@ -576,10 +579,17 @@ fn a_tag_the_owner_deleted_after_its_move_stays_out_wherever_oura_moves_it_next(
             "20261104_120002",
             None,
         );
+        // The sync fetched t1 before and the journal holds it nowhere live: the
+        // owner deleted it, so it stays out, and its delete is no hole.
         assert!(
             outcome
                 .summary
-                .contains("- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
+                .contains("1 entry wasn't added, because you deleted"),
+            "{back}: {}",
+            outcome.summary
+        );
+        assert!(
+            !outcome.summary.contains("couldn't be read"),
             "{back}: {}",
             outcome.summary
         );
@@ -1369,28 +1379,59 @@ fn an_uninterrupted_move_claims_its_oura_day_says_so_and_prints_no_hole() {
 }
 
 #[test]
-fn a_tag_refused_beside_an_owners_delete_is_no_hole_and_its_day_is_claimed() {
-    let journal = connected("America/Denver");
-    let root = journal.path();
-    let range = Some(("2026-01-01", "2026-01-10"));
-    let first = Oura::new();
-    first.serve("enhanced_tag", vec![tag("t1", "2026-01-05T09:15:00-07:00")]);
-    finished(root, &first, &ask("20261104_120000", range));
-    delete(root, "20260105", "090000_3600");
-    let second = Oura::new();
-    second.serve("enhanced_tag", vec![tag("t1", "2026-01-05T11:15:00-07:00")]);
-    let outcome = finished(root, &second, &ask("20261104_120001", range));
-    assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
-    assert!(
-        outcome.summary.contains("- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"),
-        "{}",
-        outcome.summary
-    );
-    assert_eq!(
-        covered(root, "enhanced_tag"),
-        json!([["2026-01-01", "2026-01-10"]])
-    );
-    assert_eq!(holes_of_file(root, "enhanced_tag"), Value::Null);
+fn a_deleted_tag_comes_back_on_an_asked_range_not_a_scheduled_one_and_its_day_is_claimed() {
+    for scheduled in [false, true] {
+        let journal = connected("America/Denver");
+        let root = journal.path();
+        let range = Some(("2026-01-01", "2026-01-10"));
+        let first = Oura::new();
+        first.serve("enhanced_tag", vec![tag("t1", "2026-01-05T09:15:00-07:00")]);
+        finished(root, &first, &ask("20261104_120000", range));
+        delete(root, "20260105", "090000_3600");
+        let second = Oura::new();
+        second.serve("enhanced_tag", vec![tag("t1", "2026-01-05T11:15:00-07:00")]);
+        let outcome = finished(
+            root,
+            &second,
+            &Ask {
+                scheduled,
+                ..ask("20261104_120001", range)
+            },
+        );
+        assert!(outcome.holes.is_empty(), "{scheduled}: {:?}", outcome.holes);
+        if scheduled {
+            // Nobody asked for this range: a sync, which leaves out what the owner
+            // deleted, wherever Oura moves it.
+            assert!(placed(root, "t1").is_empty());
+            assert!(
+                outcome
+                    .summary
+                    .contains("1 entry wasn't added, because you deleted"),
+                "{}",
+                outcome.summary
+            );
+        } else {
+            // A range the owner asked for is a re-import: the tag comes back, at
+            // its new hour.
+            let back = placed(root, "t1");
+            assert_eq!(back.len(), 1, "{}", outcome.summary);
+            assert_eq!(
+                (back[0].0.as_str(), back[0].1.as_str()),
+                ("20260105", "110000_3600")
+            );
+            assert!(!outcome.summary.contains("added"), "{}", outcome.summary);
+        }
+        assert!(
+            !outcome.summary.contains("couldn't be read"),
+            "{scheduled}: {}",
+            outcome.summary
+        );
+        assert_eq!(
+            covered(root, "enhanced_tag"),
+            json!([["2026-01-01", "2026-01-10"]])
+        );
+        assert_eq!(holes_of_file(root, "enhanced_tag"), Value::Null);
+    }
 }
 
 #[test]

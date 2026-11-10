@@ -1440,6 +1440,11 @@ pub fn sweep_strava_conversions(journal: &Path) {
 
 pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
     let mut counts = ConversionCounts::default();
+    // It publishes tiles: not while a Strava delete or recovery is part way. The
+    // next start or import carries on.
+    if solstone_core_import::body_trash::source_trash_moving(journal, "strava") {
+        return counts;
+    }
     finish_open_moves(journal, &mut counts);
     if journal.join(MARKER).exists() {
         return counts;

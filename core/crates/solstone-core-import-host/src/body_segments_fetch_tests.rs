@@ -291,6 +291,8 @@ struct Ask<'a> {
     stop_at: Option<&'a dyn Fn(&str) -> bool>,
     /// The frozen clock unless a test names another.
     clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    /// Nobody asked for it (`--scheduled`): a sync even with a range.
+    scheduled: bool,
 }
 
 fn ask<'a>(timestamp: &'a str, range: Option<(&'a str, &'a str)>) -> Ask<'a> {
@@ -300,6 +302,7 @@ fn ask<'a>(timestamp: &'a str, range: Option<(&'a str, &'a str)>) -> Ask<'a> {
         range,
         stop_at: None,
         clock: None,
+        scheduled: false,
     }
 }
 
@@ -307,6 +310,7 @@ fn import(root: &Path, oura: &Oura, ask: &Ask<'_>) -> Result<OuraImportOutcome, 
     let mut transport = oura.clone();
     let mut request = OuraImportRequest::new(ask.timestamp, ask.facet, &mut transport);
     request.range = ask.range.map(|(from, to)| (date(from), date(to)));
+    request.scheduled = ask.scheduled;
     request.spill_bytes = 4_096;
     request.stop_at = ask.stop_at;
     request.clock = Some(ask.clock.unwrap_or(&frozen));
@@ -575,7 +579,7 @@ fn a_failed_chunk_over_earlier_coverage_leaves_it_standing_and_a_write_hole_take
 }
 
 #[test]
-fn a_reading_held_back_by_an_owners_delete_is_no_hole_and_one_by_an_unreadable_place_is() {
+fn a_reading_beside_an_owners_delete_lands_and_one_beside_an_unreadable_place_is_a_hole() {
     for deleted in [true, false] {
         let journal = connected("America/Denver");
         let root = journal.path();
@@ -606,18 +610,33 @@ fn a_reading_held_back_by_an_owners_delete_is_no_hole_and_one_by_an_unreadable_p
             vec![heart("2026-01-18T21:22:00+00:00", 90, "workout")],
         );
         let outcome = finished(root, &second, &ask("20261104_120001", range));
-        assert!(
-            outcome.summary.contains("1 reading wasn't added"),
-            "{deleted}: {}",
-            outcome.summary
-        );
         if deleted {
+            // The workout's deleted window is no reason to hold it back: saved
+            // nowhere, it lands in its hour.
+            assert!(
+                !outcome.summary.contains("wasn't added"),
+                "{}",
+                outcome.summary
+            );
+            assert_eq!(
+                stored(root)
+                    .into_iter()
+                    .filter(|(_, rows)| rows.iter().any(|row| row.kind == RowKind::Reading))
+                    .map(|(window, _)| window)
+                    .collect::<Vec<_>>(),
+                [("20260118".to_owned(), "140000_3600".to_owned())]
+            );
             assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
             assert_eq!(
                 covered(root, "heartrate"),
                 json!([["2026-01-18T07:00:00Z", "2026-01-19T07:00:00Z"]])
             );
         } else {
+            assert!(
+                outcome.summary.contains("1 reading wasn't added"),
+                "{}",
+                outcome.summary
+            );
             assert_eq!(
                 holes_of_file(root, "heartrate"),
                 json!([{"at": "2026-01-18T21:00:00Z", "reason": "reading_held_back"}])

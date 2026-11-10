@@ -1066,48 +1066,62 @@ fn an_owner_deleted_window_with_a_record_stays_deleted_where_it_was_or_moved() {
 }
 
 #[test]
-fn with_no_record_a_deleted_window_on_the_lookup_days_refuses_a_revision_by_its_day() {
+fn a_sync_keeps_a_tag_the_owner_deleted_out_where_oura_moves_it_and_a_new_tag_beside_it_arrives() {
     let journal = journal();
     let root = journal.path();
     let scratch = tempfile::tempdir().unwrap();
-    let pages = |name: &str, start: &str| {
-        stage(
-            &scratch.path().join(name),
-            &[("enhanced_tag", vec![tag("t1", start)])],
-        )
-    };
+    let pages =
+        |name: &str, tags: Vec<Value>| stage(&scratch.path().join(name), &[("enhanced_tag", tags)]);
     run(
         root,
-        &pages("1", "2026-01-05T09:15:00-07:00"),
+        &pages("1", vec![tag("t1", "2026-01-05T09:15:00-07:00")]),
         "20261104_120000",
         None,
     );
     delete(root, "20260105", "090000_3600");
+    // Oura revises the deleted tag into another hour and adds one it never sent.
+    // The sync fetched t1 before, so it stays out wherever it goes; t2 is new to
+    // the journal and arrives, though it sits beside the owner's delete.
     let outcome = run(
         root,
-        &pages("2", "2026-01-05T11:15:00-07:00"),
+        &pages(
+            "2",
+            vec![
+                tag("t1", "2026-01-05T11:15:00-07:00"),
+                tag("t2", "2026-01-05T11:30:00-07:00"),
+            ],
+        ),
         "20261104_120001",
         None,
     );
     assert!(placed(root, "t1").is_empty());
-    assert!(!window(root, "20260105", "110000_3600").exists());
-    // Refused, naming the deleted window's day, and no hole: re-reading never
-    // fills it.
+    let t2 = placed(root, "t2");
+    assert_eq!(t2.len(), 1, "{}", outcome.summary);
+    assert_eq!(
+        (t2[0].0.as_str(), t2[0].1.as_str()),
+        ("20260105", "110000_3600")
+    );
     assert!(
-        outcome.summary.contains(
-            "## couldn't be read\n\n- tags: 1 not added; the journal can't tell whether it was in what you deleted from 2026-01-05"
-        ),
+        outcome
+            .summary
+            .contains("1 entry wasn't added, because you deleted"),
+        "{}",
+        outcome.summary
+    );
+    assert!(
+        !outcome.summary.contains("couldn't be read"),
         "{}",
         outcome.summary
     );
     assert!(!outcome.summary.contains("has since changed"));
+    // The owner's delete is no hole: asking Oura again would never fill it.
     assert!(outcome.holes.is_empty(), "{:?}", outcome.holes);
 
     // The twin: the same tag unchanged, into the hour the owner deleted, stays
     // deleted, and says nothing of Oura changing it.
     let again = run(
         root,
-        &pages("3", "2026-01-05T09:15:00-07:00"),
+        &pages("3", vec![tag("t1", "2026-01-05T09:15:00-07:00")]),
         "20261104_120002",
         None,
     );
@@ -1888,8 +1902,9 @@ fn the_lookup_reaches_one_day_either_side_and_no_further() {
     );
     assert_eq!(placed(root, "w1").len(), 1);
 
-    // Two days later is past the lookup's reach: it lands as new, beside the
-    // first, which is the documented limit.
+    // Two days later is past the lookup's reach, so no live copy is found where
+    // it could be. The sync fetched w1 before, so it's left out, not doubled:
+    // the first stays where it was, which is the documented limit.
     let far = run(
         root,
         &one_workout(
@@ -1905,7 +1920,10 @@ fn the_lookup_reaches_one_day_either_side_and_no_further() {
         "{}",
         far.summary
     );
-    assert_eq!(placed(root, "w1").len(), 2);
+    let w1 = placed(root, "w1");
+    assert_eq!(w1.len(), 1, "{}", far.summary);
+    assert_eq!(w1[0].0, "20260105");
+    assert!(!window(root, "20260107", "080000_300").exists());
 
     // A night moved past midnight is found on the day before.
     let journal = journal_with_nothing();

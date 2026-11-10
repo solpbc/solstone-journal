@@ -337,7 +337,7 @@ impl ImportPipeline for ImportingPipeline<'_> {
 }
 
 #[test]
-fn a_file_comes_back_once_its_import_is_deleted_and_not_before() {
+fn a_sync_never_brings_back_a_file_whose_import_was_deleted() {
     let tree = TempDir::new().unwrap();
     let in_journal = std::cell::Cell::new(false);
     let mut pipeline = ImportingPipeline(0, &in_journal);
@@ -366,10 +366,102 @@ fn a_file_comes_back_once_its_import_is_deleted_and_not_before() {
         pipeline.0, 1,
         "an unchanged file whose import is there stays imported"
     );
-    // The owner deletes the import: the same file is new data again.
+    // The owner deletes the import: the sync remembers it fetched the file and
+    // leaves it out; importing the file again is what brings it back.
     in_journal.set(false);
     sync(&mut pipeline);
-    assert_eq!(pipeline.0, 2);
+    assert_eq!(pipeline.0, 1, "a sync doesn't bring back what was deleted");
+}
+
+/// Finds whatever files the test puts in front of it, as `(path, hash)`.
+struct Listed<'a>(&'a std::cell::RefCell<Vec<(&'static str, &'static str)>>);
+impl DirectoryScanner for Listed<'_> {
+    fn audio_candidates(&self, _: &Path) -> Result<Vec<AudioCandidate>, String> {
+        Ok(self
+            .0
+            .borrow()
+            .iter()
+            .map(|(name, hash)| candidate(name, hash))
+            .collect())
+    }
+}
+
+#[test]
+fn a_file_found_again_renamed_or_after_a_missed_scan_isnt_brought_in_twice() {
+    let tree = TempDir::new().unwrap();
+    let in_journal = std::cell::Cell::new(false);
+    let mut pipeline = ImportingPipeline(0, &in_journal);
+    let files = std::cell::RefCell::new(vec![("talk.wav", "talk")]);
+    let sync = |pipeline: &mut ImportingPipeline<'_>| {
+        let mut writer = FilesystemAudioStateWriter;
+        let manifests = JournalImports(&in_journal);
+        let scanner = Listed(&files);
+        let preview = AudioPreviewSeams {
+            scanner: &scanner,
+            probe: &Probe,
+            manifests: &manifests,
+            clock: &Clock,
+            state_writer: &mut writer,
+        };
+        let mut seams = AudioSaveSeams { preview, pipeline };
+        let request = AudioSyncRequest::<SyncSaveRequest>::new(
+            tree.path().to_path_buf(),
+            PathBuf::from("audio"),
+            false,
+            AudioAuto::Enabled,
+        );
+        sync_audio_save(&request, &mut seams).unwrap();
+    };
+    sync(&mut pipeline);
+    assert_eq!(pipeline.0, 1);
+    // The owner deletes its import; the file is missing from one scan, then back.
+    in_journal.set(false);
+    *files.borrow_mut() = vec![("other.wav", "other")];
+    sync(&mut pipeline);
+    *files.borrow_mut() = vec![("other.wav", "other"), ("talk.wav", "talk")];
+    sync(&mut pipeline);
+    // And renamed.
+    *files.borrow_mut() = vec![("other.wav", "other"), ("renamed.wav", "talk")];
+    sync(&mut pipeline);
+    assert_eq!(pipeline.0, 2, "only the new file arrived");
+}
+
+#[test]
+fn a_record_it_cant_read_syncs_nothing() {
+    let tree = TempDir::new().unwrap();
+    std::fs::create_dir_all(tree.path().join("imports")).unwrap();
+    std::fs::write(tree.path().join("imports/audio.json"), b"{not json").unwrap();
+    let in_journal = std::cell::Cell::new(false);
+    let mut pipeline = ImportingPipeline(0, &in_journal);
+    let mut writer = FilesystemAudioStateWriter;
+    let manifests = JournalImports(&in_journal);
+    let preview = AudioPreviewSeams {
+        scanner: &OneScanner,
+        probe: &Probe,
+        manifests: &manifests,
+        clock: &Clock,
+        state_writer: &mut writer,
+    };
+    let mut seams = AudioSaveSeams {
+        preview,
+        pipeline: &mut pipeline,
+    };
+    let request = AudioSyncRequest::<SyncSaveRequest>::new(
+        tree.path().to_path_buf(),
+        PathBuf::from("audio"),
+        false,
+        AudioAuto::Enabled,
+    );
+    assert!(matches!(
+        sync_audio_save(&request, &mut seams),
+        Err(AudioSyncError::State(_))
+    ));
+    assert_eq!(pipeline.0, 0);
+    assert_eq!(
+        std::fs::read(tree.path().join("imports/audio.json")).unwrap(),
+        b"{not json",
+        "left as it was"
+    );
 }
 
 struct StoppingAudioPipeline {

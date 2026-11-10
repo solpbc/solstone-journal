@@ -38,13 +38,6 @@ pub trait AudioProbe {
 /// Caller-owned manifest lookup.
 pub trait ManifestLookup {
     fn imported_hash(&self, source_hash: &str) -> bool;
-
-    /// Whether an import of this content is in the journal at all, a run that
-    /// stopped included: what an entry the sync marked imported is checked
-    /// against.
-    fn import_exists(&self, source_hash: &str) -> bool {
-        self.imported_hash(source_hash)
-    }
 }
 
 /// Checkpoint seam, allowing progress ordering to be tested without the pipeline.
@@ -264,10 +257,16 @@ fn catalogue<M>(
     if request.source_path.as_os_str().is_empty() {
         return Err(AudioSyncError::MissingSource);
     }
+    // The record is the sync's memory of what it brought in: one it can't read
+    // would forget every file the owner deleted, so nothing syncs until it reads.
     let mut state = match read_sync_state(&request.journal_root, BackendName::Audio) {
         SyncStateRead::Loaded(state) => state,
-        SyncStateRead::Absent | SyncStateRead::Unreadable { .. } => {
-            SyncState::empty(BackendName::Audio)
+        SyncStateRead::Absent => SyncState::empty(BackendName::Audio),
+        SyncStateRead::Unreadable { .. } => {
+            return Err(AudioSyncError::State(
+                "the record of what this sync brought in can't be read, so nothing was synced"
+                    .to_owned(),
+            ));
         }
     };
     if request.force {
@@ -299,6 +298,30 @@ fn catalogue<M>(
     if candidates.is_empty() {
         return Err(AudioSyncError::MissingSource);
     }
+    // Every file this sync ever brought in, by its bytes, wherever it was found:
+    // one found again, renamed, back after a scan that missed it, or in a folder
+    // the owner picked again (whose earlier catalogue was set aside), stays
+    // brought in.
+    let retained: Vec<Value> = state
+        .root()
+        .get("retained_catalogs")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|catalogs| catalogs.values())
+        .filter_map(Value::as_object)
+        .flat_map(|files| files.values().cloned())
+        .collect();
+    let brought_in: std::collections::BTreeSet<String> = state
+        .files_mut()
+        .values()
+        .chain(retained.iter())
+        .filter_map(Value::as_object)
+        .filter(|entry| {
+            entry.get("status") == Some(&Value::String("imported".to_owned()))
+                || entry.contains_key("imported_at")
+        })
+        .filter_map(|entry| entry.get("hash").and_then(Value::as_str).map(str::to_owned))
+        .collect();
     let mut seen = Vec::new();
     let mut available = Vec::new();
     let mut errors = Vec::new();
@@ -309,13 +332,12 @@ fn catalogue<M>(
             .entry(candidate.relative_path.clone())
             .or_insert_with(|| Value::Object(Map::new()));
         let entry = entry.as_object_mut().expect("sync-state files are objects");
-        // The sync's own state is its record of what it imported, checked against what
-        // is in the journal: an unchanged file stays imported while its import is
-        // there. Once the owner deletes that import, the file comes back as new data.
-        // `force` cleared that record above.
-        let already_synced = entry.get("status") == Some(&Value::String("imported".to_owned()))
-            && entry.get("hash") == Some(&Value::String(candidate.source_hash.clone()))
-            && manifests.import_exists(&candidate.source_hash);
+        // The sync's own state is its record of what it imported: an unchanged file it
+        // already brought in stays imported, whatever the owner has since deleted, so a
+        // sync never brings back what was deleted. A changed file has another hash and
+        // arrives as new data; importing the file again brings it back. `force` cleared
+        // that record above.
+        let already_synced = brought_in.contains(&candidate.source_hash);
         entry.insert(
             "filename".to_owned(),
             Value::String(candidate.filename.clone()),
@@ -326,6 +348,12 @@ fn catalogue<M>(
             Value::String(candidate.source_hash.clone()),
         );
         if already_synced {
+            if entry.get("status") != Some(&Value::String("imported".to_owned())) {
+                entry.insert("status".to_owned(), Value::String("imported".to_owned()));
+                entry
+                    .entry("imported_at".to_owned())
+                    .or_insert_with(|| Value::String(clock.now()));
+            }
             continue;
         }
         if manifests.imported_hash(&candidate.source_hash) {

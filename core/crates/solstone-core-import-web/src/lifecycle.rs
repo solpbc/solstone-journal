@@ -485,12 +485,16 @@ fn exchange_task_id(
 /// Whether an import still in the journal already brought in these bytes.
 ///
 /// Only `imports/` is read: an import in the trash or erased has left it, so
-/// the same content imports again and comes back.
+/// the same content imports again and comes back. A fixed-key import with part
+/// of it deleted lets the same file through too: a re-import always brings back.
 fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
-    find_manifest_by_hash_where(root, hash, |found| !is_failed_original_import(root, found))
-        .ok()
-        .and_then(|scan| scan.found)
-        .is_some()
+    find_manifest_by_hash_where(root, hash, |found| {
+        !is_failed_original_import(root, found)
+            && !solstone_core_import::import_trash::reimport_brings_back(root, &found.path)
+    })
+    .ok()
+    .and_then(|scan| scan.found)
+    .is_some()
 }
 
 /// A failed image or document import does not make its bytes "already imported".

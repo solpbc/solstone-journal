@@ -191,6 +191,10 @@ pub struct OuraImportRequest<'a> {
     /// Owner days, first and last inclusive. `None` asks each endpoint from seven
     /// days before what it last covered, or the last 30 days.
     pub range: Option<(NaiveDate, NaiveDate)>,
+    /// Nobody asked for this run (`--scheduled`): even with a range it is a sync,
+    /// which leaves out what the owner deleted. A range someone asked for is a
+    /// re-import, which brings it back.
+    pub scheduled: bool,
     /// Oura, or something answering as it.
     pub transport: &'a mut dyn OuraHttp,
     pub auth: OuraAuth,
@@ -218,6 +222,7 @@ impl<'a> OuraImportRequest<'a> {
             listed: ListedMoves::Keep,
             earlier_waiting: 0,
             range: None,
+            scheduled: false,
             transport,
             auth: OuraAuth::Journal,
             old_lock_timeout: OLD_LOCK_TIMEOUT,
@@ -277,6 +282,10 @@ struct RunRequest<'a> {
     clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
     /// See `AppleSegmentsRequest::import_id`.
     exact_import: Option<&'a str>,
+    /// A re-import (an Apple export, or an Oura range someone asked for) brings
+    /// back what the owner deleted, as new data. An ordinary Oura sync (no range,
+    /// `--scheduled`, or staged pages) doesn't: it carries on from what it fetched.
+    comes_back: bool,
 }
 
 /// What a run may do with what's already filed under another facet.
@@ -560,6 +569,11 @@ struct RunState {
     /// move isn't done.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     unfinished: BTreeSet<String>,
+    /// Whether this run brings back what the owner deleted (a re-import) or
+    /// leaves it out (an ordinary Oura sync), as it started. A state from before
+    /// says nothing, and the request decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    comes_back: Option<bool>,
 }
 
 enum Read {
@@ -684,9 +698,29 @@ struct Run<'a, 'r> {
     generation: u64,
     /// Windows that couldn't be published since one last was.
     failed_in_a_row: Cell<u32>,
+    /// Whether what the owner deleted comes back: the request's, or a resumed
+    /// run's own, so a run keeps its rule however it's carried on.
+    comes_back: Cell<bool>,
+    /// What Oura runs have brought in, read once when an Oura run first needs it.
+    fetched: std::cell::RefCell<Option<solstone_core_import::oura_fetched::Fetched>>,
 }
 
 impl Run<'_, '_> {
+    /// The Oura sync's record of what it brought in, read on first use.
+    fn fetched(
+        &self,
+    ) -> Result<std::cell::RefMut<'_, solstone_core_import::oura_fetched::Fetched>, String> {
+        let mut held = self.fetched.borrow_mut();
+        if held.is_none() {
+            *held = Some(solstone_core_import::oura_fetched::Fetched::load(
+                self.journal,
+            )?);
+        }
+        Ok(std::cell::RefMut::map(held, |held| {
+            held.as_mut().expect("loaded above")
+        }))
+    }
+
     fn point(&self, name: &str) -> Result<(), Stop> {
         if self.request.stop_at.is_some_and(|stop| stop(name)) {
             return Err(Stop::Injected(name.to_owned()));
@@ -990,12 +1024,9 @@ impl Run<'_, '_> {
         let filed = if let Some(pending) = &redo {
             replay_filing(pending, windows)
         } else {
-            DayPlacement::load(self.journal, self.source, &day)?.file_for_import(
-                windows,
-                facet,
-                state.move_listed,
-                Some(&self.import_id),
-            )?
+            DayPlacement::load(self.journal, self.source, &day)?
+                .coming_back(self.comes_back.get())
+                .file_for_import(windows, facet, state.move_listed, Some(&self.import_id))?
         };
         let windows = filed.windows;
         // Before any of the day's files: a document moving from or into a window
@@ -1004,7 +1035,9 @@ impl Run<'_, '_> {
         if redo.is_none() {
             for (id, converging) in &state.findings.converging {
                 if converging.day == day && !state.drops.contains_key(id) {
-                    let dropped = converging_dropped(self.journal, self.source, converging)?;
+                    // A re-import moves what the owner deleted back in as new data.
+                    let dropped = !self.comes_back.get()
+                        && converging_dropped(self.journal, self.source, converging)?;
                     state.drops.insert(id.clone(), dropped);
                 }
             }
@@ -1036,6 +1069,10 @@ impl Run<'_, '_> {
         let mut planned_sources = BTreeMap::new();
         let mut planned_source_ends: BTreeMap<String, String> = BTreeMap::new();
         let mut planned_runs = BTreeMap::new();
+        // The rows this day's windows hold once it's written, for Oura's record.
+        let mut held_now: Vec<String> = Vec::new();
+        // What the day's windows hold now, read once, for an ordinary sync.
+        let mut day_held: Option<BTreeSet<String>> = None;
         let zone = solstone_core_journal_config::placed_zone(self.journal, self.source.source)
             .ok_or_else(|| self.source.zone_unrecognised.to_owned())?;
         for (window, mut rows) in windows {
@@ -1062,6 +1099,44 @@ impl Run<'_, '_> {
                     continue;
                 }
             }
+            // An ordinary Oura sync leaves out a reading or dated row an Oura run
+            // brought in before that this window no longer holds: the owner
+            // deleted it. What's new to Oura arrives.
+            if self.source.source == OURA.source && !self.comes_back.get() {
+                // Held anywhere on the day: a filing or a repair moves a row to
+                // another of the day's windows under the same id.
+                if day_held.is_none() {
+                    let mut ids = BTreeSet::new();
+                    for stored in stored_windows_of_day(self.journal, self.source, &day)? {
+                        if let Ok(Some((_, rows))) = stored_rows(self.journal, self.source, &stored)
+                        {
+                            ids.extend(rows.into_iter().map(|row| row.id));
+                        }
+                    }
+                    day_held = Some(ids);
+                }
+                let held = day_held.as_ref().expect("read above");
+                let fetched = self.fetched()?;
+                // A document's first row is judged whole by the scan's lookup,
+                // wherever it moves. Every other row keeps its id only while it
+                // stays in its window, so it's judged here: a tile, stage or
+                // event that moves has a new id and arrives.
+                rows.retain(|_, row| {
+                    matches!(
+                        row.kind,
+                        RowKind::Experience | RowKind::Logged | RowKind::Moved
+                    ) || held.contains(&row.id)
+                        || !fetched.contains(&row.id)
+                });
+                if rows.is_empty() {
+                    continue;
+                }
+            }
+            let arriving: Vec<String> = rows
+                .values()
+                .filter(|row| row.kind != RowKind::Moved)
+                .map(|row| row.id.clone())
+                .collect();
             planned_rows.insert(
                 window.clone(),
                 rows.values()
@@ -1150,6 +1225,7 @@ impl Run<'_, '_> {
                         filing,
                         state.move_listed,
                         Some(&self.import_id),
+                        self.comes_back.get(),
                     )?;
                     early.insert(window.clone(), decision);
                 }
@@ -1162,10 +1238,14 @@ impl Run<'_, '_> {
                 filing,
                 state.move_listed,
                 Some(&self.import_id),
+                self.comes_back.get(),
             )?;
             if decision.unreadable {
                 holes.extend(unwritten);
                 unfinished.extend(touched);
+            }
+            if !decision.unreadable && !decision.stayed_deleted {
+                held_now.extend(arriving);
             }
             decided.push((window, decision, marks_first));
         }
@@ -1361,6 +1441,10 @@ impl Run<'_, '_> {
             sync_day_folders(self.journal, self.source, &day)?;
         }
         self.append_listing(state, &pending)?;
+        if self.source.source == OURA.source {
+            self.fetched()?
+                .record(self.journal, &day, held_now.iter().map(String::as_str))?;
+        }
         state.totals.add(&pending.counts);
         state.totals.finish_split_day(&day);
         let records = activity_totals(
@@ -1409,7 +1493,10 @@ impl Run<'_, '_> {
             summary: String::new(),
             calendar_counts: Default::default(),
         };
-        let outcome = save::write_rendered(self.journal, None, &rendered);
+        // A re-import's write takes a window the owner deleted; a sync's doesn't
+        // reach one, since its decision left it deleted.
+        let outcome =
+            save::write_rendered_with(self.journal, None, &rendered, self.comes_back.get());
         if let Some(error) = outcome.error {
             if !solstone_core_import::work_continues() {
                 return Err(Stop::Stopped);
@@ -2099,6 +2186,7 @@ pub fn run_apple_health_segments(
         stop_at: request.stop_at,
         clock: None,
         exact_import: request.import_id,
+        comes_back: true,
     };
     run_segments(journal, &APPLE, &run, &|| {
         let source_hash = solstone_core_import::hash_source(request.source)
@@ -2141,6 +2229,8 @@ pub fn run_oura_segments(
         stop_at: request.stop_at,
         clock: None,
         exact_import: None,
+        // Staged pages stand in for what an ordinary sync fetched.
+        comes_back: false,
     };
     // The pages' own hashes say what they hold, so nothing else needs checking.
     run_segments(journal, &OURA, &run, &|| {
@@ -2181,6 +2271,7 @@ pub fn import_oura(
         stop_at: request.stop_at,
         clock: request.clock,
         exact_import: None,
+        comes_back: request.range.is_some() && !request.scheduled,
     };
     // A fetched run is known by what it asked; its pages' hash is set once fetched.
     let outcome = run_segments(journal, &OURA, &run, &|| Ok((String::new(), String::new())))
@@ -2296,6 +2387,13 @@ fn run_segments_bound(
             source_owner_name(source)
         ))
     })?;
+    // Nothing of this source is written while a delete or recovery of one of its
+    // imports is part way: what that moves must not meet this run's rows.
+    if let Some(words) =
+        solstone_core_import::body_trash::source_trash_held(journal, source.source, "")
+    {
+        return Err(Err(words.to_owned()));
+    }
     // A page start's import is checked again under the lock: a command-line run
     // of the same export may have bound it while this one waited.
     if let Some(exact) = request.exact_import
@@ -2331,6 +2429,10 @@ fn run_segments_bound(
         Read::Trusted(state)
             if !replan
                 && state.facet.as_deref() == request.facet
+                // A re-import someone asked for never carries on a sync's run, which
+                // would leave out what they asked to bring back. A sync may carry on
+                // a re-import's run, and keeps its rule.
+                && !(request.comes_back && state.comes_back == Some(false))
                 && matches!(
                     state.phase,
                     Phase::Fetch | Phase::Scan | Phase::Place | Phase::Write
@@ -2418,6 +2520,8 @@ fn run_segments_bound(
         import_id: import_id.clone(),
         generation,
         failed_in_a_row: Cell::new(0),
+        comes_back: Cell::new(request.comes_back),
+        fetched: std::cell::RefCell::new(None),
     };
     let finish = |input, index_only: &[PathBuf]| {
         finish_import_attempt_indexing(
@@ -2523,6 +2627,7 @@ fn run_phases(
         failed,
         holes,
         notes,
+        comes_back: Some(request.comes_back),
         ..RunState::default()
     };
     let mut state = match previous {
@@ -2712,6 +2817,11 @@ fn run_phases(
         }
         Read::Absent => fresh(BTreeSet::new(), Vec::new(), BTreeSet::new()),
     };
+    // A run carried on keeps the rule it started with.
+    match state.comes_back {
+        Some(comes_back) => run.comes_back.set(comes_back),
+        None => state.comes_back = Some(run.comes_back.get()),
+    }
     // A new fetched run works out its range now, after anything above took claims
     // back, and starts from no staged pages.
     if let Input::Fetch(input) = request.input
@@ -2777,6 +2887,13 @@ fn run_phases(
                     Input::Oura(pages) => pages.to_path_buf(),
                     _ => dir.join("pages"),
                 };
+                // An ordinary sync reads what Oura runs brought in, to leave out
+                // what the owner deleted; a re-import doesn't.
+                let fetched = if run.comes_back.get() {
+                    None
+                } else {
+                    Some(run.fetched().map_err(Stop::Failed)?)
+                };
                 (state.scan, state.findings) = scan_pages(
                     journal,
                     source,
@@ -2784,6 +2901,7 @@ fn run_phases(
                     &pages,
                     &dir.join("scan"),
                     request.spill_bytes,
+                    fetched.as_deref(),
                     &mut progress,
                 )?;
             }

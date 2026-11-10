@@ -45,7 +45,7 @@ mod write;
 
 pub use body_only::{
     day_holds_nothing_the_owner_did, holds_foreign_content, holds_nothing_the_owner_did,
-    is_body_only_dir, is_body_only_listing, is_body_only_segment,
+    is_body_only_dir, is_body_only_listing, is_body_only_segment, is_split_rows_name,
 };
 pub use calendar::{
     is_calendar_segment, is_calendar_stream, is_obsidian_stream, is_screenshots_stream,
@@ -81,7 +81,7 @@ pub use relocate::{
 pub use segment_dir::{
     Arrival, OwnerDeletionState, RetainedOwnerDeletion, SegmentDir, is_safe_stream_component,
     list_days, list_segments, list_segments_in, list_stream_segments, owner_deleted,
-    owner_deletion_state, reclaim_for_arrival,
+    owner_deletion_state, reclaim_for_arrival, reclaimable,
 };
 pub use solstone_core_journal_io::{
     DEFAULT_STREAM, DirEntryKind, LockOptions, PathOrDay, RecordIdentity, Segment,

@@ -534,7 +534,7 @@ fn an_oura_revision_keeps_its_facet_and_new_readings_get_the_run_facet() {
 }
 
 #[test]
-fn deleting_an_oura_logged_first_row_sibling_adds_no_matching_refusal() {
+fn a_sync_leaves_out_a_deleted_oura_sibling_and_keeps_the_other_tag() {
     let journal = journal();
     let root = journal.path();
     facets(root);
@@ -559,11 +559,11 @@ fn deleting_an_oura_logged_first_row_sibling_adds_no_matching_refusal() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].1, "060000_3602");
     delete(root, "20260105", "060000_3602");
+    // Staged pages stand in for an ordinary sync: it fetched the tag before, so
+    // the owner's delete keeps it out, and nothing else of that hour moves.
     let result = run(root, &next, "20261104_140000", Some("health"));
     assert!(result.finished, "{}", result.summary);
-    let found = placed(root, "new");
-    assert_eq!(found.len(), 1);
-    assert_eq!(found[0].1, "060000_3603");
+    assert!(placed(root, "new").is_empty(), "{}", result.summary);
     assert_eq!(placed(root, "old").len(), 1);
 }
 

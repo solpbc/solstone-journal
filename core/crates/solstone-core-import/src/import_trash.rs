@@ -19,6 +19,10 @@
 //! (audio, stopped runs included), `content_manifest.jsonl`, an archive's
 //! `audio-archive.sqlite`, and a legacy `segments.json`.
 //!
+//! A body import (Strava, Apple Health, Oura) holds what it first wrote, not
+//! what its records list: `body_trash` says what that is. A Strava workout is a
+//! thing of its own, its tiles.
+//!
 //! Its references are a recording's: a tombstone where each whole segment
 //! was, the search index told about every file that left or came back, and
 //! each day's stream marker. What was made from it elsewhere is not reached.
@@ -45,14 +49,10 @@ pub const STILL_IMPORTING: &str = "this import is still running; try again when 
 
 /// Whether an import of `source` deletes as a whole here. A journal archive
 /// merge isn't one thing (each thing it brought in is its own; `archive` is
-/// its older name); Strava, Apple Health and Oura imports move with the body
-/// pages' lane. Every other import, one whose kind went unrecorded included,
-/// is its record and the segments it lists.
+/// its older name). Every other import, one whose kind went unrecorded
+/// included, is its record and what it brought in.
 pub fn deletes_here(source: &str) -> bool {
-    !matches!(
-        source,
-        "journal_archive" | "archive" | "strava" | "apple_health" | "oura"
-    )
+    !matches!(source, "journal_archive" | "archive")
 }
 
 /// What kind of failure a refused delete was, for the page: a removal
@@ -61,7 +61,15 @@ pub fn deletes_here(source: &str) -> bool {
 pub fn failure_key(error: &TrashError) -> &'static str {
     match error {
         TrashError::InFlight | TrashError::Unfinished(_) => "busy",
-        TrashError::Held(reason) if reason == STILL_IMPORTING => "importing",
+        TrashError::Held(reason) if reason == STILL_IMPORTING || reason == SOURCE_IMPORTING => {
+            "importing"
+        }
+        TrashError::Held(reason)
+            if reason == crate::body_trash::TRASH_MOVING
+                || reason == crate::body_trash::TRASH_STUCK =>
+        {
+            "busy"
+        }
         _ => "other",
     }
 }
@@ -105,6 +113,13 @@ pub fn kept_originals(journal: &Path, things: &ImportThings) -> usize {
 /// What one import holds, journal-relative: what its trash item moves.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ImportThings {
+    /// For a Strava import: the workouts its tiles are.
+    pub workouts: std::collections::BTreeSet<String>,
+    /// For a body import: windows, or its listing, that couldn't be read.
+    pub unreadable: usize,
+    /// For an Apple Health or Oura import: the days on which something it
+    /// brought in again stays with an earlier import still here.
+    pub shared_days: usize,
     /// What kind of import it is: `document`, `audio`, `ics`, `strava`, …
     pub source: String,
     /// Its record: `imports/<id>`.
@@ -157,6 +172,33 @@ impl ImportThings {
     }
 }
 
+/// Whether the same file brought in again by the import whose manifest is at
+/// `manifest` is let through although that import is still here: it places by
+/// fixed keys (calendar, ChatGPT, Claude, Gemini, Evernote), so it rewrites the
+/// same segments, and part of what it brought in is deleted, which it brings
+/// back with no copies. An importer that takes the next free key would copy
+/// every live segment, so its file stays "already imported".
+pub fn reimport_brings_back(journal: &Path, manifest: &Path) -> bool {
+    let Some(id) = manifest
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .filter(|id| is_import_id(id))
+    else {
+        return false;
+    };
+    let source = source_of(journal, id);
+    if !matches!(
+        source.as_str(),
+        "ics" | "chatgpt" | "claude" | "gemini" | "evernote"
+    ) {
+        return false;
+    }
+    listed_segments(journal, id, &source)
+        .iter()
+        .any(|segment| !live_segment(journal, segment))
+}
+
 /// Whether `id` names an import the Import page lists: `YYYYMMDD_HHMMSS`.
 pub fn is_import_id(id: &str) -> bool {
     id.len() == 15
@@ -179,6 +221,22 @@ pub fn import_things(journal: &Path, id: &str) -> Option<ImportThings> {
         return None;
     }
     let source = source_of(journal, id);
+    if crate::body_trash::is_body_source(&source) {
+        let body = crate::body_trash::body_things(journal, id, &source, &|path| {
+            live_segment(journal, path)
+        });
+        return Some(ImportThings {
+            source,
+            record,
+            companions: Vec::new(),
+            segments: body.segments,
+            files: body.files,
+            shared: Vec::new(),
+            workouts: body.workouts,
+            unreadable: body.unreadable,
+            shared_days: body.shared_days,
+        });
+    }
     let mine = listed_segments(journal, id, &source);
     // Every other import still in the journal, and what it lists.
     let mut others: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -191,6 +249,11 @@ pub fn import_things(journal: &Path, id: &str) -> Option<ImportThings> {
                 continue;
             }
             let other_source = source_of(journal, &other);
+            // A body import's windows are its own stream's: no other import
+            // lists them.
+            if crate::body_trash::is_body_source(&other_source) {
+                continue;
+            }
             for segment in listed_segments(journal, &other, &other_source) {
                 others.entry(segment).or_default().insert(other.clone());
             }
@@ -537,11 +600,16 @@ fn restore_pending_tiles(journal: &Path, item: &Item) -> Result<(), String> {
 /// The trash's kind for imports.
 pub struct Imports<'a> {
     index: &'a dyn IndexNotify,
+    /// What `current_paths` just read, for the `refs` the engine asks next.
+    read: std::cell::RefCell<Option<(String, ImportThings)>>,
 }
 
 impl<'a> Imports<'a> {
     pub fn new(index: &'a dyn IndexNotify) -> Self {
-        Self { index }
+        Self {
+            index,
+            read: std::cell::RefCell::new(None),
+        }
     }
 
     /// Move import `id` to the trash, as the owner's `action` from `surface`.
@@ -554,6 +622,9 @@ impl<'a> Imports<'a> {
     ) -> Result<Item, TrashError> {
         let things =
             import_things(journal, id).ok_or_else(|| TrashError::Missing("import".into()))?;
+        if things.unreadable > 0 {
+            return Err(TrashError::Held(PART_UNREADABLE.to_owned()));
+        }
         let unit = Unit::Import {
             source: things.source.clone(),
             id: id.to_owned(),
@@ -570,13 +641,60 @@ impl<'a> Imports<'a> {
     }
 }
 
-/// The import an item holds.
-fn import_id_of(item: &Item) -> Option<&str> {
-    match &item.unit {
-        Unit::Import { id, .. } => Some(id.as_str()),
+impl Imports<'_> {
+    /// Move Strava workout `activity_id` to the trash: every tile it is, on
+    /// every day, as the owner's `action` from `surface`.
+    pub fn trash_workout(
+        &self,
+        journal: &Path,
+        activity_id: &str,
+        action: Action,
+        surface: Surface,
+    ) -> Result<Item, TrashError> {
+        let (tiles, unreadable) =
+            crate::body_trash::workout_tiles_checked(journal, activity_id, &|path| {
+                live_segment(journal, path)
+            });
+        if unreadable > 0 {
+            return Err(TrashError::Held(WORKOUT_UNREADABLE.to_owned()));
+        }
+        let day = crate::body_trash::workout_start(&tiles).map(|(day, _)| day);
+        let unit = Unit::Workout {
+            source: crate::body_trash::STRAVA.to_owned(),
+            id: activity_id.to_owned(),
+            day,
+        };
+        solstone_core_trash::detach(journal, self, unit, action, surface, tiles)
+    }
+}
+
+/// The source whose import lock an item's move holds: a body import's, or a
+/// workout's.
+fn body_source_of(unit: &Unit) -> Option<&str> {
+    match unit {
+        Unit::Import { source, .. } | Unit::Workout { source, .. }
+            if crate::body_trash::is_body_source(source) =>
+        {
+            Some(source.as_str())
+        }
         _ => None,
     }
 }
+
+/// Why a body import can't move: part of it couldn't be read, so what it
+/// holds can't be told.
+pub const PART_UNREADABLE: &str =
+    "part of this import couldn't be read, so nothing of it was deleted";
+
+/// Why a workout can't move: part of the journal's Strava workouts couldn't be
+/// read, and a piece of it could be there.
+pub const WORKOUT_UNREADABLE: &str =
+    "part of your Strava workouts couldn't be read, so nothing of this workout was deleted";
+
+/// Why a body import or a workout can't move: an import, or a delete, of its
+/// source is running now.
+pub const SOURCE_IMPORTING: &str =
+    "an import or a delete of this kind is running; try again when it's done";
 
 /// The segment a path is, or that a file of it sits in.
 fn target_of_path(path: &str) -> Option<Target> {
@@ -608,18 +726,29 @@ pub const SHARED_IN_TRASH: &str =
 /// The import's segments held, its run not going on, and, when it comes back,
 /// nothing it shares held by another item in the trash.
 struct ImportHold {
+    /// A body source's import lock, held for the whole move.
+    _source: Option<solstone_core_journal_io::FileLock>,
     segments: SegmentHold,
     /// The one segment lock held now: the segment moving.
     moving: std::cell::RefCell<Option<solstone_core_journal_io::FileLock>>,
     journal: std::path::PathBuf,
-    id: String,
+    /// The import whose run holds it back; none for a workout.
+    id: Option<String>,
     /// The item and what it shares, when it is coming back rather than going.
     returning: Option<(String, Vec<String>)>,
 }
 
+impl ImportHold {
+    fn running(&self) -> bool {
+        self.id
+            .as_deref()
+            .is_some_and(|id| attempt_holder(&self.journal, id) == AttemptHolder::Held)
+    }
+}
+
 impl Hold for ImportHold {
     fn check(&self) -> Result<(), String> {
-        if attempt_holder(&self.journal, &self.id) == AttemptHolder::Held {
+        if self.running() {
             return Err(STILL_IMPORTING.to_owned());
         }
         if let Some((item, refs)) = &self.returning {
@@ -637,13 +766,18 @@ impl Hold for ImportHold {
     fn moving(&self, path: &str) -> Result<(), String> {
         // Let go of the last segment before taking the next.
         self.moving.borrow_mut().take();
-        if attempt_holder(&self.journal, &self.id) == AttemptHolder::Held {
+        if self.running() {
             return Err(STILL_IMPORTING.to_owned());
         }
         let target = target_of_path(path);
         self.segments.check_one(target.as_ref())?;
         if let Some(target) = target {
             *self.moving.borrow_mut() = Some(self.segments.lock_one(&target)?);
+        }
+        // Going, a body import's rows in a window it shares are split out now,
+        // holding that window, so the file that moves holds exactly them.
+        if self.returning.is_none() && crate::body_trash::split_of(path).is_some() {
+            crate::body_trash::split_out(&self.journal, path)?;
         }
         Ok(())
     }
@@ -652,41 +786,96 @@ impl Hold for ImportHold {
 impl Kind for Imports<'_> {
     fn handles(&self, unit: &Unit) -> bool {
         matches!(unit, Unit::Import { .. })
+            || matches!(unit, Unit::Workout { source, .. } if source == crate::body_trash::STRAVA)
     }
 
     fn companions(&self, journal: &Path, item: &Item) -> Result<Vec<String>, String> {
+        // An Oura import's rows join the sync's record of what it fetched as they
+        // leave, so an ordinary sync leaves them out. The hold has Oura's lock.
+        if let Unit::Import { source, id } = &item.unit
+            && source == crate::body_trash::OURA
+        {
+            let mut fetched = crate::oura_fetched::Fetched::load(journal)?;
+            for (day, ids) in crate::body_trash::rows_taken(journal, &item.paths, id) {
+                fetched.record(journal, &day, ids.iter().map(String::as_str))?;
+            }
+        }
         solstone_core_retention::recording_trash::evernote_companions(journal, &item.paths)
     }
 
     fn hold<'h>(&'h self, journal: &Path, item: &Item) -> Result<Box<dyn Hold + 'h>, String> {
-        let id = import_id_of(item).ok_or_else(|| "this isn't an import".to_owned())?;
+        let id = match &item.unit {
+            Unit::Import { id, .. } => Some(id.clone()),
+            Unit::Workout { .. } => None,
+            _ => return Err("this isn't an import".to_owned()),
+        };
+        // Before the segment holds: an import of the source takes its lock first.
+        let source = match body_source_of(&item.unit) {
+            Some(source) => crate::body_trash::hold_source_lock(journal, source)
+                .map_err(|_| SOURCE_IMPORTING.to_owned())?,
+            None => None,
+        };
         let returning = (item.state != solstone_core_trash::State::Detaching)
             .then(|| (item.id.clone(), item.refs.clone()));
+        // One step of a body source at a time: another delete or recovery of it
+        // part way would meet what this one moves.
+        if let Some(source) = body_source_of(&item.unit)
+            && let Some(words) = crate::body_trash::source_trash_held(journal, source, &item.id)
+        {
+            return Err(words.to_owned());
+        }
         Ok(Box::new(ImportHold {
+            _source: source,
             segments: SegmentHold::acquire_lease(journal, &targets_of(item))?,
             moving: std::cell::RefCell::new(None),
             journal: journal.to_path_buf(),
-            id: id.to_owned(),
+            id,
             returning,
         }))
     }
 
     fn current_paths(&self, journal: &Path, unit: &Unit) -> Option<Vec<String>> {
-        let Unit::Import { id, .. } = unit else {
-            return None;
-        };
-        // Gone from the journal: nothing of it to move now.
-        Some(import_things(journal, id).map_or_else(Vec::new, |things| things.paths()))
+        match unit {
+            // Gone from the journal: nothing of it to move now.
+            // The refs asked next, under the same hold, come from this one reading.
+            Unit::Import { id, .. } => {
+                let things = import_things(journal, id);
+                let paths = things.as_ref().map_or_else(Vec::new, ImportThings::paths);
+                *self.read.borrow_mut() = things.map(|things| (id.clone(), things));
+                Some(paths)
+            }
+            Unit::Workout { id, .. } => {
+                Some(crate::body_trash::workout_tiles(journal, id, &|path| {
+                    live_segment(journal, path)
+                }))
+            }
+            _ => None,
+        }
     }
 
     fn refs(&self, journal: &Path, unit: &Unit) -> Vec<String> {
         let Unit::Import { id, .. } = unit else {
             return Vec::new();
         };
+        if let Some((read, things)) = self.read.borrow_mut().take()
+            && read == *id
+        {
+            return things.refs();
+        }
         import_things(journal, id).map_or_else(Vec::new, |things| things.refs())
     }
 
     fn present(&self, journal: &Path, path: &str) -> bool {
+        // A body import's split file is there while it, or the rows it will
+        // hold, are.
+        if let Some((window, owner)) = crate::body_trash::split_of(path) {
+            return journal.join(path).is_file()
+                || (live_segment(journal, window)
+                    && matches!(
+                        crate::body_trash::share_of(journal, window, owner),
+                        crate::body_trash::Share::Part | crate::body_trash::Share::Whole
+                    ));
+        }
         if parse_segment_rel(path).is_some() {
             return live_segment(journal, path);
         }
@@ -725,11 +914,39 @@ impl Kind for Imports<'_> {
                 .map_err(|error| format!("no tombstone was left: {error}"))?;
             }
         }
+        // The windows a body import's rows were split out of, or merged back
+        // into: their records file changed, and search reads it again.
+        let mut changed: Vec<String> = Vec::new();
         match change {
             Change::Detached => {
+                if let Unit::Import { source, id } = &item.unit {
+                    crate::body_trash::remove_run_folder(journal, id, source)?;
+                }
+                // A workout's people and gear lines go once it has left, as its
+                // delete always did: they're read again if it comes back. The hold
+                // has Strava's lock.
+                let workouts = crate::body_trash::workouts_held(journal, &item.id, &item.paths);
+                if !workouts.is_empty() {
+                    crate::strava_names::remove_strava_names_held(journal, &workouts)
+                        .map_err(|error| error.to_string())?;
+                }
+                changed.extend(
+                    item.paths
+                        .iter()
+                        .filter_map(|path| crate::body_trash::split_of(path))
+                        .map(|(window, _)| {
+                            format!(
+                                "{window}/{}",
+                                solstone_core_format::content::body_records::BODY_RECORDS_FILE
+                            )
+                        }),
+                );
                 let removed: Vec<RemovedPath> =
                     files.iter().cloned().map(RemovedPath::confirmed).collect();
-                self.index.paths_removed(&removed).map(|_| ())
+                self.index
+                    .paths_removed(&removed)
+                    .map(|_| ())
+                    .and_then(|()| self.index.paths_returned(&changed))
             }
             Change::Attached => {
                 for path in &item.paths {
@@ -737,10 +954,21 @@ impl Kind for Imports<'_> {
                         && let Some((parent, _)) = path.rsplit_once('/')
                     {
                         reclaim_for_own_file(journal, parent, &item.id)?;
+                        if crate::body_trash::split_of(path).is_some()
+                            && let Some(records) = crate::body_trash::merge_back(journal, path)?
+                        {
+                            changed.push(records);
+                        }
                     }
                 }
                 restore_pending_tiles(journal, item)?;
-                self.index.paths_returned(files)
+                let returned: Vec<String> = files
+                    .iter()
+                    .filter(|file| crate::body_trash::split_of(file).is_none())
+                    .cloned()
+                    .chain(changed)
+                    .collect();
+                self.index.paths_returned(&returned)
             }
         }
         .map_err(|error| format!("search was not updated: {}", error.reason))?;
@@ -1156,13 +1384,14 @@ mod tests {
     }
 
     #[test]
-    fn a_body_cards_upload_that_stopped_early_is_still_its_cards_kind() {
+    fn a_body_cards_upload_that_stopped_early_deletes_as_its_cards_kind() {
         // Saved as a generic upload, stopped before it wrote a manifest or a
-        // publication record: the card's hint says what it is.
+        // publication record: the card's hint says what it is, and it deletes.
         let journal = tempfile::tempdir().unwrap();
         let dir = journal.path().join(IMPORTS_DIR).join("20261109_225511");
         std::fs::create_dir_all(&dir).unwrap();
         for (hint, kind) in [
+            ("strava", "strava"),
             ("apple_health", "apple_health"),
             ("oura", "oura"),
             ("", "text"),
@@ -1173,26 +1402,22 @@ mod tests {
             }
             std::fs::write(dir.join("import.json"), record.to_string()).unwrap();
             let source = source_of(journal.path(), "20261109_225511");
-            assert!(
-                source == kind || (hint.is_empty() && deletes_here(&source)),
-                "{hint:?}: {source}"
-            );
-            assert_eq!(deletes_here(&source), hint.is_empty(), "{hint:?}");
+            assert!(source == kind || hint.is_empty(), "{hint:?}: {source}");
+            assert!(deletes_here(&source), "{hint:?}");
+            let things = import_things(journal.path(), "20261109_225511").unwrap();
+            assert_eq!(things.paths(), vec!["imports/20261109_225511".to_owned()]);
         }
     }
 
     #[test]
-    fn deletes_here_leaves_the_body_lane_and_merges_alone() {
+    fn deletes_here_leaves_only_merges_alone() {
+        for source in ["journal_archive", "archive"] {
+            assert!(!deletes_here(source), "{source}");
+        }
         for source in [
             "strava",
             "apple_health",
             "oura",
-            "journal_archive",
-            "archive",
-        ] {
-            assert!(!deletes_here(source), "{source}");
-        }
-        for source in [
             "document",
             "image",
             "text",
@@ -1205,5 +1430,445 @@ mod tests {
         ] {
             assert!(deletes_here(source), "{source}");
         }
+    }
+
+    const APPLE_A: &str = "20261001_090000";
+    const APPLE_B: &str = "20261020_090000";
+
+    fn body_row(id: &str, run: &str) -> String {
+        serde_json::json!({"id": id, "kind": "reading", "at": "2026-10-01T06:10:00+00:00",
+            "by": "Watch", "type": "heart_rate", "value": "60", "unit": "count/min",
+            "label": "heart rate", "v": 1, "source": "apple_health", "run": run})
+        .to_string()
+    }
+
+    fn window(root: &Path, key: &str, rows: &[(&str, &str)]) -> String {
+        let rel = format!("chronicle/20261001/import.apple_health/{key}");
+        let text: Vec<String> = rows.iter().map(|(id, run)| body_row(id, run)).collect();
+        write(
+            root,
+            &format!("{rel}/body.jsonl"),
+            text.join("\n").as_bytes(),
+        );
+        rel
+    }
+
+    fn apple_import(root: &Path, id: &str, keys: &[&str]) {
+        write(
+            root,
+            &format!("imports/{id}/manifest.json"),
+            br#"{"source_type": "apple_health"}"#,
+        );
+        write(
+            root,
+            &format!("imports/{id}/import.json"),
+            serde_json::json!({"import_id": id, "original_filename": "export.zip"})
+                .to_string()
+                .as_bytes(),
+        );
+        let windows: Vec<Value> = keys
+            .iter()
+            .map(|key| serde_json::json!([key, 1, 0, 0]))
+            .collect();
+        write(
+            root,
+            &format!("imports/{id}/body-touched.jsonl"),
+            format!(
+                "{}\n",
+                serde_json::json!({"day": "20261001", "windows": windows})
+            )
+            .as_bytes(),
+        );
+    }
+
+    fn ids_in(root: &Path, rel: &str) -> Vec<String> {
+        let text = fs::read_to_string(root.join(rel)).unwrap_or_default();
+        solstone_core_format::content::body_records::decode_rows(&text)
+            .unwrap()
+            .into_iter()
+            .map(|row| row.id)
+            .collect()
+    }
+
+    #[test]
+    fn a_body_import_takes_every_row_it_wrote_and_nothing_else() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        let only_a = window(root, "060000_3600", &[("a1", APPLE_A)]);
+        let both = window(root, "070000_3600", &[("a2", APPLE_A), ("b1", APPLE_B)]);
+        let only_b = window(root, "080000_3600", &[("b2", APPLE_B)]);
+        // A row of A's that B refiled into a sibling only B lists.
+        let refiled = window(root, "060000_3602", &[("a3", APPLE_A)]);
+        // B carried on A: it lists A's window too, where it changed nothing.
+        apple_import(root, APPLE_A, &["060000_3600", "070000_3600"]);
+        apple_import(
+            root,
+            APPLE_B,
+            &["060000_3602", "070000_3600", "080000_3600"],
+        );
+        // A's run stopped and left its folder, its staging A's scratch.
+        write(
+            root,
+            "imports/.apple_health-run/state.json",
+            serde_json::json!({"import_id": APPLE_A})
+                .to_string()
+                .as_bytes(),
+        );
+
+        let a = import_things(root, APPLE_A).unwrap();
+        assert_eq!(a.segments, vec![only_a.clone(), refiled.clone()], "{a:?}");
+        assert_eq!(a.files, vec![format!("{both}/body.{APPLE_A}.jsonl")]);
+        assert_eq!(a.refs(), vec![both.clone()]);
+
+        let a_item = Imports::new(&NoIndex)
+            .trash(root, APPLE_A, Action::ImportDelete, surface())
+            .unwrap();
+        assert!(root.join(&only_a).join("tombstone.json").is_file());
+        assert!(root.join(&refiled).join("tombstone.json").is_file());
+        assert_eq!(
+            ids_in(root, &format!("{both}/body.jsonl")),
+            vec!["b1"],
+            "B's row stays"
+        );
+        assert!(!root.join(format!("{both}/body.{APPLE_A}.jsonl")).exists());
+        assert!(
+            !root.join("imports/.apple_health-run").exists(),
+            "its run's scratch goes"
+        );
+
+        // B now holds the hour alone and takes it whole, with only its rows.
+        let b = import_things(root, APPLE_B).unwrap();
+        assert_eq!(b.segments, vec![both.clone(), only_b.clone()], "{b:?}");
+        let b_item = Imports::new(&NoIndex)
+            .trash(root, APPLE_B, Action::ImportDelete, surface())
+            .unwrap();
+        // A can't come back while B holds the hour they shared.
+        let kinds: [&dyn Kind; 1] = [&Imports::new(&NoIndex)];
+        let refused =
+            solstone_core_trash::attach(root, &kinds, &a_item.id, Action::Recover, surface());
+        assert!(
+            matches!(&refused, Err(TrashError::Held(reason)) if reason == SHARED_IN_TRASH),
+            "{refused:?}"
+        );
+        // B erased: A comes back, its row into the hour it shared, nothing of B's.
+        solstone_core_trash::erase(root, &b_item.id, Action::Erase, surface()).unwrap();
+        solstone_core_trash::attach(root, &kinds, &a_item.id, Action::Recover, surface()).unwrap();
+        assert_eq!(ids_in(root, &format!("{only_a}/body.jsonl")), vec!["a1"]);
+        assert_eq!(ids_in(root, &format!("{both}/body.jsonl")), vec!["a2"]);
+        assert!(!root.join(&both).join("tombstone.json").exists());
+        assert!(!root.join(format!("{both}/body.{APPLE_A}.jsonl")).exists());
+    }
+
+    #[test]
+    fn a_split_stopped_part_way_is_finished_and_takes_nothing_twice() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        let both = window(root, "070000_3600", &[("a2", APPLE_A), ("b1", APPLE_B)]);
+        apple_import(root, APPLE_A, &["070000_3600"]);
+        apple_import(root, APPLE_B, &["070000_3600"]);
+        let split = format!("{both}/body.{APPLE_A}.jsonl");
+        // Stopped after the split file was written, before the window was.
+        write(root, &split, body_row("a2", APPLE_A).as_bytes());
+        crate::body_trash::split_out(root, &split).unwrap();
+        assert_eq!(ids_in(root, &format!("{both}/body.jsonl")), vec!["b1"]);
+        assert_eq!(ids_in(root, &split), vec!["a2"]);
+        // Again, with nothing left of A's in the window: unchanged.
+        crate::body_trash::split_out(root, &split).unwrap();
+        assert_eq!(ids_in(root, &split), vec!["a2"]);
+        assert!(solstone_core_segment::is_body_only_dir(
+            "import.apple_health",
+            &root.join(&both)
+        ));
+        let item = Imports::new(&NoIndex)
+            .trash(root, APPLE_A, Action::ImportDelete, surface())
+            .unwrap();
+        assert_eq!(
+            item.paths,
+            vec![format!("imports/{APPLE_A}"), split.clone()]
+        );
+        assert_eq!(ids_in(root, &format!("{both}/body.jsonl")), vec!["b1"]);
+    }
+
+    #[test]
+    fn a_strava_import_takes_its_tiles_and_a_workout_takes_every_day_of_itself() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        write(
+            root,
+            "imports/20261001_090000/manifest.json",
+            br#"{"source_type": "strava"}"#,
+        );
+        write(
+            root,
+            "imports/20261002_090000/manifest.json",
+            br#"{"source_type": "strava"}"#,
+        );
+        let tile = |day: &str, key: &str, import: &str, activity: u64| {
+            let rel = format!("chronicle/{day}/import.strava/{key}");
+            write(
+                root,
+                &format!("{rel}/workout.json"),
+                serde_json::json!({"import_id": import, "activity_id": activity})
+                    .to_string()
+                    .as_bytes(),
+            );
+            rel
+        };
+        // Workout 7 runs past midnight; workout 8 came with the later import.
+        let first = tile("20261001", "233000_1800", "20261001_090000", 7);
+        let second = tile("20261002", "000000_1800", "20261001_090000", 7);
+        let later = tile("20261002", "090000_300", "20261002_090000", 8);
+        write(
+            root,
+            "imports/.strava-owner-words.jsonl",
+            b"{\"activity_id\":\"7\",\"names\":[]}\n{\"activity_id\":\"8\",\"names\":[]}\n",
+        );
+
+        let things = import_things(root, "20261001_090000").unwrap();
+        assert_eq!(things.segments, vec![first.clone(), second.clone()]);
+        assert_eq!(things.workouts.len(), 1);
+
+        let item = Imports::new(&NoIndex)
+            .trash_workout(
+                root,
+                "7",
+                Action::WorkoutDelete,
+                Surface::Web { page: Page::Body },
+            )
+            .unwrap();
+        assert_eq!(item.paths, vec![first.clone(), second.clone()]);
+        assert!(matches!(&item.unit, Unit::Workout { day: Some(day), .. } if day == "20261001"));
+        assert!(root.join(&later).join("workout.json").is_file());
+        // An import of Strava running holds it.
+        let held = crate::body_trash::hold_source_lock(root, "strava").unwrap();
+        let refused = Imports::new(&NoIndex).trash_workout(
+            root,
+            "8",
+            Action::WorkoutDelete,
+            Surface::Web { page: Page::Body },
+        );
+        assert!(
+            matches!(&refused, Err(TrashError::Held(reason)) if reason == SOURCE_IMPORTING),
+            "{refused:?}"
+        );
+        drop(held);
+    }
+
+    /// An item of `source` stopped part way, as a stop leaves one.
+    fn stopped_item(root: &Path, source: &str) {
+        let id = "20261110T000000000Z-0000abcd";
+        write(
+            root,
+            &format!(".trash/{id}/item.json"),
+            serde_json::json!({"schema": 1, "id": id, "state": "detaching",
+                "unit": {"kind": "import", "source": source, "id": "20261001_080000"},
+                "action": "import_delete", "surface": "web", "page": "import",
+                "trashed_at": "2026-11-10T00:00:00.000Z", "erase_at": "2026-11-17T00:00:00.000Z",
+                "paths": ["imports/20261001_080000"], "bytes": 0})
+            .to_string()
+            .as_bytes(),
+        );
+    }
+
+    #[test]
+    fn one_step_of_a_body_source_at_a_time_and_others_go_through() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        window(root, "060000_3600", &[("a1", APPLE_A)]);
+        apple_import(root, APPLE_A, &["060000_3600"]);
+        stopped_item(root, "apple_health");
+        assert!(crate::body_trash::source_trash_moving(root, "apple_health"));
+        assert!(!crate::body_trash::source_trash_moving(root, "oura"));
+        let refused = Imports::new(&NoIndex).trash(root, APPLE_A, Action::ImportDelete, surface());
+        assert!(
+            matches!(&refused, Err(error) if failure_key(error) == "busy"),
+            "{refused:?}"
+        );
+        assert!(
+            root.join("chronicle/20261001/import.apple_health/060000_3600/body.jsonl")
+                .is_file()
+        );
+        // Another source isn't held up.
+        trash(journal().path());
+    }
+
+    #[test]
+    fn a_trash_record_that_cant_be_read_holds_every_body_source() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            ".trash/20261110T000000000Z-0000abcd/item.json",
+            b"{not json",
+        );
+        for source in ["strava", "apple_health", "oura"] {
+            assert!(
+                crate::body_trash::source_trash_moving(root, source),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_workout_with_a_piece_that_cant_be_read_moves_nothing() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        let tile = "chronicle/20261001/import.strava/233000_1800";
+        write(
+            root,
+            &format!("{tile}/workout.json"),
+            br#"{"import_id": "20261001_090000", "activity_id": 7}"#,
+        );
+        write(
+            root,
+            "chronicle/20261002/import.strava/000000_1800/workout.json",
+            b"{cut sh",
+        );
+        let refused = Imports::new(&NoIndex).trash_workout(
+            root,
+            "7",
+            Action::WorkoutDelete,
+            Surface::Web { page: Page::Body },
+        );
+        assert!(
+            matches!(&refused, Err(TrashError::Held(reason)) if reason == WORKOUT_UNREADABLE),
+            "{refused:?}"
+        );
+        assert!(root.join(tile).join("workout.json").is_file());
+    }
+
+    #[test]
+    fn a_run_state_that_cant_be_read_refuses_the_delete() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        window(root, "060000_3600", &[("a1", APPLE_A)]);
+        apple_import(root, APPLE_A, &["060000_3600"]);
+        write(root, "imports/.apple_health-run/state.json", b"{cut");
+        let refused = Imports::new(&NoIndex).trash(root, APPLE_A, Action::ImportDelete, surface());
+        assert!(
+            matches!(&refused, Err(TrashError::Held(reason)) if reason == PART_UNREADABLE),
+            "{refused:?}"
+        );
+        assert!(
+            root.join("imports/.apple_health-run/state.json").is_file(),
+            "left as it was"
+        );
+    }
+
+    #[test]
+    fn an_oura_imports_delete_adds_what_it_takes_to_the_syncs_record() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        let oura = |id: &str, run: &str| {
+            serde_json::json!({"id": id, "kind": "dated", "date": "2026-10-01", "by": "Oura",
+                "type": "daily_readiness", "label": "readiness", "v": 1, "source": "oura", "run": run})
+            .to_string()
+        };
+        let day = "chronicle/20261001/import.oura/000000_86400";
+        write(
+            root,
+            &format!("{day}/body.jsonl"),
+            format!("{}\n{}", oura("r1", APPLE_A), oura("r2", APPLE_B)).as_bytes(),
+        );
+        for id in [APPLE_A, APPLE_B] {
+            write(
+                root,
+                &format!("imports/{id}/manifest.json"),
+                br#"{"source_type": "oura"}"#,
+            );
+            write(
+                root,
+                &format!("imports/{id}/body-touched.jsonl"),
+                b"{\"day\":\"20261001\",\"windows\":[[\"000000_86400\",1,0,0]]}\n",
+            );
+        }
+        // No record yet: the delete starts it from what's here, then adds its own.
+        Imports::new(&NoIndex)
+            .trash(root, APPLE_A, Action::ImportDelete, surface())
+            .unwrap();
+        let fetched = crate::oura_fetched::Fetched::load(root).unwrap();
+        assert!(fetched.contains("r1"), "the row it took");
+        assert!(
+            fetched.contains("r2"),
+            "the row that stays was already fetched"
+        );
+        assert_eq!(ids_in(root, &format!("{day}/body.jsonl")), vec!["r2"]);
+    }
+
+    #[test]
+    fn a_step_part_way_past_two_sweeps_says_it_couldnt_finish() {
+        let root = TempDir::new().unwrap();
+        let root = root.path();
+        // Stopped long ago.
+        stopped_item(root, "oura");
+        assert_eq!(
+            crate::body_trash::source_trash_held(root, "oura", ""),
+            Some(crate::body_trash::TRASH_STUCK)
+        );
+        // Stopped just now: it's still finishing.
+        let id = "20261110T000000000Z-0000abcd";
+        let path = root.join(format!(".trash/{id}/item.json"));
+        let mut item: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        item["trashed_at"] = Value::String(chrono::Utc::now().to_rfc3339());
+        fs::write(&path, item.to_string()).unwrap();
+        assert_eq!(
+            crate::body_trash::source_trash_held(root, "oura", ""),
+            Some(crate::body_trash::TRASH_MOVING)
+        );
+        assert_eq!(crate::body_trash::source_trash_held(root, "oura", id), None);
+    }
+
+    #[test]
+    fn a_fixed_key_import_with_part_deleted_takes_its_file_again() {
+        let root = journal();
+        let manifest = root.path().join(format!("imports/{ID}/manifest.json"));
+        assert!(
+            !reimport_brings_back(root.path(), &manifest),
+            "all of it is here"
+        );
+        // One of its segments deleted on its own.
+        let gone = root.path().join("chronicle/20260801/import.ics/090000_300");
+        fs::remove_dir_all(&gone).unwrap();
+        fs::create_dir_all(&gone).unwrap();
+        fs::write(gone.join("tombstone.json"), b"{}").unwrap();
+        assert!(reimport_brings_back(root.path(), &manifest));
+        // A next-free-key kind would copy what's live: its file stays imported.
+        fs::write(&manifest, br#"{"source_type": "document"}"#).unwrap();
+        assert!(!reimport_brings_back(root.path(), &manifest));
     }
 }

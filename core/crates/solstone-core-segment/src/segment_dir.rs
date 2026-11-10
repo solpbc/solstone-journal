@@ -919,6 +919,35 @@ pub enum Arrival {
     Removing,
 }
 
+/// Whether a segment the owner removed holds nothing but its removal's
+/// tombstone, with no removal of it under way: the place [`reclaim_for_arrival`]
+/// gives to what arrives again. Reads only; takes no lock.
+pub fn reclaimable(segment_dir: &Path) -> Result<bool, SegmentError> {
+    if owner_deletion_state(segment_dir)? != OwnerDeletionState::Deleted {
+        return Ok(false);
+    }
+    let io = |source| SegmentError::Io {
+        path: segment_dir.to_path_buf(),
+        source,
+    };
+    // A removal staged beside it is still under way.
+    if let (Some(parent), Some(name)) = (segment_dir.parent(), segment_dir.file_name()) {
+        let mut staged = std::ffi::OsString::from(".removing_");
+        staged.push(name);
+        match std::fs::symlink_metadata(parent.join(staged)) {
+            Ok(_) => return Ok(false),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(io(error)),
+        }
+    }
+    for entry in std::fs::read_dir(segment_dir).map_err(io)? {
+        if entry.map_err(io)?.file_name() != TOMBSTONE_NAME {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Make room for a segment that arrives again where the owner removed it.
 ///
 /// What arrives is new data and comes back: the owner's earlier removal is not
