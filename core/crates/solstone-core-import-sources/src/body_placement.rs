@@ -68,7 +68,8 @@ impl<'a> DayPlacement<'a> {
             }
             let rows = match stored_rows(journal, source, &(day.to_owned(), key.clone())) {
                 Ok(Some((_, rows))) => rows,
-                Ok(None) | Err(StoredRowsError::NotRows) => continue,
+                Ok(None) => Vec::new(),
+                Err(StoredRowsError::NotRows) => continue,
                 Err(StoredRowsError::Read(error)) => return Err(error),
             };
             let file = entry.path().join("talents/facets.json");
@@ -136,6 +137,13 @@ impl<'a> DayPlacement<'a> {
                     stored_rows(journal, source, &(day, key.clone())),
                     Err(StoredRowsError::NotRows)
                 );
+            let has_earlier_foreign_rows = chosen.is_some()
+                && self.held.iter().any(|(held_key, held)| {
+                    same_grid(&key, held_key)
+                        && held.filing.is_some()
+                        && held.filing != chosen
+                        && held.rows.iter().any(|row| row.kind != RowKind::Moved)
+                });
             for (id, mut row) in rows {
                 if row.kind == RowKind::Moved || blocked {
                     let target = placed.entry(key.clone()).or_default();
@@ -179,7 +187,7 @@ impl<'a> DayPlacement<'a> {
                             .entry(held.filing.clone().unwrap_or_default())
                             .or_default() += 1;
                     }
-                } else if facet.is_some() && destination != key {
+                } else if has_earlier_foreign_rows && destination != key {
                     *result.split_rows.entry(destination.clone()).or_default() += 1;
                 }
                 let assign = may_refile

@@ -891,8 +891,8 @@ impl Run<'_, '_> {
     }
 
     /// Give windows their facet, the run's or one a moved document takes with it,
-    /// where they hold records: a folder holding only a facet would stop being
-    /// body-only.
+    /// where they hold records or an earlier assignment. A new folder gets no
+    /// facet before its records: that would stop it being body-only.
     fn write_facets(
         &self,
         day: &str,
@@ -906,8 +906,8 @@ impl Run<'_, '_> {
                     self.source,
                     &(day.to_owned(), window.key.clone()),
                 );
-                if dir.join(BODY_RECORDS_FILE).is_file() {
-                    let path = dir.join("talents/facets.json");
+                let path = dir.join("talents/facets.json");
+                if dir.join(BODY_RECORDS_FILE).is_file() || path.is_file() {
                     fs::create_dir_all(path.parent().expect("facets file has a parent"))
                         .map_err(|error| error.to_string())?;
                     atomic_replace(&path, filing.as_bytes(), PRIVATE)
@@ -1006,9 +1006,8 @@ impl Run<'_, '_> {
             let filing = filed.filings.get(&window.1).map(String::as_str);
             if let Some(filing) = filing.filter(|_| !state.move_listed) {
                 let dir = window_dir(self.journal, self.source, &window);
-                if dir.join(BODY_RECORDS_FILE).is_file()
-                    && fs::read_to_string(dir.join("talents/facets.json"))
-                        .is_ok_and(|held| held != filing)
+                if fs::read_to_string(dir.join("talents/facets.json"))
+                    .is_ok_and(|held| held != filing)
                 {
                     return Err(Stop::Failed("a part of your journal is now filed elsewhere. the entries waiting to be saved were left unwritten.".to_owned()));
                 }
@@ -1373,14 +1372,28 @@ fn replay_filing(pending: &Pending, windows: DayRows) -> FiledDay {
                 .map(|id| (id.as_str(), window.key.as_str()))
         })
         .collect();
+    let planned_keys: BTreeSet<&str> = pending
+        .windows
+        .iter()
+        .map(|window| window.key.as_str())
+        .collect();
     let mut filed = FiledDay::default();
     let mut placed: BTreeMap<WindowId, BTreeMap<String, BodyRow>> = BTreeMap::new();
     for ((day, key), rows) in windows {
         for (id, mut row) in rows {
             let target = if row.kind == RowKind::Moved {
+                if !planned_keys.contains(key.as_str()) {
+                    continue;
+                }
                 key.as_str()
             } else {
-                destinations.get(id.as_str()).copied().unwrap_or(&key)
+                // A window refused as unreadable or deleted was not planned.
+                // Its later repair cannot turn this replay into an unfiled
+                // write; the next fresh import decides it against that repair.
+                let Some(target) = destinations.get(id.as_str()).copied() else {
+                    continue;
+                };
+                target
             };
             let target_rows = placed.entry((day.clone(), target.to_owned())).or_default();
             if let Some(run) = pending

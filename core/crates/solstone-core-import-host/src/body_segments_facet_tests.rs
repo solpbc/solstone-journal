@@ -174,6 +174,92 @@ fn new_apple_identities_in_a_foreign_hour_are_readable_only_under_the_run_facet(
 }
 
 #[test]
+fn a_directory_with_only_a_foreign_facet_cannot_receive_new_rows_under_it() {
+    for listed in [ListedMoves::Keep, ListedMoves::Move] {
+        let journal = journal();
+        let root = journal.path();
+        facets(root);
+        let scratch = tempfile::tempdir().unwrap();
+        let original = window(root, "20261010", "060000_3600");
+        fs::create_dir_all(original.join("talents")).unwrap();
+        fs::write(
+            original.join("talents/facets.json"),
+            facet_file_text("work"),
+        )
+        .unwrap();
+        let source = export(
+            scratch.path(),
+            &[heart("2026-10-10 06:42:00 -0600", "7222")],
+        );
+        let stop = stopping_at("written", 1);
+        let mut request = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+        request.listed = listed;
+        request.stop_at = Some(&stop);
+        run_apple_health_segments(root, &request).unwrap_err();
+        assert!(
+            entries(root, WORK_ID, "20261010", "Apple Health · imported").is_empty(),
+            "an interrupted first write inherited the old metadata-only facet"
+        );
+        if matches!(listed, ListedMoves::Move) {
+            assert_eq!(
+                fs::read_to_string(original.join("talents/facets.json")).unwrap(),
+                facet_file_text("body")
+            );
+        } else {
+            assert!(!original.join(BODY_RECORDS_FILE).exists());
+            assert_eq!(
+                fs::read_to_string(original.join("talents/facets.json")).unwrap(),
+                facet_file_text("work")
+            );
+        }
+        request.stop_at = None;
+        let done = run_apple_health_segments(root, &request).unwrap();
+        assert!(done.finished, "{}", done.summary);
+        assert!(
+            !done.summary.contains("saved separately"),
+            "{}",
+            done.summary
+        );
+        assert_eq!(
+            entries(root, BODY_ID, "20261010", "Apple Health · imported").len(),
+            1
+        );
+        assert!(entries(root, WORK_ID, "20261010", "Apple Health · imported").is_empty());
+    }
+}
+
+#[test]
+fn a_resume_respects_a_changed_facet_even_before_its_first_body_write() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(
+        scratch.path(),
+        &[heart("2026-10-10 06:42:00 -0600", "7222")],
+    );
+    let stop = stopping_at("pending", 1);
+    let mut request = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    request.stop_at = Some(&stop);
+    run_apple_health_segments(root, &request).unwrap_err();
+    let Read::Trusted(state) = read_state(root, &APPLE) else {
+        panic!("no saved run");
+    };
+    let planned = &state.pending.as_ref().unwrap().windows[0];
+    let dir = window(root, "20261010", &planned.key);
+    fs::create_dir_all(dir.join("talents")).unwrap();
+    fs::write(dir.join("talents/facets.json"), facet_file_text("work")).unwrap();
+    request.stop_at = None;
+    let error = run_apple_health_segments(root, &request).unwrap_err();
+    assert!(error.contains("now filed elsewhere"), "{error}");
+    assert!(!dir.join(BODY_RECORDS_FILE).exists());
+    assert_eq!(
+        fs::read_to_string(dir.join("talents/facets.json")).unwrap(),
+        facet_file_text("work")
+    );
+}
+
+#[test]
 fn the_remembered_default_command_splits_a_foreign_hour_without_an_answer() {
     let journal = journal();
     let root = journal.path();
@@ -271,6 +357,58 @@ fn a_same_plan_resume_replays_the_saved_sibling_and_keeps_its_counts() {
             serde_json::from_str(listing.lines().next().unwrap()).unwrap();
         assert!(listing.to_string().contains("060000_3602"), "{listing}");
     }
+}
+
+#[test]
+fn a_resume_never_writes_unplanned_rows_after_a_formerly_unreadable_window_is_repaired() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = export(
+        &scratch.path().join("first"),
+        &[heart("2026-10-10 06:11:10 -0600", "7111")],
+    );
+    run(root, &first, "20261012_120000", Some("work"));
+    let path = window(root, "20261010", "060000_3600").join(BODY_RECORDS_FILE);
+    let before = fs::read(&path).unwrap();
+    fs::write(&path, "not rows").unwrap();
+    let next = export(
+        &scratch.path().join("next"),
+        &[
+            heart("2026-10-10 06:42:00 -0600", "7222"),
+            heart("2026-10-10 08:42:00 -0600", "7333"),
+        ],
+    );
+    let stop = stopping_at("pending", 1);
+    let mut request = AppleSegmentsRequest::new(&next, "20261012_130000", Some("body"));
+    request.stop_at = Some(&stop);
+    run_apple_health_segments(root, &request).unwrap_err();
+    let Read::Trusted(state) = read_state(root, &APPLE) else {
+        panic!("no saved run");
+    };
+    assert_eq!(state.pending.as_ref().unwrap().counts.unreadable, 1);
+    fs::write(&path, &before).unwrap();
+    request.stop_at = None;
+    let resumed = run_apple_health_segments(root, &request).unwrap();
+    assert_eq!(resumed.import_id, state.import_id);
+    let work = entries(root, WORK_ID, "20261010", "Apple Health · imported");
+    assert_eq!(work.len(), 1, "{work:?}");
+    assert!(!work[0].contains("7222"));
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "the saved unreadable decision is not silently replaced by a new write"
+    );
+    let fresh = run_apple_health_segments(root, &request).unwrap();
+    assert_ne!(fresh.import_id, resumed.import_id);
+    let body = entries(root, BODY_ID, "20261010", "Apple Health · imported");
+    assert_eq!(body.len(), 1, "{body:?}");
+    assert!(body[0].contains("7222"));
+    assert_eq!(
+        entries(root, WORK_ID, "20261010", "Apple Health · imported"),
+        work
+    );
 }
 
 #[test]
