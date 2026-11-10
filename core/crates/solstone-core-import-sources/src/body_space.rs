@@ -18,10 +18,14 @@ use crate::body_stream::APPLE;
 const GIB: u64 = 1024 * 1024 * 1024;
 /// Kept free beyond what the import needs.
 pub const RESERVE: u64 = GIB;
-/// Peak staging, per byte of `export.xml`. Measured; see the docs.
-pub const STAGING_PER_XML_BYTE: f64 = 0.8;
-/// What a first import leaves in the journal, per byte of `export.xml`. Measured.
-pub const GROWTH_PER_XML_BYTE: f64 = 1.0;
+/// Peak staging, per byte of `export.xml`: 0.91 measured on a synthetic six-year
+/// history (2.34 GB of `export.xml`, 2.09 million rows) on Linux.
+pub const STAGING_PER_XML_BYTE: f64 = 0.92;
+/// What a first import leaves in the journal, per byte of `export.xml`: 1.29
+/// measured on the same history.
+pub const GROWTH_PER_XML_BYTE: f64 = 1.30;
+/// Headroom over the measured factors until they are measured on a Mac too.
+pub const MARGIN: f64 = 1.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Space {
@@ -79,6 +83,7 @@ pub fn need(xml_bytes: u64, first: bool, staging_now: u64) -> u64 {
     if first {
         need += xml * GROWTH_PER_XML_BYTE;
     }
+    need *= MARGIN;
     ((need as u64).saturating_add(RESERVE)).saturating_sub(staging_now)
 }
 
