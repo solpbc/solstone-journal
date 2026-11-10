@@ -599,6 +599,11 @@ function createEnvironment(pathname = '/app/home/week/20260308', evalWeek = true
     },
     addEventListener: (type, listener) => doc.addEventListener(type, listener),
     removeEventListener: () => {},
+    // Home's mount sets its once-a-minute pulse read; nothing here runs it.
+    setTimeout: setTimeout,
+    clearTimeout: clearTimeout,
+    setInterval: () => 0,
+    clearInterval: () => {},
     CustomEvent: CustomEvent,
     Element: Element,
     HTMLElement: Element,
@@ -1174,11 +1179,7 @@ async function runTests() {
     vm.runInContext(homeJsCode, envOriginals.sandbox, { filename: 'home.js' });
     vm.runInContext(weekJsCode, envOriginals.sandbox, { filename: 'week.js' });
     vm.runInContext(removalsJsCode, envOriginals.sandbox, { filename: 'removals.js' });
-    envOriginals.doc.dispatchEvent(
-      new CustomEvent('workspace:mounted', {
-        detail: { appName: 'home', url: '/app/home/originals/' }
-      })
-    );
+    vm.runInContext("window.SolViews.mount('home');", envOriginals.sandbox);
     envOriginals.doc.dispatchEvent(new CustomEvent('visibilitychange', {}));
     await new Promise((r) => setTimeout(r, 10));
     assert.ok(envOriginals.doc.querySelector('[data-removals-card]'), 'originals card mounted on its page');

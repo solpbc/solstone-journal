@@ -85,9 +85,11 @@
       return esc(raw || '').replace(/\n/g, '<br>');
     }
 
-    // Home's reads belong to this mount, through the page's read store.
+    // Home's reads belong to this mount, through the page's read store. Home
+    // keeps one read of each in flight itself (pulseRequest and the rest), so
+    // each one it starts is a read of its own.
     function apiJson(url) {
-      return ctx.read(url);
+      return ctx.read(url, { fresh: true });
     }
 
     // Initial paint and live updates share the same observation. Event bursts
