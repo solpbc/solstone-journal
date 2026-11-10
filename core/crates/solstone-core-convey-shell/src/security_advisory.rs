@@ -309,7 +309,7 @@ fn raise(flag: &Flag) -> Value {
         None => (
             "a security update is ready for your journal".to_owned(),
             format!(
-                "this version is missing a security fix. update your journal to {} or later.",
+                "your journal is missing a security fix. update it to {} or later.",
                 flag.fixed_in
             ),
         ),
@@ -322,7 +322,7 @@ fn raise(flag: &Flag) -> Value {
                     .to_owned(),
             },
             format!(
-                "its version is missing a security fix. update the solstone app there to {} or later.",
+                "the solstone app there is missing a security fix. update it to {} or later.",
                 flag.fixed_in
             ),
         ),

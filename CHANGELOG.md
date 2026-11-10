@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- when your journal runs on a computer, once a day it reads a short notice, signed by sol pbc, that names the versions missing a security fix. if your journal, or the solstone app on a computer paired with it, is on one of them, you get a notification and a banner on your journal's home page that says which version to update to and links to what it fixes. the check is a plain request for a public file, like visiting a web page, and nothing about you, your journal or your devices goes with it.
 - you can now bring an Apple Health export in from the Apple Health card on the import page, when your journal runs on a computer. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
 - you can bring Oura into your journal through an app you register with Oura yourself. `solstone journal importer --connect oura` asks for the app's client ID and secret the first time, then `--sync oura --save` brings Oura in. its workouts, sleep and readings land on their own days, the same way as Apple Health's. how to register it: [connecting Oura](https://github.com/solpbc/solstone-journal/blob/main/docs/health_imports.md#connecting-oura).
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.

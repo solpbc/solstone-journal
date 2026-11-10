@@ -274,6 +274,25 @@ fn apply_permanent_devices_shell_divergence(expected: &mut Value) {
 /// regenerated, so the one added member is taken out of the live payload after
 /// checking it names calendar notes. Narrowness is the safeguard: it removes
 /// exactly that member and nothing else.
+/// The security advisory check's report, a native addition on a desktop
+/// journal. Before the check first compares, it says it is checking.
+fn strip_permanent_status_security_addition_from_actual(actual: &mut Value) {
+    let Some(security) = actual
+        .as_object_mut()
+        .expect("system status is an object")
+        .remove("security")
+    else {
+        return;
+    };
+    assert!(
+        matches!(
+            security["state"].as_str(),
+            Some("checking" | "confirmed" | "unconfirmed")
+        ) && security["flags"].is_array(),
+        "system status reports the security advisory check: {security}"
+    );
+}
+
 fn strip_permanent_status_capabilities_addition_from_actual(actual: &mut Value) {
     let capabilities = actual
         .as_object_mut()
@@ -994,6 +1013,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                 if phase == "established" && path == "/api/system/status" {
                     apply_client_capture_projection_rename(&mut expected);
                     strip_permanent_status_capabilities_addition_from_actual(&mut actual);
+                    strip_permanent_status_security_addition_from_actual(&mut actual);
                 }
                 normalize(&mut actual, &journal.0.display().to_string(), "");
                 normalize(&mut expected, &journal.0.display().to_string(), "");
