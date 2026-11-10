@@ -1166,7 +1166,7 @@ function formatDateRange(dateRange) {
 function formatImportStats(entriesWritten, entitiesSeeded) {
   const parts = [];
   if (typeof entriesWritten === 'number') {
-    parts.push(`${entriesWritten} ${entriesWritten === 1 ? 'entry' : 'entries'}`);
+    parts.push(`${entriesWritten.toLocaleString()} ${entriesWritten === 1 ? 'entry' : 'entries'}`);
   }
   if (typeof entitiesSeeded === 'number') {
     parts.push(`${entitiesSeeded} entities`);
@@ -1273,15 +1273,18 @@ function sourceLabel(imp) {
 
 // `picking` adds select mode's first column: a checkbox for an import that can
 // be deleted, and an empty cell for one that can't.
-function renderImportRow(imp, picking = false) {
-  // What an Apple Health import's row says, by its state. Owner copy: voice-checked.
-  const BODY_STATE_WORDS = {
+// What an Apple Health import's row says, by its state. Owner copy: voice-checked.
+function bodyStateLabel(state) {
+  return {
     saved: 'saved',
     partly_saved: 'partly saved',
     stopped: 'stopped',
     failed: 'not brought in',
     didnt_start: "didn't start",
-  };
+  }[state];
+}
+
+function renderImportRow(imp, picking = false) {
   const importedAtMs = (imp.imported_at || imp.created_at) * 1000;
   const importedAt = window.JournalFormat.timestamp(importedAtMs);
   const targetDayDisplay = imp.target_day ? window.JournalFormat.day(imp.target_day) : '—';
@@ -1291,10 +1294,10 @@ function renderImportRow(imp, picking = false) {
   let statusDetail = '';
   if (imp.status === 'success') {
     statusClass = 'success';
-    statusText = imp.body_state === 'saved' ? BODY_STATE_WORDS.saved : 'completed';
+    statusText = imp.body_state === 'saved' ? bodyStateLabel('saved') : 'completed';
   } else if (imp.status === 'failed') {
     statusClass = 'failed';
-    statusText = BODY_STATE_WORDS[imp.body_state] || 'failed';
+    statusText = bodyStateLabel(imp.body_state) || 'failed';
     if (imp.body_words) {
       statusDetail = `<div class="progress-detail">${escapeHtml(imp.body_words)}</div>`;
     } else if (imp.error) {
@@ -1306,7 +1309,7 @@ function renderImportRow(imp, picking = false) {
     statusText = 'unconfirmed';
   } else if (imp.status === 'noted') {
     statusClass = 'unconfirmed';
-    statusText = BODY_STATE_WORDS[imp.body_state] || 'stopped';
+    statusText = bodyStateLabel(imp.body_state) || 'stopped';
   } else if (imp.status === 'unavailable') {
     statusClass = 'unavailable';
     statusText = 'status unavailable';
@@ -3528,9 +3531,17 @@ function showProgressView(importId, eventData = null) {
     : importInfo?.status === 'failed';
   const isStalled = Boolean(currentEvent?.stalled);
 
-  const displayName = currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
+  // An Apple Health import ends as its row reads, in the row's own words.
+  const bodyState = currentEvent?.body_state || importInfo?.body_state || null;
+  const apple = currentGuideSource === 'apple_health' || importInfo?.source_hint === 'apple_health' || Boolean(bodyState);
+  const appleEnded = apple && (isConfirmedSuccess || isFailed || isUnconfirmed || Boolean(bodyState));
+  const displayName = apple
+    ? 'Apple Health'
+    : currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
 
-  const stageLabel = isStalled
+  const stageLabel = appleEnded
+    ? bodyStateLabel(bodyState) || (isConfirmedSuccess ? bodyStateLabel('saved') : bodyStateLabel('stopped'))
+    : isStalled
     ? 'stalled: no updates in 10 minutes'
     : isConfirmedSuccess
       ? 'recordings saved'
@@ -3543,10 +3554,34 @@ function showProgressView(importId, eventData = null) {
             : currentEvent?.source_type === 'audio_archive' && currentEvent?.save_complete === true
               ? 'recordings saved; processing continues'
               : humanStageName(currentEvent?.stage || 'initialization', displayName);
-  const progressHtml = currentEvent ? renderProgressStats(currentEvent) : '';
+  const progressHtml = currentEvent && !appleEnded ? renderProgressStats(currentEvent) : '';
   let completionHtml = '';
 
-  if (isConfirmedSuccess) {
+  if (apple && isConfirmedSuccess) {
+    const done = currentEvent || importInfo || {};
+    const range = done.date_range || importInfo?.date_range || null;
+    const entries = done.entries_written ?? importInfo?.entries_written ?? null;
+    const durationMs = done.duration_ms ?? importInfo?.duration_ms ?? null;
+    const words = currentEvent?.body_words || importInfo?.body_words || '';
+    const facts = [];
+    if (Array.isArray(range) && range[0]) {
+      const day = value => window.JournalFormat.day(value);
+      facts.push(range[1] && range[1] !== range[0] ? `${day(range[0])} to ${day(range[1])}` : day(range[0]));
+    }
+    if (typeof entries === 'number') facts.push(`${entries.toLocaleString()} ${entries === 1 ? 'entry' : 'entries'}`);
+    if (durationMs !== null && durationMs !== undefined) facts.push(`took ${formatElapsed(durationMs)}`);
+    completionHtml = `
+      <div class="import-completion-summary">
+        ${words ? `<div>${escapeHtml(words)}</div>` : ''}
+        ${facts.length ? `<div>${escapeHtml(facts.join(' · '))}</div>` : ''}
+        <div class="import-action-row">
+          <a class="import-primary-btn" href="/app/body/">see it in the body app →</a>
+          <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(done.processed_timestamp || importId)}#content">browse what was imported →</a>
+          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+        </div>
+      </div>
+    `;
+  } else if (isConfirmedSuccess) {
     const completedInfo = currentEvent || importInfo || {};
     const range = completedInfo.date_range || importInfo?.date_range || null;
     const entriesWritten = completedInfo.entries_written ?? importInfo?.entries_written ?? null;
@@ -3563,7 +3598,7 @@ function showProgressView(importId, eventData = null) {
       gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: var(--warn-ink);">partially extracted (${pageLabel})</div>`;
     }
     const sourceName = currentGuideSource || source?.name || completedInfo.source_type || importInfo?.source_type || '';
-    const repeatBtn = sourceName ? `
+    const repeatBtn = ['image', 'document'].includes(sourceName) ? `
       <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${escapeHtml(['image', 'document'].includes(sourceName) ? 'import another ' + (source?.display_name || sourceName) : 'import another source')}</button>
     ` : '';
     completionHtml = `

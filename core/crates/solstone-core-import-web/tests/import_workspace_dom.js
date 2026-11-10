@@ -724,6 +724,7 @@ function runImportRowColumns() {
   vm.runInContext(functionSource(workspace, 'renderSourceDisplay'), context);
   vm.runInContext(functionSource(workspace, 'formatImportStats'), context);
   vm.runInContext(functionSource(workspace, 'sourceLabel'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'renderImportRow'), context);
   assert.strictEqual(
     vm.runInContext("formatImportStats(0, 0)", context),
@@ -867,7 +868,7 @@ function runProgressPanelUpdatesOnCompletion() {
   for (const name of [
     'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatDateRange',
     'formatStatValue', 'formatProgressStats', 'renderProgressStats', 'getImportById',
-    'showProgressView', 'refreshInlineProgress',
+    'bodyStateLabel', 'showProgressView', 'refreshInlineProgress',
   ]) {
     vm.runInContext(functionSource(workspace, name), context);
   }
@@ -983,7 +984,7 @@ function runReloadedPanelAgreesWithItsOwnSummary() {
   vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, context);
   for (const name of [
     'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatDateRange',
-    'formatStatValue', 'formatProgressStats', 'renderProgressStats', 'getImportById', 'showProgressView',
+    'formatStatValue', 'formatProgressStats', 'renderProgressStats', 'getImportById', 'bodyStateLabel', 'showProgressView',
   ]) {
     vm.runInContext(functionSource(workspace, name), context);
   }
@@ -1090,6 +1091,7 @@ async function runRepeatSourceFocus() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
@@ -1247,6 +1249,7 @@ function runGenerationComparisonInRowUpdates() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
@@ -1297,6 +1300,7 @@ function runShowProgressViewDoesNotReconcile() {
   context.formatStatValue = (v) => String(v);
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
 
   vm.runInContext("showProgressView('1700000001', { import_id: '1700000001', event: 'started' })", context);
@@ -1327,6 +1331,7 @@ function runDistinctUnconfirmedAndUnavailablePanels() {
   context.formatDateRange = () => '-';
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
 
   // Unconfirmed panel
@@ -1439,6 +1444,7 @@ async function runNavigateToProgressIssuesOnlyOneGet() {
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
   vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'reconcileImportState'), context);
   vm.runInContext(functionSource(workspace, 'navigateTo'), context);
@@ -1557,6 +1563,7 @@ async function runRepeatSourceThenDelayedOldGenCompleted() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'navigateTo'), context);
@@ -1667,6 +1674,7 @@ function runSingularPageUnavailable() {
   context.formatDateRange = () => '-';
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
 
   vm.runInContext("showProgressView('1700000001', { import_id: '1700000001', status: 'success', unavailable_pages: 1 })", context);
@@ -1975,7 +1983,8 @@ function runRepaintSeesTheFactsThatWereStored() {
     vm.runInContext(functionSource(workspace, 'formatProgressStats'), context);
     vm.runInContext(functionSource(workspace, 'renderProgressStats'), context);
     vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
-    vm.runInContext(functionSource(workspace, 'showProgressView'), context);
+    vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
+  vm.runInContext(functionSource(workspace, 'showProgressView'), context);
     vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
     vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
     vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
@@ -2137,6 +2146,7 @@ async function runAuthoritativeRunningReadKeepsACompletedImportComplete() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
@@ -2325,7 +2335,7 @@ async function runCompletionThenAQuietReadShowsThePartialNotice() {
     context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
     context.IMPORT_TERMINAL_EVENTS = new Set(['completed', 'error', 'declined']);
     context.inFlightReconcile = new Set();
-    for (const name of ['formatStatValue', 'isTerminalState', 'showProgressView', 'refreshInlineProgress', 'statusElapsedDetail', 'updateImportRow', 'reconcileImportState']) {
+    for (const name of ['formatStatValue', 'isTerminalState', 'bodyStateLabel', 'showProgressView', 'refreshInlineProgress', 'statusElapsedDetail', 'updateImportRow', 'reconcileImportState']) {
       vm.runInContext(functionSource(workspace, name), context);
     }
     return { context, guideSteps, failure };
@@ -2440,6 +2450,7 @@ async function runCanonicalReadOutranksTheGenerationFloor() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
@@ -2682,7 +2693,7 @@ function runEveryOwnerSinkEscapes() {
   installRealEscapeHtml(historyContext);
   assertEscaperIsReal(historyContext);
   for (const name of [
-    'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'sourceLabel', 'renderImportRow',
+    'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'sourceLabel', 'bodyStateLabel', 'renderImportRow',
     'sourceFilterOptionsHtml', 'buildHistoryHeader',
   ]) {
     vm.runInContext(functionSource(workspace, name), historyContext);
@@ -3107,6 +3118,7 @@ function runUnavailablePanelNeverEchoesTheServer() {
   context.formatDateRange = () => '';
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
 
   vm.runInContext(
@@ -3224,6 +3236,7 @@ function runMeasuredZeroIsNotUnknown() {
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
   vm.runInContext(functionSource(workspace, 'formatImportStats'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
 
   assert.strictEqual(vm.runInContext('formatStatValue(0)', context), '0', 'a measured zero renders as 0');
@@ -3366,7 +3379,8 @@ function runOwnerSinksEscapeServerDerivedPayloads() {
     + " event: 'completed', status: 'success', entries_written: 1, entities_seeded: 0 })",
     panelContext
   );
-  assert.ok(guideSteps.innerHTML.includes(`data-source="${ESCAPED_PAYLOAD}"`), 'data-source is escaped');
+  assert.ok(!guideSteps.innerHTML.includes('data-source='), 'one "import another source", not a second button naming the source');
+  assert.strictEqual(guideSteps.innerHTML.split('import another source').length - 1, 1, 'it is offered once');
   assert.ok(
     guideSteps.innerHTML.includes(`href="/app/import/${encodeURIComponent(ESCAPE_PAYLOAD)}#content"`),
     'the browse link percent-encodes the import id'
@@ -3471,7 +3485,8 @@ async function runCheckStatusFocusLandsOnThePanel() {
 
     vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
     vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
-    vm.runInContext(functionSource(workspace, 'showProgressView'), context);
+    vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
+  vm.runInContext(functionSource(workspace, 'showProgressView'), context);
     vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
     vm.runInContext(functionSource(workspace, 'statusElapsedDetail'), context);
     vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
@@ -3529,6 +3544,7 @@ function runStalledRowNamesTheImportId() {
   context.formatDateRange = () => '';
 
   vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+  vm.runInContext(functionSource(workspace, 'bodyStateLabel'), context);
   vm.runInContext(functionSource(workspace, 'showProgressView'), context);
   vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
   vm.runInContext(functionSource(workspace, 'markRowStalled'), context);
@@ -4512,6 +4528,45 @@ async function runImportSetRefusalsStaySelected() {
 
 // A file an import still in the journal brought in is refused, and the page
 // says so; the duplicate notice is only ever for one still on its way in.
+// An Apple Health import ends in its row's own words: no "recordings saved",
+// no leftover phase line, its days as days, and the way to the body app.
+function runAppleImportEndsInItsOwnWords() {
+  const guideSteps = new Element();
+  const context = makeContext({ console });
+  context.document = { getElementById: (id) => (id === 'guideSteps' ? guideSteps : null) };
+  context.window = { location: { hash: '#progress/a1' }, CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
+    JournalFormat: { day: (value) => `DAY(${value})` } };
+  context.encodeURIComponent = encodeURIComponent;
+  context.sourceMetadataByName = { apple_health: { name: 'apple_health', display_name: 'Apple Health' } };
+  context.currentGuideSource = 'apple_health';
+  context.importEvents = {};
+  context.getImportById = () => null;
+  installRealEscapeHtml(context);
+  context.humanStageName = (s) => s;
+  context.formatElapsed = () => '39s';
+  context.renderProgressStats = () => 'PHASE LINE';
+  context.formatDateRange = () => '';
+  for (const name of ['formatStatValue', 'bodyStateLabel', 'showProgressView']) {
+    vm.runInContext(functionSource(workspace, name), context);
+  }
+  const done = (extra) => vm.runInContext(`showProgressView('a1', ${JSON.stringify({ import_id: 'a1', event: 'completed',
+    status: 'success', source_display: 'Apple_health', entries_written: 1743, date_range: ['20261024', '20261107'],
+    duration_ms: 39000, ...extra })})`, context);
+  done({ body_state: 'saved' });
+  let html = guideSteps.innerHTML;
+  assert.ok(html.includes('Apple Health') && !html.includes('Apple_health'), html);
+  assert.ok(html.includes('>saved<') || html.includes('saved'), html);
+  assert.ok(!html.includes('recordings'), 'an Apple import saves no recordings: ' + html);
+  assert.ok(!html.includes('PHASE LINE'), 'no phase line once it ended');
+  assert.ok(html.includes('DAY(20261024) to DAY(20261107) · 1,743 entries · took 39s'), html);
+  assert.ok(html.includes('href="/app/body/"'), 'the way to the body app');
+  done({ body_state: 'partly_saved', body_words: '2 parts of your journal didn\'t finish saving.' });
+  html = guideSteps.innerHTML;
+  assert.ok(html.includes('partly saved'), html);
+  assert.ok(html.includes('2 parts of your journal didn'), 'its row words: ' + html);
+  cases += 1;
+}
+
 function runAlreadyImportedCopyNamesOnlyALiveImport() {
   const context = makeContext({ console });
   for (const name of ['duplicateNoticeText', 'importErrorMessage']) vm.runInContext(functionSource(workspace, name), context);
@@ -4614,6 +4669,7 @@ Promise.resolve()
   .then(runImportSelectMode)
   .then(runImportSetRefusalsStaySelected)
   .then(runAlreadyImportedCopyNamesOnlyALiveImport)
+  .then(runAppleImportEndsInItsOwnWords)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {
     console.error(error.stack || error);
