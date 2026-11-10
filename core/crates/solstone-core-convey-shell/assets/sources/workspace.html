@@ -1,0 +1,24 @@
+<style>
+  .sources-page { max-width: 1100px; margin: 16px auto; padding: 28px 20px 40px; color: var(--ink); background: var(--panel); border-radius: 14px; }
+  .sources-page h1 { font-size: 1.6rem; line-height: 1.15; margin: 0 0 8px; }
+  .sources-lede { margin: 0 0 16px; max-width: 42rem; }
+  .sources-manage, .sources-pair { display: inline-block; margin: 0 0 18px; }
+  .sources-matrix { width: 100%; border-collapse: collapse; }
+  .sources-matrix th, .sources-matrix td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--hairline); font-weight: 400; }
+  .sources-matrix th[scope="row"] { color: var(--ink-faint); }
+  .sources-name { display: block; font-weight: 700; }
+  .sources-kind, .sources-device-time, .sources-none { display: block; color: var(--ink-faint); }
+  .sources-devices { list-style: none; margin: 0; padding: 0; }
+  .sources-devices > .sources-device { padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+  .sources-cards { display: grid; gap: 12px; }
+  .sources-card { background: var(--cream-bright); border: 1px solid var(--hairline); border-radius: 14px; padding: 14px; }
+  .sources-card h2 { font-size: 1.05rem; margin: 0; }
+  .sources-rows { list-style: none; margin: 10px 0 0; padding: 0; }
+  .sources-rows li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--hairline); }
+  .sources-row-label { color: var(--ink-faint); }
+  .sources-error, .sources-empty { margin: 8px 0; }
+  .sources-retry { margin-top: 12px; font: inherit; }
+  @media (max-width: 700px) { .sources-page { margin: 8px; padding: 20px 16px 32px; } }
+</style>
+<main id="sources-root" class="sources-page" tabindex="-1"></main>
+<script src="/app/sources/static/sources.js"></script>

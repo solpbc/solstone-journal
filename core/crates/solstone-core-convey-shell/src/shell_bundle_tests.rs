@@ -700,7 +700,13 @@ async fn every_declared_first_read_is_one_the_views_code_asks_for() {
         }
         for row in &facts.reads {
             for url in &row.urls {
-                let asked = url.replace("{day}", "${day}");
+                // A query the view builds at run time is matched on its path
+                // here; the lab's early-read counts prove the whole address.
+                let asked = url
+                    .split('?')
+                    .next()
+                    .unwrap_or_default()
+                    .replace("{day}", "${day}");
                 assert!(
                     code.contains(&asked),
                     "{}: nothing asks for {asked}",

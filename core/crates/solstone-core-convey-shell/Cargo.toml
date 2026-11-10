@@ -90,6 +90,10 @@ name = "network_pairing_dom"
 path = "tests/network_pairing_dom.rs"
 
 [[test]]
+name = "sources_dom"
+path = "tests/sources_dom.rs"
+
+[[test]]
 name = "network_corpus"
 path = "tests/network_corpus.rs"
 

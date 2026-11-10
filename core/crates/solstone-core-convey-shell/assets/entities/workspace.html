@@ -1,3 +1,4 @@
+<!-- first-read: /app/entities/ -> /app/entities/api/state /app/settings/api/facets /app/entities/api/journal/summary?offset=0&limit=50&hidden=exclude -->
 <link rel="stylesheet" href="/static/date-nav.css">
 <script src="/static/date-nav.js"></script>
 <link rel="stylesheet" href="/static/day-grid.css">
@@ -5577,13 +5578,16 @@ function adoptJournalSummary(summary) {
   facetEntityCounts = summary.facet_counts || {};
 }
 
-async function loadEntityScopeMetadata() {
+/// `stateLoaded`, when given, is the entities state read already under way:
+/// the scope is restored with its copy, so it waits for that read here.
+async function loadEntityScopeMetadata(stateLoaded = null) {
   readJournalListState();
   try {
     const [facetPayload, summary] = await Promise.all([
       window.apiJson('/app/settings/api/facets'),
       fetchJournalSummary(),
     ]);
+    if (stateLoaded && !await stateLoaded) return false;
     facetRoster = facetPayload.facets || [];
     adoptJournalSummary(summary);
     hideJournalListError();
@@ -5614,10 +5618,10 @@ function refreshEntitiesAfterMutation() {
 
 // Edit form submission
 async function initEntities() {
-  if (!await loadEntitiesState()) {
-    return;
-  }
-  if (!await loadEntityScopeMetadata()) {
+  // The state read and the scope reads don't depend on each other, so they
+  // start together; the scope waits for the state's copy before it draws.
+  const stateLoaded = loadEntitiesState();
+  if (!await loadEntityScopeMetadata(stateLoaded) || !await stateLoaded) {
     return;
   }
   loadEntityTypes();  // Load entity types first for UI elements

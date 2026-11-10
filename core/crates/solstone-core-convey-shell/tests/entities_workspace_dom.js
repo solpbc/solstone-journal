@@ -865,6 +865,62 @@ async function main() {
     check(host.children.some(node => node.className === 'journal-detail-id-note'), 'a detail opened while the groups read is in flight shows the ID line once the read lands');
   }
 
+  {
+    // The state read and the scope reads start together; the scope is drawn
+    // with the state's copy, so it waits for that read.
+    const initStart = workspace.indexOf('async function loadEntitiesState()');
+    const initEnd = workspace.indexOf("if (document.readyState === 'loading') {\n  document.addEventListener('DOMContentLoaded', initEntities);");
+    check(initStart !== -1 && initEnd !== -1, 'workspace exposes the entities start-up');
+    const asked = [];
+    const answers = new Map();
+    const restoredWith = [];
+    const noop = () => {};
+    const initContext = {
+      window: {
+        apiJson(url) {
+          asked.push(url);
+          let resolve;
+          const promise = new Promise((done) => { resolve = done; });
+          answers.set(url, resolve);
+          return promise;
+        },
+        logError: noop,
+        SurfaceState: {replaceLoading: noop, error: () => ''},
+        CONVEY_COPY: {RELOAD_HINT: ''},
+      },
+      document: {getElementById: () => null, querySelector: () => null, addEventListener: noop},
+      URLSearchParams,
+      location: {search: '', hash: ''},
+      Set, String, Promise,
+      resetEntitiesLoading: noop, readJournalListState: noop, writeJournalListState: noop,
+      journalListStateKey: () => 'key', hideJournalListError: noop, entityErrorMessage: () => '',
+      reportEntitiesReady: noop, loadEntityTypes: noop, loadEntities: noop, loadTidyGroups: noop,
+      reportUnfinishedEntityDeletes: noop,
+    };
+    vm.runInNewContext(`
+      var ENT_COPY = {}, ATTENDANCE_KINDS = new Set(), journalSummary = null, journalSummaryKey = '',
+        facetEntityCounts = {}, facetRoster = [], scopeMetadataDirty = true, entitiesInitialized = false,
+        journalEntityPage = 0, journalEntityType = '', journalEntitySearch = '', journalFolder = '';
+      const JOURNAL_ENTITY_PAGE_SIZE = 50;
+      function restoreEntityScopeFromLocation() { window.__restoredWith.push(ENT_COPY.mark || null); }
+    `, initContext);
+    initContext.window.__restoredWith = restoredWith;
+    vm.runInNewContext(workspace.slice(initStart, initEnd), initContext, {filename: 'entities-init.js'});
+    const started = initContext.initEntities();
+    await new Promise((resolve) => setImmediate(resolve));
+    check(asked.includes('/app/entities/api/state'), 'the state read goes out at once');
+    check(asked.includes('/app/settings/api/facets'), 'the facet read goes out with it');
+    check(asked.includes('/app/entities/api/journal/summary?offset=0&limit=50&hidden=exclude'),
+      'the summary read goes out with it, at the address the page head starts');
+    answers.get('/app/settings/api/facets')({facets: []});
+    answers.get('/app/entities/api/journal/summary?offset=0&limit=50&hidden=exclude')({facet_counts: {}});
+    await new Promise((resolve) => setImmediate(resolve));
+    check(restoredWith.length === 0, 'the scope waits for the state read');
+    answers.get('/app/entities/api/state')({entities_copy: {mark: 'state copy'}, attendance_kinds: []});
+    await started;
+    check(restoredWith.length === 1 && restoredWith[0] === 'state copy', 'the scope is drawn with the state copy');
+  }
+
   console.log(`DOM CASES: ${cases} passed`);
 }
 
