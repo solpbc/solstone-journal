@@ -23,12 +23,12 @@ For a curl installation, the prefix is `~/.local`, with binary `~/.local/current
 
 The journal needs glibc 2.34 or newer and the GCC 11 C++ runtime. Ubuntu 22.04, Debian 12, RHEL 9, Fedora 35 and newer releases of each include both. Local transcription also needs the GCC 12 C++ runtime, which Ubuntu 22.04, Debian 12 and Fedora 36 or newer include and RHEL 9 does not.
 
-The installer refuses without `minisign` and the OpenMP runtime (`libgomp.so.1`):
+The journal also needs the OpenMP runtime (`libgomp.so.1`). Install it if it is missing.
 
 ```bash
-sudo apt install minisign libgomp1
-sudo dnf install minisign libgomp
-sudo pacman -S minisign gcc-libs
+sudo apt install libgomp1
+sudo dnf install libgomp
+sudo pacman -S gcc-libs
 ```
 
 ## Install the journal on linux
@@ -71,7 +71,9 @@ If minisign refuses, stop. Compare the artifact digest printed by `sha256sum` wi
 
 The public key is in this repository at `packaging/keys/solstone-journal-release.pub`. It is also at `https://updates.solstone.app/solstone-journal/minisign.pub`. Install minisign from your distribution if you do not have it (for example `apt install minisign`, `dnf install minisign` or `pacman -S minisign`).
 
-If `minisign` is absent, `install.sh` refuses before changing anything and prints the command that adds it on apt, dnf, pacman and zypper systems, with EPEL first on AlmaLinux and Rocky. `--skip-signature` is the explicit opt-out, and the install receipt records that verification was skipped.
+For an online install, the installer downloads and checks a pinned copy of minisign if it is missing. To verify files independently or install from local files, have minisign available on PATH.
+
+If a completed journal or CLI tree install skipped signature verification, download the [journal installer](https://updates.solstone.app/solstone-journal/install.sh) and run it with the same `--prefix`, `--role` and `--version`. If the installed files match the signed release, it updates the receipt and keeps the installed files and service settings.
 
 ### The archive
 

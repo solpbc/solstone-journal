@@ -227,13 +227,49 @@ BASE=$(mktemp -d "$TMP_ROOT/solstone-install-test-XXXXXX") || {
 }
 trap 'rm -rf "$BASE"' 0 1 2 15
 
-# Existing behavioral cases exercise the explicit opt-out while the dedicated
-# signature cases below call INSTALL_SOURCE directly.
-INSTALL=$BASE/install-with-signature-opt-out.sh
-{
-	printf '%s\n' '#!/bin/sh'
-	printf 'exec "%s" --skip-signature "$@"\n' "$INSTALL_SOURCE"
-} >"$INSTALL"
+# Exercise the release path with a fresh test key and real signatures.
+TEST_SECRET=$BASE/fixture.key
+TEST_PUBLIC=$BASE/fixture.pub
+TEST_BOOTSTRAP=$BASE/install-test-pins.sh
+minisign -G -W -p "$TEST_PUBLIC" -s "$TEST_SECRET" >/dev/null
+test_key=$(sed -n '2p' "$TEST_PUBLIC")
+test_key_id=$(sed -n '1s/.* //p' "$TEST_PUBLIC")
+sed -e "s|^MINISIGN_PUBLIC_KEY=.*|MINISIGN_PUBLIC_KEY=$test_key|" \
+	-e "s|^MINISIGN_KEY_ID=.*|MINISIGN_KEY_ID=$test_key_id|" "$INSTALL_SOURCE" >"$TEST_BOOTSTRAP"
+chmod 755 "$TEST_BOOTSTRAP"
+
+INSTALL=$BASE/install-fixtures.sh
+cat >"$INSTALL" <<EOF
+#!/bin/sh
+set -eu
+TEST_BASE='$BASE'
+TEST_SECRET='$TEST_SECRET'
+TEST_BOOTSTRAP='$TEST_BOOTSTRAP'
+TEST_MINISIGN='$(command -v minisign)'
+EOF
+cat >>"$INSTALL" <<'EOF'
+archive= sha= release= prev=
+for arg do
+	case $prev in
+	--archive) archive=$arg ;;
+	--sha256) sha=$arg ;;
+	--release) release=$arg ;;
+	esac
+	prev=$arg
+done
+if [ -f "$archive" ] && [ -f "$sha" ] && [ -f "$release" ]; then
+	fixture=$(/usr/bin/mktemp -d "$TEST_BASE/signed-fixture-XXXXXX")
+	archive_digest=$(/usr/bin/sha256sum "$archive")
+	sha_digest=$(/usr/bin/sha256sum "$sha")
+	release_digest=$(/usr/bin/sha256sum "$release")
+	printf '{"files":{"%s":"%s","%s":"%s","%s":"%s"}}\n' \
+		"${archive##*/}" "${archive_digest%% *}" "${sha##*/}" "${sha_digest%% *}" \
+		"${release##*/}" "${release_digest%% *}" >"$fixture/manifest"
+	"$TEST_MINISIGN" -S -s "$TEST_SECRET" -m "$fixture/manifest" >/dev/null
+	set -- "$@" --manifest "$fixture/manifest" --minisig "$fixture/manifest.minisig"
+fi
+exec "$TEST_BOOTSTRAP" "$@"
+EOF
 chmod 755 "$INSTALL"
 
 HOST_ARCH=$(uname -m)
@@ -337,7 +373,7 @@ expect_refuse origin-refused incomplete-http-200-refuses-before-verification \
 # it can make another request. The stub models wget's automatic-follow default.
 WGET_BIN=$BASE/wget-bin
 mkdir -p "$WGET_BIN"
-for cmd in sh tar sha256sum uname mktemp mkdir cp mv ln cat awk chmod wc tr cut printf dirname rm rmdir ls env od; do
+for cmd in sh tar sha256sum uname mktemp mkdir cp mv ln cat awk chmod wc tr cut printf dirname rm rmdir ls env od minisign; do
 	_path=$(command -v "$cmd" || true)
 	[ -n "$_path" ] && ln -s "$_path" "$WGET_BIN/$cmd"
 done
@@ -500,7 +536,7 @@ for _hint_case in \
 	fi
 done
 printf '%s\n' 'ID=arch' >"$BASE/os-release-arch"
-expect_refuse "verifier-missing: minisign was not found, and it is needed to verify what the installer downloads. Nothing was changed. To fix: sudo pacman -S minisign, then run this command again." verifier-missing-names-install-command \
+expect_refuse "verifier-missing: minisign is required to verify this release. To fix: sudo pacman -S minisign, then retry." verifier-missing-names-install-command \
 	env PATH="$BINDIR" HOME="$BASE/verifier-home" SOLSTONE_UNAME_S=Linux SOLSTONE_UNAME_M="$HOST_ARCH" SOLSTONE_OS_RELEASE="$BASE/os-release-arch" \
 	"$INSTALL_SOURCE" --prefix "$BASE/verifier-prefix" --archive "$SIGNED_ARCHIVE" --sha256 "$SIGNED_SHA" --release "$SIGNED_REL" --manifest "$SIGNED_MANIFEST" --minisig "$SIGNED_MINISIG"
 
@@ -540,7 +576,7 @@ if grep -F 'schema_version=1' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'installer_revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'bootstrap_revision=4' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'route=tree' "$PREFIX/install-receipt" >/dev/null \
-	&& grep -F 'signature_verification=skipped' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'signature_verification=verified' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'role=journal' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'journal_state=present' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'service_policy=start' "$PREFIX/install-receipt" >/dev/null \
@@ -553,6 +589,54 @@ if [ ! -e "$PREFIX/.solstone-route.lock" ]; then
 	pass "successful install releases the route lock"
 else
 	fail "successful install left the route lock"
+fi
+
+# A skipped tree can earn a verified receipt at the same digest. Changed
+# files must fail before the installed launcher runs or the receipt changes.
+REVERIFY_PREFIX=$BASE/reverify-prefix
+REVERIFY_HOME=$BASE/reverify-home
+reverify_install() {
+	env HOME="$REVERIFY_HOME" "$INSTALL" --prefix "$REVERIFY_PREFIX" --role cli --no-path \
+		--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+}
+reverify_install >/dev/null
+sed 's/^signature_verification=verified$/signature_verification=skipped/' \
+	"$REVERIFY_PREFIX/install-receipt" >"$BASE/skipped-receipt"
+cp "$BASE/skipped-receipt" "$REVERIFY_PREFIX/install-receipt"
+REVERIFY_CURRENT=$(readlink "$REVERIFY_PREFIX/current")
+REVERIFY_LAUNCHER=$REVERIFY_PREFIX/current/bin/solstone
+cp "$REVERIFY_LAUNCHER" "$BASE/reverify-launcher"
+printf '#!/bin/sh\ntouch "%s"\nexit 99\n' "$BASE/unverified-launch" >"$REVERIFY_LAUNCHER"
+expect_refuse candidate-invalid skipped-recovery-refuses-changed-launcher reverify_install
+if [ ! -e "$BASE/unverified-launch" ] && cmp -s "$BASE/skipped-receipt" "$REVERIFY_PREFIX/install-receipt"; then
+	pass "failed verification preserves the skipped receipt and runs no launcher"
+else
+	fail "failed verification executed an unverified launcher or changed its receipt"
+fi
+cp "$BASE/reverify-launcher" "$REVERIFY_LAUNCHER"
+if reverify_install >/dev/null \
+	&& [ "$(readlink "$REVERIFY_PREFIX/current")" = "$REVERIFY_CURRENT" ] \
+	&& grep -Fqx 'signature_verification=verified' "$REVERIFY_PREFIX/install-receipt" \
+	&& grep -Fqx 'origin=local' "$REVERIFY_PREFIX/install-receipt"; then
+	pass "same-digest recovery verifies the tree and preserves its origin"
+else
+	fail "same-digest recovery did not preserve the current tree and origin"
+fi
+
+RECOVERY_SERVICE_PREFIX=$BASE/reverify-service-prefix
+env HOME="$REVERIFY_HOME" "$INSTALL" --prefix "$RECOVERY_SERVICE_PREFIX" --no-path --no-start \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+sed 's/^signature_verification=verified$/signature_verification=skipped/' \
+	"$RECOVERY_SERVICE_PREFIX/install-receipt" >"$BASE/skipped-service-receipt"
+cp "$BASE/skipped-service-receipt" "$RECOVERY_SERVICE_PREFIX/install-receipt"
+env HOME="$REVERIFY_HOME" SOLSTONE_SETUP_PATH_LOG="$BASE/recovery-service-setup" "$INSTALL" \
+	--prefix "$RECOVERY_SERVICE_PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+if [ ! -e "$BASE/recovery-service-setup" ] && [ ! -e "$REVERIFY_HOME/.profile" ] \
+	&& grep -Fqx 'service_policy=no-start' "$RECOVERY_SERVICE_PREFIX/install-receipt" \
+	&& grep -Fqx 'signature_verification=verified' "$RECOVERY_SERVICE_PREFIX/install-receipt"; then
+	pass "same-digest recovery preserves service and PATH choices"
+else
+	fail "same-digest recovery changed service or PATH choices"
 fi
 
 # A nondefault journal port is carried through desktop and headless setup.
@@ -1648,7 +1732,7 @@ expect_refuse prune-unsafe prune-rejects-lane \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --lane release
 expect_refuse prune-unsafe prune-rejects-origin \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --origin https://updates.solstone.app
-expect_refuse prune-unsafe prune-rejects-signature-flag \
+expect_refuse "unknown argument --skip-signature" removed-signature-flag \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --skip-signature
 expect_refuse prune-unsafe prune-rejects-path-flag \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --no-path
@@ -2210,6 +2294,8 @@ if [ -x "$BIN" ]; then
 	cp "$ARCHIVE" "$_object/${_base}.tar.gz"
 	make_release "$_object/${_base}.release" 3.0.0 "$TARGET"
 	sha_sidecar "$_object/${_base}.tar.gz" "$_object/${_base}.sha256"
+	make_manifest "$_object/${_base}.manifest.json" "$_object/${_base}.tar.gz" "$_object/${_base}.sha256" "$_object/${_base}.release"
+	minisign -S -s "$TEST_SECRET" -m "$_object/${_base}.manifest.json" >/dev/null
 	printf 'version=3.0.0\n' >"$SERVE/solstone-journal/release/latest"
 	"$BIN" cleanroom-serve "$SERVE" >"$BASE/serve.out" 2>"$BASE/serve.err" &
 	_srv=$!

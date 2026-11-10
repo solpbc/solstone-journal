@@ -72,6 +72,9 @@ SUPPORTED_STATE_READER_MIN=1.0.0
 # mirrors this floor).
 BOOTSTRAP_REVISION=4
 BOOTSTRAP_CONTRACT_VERSION=2
+# Read by the platform installer before delegating a skipped tree recovery.
+# shellcheck disable=SC2034
+BOOTSTRAP_RECOVERS_SKIPPED=1
 
 refuse() {
 	_name=$1
@@ -89,7 +92,7 @@ refuse() {
 }
 
 usage() {
-	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--lane LANE] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--manifest FILE] [--minisig FILE] [--skip-signature] [--upgrade] [--prune] [--no-path] [--role ROLE] [--no-start]"
+	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--lane LANE] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--manifest FILE] [--minisig FILE] [--upgrade] [--prune] [--no-path] [--role ROLE] [--no-start]"
 }
 
 PREFIX=
@@ -103,7 +106,6 @@ SHA256_FILE=
 RELEASE_FILE=
 MANIFEST_FILE=
 MINISIG_FILE=
-SKIP_SIGNATURE=0
 UPGRADE=0
 PRUNE=0
 NO_PATH=0
@@ -115,6 +117,7 @@ INSTALLED_ROLE=journal
 INSTALLED_JOURNAL_STATE=unknown
 INSTALLED_SERVICE_POLICY=start
 INSTALLED_SETUP_STATUS=pending
+INSTALLED_SIGNATURE=unknown
 INSTALLED_STATE_READER_MIN=
 INSTALLED_STATE_READER_MAX=
 RELEASE_STATE_READER_MIN=
@@ -274,10 +277,6 @@ parse_args() {
 			[ "$#" -ge 2 ] || refuse release-invalid "--minisig requires a value"
 			MINISIG_FILE=$2
 			shift 2
-			;;
-		--skip-signature)
-			SKIP_SIGNATURE=1
-			shift
 			;;
 		--upgrade)
 			UPGRADE=1
@@ -548,6 +547,42 @@ install_hint() {
 }
 # END shared install_hint
 
+# BEGIN shared install_verifier
+# Keep this block in sync with solstone-journal core/distribution/install.sh.
+# The pins cover the unmodified Linux executables from minisign 0.12.
+select_minisign() {
+	MINISIGN=$(command -v minisign 2>/dev/null) && [ -x "$MINISIGN" ] && return 0
+	[ "$3" = online ] || return 1
+
+	case "$1" in
+	x86_64) _ms_sha=2c74dffcc1c9a5ee55957c60971998ace2b89f22585631594ec2152c588af8db ;;
+	aarch64) _ms_sha=cec9f88be8c975af76854a53b4d49c3d257feae38d916edb0d16fb55aacd3000 ;;
+	*) return 1 ;;
+	esac
+	_ms_dir="$2/verifier"
+	_ms_file="$_ms_dir/minisign"
+	_ms_url="https://solstone.app/install-tools/minisign/0.12/$1/minisign"
+	mkdir -m 0700 "$_ms_dir" || return 1
+	# Cap the write even if the server omits a content length.
+	(
+		ulimit -f 1024 || exit 1
+		if command -v curl >/dev/null 2>&1; then
+			_ms_status=$(curl -q --proto '=https' -fsS --connect-timeout 10 --max-time 60 \
+				-o "$_ms_file" -w '%{http_code}' "$_ms_url") && [ "$_ms_status" = 200 ]
+		else
+			wget --no-config --https-only --max-redirect=0 --tries=2 --timeout=30 -q -O "$_ms_file" "$_ms_url"
+		fi
+	) || return 1
+	_ms_actual=$(digest_file "$_ms_file") || return 1
+	[ "$_ms_actual" = "$_ms_sha" ] || return 1
+	chmod 0700 "$_ms_file" || return 1
+	MINISIGN=$_ms_file
+	# A catalogue can delegate to an older signed journal bootstrap.
+	PATH="$_ms_dir:$PATH"
+	export PATH
+}
+# END shared install_verifier
+
 manifest_member_digest() {
 	_manifest=$1
 	_member=$2
@@ -576,10 +611,9 @@ verify_signed_release_set() {
 	if [ ! -f "$_signature" ] || [ -L "$_signature" ]; then
 		refuse signature-invalid "signature missing or not a regular file"
 	fi
-	command -v minisign >/dev/null 2>&1 || refuse verifier-missing "minisign was not found, and it is needed to verify what the installer downloads. Nothing was changed. To fix: $(install_hint minisign "${SOLSTONE_OS_RELEASE:-/etc/os-release}"), then run this command again."
 	_pin=$WORK/solstone-journal-release.pub
 	printf '%s\n%s\n' "untrusted comment: minisign public key ${MINISIGN_KEY_ID}" "$MINISIGN_PUBLIC_KEY" >"$_pin"
-	if ! minisign -Vm "$_manifest" -x "$_signature" -p "$_pin" >/dev/null 2>&1; then
+	if ! "$MINISIGN" -Vm "$_manifest" -x "$_signature" -p "$_pin" >/dev/null 2>&1; then
 		refuse signature-invalid "manifest signature"
 	fi
 	for _member in "$_archive_name:$WORK/tree.tar.gz" "$_sha_name:$WORK/tree.sha256" "$_release_name:$WORK/tree.release"; do
@@ -1253,6 +1287,7 @@ read_receipt() {
 	RECEIPT_SERVICE_POLICY=
 	RECEIPT_SETUP_STATUS=
 	RECEIPT_HAS_ROLE=0
+	RECEIPT_SIGNATURE=unknown
 
 	_seen_schema=0
 	_seen_version=0
@@ -1313,6 +1348,7 @@ read_receipt() {
 			;;
 		signature_verification)
 			[ "$_seen_sig" -eq 0 ] || refuse receipt-invalid "duplicate signature_verification"
+			RECEIPT_SIGNATURE=$_value
 			_seen_sig=1
 			;;
 		role)
@@ -1399,6 +1435,7 @@ read_receipt() {
 	INSTALLED_JOURNAL_STATE=$RECEIPT_JOURNAL_STATE
 	INSTALLED_SERVICE_POLICY=$RECEIPT_SERVICE_POLICY
 	INSTALLED_SETUP_STATUS=$RECEIPT_SETUP_STATUS
+	INSTALLED_SIGNATURE=$RECEIPT_SIGNATURE
 }
 
 # A first install that stops before it publishes `current` (Ctrl-C, a closed
@@ -1514,8 +1551,6 @@ stage_receipt() {
 	_service_policy=${4:-start}
 	_journal_state=${5:-unknown}
 
-	_status=verified
-	[ "$SKIP_SIGNATURE" -eq 0 ] || _status=skipped
 	_origin=${ORIGIN%/}
 	[ -n "$ARCHIVE" ] && _origin=local
 	_line_count=$(printf '%s' "${VERSION}${LANE}${_origin}${TARGET}${RELEASE_COMMIT}${_role}${_journal_state}${_service_policy}${_setup_status}" | wc -l | tr -d ' ')
@@ -1531,7 +1566,7 @@ stage_receipt() {
 		printf 'installer_revision=%s\n' "$RELEASE_COMMIT"
 		printf 'bootstrap_revision=%s\n' "$BOOTSTRAP_REVISION"
 		printf 'route=tree\n'
-		printf 'signature_verification=%s\n' "$_status"
+		printf 'signature_verification=verified\n'
 		printf 'role=%s\n' "$_role"
 		printf 'journal_state=%s\n' "$_journal_state"
 		printf 'service_policy=%s\n' "$_service_policy"
@@ -1557,6 +1592,16 @@ mark_receipt_complete() {
 		return 1
 	fi
 	return 0
+}
+
+record_reverified_install() {
+	RECEIPT_PARTIAL=$(mktemp "$PREFIX/.install-receipt-XXXXXX") \
+		|| refuse receipt-invalid "cannot stage receipt"
+	sed 's/^signature_verification=skipped$/signature_verification=verified/' \
+		"$PREFIX/install-receipt" >"$RECEIPT_PARTIAL" \
+		&& grep -Fqx 'signature_verification=verified' "$RECEIPT_PARTIAL" \
+		|| refuse receipt-invalid "could not stage reverified receipt"
+	publish_receipt "$PREFIX"
 }
 
 publish_receipt() {
@@ -1750,7 +1795,7 @@ main() {
 		[ -z "$ARCHIVE" ] && [ -z "$SHA256_FILE" ] && [ -z "$RELEASE_FILE" ] \
 			&& [ -z "$MANIFEST_FILE" ] && [ -z "$MINISIG_FILE" ] && [ -z "$VERSION" ] \
 			&& [ "$UPGRADE" -eq 0 ] && [ "$LANE_EXPLICIT" -eq 0 ] \
-			&& [ "$ORIGIN_EXPLICIT" -eq 0 ] && [ "$SKIP_SIGNATURE" -eq 0 ] \
+			&& [ "$ORIGIN_EXPLICIT" -eq 0 ] \
 			&& [ "$NO_PATH" -eq 0 ] && [ "$ROLE_EXPLICIT" -eq 0 ] \
 			&& [ "$NO_START" -eq 0 ] \
 			|| refuse prune-unsafe "--prune must be used by itself (plus --prefix if needed)"
@@ -1764,6 +1809,16 @@ if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
 fi
 WORK=$(mktemp -d "$TMP_ROOT/solstone-install-work-XXXXXX") || refuse tmpdir-unusable "$TMP_ROOT"
 
+_verifier_mode=offline
+if [ -z "$ARCHIVE" ]; then
+	if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+		refuse fetcher-missing
+	fi
+	_verifier_mode=online
+fi
+select_minisign "${TARGET#linux-}" "$WORK" "$_verifier_mode" \
+	|| refuse verifier-missing "minisign is required to verify this release. To fix: $(install_hint minisign "${SOLSTONE_OS_RELEASE:-/etc/os-release}"), then retry."
+
 if [ -n "$ARCHIVE" ]; then
 	[ -f "$ARCHIVE" ] || refuse digest-mismatch "archive missing"
 	[ -n "$SHA256_FILE" ] || refuse digest-mismatch "sha256 sidecar missing"
@@ -1774,17 +1829,12 @@ if [ -n "$ARCHIVE" ]; then
 	_archive_name=${ARCHIVE##*/}
 	_sha_name=${SHA256_FILE##*/}
 	_release_name=${RELEASE_FILE##*/}
-	if [ "$SKIP_SIGNATURE" -eq 0 ]; then
-		[ -n "$MANIFEST_FILE" ] || refuse signature-invalid "manifest sidecar missing"
-		[ -n "$MINISIG_FILE" ] || refuse signature-invalid "minisign sidecar missing"
-		cp "$MANIFEST_FILE" "$WORK/tree.manifest.json"
-		cp "$MINISIG_FILE" "$WORK/tree.manifest.json.minisig"
-	fi
+	[ -n "$MANIFEST_FILE" ] || refuse signature-invalid "manifest sidecar missing"
+	[ -n "$MINISIG_FILE" ] || refuse signature-invalid "minisign sidecar missing"
+	cp "$MANIFEST_FILE" "$WORK/tree.manifest.json"
+	cp "$MINISIG_FILE" "$WORK/tree.manifest.json.minisig"
 else
 	_origin=${ORIGIN%/}
-	if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
-		refuse fetcher-missing
-	fi
 	if [ -z "$VERSION" ]; then
 		_latest=$(mktemp "$WORK/solstone-install-latest-XXXXXX")
 		fetch_url "${_origin}/solstone-journal/${LANE}/latest" "$_latest" latest-invalid
@@ -1810,20 +1860,16 @@ else
 	_archive_name=${_base}.tar.gz
 	_sha_name=${_base}.sha256
 	_release_name=${_base}.release
-	if [ "$SKIP_SIGNATURE" -eq 0 ]; then
-		fetch_url "${_object_base}/${_base}.manifest.json" "$WORK/tree.manifest.json"
-		fetch_url "${_object_base}/${_base}.manifest.json.minisig" "$WORK/tree.manifest.json.minisig"
-	fi
+	fetch_url "${_object_base}/${_base}.manifest.json" "$WORK/tree.manifest.json"
+	fetch_url "${_object_base}/${_base}.manifest.json.minisig" "$WORK/tree.manifest.json.minisig"
 fi
 
-if [ "$SKIP_SIGNATURE" -eq 0 ]; then
-	verify_signed_release_set \
-		"$WORK/tree.manifest.json" \
-		"$WORK/tree.manifest.json.minisig" \
-		"$_archive_name" \
-		"$_sha_name" \
-		"$_release_name"
-fi
+verify_signed_release_set \
+	"$WORK/tree.manifest.json" \
+	"$WORK/tree.manifest.json.minisig" \
+	"$_archive_name" \
+	"$_sha_name" \
+	"$_release_name"
 
 EXPECTED=$(parse_sha256_file "$WORK/tree.sha256" "$_archive_name")
 ACTUAL=$(digest_file "$WORK/tree.tar.gz")
@@ -1851,6 +1897,22 @@ CURRENT=$PREFIX/current
 if [ -e "$DEST" ] || [ -L "$DEST" ]; then
 	validate_installed_destination "$DEST" "$ACTUAL" "$RELEASE_TEXT"
 	check_existing_destination_marker "$DEST"
+	if [ "$INSTALLED_SIGNATURE" = skipped ] || [ "$DEST" != "${INSTALLED_DEST:-}" ]; then
+		# Authenticate a retained tree before its launchers can run.
+		_checked_tree="$WORK/reverify"
+		mkdir "$_checked_tree"
+		tar -xzf "$WORK/tree.tar.gz" -C "$_checked_tree" \
+			|| refuse release-invalid "could not extract the verified archive"
+		printf '%s\n' "$RELEASE_TEXT" >"$_checked_tree/.release"
+		printf '%s\n' "$ACTUAL" >"$_checked_tree/.archive-sha256"
+		# The bootstrap owns these root-level transaction records.
+		for _marker in "$DEST"/.install-transaction-*; do
+			[ -f "$_marker" ] && [ ! -L "$_marker" ] || continue
+			cp -- "$_marker" "$_checked_tree/${_marker##*/}"
+		done
+		diff -qr --no-dereference -- "$_checked_tree" "$DEST" >/dev/null 2>&1 \
+			|| refuse candidate-invalid "could not verify the installed files against the signed release. Install a newer release."
+	fi
 fi
 
 DOWNGRADE=0
@@ -1905,6 +1967,15 @@ if [ -e "$DEST" ] && [ -L "$CURRENT" ]; then
 		# Validated no-op: re-read release, do not rewrite current.
 		validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
 		verify_candidate_launchers "$DEST" "$VERSION"
+		if [ "$INSTALLED_SIGNATURE" = skipped ] && [ "$INSTALLED_ROLE" = "$ROLE" ]; then
+			case "$INSTALLED_SETUP_STATUS" in
+			complete | not-applicable)
+				record_reverified_install
+				printf 'verified installed %s %s at %s\n' "$PRODUCT" "$VERSION" "$PREFIX"
+				exit 0
+				;;
+			esac
+		fi
 		if [ "$ROLE" = cli ]; then
 			if [ "$INSTALLED_ROLE" = cli ] && [ "$INSTALLED_SETUP_STATUS" = not-applicable ]; then
 				if [ "$NO_PATH" -eq 0 ]; then
