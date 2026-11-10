@@ -40,6 +40,8 @@ pub const CODES: &[(&str, StopClass)] = &[
     ("facet", StopClass::Refused),
     ("go_ahead", StopClass::Refused),
     ("whole_export", StopClass::Refused),
+    ("preview_again", StopClass::Refused),
+    ("not_started", StopClass::Refused),
 ];
 
 /// The class of a recorded code. A code this build doesn't know reads as a stop.
@@ -133,16 +135,31 @@ pub fn read(journal: &std::path::Path, import_id: &str) -> Option<(String, u64)>
     ))
 }
 
+/// The incomplete-export words as a sentence beside the others.
+const EXPORT_INCOMPLETE_SENTENCE: &str = "this export looks incomplete, so none of it was saved. export it from Apple Health again and import the new copy.";
+
+/// What to do after a stop whose cause importing again won't fix by itself.
+#[must_use]
+pub fn remedy(code: &str) -> Option<&'static str> {
+    match code {
+        "disk_full" => Some("free up space, then import the export again."),
+        "permission" => Some("let the journal open the export, then import it again."),
+        _ => None,
+    }
+}
+
 /// What the owner reads for a code: what happened, without the system's own words.
 #[must_use]
 pub fn words(code: &str) -> &'static str {
     match code {
         "disk_full" => "the disk filled up before it finished.",
         "permission" => "the journal wasn't allowed to open the export.",
-        "windows_not_saving" => "64 hours in a row couldn't be saved, so it stopped.",
+        "windows_not_saving" => {
+            "too many parts of your journal in a row couldn't be saved, so it stopped."
+        }
         "busy" => "another Apple Health import was running, so this one didn't start.",
-        "export_incomplete" => EXPORT_INCOMPLETE_TEXT,
-        "export_too_large" => "this export is larger than 64 GiB, the most one import reads.",
+        "export_incomplete" => EXPORT_INCOMPLETE_SENTENCE,
+        "export_too_large" => "this export unpacks to more than 64 GiB, the most one import reads.",
         "export_unreadable" => {
             "this export couldn't be read. export it from Apple Health again and import the new copy."
         }
@@ -152,6 +169,10 @@ pub fn words(code: &str) -> &'static str {
         "whole_export" => {
             "an Apple Health import always reads the whole export, so nothing was brought in."
         }
+        "preview_again" => {
+            "it changed since its preview, so nothing was brought in. preview it again on the Apple Health card."
+        }
+        "not_started" => "it didn't start, so nothing was brought in.",
         _ => "it stopped before it finished.",
     }
 }

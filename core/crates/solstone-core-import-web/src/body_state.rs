@@ -196,14 +196,9 @@ pub(crate) fn apple_row(
             return Some(("saved", String::new()));
         }
         let words = match failing {
-            Some(1) => {
-                "1 hour didn't finish saving. importing any Apple export again tries it.".to_owned()
-            }
-            Some(n) => format!(
-                "{n} hours didn't finish saving. importing any Apple export again tries them."
-            ),
-            None => "some hours didn't finish saving. importing any Apple export again tries them."
-                .to_owned(),
+            Some(1) => "1 part of your journal didn't finish saving. importing any Apple Health export again tries it.".to_owned(),
+            Some(n) => format!("{n} parts of your journal didn't finish saving. importing any Apple Health export again tries them."),
+            None => "some parts of your journal didn't finish saving. importing any Apple Health export again tries them.".to_owned(),
         };
         return Some(("partly_saved", words));
     }
@@ -227,14 +222,14 @@ pub(crate) fn apple_row(
             "stopped before it finished. your import of {} is running now.",
             when(root, seen.started_ms.unwrap_or_default())
         ),
-        None => {
-            let why = stop
-                .as_ref()
-                .map_or("it stopped before it finished.", |(code, _)| {
-                    body_status::words(code)
-                });
-            format!("{why} import the export again to finish.")
-        }
+        None => match stop.as_ref() {
+            Some((code, _)) => format!(
+                "{} {}",
+                body_status::words(code),
+                body_status::remedy(code).unwrap_or("import the export again to finish.")
+            ),
+            None => "it stopped before it finished. import the export again to finish.".to_owned(),
+        },
     };
     Some(("stopped", words))
 }
@@ -447,11 +442,14 @@ mod tests {
         );
         let (state, words) = row(root, "20261010_110000").unwrap();
         assert_eq!(state, "partly_saved");
-        assert!(words.starts_with("1 hour didn't finish saving"), "{words}");
+        assert!(
+            words.starts_with("1 part of your journal didn't finish saving"),
+            "{words}"
+        );
         assert_eq!(row(root, "20261010_120000").unwrap().0, "partly_saved");
         let (state, words) = row(root, "20261010_130000").unwrap();
         assert_eq!(state, "partly_saved");
-        assert!(words.starts_with("2 hours"), "{words}");
+        assert!(words.starts_with("2 parts"), "{words}");
     }
 
     #[test]
@@ -538,10 +536,7 @@ mod tests {
         body_status::record(root, "20261010_140000", "export_incomplete", 1);
         let (state, words) = row(root, "20261010_140000").unwrap();
         assert_eq!(state, "failed");
-        assert_eq!(
-            words,
-            solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT
-        );
+        assert_eq!(words, body_status::words("export_incomplete"));
     }
 
     #[test]
@@ -649,12 +644,12 @@ mod tests {
             row(root, "20261010_140000")
                 .unwrap()
                 .1
-                .starts_with("1 hour")
+                .starts_with("1 part")
         );
         // A finished import with no record at all can't say it saved anything.
         ran(root, "20261010_150000", 5_000, true, None);
         let (state, words) = row(root, "20261010_150000").unwrap();
         assert_eq!(state, "partly_saved");
-        assert!(words.starts_with("some hours"), "{words}");
+        assert!(words.starts_with("some parts"), "{words}");
     }
 }

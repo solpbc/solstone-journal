@@ -119,7 +119,7 @@ pub fn size_words(bytes: u64) -> String {
 #[must_use]
 pub fn too_full_words(space: &Space) -> String {
     format!(
-        "this import needs about {} free while it runs, and this disk has {} free, as the system reports it. free up about {} and start it again.",
+        "this import needs about {} free, and this disk has {} free, as the system reports it. free up about {}, then start it.",
         size_words(space.need),
         size_words(space.free),
         size_words(space.need.saturating_sub(space.free))

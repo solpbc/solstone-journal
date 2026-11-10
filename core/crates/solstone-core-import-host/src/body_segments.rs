@@ -800,7 +800,7 @@ impl Run<'_, '_> {
         let count = self.failed_in_a_row.get();
         if count >= MAX_FAILED_IN_A_ROW {
             return Err(Stop::Failed(format!(
-                "the import stopped after {}: {count} segments {}; import the same file again to carry on from there",
+                "the import stopped after {}: {count} parts of your journal {}; import the same file again to carry on from there",
                 readable_day(day),
                 solstone_core_import_sources::body_status::STUCK_MARKER
             )));

@@ -261,19 +261,21 @@ pub(crate) fn preview_apple(
         APPLE_READS[APPLE_READS.len() - 1]
     );
     if let Some((first, last)) = &preview.span {
+        let count =
+            |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
         text.push_str(&format!(
-            "it runs from {first} to {last}: {} workouts, {} nights put together from sleep stages, {} mindful sessions, {} readings, {} daily totals and {} logged entries.\n",
-            preview.workouts,
-            preview.nights,
-            preview.mindful_sessions,
-            preview.readings,
-            preview.daily_totals,
-            preview.logged
+            "it runs from {first} to {last}: {}, {} put together from sleep stages, {}, {}, {} and {}.\n",
+            count(preview.workouts, "workout", "workouts"),
+            count(preview.nights, "night", "nights"),
+            count(preview.mindful_sessions, "mindful session", "mindful sessions"),
+            count(preview.readings, "reading", "readings"),
+            count(preview.daily_totals, "daily total", "daily totals"),
+            count(preview.logged, "logged entry", "logged entries")
         ));
     }
     if let Some((count, _)) = listed {
         text.push_str(&format!(
-            "a yes can move up to {count} {} already listed under another facet.\n",
+            "saying yes can move up to {count} {} already listed under another facet.\n",
             if count == 1 { "record" } else { "records" }
         ));
     }

@@ -1953,7 +1953,10 @@ fn a_stream_that_takes_no_window_stops_the_run_though_each_day_holds_only_one() 
     fs::create_dir_all(record.parent().unwrap()).unwrap();
     fs::write(&record, "not a record").unwrap();
     let error = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap_err();
-    assert!(error.contains("64 segments in a row"), "{error}");
+    assert!(
+        error.contains("64 parts of your journal in a row"),
+        "{error}"
+    );
     assert!(error.contains("carry on"), "{error}");
 }
 
@@ -2272,7 +2275,7 @@ fn a_day_with_more_stuck_windows_than_the_bound_is_recorded_and_the_next_run_goe
         assert!(error.contains("carry on"), "{error}");
         assert!(error.contains("after 2026-10-10"), "{error}");
         assert!(
-            error.contains(&format!("{slots} segments in a row")),
+            error.contains(&format!("{slots} parts of your journal in a row")),
             "{error}"
         );
         // It stopped having recorded the day, and said so truly: the next run is past it.

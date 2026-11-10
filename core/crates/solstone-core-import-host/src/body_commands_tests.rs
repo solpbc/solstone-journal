@@ -144,7 +144,7 @@ fn a_preview_counts_what_an_export_holds_and_writes_nothing() {
     assert!(
         preview_apple(media, journal.path(), &ImportFacet::Unattended, false)
             .stdout
-            .contains("1 workouts, 2 nights put together from sleep stages")
+            .contains("1 workout, 2 nights put together from sleep stages")
     );
 }
 
@@ -166,7 +166,7 @@ fn a_preview_of_a_cut_export_answers_in_words_the_page_shows() {
     assert_eq!(size["refusal"], "export_incomplete");
     assert_eq!(
         size["page_refusal"],
-        solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT
+        solstone_core_import_sources::body_status::words("export_incomplete")
     );
     let words = preview_apple(media, journal.path(), &ImportFacet::Unattended, false);
     assert_eq!(words.exit_code, 1);
