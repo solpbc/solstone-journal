@@ -1865,19 +1865,7 @@ fn settle_on_exit(watch: TaskWatch, root: PathBuf, task_id: &str, timestamp: &st
             return;
         };
         let _ = tokio::task::spawn_blocking(move || {
-            // An Apple Health import a live run holds (a command-line run that
-            // bound it while this one waited) isn't this exit's to settle.
-            let held = apple
-                && solstone_core_import::metadata::attempt_holder(&root, &timestamp)
-                    == solstone_core_import::metadata::AttemptHolder::Held;
-            if !held {
-                let _ = solstone_core_import::settle_exited_import(
-                    &root,
-                    &timestamp,
-                    exit_code,
-                    u64::try_from(now_ms()).unwrap_or_default(),
-                );
-            }
+            settle_exit_record(&root, &timestamp, exit_code, apple);
             announce_exit(&root, &timestamp);
         })
         .await;
@@ -1891,6 +1879,36 @@ pub(crate) enum ExitEvent {
 
 /// Send the terminal event an exited queued import is owed, whether the importer recorded its
 /// own outcome or the settle recorded one for it.
+/// Settle a start's import once its importer has exited.
+fn settle_exit_record(root: &Path, timestamp: &str, exit_code: i32, apple: bool) {
+    if apple {
+        // An Apple Health import a live run holds (a command-line run that
+        // bound it while this one waited) isn't this exit's to settle.
+        if solstone_core_import::metadata::attempt_holder(root, timestamp)
+            == solstone_core_import::metadata::AttemptHolder::Held
+        {
+            return;
+        }
+        // Nor is one whose attempt has already ended: this start never admitted
+        // on it (admission would have taken its task id), so that attempt is
+        // another run's, finished meanwhile. The record reads as that run left it.
+        if let Ok(metadata) = read_import_metadata(root, timestamp)
+            && let solstone_core_import::metadata::AttemptRead::Present(facts) =
+                solstone_core_import::metadata::read_attempt_facts(&metadata)
+            && facts.state != solstone_core_import::metadata::AttemptState::Running
+        {
+            let _ = solstone_core_import::metadata::record_queued_task(root, timestamp, timestamp);
+            return;
+        }
+    }
+    let _ = solstone_core_import::settle_exited_import(
+        root,
+        timestamp,
+        exit_code,
+        u64::try_from(now_ms()).unwrap_or_default(),
+    );
+}
+
 fn announce_exit(root: &Path, timestamp: &str) {
     discard_terminal_strava_download(root, timestamp);
     let emitter = solstone_core_import::EventEmitter::new(root, None);
@@ -4607,6 +4625,76 @@ mod tests {
         assert!(!source.exists());
         assert!(!copy.exists());
         assert!(directory.join("import.json").exists());
+    }
+
+    #[test]
+    fn a_command_line_run_that_finished_the_cards_import_meanwhile_isnt_overwritten() {
+        let root = TempDir::new().unwrap();
+        let id = "20261011_120000";
+        let dir = root.path().join("imports").join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        write_import_metadata(
+            root.path(),
+            id,
+            json!({"source_hint": "apple_health", "file_path": dir.join("export.zip")})
+                .as_object()
+                .unwrap(),
+        )
+        .unwrap();
+        // A command-line run admits and finishes on it while the page's start
+        // is queued; the page's queued task id is the newer write.
+        let now = super::now_ms() as u64;
+        let attempt = solstone_core_import::record_running_attempt(root.path(), id, now).unwrap();
+        solstone_core_import::record_completed_attempt(
+            root.path(),
+            id,
+            attempt.generation,
+            now + 1,
+            None,
+            None,
+        )
+        .unwrap();
+        solstone_core_import::metadata::record_queued_task(root.path(), id, &(now + 2).to_string())
+            .unwrap();
+        // The page's importer then exits refused ("already run").
+        super::settle_exit_record(root.path(), id, 1, true);
+        let metadata = read_import_metadata(root.path(), id).unwrap();
+        match solstone_core_import::metadata::read_attempt_facts(&metadata) {
+            solstone_core_import::metadata::AttemptRead::Present(facts) => {
+                assert_eq!(
+                    facts.generation, attempt.generation,
+                    "no attempt written over it"
+                );
+                assert_eq!(
+                    facts.state,
+                    solstone_core_import::metadata::AttemptState::Completed
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_ne!(
+            solstone_core_import::project_import_result(root.path(), id).status,
+            solstone_core_import::ProjectionStatus::Running,
+            "it reads as that run left it"
+        );
+        // Another source's exit settles as it always has.
+        let other = "20261011_130000";
+        std::fs::create_dir_all(root.path().join("imports").join(other)).unwrap();
+        write_import_metadata(
+            root.path(),
+            other,
+            json!({"source_hint": "strava"}).as_object().unwrap(),
+        )
+        .unwrap();
+        solstone_core_import::metadata::record_queued_task(root.path(), other, &now.to_string())
+            .unwrap();
+        super::settle_exit_record(root.path(), other, 1, false);
+        assert!(matches!(
+            solstone_core_import::metadata::read_attempt_facts(
+                &read_import_metadata(root.path(), other).unwrap()
+            ),
+            solstone_core_import::metadata::AttemptRead::Present(_)
+        ));
     }
 
     #[test]
