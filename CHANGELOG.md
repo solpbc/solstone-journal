@@ -19,7 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- the solstone app on windows checks for a journal update once a day, downloads it in the background on an unrestricted connection, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.
+- the journal app on windows checks for a journal update once a day, downloads it in the background on an unrestricted connection, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.
 - the body app now shows what's in your journal: each source you hold, its days, and each day's readings, counts and logged entries. earlier Apple Health, Oura and Dexcom Clarity imports stay on disk and aren't read. the body app lists each one and says how to import it again, where there's still a way to.
 - a damaged earlier Apple Health or Oura import no longer stops a restore from finishing.
 - `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.

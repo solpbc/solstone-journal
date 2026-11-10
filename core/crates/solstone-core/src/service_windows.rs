@@ -1535,11 +1535,27 @@ fn run_uninstall_action() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn clear_update_intent(ctx: &ServiceContext) -> Result<(), ExitCode> {
+    let directory = task_artifact_directory(&ctx.owner)
+        .ok_or_else(|| task_error("cannot resolve task artifact directory"))?;
+    let path = directory.join(format!("{}.update-intent.json", ctx.guard.namespace));
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(task_error(format!(
+            "could not clear prior update intent: {error}"
+        ))),
+    }
+}
+
 fn run_start_action() -> ExitCode {
     let ctx = match resolve_context() {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     match start_task(&ctx) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
@@ -1551,6 +1567,9 @@ fn run_stop_action() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     if let Err(code) = prepare_sign_in_resume(&ctx) {
         return code;
     }
@@ -1580,57 +1599,64 @@ fn run_stop_for_update_action() -> ExitCode {
         return task_error("cannot resolve task artifact directory");
     };
     let intent_path = artifact_dir.join(format!("{}.update-intent.json", ctx.guard.namespace));
-    let has_prior_valid_record = if intent_path.is_file() {
-        match fs::read(&intent_path) {
-            Ok(bytes) => parse_windows_update_intent(&bytes).is_some(),
-            Err(_) => false,
-        }
-    } else {
-        false
+    let saved_intent = match fs::read(&intent_path) {
+        Ok(bytes) => match parse_windows_update_intent(&bytes) {
+            Some(intent) => Some(intent),
+            None => return task_error("update intent record is invalid"),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return task_error(format!("could not read update intent record: {error}")),
     };
-
-    let was_running = !snapshot.instances.is_empty();
-    let was_enabled = match validate_task(&ctx, &snapshot) {
-        Ok(def) => def.enabled,
+    let definition = match validate_task(&ctx, &snapshot) {
+        Ok(definition) => definition,
         Err(code) => return code,
     };
+    let was_running = !snapshot.instances.is_empty();
+    let intent = saved_intent.unwrap_or(OwnerRunIntent {
+        was_running,
+        was_enabled: registered_run_intent(&ctx, &definition, was_running),
+    });
 
-    let restore_stop_failure = || {
-        let failure_restore = windows_update_stop_failure_restore(was_enabled);
-        if failure_restore.enable_without_start {
-            let restore_deadline = Instant::now() + STOP_TIMEOUT;
-            if let Ok(after) = inspect_task(&ctx, restore_deadline) {
-                if after.present && after.instances.is_empty() {
-                    let _ = set_task_enabled(&ctx, &after, true, restore_deadline);
-                }
-            }
+    // Publish the recovery record before disabling or stopping anything. A
+    // retry after an interrupted stop must retain the original owner intent.
+    if saved_intent.is_none() {
+        let temp_path = artifact_dir.join(format!("{}.update-intent.tmp", ctx.guard.namespace));
+        let publish = || -> std::io::Result<()> {
+            use std::io::Write;
+            fs::create_dir_all(&artifact_dir)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&temp_path)?;
+            file.write_all(&windows_update_intent_bytes(intent))?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temp_path, &intent_path)
+        };
+        if let Err(error) = publish() {
+            let _ = fs::remove_file(&temp_path);
+            return task_error(format!("could not write update intent record: {error}"));
         }
-    };
+    }
 
     match stop_task(&ctx, windows_update_quiesce().disable_before_stop) {
-        Ok(()) => {
-            if !has_prior_valid_record {
-                let intent = OwnerRunIntent {
-                    was_running,
-                    was_enabled,
-                };
-                let bytes = windows_update_intent_bytes(intent);
-                let _ = fs::create_dir_all(&artifact_dir);
-                let temp_path =
-                    artifact_dir.join(format!("{}.update-intent.tmp", ctx.guard.namespace));
-                if let Err(e) =
-                    fs::write(&temp_path, bytes).and_then(|()| fs::rename(&temp_path, &intent_path))
-                {
-                    let _ = fs::remove_file(&temp_path);
-                    restore_stop_failure();
-                    return task_error(format!("could not write update intent record: {e}"));
-                }
-            }
-            ExitCode::SUCCESS
-        }
+        Ok(()) => ExitCode::SUCCESS,
         Err(code) => {
-            if !has_prior_valid_record {
-                restore_stop_failure();
+            if windows_update_stop_failure_restore(intent.was_enabled).enable_without_start {
+                let restore_deadline = Instant::now() + STOP_TIMEOUT;
+                let restore = inspect_task(&ctx, restore_deadline).and_then(|after| {
+                    if after.present {
+                        // A surviving instance still needs its registration enabled.
+                        set_task_enabled(&ctx, &after, true, restore_deadline)?;
+                    }
+                    Ok(())
+                });
+                if restore.is_err() {
+                    log::error!(
+                        "could not restore the service registration after a failed update stop; saved intent remains"
+                    );
+                }
             }
             code
         }
@@ -1642,6 +1668,9 @@ fn run_restart_action(if_installed: bool) -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     let installed = match inspect_task(&ctx, Instant::now() + STOP_TIMEOUT) {
         Ok(snapshot) => snapshot.present,
         Err(code) => return code,
@@ -1683,6 +1712,9 @@ fn run_up() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     let before = match inspect_task(&ctx, Instant::now() + STOP_TIMEOUT) {
         Ok(snapshot) => snapshot,
         Err(code) => return code,
@@ -1705,6 +1737,9 @@ fn run_down() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(code) = clear_update_intent(&ctx) {
+        return code;
+    }
     if let Err(code) = prepare_sign_in_resume(&ctx) {
         return code;
     }
@@ -2244,24 +2279,18 @@ fn consume_saved_intent(ctx: &ServiceContext) -> Result<Option<&'static str>, Ex
         return Ok(None);
     };
     let intent_path = directory.join(format!("{}.update-intent.json", ctx.guard.namespace));
-    if !intent_path.is_file() {
-        return Ok(None);
-    }
     let bytes = match fs::read(&intent_path) {
         Ok(b) => b,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
             log::warn!("could not read update intent file: {e}");
-            let _ = fs::remove_file(&intent_path);
-            return Ok(None);
+            return Err(task_error(format!(
+                "could not read update intent record: {e}"
+            )));
         }
     };
     let Some(intent) = parse_windows_update_intent(&bytes) else {
-        log::warn!(
-            "corrupt windows update intent record, deleting: {}",
-            intent_path.display()
-        );
-        let _ = fs::remove_file(&intent_path);
-        return Ok(None);
+        return Err(task_error("update intent record is invalid"));
     };
 
     let restore = windows_update_restore(intent);
@@ -2275,19 +2304,28 @@ fn consume_saved_intent(ctx: &ServiceContext) -> Result<Option<&'static str>, Ex
     let is_enabled = validate_task(ctx, &after)?.enabled;
 
     if restore.start {
+        if !is_enabled {
+            set_task_enabled(ctx, &after, true, deadline)?;
+        }
         if !is_running {
             start_task(ctx)?;
         }
-        let _ = fs::remove_file(&intent_path);
+        fs::remove_file(&intent_path)
+            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
         Ok(Some("started"))
     } else if restore.enable_without_start {
         if !is_enabled {
             set_task_enabled(ctx, &after, true, deadline)?;
         }
-        let _ = fs::remove_file(&intent_path);
+        fs::remove_file(&intent_path)
+            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
         Ok(Some("enabled"))
     } else {
-        let _ = fs::remove_file(&intent_path);
+        if is_enabled || is_running {
+            stop_task(ctx, true)?;
+        }
+        fs::remove_file(&intent_path)
+            .map_err(|error| task_error(format!("could not consume update intent: {error}")))?;
         Ok(Some("stopped"))
     }
 }

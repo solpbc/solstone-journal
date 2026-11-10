@@ -171,7 +171,7 @@ const COPY = {
     upToDate: 'the journal is up to date',
     lastChecked: relative => `last checked ${relative}`,
     availableTitle: target => `version ${target} is available`,
-    availableSubtitle: 'the solstone app will download it in the background when this connection allows it.',
+    availableSubtitle: 'the journal app will download it in the background when this connection allows it.',
     deferral: {
       metered: 'this connection is metered, so the download is waiting.',
       roaming: 'this connection is roaming, so the download is waiting.',
@@ -181,10 +181,10 @@ const COPY = {
     download: 'download',
     downloadingTitle: target => `downloading ${target}`,
     downloadingRetainsDownloaded: downloaded => `version ${downloaded} stays downloaded until the new one finishes.`,
-    readyTitle: downloaded => `version ${downloaded} is downloaded. the journal installs it the next time the solstone app starts.`,
+    readyTitle: downloaded => `version ${downloaded} is downloaded. the journal installs it the next time the journal app starts.`,
     install: 'install now',
     installingTitle: downloaded => `installing ${downloaded}`,
-    installingSubtitle: 'the solstone app is applying the update.',
+    installingSubtitle: 'the journal app is applying the update.',
     failureCheckTitle: 'the check failed',
     failureCheckBody: 'the journal could not finish the check.',
     failureCheckRemains: 'the downloaded update is still here.',
@@ -194,9 +194,10 @@ const COPY = {
     failureDownloadRetained: downloaded => `version ${downloaded} is still downloaded.`,
     retryDownload: 'retry download',
     failureStopTitle: 'the update did not start',
-    failureStopBody: 'the journal could not stop, so the update did not start. the downloaded update is still here.',
+    failureStopBody: 'the update could not start. the downloaded update is still here.',
     failureInstallTitle: 'the update did not finish',
-    failureInstallBody: 'the downloaded update is still here. the journal installs it the next time the solstone app starts.',
+    failureInstallBody: 'the downloaded update is still here. the journal installs it the next time the journal app starts.',
+    failureInstallMissing: 'the downloaded update is no longer available. check for an update again.',
     unavailableTitle: 'updates are unavailable',
     unavailableSubtitle: 'this build cannot check for updates on its own.',
     automatic: 'automatic updates',
@@ -2317,8 +2318,9 @@ function renderUpdates() {
         body.push(el('h2', {}, u.failureStopTitle), el('p', { class: 'muted' }, u.failureStopBody));
         body.push(el('div', { class: 'actions' }, action(u.install, 'install', true)));
       } else if (view.failure === 'install') {
-        body.push(el('h2', {}, u.failureInstallTitle), el('p', { class: 'muted' }, u.failureInstallBody));
-        body.push(el('div', { class: 'actions' }, action(u.install, 'install', true)));
+        const retained = view.downloaded_version && view.next_start;
+        body.push(el('h2', {}, u.failureInstallTitle), el('p', { class: 'muted' }, retained ? u.failureInstallBody : u.failureInstallMissing));
+        body.push(el('div', { class: 'actions' }, retained ? action(u.install, 'install', true) : action(u.checkAgain, 'check', true)));
       } else if (view.failure === 'download') {
         body.push(el('h2', {}, u.failureDownloadTitle));
         let bodyMsg = u.failureDownloadBody;

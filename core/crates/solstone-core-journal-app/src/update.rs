@@ -226,11 +226,22 @@ pub fn probe_connection() -> ConnectionReport {
         NetworkConnectivityLevel, NetworkCostType, NetworkInformation,
     };
 
-    let _ = unsafe {
-        windows::Win32::System::Com::CoInitializeEx(
-            None,
-            windows::Win32::System::Com::COINIT_MULTITHREADED,
-        )
+    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
+    struct Apartment(bool);
+    impl Drop for Apartment {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+    let _apartment = Apartment(unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok());
+    let unknown = || ConnectionReport {
+        known: false,
+        unrestricted: false,
+        roaming: false,
+        over_data_limit: false,
+        background_restricted: false,
     };
 
     let profile = match NetworkInformation::GetInternetConnectionProfile() {
@@ -273,12 +284,18 @@ pub fn probe_connection() -> ConnectionReport {
         }
     };
 
-    let roaming = cost_obj.Roaming().unwrap_or(false);
-    let over_data_limit = cost_obj.OverDataLimit().unwrap_or(false);
-    let background_restricted = cost_obj.BackgroundDataUsageRestricted().unwrap_or(false);
-    let unrestricted = match cost_obj.NetworkCostType() {
-        Ok(NetworkCostType::Unrestricted) => true,
-        _ => false,
+    let (Ok(roaming), Ok(over_data_limit), Ok(background_restricted), Ok(kind)) = (
+        cost_obj.Roaming(),
+        cost_obj.OverDataLimit(),
+        cost_obj.BackgroundDataUsageRestricted(),
+        cost_obj.NetworkCostType(),
+    ) else {
+        return unknown();
+    };
+    let unrestricted = match kind {
+        NetworkCostType::Unrestricted => true,
+        NetworkCostType::Fixed | NetworkCostType::Variable => false,
+        _ => return unknown(),
     };
 
     ConnectionReport {
@@ -345,7 +362,7 @@ pub fn production_apply_hooks(feed: Option<&str>) -> ApplyHooks {
         stop_journal: Box::new(production_stop_journal),
         resume_journal: Box::new(production_resume_journal),
         spawn_helper: Box::new(move |packages_dir, asset| {
-            let (manager, _, _) = build_manager(feed_str.as_deref());
+            let (manager, _, _, _) = build_manager(feed_str.as_deref());
             let Some(manager) = manager else {
                 return Err("update manager unavailable".into());
             };
@@ -397,11 +414,95 @@ pub fn write_pending_record(record: &PendingRecord) -> Result<(), std::io::Error
     Ok(())
 }
 
+fn owned_package_version(name: &str) -> Option<String> {
+    let version = name
+        .strip_prefix("SolstoneJournal-")?
+        .strip_suffix("-full.nupkg")?;
+    let parsed = semver::Version::parse(version).ok()?;
+    (parsed.to_string() == version).then(|| version.to_owned())
+}
+
+fn remove_if_present(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+fn cache_operation_lock(directory: &Path) -> Result<velopack::lockfile::LockFile, Error> {
+    std::fs::create_dir_all(directory)?;
+    Ok(velopack::lockfile::LockFile::try_acquire_lock(
+        directory.join(".solstone_update_lock"),
+    )?)
+}
+
+fn retire_other_pending(
+    directory: &Path,
+    current: &str,
+    keep: Option<&str>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let base = name.strip_suffix(".minisig").unwrap_or(name);
+        if keep == Some(base) {
+            continue;
+        }
+        if owned_package_version(base).is_some_and(|version| is_newer_version(&version, current)) {
+            remove_if_present(&entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+// Cache recovery mutates only our canonical package namespace, under the same
+// lock used by transfer and apply. Installed-version cache files remain intact.
+fn hydrate_pending(directory: &Path, manager: &UpdateManager) -> Option<String> {
+    let result = (|| -> Result<Option<String>, Error> {
+        let _guard = cache_operation_lock(directory)?;
+        let current = manager.get_current_version_as_string();
+        let record = read_pending_record();
+        let admitted = record.as_ref().and_then(|record| {
+            owned_package_version(&record.file)?;
+            package_admission::admit_cached_package(
+                &directory.join(&record.file),
+                &directory.join(format!("{}.minisig", record.file)),
+            )
+            .ok()
+            .filter(|admitted| is_newer_version(&admitted.version, &current))
+        });
+        let keep = admitted
+            .as_ref()
+            .and(record.as_ref())
+            .map(|record| record.file.as_str());
+        retire_other_pending(directory, &current, keep)?;
+        if admitted.is_none() {
+            remove_if_present(&prefs::pending_update_path())?;
+        }
+        Ok(admitted.map(|admitted| admitted.version))
+    })();
+    match result {
+        Ok(version) => version,
+        Err(error) => {
+            log::warn!("pending update recovery failed: {error}");
+            None
+        }
+    }
+}
+
 fn apply_on_start_packages(
     packages_dir: &Path,
     current_version: &str,
     hooks: ApplyHooks,
 ) -> StartApply {
+    let _guard = match cache_operation_lock(packages_dir) {
+        Ok(guard) => guard,
+        Err(error) => {
+            log::warn!("update cache unavailable: {error}");
+            return StartApply::Deferred { failure: "install" };
+        }
+    };
     let pending_path = prefs::pending_update_path();
     let Ok(content) = std::fs::read_to_string(&pending_path) else {
         return StartApply::NotCandidate;
@@ -410,7 +511,7 @@ fn apply_on_start_packages(
         let _ = std::fs::remove_file(&pending_path);
         return StartApply::NotCandidate;
     };
-    if !asset_name_is_plain(&record.file) {
+    if owned_package_version(&record.file).is_none() {
         let _ = std::fs::remove_file(&pending_path);
         return StartApply::NotCandidate;
     }
@@ -433,6 +534,7 @@ fn apply_on_start_packages(
     };
 
     if !is_newer_version(&admitted.version, current_version) {
+        let _ = remove_if_present(&pending_path);
         return StartApply::NotCandidate;
     }
 
@@ -508,9 +610,17 @@ enum Phase {
     Failed(String),
 }
 
+fn phase_is_busy(phase: &Phase) -> bool {
+    matches!(
+        phase,
+        Phase::Unavailable | Phase::Checking | Phase::Downloading(_) | Phase::Installing
+    )
+}
+
 struct Inner {
     manager: Option<UpdateManager>,
     packages_dir: Option<PathBuf>,
+    update_path: Option<PathBuf>,
     feed_store: FeedStore,
     phase: Phase,
     info: Option<UpdateInfo>,
@@ -566,19 +676,26 @@ fn keep_staging_id_empty() {
     }
 }
 
-fn build_manager(feed: Option<&str>) -> (Option<UpdateManager>, Option<PathBuf>, FeedStore) {
+fn build_manager(
+    feed: Option<&str>,
+) -> (
+    Option<UpdateManager>,
+    Option<PathBuf>,
+    FeedStore,
+    Option<PathBuf>,
+) {
     keep_staging_id_empty();
     let options = UpdateOptions {
         ExplicitChannel: Some(CHANNEL.to_owned()),
         MaximumDeltasBeforeFallback: -1,
         ..Default::default()
     };
-    let packages_dir = match velopack::locator::auto_locate_app_manifest(
+    let located = velopack::locator::auto_locate_app_manifest(
         velopack::locator::LocationContext::FromCurrentExe,
-    ) {
-        Ok(locator) => Some(locator.get_packages_dir()),
-        Err(_) => None,
-    };
+    )
+    .ok();
+    let packages_dir = located.as_ref().map(|locator| locator.get_packages_dir());
+    let update_path = located.as_ref().map(|locator| locator.get_update_path());
     let feed_store = match feed {
         Some(feed) if Path::new(feed).is_dir() => FeedStore::Dir(PathBuf::from(feed)),
         Some(feed) => FeedStore::Http(FirstPartyFeed {
@@ -589,7 +706,7 @@ fn build_manager(feed: Option<&str>) -> (Option<UpdateManager>, Option<PathBuf>,
         }),
     };
     let Some(packages_dir) = packages_dir else {
-        return (None, None, feed_store);
+        return (None, None, feed_store, None);
     };
 
     let source = SignedFeed {
@@ -597,16 +714,16 @@ fn build_manager(feed: Option<&str>) -> (Option<UpdateManager>, Option<PathBuf>,
     };
     let manager = UpdateManager::new(source, Some(options), None).ok();
     if manager.is_some() {
-        (manager, Some(packages_dir), feed_store)
+        (manager, Some(packages_dir), feed_store, update_path)
     } else {
-        (None, None, feed_store)
+        (None, None, feed_store, None)
     }
 }
 
 impl Updater {
     pub fn new(feed: Option<&str>, notify: impl Fn(Value) + Send + Sync + 'static) -> Self {
         prefs::initialize();
-        let (manager, packages_dir, feed_store) = build_manager(feed);
+        let (manager, packages_dir, feed_store, update_path) = build_manager(feed);
         let mut downloaded_version = None;
         let mut phase = if manager.is_some() {
             Phase::Idle
@@ -614,29 +731,10 @@ impl Updater {
             Phase::Unavailable
         };
 
-        if let (Some(dir), Some(record)) = (&packages_dir, read_pending_record()) {
-            if asset_name_is_plain(&record.file) {
-                let pkg = dir.join(&record.file);
-                let sig = dir.join(format!("{}.minisig", record.file));
-                if pkg.is_file() && sig.is_file() {
-                    match package_admission::admit_cached_package(&pkg, &sig) {
-                        Ok(admitted) => {
-                            downloaded_version = Some(admitted.version);
-                            if phase == Phase::Idle {
-                                phase = Phase::Ready;
-                            }
-                        }
-                        Err(_) => {
-                            let _ = std::fs::remove_file(prefs::pending_update_path());
-                            let _ = std::fs::remove_file(pkg);
-                            let _ = std::fs::remove_file(sig);
-                        }
-                    }
-                } else {
-                    let _ = std::fs::remove_file(prefs::pending_update_path());
-                }
-            } else {
-                let _ = std::fs::remove_file(prefs::pending_update_path());
+        if let (Some(dir), Some(manager)) = (&packages_dir, &manager) {
+            downloaded_version = hydrate_pending(dir, manager);
+            if downloaded_version.is_some() {
+                phase = Phase::Ready;
             }
         }
 
@@ -644,6 +742,7 @@ impl Updater {
             inner: Arc::new(Mutex::new(Inner {
                 manager,
                 packages_dir,
+                update_path,
                 feed_store,
                 phase,
                 info: None,
@@ -669,6 +768,7 @@ impl Updater {
         prefs::initialize();
         keep_staging_id_empty();
         let packages_dir = locator.PackagesDir.clone();
+        let update_path = locator.UpdateExePath.clone();
         let options = UpdateOptions {
             ExplicitChannel: Some(CHANNEL.to_owned()),
             MaximumDeltasBeforeFallback: -1,
@@ -694,29 +794,10 @@ impl Updater {
             Phase::Unavailable
         };
 
-        if let Some(record) = read_pending_record() {
-            if asset_name_is_plain(&record.file) {
-                let pkg = packages_dir.join(&record.file);
-                let sig = packages_dir.join(format!("{}.minisig", record.file));
-                if pkg.is_file() && sig.is_file() {
-                    match package_admission::admit_cached_package(&pkg, &sig) {
-                        Ok(admitted) => {
-                            downloaded_version = Some(admitted.version);
-                            if phase == Phase::Idle {
-                                phase = Phase::Ready;
-                            }
-                        }
-                        Err(_) => {
-                            let _ = std::fs::remove_file(prefs::pending_update_path());
-                            let _ = std::fs::remove_file(pkg);
-                            let _ = std::fs::remove_file(sig);
-                        }
-                    }
-                } else {
-                    let _ = std::fs::remove_file(prefs::pending_update_path());
-                }
-            } else {
-                let _ = std::fs::remove_file(prefs::pending_update_path());
+        if let Some(manager) = &manager {
+            downloaded_version = hydrate_pending(&packages_dir, manager);
+            if downloaded_version.is_some() {
+                phase = Phase::Ready;
             }
         }
 
@@ -724,6 +805,7 @@ impl Updater {
             inner: Arc::new(Mutex::new(Inner {
                 manager,
                 packages_dir: Some(packages_dir),
+                update_path: Some(update_path),
                 feed_store,
                 phase,
                 info: None,
@@ -812,24 +894,23 @@ impl Updater {
 
     fn set_download_percent(&self, percent: i16) {
         let mut inner = self.inner.lock().expect("update state");
-        inner.phase = Phase::Downloading(percent);
+        if matches!(inner.phase, Phase::Downloading(_)) {
+            inner.phase = Phase::Downloading(percent);
+        }
         drop(inner);
         self.push();
     }
 
-    fn busy(&self) -> bool {
-        matches!(
-            self.inner.lock().expect("update state").phase,
-            Phase::Unavailable | Phase::Checking | Phase::Downloading(_) | Phase::Installing
-        )
-    }
-
     /// Check the feed. Runs on the caller's thread; call it off the window's.
     pub fn check(&self) {
-        if self.busy() {
-            return;
+        {
+            let mut inner = self.inner.lock().expect("update state");
+            if phase_is_busy(&inner.phase) {
+                return;
+            }
+            inner.phase = Phase::Checking;
         }
-        self.set_phase(Phase::Checking);
+        self.push();
         let result = {
             let inner = self.inner.lock().expect("update state");
             inner.manager.as_ref().map(UpdateManager::check_for_updates)
@@ -900,6 +981,8 @@ impl Updater {
                     false
                 }
                 Some(Err(error)) => {
+                    prefs::update_last_checked_at(now_ts);
+                    inner.prefs.last_checked_at = Some(now_ts);
                     log::warn!("update check failed: {error}");
                     inner.failure = Some("check");
                     inner.phase = Phase::Failed("the check failed".to_owned());
@@ -934,28 +1017,27 @@ impl Updater {
                 return;
             }
         }
-        let probe = self.probe();
-        if !background_download_allowed(probe) {
-            let mut inner = self.inner.lock().expect("update state");
-            inner.deferral = deferral_reason(probe);
-            drop(inner);
-            self.push();
-            return;
-        }
         self.download_impl(true);
     }
 
     fn download_impl(&self, is_background: bool) {
-        let (info, packages_dir, feed_store, downloaded_version) = {
-            let inner = self.inner.lock().expect("update state");
-            if !matches!(inner.phase, Phase::Available | Phase::Failed(_)) {
+        let (info, packages_dir, feed_store, downloaded_version, update_path) = {
+            let mut inner = self.inner.lock().expect("update state");
+            if !matches!(inner.phase, Phase::Available | Phase::Failed(_))
+                || inner.info.is_none()
+                || inner.packages_dir.is_none()
+            {
                 return;
             }
+            inner.phase = Phase::Downloading(0);
+            inner.deferral = None;
+            inner.failure = None;
             (
                 inner.info.clone(),
                 inner.packages_dir.clone(),
                 inner.feed_store.clone(),
                 inner.downloaded_version.clone(),
+                inner.update_path.clone(),
             )
         };
         let Some(info) = info else { return };
@@ -968,6 +1050,7 @@ impl Updater {
             .as_deref()
             .is_some_and(|d| !is_newer_version(&info.TargetFullRelease.Version, d))
         {
+            self.set_phase(Phase::Ready);
             return;
         }
 
@@ -976,6 +1059,8 @@ impl Updater {
             if !background_download_allowed(probe) {
                 let mut inner = self.inner.lock().expect("update state");
                 inner.deferral = deferral_reason(probe);
+                inner.last_download_failure_at = None;
+                inner.failure = None;
                 inner.phase = Phase::Available;
                 drop(inner);
                 self.push();
@@ -984,7 +1069,7 @@ impl Updater {
         }
 
         let asset = info.TargetFullRelease;
-        if !asset_name_is_plain(&asset.FileName) {
+        if owned_package_version(&asset.FileName).as_deref() != Some(&asset.Version) {
             let mut inner = self.inner.lock().expect("update state");
             inner.last_download_failure_at = Some(inner.now());
             inner.failure = Some("download");
@@ -1009,7 +1094,14 @@ impl Updater {
             return;
         }
 
-        self.set_phase(Phase::Downloading(0));
+        let _cache_guard = match cache_operation_lock(&packages_dir) {
+            Ok(guard) => guard,
+            Err(error) => {
+                self.fail_download(error.to_string());
+                return;
+            }
+        };
+        self.push();
         let (sender, receiver) = channel::<i16>();
         let progress = self.clone();
         let reporter = std::thread::spawn(move || {
@@ -1055,12 +1147,15 @@ impl Updater {
                 let probe = self.probe();
                 let mut inner = self.inner.lock().expect("update state");
                 inner.deferral = deferral_reason(probe);
+                inner.last_download_failure_at = None;
+                inner.failure = None;
                 inner.phase = Phase::Available;
                 drop(inner);
                 self.push();
                 return;
             } else {
                 let mut inner = self.inner.lock().expect("update state");
+                inner.deferral = None;
                 inner.last_download_failure_at = Some(inner.now());
                 inner.failure = Some("download");
                 inner.phase = Phase::Failed("the download did not finish".into());
@@ -1070,48 +1165,39 @@ impl Updater {
             }
         }
 
-        // 1. admit_cached_package on temp and sidecar partial
-        if let Err(e) = package_admission::admit_cached_package(&temp_nupkg, &temp_sidecar) {
-            log::warn!("temp package failed admission: {e}");
+        let prepare_result = prepare_verified_helper(&temp_nupkg, &temp_sidecar, |package| {
+            #[cfg(windows)]
+            {
+                let path = update_path
+                    .as_deref()
+                    .ok_or_else(|| Error::Other("update helper path unavailable".into()))?;
+                extract_helper_if_needed(path, package)
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = (update_path, package);
+                Ok(())
+            }
+        });
+        if let Err(error) = prepare_result {
             let _ = std::fs::remove_file(&temp_nupkg);
             let _ = std::fs::remove_file(&temp_sidecar);
-            let mut inner = self.inner.lock().expect("update state");
-            inner.last_download_failure_at = Some(inner.now());
-            inner.failure = Some("download");
-            inner.phase = Phase::Failed("the download did not finish".into());
-            drop(inner);
-            self.push();
+            self.fail_download(error.to_string());
             return;
         }
 
-        // 2. Windows only: extract_helper_if_needed on temp while previous .nupkg is still the only full package
-        #[cfg(windows)]
-        {
-            if let Err(e) = extract_helper_if_needed(&temp_nupkg) {
-                log::warn!("helper extraction failed: {e}");
-                let _ = std::fs::remove_file(&temp_nupkg);
-                let _ = std::fs::remove_file(&temp_sidecar);
-                let mut inner = self.inner.lock().expect("update state");
-                inner.last_download_failure_at = Some(inner.now());
-                inner.failure = Some("download");
-                inner.phase = Phase::Failed("the download did not finish".into());
-                drop(inner);
-                self.push();
-                return;
-            }
-        }
-
-        // 3. Only then delete previous updater-owned .nupkg and .minisig named by pending record
-        if let Some(record) = read_pending_record()
-            .filter(|r| asset_name_is_plain(&r.file) && r.file != asset.FileName)
-        {
-            let old_pkg = packages_dir.join(&record.file);
-            let old_sig = packages_dir.join(format!("{}.minisig", record.file));
-            let _ = std::fs::remove_file(old_pkg);
-            let _ = std::fs::remove_file(old_sig);
-        }
-
         let post_delete_step = (|| -> Result<String, velopack::Error> {
+            let current = self
+                .inner
+                .lock()
+                .expect("update state")
+                .manager
+                .as_ref()
+                .expect("installed update manager")
+                .get_current_version_as_string();
+            // Refuse promotion if any older pending package cannot be retired.
+            retire_other_pending(&packages_dir, &current, Some(&asset.FileName))
+                .map_err(|error| Error::Other(error.to_string()))?;
             std::fs::rename(&temp_nupkg, &final_nupkg)
                 .map_err(|e| velopack::Error::Other(e.to_string()))?;
             std::fs::rename(&temp_sidecar, &final_sidecar)
@@ -1161,6 +1247,7 @@ impl Updater {
 
                 let mut inner = self.inner.lock().expect("update state");
                 inner.downloaded_version = remaining_version;
+                inner.deferral = None;
                 inner.last_download_failure_at = Some(inner.now());
                 inner.failure = Some("download");
                 inner.phase = Phase::Failed("the download did not finish".into());
@@ -1170,11 +1257,26 @@ impl Updater {
         }
     }
 
+    fn fail_download(&self, error: String) {
+        log::warn!("update download failed: {error}");
+        let mut inner = self.inner.lock().expect("update state");
+        inner.deferral = None;
+        inner.last_download_failure_at = Some(inner.now());
+        inner.failure = Some("download");
+        inner.phase = Phase::Failed("the download did not finish".into());
+        drop(inner);
+        self.push();
+    }
+
     /// Hand off to the installer. On success this process exits here and the
     /// installer opens the app again once the update is in place.
     pub fn install(&self) {
         let (packages_dir, current_version, manager) = {
-            let inner = self.inner.lock().expect("update state");
+            let mut inner = self.inner.lock().expect("update state");
+            if phase_is_busy(&inner.phase) || inner.downloaded_version.is_none() {
+                return;
+            }
+            inner.phase = Phase::Installing;
             let dir = inner.packages_dir.clone();
             let cur = inner
                 .manager
@@ -1191,7 +1293,7 @@ impl Updater {
             return;
         };
 
-        self.set_phase(Phase::Installing);
+        self.push();
 
         let hooks = ApplyHooks {
             stop_journal: Box::new(production_stop_journal),
@@ -1211,7 +1313,11 @@ impl Updater {
     #[cfg(test)]
     pub fn install_with_hooks(&self, hooks: ApplyHooks) {
         let (packages_dir, current_version) = {
-            let inner = self.inner.lock().expect("update state");
+            let mut inner = self.inner.lock().expect("update state");
+            if phase_is_busy(&inner.phase) || inner.downloaded_version.is_none() {
+                return;
+            }
+            inner.phase = Phase::Installing;
             let dir = inner.packages_dir.clone();
             let cur = inner
                 .manager
@@ -1224,7 +1330,7 @@ impl Updater {
             return;
         };
 
-        self.set_phase(Phase::Installing);
+        self.push();
         let outcome = apply_on_start_packages(&packages_dir, &current_version, hooks);
         self.note_start(outcome);
     }
@@ -1238,7 +1344,18 @@ impl Updater {
                 drop(inner);
                 self.push();
             }
-            StartApply::NotCandidate | StartApply::AppliedExiting => {}
+            StartApply::NotCandidate => {
+                let mut inner = self.inner.lock().expect("update state");
+                if inner.phase == Phase::Installing {
+                    inner.downloaded_version = None;
+                    inner.failure = Some("install");
+                    inner.phase =
+                        Phase::Failed("the downloaded update is no longer available".into());
+                    drop(inner);
+                    self.push();
+                }
+            }
+            StartApply::AppliedExiting => {}
         }
     }
 
@@ -1320,15 +1437,26 @@ impl Updater {
     }
 }
 
+// Keep the authenticated file open through helper extraction. On Windows the
+// admission handle excludes writes/replacement, including through hard links.
+fn prepare_verified_helper(
+    package: &Path,
+    sidecar: &Path,
+    prepare: impl FnOnce(&Path) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let admitted = package_admission::admit_cached_package(package, sidecar)?;
+    prepare(package)?;
+    drop(admitted); // release before renaming the package on Windows
+    Ok(())
+}
+
 #[cfg(windows)]
-fn extract_helper_if_needed(temp_nupkg: &Path) -> Result<(), velopack::Error> {
-    let loc = velopack::locator::auto_locate_app_manifest(
-        velopack::locator::LocationContext::FromCurrentExe,
-    )
-    .map_err(|e| velopack::Error::Other(e.to_string()))?;
-    let update_exe_path = loc.get_update_path();
+fn extract_helper_if_needed(
+    update_exe_path: &Path,
+    temp_nupkg: &Path,
+) -> Result<(), velopack::Error> {
     let mut bundle = velopack::bundle::load_bundle_from_file(temp_nupkg)?;
-    bundle.extract_zip_predicate_to_path(|f| f.ends_with("Squirrel.exe"), &update_exe_path)?;
+    bundle.extract_zip_predicate_to_path(|f| f.ends_with("Squirrel.exe"), update_exe_path)?;
     Ok(())
 }
 
@@ -1616,11 +1744,11 @@ mod tests {
         use std::io::{Cursor, Read, Write};
         use std::net::TcpListener;
         use std::path::{Path, PathBuf};
-        use std::sync::OnceLock;
+        use std::sync::{Arc, OnceLock};
         use std::time::{Duration, Instant};
 
         use velopack::sources::UpdateSource;
-        use velopack::{UpdateManager, VelopackAsset};
+        use velopack::{UpdateInfo, UpdateManager, VelopackAsset};
         use zip::ZipWriter;
         use zip::write::SimpleFileOptions;
 
@@ -1628,8 +1756,8 @@ mod tests {
         use super::super::{
             ApplyHooks, CHANNEL, CheckInterval, ConnectionReport, FeedStore, FirstPartyFeed,
             LaunchKind, PackageIdentity, PendingRecord, Phase, SignedFeed, StartApply, Updater,
-            apply_on_start_test, package_identity, read_pending_record, spawn_verified_helper,
-            write_pending_record,
+            apply_on_start_test, is_newer_version, package_identity, read_pending_record,
+            retire_other_pending, spawn_verified_helper, write_pending_record,
         };
 
         struct TestKeys {
@@ -1708,11 +1836,16 @@ mod tests {
             zip.start_file(format!("{id}.nuspec"), SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(nuspec.as_bytes()).unwrap();
-            if architecture != solstone_core_installed_payload::compiled_windows_architecture() {
-                zip.start_file("lib/net45/Squirrel.exe", SimpleFileOptions::default())
-                    .unwrap();
-                zip.write_all(b"synthetic foreign update helper").unwrap();
-            }
+            zip.start_file("lib/net45/Squirrel.exe", SimpleFileOptions::default())
+                .unwrap();
+            let helper = if architecture
+                == solstone_core_installed_payload::compiled_windows_architecture()
+            {
+                std::fs::read(get_test_recorder_binary()).unwrap()
+            } else {
+                b"synthetic foreign update helper".to_vec()
+            };
+            zip.write_all(&helper).unwrap();
             zip.finish().unwrap();
             buf
         }
@@ -2547,6 +2680,188 @@ fn main() {
                     .position(|&a| a == "--after-update")
                     .expect("--after-update flag");
                 assert!(after_update_idx > pkg_flag_idx);
+            });
+        }
+
+        #[test]
+        fn obsolete_pending_and_tampered_manual_install_recover_without_hooks() {
+            let keys = get_test_keys();
+            let temp = tempfile::tempdir().unwrap();
+            prefs::with_test_state_dir(temp.path(), || {
+                let locator = create_test_locator(temp.path());
+                let current = UpdateManager::new(
+                    SignedFeed {
+                        store: FeedStore::Dir(temp.path().to_owned()),
+                    },
+                    None,
+                    Some(locator.clone()),
+                )
+                .unwrap()
+                .get_current_version_as_string();
+                for version in [&current, "0.0.1", "2.0.28"] {
+                    let name = format!("SolstoneJournal-{version}-full.nupkg");
+                    let bytes = make_valid_nupkg("SolstoneJournal", version, "bin/journal-app.exe");
+                    let package = locator.PackagesDir.join(&name);
+                    let sidecar = locator.PackagesDir.join(format!("{name}.minisig"));
+                    std::fs::write(&package, &bytes).unwrap();
+                    std::fs::write(&sidecar, sign_with_key(&keys.primary_sec, &bytes)).unwrap();
+                    write_pending_record(&PendingRecord { file: name }).unwrap();
+                    let updater = Updater::new_with_locator(None, locator.clone(), |_| {});
+                    if !is_newer_version(version, &current) {
+                        assert!(updater.view()["downloaded_version"].is_null());
+                        assert_eq!(updater.view()["next_start"], false);
+                        assert!(!prefs::pending_update_path().exists());
+                    } else {
+                        assert_eq!(updater.view()["phase"], "ready");
+                        std::fs::write(&package, b"tampered after hydration").unwrap();
+                        updater.install_with_hooks(ApplyHooks {
+                            stop_journal: Box::new(|| panic!("tampering must precede quiesce")),
+                            resume_journal: Box::new(|| panic!("no recovery hook needed")),
+                            spawn_helper: Box::new(|_, _| panic!("tampering must precede helper")),
+                            exit_process: Box::new(|_| panic!("tampering must not exit")),
+                        });
+                        assert_eq!(updater.view()["phase"], "failed");
+                        assert_eq!(updater.view()["failure"], "install");
+                        assert!(updater.view()["downloaded_version"].is_null());
+                        assert!(!package.exists());
+                        assert!(!sidecar.exists());
+                        assert!(!prefs::pending_update_path().exists());
+                        assert!(updater.check_due());
+                    }
+                }
+            });
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn admitted_temp_stays_write_locked_until_helper_extraction_finishes() {
+            let keys = get_test_keys();
+            let temp = tempfile::tempdir().unwrap();
+            let bytes = make_valid_nupkg("SolstoneJournal", "2.0.28", "bin/journal-app.exe");
+            let package = temp.path().join("SolstoneJournal-2.0.28-full.partial");
+            let sidecar = temp
+                .path()
+                .join("SolstoneJournal-2.0.28-full.nupkg.minisig.partial");
+            let helper = temp.path().join("Update.exe");
+            let alias = temp.path().join("same-package.partial");
+            std::fs::write(&package, &bytes).unwrap();
+            std::fs::write(&sidecar, sign_with_key(&keys.primary_sec, &bytes)).unwrap();
+            std::fs::hard_link(&package, &alias).unwrap();
+            super::super::prepare_verified_helper(&package, &sidecar, |path| {
+                for target in [path, alias.as_path()] {
+                    assert!(
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .open(target)
+                            .is_err()
+                    );
+                }
+                assert!(std::fs::rename(path, temp.path().join("replaced.partial")).is_err());
+                super::super::extract_helper_if_needed(&helper, path)
+            })
+            .unwrap();
+            assert_eq!(
+                std::fs::read(&helper).unwrap(),
+                std::fs::read(get_test_recorder_binary()).unwrap()
+            );
+            // Positive control: release of the admission handle permits a write.
+            assert!(
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&package)
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn eligible_failure_after_cost_deferral_observes_retry_delay() {
+            let _keys = get_test_keys();
+            let temp = tempfile::tempdir().unwrap();
+            prefs::with_test_state_dir(temp.path(), || {
+                let locator = create_test_locator(temp.path());
+                let updater = Updater::new_with_locator(None, locator, |_| {});
+                let clock = Arc::new(std::sync::atomic::AtomicU64::new(100));
+                let clock_read = clock.clone();
+                updater.set_clock(Arc::new(move || {
+                    clock_read.load(std::sync::atomic::Ordering::SeqCst)
+                }));
+                updater.set_probe(Arc::new(|| ConnectionReport {
+                    known: true,
+                    unrestricted: true,
+                    roaming: false,
+                    over_data_limit: false,
+                    background_restricted: false,
+                }));
+                updater.set_prefs(false, true, CheckInterval::Day);
+                {
+                    let mut inner = updater.inner.lock().unwrap();
+                    inner.phase = Phase::Available;
+                    inner.deferral = Some("metered");
+                    inner.feed_store = FeedStore::Dir(temp.path().join("missing-feed"));
+                    inner.info = Some(UpdateInfo {
+                        TargetFullRelease: VelopackAsset {
+                            FileName: "SolstoneJournal-2.0.28-full.nupkg".into(),
+                            Version: "2.0.28".into(),
+                            Type: "Full".into(),
+                            PackageId: "SolstoneJournal".into(),
+                            ..Default::default()
+                        },
+                        BaseRelease: None,
+                        DeltasToTarget: Vec::new(),
+                        IsDowngrade: false,
+                    });
+                }
+                updater.poll_tick();
+                assert_eq!(updater.view()["failure"], "download");
+                assert!(updater.view()["deferral"].is_null());
+                assert_eq!(
+                    updater.inner.lock().unwrap().last_download_failure_at,
+                    Some(100)
+                );
+                clock.store(999, std::sync::atomic::Ordering::SeqCst);
+                updater.poll_tick();
+                assert_eq!(
+                    updater.inner.lock().unwrap().last_download_failure_at,
+                    Some(100)
+                );
+                clock.store(1000, std::sync::atomic::Ordering::SeqCst);
+                updater.poll_tick();
+                assert_eq!(
+                    updater.inner.lock().unwrap().last_download_failure_at,
+                    Some(1000)
+                );
+            });
+        }
+
+        #[test]
+        fn failed_retirement_blocks_promotion_and_busy_install_preserves_transfer() {
+            let temp = tempfile::tempdir().unwrap();
+            let old = temp.path().join("SolstoneJournal-2.0.28-full.nupkg");
+            std::fs::create_dir(&old).unwrap();
+            assert!(
+                retire_other_pending(
+                    temp.path(),
+                    "2.0.27",
+                    Some("SolstoneJournal-2.0.29-full.nupkg")
+                )
+                .is_err()
+            );
+            prefs::with_test_state_dir(temp.path(), || {
+                let locator = create_test_locator(temp.path());
+                let updater = Updater::new_with_locator(None, locator, |_| {});
+                {
+                    let mut inner = updater.inner.lock().unwrap();
+                    inner.phase = Phase::Downloading(42);
+                    inner.downloaded_version = Some("2.0.28".into());
+                }
+                updater.install_with_hooks(ApplyHooks {
+                    stop_journal: Box::new(|| panic!("transfer is busy")),
+                    resume_journal: Box::new(|| panic!("transfer is busy")),
+                    spawn_helper: Box::new(|_, _| panic!("transfer is busy")),
+                    exit_process: Box::new(|_| panic!("transfer is busy")),
+                });
+                assert_eq!(updater.view()["phase"], "downloading");
+                assert_eq!(updater.view()["percent"], 42);
             });
         }
 
