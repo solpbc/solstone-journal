@@ -24,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
 - security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
 - a stopped Apple Health import now says when the disk on the computer running your journal is full. the body page's empty state also makes clear that Apple Health and Oura imports need a journal running on a computer.
 - a stopped Apple Health import's own page now says what its row in your import history says, in place of "import failed".

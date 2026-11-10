@@ -742,7 +742,7 @@ fn relevance_uses_live_match() {
 
 #[test]
 fn search_prepares_no_distinct_path_statement() {
-    let (root, connection) = seeded_root("no-distinct-path");
+    let (root, mut connection) = seeded_root("no-distinct-path");
     insert(
         &connection,
         "needle",
@@ -754,7 +754,9 @@ fn search_prepares_no_distinct_path_statement() {
         0,
     );
     SQL_TRACE.with(|trace| trace.borrow_mut().clear());
-    connection.trace_v2(TraceEventCodes::SQLITE_TRACE_STMT, Some(record_sql));
+    connection
+        .trace_v2(TraceEventCodes::SQLITE_TRACE_STMT, Some(record_sql))
+        .expect("install the statement trace");
     let response = search_with_connection_for_test(
         connection,
         db_path(&root),

@@ -246,7 +246,8 @@ fn open_index_connection(
     conn.trace_v2(
         rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
         Some(statement_log::record),
-    );
+    )
+    .expect("install the statement trace");
     admit_scan_journal(checkpoint)?;
     conn.execute_batch(
         "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
