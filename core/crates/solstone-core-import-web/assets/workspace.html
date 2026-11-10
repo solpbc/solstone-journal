@@ -3603,7 +3603,8 @@ function showProgressView(importId, eventData = null) {
     }
     if (entries === 0) facts.push('nothing new');
     else if (typeof entries === 'number') facts.push(`${entries.toLocaleString()} ${entries === 1 ? 'entry' : 'entries'}`);
-    if (durationMs !== null && durationMs !== undefined) facts.push(`took ${formatElapsed(durationMs)}`);
+    // Under a second would read "took 0s": say nothing about the time.
+    if (typeof durationMs === 'number' && durationMs >= 1000) facts.push(`took ${formatElapsed(durationMs)}`);
     completionHtml = `
       <div class="import-completion-summary">
         ${words ? `<div>${escapeHtml(words)}</div>` : ''}

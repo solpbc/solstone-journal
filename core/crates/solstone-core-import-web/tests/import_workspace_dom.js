@@ -4614,6 +4614,8 @@ function runAppleImportEndsInItsOwnWords() {
   assert.strictEqual(ImportDetail.composeDrawerLine(stopped), stopped.body_words);
   done({ body_state: 'saved', entries_written: 0, duration_ms: 1000 });
   assert.ok(guideSteps.innerHTML.includes('nothing new'), 'the same export again: ' + guideSteps.innerHTML);
+  done({ body_state: 'saved', entries_written: 0, duration_ms: 400 });
+  assert.ok(guideSteps.innerHTML.includes('nothing new') && !guideSteps.innerHTML.includes('took'), 'under a second says no time: ' + guideSteps.innerHTML);
   // The run's phase is said while it runs, and not once it has ended.
   const phaseWords = workspace.match(/const BODY_PHASE_WORDS = \{[\s\S]*?\};/)[0];
   vm.runInContext(phaseWords, context);
