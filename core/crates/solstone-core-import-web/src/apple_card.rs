@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use solstone_core_import::{ImportMetadata, ProjectionStatus, read_import_metadata};
-use solstone_core_import_sources::body_space::{Space, apple_space, too_full_words};
+use solstone_core_import_sources::body_space::{Space, apple_space, size_words, too_full_words};
 
 use crate::lifecycle::is_apple_card;
 
@@ -55,6 +55,8 @@ pub(crate) fn add_space(root: &Path, import_id: &str, preview: &mut Value) {
         "need": space.need,
         "free": space.free,
         "fits": space.fits,
+        "need_words": size_words(space.need),
+        "free_words": size_words(space.free),
         "words": (!space.fits).then(|| too_full_words(&space)),
     });
 }

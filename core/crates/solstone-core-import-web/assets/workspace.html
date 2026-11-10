@@ -834,8 +834,12 @@ let currentFile = null;
 let currentGuideSource = null;
 let currentGuidedFile = null;
 let currentGuidedSaved = null;
-// The Strava card's facet question and choices, as /app/import/api/body-facet answers.
+// The Strava and Apple Health cards' facet question and choices, as /app/import/api/body-facet answers.
 let stravaFacet = null;
+// The page's upload limit, so an Apple Health export over it is refused before it uploads.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024;
+// The Apple Health preview in flight, so the card can cancel it.
+let applePreviewAbort = null;
 window._quickClientItemId = null;
 window._quickSaved = null;
 window._guidedClientItemId = null;
@@ -2604,7 +2608,7 @@ async function loadGuidedFlow(sourceName) {
               <div class="import-field-hint">a short note about what this is, so it's easier to find later</div>
             </div>
           </div>
-          ${source.name === 'strava' ? '<div id="guidedFacet" class="import-facet"></div>' : ''}
+          ${['strava', 'apple_health'].includes(source.name) ? '<div id="guidedFacet" class="import-facet"></div>' : ''}
           <div class="import-action-row">
             <button id="guidedStartBtn" class="import-primary-btn" type="button">preview import</button>
           </div>
@@ -2614,8 +2618,8 @@ async function loadGuidedFlow(sourceName) {
   `;
 
   stravaFacet = null;
-  if (source.name === 'strava') {
-    await loadStravaFacet();
+  if (['strava', 'apple_health'].includes(source.name)) {
+    await loadStravaFacet(source.name);
     if (currentGuideSource !== source.name) return;
   }
   const folderButton = document.getElementById('guidedFolderBtn');
@@ -2664,19 +2668,19 @@ function stravaFacetTitle(name) {
   return found ? found.title : name;
 }
 
-async function loadStravaFacet() {
+async function loadStravaFacet(sourceName) {
   const slot = document.getElementById('guidedFacet');
   if (!slot) return;
   let data = null;
   try {
-    const response = await fetch('/app/import/api/body-facet');
+    const response = await fetch(sourceName === 'apple_health' ? '/app/import/api/body-facet?source=apple_health' : '/app/import/api/body-facet');
     data = response.ok ? await response.json() : null;
   } catch (_) {
     data = null;
   }
   // With no answer to show, the import goes with nothing chosen: the remembered facet
   // while it's still on, otherwise none.
-  stravaFacet = data && data.offer ? data : null;
+  stravaFacet = data && data.offer ? { ...data, source: sourceName } : null;
   renderStravaFacet();
 }
 
@@ -2733,16 +2737,16 @@ async function answerStravaFacet(answer) {
     const response = await fetch('/app/import/api/body-facet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answer, offer: stravaFacet && stravaFacet.offer }),
+      body: JSON.stringify({ answer, offer: stravaFacet && stravaFacet.offer, source: stravaFacet && stravaFacet.source }),
     });
     const data = await response.json().catch(() => null);
     if (data && data.reason_code === 'body_facet_offer_changed') {
       if (window.showError) showError(data.error || stravaFacetText('offer_changed'));
-      await loadStravaFacet();
+      await loadStravaFacet(stravaFacet && stravaFacet.source);
       return;
     }
     if (!response.ok || !data || !data.offer) throw new Error(stravaFacetText('answer_failed'));
-    stravaFacet = data;
+    stravaFacet = { ...data, source: stravaFacet && stravaFacet.source };
     invalidateImportPreview('guided');
     renderStravaFacet();
     const select = document.getElementById('guidedFacetSelect');
@@ -2816,6 +2820,10 @@ function setupGuidedUploadArea() {
 
   const setFile = file => {
     if (!file || guidedFolderBusy || fileInput.disabled) return;
+    if (currentGuideSource === 'apple_health' && file.size > MAX_UPLOAD_BYTES) {
+      if (window.showError) showError(APPLE_WORDS.too_big);
+      return;
+    }
     currentGuidedFile = file || null;
     fileLabel.textContent = file ? file.name : '';
     currentGuidedSaved = null;
@@ -3196,15 +3204,82 @@ function restoreImportButton(kind, button) {
   button.disabled = importInFlight[kind] || Boolean(preview && !preview.ready);
 }
 
-async function prepareImportPreview(kind, payload, setting, button) {
+// What the Apple Health card says. Owner copy: reviewed with voice-check.
+const APPLE_WORDS = {
+  reading: 'reading your export…',
+  cancel: 'cancel',
+  too_big: 'this export is larger than 4 GB, the most this page uploads. bring it in from the command line instead: solstone journal importer <your export> --confirm-body-save',
+  keeps_running: 'this keeps running if you close this page. a long history can take an hour or more.',
+};
+
+function applePreviewText(size, space) {
+  const held = size.apple_health;
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const parts = [];
+  if (held.span) parts.push(`${held.span[0]} to ${held.span[1]}`);
+  parts.push(count(held.workouts, 'workout', 'workouts'));
+  parts.push(`${count(held.nights, 'night', 'nights')} put together from sleep stages`);
+  parts.push(count(held.mindful_sessions, 'mindful session', 'mindful sessions'));
+  parts.push(count(held.readings, 'reading', 'readings'));
+  parts.push(count(held.daily_totals, 'daily total', 'daily totals'));
+  parts.push(count(held.logged, 'logged entry', 'logged entries'));
+  const left = Object.keys(held.not_read || {}).length;
+  if (left) parts.push(`${count(left, 'other kind', 'other kinds')} left out, named in the summary`);
+  if (size.listed_moves?.count) {
+    parts.push(`a yes can move up to ${count(size.listed_moves.count, 'record', 'records')} already listed on the activities page to this import's facet`);
+  }
+  let text = parts.join(' · ');
+  if (space) {
+    text += space.fits === false
+      ? ` · ${space.words}`
+      : ` · needs about ${space.need_words} free while it runs, and ${space.free_words} is free`;
+  }
+  if (!size.other_units?.[1]) text += ' · nothing to import';
+  return text;
+}
+
+function showApplePreviewCancel(controller) {
+  applePreviewAbort = controller;
+  let cancel = document.getElementById('guidedPreviewCancel');
+  if (!controller) {
+    if (cancel) cancel.remove();
+    return;
+  }
+  const row = document.getElementById('guidedStartBtn')?.parentElement;
+  if (!row || cancel) return;
+  cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.id = 'guidedPreviewCancel';
+  cancel.className = 'import-secondary-btn';
+  cancel.textContent = APPLE_WORDS.cancel;
+  cancel.addEventListener('click', () => { if (applePreviewAbort) applePreviewAbort.abort(); });
+  row.appendChild(cancel);
+}
+
+async function prepareImportPreview(kind, payload, setting, button, sourceName = '') {
   const key = JSON.stringify({ ...payload, setting });
   const previous = importPreviews[kind];
   if (previous?.key === key && previous.ready) return previous.token;
   const revision = previewRevisions[kind];
-  button.textContent = 'preparing preview…';
-  const response = await fetch('/app/import/api/preview', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-  });
+  const apple = kind === 'guided' && sourceName === 'apple_health';
+  button.textContent = apple ? APPLE_WORDS.reading : 'preparing preview…';
+  const controller = apple ? new AbortController() : null;
+  if (apple) showApplePreviewCancel(controller);
+  let response;
+  try {
+    response = await fetch('/app/import/api/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined,
+    });
+  } catch (err) {
+    if (controller && controller.signal.aborted) {
+      restoreImportButton(kind, button);
+      return null;
+    }
+    throw err;
+  } finally {
+    if (apple) showApplePreviewCancel(null);
+  }
   const data = await response.json();
   if (!response.ok) throw new Error(importErrorMessage(data, 'could not preview this import'));
   if (revision !== previewRevisions[kind]) return null;
@@ -3227,6 +3302,15 @@ async function prepareImportPreview(kind, payload, setting, button) {
   }
   if (!size || !Number.isInteger(size.recordings) || !Number.isInteger(size.days) || !data.preview_token) {
     throw new Error('could not read the import size');
+  }
+  if (size.apple_health) {
+    const fits = !data.space || data.space.fits !== false;
+    const ready = Boolean(size.other_units?.[1]) && fits;
+    importPreviews[kind] = { key, token: data.preview_token, ready };
+    const panel = document.getElementById(`${kind}SizePreview`);
+    if (panel) panel.textContent = applePreviewText(size, data.space);
+    restoreImportButton(kind, button);
+    return null;
   }
   const ready = size.recordings > 0 || Boolean(size.other_units?.[1]) || Boolean(size.listed_moves?.count);
   importPreviews[kind] = { key, token: data.preview_token, ready };
@@ -3279,7 +3363,7 @@ async function startGuidedImport(source) {
     const ts = saved.source_timestamp || saved.timestamp;
     const setting = guidedSettingInput ? guidedSettingInput.value.trim() : '';
     const metaBody = { path, setting, import_id: saved.timestamp };
-    if (source.name === 'strava') {
+    if (['strava', 'apple_health'].includes(source.name)) {
       const bodyFacet = stravaFacetChoice();
       if (bodyFacet) metaBody.body_facet = bodyFacet;
     }
@@ -3303,13 +3387,16 @@ async function startGuidedImport(source) {
       if (!payload.source_zone && !manifest) throw new Error('choose the time zone in the recording filenames, or enter the manifest filename.');
       if (manifest) payload.archive_manifest = manifest;
     }
-    const previewToken = await prepareImportPreview('guided', payload, setting, startButton);
+    const previewToken = await prepareImportPreview('guided', payload, setting, startButton, source.name);
     preparedPreview = !previewToken && revision === previewRevisions.guided && Boolean(importPreviews.guided?.ready);
     if (!previewToken || revision !== previewRevisions.guided) return;
+    const startBody = { ...payload, preview_token: previewToken };
+    // The Apple Health card's go-ahead is the preview its owner saw.
+    if (source.name === 'apple_health') startBody.body_confirmed = previewToken;
     const startResponse = await fetch('/app/import/api/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, preview_token: previewToken }),
+      body: JSON.stringify(startBody),
     });
 
     const started = await startResponse.json().catch(() => ({}));
@@ -3331,7 +3418,11 @@ async function startGuidedImport(source) {
       };
     }
     loadImports();
-    navigateTo(`progress/${importId}`);
+    await navigateTo(`progress/${importId}`);
+    if (source.name === 'apple_health') {
+      const note = document.querySelector('.import-thinking-progress');
+      if (note) note.insertAdjacentHTML('beforebegin', `<p class="import-field-hint">${escapeHtml(APPLE_WORDS.keeps_running)}</p>`);
+    }
   } catch (err) {
     invalidateImportPreview('guided');
     await loadImports();
@@ -3380,7 +3471,22 @@ function formatStatValue(val) {
   return escapeHtml(String(val));
 }
 
+const BODY_PHASE_WORDS = {
+  scan: 'reading your export',
+  place: 'sorting what it read',
+  repair: 'checking what an earlier import left',
+  write: 'saving',
+  retry: 'trying again what didn\'t save',
+};
+
 function renderThinkingProgress(progress) {
+  if (progress && progress.status === 'body') {
+    const body = progress.body || {};
+    const phase = BODY_PHASE_WORDS[body.phase] || '';
+    const days = Number.isSafeInteger(body.days_total) && body.days_total > 0
+      ? `day ${escapeHtml(body.days_done || 0)} of ${escapeHtml(body.days_total)}` : '';
+    return [phase, body.phase === 'write' ? days : ''].filter(Boolean).join(' · ');
+  }
   if (!progress || progress.status === 'not_published') return '';
   if (progress.status !== 'current') return 'thinking progress is unavailable';
   return `${escapeHtml(progress.ready)} of ${escapeHtml(progress.recordings)} ${progress.recordings === 1 ? 'recording' : 'recordings'} ready to find`

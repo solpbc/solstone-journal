@@ -431,6 +431,66 @@ function stravaFacetHarness(ids) {
   return harness;
 }
 
+// The Apple Health card: its preview says what the export holds and what space it
+// needs; Start stays shut when it doesn't fit; and the start carries the preview
+// token as the owner's go-ahead.
+function appleCardHarness(previewBody) {
+  const harness = stravaFacetHarness({ guidedSizePreview: '' });
+  for (const name of ['applePreviewText', 'showApplePreviewCancel']) {
+    vm.runInContext(functionSource(workspace, name), harness.context);
+  }
+  const words = /const APPLE_WORDS = \{[\s\S]*?\n\};/.exec(workspace);
+  assert.ok(words, 'the Apple Health card keeps its words in one place');
+  vm.runInContext(`${words[0]}\nlet applePreviewAbort = null;`, harness.context);
+  harness.context.AbortController = AbortController;
+  const requests = harness.requests;
+  harness.context.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return { ok: true, async json() { return url.endsWith('/preview') ? previewBody : {}; } };
+  };
+  vm.runInContext("currentGuidedSaved = { path: '/saved/export.zip', timestamp: '20261010_120000' };", harness.context);
+  return harness;
+}
+
+async function runAppleCardCarriesItsGoAheadAndRefusesWhatWontFit() {
+  const apple = { name: 'apple_health', display_name: 'Apple Health' };
+  const held = { span: ['2020-11-01', '2026-11-04'], workouts: 1299, nights: 2190, mindful_sessions: 0,
+    readings: 2000000, daily_totals: 4000, logged: 10, not_read: { HKQuantityTypeIdentifierActiveEnergyBurned: 9 }, refused: 0, export_bytes: 1 };
+  const size = { schema: 'solstone.import.size.v1', recordings: 0, days: 0, skipped: 0,
+    other_units: ['Apple Health records', 2007499], apple_health: held };
+  const fits = appleCardHarness({ preview_token: 'shown-token', size,
+    space: { fits: true, need: 1, free: 2, need_words: '3.0 GB', free_words: '400.0 GB' } });
+  await fits.context.startGuidedImport(apple);
+  const panel = fits.elements.guidedSizePreview.textContent;
+  assert.ok(panel.includes('2020-11-01 to 2026-11-04'), panel);
+  assert.ok(panel.includes('2190 nights put together from sleep stages'), panel);
+  assert.ok(panel.includes('needs about 3.0 GB free while it runs'), panel);
+  assert.ok(!fits.requests.some(request => request.url.endsWith('/start')), 'the first click only previews');
+  await fits.context.startGuidedImport(apple);
+  const start = fits.requests.find(request => request.url.endsWith('/start'));
+  assert.ok(start, 'the second click starts');
+  assert.strictEqual(JSON.parse(start.options.body).body_confirmed, 'shown-token', 'the go-ahead is the preview it showed');
+  cases += 1;
+
+  const full = appleCardHarness({ preview_token: 'shown-token', size,
+    space: { fits: false, need: 9, free: 1, words: 'TOO-FULL', need_words: '9 GB', free_words: '1 GB' } });
+  await full.context.startGuidedImport(apple);
+  assert.ok(full.elements.guidedSizePreview.textContent.includes('TOO-FULL'));
+  assert.strictEqual(full.elements.guidedStartBtn.disabled, true, 'Start stays shut when it does not fit');
+  await full.context.startGuidedImport(apple);
+  assert.ok(!full.requests.some(request => request.url.endsWith('/start')), 'nothing starts when it does not fit');
+  cases += 1;
+
+  // Any other card's start carries no go-ahead.
+  const notes = stravaFacetHarness({});
+  vm.runInContext("currentGuidedSaved = { path: '/saved', timestamp: '20261010_120000' };", notes.context);
+  await notes.context.startGuidedImport({ name: 'notes', display_name: 'Notes' });
+  await notes.context.startGuidedImport({ name: 'notes', display_name: 'Notes' });
+  const other = notes.requests.find(request => request.url.endsWith('/start'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(JSON.parse(other.options.body), 'body_confirmed'));
+  cases += 1;
+}
+
 // The Strava card's facet goes with the import's settings: the one picked, none, or
 // nothing at all when the question couldn't be shown. An unanswered question stops
 // the import before anything is sent.
@@ -4462,6 +4522,7 @@ Promise.resolve()
   .then(runQuickSaveFailureReadsOnce)
   .then(runGuidedSubmit)
   .then(runStravaFacetTravelsWithTheImport)
+  .then(runAppleCardCarriesItsGoAheadAndRefusesWhatWontFit)
   .then(runStravaFacetSaysWhatANoMeansFirst)
   .then(runStravaFacetAnswerNamesItsQuestion)
   .then(runConfirmSubmit)
