@@ -14,6 +14,7 @@ use axum::{
 
 mod assets;
 mod audio_archive;
+mod apple_card;
 mod body_facet;
 mod callosum;
 mod content;

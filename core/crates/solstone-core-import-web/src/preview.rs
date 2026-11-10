@@ -685,6 +685,7 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
     } else {
         None
     };
+    let root = state.root.clone();
     let previewed = if let Some(slot) = state.route.clone() {
         create_preview(state.root, data, PreviewPlan::Embedded(slot)).await
     } else {
@@ -694,7 +695,12 @@ pub(crate) async fn preview(State(state): State<AppState>, Json(data): Json<Valu
         }
     };
     match previewed {
-        Ok(preview) => json_response(StatusCode::OK, preview),
+        Ok(mut preview) => {
+            if let Some(id) = resolved_id.as_deref() {
+                crate::apple_card::add_space(&root, id, &mut preview);
+            }
+            json_response(StatusCode::OK, preview)
+        }
         Err(error) => {
             preview_error_response(StatusCode::BAD_REQUEST, "import_preview_failed", &error)
         }

@@ -1460,6 +1460,16 @@ pub(crate) async fn run_start(
             return replay_body(root, id);
         }
     }
+    // An Apple Health import that no longer fits isn't started: the page may
+    // have previewed it when there was room.
+    if let Some(id) = resolved_id.as_deref()
+        && let Some(words) = crate::apple_card::refuse_start_for_space(root, id)
+    {
+        return json_response(
+            StatusCode::CONFLICT,
+            json!({"error": words, "reason_code": "body_space"}),
+        );
+    }
 
     let (validated, pending_preview) = match &embedded {
         Some(slot) => {

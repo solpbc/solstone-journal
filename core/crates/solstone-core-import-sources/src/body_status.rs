@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Why an Apple Health import from the import page stopped or was refused, as
-//! a code the run records and the page turns into words.
+//! Why an Apple Health import stopped or was refused, as a code the run records
+//! and the page turns into words.
 //!
-//! The run writes `imports/<id>/body-stop.json` before the write that ends its
-//! attempt. It only annotates: what an import reads as comes from its attempt.
+//! An Apple run writes `imports/<id>/body-stop.json` before the write that ends
+//! its attempt, naming the attempt's generation. It only annotates: what an
+//! import reads as comes from its attempt, and a code from another generation is
+//! ignored.
 
 use crate::apple_export::EXPORT_INCOMPLETE_TEXT;
 
-/// The file a page-started body run leaves when it stops or is refused.
+/// The file an Apple run leaves when it stops or is refused.
 pub const STOP_FILE: &str = "body-stop.json";
 
 /// Whether a code means the export or the request was refused, so nothing was

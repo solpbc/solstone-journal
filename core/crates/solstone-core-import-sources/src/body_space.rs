@@ -100,6 +100,29 @@ fn apple_space_with(
     })
 }
 
+/// A size as an owner reads it: gigabytes to one decimal, megabytes under one.
+#[must_use]
+pub fn size_words(bytes: u64) -> String {
+    const GB: f64 = 1_000_000_000.0;
+    let bytes = bytes as f64;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes / GB)
+    } else {
+        format!("{} MB", (bytes / 1_000_000.0).ceil() as u64)
+    }
+}
+
+/// Why a start was refused for space, in the owner's words.
+#[must_use]
+pub fn too_full_words(space: &Space) -> String {
+    format!(
+        "this import needs about {} free while it runs, and this disk has {} free, as the system reports it. free up about {} and start it again.",
+        size_words(space.need),
+        size_words(space.free),
+        size_words(space.need.saturating_sub(space.free))
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +154,8 @@ mod tests {
         assert_eq!(space.need, RESERVE - 4096);
         assert!(space.fits);
         let full = |_: &Path| Ok(RESERVE / 2);
-        assert!(!apple_space_with(journal.path(), 0, true, &full).unwrap().fits);
+        let short = apple_space_with(journal.path(), 0, true, &full).unwrap();
+        assert!(!short.fits);
+        assert!(too_full_words(&short).contains("free up about 537 MB"), "{}", too_full_words(&short));
     }
 }

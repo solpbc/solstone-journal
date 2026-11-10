@@ -371,3 +371,57 @@ fn only_the_apple_cards_start_with_the_token_it_showed_carries_the_go_ahead() {
     let unpreviewed = json!({"source_hint": "apple_health"}).as_object().unwrap().clone();
     assert!(!go_ahead(json!({"body_confirmed": null}), &unpreviewed));
 }
+
+fn staged_apple(root: &Path, export_bytes: u64) -> (String, String) {
+    let id = "20261010_130000";
+    let path = root.join("imports").join(id).join("export.zip");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"PK").unwrap();
+    let mut metadata = solstone_core_import::ImportMetadata::new();
+    metadata.insert("file_path".into(), json!(path.to_str().unwrap()));
+    metadata.insert("source_hint".into(), json!("apple_health"));
+    metadata.insert(
+        "preview".into(),
+        json!({"digest": "d", "token": "shown",
+            "size": {"schema": "solstone.import.size.v1", "recordings": 0,
+                "other_units": ["Apple Health records", 1],
+                "apple_health": {"export_bytes": export_bytes}}}),
+    );
+    solstone_core_import::write_import_metadata(root, id, &metadata).unwrap();
+    (id.to_owned(), path.to_str().unwrap().to_owned())
+}
+
+#[tokio::test]
+async fn a_card_import_that_no_longer_fits_isnt_started() {
+    let root = journal(&[]);
+    // Far more than any disk holds.
+    let (id, path) = staged_apple(root.path(), u64::MAX / 4);
+    let (status, body) = call(
+        root.path(),
+        "POST",
+        crate::mobile_import_contract::START_PATH,
+        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "body_space");
+    assert!(body["error"].as_str().unwrap().contains("free up about"), "{body}");
+    // Nothing was queued or written for it.
+    let metadata = solstone_core_import::read_import_metadata(root.path(), &id).unwrap();
+    assert!(metadata.get("task_id").is_none(), "{metadata:?}");
+}
+
+#[test]
+fn a_card_preview_carries_space_beside_its_size_and_a_small_one_fits() {
+    let root = journal(&[]);
+    let (id, _) = staged_apple(root.path(), 1_000);
+    let mut preview = json!({"size": {"apple_health": {"export_bytes": 1_000}}});
+    crate::apple_card::add_space(root.path(), &id, &mut preview);
+    assert_eq!(preview["space"]["fits"], true, "{preview}");
+    assert!(preview["size"].get("space").is_none());
+    assert!(preview["space"]["words"].is_null());
+    let mut other = json!({"size": {"apple_health": {"export_bytes": 1_000}}});
+    let (strava, _) = staged_strava(root.path());
+    crate::apple_card::add_space(root.path(), &strava, &mut other);
+    assert!(other.get("space").is_none());
+}
