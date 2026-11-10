@@ -12,7 +12,7 @@ if (!manifestDir) throw new Error('manifest directory required');
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
   '  window.selectAccountSide = selectAccountSide;\n',
-  `  window.__home = { connectionRecovery, wireRealtime };
+  `  window.__home = { connectionRecovery, wireRealtime, readPulse };
   window.selectAccountSide = selectAccountSide;\n`,
 );
 
@@ -67,6 +67,17 @@ assert.strictEqual(sequence([true, false, true, false, true]), 2);
 assert.strictEqual(sequence([false, true]), 0);
 assert.strictEqual(sequence([false, false, true]), 0);
 assert.strictEqual(sequence([false, true, false, true]), 1);
+// ...unless the page's own read failed: it opened into an outage, and its
+// first connect reads again once.
+function failedFirstSequence(states) {
+  let refreshes = 0;
+  const handle = connectionRecovery(() => { refreshes += 1; }, () => true);
+  states.forEach((connected) => handle({ connected, state: connected ? 'connected' : 'disconnected' }));
+  return refreshes;
+}
+assert.strictEqual(failedFirstSequence([false, true]), 1);
+assert.strictEqual(failedFirstSequence([false, true, true]), 1);
+assert.strictEqual(failedFirstSequence([false, true, false, true]), 2);
 // A missing state is treated as disconnected, never as a reconnect.
 const tolerant = connectionRecovery(() => { throw new Error('unexpected refresh'); });
 tolerant(undefined);
@@ -120,6 +131,41 @@ async function main() {
   );
   notify({ connected: true, state: 'connected' });
   assert.strictEqual(requests.length, 2, 'a repeated connected state does not reconcile again');
+
+  // A home that opened into an outage: its first pulse read failed, so the
+  // stream's first connect reads pulse and the briefing again, once.
+  {
+    const failing = [];
+    const outageHandlers = [];
+    let pulseFails = true;
+    const outage = { createViewReady: () => () => {},
+      location: { href: '' },
+      document: { readyState: 'loading', addEventListener() {}, querySelector() { return null; }, getElementById() { return null; } },
+      addEventListener() {},
+      apiJson(url) {
+        failing.push(url);
+        if (url === '/app/home/api/pulse' && pulseFails) return Promise.reject(new TypeError('Failed to fetch'));
+        return Promise.resolve({});
+      },
+      appEvents: { listen() {}, onConnectionState(handler) { outageHandlers.push(handler); return () => {}; } },
+    };
+    outage.window = outage;
+    outage.document.defaultView = outage;
+    vm.runInNewContext(source, { window: outage, document: outage.document, console }, { filename: 'home.js' });
+    outage.__home.wireRealtime();
+    await outage.__home.readPulse().catch(() => {});
+    pulseFails = false;
+    failing.length = 0;
+    outageHandlers[0]({ connected: false, state: 'connecting' });
+    outageHandlers[0]({ connected: true, state: 'connected' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(failing.includes('/app/home/api/pulse'), 'the first connect reads pulse again after a failed first read');
+    assert.ok(failing.includes('/app/home/api/briefing'), 'and the briefing');
+    const reads = failing.length;
+    outageHandlers[0]({ connected: true, state: 'connected' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(failing.length, reads, 'once');
+  }
 
   // A shell without the connection-state API keeps Home's event wiring working.
   const bareRequests = [];
