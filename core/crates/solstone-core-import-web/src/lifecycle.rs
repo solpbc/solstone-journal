@@ -1838,7 +1838,7 @@ fn settle_on_exit(watch: TaskWatch, root: PathBuf, task_id: &str, timestamp: &st
     });
 }
 
-enum ExitEvent {
+pub(crate) enum ExitEvent {
     Completed(Box<solstone_core_import::ImporterCompleted>),
     Error(solstone_core_import::ImporterError),
 }
@@ -1847,12 +1847,28 @@ enum ExitEvent {
 /// own outcome or the settle recorded one for it.
 fn announce_exit(root: &Path, timestamp: &str) {
     discard_terminal_strava_download(root, timestamp);
-    let projection = solstone_core_import::project_import_result(root, timestamp);
     let emitter = solstone_core_import::EventEmitter::new(root, None);
+    match exit_event_for(root, timestamp) {
+        Some(ExitEvent::Completed(value)) => {
+            solstone_core_import::emit_importer_completed(&emitter, &value);
+        }
+        Some(ExitEvent::Error(value)) => {
+            solstone_core_import::emit_importer_error(&emitter, &value);
+        }
+        None => {}
+    }
+}
+
+/// The event an import's exit sends, from its record as it stands.
+pub(crate) fn exit_event_for(root: &Path, timestamp: &str) -> Option<ExitEvent> {
+    let projection = solstone_core_import::project_import_result(root, timestamp);
     // An Apple Health import ends as its row reads: finished in full, or with
     // its own words for anything else, never a bare "import failed".
     let apple = crate::body_state::apple_imports(root);
-    let event = match crate::body_state::apple_row(root, timestamp, &apple) {
+    match crate::body_state::apple_row(root, timestamp, &apple) {
+        // A partly saved import finished: what it saved is there, and its row
+        // says what didn't, so the page isn't told it failed.
+        Some(("partly_saved", _)) => Some(completed_event(timestamp, &projection)),
         Some((state, words)) if state != "saved" => {
             Some(ExitEvent::Error(solstone_core_import::ImporterError {
                 import_id: timestamp.to_owned(),
@@ -1865,15 +1881,6 @@ fn announce_exit(root: &Path, timestamp: &str) {
             }))
         }
         _ => exit_event(timestamp, &projection),
-    };
-    match event {
-        Some(ExitEvent::Completed(value)) => {
-            solstone_core_import::emit_importer_completed(&emitter, &value);
-        }
-        Some(ExitEvent::Error(value)) => {
-            solstone_core_import::emit_importer_error(&emitter, &value);
-        }
-        None => {}
     }
 }
 
@@ -1888,27 +1895,7 @@ fn exit_event(
     let duration_ms = projection.duration_ms.unwrap_or_default();
     match projection.status {
         ProjectionStatus::Running | ProjectionStatus::Pending => None,
-        ProjectionStatus::Success => Some(ExitEvent::Completed(Box::new(
-            solstone_core_import::ImporterCompleted {
-                import_id: import_id.to_owned(),
-                stage: "complete".to_owned(),
-                duration_ms,
-                total_files_created: projection.total_files_created.unwrap_or_default(),
-                output_files: vec![],
-                metadata_file: String::new(),
-                stages_run: vec![],
-                segments: vec![],
-                stream: String::new(),
-                source_type: Some(projection.source_type.clone()),
-                source_display: Some(projection.source_display.clone()),
-                entries_written: projection.entries_written.unwrap_or_default(),
-                entities_seeded: projection.entities_seeded.unwrap_or_default(),
-                date_range: projection.date_range.clone(),
-                generation: projection.generation,
-                attempt_id: projection.attempt_id.clone(),
-                errors: vec![],
-            },
-        ))),
+        ProjectionStatus::Success => Some(completed_event(import_id, projection)),
         ProjectionStatus::Failed
         | ProjectionStatus::Unavailable
         | ProjectionStatus::Unconfirmed => {
@@ -1929,6 +1916,33 @@ fn exit_event(
             }))
         }
     }
+}
+
+/// The event for an import that finished, whatever its row reads beside it.
+fn completed_event(
+    import_id: &str,
+    projection: &solstone_core_import::ImportProjection,
+) -> ExitEvent {
+    let duration_ms = projection.duration_ms.unwrap_or_default();
+    ExitEvent::Completed(Box::new(solstone_core_import::ImporterCompleted {
+        import_id: import_id.to_owned(),
+        stage: "complete".to_owned(),
+        duration_ms,
+        total_files_created: projection.total_files_created.unwrap_or_default(),
+        output_files: vec![],
+        metadata_file: String::new(),
+        stages_run: vec![],
+        segments: vec![],
+        stream: String::new(),
+        source_type: Some(projection.source_type.clone()),
+        source_display: Some(projection.source_display.clone()),
+        entries_written: projection.entries_written.unwrap_or_default(),
+        entities_seeded: projection.entities_seeded.unwrap_or_default(),
+        date_range: projection.date_range.clone(),
+        generation: projection.generation,
+        attempt_id: projection.attempt_id.clone(),
+        errors: vec![],
+    }))
 }
 
 fn replay_body(root: &Path, id: &str) -> Response {

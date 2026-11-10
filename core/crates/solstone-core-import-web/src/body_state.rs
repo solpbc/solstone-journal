@@ -228,11 +228,7 @@ pub(crate) fn apple_row(
             when(root, seen.started_ms.unwrap_or_default())
         ),
         None => match stop.as_ref() {
-            Some((code, _)) => format!(
-                "{} {}",
-                body_status::words(code),
-                body_status::remedy(code).unwrap_or("import the export again to finish.")
-            ),
+            Some((code, _)) => body_status::stopped_words(code),
             None => "it stopped before it finished. import the export again to finish.".to_owned(),
         },
     };
@@ -538,6 +534,46 @@ mod tests {
     }
 
     #[test]
+    fn a_partly_saved_import_ends_as_finished_and_a_stopped_one_in_its_words() {
+        use crate::lifecycle::{ExitEvent, exit_event_for};
+        let journal = journal();
+        let root = journal.path();
+        let failed = || SegmentBindingOutcome::FailedAtAdvance { error: "x".into() };
+        ran(
+            root,
+            "20261010_120000",
+            1_000,
+            true,
+            Some(record(
+                vec![segment("20261009", "070000_3600", failed())],
+                vec![],
+                vec![],
+            )),
+        );
+        assert_eq!(row(root, "20261010_120000").unwrap().0, "partly_saved");
+        assert!(
+            matches!(
+                exit_event_for(root, "20261010_120000"),
+                Some(ExitEvent::Completed(_))
+            ),
+            "what it saved is there: the page isn't told it failed"
+        );
+        ran(root, "20261010_130000", 2_000, false, None);
+        body_status::record(root, "20261010_130000", "permission", 1);
+        match exit_event_for(root, "20261010_130000") {
+            Some(ExitEvent::Error(error)) => {
+                assert_eq!(error.stage, "stopped");
+                assert_eq!(
+                    error.error,
+                    body_status::words("permission"),
+                    "no remedy it can't keep"
+                );
+            }
+            _ => panic!("a stop is told as one"),
+        }
+    }
+
+    #[test]
     fn an_import_that_didnt_finish_never_reads_failed_unless_it_was_refused() {
         let journal = journal();
         let root = journal.path();
@@ -580,6 +616,7 @@ mod tests {
         for (id, code, state) in [
             ("20261010_120000", "go_ahead", "failed"),
             ("20261010_130000", "busy", "didnt_start"),
+            ("20261010_140000", "no_room", "failed"),
         ] {
             staged(root, id);
             let mut metadata = read_import_metadata(root, id).unwrap();

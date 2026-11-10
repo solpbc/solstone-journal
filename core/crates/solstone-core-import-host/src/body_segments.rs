@@ -1887,7 +1887,7 @@ fn run_segments_text(
         } else if solstone_core_import_sources::body_status::code_for_run_error(error)
             == "disk_full"
         {
-            "disk_full"
+            "no_room"
         } else {
             "not_started"
         };
@@ -2018,7 +2018,7 @@ fn run_segments_bound(
             let text = error.to_string();
             refused_before_admission(
                 match solstone_core_import_sources::body_status::code_for_error_text(&text) {
-                    "disk_full" => "disk_full",
+                    "disk_full" => "no_room",
                     _ => "not_started",
                 },
             );

@@ -398,7 +398,7 @@ mod page_start {
         let other = "20261012_150000";
         let held = stage(other);
         let lock = solstone_core_journal_io::hold_lock(
-            &root.join("imports").join(other).join(".attempt"),
+            root.join("imports").join(other).join(".attempt"),
             solstone_core_journal_io::LockOptions::default(),
         )
         .unwrap();

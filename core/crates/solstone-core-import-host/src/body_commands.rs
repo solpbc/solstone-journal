@@ -131,7 +131,7 @@ pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: O
         } else if solstone_core_import_sources::body_status::code_for_error_text(words)
             == "disk_full"
         {
-            "disk_full"
+            "no_room"
         } else {
             "not_started"
         };
