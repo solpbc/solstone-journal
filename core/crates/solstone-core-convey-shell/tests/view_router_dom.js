@@ -224,8 +224,13 @@ class FakeNode extends FakeEventTarget {
   }
   remove() {
     if (!this.parent) return;
-    this.parent.children = this.parent.children.filter((child) => child !== this);
+    const parent = this.parent;
+    const active = this.ownerDocument.activeElement;
+    parent.children = parent.children.filter((child) => child !== this);
     this.parent = null;
+    // As in a browser, focus on a node taken out falls to the body.
+    if (active && this.walk().includes(active)) this.ownerDocument.activeElement = this.ownerDocument.body;
+    this.ownerDocument.removed?.(parent);
   }
   replaceWith(other) {
     const parent = this.parent;
@@ -262,7 +267,10 @@ class FakeNode extends FakeEventTarget {
     }
     return null;
   }
-  focus() { this.ownerDocument.activeElement = this; }
+  focus() {
+    this.ownerDocument.activeElement = this;
+    this.ownerDocument.dispatchEvent({ type: 'focusin', target: this });
+  }
   // A click bubbles from the element to the document.
   click() {
     const event = { type: 'click', target: this, button: 0, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
@@ -569,6 +577,24 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       return () => connectionHandlers.delete(fn);
     },
   };
+  // A mutation observer hears, a microtask later, that a node under the one
+  // it watches lost a child.
+  const mutationObservers = new Set();
+  class FakeMutationObserver {
+    constructor(fn) { this.fn = fn; this.target = null; }
+    observe(target) { this.target = target; mutationObservers.add(this); }
+    disconnect() { mutationObservers.delete(this); }
+  }
+  document.removed = (parent) => {
+    mutationObservers.forEach((observer) => {
+      if (!observer.target.walk().includes(parent) || observer.queued) return;
+      observer.queued = true;
+      queueMicrotask(() => {
+        observer.queued = false;
+        if (mutationObservers.has(observer)) observer.fn([], observer);
+      });
+    });
+  };
   const observers = new Set();
   class FakeObserver {
     constructor() { observers.add(this); }
@@ -581,7 +607,7 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
     removeItem: (key) => storage.delete(key),
   };
   Object.assign(window, {
-    window, document, location, history, appEvents, FakeObserver, sessionStorage,
+    window, document, location, history, appEvents, FakeObserver, sessionStorage, MutationObserver: FakeMutationObserver,
     localStorage: { getItem: () => null, setItem: (key) => writes.push('local:' + key), removeItem() {} },
     fetch: server.fetch,
     setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout,
@@ -1048,6 +1074,47 @@ asyncCase('accessibility: focus moves to the new view\'s heading and the view is
   page.window.solRouter.navigate('/app/transcripts/20260102');
   await page.clock.advance(400);
   assert.strictEqual(page.document.activeElement, step);
+});
+
+asyncCase('accessibility: a view with no heading drawn yet takes focus on the workspace itself', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  page.server.answers.set('/app/home/workspace', page.server.html('<div class="home"><div id="home-root"></div></div><script src="/h/home.js"></script>'));
+  await page.boot('transcripts');
+  page.main().removeAttribute('tabindex');
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.document.activeElement, page.main(), 'focus is on the workspace');
+  assert.strictEqual(page.main().getAttribute('tabindex'), '-1', 'the workspace can take focus');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'home');
+});
+
+asyncCase('accessibility: a heading the view draws again after the move hands focus to the workspace, not the page', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  await page.boot('transcripts');
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  const heading = page.main().querySelector('h2');
+  assert.strictEqual(page.document.activeElement, heading, 'focus starts on the heading');
+  // Home draws its section again once a read comes in.
+  page.main().querySelector('.home').innerHTML = '<h2>your day</h2><div id="home-root"></div>';
+  await page.clock.advance(0);
+  assert.strictEqual(page.document.activeElement, page.main(), 'focus is on the workspace, not the body');
+  // Once the owner has moved focus, a redraw leaves it to them.
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  page.click('/app/home/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.document.activeElement, page.main().querySelector('h2'));
+  page.document.getElementById('home-root').focus();
+  page.main().querySelector('.home').innerHTML = '<h2>your day</h2><div id="home-root"></div>';
+  await page.clock.advance(0);
+  assert.strictEqual(page.document.activeElement, page.document.body);
 });
 
 asyncCase('accessibility: a view still loading at ten seconds is announced as still working, once', async () => {

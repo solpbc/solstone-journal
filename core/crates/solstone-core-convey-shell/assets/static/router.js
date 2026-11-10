@@ -201,17 +201,53 @@
     });
   }
 
+  function focusQuietly(node) {
+    try {
+      node.focus({ preventScroll: true });
+    } catch (_) {
+      node.focus();
+    }
+  }
+
   function focusView() {
+    stopFocusWatch();
     const main = document.getElementById('main-content');
     if (!main) return;
+    if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
     const heading = main.querySelector('h1, h2');
     const into = heading && !heading.closest('[hidden]') ? heading : main;
     if (into !== main && !into.hasAttribute('tabindex')) into.setAttribute('tabindex', '-1');
-    try {
-      into.focus({ preventScroll: true });
-    } catch (_) {
-      into.focus();
+    focusQuietly(into);
+    if (into !== main) watchFocusedHeading(main, into);
+  }
+
+  // A view can draw the part holding its heading again after the move: home
+  // does as its reads come in. Focus on a heading that is taken out falls to
+  // the page itself, so it goes to the view instead. The watch ends when the
+  // owner moves focus, at the next move, or once it has done that.
+  let focusWatch = null;
+  function stopFocusWatch() {
+    if (focusWatch) focusWatch();
+  }
+  function watchFocusedHeading(main, heading) {
+    if (typeof MutationObserver !== 'function') return;
+    const observer = new MutationObserver(() => {
+      if (heading.isConnected) return;
+      stop();
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.isConnected) focusQuietly(main);
+    });
+    const onFocusIn = (event) => {
+      if (event.target !== heading) stop();
+    };
+    function stop() {
+      observer.disconnect();
+      document.removeEventListener('focusin', onFocusIn, true);
+      if (focusWatch === stop) focusWatch = null;
     }
+    observer.observe(main, { childList: true, subtree: true });
+    document.addEventListener('focusin', onFocusIn, true);
+    focusWatch = stop;
   }
 
   function announce(text) {
@@ -288,6 +324,7 @@
     // A page that stays would keep every move's marks for its whole life:
     // only the latest move's are kept.
     MOVE_MARKS.forEach((mark) => performance.clearMarks?.(mark));
+    stopFocusWatch();
     try {
       return await move(url, mode, name, app, controller);
     } finally {
