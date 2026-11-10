@@ -8,13 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- you can bring an Evernote export into your journal from the import page. each note lands on the day it was last changed in Evernote, and a later export adds only what changed. scans, PDFs and images come in with the note. a part of a note that is encrypted in Evernote stays there, and the note says so.
-- the journal dashboard now has sources. it shows when your devices last added something, and the source when the device named one.
-- you can now bring an Apple Health export into your journal from the Apple Health card on the import page, or with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. the card shows what the export holds and how much space the import needs before you start. workouts, sleep and readings land on their own days, and show in the body app and to your agents. workouts and sleep show in search too. the import asks once which facet to file them under.
-- an Apple Health import in your import history now says whether it was saved, partly saved, stopped or not brought in, and why. one that stopped part way, or whose missing parts a later import saved, no longer reads as failed.
-- agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health or Oura and says where it holds nothing, and `get_transcript` pages through those readings.
-- you can delete a whole import from its page. its segments, any original file it kept and its row in your import history go to the trash together, and recovering it puts them all back. this covers every import except Strava, Apple Health, Oura and journal archives.
-- on the import page and the transcripts page you can select several imports or segments and delete them with one confirmation. each one waits in the trash on its own.
+- you can now bring an Apple Health export in from the Apple Health card on the import page. the card shows what the export holds and how much space the import needs before you start, and the import keeps running if you close the page.
+- you can bring Oura into your journal with `solstone journal importer --connect oura` and then `--sync oura --save`. its workouts, sleep and readings land on their own days, the same way as Apple Health's.
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
@@ -24,16 +19,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the journal app on windows checks for a journal update once a day, downloads it in the background on an unrestricted connection, and installs it the next time the app starts, including a sign-in start. settings still checks, downloads, and installs now. a journal that was running starts again afterward. a journal that was stopped stays stopped.
 - moving between home and transcripts, and to another day in transcripts, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
-- the body app now shows what's in your journal: each source you hold, its days, and each day's readings, counts and logged entries. earlier Apple Health, Oura and Dexcom Clarity imports stay on disk and aren't read. the body app lists each one and says how to import it again, where there's still a way to.
-- a damaged earlier Apple Health or Oura import no longer stops a restore from finishing.
 - `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.
-- a file or export whose import you deleted now comes back when you import it again, in place of being called already imported. an audio folder file or Plaud recording comes back the same way at the next sync.
-- the dashboard now reconnects to your journal on its own after the connection drops, and stops showing it as connected soon after it goes quiet. a page that waits more than 10 seconds says it's still working, and one that never gets an answer offers to try again instead of waiting forever.
-- your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
-- restoring a journal from a backup now happens while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
 - when your journal can confirm which workout an earlier Strava record belongs to, it now lists the workout the same way as new ones, each one once, keeping your edits and hides. it can join duplicate listings and split a listing that covered two workouts. records it can't match stay as they were, and the import summary counts them.
-- choosing a facet when you import from Strava now moves every workout in that download there, including ones already listed. the import page and the terminal question say how many before anything moves, and if more would move by the time it runs, none do and its summary says so. with `--facet` on the command line, its summary says afterward how many moved. an import you didn't choose a facet for moves nothing already listed.
-- once after this update, your journal thinks again about days that hold both a Strava workout and something else you did, now leaving the workout out, and again about days that hold notes it once wrote about a workout. a day can be thought about twice. this morning's daily briefing can change until noon, and earlier ones don't.
 
 ### Fixed
 
@@ -41,10 +28,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
-- an agent connected to your journal now gets a plain reason when a call is refused, such as a single day sent alongside a date range, so it can correct the call and try again.
-- a terminal segment from a computer with eight or more tmux sessions open is no longer turned away. one that was turned away before goes into your journal on its next try.
-- recovering a segment from the trash now puts back the name you gave a place on the map, and a place you hid stays hidden while its segments wait in the trash.
-- an Apple Health export that was cut off is now refused, and none of it is saved. before, the part ahead of the cut was sometimes saved.
 - the android and iphone development journals now refresh the summary used by home, health and stats periodically while running.
 - fixed a status check that left home and health unable to report unfinished daily work in the android development journal.
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
@@ -74,9 +57,44 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- importing Apple Health or Oura no longer needs an approval file set up first.
+
+## [2.0.74] - 2026-11-10
+
+### Added
+
+- you can bring an Evernote export into your journal from the import page. each note lands on the day it was last changed in Evernote, and a later export adds only what changed. scans, PDFs and images come in with the note. a part of a note that is encrypted in Evernote stays there, and the note says so.
+- the journal dashboard now has a sources app. it shows when your devices last added something, and from which source when the device said.
+- you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`. workouts, sleep and readings land on their own days and show in the body app, and workouts and sleep show in search too. it asks once which facet to file them under and remembers your answer. something it brings in for a time your journal already filed under another facet can join that facet, so agents limited to that facet can see it.
+- an Apple Health import in your import history now says whether it was saved, partly saved, stopped or not brought in, and why. one that stopped part way, or whose missing parts a later import saved, no longer reads as failed.
+- agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health and marks the stretches where that agent can read nothing from it, and `get_transcript` pages through those readings.
+- you can delete a whole import from its page. its own segments, any original file it kept and its row in your import history go to the trash together, and recovering it puts them all back. summaries and entities made from it elsewhere in your journal stay where they are. deleting an Evernote import leaves the text of each note behind, which your journal keeps to spot what changed in a later export, even after you erase the import. this covers every import except Strava, Apple Health, Oura and journal archives.
+- on the import page and the transcripts page you can select several imports or segments and delete them with one confirmation. each one waits in the trash on its own.
+
+### Changed
+
+- the body app now shows what's in your journal: each source you hold, its days, and each day's readings, counts and logged entries. earlier Apple Health, Oura and Dexcom Clarity imports stay on disk and aren't read. the body app lists each one and says how to import it again, where there's still a way to.
+- a damaged earlier Apple Health or Oura import no longer stops a restore from finishing.
+- a file or export whose import you deleted now comes back when you import it again, in place of being called already imported. an audio folder file or Plaud recording comes back the same way at the next sync. an Evernote export is the exception: a note you deleted, alone or with its import, stays out when you import that notebook again, even if it changed.
+- the dashboard now reconnects to your journal on its own after the connection drops, and stops showing it as connected soon after it goes quiet. a page that waits more than 10 seconds says it's still working, and one that never gets an answer offers to try again instead of waiting forever.
+- your journal's dashboard opens faster, most of all on a slow connection, because it waits on fewer of its own files before showing your first page.
+- restoring a journal from a backup now happens while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
+- Strava workouts your journal read on an earlier version are now listed the same way as new ones, each one once, keeping your edits and hides. a workout that was listed in two facets now shows in one, where you hadn't hidden it, and an agent limited to the other facet no longer sees it. one listing that covered two workouts becomes two.
+- choosing a facet when you import from Strava now moves every workout in that download there, including ones already listed. the import page and the terminal question say how many before anything moves, and if more would move by the time it runs, none do and its summary says so. with `--facet` on the command line, its summary says afterward how many moved. an import you didn't choose a facet for moves nothing already listed.
+- once after this update, your journal thinks again about days that hold notes it once wrote about a Strava workout, now leaving those notes out. this morning's daily briefing can change until noon, and earlier ones don't.
+- when a check on your journal's thinking runs out of time, the thinking and health pages now offer to check again.
+
+### Fixed
+
+- an agent connected to your journal now gets a plain reason when a call is refused, such as a single day sent alongside a date range, so it can correct the call and try again.
+- a terminal segment from a computer with eight or more tmux sessions open is no longer turned away. one your computer is still trying to send goes in on its next try.
+- recovering a segment from the trash now puts back the name you gave a place on the map, and a place you hid stays hidden while its segments wait in the trash.
+- an Apple Health export that was cut off is now refused, and none of it is saved.
+
+### Removed
+
 - the body app's trends page and its highest, lowest and comparison lines are gone. the transcripts day panel's body line shows counts now.
 - an Apple Health import no longer keeps a copy of your export or takes a date range. it reads the whole export each time, and importing it again changes nothing.
-- importing Apple Health or Oura no longer needs an approval file set up first.
 
 ## [2.0.73] - 2026-11-09
 
