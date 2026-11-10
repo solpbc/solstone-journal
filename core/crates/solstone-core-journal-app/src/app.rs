@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use crate::convey::{Convey, InitProbe, Refusal};
-use crate::prefs::{self, CheckInterval};
+use crate::prefs;
 use crate::shell;
 use crate::status::{ServiceStatus, run_display};
 use crate::update::Updater;

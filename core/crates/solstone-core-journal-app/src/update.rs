@@ -226,16 +226,12 @@ pub fn probe_connection() -> ConnectionReport {
         NetworkConnectivityLevel, NetworkCostType, NetworkInformation,
     };
 
-    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx, CoUninitialize};
-    struct Apartment(bool);
-    impl Drop for Apartment {
-        fn drop(&mut self) {
-            if self.0 {
-                unsafe { CoUninitialize() };
-            }
-        }
-    }
-    let _apartment = Apartment(unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok());
+    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use windows::Win32::System::Com::CoIncrementMTAUsage;
+    use windows::Win32::System::WinRT::{
+        RO_INIT_MULTITHREADED, RO_INIT_SINGLETHREADED, RoInitialize, RoUninitialize,
+    };
+
     let unknown = || ConnectionReport {
         known: false,
         unrestricted: false,
@@ -243,6 +239,30 @@ pub fn probe_connection() -> ConnectionReport {
         over_data_limit: false,
         background_restricted: false,
     };
+    // windows-rs caches agile activation factories for the process. Keep one
+    // MTA lease for that same lifetime, including between short-lived workers.
+    // Releasing the last apartment per probe can invalidate the cached factory.
+    static MTA_AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*MTA_AVAILABLE.get_or_init(|| unsafe { CoIncrementMTAUsage() }.is_ok()) {
+        return unknown();
+    }
+    let initialized = unsafe { RoInitialize(RO_INIT_MULTITHREADED) }.or_else(|error| {
+        if error.code() == RPC_E_CHANGED_MODE {
+            unsafe { RoInitialize(RO_INIT_SINGLETHREADED) }
+        } else {
+            Err(error)
+        }
+    });
+    if initialized.is_err() {
+        return unknown();
+    }
+    struct Apartment;
+    impl Drop for Apartment {
+        fn drop(&mut self) {
+            unsafe { RoUninitialize() };
+        }
+    }
+    let _apartment = Apartment;
 
     let profile = match NetworkInformation::GetInternetConnectionProfile() {
         Ok(p) => p,
@@ -816,7 +836,15 @@ impl Updater {
                 deferral: None,
                 last_download_failure_at: None,
                 clock: Arc::new(now),
-                probe: Arc::new(probe_connection),
+                // Transport/state fixtures choose their cost explicitly. Real WinRT
+                // lifetime is covered by the native probe regression and live app.
+                probe: Arc::new(|| ConnectionReport {
+                    known: false,
+                    unrestricted: false,
+                    roaming: false,
+                    over_data_limit: false,
+                    background_restricted: false,
+                }),
             })),
             notify: Arc::new(notify),
         }
@@ -1445,8 +1473,9 @@ fn prepare_verified_helper(
     prepare: impl FnOnce(&Path) -> Result<(), Error>,
 ) -> Result<(), Error> {
     let admitted = package_admission::admit_cached_package(package, sidecar)?;
+    let package_guard = admitted.file;
     prepare(package)?;
-    drop(admitted); // release before renaming the package on Windows
+    drop(package_guard); // release before renaming the package on Windows
     Ok(())
 }
 
@@ -1455,7 +1484,7 @@ fn extract_helper_if_needed(
     update_exe_path: &Path,
     temp_nupkg: &Path,
 ) -> Result<(), velopack::Error> {
-    let mut bundle = velopack::bundle::load_bundle_from_file(temp_nupkg)?;
+    let bundle = velopack::bundle::load_bundle_from_file(temp_nupkg)?;
     bundle.extract_zip_predicate_to_path(|f| f.ends_with("Squirrel.exe"), update_exe_path)?;
     Ok(())
 }
@@ -2639,6 +2668,13 @@ fn main() {
                     |_| {},
                 );
 
+                updater2.set_probe(Arc::new(|| ConnectionReport {
+                    known: false,
+                    unrestricted: false,
+                    roaming: false,
+                    over_data_limit: false,
+                    background_restricted: false,
+                }));
                 updater2.check();
                 assert_eq!(updater2.view()["phase"], "available");
 
@@ -2771,6 +2807,25 @@ fn main() {
                     .open(&package)
                     .is_ok()
             );
+        }
+
+        #[cfg(windows)]
+        #[test]
+        fn connection_probe_survives_successive_and_concurrent_worker_exits() {
+            let probe_twice = || {
+                let first = super::super::probe_connection();
+                let second = super::super::probe_connection();
+                eprintln!("native connection probes: {first:?}; {second:?}");
+            };
+            // The process-static factory outlives each of these MTA workers.
+            for _ in 0..3 {
+                std::thread::spawn(probe_twice).join().unwrap();
+            }
+            let workers: Vec<_> = (0..4).map(|_| std::thread::spawn(probe_twice)).collect();
+            for worker in workers {
+                worker.join().unwrap();
+            }
+            probe_twice();
         }
 
         #[test]
