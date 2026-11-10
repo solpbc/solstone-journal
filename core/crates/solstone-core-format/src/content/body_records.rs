@@ -27,6 +27,28 @@ pub const BODY_RECORD_STREAMS: [&str; 2] = ["import.apple_health", "import.oura"
 pub const DATED_WINDOW: &str = "000000_86400";
 const RECORD_VERSION: u32 = 1;
 
+/// The civil grid a numeric body segment belongs to. Extra candidate names
+/// distinguish segments on that grid; they do not lengthen the recorded span.
+#[must_use]
+pub fn grid_length(key: &str) -> Option<u64> {
+    let length = key.split_once('_')?.1.parse::<u64>().ok()?;
+    [86_400, 3_600, 300]
+        .into_iter()
+        .find(|grid| length >= *grid)
+}
+
+/// Whether two physical segments occupy the same civil grid slot.
+#[must_use]
+pub fn same_grid(left: &str, right: &str) -> bool {
+    left.split_once('_').zip(right.split_once('_')).is_some_and(
+        |((left_clock, _), (right_clock, _))| {
+            left_clock == right_clock
+                && grid_length(left).is_some()
+                && grid_length(left) == grid_length(right)
+        },
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RowKind {
@@ -153,10 +175,7 @@ pub fn copy_rank(key: &str) -> u8 {
     else {
         return 2;
     };
-    let grid = [86_400_u64, 3_600, 300]
-        .into_iter()
-        .find(|grid| length >= *grid)
-        .unwrap_or(length);
+    let grid = grid_length(key).unwrap_or(length);
     match length - grid {
         1 => 0,
         0 => 1,
@@ -610,6 +629,21 @@ mod tests {
         assert!(copy_rank("090000_301") < copy_rank("090000_300"));
         assert!(copy_rank("000000_86401") < copy_rank("000000_86400"));
         assert_eq!(copy_rank("not a key"), 2);
+    }
+
+    #[test]
+    fn facet_siblings_share_their_grid_without_sharing_other_grid_lengths() {
+        for (left, right, length) in [
+            ("063000_300", "063000_302", 300),
+            ("060000_3600", "060000_3610", 3600),
+            ("000000_86400", "000000_86405", 86400),
+        ] {
+            assert!(same_grid(left, right));
+            assert_eq!(grid_length(right), Some(length));
+        }
+        assert!(!same_grid("060000_300", "060000_3600"));
+        assert!(!same_grid("060000_3600", "070000_3602"));
+        assert_eq!(grid_length("not a key"), None);
     }
 
     #[test]

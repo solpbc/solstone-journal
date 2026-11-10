@@ -138,7 +138,12 @@ fn window_span(name: &str) -> Option<(u32, u32)> {
     if clock.len() != 6 || !clock.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let length = rest.split('_').next()?.parse::<u32>().ok()?;
+    let length =
+        if let Some(length) = solstone_core_format::content::body_records::grid_length(name) {
+            u32::try_from(length).ok()?
+        } else {
+            rest.split('_').next()?.parse::<u32>().ok()?
+        };
     let hours = clock[0..2].parse::<u32>().ok()?;
     let minutes = clock[2..4].parse::<u32>().ok()?;
     let seconds = clock[4..6].parse::<u32>().ok()?;

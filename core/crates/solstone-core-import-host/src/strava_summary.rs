@@ -118,7 +118,7 @@ impl StravaRunSummary {
             (Some(facet), _) => {
                 let _ = writeln!(
                     text,
-                    "filed under the {facet} facet, the one you chose for Strava imports.\n"
+                    "new workouts are filed under the {facet} facet, the one you chose for Strava imports.\n"
                 );
             }
             (None, FacetBasis::ChosenNone) => {

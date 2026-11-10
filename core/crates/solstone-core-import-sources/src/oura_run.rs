@@ -331,7 +331,14 @@ impl Lookup<'_> {
                 continue;
             }
             if owner_deleted(&dir).map_err(io_text)? {
-                index.deleted |= is_body_only_dir(self.source.stream, &dir);
+                let base = solstone_core_format::content::body_records::grid_length(&key);
+                let length = key
+                    .split_once('_')
+                    .and_then(|(_, length)| length.parse::<u64>().ok());
+                let original = base
+                    .zip(length)
+                    .is_some_and(|(base, length)| length <= base + 1);
+                index.deleted |= original && is_body_only_dir(self.source.stream, &dir);
                 continue;
             }
             let rows = match stored_rows(self.journal, self.source, &(day.to_owned(), key.clone()))
@@ -610,15 +617,30 @@ impl Lookup<'_> {
             return Ok(Verdict::Stage(None));
         }
         let tiling = self.tiling(id, row)?;
-        let resolve = |(day, key): &WindowId| {
+        let resolve = |(day, key): &WindowId, row_id: &str| {
             (
                 day.clone(),
-                resolve_key(self.journal, self.source, day, key),
+                live.iter()
+                    .filter(|((old_day, old_key), id)| {
+                        old_day == day
+                            && id == row_id
+                            && solstone_core_format::content::body_records::same_grid(old_key, key)
+                    })
+                    .min_by_key(|((_, key), _)| {
+                        (
+                            solstone_core_format::content::body_records::copy_rank(key),
+                            key,
+                        )
+                    })
+                    .map_or_else(
+                        || resolve_key(self.journal, self.source, day, key),
+                        |((_, key), _)| key.clone(),
+                    ),
             )
         };
         let tiled: BTreeSet<(WindowId, String)> = tiling
             .iter()
-            .map(|(window, tile)| (resolve(window), tile.clone()))
+            .map(|(window, tile)| (resolve(window, tile), tile.clone()))
             .collect();
         // The trigger is the difference: a move, a changed span, or tiles named by
         // an older scheme.
@@ -627,7 +649,7 @@ impl Lookup<'_> {
             return Ok(Verdict::Stage(None));
         }
         let first = tiling[0].0.clone();
-        let placed_first = resolve(&first);
+        let placed_first = resolve(&first, id);
         let now = instants(row.start.as_deref(), row.end.as_deref());
         // A revision Oura made, rather than a copy left by a stopped run or tiles
         // named by an older scheme: no first row is already where and when it is.

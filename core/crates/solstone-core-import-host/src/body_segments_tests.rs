@@ -16,6 +16,10 @@ use super::*;
 
 const SOURCE: &str = r#"sourceName="Synthetic Watch" creationDate="2026-10-10 08:00:00 -0600""#;
 
+#[cfg(feature = "full-tests")]
+#[path = "body_segments_facet_tests.rs"]
+pub(super) mod facet_tests;
+
 fn heart(at: &str, value: &str) -> String {
     format!(
         r#"<Record type="HKQuantityTypeIdentifierHeartRate" {SOURCE} unit="count/min" startDate="{at}" endDate="{at}" value="{value}"/>"#
@@ -2646,6 +2650,19 @@ fn a_resumed_run_counts_again_and_moves_no_more_than_the_owner_was_told() {
     told.stop_at = Some(&stop);
     run_apple_health_segments(root, &told).unwrap_err();
     assert_eq!(records_in(root, "body", "20261010"), 1);
+    let Read::Trusted(prior) = read_state(root, &APPLE) else {
+        panic!("no saved run");
+    };
+    let mut kept = (*prior).clone();
+    keep_half_done_day_filed(root, &APPLE, &mut kept);
+    for window in &kept.pending.as_ref().unwrap().windows {
+        assert!(!window.publish);
+        let counts = window.counts.as_ref().unwrap();
+        assert_eq!(
+            (counts.refiled, counts.published, counts.unchanged),
+            (0, 0, 1)
+        );
+    }
     // Something else lands elsewhere while it's stopped, and the re-run is unattended.
     add_listed_elsewhere(root, "20261001", "later");
     let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
@@ -2656,12 +2673,30 @@ fn a_resumed_run_counts_again_and_moves_no_more_than_the_owner_was_told() {
         "{}",
         outcome.summary
     );
+    assert_ne!(
+        outcome.import_id, prior.import_id,
+        "a lost move bound takes over"
+    );
+    let earlier_summary = fs::read_to_string(
+        root.join("imports")
+            .join(&prior.import_id)
+            .join("summary.md"),
+    )
+    .unwrap();
     assert!(
-        outcome.summary.contains(
+        earlier_summary.contains(
             "the rest of what's already listed stayed where it was: 3 records would have moved in all, and you were told 2."
         ),
         "{}",
-        outcome.summary
+        earlier_summary
+    );
+    let metadata = read_provenance(root, &prior.import_id).unwrap().unwrap();
+    let AttemptRead::Present(facts) = read_attempt_facts(&metadata) else {
+        panic!("no former attempt");
+    };
+    assert_eq!(
+        facts.continued_by.as_deref(),
+        Some(outcome.import_id.as_str())
     );
     // The half-done day was decided with moving on, and still stays where it is.
     let stream = root.join("chronicle/20261011").join(STREAM);

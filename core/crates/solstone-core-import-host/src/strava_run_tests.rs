@@ -416,6 +416,65 @@ fn an_import_nobody_answered_for_moves_nothing_already_listed() {
     assert!(records(root, "body", "20261004").is_empty());
 }
 
+#[cfg(feature = "full-tests")]
+#[test]
+fn a_remembered_facet_files_a_new_strava_workout_separately_from_a_revised_one() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    let (first, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(first.exit_code, 0, "{}", first.stderr);
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+    let csv = download(root, "revised with Sam");
+    let mut bytes = fs::read_to_string(&csv).unwrap();
+    let another = bytes.lines().nth(1).unwrap().replacen("901", "904", 1);
+    if !bytes.ends_with('\n') {
+        bytes.push('\n');
+    }
+    bytes.push_str(&another);
+    bytes.push('\n');
+    fs::write(&csv, bytes).unwrap();
+    let (result, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(count(&result, "filed"), 1);
+    assert_eq!(count(&result, "kept_sensed"), 3);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_301").as_deref(),
+        Some("body")
+    );
+    assert!(
+        fs::read_to_string(tile(root, "20261004", "070000_300").join("workout.json"))
+            .unwrap()
+            .contains("revised with Sam")
+    );
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert_eq!(records(root, "body", "20261004").len(), 1);
+}
+
 #[test]
 fn a_strava_import_files_records_and_reads_names_once_its_tiles_are_published() {
     let journal = journal(&["body", "work"]);
