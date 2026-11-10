@@ -452,7 +452,8 @@ fn explain_arguments(name: &str, schema: &Value, arguments: Option<&Value>) -> S
 /// type, length and range checks cannot see.
 fn format_rule(key: &str) -> Option<&'static str> {
     match key {
-        "day" | "day_from" | "day_to" => Some("is YYYYMMDD or YYYY-MM-DD"),
+        "day" | "day_from" | "day_to" | "from" | "to" => Some("is YYYYMMDD or YYYY-MM-DD"),
+        "week" => Some("is YYYYMMDD"),
         "time_from" | "time_to" => Some("is HH:MM"),
         "operation_id" => Some("uses only letters, digits, '.', '_', ':' or '-'"),
         _ => None,
@@ -969,6 +970,12 @@ mod tests {
                 json!({"day": "tuesday"}),
                 "`day`",
             ),
+            (
+                ToolName::ListActivities,
+                json!({"from": "tuesday"}),
+                "`from`",
+            ),
+            (ToolName::GetWeek, json!({"week": "tuesday"}), "`week`"),
         ] {
             let message = explain(tool, arguments);
             assert!(message.contains(named), "{message} does not name {named}");

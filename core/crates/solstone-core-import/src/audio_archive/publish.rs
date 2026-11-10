@@ -329,12 +329,7 @@ pub fn prepare_audio_archive_plan(
                     .join(&part.day)
                     .join(&plan.stream)
                     .join(&part.segment_key);
-                let exists = match fs::symlink_metadata(target) {
-                    Ok(_) => true,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-                    Err(error) => return Err(error.into()),
-                };
-                checked.insert(coordinate.clone(), exists);
+                checked.insert(coordinate.clone(), tile_taken(&target)?);
             }
             if checked[&coordinate] {
                 occupied.insert(
@@ -930,6 +925,7 @@ fn recover_or_publish_tile_checked(
         }
         solstone_core_journal_io::ensure_directory(target.parent().expect("segment parent"))
             .map_err(|error| AudioArchiveError::Other(error.to_string()))?;
+        reclaim_removed_tile(&target)?;
         let _exclusion = SegmentMutation::acquire(&target, LockOptions::default())?;
         checkpoint().map_err(AudioArchiveError::Other)?;
         match fs::symlink_metadata(&target) {
@@ -1155,6 +1151,41 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+/// Whether a tile's place holds something: anything but the tombstone a
+/// removal left. What was removed and arrives again is new data, so a removed
+/// tile's place is free.
+fn tile_taken(target: &std::path::Path) -> Result<bool, AudioArchiveError> {
+    match fs::symlink_metadata(target) {
+        Ok(_) => Ok(!matches!(
+            solstone_core_segment::owner_deletion_state(target),
+            Ok(solstone_core_segment::OwnerDeletionState::Deleted)
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// At publication, a removed tile's tombstone gives way to the tile arriving
+/// there, and its emptied folder makes room for the staged one. A removal in
+/// progress, or anything written there meanwhile, stays, and the publication
+/// refuses as for any taken place.
+fn reclaim_removed_tile(target: &std::path::Path) -> Result<(), AudioArchiveError> {
+    if !matches!(
+        solstone_core_segment::owner_deletion_state(target),
+        Ok(solstone_core_segment::OwnerDeletionState::Deleted)
+    ) {
+        return Ok(());
+    }
+    if solstone_core_segment::reclaim_for_arrival(target)
+        .map_err(|error| AudioArchiveError::Other(error.to_string()))?
+        == solstone_core_segment::Arrival::Reclaimed
+    {
+        // `remove_dir` takes only an empty folder.
+        fs::remove_dir(target)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

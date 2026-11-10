@@ -174,7 +174,10 @@ pub(crate) fn compression_layer() -> CompressionLayer<
         .compress_when(SizeAbove::new(COMPRESSION_MIN_BYTES).and(compressible))
 }
 
-fn common_layers(router: Router) -> Router {
+/// The layers every connection's router is served through: framing refusals,
+/// gzip for clients that ask, the encoded validator and the body limit.
+/// Public so a dashboard test can answer exactly as a connection does.
+pub fn common_layers(router: Router) -> Router {
     router
         .layer(axum::middleware::map_response(refuse_framing))
         // Every convey page and API answer crosses the relay as-is otherwise; a

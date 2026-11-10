@@ -37,6 +37,9 @@ pub struct AssetRecord {
     pub etag: &'static str,
     /// Byte ranges of the source rewritten to hashed paths, in order.
     pub edits: &'static [(usize, usize, &'static str)],
+    /// The served bytes gzipped at build time, for a compressible `File` the
+    /// server would gzip anyway; empty otherwise.
+    pub gzip: &'static [u8],
     #[cfg(test)]
     pub bytes: &'static [u8],
 }
@@ -109,6 +112,12 @@ pub fn server_build() -> &'static str {
         }
         format!("{:x}", digest.finalize())[..16].to_owned()
     })
+}
+
+/// Each file the shell page loads through a bundle: (bundle, file), in the
+/// page's order, stylesheets first.
+pub fn shell_bundle_segments() -> &'static [(&'static str, &'static str)] {
+    SHELL_BUNDLE_SEGMENTS
 }
 
 /// Each asset tree and its hash.

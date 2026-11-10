@@ -30,9 +30,9 @@ use std::path::{Path, PathBuf};
 use chrono_tz::Tz;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use solstone_core_body_ingest::scan_apple_export;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, parse_source_time};
 
+use crate::apple_export::scan_apple_export;
 use crate::apple_health::{
     DayRows, Held, MAX_EXPERIENCE_SECONDS, NIGHT_GAP_SECONDS, NIGHT_RULE, Reader, SLEEP_TYPE,
     SOURCE, WindowId, is_session, number_events, resolve_key, row_window, sha256_hex,

@@ -4059,7 +4059,7 @@
   // says a check is still due. Nothing here decides readiness.
   function brainCheckOutstanding() {
     const brain = state.providers?.brain || {};
-    return brain.state === 'checking' || brain.action?.refresh === true;
+    return brain.state === 'checking' || (brain.state === 'unknown' && brain.action?.refresh === true);
   }
 
   function stopBrainFollow() {

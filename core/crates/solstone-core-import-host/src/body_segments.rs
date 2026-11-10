@@ -30,13 +30,14 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use solstone_core_body_ingest::oura_sync::OuraHttp;
+use sha2::{Digest, Sha256};
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
 use solstone_core_import::metadata::{
     AttemptRead, AttemptState, hold_import_lock, read_attempt_facts, read_provenance,
     record_unconfirmed_attempt_unlocked,
 };
+use solstone_core_import::oura_http::OuraHttp;
 use solstone_core_import::publish::{
     CreatedSegment, DayMarkerStatus, NativePublicationOperations, PublicationInput,
     PublicationStatus, PublishError, SegmentBindingOutcome, publish_with_operations,
@@ -93,6 +94,9 @@ pub struct AppleSegmentsRequest<'a> {
     /// `YYYYMMDD_HHMMSS`, as every import's id.
     pub timestamp: &'a str,
     pub facet: Option<&'a str>,
+    pub listed: ListedMoves,
+    /// Earlier Strava workouts that couldn't be converted before this run.
+    pub earlier_waiting: u64,
     /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
     pub spill_bytes: usize,
     /// Test seam: called at each named point, and the run stops there, as if
@@ -107,6 +111,8 @@ impl<'a> AppleSegmentsRequest<'a> {
             source,
             timestamp,
             facet,
+            listed: ListedMoves::Keep,
+            earlier_waiting: 0,
             spill_bytes: DEFAULT_SPILL_BYTES,
             stop_at: None,
         }
@@ -130,6 +136,9 @@ pub struct OuraSegmentsRequest<'a> {
     /// `YYYYMMDD_HHMMSS`, as every import's id.
     pub timestamp: &'a str,
     pub facet: Option<&'a str>,
+    pub listed: ListedMoves,
+    /// Earlier Strava workouts that couldn't be converted before this run.
+    pub earlier_waiting: u64,
     /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
     pub spill_bytes: usize,
     /// Test seam: called at each named point, and the run stops there, as if
@@ -144,6 +153,8 @@ impl<'a> OuraSegmentsRequest<'a> {
             pages,
             timestamp,
             facet,
+            listed: ListedMoves::Keep,
+            earlier_waiting: 0,
             spill_bytes: DEFAULT_SPILL_BYTES,
             stop_at: None,
         }
@@ -168,13 +179,16 @@ pub struct OuraImportRequest<'a> {
     /// `YYYYMMDD_HHMMSS`, as every import's id.
     pub timestamp: &'a str,
     pub facet: Option<&'a str>,
+    pub listed: ListedMoves,
+    /// Earlier Strava workouts that couldn't be converted before this run.
+    pub earlier_waiting: u64,
     /// Owner days, first and last inclusive. `None` asks each endpoint from seven
     /// days before what it last covered, or the last 30 days.
     pub range: Option<(NaiveDate, NaiveDate)>,
     /// Oura, or something answering as it.
     pub transport: &'a mut dyn OuraHttp,
     pub auth: OuraAuth,
-    /// How long a refresh waits for the old sync's lock.
+    /// How long a refresh waits for the token lock.
     pub old_lock_timeout: Duration,
     /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
     pub spill_bytes: usize,
@@ -195,6 +209,8 @@ impl<'a> OuraImportRequest<'a> {
         Self {
             timestamp,
             facet,
+            listed: ListedMoves::Keep,
+            earlier_waiting: 0,
             range: None,
             transport,
             auth: OuraAuth::Journal,
@@ -248,9 +264,24 @@ struct RunRequest<'a> {
     input: Input<'a>,
     timestamp: &'a str,
     facet: Option<&'a str>,
+    listed: ListedMoves,
+    earlier_waiting: u64,
     spill_bytes: usize,
     stop_at: Option<&'a dyn Fn(&str) -> bool>,
     clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+}
+
+/// What a run may do with what's already filed under another facet.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ListedMoves {
+    /// Leave it where it is: nobody answered for this run.
+    #[default]
+    Keep,
+    /// Move it to the run's facet: the owner chose one on the command line, so
+    /// the summary says afterward how many moved.
+    Move,
+    /// Move it, as long as no more would move than the owner was told.
+    MoveAtMost(usize),
 }
 
 /// What one run did, whichever source it read.
@@ -332,6 +363,13 @@ struct Totals {
     /// Windows with no facet that took the facet of the document that moved into them.
     #[serde(default, skip_serializing_if = "is_zero")]
     took_facet: u64,
+    /// Records already listed that the owner's answer moved, and from which facets.
+    #[serde(default)]
+    listed_moved: u64,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    listed_moved_from: BTreeSet<String>,
+    #[serde(default)]
+    joined_hidden: u64,
     /// Facets whose activity file refused a record; the next run tries again.
     #[serde(default)]
     activities_refused: BTreeSet<String>,
@@ -351,6 +389,10 @@ impl Totals {
         self.activities_no_facet += other.activities_no_facet;
         self.activities_refreshed += other.activities_refreshed;
         self.took_facet += other.took_facet;
+        self.listed_moved += other.listed_moved;
+        self.joined_hidden += other.joined_hidden;
+        self.listed_moved_from
+            .extend(other.listed_moved_from.iter().cloned());
         self.activities_refused
             .extend(other.activities_refused.iter().cloned());
         self.entries += other.entries;
@@ -362,6 +404,13 @@ impl Totals {
 struct PendingWindow {
     key: String,
     write: bool,
+    /// What a written window's file will hold, so a takeover can tell whether
+    /// the run it took over got that far.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    written_sha: Option<String>,
+    /// How many entries the file will hold.
+    #[serde(default)]
+    units: u64,
     facet: bool,
     publish: bool,
     /// Under a run that names no facet, the facet a document this window now
@@ -415,6 +464,19 @@ struct RunState {
     holes: BTreeSet<Hole>,
     pending: Option<Pending>,
     listing_len: u64,
+    /// The first and last day an Apple export reached, for its manifest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    export_span: Option<[String; 2]>,
+    /// The owner's answer lets this run move what's filed under another facet.
+    #[serde(default)]
+    move_listed: bool,
+    /// How many the owner was told could move, when they were told.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    listed_shown: Option<usize>,
+    /// More would have moved than the owner was told: how many they were told,
+    /// and how many that was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    listed_over: Option<(usize, usize)>,
     /// The import whose run this state is: kept apart from the current one
     /// while a repair or takeover runs under a newer attempt.
     notes: Vec<String>,
@@ -917,6 +979,7 @@ impl Run<'_, '_> {
                         &window,
                         before,
                         facet,
+                        state.move_listed,
                         Some(&self.import_id),
                     )?;
                     early.insert(window.clone(), decision);
@@ -928,6 +991,7 @@ impl Run<'_, '_> {
                 &window,
                 rows,
                 facet,
+                state.move_listed,
                 Some(&self.import_id),
             )?;
             if decision.unreadable {
@@ -984,6 +1048,8 @@ impl Run<'_, '_> {
                     recorded.push(PendingWindow {
                         key: window.1.clone(),
                         write: decision.contents.is_some(),
+                        written_sha: decision.contents.as_deref().map(text_sha),
+                        units: decision.units,
                         facet: decision.facet_changed,
                         publish,
                         taken,
@@ -1053,7 +1119,13 @@ impl Run<'_, '_> {
         }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
-        let records = activity_totals(self.journal, self.source, &day, self.now());
+        let records = activity_totals(
+            self.journal,
+            self.source,
+            &day,
+            self.now(),
+            state.move_listed,
+        );
         if !records.activities_refused.is_empty() {
             state
                 .holes
@@ -1239,13 +1311,22 @@ fn reconcile_stream(journal: &Path, source: &BodySource) -> Result<Option<String
 }
 
 /// Create the activity records of a day's experiences, as totals.
-fn activity_totals(journal: &Path, source: &BodySource, day: &str, now: DateTime<Utc>) -> Totals {
-    let counts = crate::body_activity::write_records_at(journal, source, day, now);
+fn activity_totals(
+    journal: &Path,
+    source: &BodySource,
+    day: &str,
+    now: DateTime<Utc>,
+    move_listed: bool,
+) -> Totals {
+    let counts = crate::body_activity::write_records_at(journal, source, day, now, move_listed);
     Totals {
         activities: counts.written,
         activities_no_facet: counts.no_facet,
         activities_refreshed: counts.refreshed,
         activities_refused: counts.refused.into_iter().map(|(facet, _)| facet).collect(),
+        listed_moved: counts.moved,
+        joined_hidden: counts.joined_hidden,
+        listed_moved_from: counts.moved_from,
         ..Totals::default()
     }
 }
@@ -1294,7 +1375,7 @@ fn holes_section(holes: &BTreeSet<Hole>) -> String {
     for hole in holes {
         text.push_str(&format!(
             "- {}, {}: {}\n",
-            hole.endpoint,
+            solstone_core_import_sources::apple_health::name_words(&hole.endpoint),
             hole_place(&hole.endpoint, &hole.at),
             hole.reason.words()
         ));
@@ -1350,6 +1431,11 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         entries_stayed_deleted: state.findings.stayed_deleted + dropped_count(state),
         held_back: state.totals.held_back,
         unreadable: state.totals.unreadable,
+        listed_moved: state.totals.listed_moved,
+        listed_moved_from: state.totals.listed_moved_from.iter().cloned().collect(),
+        listed_over: state.listed_over,
+        joined_hidden: state.totals.joined_hidden,
+        earlier_waiting: 0,
         kept_facet: state.totals.kept_facet,
         refiled: state.totals.refiled,
         activities: state.totals.activities,
@@ -1385,8 +1471,11 @@ fn summary_of(state: &RunState) -> SummaryCounts {
             .failed
             .iter()
             .map(|failed| match &failed.key {
-                Some(key) => format!("{} {key}: {}", failed.day, failed.stage),
-                None => format!("{}: {}", failed.day, failed.stage),
+                Some(_) | None => format!(
+                    "{}: {}",
+                    owner_day(&failed.day),
+                    solstone_core_import_sources::apple_health::stage_words(&failed.stage)
+                ),
             })
             .collect(),
         notes: state
@@ -1412,7 +1501,12 @@ fn close_superseded(journal: &Path, source: &BodySource, state: &RunState, zone:
     {
         return;
     }
-    let summary = summary_text(source, &summary_of(state), state.facet.as_deref(), zone);
+    let summary = summary_text(
+        source,
+        &summary_counts(journal, state),
+        state.facet.as_deref(),
+        zone,
+    );
     let _ = atomic_replace(
         journal
             .join("imports")
@@ -1457,6 +1551,142 @@ fn holds_a_run(journal: &Path, import_id: &str) -> bool {
         .any(|name| dir.join(name).exists())
 }
 
+/// Whether this run may move what's already filed elsewhere, counted now the
+/// run's lock is held. A run never moves more than the owner was told.
+fn listed_rule(
+    journal: &Path,
+    source: &BodySource,
+    request: &RunRequest<'_>,
+) -> (bool, Option<(usize, usize)>) {
+    let Some(facet) = request.facet else {
+        return (false, None);
+    };
+    match request.listed {
+        ListedMoves::Keep => (false, None),
+        ListedMoves::Move => (true, None),
+        ListedMoves::MoveAtMost(shown) => {
+            let (count, _) =
+                crate::body_activity::listed_elsewhere(journal, source.records().stream, facet);
+            if count > shown {
+                (false, Some((shown, count)))
+            } else {
+                (true, None)
+            }
+        }
+    }
+}
+
+/// What this import read, for the old-import line: an Apple export's whole span,
+/// or the days Oura's coverage now claims from this run. `None` when neither.
+fn span_of(state: &RunState, zone: chrono_tz::Tz) -> Option<Vec<[String; 2]>> {
+    match &state.fetch {
+        Some(fetched) => {
+            let ranges = crate::oura_coverage::claimed_days(&fetched.claims(), zone);
+            (!ranges.is_empty()).then_some(ranges)
+        }
+        None => state.export_span.clone().map(|span| vec![span]),
+    }
+}
+
+/// A resumed run moves on an earlier answer, so it counts again now its lock is
+/// held: what's moved so far and what could still move, against what the owner
+/// was told. A run told nothing, by a `--facet` on its command line, has
+/// nothing to count against.
+fn recount_listed(journal: &Path, source: &BodySource, state: &mut RunState) {
+    let (true, Some(shown), Some(facet)) = (
+        state.move_listed,
+        state.listed_shown,
+        state.facet.as_deref(),
+    ) else {
+        return;
+    };
+    let (elsewhere, _) =
+        crate::body_activity::listed_elsewhere(journal, source.records().stream, facet);
+    let total = elsewhere + usize::try_from(state.totals.listed_moved).unwrap_or(usize::MAX);
+    if total > shown {
+        state.move_listed = false;
+        state.listed_over = Some((shown, total));
+        keep_half_done_day_filed(journal, source, state);
+    }
+}
+
+/// The stopped day's decisions were made with moving on. A window it hadn't
+/// refiled yet stays under the facet it has.
+fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut RunState) {
+    let Some(facet) = state.facet.clone() else {
+        return;
+    };
+    let Some(pending) = state.pending.as_mut() else {
+        return;
+    };
+    let target = facet_file_text(&facet);
+    let day = pending.day.clone();
+    let mut kept = 0;
+    for window in pending.windows.iter_mut().filter(|window| window.facet) {
+        let file = window_dir(journal, source, &(day.clone(), window.key.clone()))
+            .join("talents/facets.json");
+        if fs::read_to_string(&file).is_ok_and(|held| held != target) {
+            window.facet = false;
+            kept += 1;
+        }
+    }
+    pending.counts.refiled = pending.counts.refiled.saturating_sub(kept);
+}
+
+/// The summary's counts, with facets named by their titles.
+fn summary_counts(journal: &Path, state: &RunState) -> SummaryCounts {
+    let mut counts = summary_of(state);
+    let titles = |facets: &[String]| {
+        facets
+            .iter()
+            .map(|facet| crate::strava_convert::facet_title(journal, facet))
+            .collect::<Vec<_>>()
+    };
+    counts.listed_moved_from = titles(&counts.listed_moved_from);
+    counts.activities_refused = titles(&counts.activities_refused);
+    counts
+}
+
+fn owner_day(day: &str) -> String {
+    match (day.get(..4), day.get(4..6), day.get(6..8)) {
+        (Some(year), Some(month), Some(date)) => format!("{year}-{month}-{date}"),
+        _ => day.to_owned(),
+    }
+}
+
+fn source_owner_name(source: &BodySource) -> &'static str {
+    if source.source == OURA.source {
+        "Oura"
+    } else {
+        "Apple Health"
+    }
+}
+
+fn text_sha(text: &str) -> String {
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The windows of a stopped day that hold what its run meant to write. One with
+/// nothing to write was already as it should be.
+fn reached_windows(journal: &Path, source: &BodySource, pending: &Pending) -> BTreeSet<String> {
+    pending
+        .windows
+        .iter()
+        .filter(|window| match (&window.written_sha, window.write) {
+            (Some(sha), true) => {
+                let id = (pending.day.clone(), window.key.clone());
+                fs::read_to_string(window_dir(journal, source, &id).join(BODY_RECORDS_FILE))
+                    .is_ok_and(|text| text_sha(&text) == *sha)
+            }
+            _ => true,
+        })
+        .map(|window| window.key.clone())
+        .collect()
+}
+
 /// Publish an Apple export as body windows. Runs under the source's lock.
 pub fn run_apple_health_segments(
     journal: &Path,
@@ -1466,6 +1696,8 @@ pub fn run_apple_health_segments(
         input: Input::Apple(request.source),
         timestamp: request.timestamp,
         facet: request.facet,
+        listed: request.listed,
+        earlier_waiting: request.earlier_waiting,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
         clock: None,
@@ -1474,14 +1706,15 @@ pub fn run_apple_health_segments(
         let source_hash = solstone_core_import::hash_source(request.source)
             .map_err(|error| error.to_string())?
             .into_inner();
-        let export_hash = match solstone_core_body_ingest::apple_folder_export(request.source)
-            .map_err(|error| refusal_text(&error.to_string()))?
-        {
-            Some(export) => solstone_core_import::hash_source(&export)
-                .map_err(|error| error.to_string())?
-                .into_inner(),
-            None => String::new(),
-        };
+        let export_hash =
+            match solstone_core_import_sources::apple_export::apple_folder_export(request.source)
+                .map_err(|error| refusal_text(&error.to_string()))?
+            {
+                Some(export) => solstone_core_import::hash_source(&export)
+                    .map_err(|error| error.to_string())?
+                    .into_inner(),
+                None => String::new(),
+            };
         Ok((source_hash, export_hash))
     })
     .map(|outcome| AppleSegmentsOutcome {
@@ -1504,6 +1737,8 @@ pub fn run_oura_segments(
         input: Input::Oura(request.pages),
         timestamp: request.timestamp,
         facet: request.facet,
+        listed: request.listed,
+        earlier_waiting: request.earlier_waiting,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
         clock: None,
@@ -1525,7 +1760,7 @@ pub fn run_oura_segments(
 /// Ask Oura for a range of days, with the journal's own tokens or through any
 /// transport that answers as Oura does, and publish what it answers as body
 /// windows, on the writer Apple's exports use. Runs under Oura's own lock, and
-/// takes the old sync's lock only around a token refresh. A run that stopped
+/// takes the token lock only around a token refresh. A run that stopped
 /// carries on when asked again with the same range, or with none.
 pub fn import_oura(
     journal: &Path,
@@ -1541,6 +1776,8 @@ pub fn import_oura(
         input: Input::Fetch(&fetch),
         timestamp: request.timestamp,
         facet: request.facet,
+        listed: request.listed,
+        earlier_waiting: request.earlier_waiting,
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
         clock: request.clock,
@@ -1595,7 +1832,12 @@ fn run_segments_text(
             ..LockOptions::default()
         },
     )
-    .map_err(|_| Err(source.lock_unavailable.to_owned()))?;
+    .map_err(|_| {
+        Err(format!(
+            "another {} import is running; run this again when it finishes.",
+            source_owner_name(source)
+        ))
+    })?;
     let zone = read_or_create_zone(journal, source).map_err(Err)?;
     // Before anything touches an earlier run: an export that can't be read this
     // moment says nothing about whether that run should carry on.
@@ -1704,10 +1946,11 @@ fn refusal_text(error: &str) -> String {
     if error.contains("export_size_limit") {
         format!(
             "this export is larger than {} GiB, the most one import reads",
-            solstone_core_body_ingest::apple_scan_byte_bound() / (1024 * 1024 * 1024)
+            solstone_core_import_sources::apple_export::apple_scan_byte_bound()
+                / (1024 * 1024 * 1024)
         )
-    } else if error.contains(solstone_core_body_ingest::EXPORT_INCOMPLETE) {
-        solstone_core_body_ingest::EXPORT_INCOMPLETE_TEXT.to_owned()
+    } else if error.contains(solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE) {
+        solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT.to_owned()
     } else {
         error.to_owned()
     }
@@ -1729,6 +1972,7 @@ fn run_phases(
     let request = run.request;
     let dir = run_dir(journal, source);
     let run_dir_rel = source.run_dir_rel;
+    let (move_listed, listed_over) = listed_rule(journal, source, run.request);
     let fresh = |failed: BTreeSet<Failed>, notes: Vec<String>, holes: BTreeSet<Hole>| RunState {
         schema: STATE_SCHEMA,
         phase: Phase::Scan,
@@ -1736,13 +1980,22 @@ fn run_phases(
         export_hash: export_hash.to_owned(),
         import_id: run.import_id.clone(),
         facet: request.facet.map(str::to_owned),
+        move_listed,
+        listed_shown: match request.listed {
+            ListedMoves::MoveAtMost(shown) => Some(shown),
+            _ => None,
+        },
+        listed_over,
         failed,
         holes,
         notes,
         ..RunState::default()
     };
     let mut state = match previous {
-        Read::Trusted(state) if resume => *state,
+        Read::Trusted(mut state) if resume => {
+            recount_listed(journal, source, &mut state);
+            *state
+        }
         Read::Trusted(mut old) if old.phase == Phase::Repair => {
             if old.import_id != run.import_id {
                 close_attempt(journal, &old.import_id);
@@ -1755,11 +2008,13 @@ fn run_phases(
             // What the old run couldn't write whole stays a hole: this run won't
             // redo its days.
             let mut holes = holes_in(&old);
+            // It moved on an answer given to the run it's taking over.
+            recount_listed(journal, source, &mut old);
             // Another export, or a finished run's leftovers: everything the old
             // run wrote is bound and queued before its staging goes.
             // Its half-done day's windows are on disk as far as they got; what it
             // owed them is publication, which is all this does.
-            if let Some(pending) = old.pending.take() {
+            if let Some(mut pending) = old.pending.take() {
                 run.write_facets(&pending.day, &pending.windows, old.facet.as_deref())?;
                 let windows: Vec<WindowId> = pending
                     .windows
@@ -1770,18 +2025,35 @@ fn run_phases(
                 let failed = run.publish_day(&windows)?;
                 old.failed.extend(failed);
                 sync_day_folders(journal, source, &pending.day)?;
-                // That day's rows name the old import, so its listing has to, whichever
-                // of the windows it had got to. A window it hadn't is listed too.
+                // That day's rows name the old import, so its listing has to, for the
+                // windows it got to and no others.
+                let reached = reached_windows(journal, source, &pending);
+                pending.listing.retain(|(key, ..)| reached.contains(key));
+                for window in pending
+                    .windows
+                    .iter()
+                    .filter(|w| w.write && !reached.contains(&w.key))
+                {
+                    pending.counts.written = pending.counts.written.saturating_sub(1);
+                    pending.counts.entries = pending.counts.entries.saturating_sub(window.units);
+                }
+                pending.moved.retain(|(key, _)| reached.contains(key));
                 let import = journal.join("imports").join(&old.import_id);
                 if import.is_dir() {
-                    run.append_listing(&mut old, &pending)?;
+                    if !pending.listing.is_empty() {
+                        run.append_listing(&mut old, &pending)?;
+                    }
                     old.totals.add(&pending.counts);
                 }
                 // A record its run didn't get to; the totals are this run's.
-                if !activity_totals(journal, source, &pending.day, run.now())
-                    .activities_refused
-                    .is_empty()
-                {
+                let records =
+                    activity_totals(journal, source, &pending.day, run.now(), old.move_listed);
+                old.totals.listed_moved += records.listed_moved;
+                old.totals
+                    .listed_moved_from
+                    .extend(records.listed_moved_from.iter().cloned());
+                old.totals.joined_hidden += records.joined_hidden;
+                if !records.activities_refused.is_empty() {
                     holes.extend(record_holes(journal, source, &pending.day));
                 }
             }
@@ -1931,6 +2203,10 @@ fn run_phases(
         state.done_through.clone(),
     )?;
     while let Some((day, windows)) = days.next_day()? {
+        state.export_span = Some(match state.export_span.take() {
+            Some([first, last]) => [first.min(day.clone()), last.max(day.clone())],
+            None => [day.clone(), day.clone()],
+        });
         let (windows, held_back, unreadable) =
             settle_readings_noting(journal, source, &day, zone, windows)?;
         let holes = holes_of(&unreadable, HoleReason::ReadingHeldBack);
@@ -1957,7 +2233,9 @@ fn run_phases(
     // Finish: the summary, the manifest, and one terminal attempt that lists
     // only the windows still failing, so the import reads as partly failed
     // until they're saved, and any endpoint Oura refused or that failed.
-    let mut summary = summary_text(source, &summary_of(&state), request.facet, zone);
+    let mut counts = summary_counts(journal, &state);
+    counts.earlier_waiting = request.earlier_waiting;
+    let mut summary = summary_text(source, &counts, request.facet, zone);
     if let Some(fetched) = &state.fetch {
         summary.push_str(&fetched.summary_section(zone));
     }
@@ -1981,6 +2259,7 @@ fn run_phases(
         link_id: None,
         observer_handle: None,
         raw_retention: Some(RAW_RETENTION),
+        span: span_of(&state, zone).as_deref(),
     })
     .map_err(|error| error.to_string())?;
     // A day whose marker didn't move is listed by one of its windows, so the

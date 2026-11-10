@@ -185,7 +185,10 @@ pub fn run_mcp_probe(
     )
     .map(|output| output.value)
     .map_err(|error| match error {
-        DispatchError::InvalidInput => McpProbeError::InvalidInput,
+        DispatchError::InvalidInput
+        | DispatchError::Tool(
+            ToolError::ActivityDayArguments | ToolError::TranscriptTimeArguments,
+        ) => McpProbeError::InvalidInput,
         DispatchError::PermissionDenied(_) => McpProbeError::PermissionDenied,
         DispatchError::Tool(_) => McpProbeError::Unavailable,
     })
@@ -492,7 +495,12 @@ fn owner_error_reason(error: DispatchError) -> &'static str {
             "the reference did not resolve to anything this connection may read"
         }
         DispatchError::Tool(ToolError::AuditUnavailable) => "the audit record could not be written",
-        DispatchError::Tool(ToolError::InvalidInput | ToolError::SourceArguments)
+        DispatchError::Tool(
+            ToolError::InvalidInput
+            | ToolError::SourceArguments
+            | ToolError::ActivityDayArguments
+            | ToolError::TranscriptTimeArguments,
+        )
         | DispatchError::InvalidInput => "the request's arguments were not valid for this tool",
         DispatchError::PermissionDenied(_) => {
             "the request was outside this connection's permission"
@@ -2964,6 +2972,11 @@ fn list_transcripts(
     let other_sources = request.day.as_deref().map_or_else(Vec::new, |day| {
         crate::body_source::other_sources(journal_root, snapshot, day)
     });
+    if let Some(note) = request.day.as_deref().and_then(|day| {
+        crate::body_source::listing_earlier_import_note(journal_root, snapshot, day)
+    }) {
+        response_val["earlier_imports_note"] = json!(note);
+    }
     if !omitted_workouts.is_empty() {
         response_val["omitted_workouts"] = json!(omitted_workouts.len());
         response_val["workouts_note"] = json!(LIST_TRANSCRIPTS_WORKOUTS);

@@ -11,6 +11,12 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 include!("../../build-support/convey_asset_refs.rs");
+include!("../../build-support/convey_shell_bundle.rs");
+
+// The app table is generated from the same source the shell serves from.
+#[allow(dead_code)]
+#[path = "src/registry.rs"]
+mod registry;
 
 fn collect_files(directory: &Path, files: &mut Vec<PathBuf>) {
     println!("cargo:rerun-if-changed={}", directory.display());
@@ -37,7 +43,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("ico") => "image/x-icon",
         Some("jpeg") | Some("jpg") => "image/jpeg",
         Some("js") => "text/javascript; charset=utf-8",
-        Some("json") => "application/json",
+        Some("json") | Some("map") => "application/json",
         Some("png") => "image/png",
         Some("svg") => "image/svg+xml",
         Some("webp") => "image/webp",
@@ -185,6 +191,10 @@ fn main() {
     assets.push(("/app/agents/workspace".to_owned(), agents_workspace));
     assets.push(("/app/more/workspace".to_owned(), more_workspace));
     assets.push(("/app/more/static/more.js".to_owned(), more_static));
+
+    let output = PathBuf::from(env::var_os("OUT_DIR").expect("output dir"));
+    let shell_page_path = static_root.join("shell.html");
+    let shell_tags = shell_bundles(&static_root, &shell_page_path, &output, &mut assets);
     assets.sort_by(|left, right| left.0.cmp(&right.0));
 
     let speakers = read_object(&speakers_copy);
@@ -213,7 +223,15 @@ fn main() {
         ));
     }
     generated.push_str("];\n");
-    generated.push_str(&inventory(&assets));
+    generated.push_str(&inventory(&assets, &shell_tags, &output));
+    generated.push_str("pub(super) static SHELL_BUNDLE_SEGMENTS: &[(&str, &str)] = &[\n");
+    for tag in &shell_tags.styles {
+        generated.push_str(&format!("    ({SHELL_STYLE_BUNDLE:?}, {:?}),\n", tag.path));
+    }
+    for tag in &shell_tags.scripts {
+        generated.push_str(&format!("    ({SHELL_SCRIPT_BUNDLE:?}, {:?}),\n", tag.path));
+    }
+    generated.push_str("];\n");
 
     generated.push_str(&format!(
         "pub(super) const SPEAKER_COPY_JSON: &str = {speaker_copy:?};\n"
@@ -231,9 +249,151 @@ fn main() {
         "pub(super) const NOT_IN_NEW_VOICES_COPY: &str = {not_in_new_voices};\n"
     ));
 
-    let output = PathBuf::from(env::var_os("OUT_DIR").expect("output dir"));
     fs::write(output.join("embedded_assets.rs"), generated)
         .expect("generated embedded asset source writes");
+}
+
+/// Concatenate the shell page's stylesheets and scripts into one file each
+/// (and the script bundle's source map), add them to the shell's assets, and
+/// return the page's tags so the served page can name the bundles instead.
+fn shell_bundles(
+    static_root: &Path,
+    page_path: &Path,
+    output: &Path,
+    assets: &mut Vec<(String, PathBuf)>,
+) -> ShellPageTags {
+    let page = fs::read_to_string(page_path).expect("shell page is readable");
+    let tags = shell_page_tags(&page).unwrap_or_else(|error| panic!("{error}"));
+    let read = |tag: &BundledTag| -> (BundledTag, String) {
+        let relative = tag
+            .path
+            .strip_prefix("/static/")
+            .expect("bundled files are shell files");
+        let file = static_root.join(relative);
+        let source = fs::read_to_string(&file)
+            .unwrap_or_else(|error| panic!("{} is readable: {error}", file.display()));
+        (tag.clone(), source)
+    };
+    let styles: Vec<_> = tags.styles.iter().map(read).collect();
+    let scripts: Vec<_> = tags.scripts.iter().map(read).collect();
+
+    let registry = serde_json::to_string(&registry::shell_registry()).expect("registry serializes");
+    let registry = format!("globalThis.SOL_SHELL_REGISTRY = {registry};\n");
+
+    let map_name = SHELL_SCRIPT_MAP.rsplit('/').next().expect("map file name");
+    let script_name = SHELL_SCRIPT_BUNDLE
+        .rsplit('/')
+        .next()
+        .expect("script file name");
+    let style_name = SHELL_STYLE_BUNDLE
+        .rsplit('/')
+        .next()
+        .expect("style file name");
+    let script = script_bundle(&scripts, &registry, map_name)
+        .unwrap_or_else(|error| panic!("the shell's scripts can't be bundled: {error}"));
+    let style = style_bundle(&styles)
+        .unwrap_or_else(|error| panic!("the shell's stylesheets can't be bundled: {error}"));
+    let map = line_source_map(&script, &scripts, script_name);
+
+    let directory = output.join("shell-bundle");
+    fs::create_dir_all(&directory).expect("bundle directory");
+    for (route, name, text) in [
+        (SHELL_SCRIPT_BUNDLE, script_name, &script.text),
+        (SHELL_STYLE_BUNDLE, style_name, &style.text),
+        (SHELL_SCRIPT_MAP, map_name, &map),
+    ] {
+        let path = directory.join(name);
+        // Rewrite only on change, so an unchanged bundle keeps its timestamp.
+        if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+            fs::write(&path, text).expect("bundle writes");
+        }
+        assert!(
+            !assets.iter().any(|(existing, _)| existing == route),
+            "{route} is a generated bundle; no file may be served at it"
+        );
+        assets.push((route.to_owned(), path));
+    }
+    tags
+}
+
+/// The edits that make the served shell page load the bundles: the first
+/// stylesheet and first script become the bundles, the rest go.
+fn bundle_edits(
+    page: &str,
+    tags: &ShellPageTags,
+    css: &str,
+    js: &str,
+) -> Vec<(usize, usize, String)> {
+    let indent = |tag: &BundledTag| -> String {
+        page[tag.start..tag.end]
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect()
+    };
+    let newline = |tag: &BundledTag| {
+        if page[..tag.end].ends_with('\n') {
+            "\n"
+        } else {
+            ""
+        }
+    };
+    let mut edits = Vec::new();
+    for (index, tag) in tags.styles.iter().enumerate() {
+        let text = if index == 0 {
+            format!(
+                "{}<link rel=\"stylesheet\" href=\"{css}\">{}",
+                indent(tag),
+                newline(tag)
+            )
+        } else {
+            String::new()
+        };
+        edits.push((tag.start, tag.end, text));
+    }
+    for (index, tag) in tags.scripts.iter().enumerate() {
+        let text = if index == 0 {
+            format!(
+                "{}<script src=\"{js}\" defer></script>{}",
+                indent(tag),
+                newline(tag)
+            )
+        } else {
+            String::new()
+        };
+        edits.push((tag.start, tag.end, text));
+    }
+    edits.sort();
+    edits
+}
+
+/// Whether a response of this content type is one the server gzips: the same
+/// allowlist as the server's compression layer.
+fn compressible(content_type: &str) -> bool {
+    let essence = content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    match essence.as_str() {
+        "text/event-stream" => false,
+        "application/json"
+        | "application/javascript"
+        | "application/manifest+json"
+        | "image/svg+xml" => true,
+        other => other.starts_with("text/") || other.ends_with("+json"),
+    }
+}
+
+/// Below this the server sends a response as it is (its compression layer's
+/// threshold).
+const GZIP_MIN_BYTES: usize = 1024;
+
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    encoder.write_all(bytes).expect("gzip writes");
+    encoder.finish().expect("gzip finishes")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -297,7 +457,7 @@ fn sibling_records() -> Vec<(Kind, String, String, PathBuf)> {
 
 /// Hash every asset tree in dependency order, rewrite each reference to a tree
 /// file to its hashed path, and emit the inventory the shell serves from.
-fn inventory(own: &[(String, PathBuf)]) -> String {
+fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Path) -> String {
     let mut sources: Vec<(Kind, String, String, PathBuf)> = own
         .iter()
         .map(|(route, path)| {
@@ -439,12 +599,32 @@ fn inventory(own: &[(String, PathBuf)]) -> String {
             .expect("target is a tree file");
         hashed_path(tree, &hashes[tree], target)
     };
+    // Every edit to a record's source, with each reference's hashed path. The
+    // shell page also loads the bundles in place of the files they hold.
+    let edits_of =
+        |record: &Record, hashes: &BTreeMap<String, String>| -> Vec<(usize, usize, String)> {
+            let mut edits: Vec<(usize, usize, String)> = record
+                .edits
+                .iter()
+                .map(|(start, end, target)| (*start, *end, hashed_of(target, hashes)))
+                .collect();
+            if record.route == "/static/shell.html" {
+                let page = std::str::from_utf8(&record.bytes).expect("shell page is UTF-8");
+                let css = hashed_of(SHELL_STYLE_BUNDLE, hashes);
+                let js = hashed_of(SHELL_SCRIPT_BUNDLE, hashes);
+                let replaced = bundle_edits(page, shell_tags, &css, &js);
+                edits.retain(|(start, end, _)| {
+                    !replaced
+                        .iter()
+                        .any(|(from, to, _)| start < to && from < end)
+                });
+                edits.extend(replaced);
+                edits.sort();
+            }
+            edits
+        };
     let served_of = |record: &Record, hashes: &BTreeMap<String, String>| -> Vec<u8> {
-        let edits: Vec<(usize, usize, String)> = record
-            .edits
-            .iter()
-            .map(|(start, end, target)| (*start, *end, hashed_of(target, hashes)))
-            .collect();
+        let edits = edits_of(record, hashes);
         let borrowed: Vec<(usize, usize, &str)> =
             edits.iter().map(|(s, e, t)| (*s, *e, t.as_str())).collect();
         apply_edits(&record.bytes, &borrowed)
@@ -464,6 +644,8 @@ fn inventory(own: &[(String, PathBuf)]) -> String {
         hashes.insert(tree.clone(), hash);
     }
 
+    let gzip_directory = output.join("gzip");
+    fs::create_dir_all(&gzip_directory).expect("gzip directory");
     let mut generated = String::from("pub static INVENTORY: &[AssetRecord] = &[\n");
     let mut hashed_index = Vec::new();
     for (position, record) in records.iter().enumerate() {
@@ -475,19 +657,31 @@ fn inventory(own: &[(String, PathBuf)]) -> String {
         if let Some(hashed) = &hashed {
             hashed_index.push((hashed.clone(), position));
         }
-        let etag = match record.kind {
+        let (etag, gzip_bytes) = match record.kind {
             Kind::File => {
                 let served = served_of(record, &hashes);
-                format!("\"{}\"", &format!("{:x}", Sha256::digest(&served))[..32])
+                let tag = format!("\"{}\"", &format!("{:x}", Sha256::digest(&served))[..32]);
+                // Compressed once here, so no request spends a worker on it.
+                let packed = (compressible(&record.content_type) && served.len() >= GZIP_MIN_BYTES)
+                    .then(|| {
+                        let file = gzip_directory.join(format!("{position}.gz"));
+                        let packed = gzip(&served);
+                        if fs::read(&file).ok().as_deref() != Some(packed.as_slice()) {
+                            fs::write(&file, &packed).expect("gzip copy writes");
+                        }
+                        file
+                    });
+                (tag, packed)
             }
-            Kind::Template | Kind::Dynamic => String::new(),
+            Kind::Template | Kind::Dynamic => (String::new(), None),
         };
-        let edits: Vec<String> = record
-            .edits
+        let gzip_field = match &gzip_bytes {
+            Some(file) => format!("include_bytes!({file:?})"),
+            None => "&[]".to_owned(),
+        };
+        let edits: Vec<String> = edits_of(record, &hashes)
             .iter()
-            .map(|(start, end, target)| {
-                format!("({start}, {end}, {:?})", hashed_of(target, &hashes))
-            })
+            .map(|(start, end, text)| format!("({start}, {end}, {text:?})"))
             .collect();
         let kind = match record.kind {
             Kind::File => "AssetKind::File",
@@ -495,7 +689,7 @@ fn inventory(own: &[(String, PathBuf)]) -> String {
             Kind::Dynamic => "AssetKind::Dynamic",
         };
         generated.push_str(&format!(
-            "    AssetRecord {{ path: {:?}, content_type: {:?}, byte_len: {}, sha256: {raw:?}, kind: {kind}, tree: {:?}, hashed: {:?}, etag: {etag:?}, edits: &[{}], #[cfg(test)] bytes: include_bytes!({:?}) }},\n",
+            "    AssetRecord {{ path: {:?}, content_type: {:?}, byte_len: {}, sha256: {raw:?}, kind: {kind}, tree: {:?}, hashed: {:?}, etag: {etag:?}, edits: &[{}], gzip: {gzip_field}, #[cfg(test)] bytes: include_bytes!({:?}) }},\n",
             record.route,
             record.content_type,
             record.bytes.len(),

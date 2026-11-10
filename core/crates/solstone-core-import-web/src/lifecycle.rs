@@ -343,6 +343,10 @@ fn exchange_task_id(
     }
 }
 
+/// Whether an import still in the journal already brought in these bytes.
+///
+/// Only `imports/` is read: an import in the trash or erased has left it, so
+/// the same content imports again and comes back.
 fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
     find_manifest_by_hash_where(root, hash, |found| !is_failed_original_import(root, found))
         .ok()
@@ -2952,6 +2956,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let imported = format!(
@@ -3293,6 +3298,23 @@ mod tests {
     }
 
     #[test]
+    fn the_page_never_queues_an_apple_save_with_its_go_ahead() {
+        for force in [false, true] {
+            let cmd = command(
+                "export.zip",
+                "20261012_120000",
+                &ImportMetadata::new(),
+                force,
+            );
+            assert!(
+                !cmd.iter().any(|arg| arg.starts_with("--confirm")),
+                "{cmd:?}"
+            );
+            assert_eq!(cmd.contains(&"--force".to_owned()), force, "{cmd:?}");
+        }
+    }
+
+    #[test]
     fn criterion_21_start_command_keeps_reference_order_and_request_path() {
         let root = TempDir::new().unwrap();
         let path = root.path().join("imports/ts/item.txt");
@@ -3477,6 +3499,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let now = super::now_ms() as u64;
@@ -3819,6 +3842,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
         let meta = crate::routes(root.path().to_path_buf())
@@ -5679,6 +5703,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
 
@@ -5755,6 +5780,7 @@ mod tests {
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })
         .unwrap();
 

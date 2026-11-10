@@ -17,6 +17,7 @@ solstone-core-removals.workspace = true
 solstone-core-trash.workspace = true
 log.workspace = true
 solstone-core-indexer-store.workspace = true
+solstone-core-import.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 chrono.workspace = true
 chrono-tz.workspace = true

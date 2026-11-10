@@ -28,18 +28,16 @@ pub fn status(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(object) = payload.as_object() else {
         return stderr(BODY_RESPONSE_ERROR);
     };
-    let imports = object
-        .get("imports")
-        .and_then(Value::as_array)
-        .map_or(0, Vec::len);
-    let entries = object
-        .get("normalized")
-        .and_then(Value::as_object)
-        .and_then(|normalized| normalized.get("total"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0);
-    let mut lines = vec![format!("imports: {imports}"), format!("entries: {entries}")];
-    if let Some(coverage) = object.get("coverage_window").and_then(Value::as_object)
+    let imports = object.get("imports").and_then(Value::as_object);
+    let imported = ["new", "old"]
+        .iter()
+        .filter_map(|group| imports.and_then(|imports| imports.get(*group)))
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum::<usize>();
+    let days = object.get("days").and_then(Value::as_i64).unwrap_or(0);
+    let mut lines = vec![format!("imports: {imported}"), format!("days: {days}")];
+    if let Some(coverage) = object.get("coverage").and_then(Value::as_object)
         && let Some(start) = coverage.get("start").and_then(Value::as_str)
     {
         let end = coverage.get("end").and_then(Value::as_str).unwrap_or("");
@@ -67,18 +65,25 @@ pub fn day(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(object) = payload.as_object() else {
         return stderr(BODY_RESPONSE_ERROR);
     };
-    let glucose = object.get("glucose").and_then(Value::as_object);
-    stdout(vec![
+    let sources = object
+        .get("sources")
+        .and_then(Value::as_array)
+        .map(|sources| {
+            sources
+                .iter()
+                .filter_map(|source| source.get("name").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let mut lines = vec![
         format!("day: {}", string_field(object.get("day"), day_value)),
         format!("entries: {}", display_or_zero(object.get("entry_total"))),
-        format!(
-            "glucose: count={} min={} max={} unit={}",
-            display_or_zero(glucose.and_then(|item| item.get("count"))),
-            display_value(glucose.and_then(|item| item.get("min"))),
-            display_value(glucose.and_then(|item| item.get("max"))),
-            display_value(glucose.and_then(|item| item.get("unit"))),
-        ),
-    ])
+    ];
+    if !sources.is_empty() {
+        lines.push(format!("sources: {sources}"));
+    }
+    stdout(lines)
 }
 
 #[must_use]
@@ -118,10 +123,14 @@ pub fn window(ctx: CommandContext<'_>) -> CommandOutput {
         ),
         format!("entries: {}", display_or_zero(object.get("entry_total"))),
     ];
-    if let Some(brief) = object.get("brief_label")
-        && truthy(brief)
-    {
-        lines.push(display_value(Some(brief)));
+    if let Some(signals) = object.get("signals").and_then(Value::as_array) {
+        for signal in signals {
+            lines.push(format!(
+                "{}: {}",
+                display_value(signal.get("label")),
+                display_value(signal.get("count_label"))
+            ));
+        }
     }
     stdout(lines)
 }
@@ -220,14 +229,5 @@ fn display_value(value: Option<&Value>) -> String {
         Some(Value::Bool(false)) => "False".to_string(),
         Some(Value::Null) | None => "None".to_string(),
         Some(value) => value.to_string(),
-    }
-}
-
-fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::String(value) => !value.is_empty(),
-        _ => true,
     }
 }

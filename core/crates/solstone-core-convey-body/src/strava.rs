@@ -14,7 +14,7 @@ use std::path::Path;
 use chrono::DateTime;
 use serde_json::{Value, json};
 
-use crate::day::{clock, grouped_decimal, number};
+use crate::fmt::{clock, grouped_decimal, number};
 
 const STREAM: &str = "import.strava";
 

@@ -69,6 +69,10 @@ name = "thinking_runs_dom"
 path = "tests/thinking_runs_dom.rs"
 
 [[test]]
+name = "body_workspace_dom"
+path = "tests/body_workspace_dom.rs"
+
+[[test]]
 name = "agents_workspace_dom"
 path = "tests/agents_workspace_dom.rs"
 
@@ -97,6 +101,11 @@ path = "tests/shell_chrome_dom.rs"
 [[test]]
 name = "read_resilience_dom"
 path = "tests/read_resilience_dom.rs"
+
+# The shell's script bundle: a full parse, and its wrappers under Node.
+[[test]]
+name = "shell_bundle_dom"
+path = "tests/shell_bundle_dom.rs"
 
 # The node test guard preloaded through .cargo/config.toml.
 [[test]]
@@ -236,8 +245,13 @@ nix = { workspace = true, features = ["signal"] }
 [build-dependencies]
 sha2.workspace = true
 serde_json.workspace = true
+# The app table is generated from the registry's own source, and the shell's
+# files are gzipped once at build time instead of on every request.
+serde.workspace = true
+flate2.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 solstone-core-segment = { workspace = true, features = ["test-fixtures"] }
 regex.workspace = true
 solstone-core-callosum = { workspace = true, features = ["test-hooks"] }

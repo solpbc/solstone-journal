@@ -462,6 +462,40 @@ fn a_window_that_cant_be_read_is_left_alone_and_counted() {
 }
 
 #[test]
+fn facets_are_named_once_each_with_a_noun() {
+    let words =
+        |titles: &[&str]| facets_words(&titles.iter().map(ToString::to_string).collect::<Vec<_>>());
+    assert_eq!(words(&["Work"]), "your Work facet");
+    assert_eq!(words(&["Work", "Work"]), "your Work facet");
+    assert_eq!(words(&["Home", "Work"]), "your Home and Work facets");
+    assert_eq!(
+        words(&["Fun", "Home", "Work"]),
+        "your Fun, Home and Work facets"
+    );
+}
+
+#[test]
+fn the_summary_says_what_moved_what_didnt_and_what_waits() {
+    let counts = SummaryCounts {
+        listed_moved: 2,
+        listed_moved_from: vec!["Work".to_owned()],
+        listed_over: Some((0, 3)),
+        joined_hidden: 2,
+        earlier_waiting: 1,
+        ..SummaryCounts::default()
+    };
+    let summary = summary_text(&APPLE, &counts, Some("body"), Denver);
+    for line in [
+        "2 records already listed on the activities page moved to this import's facet, from your Work facet.",
+        "the rest of what's already listed stayed where it was: 3 records would have moved in all, and you weren't shown any.",
+        "2 records joined a workout you'd hidden, so they're hidden too.",
+        "1 earlier Strava workout couldn't be updated yet",
+    ] {
+        assert!(summary.contains(line), "{line}: {summary}");
+    }
+}
+
+#[test]
 fn the_summary_names_and_counts_and_holds_no_value() {
     let export = read(&fixture());
     let journal = tempfile::tempdir().unwrap();
@@ -472,8 +506,8 @@ fn the_summary_names_and_counts_and_holds_no_value() {
         None,
         Denver,
     );
-    assert!(summary.contains("HKQuantityTypeIdentifierActiveEnergyBurned: 1"));
-    assert!(summary.contains("end_before_start: 2"));
+    assert!(summary.contains("active energy burned: 1"));
+    assert!(summary.contains("ended before it started: 2"));
     assert!(summary.contains("no facet"));
     assert!(!summary.contains("4817"));
     assert!(

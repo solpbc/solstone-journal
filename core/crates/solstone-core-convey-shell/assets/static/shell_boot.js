@@ -270,6 +270,65 @@
     }
   }
 
+  // The shell's state as the rest of the shell reads it: the app definitions
+  // that ship in this bundle, for the apps this journal serves (named by
+  // `/api/shell`), with the per-request part beside them.
+  // A name this bundle has no definition for means the journal is now another
+  // build than this page: the page reloads once (the same rule as a stale
+  // asset), and meanwhile shows the apps it does know.
+  const SHELL_BUILD_RELOAD_STAMP_KEY = 'solstone.shellBuildReloadAt';
+
+  function shellFrom(state) {
+    const registry = window.SOL_SHELL_REGISTRY || {};
+    const definitions = new Map((registry.apps || []).map((app) => [app.name, app]));
+    const names = Array.isArray(state && state.app_names) ? state.app_names : [];
+    if (names.some((name) => !definitions.has(name)) && typeof window.reloadOnce === 'function') {
+      window.reloadOnce(SHELL_BUILD_RELOAD_STAMP_KEY);
+    }
+    return Object.assign({}, state, {
+      apps: names.map((name) => definitions.get(name)).filter(Boolean),
+      settings: registry.settings || {}
+    });
+  }
+
+  function earlyShellBoundMs() {
+    return window.READ_BOUNDS?.read?.firstByteMs || 30000;
+  }
+
+  // The shell page asks `/api/shell` before any shell script runs. Take that
+  // answer if it is a plain JSON success within the ordinary first-byte bound;
+  // otherwise ask again through apiJson, which handles sign-in, setup, a
+  // refusal and retries exactly as before.
+  async function readShell() {
+    const early = window.__solShellEarly;
+    window.__solShellEarly = null;
+    if (early && early.response) {
+      let timer = null;
+      try {
+        const bounded = new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('early shell read took too long')), earlyShellBoundMs());
+        });
+        const state = await Promise.race([
+          early.response.then((response) => {
+            const type = response.headers.get('content-type') || '';
+            if (!response.ok || response.redirected || !type.includes('application/json')) {
+              response.body?.cancel?.().catch?.(() => {});
+              throw new Error('early shell read not usable');
+            }
+            return response.json();
+          }),
+          bounded
+        ]);
+        if (state && typeof state === 'object') return shellFrom(state);
+      } catch (_) {
+        early.controller?.abort?.();
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return shellFrom(await window.apiJson('/api/shell', { scope: 'shell' }));
+  }
+
   async function boot() {
     performance.mark('shell:scripts-loaded');
     const startedAt = Date.now();
@@ -282,7 +341,7 @@
     const context = pathContext();
     applyChromeCopy();
     try {
-      const shell = await window.apiJson('/api/shell', { scope: 'shell' });
+      const shell = await readShell();
       performance.mark('shell:answered');
       const app = findApp(shell, context.appName);
       if (!app) {

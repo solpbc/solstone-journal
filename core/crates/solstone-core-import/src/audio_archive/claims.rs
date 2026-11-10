@@ -315,6 +315,61 @@ pub(crate) fn retire_pending_tile_checked(
     Ok(())
 }
 
+/// Forget what the claims database keeps about runs that are gone for good:
+/// neither in the journal nor waiting in the trash. A run's own record is the
+/// truth, so nothing here outlives it. Missing tables and a missing database
+/// have nothing to forget.
+pub fn forget_gone_runs(
+    journal: &Path,
+    held: &dyn Fn(&str) -> bool,
+) -> Result<usize, AudioArchiveError> {
+    let path = claim_db_path(journal);
+    if !path.is_file() {
+        return Ok(0);
+    }
+    let mut conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    conn.busy_timeout(DEFAULT_WRITE_BUSY_TIMEOUT)?;
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let mut forgotten = 0;
+    for table in [
+        "audio_archive_claim",
+        "audio_archive_run",
+        "audio_archive_pending_tile",
+    ] {
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
+            params![table],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            continue;
+        }
+        let ids: Vec<String> = {
+            let mut query = tx.prepare(&format!("SELECT DISTINCT import_id FROM {table}"))?;
+            query
+                .query_map([], |row| row.get(0))?
+                .collect::<Result<_, _>>()?
+        };
+        for id in ids {
+            let record = journal.join("imports").join(&id);
+            // `held` reads the trash now, and the record is looked at again
+            // after it, so a run moving either way between them is left be.
+            if crate::timestamp::validate_timestamp(&id).is_ok()
+                && !record.exists()
+                && !held(&id)
+                && !record.exists()
+            {
+                forgotten += tx.execute(
+                    &format!("DELETE FROM {table} WHERE import_id=?"),
+                    params![id],
+                )?;
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(forgotten)
+}
+
 pub fn claim_db_path(journal_root: &Path) -> PathBuf {
     journal_root.join("imports").join(CLAIM_DB_FILENAME)
 }

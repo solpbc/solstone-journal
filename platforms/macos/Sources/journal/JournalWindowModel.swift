@@ -292,6 +292,11 @@ final class JournalWindowModel {
     private static let ownerStopReasons: Set<String> = [
         UICopy.JOURNAL_CHILD_CONTAINMENT_UNRESOLVED,
         UICopy.JOURNAL_CHILD_BREAKER_TRIPPED,
+        UICopy.JOURNAL_SPAWN_BLOCKED_LEGACY_SERVICE,
+        UICopy.JOURNAL_SPAWN_SERVICE_CHECK_FAILED,
+        UICopy.JOURNAL_SPAWN_BLOCKED_PORTS,
+        UICopy.JOURNAL_SPAWN_PORT_CHECK_FAILED,
+        UICopy.JOURNAL_SPAWN_PORT_HELD_ELSEWHERE,
     ]
 
     var homeOffer: JournalHomeOffer {

@@ -15,18 +15,22 @@ use solstone_core_journal_config_write::record_body_facet;
 
 use crate::cli_argv::ImportFacet;
 
-const NO_MEANS: &str = "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.";
+const NO_MEANS_STRAVA: &str = "if you say no, new workouts aren't listed on the activities page, no people or things come from them, and agents limited to some facets won't see them. search and the body app still show them.";
+const NO_MEANS_BODY: &str = "if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.";
 
 fn question(ask: &BodyFacetAsk) -> Option<String> {
     match ask {
         BodyFacetAsk::Chosen(_) | BodyFacetAsk::Declined => None,
         BodyFacetAsk::AskExisting(facet) => Some(format!(
-            "file your workouts under the facet you named {facet}?"
+            "file your workouts, sleep and other body data under the facet you named {facet}?"
         )),
-        BodyFacetAsk::AskMakeBody => Some("make a body facet for your workouts?".to_owned()),
-        BodyFacetAsk::AskUnmute => {
-            Some("your body facet is muted. turn it back on for your workouts?".to_owned())
+        BodyFacetAsk::AskMakeBody => {
+            Some("make a body facet for your workouts, sleep and other body data?".to_owned())
         }
+        BodyFacetAsk::AskUnmute => Some(
+            "your body facet is muted. turn it back on for your workouts, sleep and other body data?"
+                .to_owned(),
+        ),
     }
 }
 
@@ -57,22 +61,67 @@ pub(crate) fn ask_strava_facet(
     input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> (ImportFacet, Option<usize>) {
+    let ids = download_ids(media);
+    ask_facet(
+        journal,
+        (("workout", "workouts"), "moves", NO_MEANS_STRAVA),
+        &|facet| crate::strava_convert::listed_moves(journal, &ids, facet),
+        input,
+        output,
+    )
+}
+
+/// [`ask_strava_facet`] for any other body import: what a yes could move is
+/// every record of that stream filed elsewhere.
+pub(crate) fn ask_body_facet(
+    journal: &Path,
+    stream: &str,
+    input: &mut dyn BufRead,
+    output: &mut dyn Write,
+) -> (ImportFacet, Option<usize>) {
+    ask_facet(
+        journal,
+        (("record", "records"), "can move up to", NO_MEANS_BODY),
+        &|facet| {
+            let (count, from) = crate::body_activity::listed_elsewhere(journal, stream, facet);
+            (count > 0).then(|| {
+                let titles = from
+                    .iter()
+                    .map(|facet| crate::strava_convert::facet_title(journal, facet))
+                    .collect();
+                (count, titles)
+            })
+        },
+        input,
+        output,
+    )
+}
+
+type ListedCount<'a> = &'a dyn Fn(&str) -> Option<(usize, Vec<String>)>;
+
+fn ask_facet(
+    journal: &Path,
+    ((one, many), moves_verb, no_means): ((&str, &str), &str, &str),
+    listed: ListedCount<'_>,
+    input: &mut dyn BufRead,
+    output: &mut dyn Write,
+) -> (ImportFacet, Option<usize>) {
     let Ok((ask, _)) = body_facet_ask(journal) else {
         return (ImportFacet::Unattended, None);
     };
     let Some(text) = question(&ask) else {
         return (ImportFacet::Unattended, None);
     };
-    let moves =
-        crate::strava_convert::listed_moves(journal, &download_ids(media), would_file_under(&ask));
+    let moves = listed(would_file_under(&ask));
     let shown = moves.as_ref().map_or(0, |(count, _)| *count);
-    let _ = writeln!(output, "{NO_MEANS}");
+    let _ = writeln!(output, "{no_means}");
     if let Some((count, from)) = &moves {
         let _ = writeln!(
             output,
-            "a yes moves {count} {} already listed on the activities page, from {}.",
-            if *count == 1 { "workout" } else { "workouts" },
-            from.join(", ")
+            "a yes {} {count} {} already listed on the activities page, from {}.",
+            moves_verb,
+            if *count == 1 { one } else { many },
+            solstone_core_import_sources::apple_health::facets_words(from)
         );
     }
     let _ = write!(output, "{text} [y/n] ");

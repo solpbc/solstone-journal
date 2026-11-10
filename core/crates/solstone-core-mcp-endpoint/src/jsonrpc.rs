@@ -121,11 +121,13 @@ impl JsonRpcResponse {
         )
     }
 
-    pub(crate) fn tool_error(id: Option<&Value>, reason: &'static str) -> Self {
+    /// The same failure for the paired memory tools, whose reasons are their
+    /// own closed set of codes.
+    pub(crate) fn tool_error(id: Option<&Value>, reason: &'static str, message: &str) -> Self {
         Self::error_with_data(
             id,
             -32000,
-            "tool execution failed",
+            format!("tool execution failed: {message}"),
             json!({ "reason": reason }),
         )
     }

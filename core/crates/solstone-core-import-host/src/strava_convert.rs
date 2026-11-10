@@ -57,6 +57,8 @@ thread_local! {
     pub(crate) static WRITES_SEEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// Runs once, just before a pass removes its lines.
     static BEFORE_REMOVING: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
+    /// Runs once, when the marker's last look begins.
+    static BEFORE_MARKER_SCAN: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
     /// Runs once, between a sweep's walk and taking the lock for its first component.
     static BEFORE_LOCK: std::cell::Cell<Option<fn(&Path)>> = const { std::cell::Cell::new(None) };
 }
@@ -1037,11 +1039,13 @@ pub(crate) type ListedMove = (String, String);
 
 /// Of the workouts counted before a run, the ones whose record is now in
 /// `facet`, summed as [`listed_moves`] sums them. A workout whose group waited
-/// isn't one of them.
+/// isn't one of them, and nor is one whose move was held back: a stopped move
+/// can leave a copy in the facet that isn't its place yet.
 pub(crate) fn listed_moved_now(
     journal: &Path,
     counted: &[ListedMove],
     facet: &str,
+    held_back: &BTreeSet<String>,
 ) -> Option<(usize, Vec<String>)> {
     let workouts = live_workouts(journal)
         .0
@@ -1050,6 +1054,7 @@ pub(crate) fn listed_moved_now(
         .collect::<BTreeMap<_, _>>();
     let moved = counted
         .iter()
+        .filter(|(activity, _)| !held_back.contains(&account_key(STRAVA_STREAM, activity)))
         .filter(|(activity, _)| {
             workouts.get(activity).is_some_and(|workout| {
                 find_code_record(journal, &workout.candidate_days(), &workout.account())
@@ -1111,7 +1116,7 @@ pub(crate) fn listed_moves_by_workout(
     moves
 }
 
-fn facet_title(journal: &Path, facet: &str) -> String {
+pub(crate) fn facet_title(journal: &Path, facet: &str) -> String {
     solstone_core_facets::read_facet_declaration(journal, facet)
         .ok()
         .flatten()
@@ -1285,6 +1290,14 @@ pub(crate) fn sweep(journal: &Path, now: DateTime<Utc>) -> ConversionCounts {
 /// hiding those once the marker is there. A merge running or a conversion
 /// starting meanwhile leaves the marker for another pass.
 fn write_marker_if_finished(journal: &Path, lock_options: LockOptions) {
+    // Held through the look, so no merge can start and finish inside it.
+    let Some(_no_merge) = hold_lock_if_no_merge_running(journal) else {
+        return;
+    };
+    #[cfg(test)]
+    if let Some(hook) = BEFORE_MARKER_SCAN.take() {
+        hook(journal);
+    }
     let epoch = strava_conversion_epoch(journal);
     let (lines, unreadable) = all_sense_lines(journal);
     let (workouts, folders) = live_workouts(journal);
@@ -1293,7 +1306,6 @@ fn write_marker_if_finished(journal: &Path, lock_options: LockOptions) {
         && parts.is_empty()
         && folded_orphans(journal, &lines, &parts).is_empty()
         && let Ok(_held) = hold_lock(journal.join(STRAVA_LOCK), lock_options)
-        && let Some(_no_merge) = hold_lock_if_no_merge_running(journal)
         && strava_conversion_epoch(journal) == epoch
         && fs::create_dir_all(journal.join("imports")).is_ok()
     {

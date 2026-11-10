@@ -232,29 +232,6 @@ fn wait_until_status(port: u16, child: &mut ChildGuard, path: &str, expected: u1
     }
 }
 
-/// The bytes with every `/<16 hex digits>` path segment removed: a hashed
-/// asset address such as `/static/0123456789abcdef/app.js` reads as
-/// `/static/app.js`, its stable path.
-fn without_tree_hashes(bytes: &[u8]) -> Vec<u8> {
-    const HASH_LEN: usize = 16;
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        let hashed_segment = bytes[index] == b'/'
-            && bytes.get(index + 1 + HASH_LEN) == Some(&b'/')
-            && bytes[index + 1..index + 1 + HASH_LEN]
-                .iter()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte));
-        if hashed_segment {
-            index += 1 + HASH_LEN;
-        } else {
-            out.push(bytes[index]);
-            index += 1;
-        }
-    }
-    out
-}
-
 #[test]
 fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
     let journal = TempJournal::established("process");
@@ -265,11 +242,13 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
     let speakers = request(SocketAddr::from(([127, 0, 0, 1], port)), "/app/speakers/")
         .expect("speakers shell responds");
     assert_eq!(speakers.status, 200);
-    // The served shell names each asset by its build's hashed path; apart from
-    // those segments it is the shell page, byte for byte.
+    // The served shell is the shell page with its assets named by this build's
+    // hashed paths and its files loaded through the two bundles.
     assert_eq!(
-        without_tree_hashes(&speakers.body),
-        include_bytes!("../../solstone-core-convey-shell/assets/static/shell.html")
+        speakers.body,
+        solstone_core_convey_shell::assets::served_from_source(include_bytes!(
+            "../../solstone-core-convey-shell/assets/static/shell.html"
+        ))
     );
 
     let shell_v4 = request(SocketAddr::from(([127, 0, 0, 1], port)), "/api/shell")
@@ -277,11 +256,11 @@ fn convey_process_serves_shell_on_both_loopbacks_and_writes_its_port_file() {
     assert_eq!(shell_v4.status, 200);
     assert_eq!(shell_v4.content_type, "application/json");
     let shell = serde_json::from_slice::<Value>(&shell_v4.body).expect("shell JSON");
-    let app_names: Vec<_> = shell["apps"]
+    let app_names: Vec<_> = shell["app_names"]
         .as_array()
-        .expect("apps array")
+        .expect("app names")
         .iter()
-        .map(|app| app["name"].as_str().expect("app name"))
+        .map(|name| name.as_str().expect("app name"))
         .collect();
     assert_eq!(
         app_names,

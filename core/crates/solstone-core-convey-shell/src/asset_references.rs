@@ -60,6 +60,8 @@ const SAME_TREE_ABSOLUTE: &[(&str, &str)] = &[
     ("/static/shell_boot.js", "/static/sol-status/"),
     ("/static/sunarc.js", "/static/sol-status/"),
     ("/static/websocket.js", "/static/sol-status/"),
+    // The same three, inside the shell's script bundle.
+    ("/static/shell.js", "/static/sol-status/"),
 ];
 
 /// Documents served with references left on their stable paths.
@@ -250,6 +252,20 @@ fn every_served_reference_resolves_to_a_hashed_path_or_is_listed() {
         );
         referenced.insert(app.workspace_url);
     }
+    // The shell page loads its stylesheets and scripts through the two
+    // bundles, so each file in one is referenced through it; the script
+    // bundle names its source map in its last line.
+    for (bundle, file) in assets::shell_bundle_segments() {
+        assert!(
+            referenced.contains(*bundle),
+            "the shell page loads {bundle}"
+        );
+        assert!(assets::record(file).is_some(), "{file} is in {bundle}");
+        referenced.insert((*file).to_owned());
+    }
+    let script_bundle = source_of("/static/shell.js");
+    assert!(script_bundle.ends_with("//# sourceMappingURL=shell.js.map\n"));
+    referenced.insert("/static/shell.js.map".to_owned());
     let unreferenced: Vec<_> = INVENTORY
         .iter()
         .map(|asset| asset.path)
@@ -369,6 +385,8 @@ fn no_shell_script_calls_render_markdown() {
             asset.path.starts_with("/static/")
                 && !asset.path.starts_with("/static/tests/")
                 && !asset.path.starts_with("/static/vendor/")
+                // The bundle holds the shell's scripts, each checked on its own.
+                && asset.path != "/static/shell.js"
                 && asset.content_type.starts_with("text/javascript")
         })
         .filter(|asset| {

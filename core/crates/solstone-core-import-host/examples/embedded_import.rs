@@ -26,10 +26,8 @@
 //!
 //! Call `classify_arguments` before preview. Its sync backend and `--path`
 //! say whether audio omitted a path; this example does not read
-//! saved source settings. A held Body entry stays on the desktop importer.
-//! A stored Oura sync that already carries `--confirm-body-save` or
-//! `--scheduled` keeps the existing handwritten approval. `connect_oura` is
-//! not available here.
+//! saved source settings. A held Body entry stays on the desktop importer,
+//! and `connect_oura` is not available here.
 //!
 //! This example calls `cancel` immediately after `start` so the sequence is
 //! visible. Delete that call to let the attempt finish.

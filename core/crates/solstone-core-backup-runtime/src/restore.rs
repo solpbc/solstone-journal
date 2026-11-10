@@ -1278,26 +1278,6 @@ fn restore_journal_with(
     if admitted.revalidate_for_target().is_err() {
         return admission_failed();
     }
-    if services
-        .journal_maintenance
-        .rebuild_body_history(journal)
-        .is_err()
-    {
-        return finish(
-            journal,
-            services.clock,
-            recorder,
-            counters.into_draft(
-                "error",
-                Some(RESTORE_REASON_BODY_REBUILD_FAILED.to_owned()),
-                integrity_ok,
-                false,
-            ),
-        );
-    }
-    if admitted.revalidate_for_target().is_err() {
-        return admission_failed();
-    }
     if set_destination(journal, &destination).is_err() {
         return finish(
             journal,
@@ -1479,10 +1459,6 @@ mod tests {
 
     struct Maintenance;
     impl JournalMaintenance for Maintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
         }
@@ -1704,6 +1680,37 @@ mod tests {
         );
         assert!(runner.calls.borrow().is_empty());
         assert_eq!(recorder.calls.borrow().len(), 1);
+    }
+
+    /// The real maintenance, not a stub: an old import that's damaged is left
+    /// alone and doesn't stop a restore from finishing.
+    #[test]
+    fn a_damaged_old_import_doesnt_stop_a_restore() {
+        let journal = tempfile::tempdir().expect("journal");
+        let bundle = journal.path().join("imports/body-torn");
+        fs::create_dir_all(bundle.join("normalized")).unwrap();
+        fs::write(bundle.join("body-bundle.json"), b"{not json").unwrap();
+        let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
+        let runner = crate::test_support::ArgvResticFixture::new(
+            CAPTURED_SNAPSHOTS,
+            output(0, CAPTURED_RESTORE),
+            output(0, ""),
+        );
+        let clock = TestClock;
+        let maintenance = crate::engine::NativeJournalMaintenance;
+        let recorder = RestoreRecorderSpy::new();
+
+        let outcome = restore_journal(
+            journal.path(),
+            &services(&runner, &clock, &maintenance),
+            &recorder,
+            destination(),
+            &stored.recovery_key,
+        );
+
+        assert_eq!(outcome.status, "ok");
+        assert_eq!(outcome.reason_code, None);
+        assert!(bundle.join("body-bundle.json").is_file());
     }
 
     #[test]
@@ -2161,9 +2168,6 @@ mod tests {
     fn mobile_writer_refusal_precedes_copy_drain_maintenance_and_outcome() {
         struct ForbiddenMaintenance;
         impl JournalMaintenance for ForbiddenMaintenance {
-            fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-                panic!("unsupported mobile writer must not rebuild")
-            }
             fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
                 panic!("unsupported mobile writer must not scan")
             }
@@ -2229,19 +2233,6 @@ mod tests {
             },
             drain,
         )
-    }
-
-    #[cfg(unix)]
-    struct FailingRebuild;
-    #[cfg(unix)]
-    impl JournalMaintenance for FailingRebuild {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Err(JournalMaintenanceError)
-        }
-
-        fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
     }
 
     #[cfg(all(unix, feature = "full-tests"))]
@@ -2809,30 +2800,10 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn postwork_and_outcome_failures_do_not_clear_and_degraded_completion_does() {
+    fn outcome_failures_do_not_clear_and_degraded_completion_does() {
         let journal = tempfile::tempdir().expect("journal");
         let stored = solstone_core_backup::generate_and_store_keys(journal.path()).expect("keys");
         publish_byo(journal.path(), SNAPSHOT_ID, "/recorded");
-        let rebuild_runner = success_script(&catalog());
-        let rebuild = mobile_with(
-            journal.path(),
-            &rebuild_runner,
-            &Recorder::new(),
-            &FailingRebuild,
-            &stored.recovery_key,
-            SNAPSHOT_ID,
-            "/recorded",
-            &mut || Ok(()),
-        );
-        assert_eq!(
-            rebuild.reason_code.as_deref(),
-            Some(RESTORE_REASON_BODY_REBUILD_FAILED)
-        );
-        assert!(matches!(
-            read_whole_journal_restore(journal.path()),
-            WholeJournalRestoreReadiness::Pending(_)
-        ));
-
         let record_runner = success_script(&catalog());
         let recorded = mobile_with(
             journal.path(),

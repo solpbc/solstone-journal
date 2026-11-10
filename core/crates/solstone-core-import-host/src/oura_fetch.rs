@@ -10,9 +10,9 @@
 //! the page after the last one the index names.
 //!
 //! The transport, its retries on 429 and 5xx, the reading of a 403 and the token
-//! refresh are the old sync's own (`solstone-core-body-ingest`'s `oura_sync`).
+//! refresh are `solstone-core-import`'s `oura_http`.
 //! Tokens are the journal's. They are read from config when the fetch starts, and
-//! a 401 is answered by taking the old sync's lock, reading them again, and either
+//! a 401 is answered by taking the token lock, reading them again, and either
 //! using a refresh the other path just made or making the one refresh this run
 //! may make. A 401 after that ends the run.
 //!
@@ -31,11 +31,11 @@ use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use solstone_core_body_ingest::oura_sync::{
+use solstone_core_import::oura_http::{
     API_BASE, HttpResponse, LiveOuraHttp, OuraHttp, OuraSettings, ResponseClass, classify_response,
     encode_form, refresh, request_with_retry, settings,
 };
-use solstone_core_body_ingest::{BodyIngestError, BodyIngestErrorKind};
+use solstone_core_import::{BodyIngestError, BodyIngestErrorKind};
 use solstone_core_import_sources::oura::ENDPOINTS;
 use solstone_core_journal_io::{
     AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
@@ -46,14 +46,14 @@ use crate::oura_coverage::{Claim, Coverage};
 
 /// Sent with every request: Oura refuses requests without one.
 pub const USER_AGENT: &str = concat!("solstone-journal/", env!("CARGO_PKG_VERSION"));
-/// The old sync's lock, held here only around a token refresh. It is a sidecar
-/// beside the old sync's cursor, whose bytes this path never reads.
+/// The token lock, held here only around a token refresh. It is a sidecar beside
+/// the cursor an earlier sync left, whose bytes this path never reads.
 const OLD_SYNC_LOCK: &str = "imports/oura.json";
-/// How long a refresh waits for an old sync to finish: the old lock's own default.
+/// How long a refresh waits for the token lock: the lock's own default.
 pub const OLD_LOCK_TIMEOUT: Duration = solstone_core_journal_io::DEFAULT_LOCK_TIMEOUT;
 const HEARTRATE: &str = "heartrate";
 /// Oura documents no longest range for date endpoints; a year at a time is what
-/// the old sync asks.
+/// the earlier sync asked.
 const DATE_CHUNK_DAYS: u64 = 364;
 /// Oura refuses a heartrate span whose dates are more than 30 apart.
 const HEARTRATE_CHUNK_DAYS: u64 = 30;
@@ -64,8 +64,8 @@ const MOST_PAGES_PER_CHUNK: usize = 1_000;
 const MOST_RENEWALS: u32 = 4;
 /// A run with no range asks again from this many days before what it last covered.
 const TRAILING_DAYS: u64 = 7;
-/// And this many days back when nothing is covered yet.
-const FIRST_DAYS: u64 = 30;
+/// The first day a run with no range asks about.
+const HISTORY_FLOOR: (i32, u32, u32) = (2015, 1, 1);
 const INDEX_FILE: &str = "index.json";
 const PRIVATE: AtomicWriteOptions = AtomicWriteOptions { mode: Some(0o600) };
 /// Oura's scopes, as its API names them.
@@ -97,7 +97,7 @@ pub enum OuraStop {
     Authorization,
     /// Oura says the account's membership isn't active.
     Membership,
-    /// The old sync holds its lock past the wait.
+    /// Something holds the token lock past the wait.
     AnotherSync,
 }
 
@@ -169,7 +169,7 @@ impl EndpointReport {
     pub fn line(&self) -> String {
         format!(
             "- {}: {}: {}",
-            self.endpoint,
+            solstone_core_import_sources::apple_health::name_words(&self.endpoint),
             self.kind.as_str(),
             self.words
         )
@@ -336,9 +336,8 @@ fn date_chunks(from: NaiveDate, to: NaiveDate) -> Vec<[String; 2]> {
     chunks
 }
 
-/// What a new run asks for: the range named, or each endpoint from seven days
-/// before what it last covered through today, or the last 30 days when it has
-/// covered nothing.
+/// What a new run asks for: the range named, or for each endpoint every stretch
+/// since the floor that coverage doesn't hold, and its trailing week.
 pub(crate) fn plan(
     range: Option<(NaiveDate, NaiveDate)>,
     coverage: &Coverage,
@@ -356,19 +355,22 @@ pub(crate) fn plan(
     }
     let mut endpoints = BTreeMap::new();
     for endpoint in ENDPOINTS {
-        let (from, to) = range.unwrap_or_else(|| {
-            let from = coverage
-                .last_covered_day(endpoint, zone)
-                .map_or(today - Days::new(FIRST_DAYS), |day| {
-                    day - Days::new(TRAILING_DAYS)
-                });
-            (from.min(today), today)
-        });
-        let chunks = if endpoint == HEARTRATE {
-            heartrate_chunks(from, to, zone)
-        } else {
-            date_chunks(from, to)
+        let spans = match range {
+            Some(span) => vec![span],
+            None => unheld_spans(coverage, endpoint, today, zone)?,
         };
+        let from = spans.first().map_or(today, |span| span.0);
+        let to = spans.last().map_or(today, |span| span.1);
+        let chunks = spans
+            .into_iter()
+            .flat_map(|(from, to)| {
+                if endpoint == HEARTRATE {
+                    heartrate_chunks(from, to, zone)
+                } else {
+                    date_chunks(from, to)
+                }
+            })
+            .collect();
         endpoints.insert(
             endpoint.to_owned(),
             EndpointPlan {
@@ -383,6 +385,54 @@ pub(crate) fn plan(
         asked: range.map(|(from, to)| [day_text(from), day_text(to)]),
         endpoints,
     })
+}
+
+/// What a run with no range asks an endpoint for: every span from the floor to
+/// today that coverage doesn't hold, and the trailing week, which Oura can revise.
+fn unheld_spans(
+    coverage: &Coverage,
+    endpoint: &str,
+    today: NaiveDate,
+    zone: Tz,
+) -> Result<Vec<(NaiveDate, NaiveDate)>, String> {
+    let (year, month, day) = HISTORY_FLOOR;
+    let floor = NaiveDate::from_ymd_opt(year, month, day).ok_or("the floor isn't a day")?;
+    let trailing = (today - Days::new(TRAILING_DAYS)).max(floor);
+    coverage.unheld_spans(endpoint, floor, trailing, today, zone)
+}
+
+/// What a run would ask Oura for, in words, from what the journal holds. It
+/// writes nothing and asks Oura nothing.
+pub(crate) fn endpoint_plan_lines(
+    journal: &Path,
+    range: Option<(NaiveDate, NaiveDate)>,
+    today: NaiveDate,
+    zone: Tz,
+) -> Result<String, String> {
+    let coverage = crate::oura_coverage::read_coverage(journal)?;
+    plan(range, &coverage, today, zone)?;
+    let mut lines = String::from("this would ask Oura for:\n");
+    for endpoint in ENDPOINTS {
+        let spans = match range {
+            Some(span) => vec![span],
+            None => unheld_spans(&coverage, endpoint, today, zone)?,
+        };
+        let days = spans
+            .iter()
+            .map(|(from, to)| {
+                if from == to {
+                    day_text(*from)
+                } else {
+                    format!("{} to {}", day_text(*from), day_text(*to))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let name = solstone_core_import_sources::apple_health::name_words(endpoint);
+        let _ = writeln!(lines, "  {name}: {days}");
+    }
+    lines.push_str("nothing was saved. add --save to bring it in.\n");
+    Ok(lines)
 }
 
 impl FetchState {
@@ -721,7 +771,7 @@ impl<'j> Tokens<'j> {
         })
     }
 
-    /// One request, through the old sync's retries. That function refreshes on a
+    /// One request, through `oura_http`'s retries. That function refreshes on a
     /// 401 by itself, without the lock and without reading config again, so it is
     /// never let to: asked not to persist, it says a refresh is needed instead, and
     /// this answers that under the lock. After this run's refresh, it hands back a
@@ -775,6 +825,8 @@ impl<'j> Tokens<'j> {
             LockError::Timeout(_) => Fault::Stop(OuraStop::AnotherSync),
             other => Fault::Run(format!("the Oura sync lock couldn't be taken: {other}")),
         })?;
+        solstone_core_import::oura_http::apply_held_renewal(self.journal)
+            .map_err(|_| Fault::Run(TOKEN_STORE_WORDS.to_owned()))?;
         let mut current = load_settings(self.journal)?;
         if current.access_token != self.settings.access_token
             || current.refresh_token != self.settings.refresh_token

@@ -58,6 +58,24 @@ fn a_yes_says_how_many_it_was_shown_and_a_no_answer_shows_none() {
 }
 
 #[test]
+fn the_question_is_worded_for_every_body_import() {
+    let journal = journal(&["work"]);
+    let mut output = Vec::new();
+    ask_body_facet(
+        journal.path(),
+        "import.oura",
+        &mut "n\n".as_bytes(),
+        &mut output,
+    );
+    let said = String::from_utf8(output).unwrap();
+    assert!(
+        said.contains("workouts, sleep and other body data"),
+        "{said}"
+    );
+    assert!(!said.contains("people or things"), "{said}");
+}
+
+#[test]
 fn a_yes_makes_the_facet_remembers_it_and_files_this_import_under_it() {
     let journal = journal(&["work"]);
     let root = journal.path();
@@ -133,4 +151,27 @@ fn a_named_existing_facet_is_the_one_a_yes_files_under() {
     let (facet, said) = ask(root, "y\n");
     assert_eq!(facet, ImportFacet::Facet("health".to_owned()));
     assert!(said.contains("health"), "{said}");
+}
+
+#[test]
+fn a_yes_for_a_body_import_says_what_it_can_move_at_most() {
+    let journal = journal(&["work", "body"]);
+    let root = journal.path();
+    let record = json!({"id": "body_1", "source": "body", "activity": "workout",
+        "account": {"key": "import.oura\u{1f}1"}});
+    fs::create_dir_all(root.join("facets/work/activities")).unwrap();
+    fs::write(
+        root.join("facets/work/activities/20260101.jsonl"),
+        format!("{record}\n"),
+    )
+    .unwrap();
+    let mut output = Vec::new();
+    ask_body_facet(root, "import.oura", &mut "n\n".as_bytes(), &mut output);
+    let said = String::from_utf8(output).unwrap();
+    assert!(
+        said.contains(
+            "a yes can move up to 1 record already listed on the activities page, from your work facet."
+        ),
+        "{said}"
+    );
 }

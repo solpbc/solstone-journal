@@ -397,7 +397,9 @@ impl HoleReason {
     #[must_use]
     pub fn words(self) -> &'static str {
         match self {
-            Self::Deferred => "changed in Oura since; the journal keeps it as first written",
+            Self::Deferred => {
+                "Oura moved this to the other side of midnight; your journal keeps the time it first saved"
+            }
             Self::HeldBack | Self::ReadingHeldBack => {
                 "not added yet: it may already be in a part of the journal that couldn't be read; an import that asks for this day again tries again"
             }

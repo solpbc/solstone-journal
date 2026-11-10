@@ -242,6 +242,56 @@ fn available_entry_is_promoted_when_a_later_manifest_match_appears() {
 }
 
 #[test]
+fn a_recording_comes_back_once_its_import_is_deleted_and_not_before() {
+    let tree = TempDir::new().unwrap();
+    let credential = Credential;
+    let clock = Clock;
+    let preview = |kept: bool| {
+        let mut catalogue = Catalogue {
+            files: vec![file("rec", 1_725_000_000_000.0, 60_000.0)],
+            fail: false,
+        };
+        let mut state = SyncState::empty(BackendName::Plaud);
+        state.files_mut().insert(
+            "rec".to_owned(),
+            serde_json::json!({"status": "imported", "import_timestamp": "20240802_010203", "filename": "rec", "filesize": 1}),
+        );
+        let record = tree.path().join("imports").join("20240802_010203");
+        if kept {
+            std::fs::create_dir_all(&record).unwrap();
+        } else if record.exists() {
+            std::fs::remove_dir(&record).unwrap();
+        }
+        std::fs::create_dir_all(tree.path().join("imports")).unwrap();
+        std::fs::write(
+            state_path(tree.path(), BackendName::Plaud),
+            serde_json::to_vec(&state.root()).unwrap(),
+        )
+        .unwrap();
+        let matches = Matches(BTreeMap::new());
+        let mut writer = Writer::default();
+        let mut seams = PlaudPreviewSeams {
+            credential: &credential,
+            catalogue: &mut catalogue,
+            manifests: &matches,
+            clock: &clock,
+            state_writer: &mut writer,
+        };
+        sync_plaud_preview(
+            &PlaudSyncRequest::<SyncPreviewRequest>::new(tree.path().to_path_buf()),
+            &mut seams,
+        )
+        .unwrap()
+        .state
+        .root()["files"]["rec"]["status"]
+            .clone()
+    };
+    assert_eq!(preview(true), "imported");
+    // The owner deletes the import: the recording is new data again.
+    assert_eq!(preview(false), "available");
+}
+
+#[test]
 fn new_trash_and_short_recordings_are_skipped() {
     let tree = TempDir::new().unwrap();
     let credential = Credential;

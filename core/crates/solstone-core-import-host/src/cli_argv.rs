@@ -11,7 +11,6 @@ use std::time::Duration;
 use chrono::{Local, NaiveDateTime};
 use ffmpeg_next as ffmpeg;
 use serde_json::Value;
-use serde_json::json;
 use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
 };
@@ -379,17 +378,7 @@ impl Dispatch<'_> {
 }
 
 fn embedded_body_refused() -> CliRun {
-    failure(
-        "",
-        "Apple Health import, Oura sync, and Oura connect stay on the desktop importer.\n",
-        1,
-    )
-}
-
-/// A stored Oura sync already carries the handwritten confirm or schedule flag.
-/// An ordinary sync, and every connect, does not.
-fn oura_sync_is_stored(options: &Options) -> bool {
-    options.confirm_body_save || options.scheduled
+    failure("", &format!("{}\n", cli_render::EMBEDDED_BODY_REFUSAL), 1)
 }
 
 /// Shape one embedded preview so it cannot save, admit, or publish.
@@ -449,11 +438,8 @@ fn without_flag(args: &[String], flag: &str) -> Vec<String> {
 pub enum BodyAdmission {
     /// Not `--source apple_health`, `--connect oura`, or `--sync oura`.
     NotBody,
-    /// Apple Health import, Oura connect, or an Oura sync that does not
-    /// already carry `--confirm-body-save` or `--scheduled`.
+    /// Apple Health import, Oura connect, or an Oura sync.
     Held,
-    /// `--sync oura` that already carries `--confirm-body-save` or `--scheduled`.
-    StoredOura,
 }
 
 /// Parsed shape of one importer invocation.
@@ -491,11 +477,7 @@ fn classify_parsed(parsed: &ParsedCommand) -> ArgumentClass {
             sync_source: Some(backend.clone()),
             explicit_path: options.path.clone(),
             body: if backend == "oura" {
-                if oura_sync_is_stored(options) {
-                    BodyAdmission::StoredOura
-                } else {
-                    BodyAdmission::Held
-                }
+                BodyAdmission::Held
             } else {
                 BodyAdmission::NotBody
             },
@@ -581,7 +563,7 @@ fn dispatch_parsed(
         }
         ParsedCommand::RetiredNotesFolder => rendered(notes_folder_retired()),
         ParsedCommand::Sync { backend, options } => {
-            if dispatch.embedded() && backend == "oura" && !oura_sync_is_stored(&options) {
+            if dispatch.embedded() && backend == "oura" {
                 return rendered(embedded_body_refused());
             }
             rendered(run_sync(&backend, &options, journal_path))
@@ -646,28 +628,7 @@ fn run_connect(backend: &str, journal_path: &Path) -> CliRun {
 
 fn run_sync(backend: &str, options: &Options, journal_path: &Path) -> CliRun {
     match backend {
-        "oura" => {
-            let result = solstone_core_body_ingest::sync_oura(
-                journal_path,
-                &solstone_core_body_ingest::OuraSyncOptions {
-                    save: options.save,
-                    confirm_body_save: options.confirm_body_save,
-                    scheduled: options.scheduled,
-                    window_days: options.window_days,
-                    today: None,
-                },
-            );
-            match result {
-                Ok(report) => success(format!(
-                    "Oura body sync {}: rows={} days={} pages={}\n",
-                    if options.save { "complete" } else { "preview" },
-                    report.rows(),
-                    report.days().len(),
-                    report.pages()
-                )),
-                Err(error) => failure("", &format!("{error}\n"), 1),
-            }
-        }
+        "oura" => crate::body_commands::sync_oura(&body_command(options), journal_path),
         "plaud" => run_plaud_sync(journal_path, options),
         "audio" => run_audio_sync(journal_path, options),
         _ => failure(
@@ -757,23 +718,22 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
         && !strava
         && matches!(
             outcome,
-            ResolutionOutcome::RouteAppleHealth
-                | ResolutionOutcome::Resolved {
-                    source: ResolvedSource::Registry(_),
-                    ..
-                }
+            ResolutionOutcome::Resolved {
+                source: ResolvedSource::Registry(_),
+                ..
+            }
         )
     {
         return rendered(failure(
             "",
-            "--facet only applies to an audio file, a plain text file or a Strava download, so nothing was imported; import this one without it\n",
+            "--facet only applies to an audio file, a plain text file or a body import, so nothing was imported; import this one without it\n",
             1,
         ));
     }
-    if options.no_facet && !strava {
+    if options.no_facet && !strava && !matches!(outcome, ResolutionOutcome::RouteAppleHealth) {
         return rendered(failure(
             "",
-            "--no-facet only applies to a Strava download, so nothing was imported; import this one without it\n",
+            "--no-facet only applies to a body import, so nothing was imported; import this one without it\n",
             1,
         ));
     }
@@ -782,7 +742,11 @@ fn run_import(mut options: Options, journal_path: &Path, dispatch: Dispatch<'_>)
             if dispatch.embedded() {
                 rendered(embedded_body_refused())
             } else {
-                rendered(run_apple(media, &options, journal_path))
+                rendered(if options.dry_run {
+                    crate::body_commands::preview_apple(options.json)
+                } else {
+                    crate::body_commands::save_apple(media, &body_command(&options), journal_path)
+                })
             }
         }
         ResolutionOutcome::Skipped {
@@ -916,6 +880,21 @@ fn asked_import_facet(
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
+}
+
+fn body_command(options: &Options) -> crate::body_commands::BodyCommand<'_> {
+    crate::body_commands::BodyCommand {
+        facet: import_facet(options),
+        listed_moves_shown: options.listed_moves_shown,
+        scheduled: options.scheduled,
+        json: options.json,
+        confirm: options.confirm_body_save,
+        date_from: options.date_from.as_deref(),
+        date_to: options.date_to.as_deref(),
+        window_days: options.window_days,
+        force: options.force,
+        save: options.save,
+    }
 }
 
 /// The facet a run was given on its command line.
@@ -1222,6 +1201,7 @@ fn write_audio_manifest(
         link_id: None,
         observer_handle: None,
         raw_retention: None,
+        span: None,
     })
     .map(|_| ())
     .map_err(|error| error.to_string())
@@ -1354,47 +1334,6 @@ fn run_text(
     (run, import_id)
 }
 
-fn run_apple(media: &str, options: &Options, journal_path: &Path) -> CliRun {
-    let result = if options.dry_run {
-        solstone_core_body_ingest::preview_apple(
-            Path::new(media),
-            options.date_from.as_deref(),
-            options.date_to.as_deref(),
-        )
-    } else {
-        solstone_core_body_ingest::save_apple(
-            Path::new(media),
-            journal_path,
-            &solstone_core_body_ingest::AppleImportOptions {
-                date_from: options.date_from.clone(),
-                date_to: options.date_to.clone(),
-                confirm_body_save: options.confirm_body_save,
-                force: options.force,
-            },
-        )
-    };
-    match result {
-        Ok(report) if options.json => success(format!(
-            "{}\n",
-            json!({"schema":"solstone.body.ingest.result.v1", "source":"apple_health", "mode": if options.dry_run { "preview" } else { "save" }, "bundle_id":report.bundle_id(), "rows":report.rows(), "days":report.days(), "skipped":report.skipped()})
-        )),
-        Ok(report) => success(format!(
-            "Apple Health {} complete.\n  Rows:                {}\n  Days:                {}\n",
-            if options.dry_run { "preview" } else { "save" },
-            report.rows(),
-            report.days().len()
-        )),
-        Err(error) => failure(
-            "",
-            &format!(
-                "{}\n",
-                solstone_core_body_ingest::apple_refusal_text(&error)
-            ),
-            1,
-        ),
-    }
-}
-
 fn options_ref<'a>(options: &'a Options, media: &'a str) -> ResolutionOptions<'a> {
     ResolutionOptions {
         media: Path::new(media),
@@ -1422,9 +1361,9 @@ fn resolve(
     if options.source.is_none()
         && options.media.exists()
         && requires_registry_classification(options.media)
-        && !solstone_core_body_ingest::detect_apple_source(options.media).map_err(|_| {
-            "could not inspect Apple Health export; retry with a valid export".to_owned()
-        })?
+        && !solstone_core_import_sources::apple_export::detect_apple_source(options.media).map_err(
+            |_| "could not inspect Apple Health export; retry with a valid export".to_owned(),
+        )?
     {
         // An export dropped with no source named is recognised by its content, in registry
         // order, as each source's own detector reads it.
@@ -1446,7 +1385,7 @@ fn resolve(
     }
     let zone = solstone_core_journal_config::owner_zone(journal_path);
     let mut seams = ResolutionSeams {
-        apple_detector: solstone_core_body_ingest::detect_apple_source,
+        apple_detector: solstone_core_import_sources::apple_export::detect_apple_source,
         // The source crate does not depend on this crate. The host pre-classifies
         // through solstone_core_import_sources::registry::claims in classify_export.
         // The resolver seam stays no_registry_claim so selection is not applied twice.
@@ -1900,6 +1839,13 @@ impl ManifestLookup for FilesystemManifestLookup<'_> {
         .and_then(|scan| scan.found)
         .is_some()
     }
+
+    fn import_exists(&self, source_hash: &str) -> bool {
+        solstone_core_import::dedupe::import_of_source_exists(
+            self.journal_path,
+            &solstone_core_import::SourceHash::new(source_hash.to_owned()),
+        )
+    }
 }
 
 /// The owner's Plaud token, as Settings stores it, or from the environment.
@@ -2271,10 +2217,11 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
         return Err("--archive-identity is only valid with --audio-archive".to_owned());
     }
     if (options.facet.is_some() || options.no_facet)
-        && (options.audio_archive.is_some() || options.sync.is_some())
+        && (options.audio_archive.is_some()
+            || options.sync.as_deref().is_some_and(|sync| sync != "oura"))
     {
         return Err(
-            "--facet is only valid when importing one audio or text file or a Strava download"
+            "--facet is only valid when importing one audio or text file or a body import"
                 .to_owned(),
         );
     }
@@ -2417,7 +2364,11 @@ fn assign_value(options: &mut Options, name: &str, value: &str) -> Result<(), St
             )
         }
         "--facet" => options.facet = Some(value.to_owned()),
-        "--listed-moves-shown" => options.listed_moves_shown = value.parse().ok(),
+        "--listed-moves-shown" => {
+            options.listed_moves_shown = Some(value.parse().map_err(|_| {
+                format!("argument --listed-moves-shown: invalid int value: '{value}'")
+            })?);
+        }
         "--setting" => options.setting = Some(value.to_owned()),
         "--audio-archive" => options.audio_archive = Some(PathBuf::from(value)),
         "--archive-identity" => {
@@ -2539,14 +2490,14 @@ fn argparse_error(arguments: String) -> CliRun {
         2,
     )
 }
-fn success(stdout: String) -> CliRun {
+pub(crate) fn success(stdout: String) -> CliRun {
     CliRun {
         stdout,
         stderr: String::new(),
         exit_code: 0,
     }
 }
-fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
+pub(crate) fn failure(stdout: &str, stderr: &str, exit_code: i32) -> CliRun {
     CliRun {
         stdout: stdout.to_owned(),
         stderr: stderr.to_owned(),
@@ -2567,18 +2518,18 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         std::fs::write(scratch.path().join("export.xml"), "<HealthData><Record").unwrap();
         let options = Options {
-            dry_run: true,
+            confirm_body_save: true,
             ..Options::default()
         };
-        let run = run_apple(
+        let run = crate::body_commands::save_apple(
             scratch.path().to_str().unwrap(),
-            &options,
+            &body_command(&options),
             &scratch.path().join("journal"),
         );
         assert_eq!(run.exit_code, 1, "{}", run.stderr);
         assert_eq!(
             run.stderr.trim_end(),
-            solstone_core_body_ingest::EXPORT_INCOMPLETE_TEXT
+            solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT
         );
     }
 

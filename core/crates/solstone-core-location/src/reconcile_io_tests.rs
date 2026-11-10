@@ -14,6 +14,8 @@ fn place(name: &str) -> crate::places::Place {
         name: Some(name.into()),
         alias: None,
         hidden: false,
+        days: Vec::new(),
+        dormant: false,
     }
 }
 

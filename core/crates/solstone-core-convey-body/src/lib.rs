@@ -1,67 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Read-only body-store inventory, shard, aggregate, and health primitives.
+//! The Body app's read routes, over the journal's body windows.
 
-mod aggregate;
-mod archive;
-mod chronicle;
-#[cfg(all(test, feature = "full-tests"))]
-mod corpus_test;
+mod audit;
 mod day;
-mod freshness;
-mod health;
-mod inventory;
-mod month;
+mod fmt;
+mod listing;
+mod old_lines;
 mod presentation;
 mod query;
 mod router;
-mod seed;
-mod shard;
-mod signature;
-mod sleep;
+mod rows;
+mod status;
 mod strava;
-mod trends;
 mod window;
 
-pub use aggregate::{
-    HealthDedupeStats, HealthDedupeStatsError, HealthDedupeTimeRange, read_health_dedupe_stats,
-};
-pub use chronicle::{ChronicleReadError, find_day_summary};
-pub use health::{
-    BodyStoreHealthError, BodyStoreHealthReason, BodyStoreHealthVerdict, read_body_store_health,
-};
-pub use inventory::{
-    BodyImportInventory, BodyImportInventoryEntry, BodyImportInventoryError, BodyImportSkip,
-    ManifestEntryCount, ManifestReadError, read_body_import_inventory,
-};
-pub use month::{MonthReader, coverage_month_keys, read_normalized_rows};
-pub use presentation::{
-    FRIENDLY_CONTRIBUTOR_NAMES, FRIENDLY_TYPE_NAMES, HEALTH_CARD_STREAM_BY_FAMILY,
-    HealthCardStreamError, SOURCE_APPLE_HEALTH, SOURCE_DEXCOM_CLARITY, SOURCE_OURA,
-    SOURCE_OURA_API, display_number, display_value, friendly_contributor_name, friendly_type_name,
-    friendly_unit_label, health_card_stream,
-};
-pub use router::api_router;
-pub use seed::{
-    BodyAggregateSeed, BodyJournalSeed, BodySeedBundle, BodySeedError, BodySeedManifest,
-    BodySeedReport, seed_body_journal,
-};
-pub use shard::{NormalizedRow, NormalizedValue, ShardReadError, read_normalized_shard};
-pub use signature::{DatabaseSignatureError, TrendsSignature, trends_db_path, trends_signature};
-pub(crate) use signature::{health_dedupe_database_path, read_database_signature};
-pub use sleep::{
-    DaySleep, SLEEP_SESSION_GAP_MINUTES, SleepInterval, SleepStagedInterval, merge_sleep_sessions,
-    pick_day_sleep, pick_main_session, sleep_stage_kind,
-};
-pub use solstone_core_body_source::{BodyValue, FieldState, ValueState};
-pub use trends::{
-    TrendAnnotation, TrendCoverage, TrendSignal, TrendValue, TrendsCacheError, TrendsFoldError,
-    TrendsPayload, TrendsWarmOutcome, TrendsWarmProbe, read_trends_cache, replace_trends_cache,
-    warm_trends,
-};
+#[cfg(test)]
+mod app_tests;
+#[cfg(test)]
+mod corpus_test;
 
-#[cfg(all(test, not(feature = "full-tests")))]
+pub use router::api_router;
+
+#[cfg(test)]
 mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};

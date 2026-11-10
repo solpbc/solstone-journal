@@ -458,6 +458,24 @@ pub fn served_app(name: &str, include_agents: bool) -> Option<&'static AppDefini
     served_apps(include_agents).find(|app| app.name == name)
 }
 
+/// The app table that ships with the code: every app any router can serve,
+/// the registry then the agents app, and the shell's fixed settings. The build
+/// generates it into the shell's script bundle, so it is cached with the code;
+/// which of these apps a router serves comes from `/api/shell`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ShellRegistry {
+    pub apps: Vec<ShellApp>,
+    pub settings: ShellSettings,
+}
+
+pub fn shell_registry() -> ShellRegistry {
+    let payload = shell_payload_with_agents(true);
+    ShellRegistry {
+        apps: payload.apps,
+        settings: payload.settings,
+    }
+}
+
 pub fn shell_payload() -> ShellPayload {
     shell_payload_with_agents(false)
 }

@@ -1168,13 +1168,12 @@ fn restore_command(
     restore_from_payload(
         &payload,
         |destination, recovery_key| {
-            solstone_core_backup_runtime::restore::restore_during_setup(
-                journal,
-                services,
-                recorder,
-                destination,
-                recovery_key,
-            )
+            #[cfg(not(target_os = "ios"))]
+            let restore = solstone_core_backup_runtime::restore::restore_during_setup;
+            // iOS restores during its in-app setup, never from here.
+            #[cfg(target_os = "ios")]
+            let restore = solstone_core_backup_runtime::restore::restore_journal;
+            restore(journal, services, recorder, destination, recovery_key)
         },
         json_output,
     )
@@ -2196,10 +2195,6 @@ mod tests {
     struct UnusedMaintenance;
 
     impl JournalMaintenance for UnusedMaintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("backup maintenance is not reached")
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("backup maintenance is not reached")
         }
@@ -2208,10 +2203,6 @@ mod tests {
     struct SuccessfulMaintenance;
 
     impl JournalMaintenance for SuccessfulMaintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
         }

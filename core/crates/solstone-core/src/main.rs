@@ -21,13 +21,12 @@ use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    BACKFILL_FACET_IDS_HELP, BACKFILL_FACET_IDS_USAGE, BodyAppleOptions, BodyCommand,
-    BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions, BodyRebuildOptions, BrainCommand,
-    BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions, BrainRefreshExpectArg,
-    BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP, CHECK_USAGE, CONFIG_HELP,
-    CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP,
-    CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CORTEX_HELP,
-    CORTEX_USAGE, ChatGptCommand, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
+    BACKFILL_FACET_IDS_HELP, BACKFILL_FACET_IDS_USAGE, BrainCommand, BrainInspectOptions,
+    BrainPrerequisiteRenewalSessionOptions, BrainRefreshExpectArg, BrainRefreshSessionOptions,
+    BrainRuntimeFailureOptions, CHECK_HELP, CHECK_USAGE, CONFIG_HELP, CONFIG_USAGE,
+    CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE,
+    CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CORTEX_HELP, CORTEX_USAGE,
+    ChatGptCommand, Command, ContractCommand, ConveyOptions, FACET_CANDIDATES_HELP,
     FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions,
     GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE,
     INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE,
@@ -706,7 +705,6 @@ fn main() -> ExitCode {
             ),
             command => run_brain_owner(command),
         },
-        Ok(Command::Body(command)) => run_body(command),
         Ok(Command::Transcribe(options)) => run_transcribe(
             options,
             #[cfg(windows)]
@@ -6031,276 +6029,6 @@ fn run_journal_path(options: JournalPathOptions) -> Result<JournalPathLine, Jour
     Ok(line)
 }
 
-fn run_body(command: BodyCommand) -> ExitCode {
-    match command {
-        BodyCommand::Rebuild(options) => run_body_rebuild(options),
-        BodyCommand::Apple(options) => run_body_apple(options),
-        BodyCommand::Oura(command) => run_body_oura(command),
-    }
-}
-
-fn run_body_oura(command: BodyOuraCommand) -> ExitCode {
-    match command {
-        BodyOuraCommand::Connect(options) => run_body_oura_connect(options),
-        BodyOuraCommand::Sync(options) => run_body_oura_sync(options),
-    }
-}
-
-fn run_body_oura_connect(options: BodyOuraConnectOptions) -> ExitCode {
-    use solstone_core_body_ingest::{BodyIngestErrorKind, OuraConnectOptions, connect_oura};
-
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    match connect_oura(&journal, &OuraConnectOptions::default()) {
-        Ok(report) => {
-            if options.json {
-                print_json(&json!({
-                    "schema": "solstone.body.oura.connect.result.v1",
-                    "connected": true,
-                    "scopes": report.scopes(),
-                }));
-            } else {
-                println!("Oura authorization saved to journal config.");
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("Oura authorization failed: {error}");
-            ExitCode::from(match error.kind() {
-                BodyIngestErrorKind::Gate => 2,
-                BodyIngestErrorKind::Source | BodyIngestErrorKind::Normalize => EXIT_DATAERR,
-                BodyIngestErrorKind::Publication | BodyIngestErrorKind::Rebuild => EXIT_IOERR,
-            })
-        }
-    }
-}
-
-fn run_body_oura_sync(options: BodyOuraSyncOptions) -> ExitCode {
-    use solstone_core_body_ingest::{BodyIngestErrorKind, OuraSyncOptions, sync_oura};
-
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    let result = sync_oura(
-        &journal,
-        &OuraSyncOptions {
-            save: options.save,
-            confirm_body_save: options.confirm_body_save,
-            scheduled: options.scheduled,
-            window_days: options.window_days,
-            today: None,
-        },
-    );
-    match result {
-        Ok(report) => {
-            if options.json {
-                print_json(&json!({
-                    "schema": "solstone.body.ingest.result.v1",
-                    "source": "oura_api",
-                    "mode": if options.save { "save" } else { "preview" },
-                    "bundle_id": report.bundle_id(),
-                    "rows": report.rows(),
-                    "days": report.days(),
-                    "pages": report.pages(),
-                    "skipped": report.quiet_run(),
-                    "endpoint_counts": report.endpoint_counts(),
-                    "issues": report.issues().iter().map(|issue| json!({
-                        "endpoint": issue.endpoint(),
-                        "kind": issue.kind().as_str(),
-                    })).collect::<Vec<_>>(),
-                }));
-            } else if options.save {
-                println!(
-                    "Oura body sync complete: rows={} days={} pages={} bundle={}",
-                    report.rows(),
-                    report.days().len(),
-                    report.pages(),
-                    report.bundle_id().unwrap_or("none")
-                );
-            } else {
-                println!(
-                    "Oura body sync preview: rows={} days={} pages={} (nothing written)",
-                    report.rows(),
-                    report.days().len(),
-                    report.pages()
-                );
-            }
-            if !options.json {
-                for issue in report.issues() {
-                    println!(
-                        "Oura endpoint unavailable: {} ({})",
-                        issue.endpoint(),
-                        issue.kind().as_str()
-                    );
-                }
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("Oura body sync failed: {error}");
-            ExitCode::from(match error.kind() {
-                BodyIngestErrorKind::Gate => 2,
-                BodyIngestErrorKind::Source | BodyIngestErrorKind::Normalize => EXIT_DATAERR,
-                BodyIngestErrorKind::Publication | BodyIngestErrorKind::Rebuild => EXIT_IOERR,
-            })
-        }
-    }
-}
-
-fn run_body_apple(options: BodyAppleOptions) -> ExitCode {
-    use solstone_core_body_ingest::{
-        AppleImportOptions, BodyIngestErrorKind, detect_apple_source, preview_apple, save_apple,
-    };
-
-    let source = PathBuf::from(options.source);
-    if options.detect {
-        return match detect_apple_source(&source) {
-            Ok(detected) => {
-                if options.json {
-                    print_json(&json!({
-                        "schema": "solstone.body.apple.detect.result.v1",
-                        "apple_health": detected,
-                    }));
-                } else {
-                    println!(
-                        "{}",
-                        if detected {
-                            "apple_health"
-                        } else {
-                            "not_apple_health"
-                        }
-                    );
-                }
-                ExitCode::SUCCESS
-            }
-            Err(error) => {
-                eprintln!("Apple Health source detection failed: {error}");
-                ExitCode::from(match error.kind() {
-                    BodyIngestErrorKind::Gate => 2,
-                    BodyIngestErrorKind::Source | BodyIngestErrorKind::Normalize => EXIT_DATAERR,
-                    BodyIngestErrorKind::Publication | BodyIngestErrorKind::Rebuild => EXIT_IOERR,
-                })
-            }
-        };
-    }
-    let result = if options.save {
-        let journal = match resolve_indexer_journal_path(options.journal_override) {
-            Ok(line) => line.path,
-            Err(error) => return print_journal_error(error),
-        };
-        save_apple(
-            &source,
-            &journal,
-            &AppleImportOptions {
-                date_from: options.date_from,
-                date_to: options.date_to,
-                confirm_body_save: options.confirm_body_save,
-                force: options.force,
-            },
-        )
-    } else {
-        preview_apple(
-            &source,
-            options.date_from.as_deref(),
-            options.date_to.as_deref(),
-        )
-    };
-    match result {
-        Ok(report) => {
-            if options.json {
-                print_json(&json!({
-                    "schema": "solstone.body.ingest.result.v1",
-                    "source": "apple_health",
-                    "mode": if options.save { "save" } else { "preview" },
-                    "bundle_id": report.bundle_id(),
-                    "rows": report.rows(),
-                    "days": report.days(),
-                    "skipped": report.skipped(),
-                }));
-            } else if options.save {
-                println!(
-                    "Apple Health body import complete: rows={} days={} bundle={}",
-                    report.rows(),
-                    report.days().len(),
-                    report.bundle_id().unwrap_or("none")
-                );
-            } else {
-                println!(
-                    "Apple Health body import preview: rows={} days={} (nothing written)",
-                    report.rows(),
-                    report.days().len()
-                );
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!(
-                "Apple Health body import failed: {}",
-                solstone_core_body_ingest::apple_refusal_text(&error)
-            );
-            ExitCode::from(match error.kind() {
-                BodyIngestErrorKind::Gate => 2,
-                BodyIngestErrorKind::Source | BodyIngestErrorKind::Normalize => EXIT_DATAERR,
-                BodyIngestErrorKind::Publication | BodyIngestErrorKind::Rebuild => EXIT_IOERR,
-            })
-        }
-    }
-}
-
-fn run_body_rebuild(options: BodyRebuildOptions) -> ExitCode {
-    let json_output = options.json;
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    match solstone_core_body_rebuild::rebuild_body_store(&journal) {
-        Ok(report) => {
-            if json_output {
-                print_json(&json!({
-                    "schema": "solstone.body.rebuild.result.v1",
-                    "native_bundles": report.native_bundles(),
-                    "legacy_bundles": report.legacy_bundles(),
-                    "rows": report.rows(),
-                }));
-            } else {
-                println!(
-                    "body rebuild complete: native_bundles={} legacy_bundles={} rows={}",
-                    report.native_bundles(),
-                    report.legacy_bundles(),
-                    report.rows()
-                );
-            }
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!("body rebuild failed: {error}");
-            let exit = body_rebuild_error_exit(error.kind(), error.stage());
-            ExitCode::from(exit)
-        }
-    }
-}
-
-fn body_rebuild_error_exit(
-    kind: solstone_core_body_rebuild::BodyRebuildErrorKind,
-    stage: &str,
-) -> u8 {
-    use solstone_core_body_rebuild::BodyRebuildErrorKind;
-
-    match (kind, stage) {
-        (BodyRebuildErrorKind::Publication, "database_lock_timeout") => EXIT_TEMPFAIL,
-        (
-            BodyRebuildErrorKind::Journal
-            | BodyRebuildErrorKind::Sqlite
-            | BodyRebuildErrorKind::Publication,
-            _,
-        ) => EXIT_IOERR,
-        _ => EXIT_DATAERR,
-    }
-}
-
 fn run_indexer(command: IndexerCommand) -> ExitCode {
     match command {
         IndexerCommand::Maintenance(options) => run_indexer_maintenance(options),
@@ -7057,31 +6785,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.explicit_journal, Some(PathBuf::from(journal)));
-    }
-
-    #[test]
-    fn body_rebuild_errors_distinguish_data_io_and_retryable_lock_failure() {
-        use solstone_core_body_rebuild::BodyRebuildErrorKind;
-
-        assert_eq!(
-            body_rebuild_error_exit(BodyRebuildErrorKind::Publication, "database_lock_timeout"),
-            EXIT_TEMPFAIL
-        );
-        for (kind, stage) in [
-            (BodyRebuildErrorKind::Journal, "journal_root"),
-            (BodyRebuildErrorKind::Sqlite, "open_temp_database"),
-            (BodyRebuildErrorKind::Publication, "database_lock"),
-        ] {
-            assert_eq!(body_rebuild_error_exit(kind, stage), EXIT_IOERR);
-        }
-        for kind in [
-            BodyRebuildErrorKind::Authority,
-            BodyRebuildErrorKind::Envelope,
-            BodyRebuildErrorKind::NativeReplay,
-            BodyRebuildErrorKind::LegacyReplay,
-        ] {
-            assert_eq!(body_rebuild_error_exit(kind, "semantic"), EXIT_DATAERR);
-        }
     }
 
     #[test]

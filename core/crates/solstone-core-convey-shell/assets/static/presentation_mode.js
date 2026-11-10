@@ -23,20 +23,8 @@
   function isOn() {
     return document.body.classList.contains('presentation-mode');
   }
-  var on = false;
-  try {
-    var p = new URL(window.location.href).searchParams.get('present');
-    if (p === '1' || p === 'on' || p === 'true') {
-      on = true;
-      sessionStorage.setItem(KEY, '1');
-    } else if (p === '0' || p === 'off' || p === 'false') {
-      on = false;
-      sessionStorage.removeItem(KEY);
-    } else {
-      on = sessionStorage.getItem(KEY) === '1';
-    }
-  } catch (_) {}
-  if (on) document.body.classList.add('presentation-mode');
+  // Whether it starts on is decided once, by the shell page's inline script
+  // before the first paint; this only reads the class that leaves.
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'P' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
     var t = e.target;

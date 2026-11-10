@@ -286,8 +286,9 @@ fn moved_with(shown: Option<usize>) -> (tempfile::TempDir, String) {
 fn a_facet_named_on_the_command_line_says_how_many_moved_and_from_where() {
     let (journal, summary) = moved_with(None);
     assert!(
-        summary
-            .contains("3 workouts already listed on the activities page moved there, from work."),
+        summary.contains(
+            "3 workouts already listed on the activities page moved to this import's facet, from your work facet."
+        ),
         "{summary}"
     );
     assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
@@ -338,8 +339,9 @@ fn the_summary_counts_what_moved_and_not_what_was_going_to() {
     assert_eq!(run.exit_code, 0, "{}", run.stderr);
     let summary = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
     assert!(
-        summary
-            .contains("2 workouts already listed on the activities page moved there, from work."),
+        summary.contains(
+            "2 workouts already listed on the activities page moved to this import's facet, from your work facet."
+        ),
         "{summary}"
     );
 }
@@ -347,7 +349,10 @@ fn the_summary_counts_what_moved_and_not_what_was_going_to() {
 #[test]
 fn a_run_moves_what_the_owner_was_shown() {
     let (journal, summary) = moved_with(Some(3));
-    assert!(summary.contains("moved there, from work."), "{summary}");
+    assert!(
+        summary.contains("moved to this import's facet, from your work facet."),
+        "{summary}"
+    );
     assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
 }
 
@@ -359,7 +364,7 @@ fn more_to_move_than_the_owner_saw_moves_none_and_says_so() {
             .contains("nothing already listed moved: 3 workouts would have, and you were told 2."),
         "{summary}"
     );
-    assert!(!summary.contains("moved there"), "{summary}");
+    assert!(!summary.contains("moved to this import"), "{summary}");
     let root = journal.path();
     assert_eq!(records(root, "work", "20261004").len(), 1);
     assert!(records(root, "body", "20261004").is_empty());

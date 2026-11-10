@@ -126,8 +126,21 @@
     return coerce(error);
   }
 
+  // The shell's scripts are served as one file. A position in it is named by
+  // the file it came from, so the diagnostic console names that file and line.
+  function authoredStack(stack) {
+    const shell = window.__solShell;
+    return shell && typeof shell.stack === 'function' ? shell.stack(stack) : stack;
+  }
+
+  function authoredPosition(filename, lineno) {
+    const shell = window.__solShell;
+    const at = shell && typeof shell.locate === 'function' ? shell.locate(filename, lineno) : null;
+    return at ? { filename: at.file, lineno: at.line } : { filename, lineno };
+  }
+
   function stackFromError(error) {
-    return error && typeof error.stack === 'string' ? error.stack : '';
+    return error && typeof error.stack === 'string' ? authoredStack(error.stack) : '';
   }
 
   // A page that is going away cancels its own in-flight GETs. The browser
@@ -348,10 +361,11 @@
   // Global error handler
   window.addEventListener('error', (e) => {
     const error = e.error instanceof Error ? e.error : new Error(e.message || 'unknown error');
+    const position = authoredPosition(e.filename, e.lineno);
     window.logError(error, {
       kind: 'error',
-      filename: e.filename,
-      lineno: e.lineno,
+      filename: position.filename,
+      lineno: position.lineno,
       colno: e.colno
     });
   });

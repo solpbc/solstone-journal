@@ -84,6 +84,8 @@ pub(crate) enum ToolError {
     AuditUnavailable,
     ReferenceNotFound,
     SourceArguments,
+    ActivityDayArguments,
+    TranscriptTimeArguments,
 }
 
 impl ToolError {
@@ -98,7 +100,9 @@ impl ToolError {
             Self::FileUnreadable => "file_unreadable",
             Self::AuditUnavailable => "audit_unavailable",
             Self::ReferenceNotFound => "not_found",
-            Self::SourceArguments => "invalid_tool_input",
+            Self::SourceArguments | Self::ActivityDayArguments | Self::TranscriptTimeArguments => {
+                "invalid_tool_input"
+            }
         }
     }
 
@@ -122,6 +126,12 @@ impl ToolError {
             Self::SourceArguments => {
                 "source needs a day and can't be combined with facet, and kind needs source"
             }
+            Self::ActivityDayArguments => {
+                "day can't be combined with from or to: send one day or a range, and the to day can't be before the from day"
+            }
+            Self::TranscriptTimeArguments => {
+                "time_from and time_to need a day, and time_to can't be before time_from"
+            }
         }
     }
 }
@@ -144,6 +154,8 @@ pub(crate) fn execute_after_audit<A, T, E>(
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::cell::Cell;
+
+    use serde_json::json;
 
     use super::{ToolError, execute_after_audit, normalize_day};
 
@@ -172,6 +184,35 @@ mod tests {
                 Err(ToolError::InvalidInput),
                 "{refused}"
             );
+        }
+    }
+
+    #[test]
+    fn a_refused_combination_names_the_arguments_instead_of_blaming_a_valid_day() {
+        let zone = "UTC".parse().expect("UTC parses");
+        for (arguments, named) in [
+            (json!({"day": "20261005", "from": "20261001"}), "from"),
+            (json!({"day": "20261005", "to": "20261006"}), "to"),
+            (json!({"from": "20261006", "to": "20261005"}), "before"),
+        ] {
+            let error = super::activities::validate_list(Some(&arguments), &zone).unwrap_err();
+            let message = error.agent_message();
+            assert!(message.contains(named), "{arguments}: {message}");
+            assert!(!message.contains("YYYYMMDD"), "{arguments}: {message}");
+        }
+        for (arguments, named) in [
+            (json!({"time_from": "10:00"}), "day"),
+            (
+                json!({"day": "20261005", "time_from": "11:00", "time_to": "10:00"}),
+                "before",
+            ),
+        ] {
+            let error = super::transcripts::validate_list(Some(&arguments))
+                .err()
+                .expect("the combination is refused");
+            let message = error.agent_message();
+            assert!(message.contains(named), "{arguments}: {message}");
+            assert!(!message.contains("HH:MM"), "{arguments}: {message}");
         }
     }
 

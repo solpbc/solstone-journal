@@ -165,7 +165,11 @@ pub(crate) async fn edit(
     };
     let journal_root = state.journal_root.clone();
     let found = PlaceStore::update(&journal_root, |store| {
-        let Some(place) = store.places.iter_mut().find(|place| place.id == id) else {
+        let Some(place) = store
+            .places
+            .iter_mut()
+            .find(|place| place.id == id && !place.dormant)
+        else {
             return false;
         };
         if let Some(name) = name {

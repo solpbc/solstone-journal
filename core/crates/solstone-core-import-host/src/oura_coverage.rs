@@ -14,14 +14,14 @@
 //! touches as soon as the run state holds it; removing a claim twice changes
 //! nothing, so a resumed run may do it again. What a run fetched whole is added
 //! once, when its last day is done. Both happen in the writer, under the run's
-//! lock; nothing else writes this file. Nothing here reads the old sync cursor,
+//! lock; nothing else writes this file. Nothing here reads the cursor an earlier sync left,
 //! `imports/oura.json`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
-use chrono::{DateTime, Datelike as _, NaiveDate, Utc};
+use chrono::{DateTime, Datelike as _, NaiveDate, TimeZone as _, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use solstone_core_import_sources::oura::{ENDPOINTS, Hole, HoleReason};
@@ -263,17 +263,100 @@ impl Coverage {
         Ok(())
     }
 
-    /// The last Oura day an endpoint has covered; for heartrate, the owner day
-    /// its last covered instant falls on, on the fixed zone.
-    pub(crate) fn last_covered_day(&self, endpoint: &str, zone: Tz) -> Option<NaiveDate> {
-        let [_, last] = self.endpoints.get(endpoint)?.covered.last()?;
-        if endpoint == HEARTRATE {
-            let end = DateTime::<Utc>::from_timestamp(instant_of(last)? - 1, 0)?;
-            Some(end.with_timezone(&zone).date_naive())
-        } else {
-            parse_day(last)
+    /// The days from `floor` to `today` an endpoint doesn't hold, as spans,
+    /// with every day from `trailing` on asked again. Days whose only trouble is
+    /// a `Deferred` hole stay out: asking can't fill those.
+    pub(crate) fn unheld_spans(
+        &self,
+        endpoint: &str,
+        floor: NaiveDate,
+        trailing: NaiveDate,
+        today: NaiveDate,
+        zone: Tz,
+    ) -> Result<Vec<(NaiveDate, NaiveDate)>, String> {
+        let stored = self.endpoints.get(endpoint);
+        let covered = stored.map_or_else(|| Ok(Spans::default()), |e| e.spans(endpoint))?;
+        let mut deferred = BTreeSet::new();
+        for hole in stored.into_iter().flat_map(|e| &e.holes) {
+            if hole.reason == HoleReason::Deferred
+                && let Some(day) = hole_day(endpoint, &hole.at, zone)
+            {
+                deferred.insert(day);
+            }
         }
+        let held = |day: NaiveDate| {
+            let span = if endpoint == HEARTRATE {
+                owner_day_instants(day, zone)
+            } else {
+                Some((day_number(day), day_number(day) + 1))
+            };
+            span.is_some_and(|span| covered.covers(span))
+        };
+        let mut spans: Vec<(NaiveDate, NaiveDate)> = Vec::new();
+        let mut day = floor;
+        while day <= today {
+            if day >= trailing || (!held(day) && !deferred.contains(&day)) {
+                match spans.last_mut() {
+                    Some(span) if span.1.succ_opt() == Some(day) => span.1 = day,
+                    _ => spans.push((day, day)),
+                }
+            }
+            let Some(next) = day.succ_opt() else {
+                break;
+            };
+            day = next;
+        }
+        Ok(spans)
     }
+}
+
+/// The owner days a set of claims covers, as inclusive `YYYYMMDD` ranges,
+/// each run of days whole: never the asked range, so a failed chunk's days
+/// stay out.
+pub(crate) fn claimed_days(claims: &BTreeMap<String, Vec<Claim>>, zone: Tz) -> Vec<[String; 2]> {
+    let mut days = Spans::default();
+    for claim in claims.values().flatten() {
+        let (first, last) = match *claim {
+            Claim::Days(first, last) => (first, last),
+            Claim::Instants(from, to) => (
+                from.with_timezone(&zone).date_naive(),
+                (to - chrono::Duration::seconds(1))
+                    .with_timezone(&zone)
+                    .date_naive(),
+            ),
+        };
+        days.add((day_number(first), day_number(last) + 1));
+    }
+    days.0
+        .iter()
+        .filter_map(|&(from, to)| {
+            Some([
+                day_of(from)?.format("%Y%m%d").to_string(),
+                day_of(to - 1)?.format("%Y%m%d").to_string(),
+            ])
+        })
+        .collect()
+}
+
+/// The owner day a hole falls on.
+fn hole_day(endpoint: &str, at: &str, zone: Tz) -> Option<NaiveDate> {
+    if endpoint == HEARTRATE {
+        let instant = DateTime::<Utc>::from_timestamp(instant_of(at)?, 0)?;
+        Some(instant.with_timezone(&zone).date_naive())
+    } else {
+        parse_day(at)
+    }
+}
+
+/// An owner day as UTC seconds, half open.
+fn owner_day_instants(day: NaiveDate, zone: Tz) -> Option<(i64, i64)> {
+    let start = zone
+        .from_local_datetime(&day.and_hms_opt(0, 0, 0)?)
+        .earliest()?;
+    let end = zone
+        .from_local_datetime(&day.succ_opt()?.and_hms_opt(0, 0, 0)?)
+        .earliest()?;
+    Some((start.timestamp(), end.timestamp()))
 }
 
 /// The coverage a journal holds. None yet is none; a file that can't be read is
@@ -394,6 +477,47 @@ mod tests {
 
     fn day(text: &str) -> NaiveDate {
         parse_day(text).unwrap()
+    }
+
+    #[test]
+    fn unheld_days_leave_out_a_deferred_one_and_ask_other_holes_and_the_trailing_week() {
+        let mut coverage = Coverage::default();
+        coverage.endpoints.insert(
+            "sleep".to_owned(),
+            EndpointCoverage {
+                covered: vec![
+                    ["2026-01-01".to_owned(), "2026-01-09".to_owned()],
+                    ["2026-01-11".to_owned(), "2026-01-14".to_owned()],
+                    ["2026-01-16".to_owned(), "2026-01-27".to_owned()],
+                ],
+                holes: vec![
+                    StoredHole {
+                        at: "2026-01-10".to_owned(),
+                        reason: HoleReason::Deferred,
+                    },
+                    StoredHole {
+                        at: "2026-01-15".to_owned(),
+                        reason: HoleReason::Unreadable,
+                    },
+                ],
+            },
+        );
+        let spans = coverage
+            .unheld_spans(
+                "sleep",
+                day("2026-01-01"),
+                day("2026-01-25"),
+                day("2026-01-27"),
+                chrono_tz::UTC,
+            )
+            .unwrap();
+        assert_eq!(
+            spans,
+            [
+                (day("2026-01-15"), day("2026-01-15")),
+                (day("2026-01-25"), day("2026-01-27")),
+            ]
+        );
     }
 
     fn hole(endpoint: &str, at: &str, reason: HoleReason) -> Hole {

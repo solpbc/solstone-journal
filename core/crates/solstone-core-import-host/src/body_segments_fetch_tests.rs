@@ -3,7 +3,7 @@
 
 //! An Oura run that asks Oura itself, against a stand-in for Oura's API held in
 //! memory: its range, its coverage, each endpoint's result, the run's stops, kill
-//! and resume, and the old sync beside it.
+//! and resume.
 
 #![allow(clippy::disallowed_methods)]
 
@@ -11,10 +11,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::TimeZone as _;
-use solstone_core_body_ingest::oura_sync::{
-    HttpResponse, OuraHttp, OuraSyncOptions, hold_oura_lock, sync_with_http,
-};
-use solstone_core_body_ingest::{BodyIngestError, BodyIngestErrorKind};
+use solstone_core_import::BodyIngestError;
+use solstone_core_import::oura_http::{HttpResponse, OuraHttp, hold_oura_lock, refresh, settings};
 
 use super::*;
 use crate::oura_fetch::asked_documents;
@@ -399,7 +397,7 @@ fn an_uninterrupted_run_covers_exactly_the_oura_days_asked() {
     assert!(
         outcome
             .summary
-            .contains("## From Oura\n\n- daily_readiness: read: 1 entry"),
+            .contains("## From Oura\n\n- readiness: read: 1 entry"),
         "{}",
         outcome.summary
     );
@@ -515,7 +513,7 @@ fn a_deferral_takes_back_a_day_an_earlier_run_covered_and_names_it_and_its_twin_
                 outcome.summary.contains(
                     "## Not written in full\n\nOura answered for these, and the journal couldn't write all of it."
                 ) && outcome.summary.contains(
-                    "- workout, 2026-01-05: changed in Oura since; the journal keeps it as first written"
+                    "- workouts, 2026-01-05: Oura moved this to the other side of midnight; your journal keeps the time it first saved"
                 ),
                 "{}",
                 outcome.summary
@@ -684,7 +682,7 @@ fn a_document_refused_for_size_is_named_under_refused_and_is_no_hole() {
     assert!(
         outcome
             .summary
-            .contains("## Refused\n\n- workout: row_too_large: 1"),
+            .contains("## couldn't be read\n\n- workouts: too large to keep: 1"),
         "{}",
         outcome.summary
     );
@@ -695,8 +693,16 @@ fn a_document_refused_for_size_is_named_under_refused_and_is_no_hole() {
     );
 }
 
+fn asked_starts(oura: &Oura, endpoint: &str) -> Vec<String> {
+    oura.gets()
+        .iter()
+        .filter(|(asked, ..)| asked == endpoint)
+        .map(|(_, query, _)| query["start_date"].clone())
+        .collect()
+}
+
 #[test]
-fn the_next_run_with_no_range_asks_from_seven_days_before_the_last_covered() {
+fn a_run_with_no_range_asks_only_what_coverage_doesnt_hold_and_the_trailing_week() {
     let journal = connected("America/Denver");
     let root = journal.path();
     finished(
@@ -707,20 +713,95 @@ fn the_next_run_with_no_range_asks_from_seven_days_before_the_last_covered() {
     let next = Oura::new();
     finished(root, &next, &ask("20261104_120001", None));
     for endpoint in solstone_core_import_sources::oura::ENDPOINTS {
-        let query = next.first_asked(endpoint);
         if endpoint == "heartrate" {
-            assert_eq!(query["start_datetime"], "2026-01-13T00:00:00-07:00");
-        } else {
-            assert_eq!(query["start_date"], "2026-01-13", "{endpoint}");
-            // Through today, the frozen clock's.
-            assert_eq!(query["end_date"], "2026-02-02", "{endpoint}");
+            continue;
         }
+        let starts = asked_starts(&next, endpoint);
+        assert_eq!(starts[0], "2015-01-01", "{endpoint}");
+        assert!(
+            starts.contains(&"2026-01-21".to_owned()),
+            "{endpoint}: {starts:?}"
+        );
+        assert!(
+            !starts
+                .iter()
+                .any(|day| ("2026-01-01".."2026-01-21").contains(&day.as_str())),
+            "{endpoint}: {starts:?}"
+        );
     }
-    // With nothing covered, the last 30 days.
-    let fresh = connected("America/Denver");
+}
+
+#[test]
+fn an_answer_with_nothing_in_it_counts_as_held_and_isnt_asked_again() {
+    let journal = connected("America/Denver");
+    let root = journal.path();
     let first = Oura::new();
-    finished(fresh.path(), &first, &ask("20261104_120000", None));
-    assert_eq!(first.first_asked("sleep")["start_date"], "2026-01-02");
+    finished(root, &first, &ask("20261104_120000", None));
+    assert_eq!(
+        covered(root, "sleep"),
+        json!([["2015-01-01", "2026-02-01"]])
+    );
+    let second = Oura::new();
+    finished(root, &second, &ask("20261104_120001", None));
+    assert_eq!(second.first_asked("sleep")["start_date"], "2026-01-25");
+    let starts = asked_starts(&second, "sleep");
+    assert_eq!(starts.len(), 1, "{starts:?}");
+}
+
+#[test]
+fn a_first_run_counts_its_requests_from_2015_to_today() {
+    let journal = connected("America/Denver");
+    let root = journal.path();
+    let oura = Oura::new();
+    let started = std::time::Instant::now();
+    finished(root, &oura, &ask("20261104_120000", None));
+    let requests = oura.gets().len();
+    eprintln!(
+        "first run: {requests} requests, {} ms",
+        started.elapsed().as_millis()
+    );
+    // Eleven full years of 364-day chunks an endpoint, and heartrate's 30-day ones.
+    assert!((200..1_000).contains(&requests), "{requests}");
+}
+
+#[test]
+fn the_manifest_says_which_days_a_range_with_a_failed_chunk_read() {
+    let journal = connected("America/Denver");
+    let root = journal.path();
+    let oura = Oura::new();
+    // Every endpoint stops at the chunk reaching into 2023.
+    for endpoint in solstone_core_import_sources::oura::ENDPOINTS {
+        oura.rule(
+            endpoint,
+            |query| {
+                query
+                    .get("start_date")
+                    .or_else(|| query.get("start_datetime"))
+                    .is_some_and(|start| start.as_str() >= "2023")
+            },
+            500,
+            json!({}),
+            None,
+        );
+    }
+    let outcome = finished(
+        root,
+        &oura,
+        &ask("20261104_120000", Some(("2022-01-01", "2024-06-01"))),
+    );
+    let manifest: Value = serde_json::from_slice(
+        &fs::read(
+            root.join("imports")
+                .join(&outcome.import_id)
+                .join("manifest.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let span = manifest["span"].as_array().unwrap();
+    assert_eq!(span.len(), 1, "{span:?}");
+    assert_eq!(span[0][0], "20220101");
+    assert_eq!(span[0][1], "20231229", "{span:?}");
 }
 
 /// The kill fixture: the slice's kill base and pages, served by Oura, plus a daily
@@ -1064,7 +1145,7 @@ fn a_takeover_writes_the_stopped_runs_record_hole_and_an_explicit_range_clears_i
     assert!(
         taken
             .summary
-            .contains("- workout, 2026-01-03: it couldn't be shown on its day"),
+            .contains("- workouts, 2026-01-03: it couldn't be shown on its day"),
         "{}",
         taken.summary
     );
@@ -1159,7 +1240,7 @@ fn a_restored_run_carries_its_hole_and_with_none_the_earlier_claim_stands() {
             assert!(
                 repaired
                     .summary
-                    .contains("- workout, 2026-01-05: changed in Oura since"),
+                    .contains("- workouts, 2026-01-05: Oura moved this"),
                 "{}",
                 repaired.summary
             );
@@ -1250,7 +1331,7 @@ fn a_window_that_wont_publish_still_counts_and_saving_it_later_changes_no_covera
     let partly = import(whole.path(), &serve(), &ask("20261104_120000", range)).unwrap();
     assert!(!partly.finished);
     assert!(
-        partly.summary.contains("20260105 063000_300: bind"),
+        partly.summary.contains("2026-01-05: bind"),
         "{}",
         partly.summary
     );
@@ -1591,56 +1672,21 @@ fn an_old_sync_holding_its_lock_stops_a_run_that_must_refresh_and_it_carries_on_
     assert_eq!(oura.posts(), 1);
 }
 
-fn approve(root: &Path) {
-    fs::create_dir_all(root.join("imports/_approvals")).unwrap();
-    fs::write(
-        root.join("imports/_approvals/oura_sync_preflight.json"),
-        json!({
-            "schema": "solstone.oura_sync_preflight.v1",
-            "checklist_version": "solstone.oura_sync_preflight.checklist.v2",
-            "journal_root": root.canonicalize().unwrap(),
-            "requires_per_run_confirmation": true,
-            "replication_destinations": {
-                "time_machine": {"decision": "excluded"},
-                "icloud": {"decision": "excluded"},
-                "solbase": {"decision": "excluded"},
-                "hosted_backup": {"decision": "excluded"},
-                "other": {"decision": "excluded"}
-            },
-            "raw_retention": {"decision": "discard"}
-        })
-        .to_string(),
-    )
-    .unwrap();
+fn config_tokens(root: &Path) -> Value {
+    let text = fs::read_to_string(root.join("config/journal.json")).unwrap();
+    serde_json::from_str::<Value>(&text).unwrap()["oura"]["tokens"].clone()
 }
 
-/// The old sync, saving, as the owner's command runs it.
-fn old_sync(root: &Path, oura: &Oura) -> Result<(), BodyIngestError> {
-    let mut transport = oura.clone();
-    sync_with_http(
-        root,
-        &OuraSyncOptions {
-            save: true,
-            confirm_body_save: true,
-            today: Some(date("2026-02-01")),
-            ..OuraSyncOptions::default()
-        },
-        &mut transport,
-    )
-    .map(|_| ())
-}
+const HOLD: &str = "config/oura-renewal.json";
 
 #[test]
-fn a_refresh_whose_tokens_cant_be_saved_loses_the_connection_on_both_paths() {
+fn a_refresh_config_couldnt_take_is_held_and_the_next_run_applies_it_without_spending_another() {
     let journal = connected("America/Denver");
     let root = journal.path();
-    approve(root);
     let oura = Oura::new();
     oura.expire("access-0");
     let range = Some(("2026-01-01", "2026-01-10"));
-    let config = fs::read(root.join("config/journal.json")).unwrap();
-    // Oura answers the refresh, and the journal can't write its config: what a
-    // kill between the answer and the write leaves.
+    let spent = config_tokens(root)["refresh_token"].clone();
     let blocked = root.join("config/journal.json.lock");
     fs::create_dir_all(&blocked).unwrap();
     let error = import(root, &oura, &ask("20261104_120000", range)).unwrap_err();
@@ -1649,19 +1695,69 @@ fn a_refresh_whose_tokens_cant_be_saved_loses_the_connection_on_both_paths() {
         "{error:?}"
     );
     assert_eq!(oura.posts(), 1);
-    assert_eq!(fs::read(root.join("config/journal.json")).unwrap(), config);
+    assert!(root.join(HOLD).is_file());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = fs::metadata(root.join(HOLD)).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    assert_eq!(config_tokens(root)["refresh_token"], spent);
     fs::remove_dir(&blocked).unwrap();
 
-    // The next run offers the spent refresh token, which Oura refuses.
-    let error = import(root, &oura, &ask("20261104_120001", range)).unwrap_err();
-    assert_eq!(error, OuraImportError::Stop(OuraStop::Authorization));
-    assert!(stored(root).is_empty());
-    assert_eq!(coverage_file(root), Value::Null);
+    finished(root, &oura, &ask("20261104_120001", range));
+    assert_eq!(oura.posts(), 1, "the held answer needs no second refresh");
+    assert!(!root.join(HOLD).exists());
+    assert_ne!(config_tokens(root)["refresh_token"], spent);
+}
 
-    // The old sync, in the same state, fails as it does today.
-    let old = old_sync(root, &oura).unwrap_err();
-    assert_eq!(old.stage(), "authorization_refresh");
-    assert_eq!(old.kind(), BodyIngestErrorKind::Source);
+#[test]
+fn a_held_answer_for_a_token_config_no_longer_holds_is_dropped() {
+    let journal = connected("America/Denver");
+    let root = journal.path();
+    let before = config_tokens(root);
+    fs::write(
+        root.join(HOLD),
+        json!({"spent_refresh_token": "long-gone", "tokens": {"access_token": "stale",
+            "refresh_token": "stale", "expires_at": 1.0, "token_type": "Bearer"}})
+        .to_string(),
+    )
+    .unwrap();
+    let oura = Oura::new();
+    oura.expire("access-0");
+    finished(
+        root,
+        &oura,
+        &ask("20261104_120000", Some(("2026-01-01", "2026-01-02"))),
+    );
+    assert!(!root.join(HOLD).exists());
+    assert_ne!(config_tokens(root)["access_token"], "stale");
+    assert_ne!(
+        config_tokens(root)["refresh_token"],
+        before["refresh_token"]
+    );
+}
+
+#[test]
+fn a_hold_that_cant_be_written_doesnt_stop_config_and_the_next_run_keeps_its_connection() {
+    let journal = connected("America/Denver");
+    let root = journal.path();
+    let spent = config_tokens(root)["refresh_token"].clone();
+    fs::create_dir_all(root.join(HOLD)).unwrap();
+    let oura = Oura::new();
+    oura.expire("access-0");
+    let range = Some(("2026-01-01", "2026-01-02"));
+    finished(root, &oura, &ask("20261104_120000", range));
+    assert_ne!(config_tokens(root)["refresh_token"], spent);
+    finished(root, &oura, &ask("20261104_120001", range));
+    assert_eq!(oura.posts(), 1);
+}
+
+#[test]
+fn a_renewal_hold_is_handled_as_the_token_config_is() {
+    use solstone_core_journal_io::copy_excludes::copy_excluded;
+    assert!(!copy_excluded("config/journal.json"));
+    assert!(!copy_excluded(HOLD));
 }
 
 #[test]
@@ -1695,55 +1791,25 @@ fn the_new_path_never_reads_the_old_cursor_poisoned_or_not() {
             None => assert!(!root.join("imports/oura.json").exists()),
         }
     }
-    assert_eq!(first_asks[0].0["start_date"], "2026-01-02");
+    assert_eq!(first_asks[0].0["start_date"], "2015-01-01");
     assert!(first_asks.iter().all(|asked| *asked == first_asks[0]));
-}
-
-#[test]
-fn the_old_sync_never_reads_the_new_paths_files() {
-    let mut asked = Vec::new();
-    for poisoned in [false, true] {
-        let journal = connected("America/Denver");
-        let root = journal.path();
-        approve(root);
-        if poisoned {
-            fs::create_dir_all(root.join(OURA.run_dir_rel).join("pages")).unwrap();
-            fs::write(root.join(crate::oura_coverage::COVERAGE_REL), "not json").unwrap();
-            fs::write(root.join(OURA.run_dir_rel).join(STATE_FILE), "not json").unwrap();
-            fs::write(
-                root.join(OURA.run_dir_rel).join("pages/index.json"),
-                "not json",
-            )
-            .unwrap();
-        }
-        let oura = Oura::new();
-        old_sync(root, &oura).unwrap();
-        asked.push(oura.gets());
-        if poisoned {
-            assert_eq!(
-                fs::read_to_string(root.join(crate::oura_coverage::COVERAGE_REL)).unwrap(),
-                "not json"
-            );
-        }
-    }
-    assert_eq!(asked[0], asked[1]);
 }
 
 #[test]
 fn a_path_whose_tokens_another_path_refreshed_uses_them_with_no_second_refresh() {
     let journal = connected("America/Denver");
     let root = journal.path().to_path_buf();
-    approve(&root);
     let oura = Oura::new();
     // The new path has loaded its tokens. Before its first request is answered,
-    // the old sync runs, finds them expired and refreshes.
+    // another path finds them expired and refreshes.
     let during = oura.clone();
     let path = root.clone();
     oura.0.borrow_mut().hooks.push((
         0,
         Box::new(move || {
             during.expire("access-0");
-            old_sync(&path, &during).unwrap();
+            let mut current = settings(&path).unwrap();
+            refresh(&mut during.clone(), &mut current, &path, true).unwrap();
         }),
     ));
     let outcome = finished(
@@ -1751,7 +1817,7 @@ fn a_path_whose_tokens_another_path_refreshed_uses_them_with_no_second_refresh()
         &oura,
         &ask("20261104_120000", Some(("2026-01-01", "2026-01-10"))),
     );
-    assert_eq!(oura.posts(), 1, "one refresh, the old sync's");
+    assert_eq!(oura.posts(), 1, "one refresh, the other path's");
     assert!(
         outcome
             .results
@@ -1761,65 +1827,6 @@ fn a_path_whose_tokens_another_path_refreshed_uses_them_with_no_second_refresh()
     let config: Value =
         serde_json::from_slice(&fs::read(root.join("config/journal.json")).unwrap()).unwrap();
     assert_eq!(config["oura"]["tokens"]["refresh_token"], "refresh-1");
-}
-
-#[test]
-fn an_old_sync_that_loaded_first_refreshes_alone_and_the_new_path_then_uses_its_tokens() {
-    let journal = connected("America/Denver");
-    let root = journal.path().to_path_buf();
-    approve(&root);
-    let oura = Oura::new();
-    oura.expire("access-0");
-    // The old sync holds its lock and has loaded its tokens. Before its first
-    // request is answered, the new path runs: it must refresh, and can't.
-    let during = oura.clone();
-    let path = root.clone();
-    let waited = Rc::new(RefCell::new(None));
-    let seen = Rc::clone(&waited);
-    oura.0.borrow_mut().hooks.push((
-        0,
-        Box::new(move || {
-            *seen.borrow_mut() = Some(import(
-                &path,
-                &during,
-                &ask("20261104_120000", Some(("2026-01-01", "2026-01-10"))),
-            ));
-        }),
-    ));
-    old_sync(&root, &oura).unwrap();
-    assert!(matches!(
-        waited.borrow().as_ref(),
-        Some(Err(OuraImportError::Stop(OuraStop::AnotherSync)))
-    ));
-    assert_eq!(oura.posts(), 1, "only the old sync refreshed");
-    // Run again, the new path carries on with the old sync's rotated tokens.
-    finished(
-        &root,
-        &oura,
-        &ask("20261104_120001", Some(("2026-01-01", "2026-01-10"))),
-    );
-    assert_eq!(oura.posts(), 1);
-}
-
-#[test]
-fn a_new_path_refresh_is_what_the_old_sync_loads_next() {
-    let journal = connected("America/Denver");
-    let root = journal.path();
-    approve(root);
-    let oura = Oura::new();
-    oura.expire("access-0");
-    finished(
-        root,
-        &oura,
-        &ask("20261104_120000", Some(("2026-01-01", "2026-01-10"))),
-    );
-    assert_eq!(oura.posts(), 1);
-    // The rotated access token expires too: the old sync refreshes with the
-    // rotated refresh token, which Oura still takes.
-    oura.expire("access-1");
-    old_sync(root, &oura).unwrap();
-    assert_eq!(oura.posts(), 2);
-    assert_eq!(oura.0.borrow().posts[1]["refresh_token"], "refresh-1");
 }
 
 #[test]
@@ -1885,14 +1892,13 @@ fn a_run_with_no_range_resumed_on_a_later_day_asks_for_the_days_it_first_worked_
         oura.gets()
             .iter()
             .filter(|(endpoint, ..)| endpoint != "heartrate")
-            .all(|(_, query, _)| query["start_date"] == "2026-01-02"
-                && query["end_date"] == "2026-02-02"),
+            .all(|(_, query, _)| query["end_date"].as_str() <= "2026-02-02"),
         "{:?}",
         oura.gets()
     );
     assert_eq!(
         covered(root, "sleep"),
-        json!([["2026-01-02", "2026-02-01"]])
+        json!([["2015-01-01", "2026-02-01"]])
     );
 }
 

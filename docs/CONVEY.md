@@ -21,7 +21,8 @@ Read it before touching any workspace, shell chrome, or shared client helper.
 ### Shell chrome
 
 The canonical static shell has dedicated rail, dock, and status instrument
-slots. `shell_boot.js` renders the rail, dock, and status instrument from
+slots. `shell_boot.js` renders the rail, dock, and status instrument from the
+app table in the shell's script bundle and the served `app_names` on
 `/api/shell`. The rail's top group is home, then the pins on that response,
 then more (`/app/more/`). The bottom group is `rail_group` `management` by
 `rail_rank`. `/app/more/` lists every served view except more. Pins are

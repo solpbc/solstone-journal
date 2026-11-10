@@ -542,7 +542,7 @@ fn queued_import_writes_real_notes_and_unresolved_sync_cannot_borrow_retained_pa
     assert_eq!(fs::read(state_path).unwrap(), before);
     assert!(!admit(&owned(&["--connect", "oura"])));
     assert!(!admit(&owned(&["--sync", "oura", "--save"])));
-    assert!(admit(&owned(&["--sync", "oura", "--save", "--scheduled"])));
+    assert!(!admit(&owned(&["--sync", "oura", "--save", "--scheduled"])));
     host.shutdown().unwrap();
     assert!(
         host.import_preparation(WorkStop::new(), Default::default())

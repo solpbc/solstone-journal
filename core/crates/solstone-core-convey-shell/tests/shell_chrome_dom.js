@@ -431,6 +431,17 @@ function addStaticElement(document, tagName, attributes = {}) {
   return element;
 }
 
+// `/api/shell` names the served apps beside the per-request part; the app
+// definitions ship in the shell's script bundle, as SOL_SHELL_REGISTRY.
+function perRequest(shell) {
+  return {
+    app_names: shell.apps.map((app) => app.name),
+    clock: shell.clock,
+    pinned: shell.pinned,
+    version: shell.version,
+  };
+}
+
 function shellFixture(options = {}) {
   const shell = JSON.parse(JSON.stringify(generatedShell));
   shell.pinned = Object.prototype.hasOwnProperty.call(options, 'pinned')
@@ -556,10 +567,11 @@ function createHarness(options = {}) {
     CustomEvent: class CustomEvent {
       constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
     },
+    SOL_SHELL_REGISTRY: { apps: shell.apps, settings: shell.settings },
     whenShellReady(callback) { callback(shell); },
     resolveSolShellReady(data) { readyCalls.push(data); },
     apiJson(url) {
-      if (url === '/api/shell') return Promise.resolve(shell);
+      if (url === '/api/shell') return Promise.resolve(perRequest(shell));
       return Promise.reject(new Error('unexpected apiJson ' + url));
     },
     fetch,
@@ -1168,6 +1180,169 @@ asyncCase('curation, agents, and backup state lines skip rejection, hang, and wr
     }
     assert.strictEqual(root.querySelector('.more-live').textContent, '');
     assert.ok(!root.innerHTML.includes("couldn't"));
+  }
+});
+
+async function settleEarly() {
+  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+}
+
+function earlyShell(response, aborted) {
+  return {
+    response,
+    controller: { abort() { aborted.push(true); } },
+  };
+}
+
+function jsonResponse(body, overrides = {}) {
+  return Object.assign({
+    ok: true,
+    status: 200,
+    redirected: false,
+    headers: { get: (name) => (name.toLowerCase() === 'content-type' ? 'application/json' : null) },
+    json: async () => body,
+    body: { cancel: async () => {} },
+  }, overrides);
+}
+
+function bootFetches() {
+  return {
+    '/app/support/background': { status: 200, body: '' },
+    '/app/home/workspace': { status: 200, body: '<div data-workspace="home"></div>' },
+  };
+}
+
+asyncCase('boot takes the shell page\'s early /api/shell answer and reads it no second time', async () => {
+  const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
+  const shell = harness.readyCalls;
+  let reads = 0;
+  const stub = harness.window.apiJson;
+  harness.window.apiJson = (url, opts) => {
+    if (url === '/api/shell') reads += 1;
+    return stub(url, opts);
+  };
+  const aborted = [];
+  const registry = harness.window.SOL_SHELL_REGISTRY;
+  harness.window.__solShellEarly = earlyShell(Promise.resolve(jsonResponse({
+    app_names: ['home', 'more', 'settings'],
+    clock: null,
+    pinned: [],
+    version: '9.9.9',
+  })), aborted);
+  await harness.boot();
+  assert.strictEqual(reads, 0);
+  assert.strictEqual(aborted.length, 0);
+  assert.strictEqual(harness.window.__solShellEarly, null);
+  const ready = shell[shell.length - 1];
+  assert.deepStrictEqual(ready.apps.map((app) => app.name), ['home', 'more', 'settings']);
+  assert.strictEqual(ready.settings, registry.settings);
+  assert.strictEqual(ready.version, '9.9.9');
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'more', 'settings']);
+});
+
+for (const [label, response] of [
+  ['a refusal', () => Promise.resolve(jsonResponse({}, { ok: false, status: 401 }))],
+  ['a redirect to setup', () => Promise.resolve(jsonResponse({}, { redirected: true }))],
+  ['not JSON', () => Promise.resolve(jsonResponse({}, { headers: { get: () => 'text/html' } }))],
+  ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
+]) {
+  asyncCase(`boot asks /api/shell again through apiJson when the early answer is ${label}`, async () => {
+    const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
+    let reads = 0;
+    const stub = harness.window.apiJson;
+    harness.window.apiJson = (url, opts) => {
+      if (url === '/api/shell') {
+        reads += 1;
+        assert.strictEqual(opts && opts.scope, 'shell');
+      }
+      return stub(url, opts);
+    };
+    const aborted = [];
+    harness.window.__solShellEarly = earlyShell(response(), aborted);
+    await harness.boot();
+    assert.strictEqual(reads, 1);
+    assert.strictEqual(aborted.length, 1);
+    assert.ok(namedApps(harness.document.querySelector('#app-rail')).includes('home'));
+  });
+}
+
+asyncCase('a served app this bundle has no definition for reloads the page once', async () => {
+  const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
+  const reloads = [];
+  harness.window.reloadOnce = (key) => { reloads.push(key); return true; };
+  const aborted = [];
+  harness.window.__solShellEarly = earlyShell(Promise.resolve(jsonResponse({
+    app_names: ['home', 'a-view-from-a-newer-build', 'more'],
+    clock: null,
+    pinned: [],
+    version: '9.9.9',
+  })), aborted);
+  await harness.boot();
+  assert.deepStrictEqual(reloads, ['solstone.shellBuildReloadAt']);
+  const ready = harness.readyCalls[harness.readyCalls.length - 1];
+  assert.deepStrictEqual(ready.apps.map((app) => app.name), ['home', 'more']);
+});
+
+asyncCase('an early /api/shell answer that never comes is given up at the read bound', async () => {
+  const timers = [];
+  const harness = createHarness({
+    boot: true,
+    setTimeout: (cb, delay) => { timers.push({ cb, delay }); return timers.length; },
+    clearTimeout: () => {},
+    fetchResponses: bootFetches(),
+  });
+  harness.window.READ_BOUNDS = { read: { firstByteMs: 30000 } };
+  let reads = 0;
+  const stub = harness.window.apiJson;
+  harness.window.apiJson = (url, opts) => {
+    if (url === '/api/shell') reads += 1;
+    return stub(url, opts);
+  };
+  const aborted = [];
+  harness.window.__solShellEarly = earlyShell(new Promise(() => {}), aborted);
+  const booting = harness.boot();
+  await settleEarly();
+  const bound = timers.find((timer) => timer.delay === 30000);
+  assert.ok(bound, 'the early read is bounded by the ordinary first-byte bound');
+  assert.strictEqual(reads, 0);
+  bound.cb();
+  await settleEarly();
+  for (const timer of timers.filter((t) => t !== bound)) timer.cb();
+  await booting;
+  assert.strictEqual(aborted.length, 1);
+  assert.strictEqual(reads, 1);
+});
+
+testCase('presentation mode is decided once, by the shell page, before the first paint', () => {
+  const page = fs.readFileSync(path.join(crateDir, 'assets/static/shell.html'), 'utf8');
+  const inline = page.match(/<script>\s*\/\/ Presentation mode is decided here[\s\S]*?<\/script>/)[0]
+    .replace(/^<script>/, '').replace(/<\/script>$/, '');
+  const source = fs.readFileSync(path.join(crateDir, 'assets/static/presentation_mode.js'), 'utf8');
+  assert.ok(!source.includes('searchParams'), 'presentation_mode.js reads no address');
+  for (const [search, stored, on, kept] of [
+    ['?present=1', null, true, '1'],
+    ['?present=on', null, true, '1'],
+    ['?present=0', '1', false, null],
+    ['?present=off', '1', false, null],
+    ['', '1', true, '1'],
+    ['', null, false, null],
+    ['?present=maybe', '1', true, '1'],
+  ]) {
+    const storage = new Map(stored ? [['solstone:presentation-mode', stored]] : []);
+    const classes = new Set();
+    const context = vm.createContext({
+      URLSearchParams,
+      window: { location: { search } },
+      sessionStorage: {
+        getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+        setItem: (key, value) => storage.set(key, value),
+        removeItem: (key) => storage.delete(key),
+      },
+      document: { body: { classList: { add: (name) => classes.add(name) } } },
+    });
+    vm.runInContext(inline, context);
+    assert.strictEqual(classes.has('presentation-mode'), on, search || 'stored ' + stored);
+    assert.strictEqual(storage.get('solstone:presentation-mode') ?? null, kept, search);
   }
 });
 

@@ -31,13 +31,13 @@ path = "tests/source_planning_contracts.rs"
 unsafe_code = "deny"
 
 [dependencies]
-solstone-core-body-ingest.workspace = true
 base64 = "0.22.1"
 chrono.workspace = true
 chrono-tz.workspace = true
 getrandom.workspace = true
 icalendar = { version = "0.17.13", features = ["chrono-tz", "recurrence"] }
 image.workspace = true
+quick-xml = "0.41.0"
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

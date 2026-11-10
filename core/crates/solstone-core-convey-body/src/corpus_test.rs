@@ -1,222 +1,141 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#![cfg(all(test, feature = "full-tests"))]
+//! Replaying the recorded Body app corpus against the routes, on a journal this
+//! file builds. Run the ignored `regenerate_corpus` test to record a change on
+//! purpose, and say why in the commit.
 
-//! Shared assertions for replaying the recorded Body convey corpus.
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use serde_json::{Value, json};
 
-use serde_json::Value;
-use sha2::{Digest, Sha256};
+use crate::app_tests::{dated, get, reading, steps, window, workout};
 
-const PLACEHOLDER_ROOT: &str = "<journal-root>";
+const CORPUS: &str = include_str!("../../../fixtures/convey_body_corpus.json");
+const FIXED: &[(&str, &str)] = &[
+    ("/app/body/api/index", "/app/body/api/index"),
+    ("/app/body/api/stats/<month>", "/app/body/api/stats/202601"),
+    ("/app/body/api/status", "/app/body/api/status"),
+    (
+        "/app/body/api/recent",
+        "/app/body/api/recent?before=20260120",
+    ),
+    ("/app/body/api/day/<day>", "/app/body/api/day/20260110"),
+    (
+        "/app/body/api/window",
+        "/app/body/api/window?from=2026-01-10T09:00:00-07:00&to=2026-01-10T10:00:00-07:00",
+    ),
+];
 
-/// Reports the first structural difference between two JSON values.
-pub(crate) fn first_difference(left: &Value, right: &Value, path: &str) -> Option<String> {
-    match (left, right) {
-        (Value::Object(left), Value::Object(right)) => {
-            let keys = left.keys().chain(right.keys()).collect::<BTreeSet<_>>();
-            keys.into_iter()
-                .find_map(|key| match (left.get(key), right.get(key)) {
-                    (Some(left), Some(right)) => {
-                        first_difference(left, right, &format!("{path}.{key}"))
-                    }
-                    (Some(_), None) => Some(format!("{path}.{key}: key missing on right")),
-                    (None, Some(_)) => Some(format!("{path}.{key}: key missing on left")),
-                    (None, None) => None,
-                })
-        }
-        (Value::Array(left), Value::Array(right)) if left.len() == right.len() => left
-            .iter()
-            .zip(right)
-            .enumerate()
-            .find_map(|(index, (left, right))| {
-                first_difference(left, right, &format!("{path}[{index}]"))
-            }),
-        _ if left == right => None,
-        _ => Some(format!("{path}: left={left}; right={right}")),
-    }
+fn seed_journal(root: &Path) {
+    let imports = root.join("imports");
+    fs::create_dir_all(&imports).unwrap();
+    fs::write(
+        imports.join(".apple_health-zone.json"),
+        r#"{"zone":"America/Denver"}"#,
+    )
+    .unwrap();
+    window(
+        root,
+        "20260110",
+        "import.apple_health",
+        "060000_3600",
+        &[
+            workout(
+                "w1",
+                "2026-01-10 06:31:00 -0700",
+                "2026-01-10 07:20:00 -0700",
+            ),
+            steps(
+                "s1",
+                "2026-01-10 06:40:00 -0700",
+                "2026-01-10 06:45:00 -0700",
+                "1200",
+            ),
+        ],
+    );
+    window(
+        root,
+        "20260110",
+        "import.apple_health",
+        "090000_3600",
+        &[reading("r1", "2026-01-10 09:05:00 -0700")],
+    );
+    window(
+        root,
+        "20260111",
+        "import.oura",
+        "000000_86400",
+        &[dated("d1", "20260111")],
+    );
+    let done = imports.join("20260112_120000");
+    fs::create_dir_all(&done).unwrap();
+    fs::write(done.join("body-touched.jsonl"), "").unwrap();
+    fs::write(done.join("body-progress.json"), "{}").unwrap();
+    fs::write(
+        done.join("manifest.json"),
+        r#"{"source_type":"apple_health"}"#,
+    )
+    .unwrap();
+    fs::write(done.join("summary.md"), "# Apple Health import\n").unwrap();
 }
 
-/// Compares a native JSON payload with its recorded structural and hash contracts.
-pub(crate) fn assert_recorded_payload(
-    phase: &str,
-    rule: &str,
-    journal_root: &Path,
-    payload: &Value,
-) {
-    let case = recorded_case(phase, rule);
-    let path = case["path"].as_str().expect("recorded path");
-    let mut actual = redact_journal_root(payload, journal_root);
-    let mut omitted = Vec::new();
-    if path.split('?').next() == Some("/app/body/api/status")
-        && actual
-            .as_object_mut()
-            .and_then(|object| object.remove("freshness"))
-            .is_some()
-    {
-        omitted.push("freshness");
+async fn recorded(phase: &str, root: &Path) -> Vec<Value> {
+    let mut cases = Vec::new();
+    for (rule, path) in FIXED {
+        let (status, body) = get(root, path).await;
+        cases.push(json!({"rule": rule, "path": path, "status": status.as_u16(), "json": body}));
     }
-    assert_eq!(
-        omitted,
-        case["body_omitted_fields"]
-            .as_array()
-            .map(|values| values
-                .iter()
-                .map(|value| value.as_str().expect("omitted field"))
-                .collect::<Vec<_>>())
-            .unwrap_or_default(),
-        "recorded omitted fields"
-    );
-
-    let mut normalized_fields = BTreeSet::new();
-    normalize(
-        &mut actual,
-        "",
-        path.split('?').next().unwrap_or(path),
-        &mut normalized_fields,
-    );
-    assert_eq!(
-        normalized_fields.into_iter().collect::<Vec<_>>(),
-        case["normalized_fields"]
-            .as_array()
-            .expect("recorded normalized fields")
-            .iter()
-            .map(|value| value.as_str().expect("normalized field").to_owned())
-            .collect::<Vec<_>>(),
-        "recorded normalized fields"
-    );
-
-    let expected = &case["json"];
-    if let Some(difference) = first_difference(&actual, expected, "$") {
-        panic!("recorded corpus structural mismatch: {difference}");
-    }
-    let canonical = canonical_json(&actual);
-    assert_eq!(
-        format!("{:x}", Sha256::digest(canonical.as_bytes())),
-        case["body_sha256"].as_str().expect("recorded body hash"),
-        "recorded corpus normalized-json SHA-256"
-    );
-    assert_eq!(
-        canonical.len(),
-        case["body_bytes"].as_u64().expect("recorded body bytes") as usize,
-        "recorded corpus normalized-json byte length"
-    );
-}
-
-fn recorded_case(phase: &str, rule: &str) -> Value {
-    let corpus: Value =
-        serde_json::from_str(include_str!("../../../fixtures/convey_body_corpus.json"))
-            .expect("corpus parses");
-    corpus["cases"][phase]
+    json!({"phase": phase, "cases": cases})["cases"]
         .as_array()
-        .expect("phase is cases")
-        .iter()
-        .find(|case| case["rule"] == rule)
-        .expect("recorded rule exists")
+        .unwrap()
         .clone()
 }
 
-fn redact_journal_root(payload: &Value, journal_root: &Path) -> Value {
-    let encoded = serde_json::to_string(payload).expect("payload serializes");
-    let root = journal_root.to_string_lossy();
-    serde_json::from_str(&encoded.replace(root.as_ref(), PLACEHOLDER_ROOT))
-        .expect("redacted payload parses")
+fn corpus_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/convey_body_corpus.json")
 }
 
-fn normalize(
-    value: &mut Value,
-    field_path: &str,
-    request_path: &str,
-    found: &mut BTreeSet<String>,
-) {
-    match value {
-        Value::Object(object) => {
-            for (key, value) in object {
-                let path = if field_path.is_empty() {
-                    key.to_owned()
-                } else {
-                    format!("{field_path}.{key}")
-                };
-                normalize(value, &path, request_path, found);
-            }
+async fn current() -> Value {
+    let first = tempfile::tempdir().unwrap();
+    let fixed = tempfile::tempdir().unwrap();
+    seed_journal(fixed.path());
+    json!({
+        "schema": "solstone-convey-body-corpus-v2",
+        "note": "Recorded Body app responses over synthetic body windows, for every route that reads windows. A change here is a change to the page's contract: rerun the ignored regenerate_corpus test and say why in the commit.",
+        "cases": {
+            "first_run": recorded("first_run", first.path()).await,
+            "fixed": recorded("fixed", fixed.path()).await,
         }
-        Value::Array(values) => {
-            for value in values {
-                normalize(value, &format!("{field_path}[]"), request_path, found);
-            }
-        }
-        Value::String(text)
-            if request_path == "/app/body/api/trends"
-                && field_path == "generated_at_day"
-                && text.len() == 8
-                && text.bytes().all(|byte| byte.is_ascii_digit()) =>
+    })
+}
+
+#[tokio::test]
+async fn the_recorded_corpus_matches_every_route() {
+    let expected: Value = serde_json::from_str(CORPUS).expect("corpus parses");
+    let actual = current().await;
+    for phase in ["first_run", "fixed"] {
+        for (index, case) in expected["cases"][phase]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
         {
-            *text = "<generated-at-day>".to_owned();
-            found.insert(field_path.to_owned());
+            assert_eq!(
+                actual["cases"][phase][index], *case,
+                "{phase} {}",
+                case["path"]
+            );
         }
-        _ => {}
     }
+    assert_eq!(actual["schema"], expected["schema"]);
 }
 
-fn canonical_json(value: &Value) -> String {
-    match value {
-        Value::Object(object) => {
-            let mut keys = object.keys().collect::<Vec<_>>();
-            keys.sort_unstable();
-            format!(
-                "{{{}}}",
-                keys.into_iter()
-                    .map(|key| format!(
-                        "{}:{}",
-                        python_json_string(key),
-                        canonical_json(&object[key])
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )
-        }
-        Value::Array(values) => format!(
-            "[{}]",
-            values
-                .iter()
-                .map(canonical_json)
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        Value::String(value) => python_json_string(value),
-        _ => serde_json::to_string(value).expect("JSON value serializes"),
-    }
-}
-
-fn python_json_string(value: &str) -> String {
-    let mut encoded = String::from("\"");
-    for character in value.chars() {
-        match character {
-            '\"' => encoded.push_str("\\\""),
-            '\\' => encoded.push_str("\\\\"),
-            '\u{08}' => encoded.push_str("\\b"),
-            '\u{0C}' => encoded.push_str("\\f"),
-            '\n' => encoded.push_str("\\n"),
-            '\r' => encoded.push_str("\\r"),
-            '\t' => encoded.push_str("\\t"),
-            character if character <= '\u{1F}' => {
-                encoded.push_str(&format!("\\u{:04x}", character as u32));
-            }
-            character if character <= '\u{7F}' => encoded.push(character),
-            character if (character as u32) <= 0xFFFF => {
-                encoded.push_str(&format!("\\u{:04x}", character as u32));
-            }
-            character => {
-                let scalar = character as u32 - 0x1_0000;
-                let high = 0xD800 + (scalar >> 10);
-                let low = 0xDC00 + (scalar & 0x3FF);
-                encoded.push_str(&format!("\\u{high:04x}\\u{low:04x}"));
-            }
-        }
-    }
-    encoded.push('\"');
-    encoded
+#[tokio::test]
+#[ignore = "writes the fixture; run on purpose"]
+async fn regenerate_corpus() {
+    let mut text = serde_json::to_string_pretty(&current().await).unwrap();
+    text.push('\n');
+    fs::write(corpus_path(), text).unwrap();
 }

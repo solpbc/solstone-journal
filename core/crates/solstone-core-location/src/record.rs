@@ -23,11 +23,12 @@ pub const SEGMENT_SCHEMA: &str = "solstone.location.segment/1";
 pub const FIX_SCHEMA: &str = "solstone.location.fix/1";
 pub const VISIT_SCHEMA: &str = "solstone.location.visit/1";
 
-/// Which kind of phone wrote the file.
+/// Which device platform wrote the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Platform {
     Ios,
     Watchos,
+    Wearos,
     Android,
     Unknown,
 }
@@ -37,6 +38,7 @@ impl Platform {
         match value.to_ascii_lowercase().as_str() {
             "ios" | "ipados" => Self::Ios,
             "watchos" => Self::Watchos,
+            "wearos" => Self::Wearos,
             "android" => Self::Android,
             _ => Self::Unknown,
         }
@@ -46,6 +48,7 @@ impl Platform {
         match self {
             Self::Ios => "ios",
             Self::Watchos => "watchos",
+            Self::Wearos => "wearos",
             Self::Android => "android",
             Self::Unknown => "unknown",
         }
@@ -276,6 +279,19 @@ pub fn parse_segment_file(bytes: &[u8]) -> SegmentFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wear_location_preserves_its_distinct_platform() {
+        let file = parse_segment_file(
+            br#"{"accuracy":"reduced","fix_count":0,"gap":false,"kind":"location","platform":"wearos","schema":"solstone.location.segment/1","source":"location","tier":"light"}
+"#,
+        );
+        assert_eq!(file.platform(), Some(Platform::Wearos));
+        assert_eq!(Platform::parse(Platform::Wearos.as_str()), Platform::Wearos);
+        assert_ne!(file.platform(), Some(Platform::Android));
+        assert_ne!(file.platform(), Some(Platform::Watchos));
+        assert_eq!(file.precision(Platform::Unknown), Precision::Reduced);
+    }
 
     #[test]
     fn an_iphone_file_reads_its_header_readings_and_visits() {

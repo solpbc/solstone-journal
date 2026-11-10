@@ -1,6 +1,6 @@
 # Oura API Lane — Design
 
-> OAuth/sync/rebuild shipped in `solstone-core-body-ingest`. File-import save and webhooks are still open. Python paths in this file are dead.
+> Historical. Oura now imports as ordinary journal segments: see [`../BODY_SEGMENTS.md`](../BODY_SEGMENTS.md) and [`../health_imports.md`](../health_imports.md). The cursor, the bundles and the approval file described below are no longer written or read, and Python paths in this file are dead.
 
 
 - **Date:** 2026-07-05 (overnight lane, owner-authorized)
@@ -14,16 +14,7 @@
 > the current runbook. See [`../health_imports.md`](../health_imports.md) for
 > the current boundary.
 
-Status note, 2026-08-09: Oura connect, HTTPS transport, token refresh,
-pagination, backfill, cursor state, normalization, native-bundle publication,
-dedupe replay, and restore rebuild are now Rust-owned in
-`solstone-core-body-ingest` and the body-source/store/rebuild crates. Python's
-`oura.py` is a read-only differential oracle and `body_native.py` is process
-transport. The Python sync registry, OAuth/token code, network client, cursor
-writer, bundle writer, and dedupe writer are gone. The owner commands remain
-`solstone journal importer --connect oura`, `solstone journal importer --sync oura`, and
-`solstone journal importer --sync oura --save --confirm-body-save`. Oura file-import
-save and webhooks remain deferred.
+Status note, 2026-11: Oura connect, HTTPS transport and token refresh are Rust-owned; every sync now lands through the segment writer.
 
 The native sync has aggregate run budgets in addition to its per-response
 limit: 128 MiB of response bodies, 5,000 pages, and 100,000 source items. A
@@ -40,9 +31,8 @@ The original stack recorded below is historical. Its current ownership is:
 
 | Piece | File | Role |
 |---|---|---|
-| Native body ingress | `core/crates/solstone-core-body-ingest/` | Oura OAuth, API sync, cursor, normalization, immutable native-bundle publication |
-| Native body contracts | `core/crates/solstone-core-body-source/` | Row/hash, manifest, envelope, ledger, and validation contracts |
-| Native body store | `core/crates/solstone-core-body-store/` + `solstone-core-body-rebuild/` | Ordered replay and atomic `imports/health-dedupe.sqlite` reconstruction |
+| Oura connection | `core/crates/solstone-core-import/` (`oura_connect`, `oura_http`) | Oura OAuth, HTTP transport, settings, token refresh and the held renewal |
+| Body import | `core/crates/solstone-core-import-host/` (`body_segments`, `oura_fetch`) | Asking Oura for days and writing them as body segments |
 | Python Oura reader | `solstone/think/importers/oura.py` | Preview and independent parse/normalization differential oracle only |
 | Process adapter | `solstone/think/body_native.py` | Version-matched native helper dispatch and result validation only |
 | Native body surface | `core/crates/solstone-core-convey-shell/` | Read-only archive and day presentation over normalized shards and the dedupe DB |

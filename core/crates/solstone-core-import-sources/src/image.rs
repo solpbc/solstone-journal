@@ -1190,6 +1190,7 @@ fn write_import_manifest(
         link_id: None,
         observer_handle: None,
         raw_retention: None,
+        span: None,
     })
     .map_err(|error| ImageImportError::Manifest {
         detail: error.to_string(),

@@ -19,15 +19,18 @@ use chrono::{DateTime, Duration, FixedOffset, TimeZone, Timelike};
 use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_body_ingest::{AppleElement, AppleItem};
-#[cfg(test)]
-use solstone_core_body_ingest::{BodyIngestError, scan_apple_export};
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, DATED_WINDOW, RowKind, decode_rows, encode_rows, parse_source_time,
     plain_words, sort_rows, source_words,
 };
+#[cfg(test)]
+use solstone_core_import::BodyIngestError;
 use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
+
+#[cfg(test)]
+use crate::apple_export::scan_apple_export;
+use crate::apple_export::{AppleElement, AppleItem};
 use solstone_core_segment::{holds_foreign_content, owner_deleted};
 
 use crate::body_stream::{APPLE, BodySource, SpanPolicy, TileIds};
@@ -957,6 +960,7 @@ pub fn decide(
     window: &WindowId,
     rows: BTreeMap<String, BodyRow>,
     facet: Option<&str>,
+    may_refile: bool,
     run: Option<&str>,
 ) -> Result<Decision, String> {
     let dir = stream_dir(journal, source, &window.0).join(&window.1);
@@ -1014,8 +1018,11 @@ pub fn decide(
     sort_rows(&mut merged_rows);
     let contents = encode_rows(&merged_rows);
     let rows_changed = stored_text.as_deref() != Some(contents.as_str());
-    decision.facet_changed =
-        !marks_only && facet.is_some_and(|facet| !facet_file_holds(journal, source, window, facet));
+    // Only an owner's answer moves what's already filed.
+    let already_filed = dir.join("talents/facets.json").exists();
+    decision.facet_changed = !marks_only
+        && (may_refile || !already_filed)
+        && facet.is_some_and(|facet| !facet_file_holds(journal, source, window, facet));
     let unbound = !dir.join("stream.json").exists();
     decision.refiled = decision.facet_changed && stored_text.is_some();
     // A window carries one facet, so its rows share whichever it has.
@@ -1248,7 +1255,7 @@ pub(crate) fn plan_with(
     }
     let mut plan = Plan::default();
     for (window, rows) in desired {
-        let decision = decide(journal, source, &window, rows, facet, None)?;
+        let decision = decide(journal, source, &window, rows, facet, true, None)?;
         plan.absorb(&window, decision);
     }
     if repair {
@@ -1365,9 +1372,9 @@ impl Plan {
 
 fn count_of_windows(count: u64) -> String {
     if count == 1 {
-        "1 window".to_owned()
+        "1 part of your journal".to_owned()
     } else {
-        format!("{count} windows")
+        format!("{count} parts of your journal")
     }
 }
 
@@ -1377,6 +1384,21 @@ pub struct SummaryCounts {
     pub read: BTreeMap<String, u64>,
     pub not_read: BTreeMap<String, u64>,
     pub refused: BTreeMap<String, u64>,
+    /// Records already listed that the owner's answer moved, and the titles of
+    /// the facets they came from.
+    #[serde(default)]
+    pub listed_moved: u64,
+    #[serde(default)]
+    pub listed_moved_from: Vec<String>,
+    /// More would have moved than the owner was told: told, and that many.
+    #[serde(default)]
+    pub listed_over: Option<(usize, usize)>,
+    /// New records that joined a group the owner had hidden.
+    #[serde(default)]
+    pub joined_hidden: u64,
+    /// Earlier Strava workouts the conversion couldn't get to before this run.
+    #[serde(default)]
+    pub earlier_waiting: u64,
     pub written: u64,
     pub unchanged: u64,
     pub stayed_deleted: u64,
@@ -1433,6 +1455,11 @@ impl SummaryCounts {
             read: export.read.clone(),
             not_read: export.not_read.clone(),
             refused: export.refused.clone(),
+            listed_moved: 0,
+            listed_moved_from: Vec::new(),
+            listed_over: None,
+            joined_hidden: 0,
+            earlier_waiting: 0,
             written,
             unchanged: plan.unchanged,
             stayed_deleted: plan.stayed_deleted,
@@ -1454,6 +1481,94 @@ impl SummaryCounts {
             not_saved: Vec::new(),
             notes: Vec::new(),
         }
+    }
+}
+
+fn count_of_records(count: u64) -> String {
+    if count == 1 {
+        "1 record".to_owned()
+    } else {
+        format!("{count} records")
+    }
+}
+
+/// Facet titles as an owner would say them: "your work facet", "your work and
+/// home facets".
+#[must_use]
+pub fn facets_words(titles: &[String]) -> String {
+    // Two facets can share a title.
+    let unique = titles
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    match unique.as_slice() {
+        [] => "another facet".to_owned(),
+        [one] => format!("your {one} facet"),
+        [rest @ .., last] => format!("your {} and {last} facets", rest.join(", ")),
+    }
+}
+
+/// A source's own name for a kind of thing, as an owner would say it.
+#[must_use]
+pub fn name_words(name: &str) -> String {
+    const KNOWN: &[(&str, &str)] = &[
+        ("heartrate", "heart rate"),
+        ("daily_spo2", "blood oxygen"),
+        ("vO2_max", "VO2 max"),
+        ("daily_readiness", "readiness"),
+        ("daily_sleep", "sleep scores"),
+        ("daily_activity", "daily activity"),
+        ("daily_stress", "stress"),
+        ("daily_resilience", "resilience"),
+        ("daily_cardiovascular_age", "cardiovascular age"),
+        ("sleep_time", "suggested bedtimes"),
+        ("rest_mode_period", "rest periods"),
+        ("ring_configuration", "ring details"),
+        ("enhanced_tag", "tags"),
+        ("tag", "tags"),
+        ("session", "sessions"),
+        ("workout", "workouts"),
+    ];
+    if let Some((_, words)) = KNOWN.iter().find(|(known, _)| *known == name) {
+        return (*words).to_owned();
+    }
+    let short = ["TypeIdentifier", "ActivityType"]
+        .iter()
+        .find_map(|marker| name.split_once(marker).map(|(_, rest)| rest))
+        .unwrap_or(name);
+    let mut words = String::new();
+    let mut previous_lower = false;
+    for character in short.chars() {
+        if character == '_' {
+            words.push(' ');
+            previous_lower = false;
+        } else if character.is_uppercase() && previous_lower {
+            words.push(' ');
+            words.extend(character.to_lowercase());
+            previous_lower = false;
+        } else {
+            previous_lower = character.is_lowercase() || character.is_ascii_digit();
+            words.extend(character.to_lowercase());
+        }
+    }
+    words
+}
+
+/// Why something wasn't read, as an owner would say it.
+#[must_use]
+pub fn stage_words(stage: &str) -> String {
+    if let Some((name, why)) = stage.split_once(": ") {
+        return format!("{}: {}", name_words(name), stage_words(why));
+    }
+    match stage {
+        "end_before_start" => "ended before it started".to_owned(),
+        "row_too_large" => "too large to keep".to_owned(),
+        "time" | "event_time" => "no time the journal could read".to_owned(),
+        "span_too_long" => "covers too long a stretch of time".to_owned(),
+        "type" => "no kind the journal could read".to_owned(),
+        other => other.replace('_', " "),
     }
 }
 
@@ -1482,10 +1597,10 @@ pub fn summary_text(
     );
     match facet {
         Some(facet) => {
-            let _ = writeln!(text, "Filed under the {facet} facet.\n");
+            let _ = writeln!(text, "filed under the {facet} facet.\n");
         }
         None => text.push_str(
-            "Filed under no facet: a connection that can see the whole journal reads it, and one limited to chosen facets doesn't.\n\n",
+            "filed under no facet: an agent that can read your whole journal reads it, and one limited to chosen facets doesn't.\n\n",
         ),
     }
     if counts.took_facet > 0 {
@@ -1493,10 +1608,10 @@ pub fn summary_text(
             text,
             "{}\n",
             if counts.took_facet == 1 {
-                "1 window took the facet of the entry Oura moved into it, so what's in it is readable under that facet.".to_owned()
+                "1 part of your journal took the facet of the entry Oura moved into it, so what's in it is readable under that facet.".to_owned()
             } else {
                 format!(
-                    "{} windows each took the facet of the entry Oura moved into it, so what's in them is readable under that facet.",
+                    "{} parts of your journal each took the facet of the entry Oura moved into it, so what's in them is readable under that facet.",
                     counts.took_facet
                 )
             }
@@ -1507,9 +1622,9 @@ pub fn summary_text(
             text,
             "{} a facet from an earlier import, so what this import added is readable under that facet too.\n",
             if counts.kept_facet == 1 {
-                "1 window already carries".to_owned()
+                "1 part of your journal already carries".to_owned()
             } else {
-                format!("{} windows already carry", counts.kept_facet)
+                format!("{} parts of your journal already carry", counts.kept_facet)
             }
         );
     }
@@ -1518,6 +1633,62 @@ pub fn summary_text(
             text,
             "{} already held records, and those are now filed under this facet instead of the one they had.\n",
             count_of_windows(counts.refiled)
+        );
+    }
+    if counts.listed_moved > 0 {
+        let _ = writeln!(
+            text,
+            "{} already listed on the activities page moved to this import's facet, from {}.\n",
+            count_of_records(counts.listed_moved),
+            facets_words(&counts.listed_moved_from)
+        );
+    }
+    if let Some((shown, count)) = counts.listed_over {
+        let told = if shown == 0 {
+            "you weren't shown any".to_owned()
+        } else {
+            format!("you were told {shown}")
+        };
+        let _ = if counts.listed_moved > 0 {
+            writeln!(
+                text,
+                "the rest of what's already listed stayed where it was: {} would have moved in all, and {told}.\n",
+                count_of_records(count as u64)
+            )
+        } else {
+            writeln!(
+                text,
+                "nothing already listed moved: {} would have, and {told}.\n",
+                count_of_records(count as u64)
+            )
+        };
+    }
+    if counts.joined_hidden > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.joined_hidden == 1 {
+                "1 record joined a workout you'd hidden, so it's hidden too.".to_owned()
+            } else {
+                format!(
+                    "{} records joined a workout you'd hidden, so they're hidden too.",
+                    counts.joined_hidden
+                )
+            }
+        );
+    }
+    if counts.earlier_waiting > 0 {
+        let _ = writeln!(
+            text,
+            "{}\n",
+            if counts.earlier_waiting == 1 {
+                "1 earlier Strava workout couldn't be updated yet, so it can show twice beside what this import added until it is.".to_owned()
+            } else {
+                format!(
+                    "{} earlier Strava workouts couldn't be updated yet, so they can show twice beside what this import added until they are.",
+                    counts.earlier_waiting
+                )
+            }
         );
     }
     if counts.activities > 0 {
@@ -1539,10 +1710,10 @@ pub fn summary_text(
             text,
             "{}\n",
             if counts.activities_no_facet == 1 {
-                "1 workout, night of sleep or mindfulness session doesn't show on its day, because its window has no facet.".to_owned()
+                "1 workout, night of sleep or mindfulness session isn't listed on the activities page, because that part of your journal has no facet.".to_owned()
             } else {
                 format!(
-                    "{} of the workouts, nights of sleep and mindfulness sessions don't show on their days, because their windows have no facet.",
+                    "{} of the workouts, nights of sleep and mindfulness sessions aren't listed on the activities page, because those parts of your journal have no facet.",
                     counts.activities_no_facet
                 )
             }
@@ -1563,11 +1734,7 @@ pub fn summary_text(
         );
     }
     if !counts.activities_refused.is_empty() {
-        let facets = match counts.activities_refused.as_slice() {
-            [one] => format!("the {one} facet"),
-            [rest @ .., last] => format!("the {} and {last} facets", rest.join(", ")),
-            [] => String::new(),
-        };
+        let facets = facets_words(&counts.activities_refused);
         let _ = writeln!(
             text,
             "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"
@@ -1598,13 +1765,17 @@ pub fn summary_text(
     if counts.deferred > 0 {
         let _ = writeln!(
             text,
-            "{source} has since changed {}; the journal keeps {} as first written.\n",
+            "{source} moved {} to the other side of midnight; your journal keeps the {} it first saved.\n",
             if counts.deferred == 1 {
                 "1 entry".to_owned()
             } else {
                 format!("{} entries", counts.deferred)
             },
-            if counts.deferred == 1 { "it" } else { "them" }
+            if counts.deferred == 1 {
+                "time"
+            } else {
+                "times"
+            }
         );
     }
     if counts.moved > 0 {
@@ -1625,7 +1796,7 @@ pub fn summary_text(
             "## Held back\n\nNot added yet: each may already be in a part of the journal that couldn't be read. The next import tries again.\n\n",
         );
         for (name, count) in &counts.held {
-            let _ = writeln!(text, "- {name}: {count}");
+            let _ = writeln!(text, "- {}: {count}", name_words(name));
         }
         text.push('\n');
     }
@@ -1633,13 +1804,13 @@ pub fn summary_text(
         if !items.is_empty() {
             let _ = writeln!(text, "## {title}\n");
             for (name, count) in items {
-                let _ = writeln!(text, "- {name}: {count}");
+                let _ = writeln!(text, "- {}: {count}", name_words(&name));
             }
             text.push('\n');
         }
     };
     section(
-        "Read",
+        "read",
         counts
             .read
             .iter()
@@ -1647,7 +1818,7 @@ pub fn summary_text(
             .collect(),
     );
     section(
-        "Not read",
+        "not read",
         counts
             .not_read
             .iter()
@@ -1657,9 +1828,10 @@ pub fn summary_text(
     let mut refused: Vec<String> = counts
         .refused
         .iter()
-        .map(|(name, count)| format!("{name}: {count}"))
+        .map(|(name, count)| format!("{}: {count}", stage_words(name)))
         .collect();
     for (endpoint, days, count) in &counts.unsure {
+        let endpoint = name_words(endpoint);
         let days = match days.as_slice() {
             [one] => one.clone(),
             [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
@@ -1676,14 +1848,14 @@ pub fn summary_text(
         });
     }
     if !refused.is_empty() {
-        let _ = writeln!(text, "## Refused\n");
+        let _ = writeln!(text, "## couldn't be read\n");
         for line in refused {
             let _ = writeln!(text, "- {line}");
         }
         text.push('\n');
     }
     if !counts.not_saved.is_empty() {
-        let _ = writeln!(text, "## Not saved\n");
+        let _ = writeln!(text, "## not saved yet\n");
         for line in &counts.not_saved {
             let _ = writeln!(text, "- {line}");
         }

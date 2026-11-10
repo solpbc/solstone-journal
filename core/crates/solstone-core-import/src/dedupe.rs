@@ -30,6 +30,8 @@ pub struct ManifestWriteRequest<'a> {
     pub link_id: Option<&'a str>,
     pub observer_handle: Option<&'a str>,
     pub raw_retention: Option<&'a str>,
+    /// The inclusive `YYYYMMDD` day ranges a body import read, written as `span`.
+    pub span: Option<&'a [[String; 2]]>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -155,6 +157,7 @@ pub fn backfill_retained_import_manifests(
             link_id: None,
             observer_handle: None,
             raw_retention: None,
+            span: None,
         })?;
         report.backfilled += 1;
     }
@@ -320,6 +323,9 @@ pub fn write_manifest(request: &ManifestWriteRequest<'_>) -> Result<PathBuf, Imp
     manifest.insert("imported_via".to_owned(), json!(request.imported_via));
     manifest.insert("link_id".to_owned(), json!(request.link_id));
     manifest.insert("observer_handle".to_owned(), json!(request.observer_handle));
+    if let Some(span) = request.span {
+        manifest.insert("span".to_owned(), json!(span));
+    }
     if let Some(raw_retention) = request.raw_retention {
         manifest.insert("raw_retention".to_owned(), json!(raw_retention));
     }
@@ -419,6 +425,30 @@ pub fn find_manifest_by_hash_where(
     Ok(ManifestScan {
         found: None,
         skipped,
+    })
+}
+
+/// Whether an import of content with this hash is in the journal now: its
+/// manifest says so, or, for a run that stopped before writing one, its own
+/// record does. What a sync ledger marked imported is checked against this.
+pub fn import_of_source_exists(journal_root: &Path, source_hash: &SourceHash) -> bool {
+    if find_manifest_by_hash(journal_root, source_hash)
+        .ok()
+        .and_then(|scan| scan.found)
+        .is_some()
+    {
+        return true;
+    }
+    let Ok(listing) = fs::read_dir(journal_root.join("imports")) else {
+        return false;
+    };
+    listing.flatten().any(|entry| {
+        fs::read(entry.path().join("import.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|record| {
+                record.get("source_hash").and_then(Value::as_str) == Some(source_hash.as_str())
+            })
     })
 }
 

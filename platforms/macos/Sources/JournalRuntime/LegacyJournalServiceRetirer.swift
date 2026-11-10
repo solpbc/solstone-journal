@@ -55,7 +55,12 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
     private let uid: uid_t
     private let fileManager: FileManager
     private let commandTimeout: Duration
+    // `launchctl bootout` returns at once; the job stays loaded until it has
+    // exited. launchd kills it 5 s after SIGTERM, or after the plist's
+    // ExitTimeOut when it sets one (20 s for launchd's own default stop).
     private let absenceTimeout: Duration
+    // The journal's own shutdown is budgeted at 15 s.
+    private let gracefulStopTimeout: Duration
     private let absencePollInterval: Duration
 
     public init(
@@ -67,8 +72,9 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
             .appendingPathComponent("Library/LaunchAgents/\(LegacyJournalServiceRetirer.label).plist"),
         uid: uid_t = getuid(),
         fileManager: FileManager = .default,
-        commandTimeout: Duration = .seconds(2),
-        absenceTimeout: Duration = .seconds(3),
+        commandTimeout: Duration = .seconds(10),
+        absenceTimeout: Duration = .seconds(30),
+        gracefulStopTimeout: Duration = .seconds(20),
         absencePollInterval: Duration = .milliseconds(250)
     ) {
         self.runner = runner
@@ -79,6 +85,7 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         self.fileManager = fileManager
         self.commandTimeout = commandTimeout
         self.absenceTimeout = absenceTimeout
+        self.gracefulStopTimeout = gracefulStopTimeout
         self.absencePollInterval = absencePollInterval
     }
 
@@ -93,15 +100,35 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         }
     }
 
+    /// Whether launchd's job for this service is the live supervisor of
+    /// `journalRoot`: its plist has a service install's shape and names this
+    /// journal, and the job's pid is `supervisorPID`. A journal run any other
+    /// way (setup's own, a foreground start, another journal's service) is not.
+    public func runsLiveSupervisor(journalRoot: URL, supervisorPID: pid_t) async -> Bool {
+        guard fileManager.fileExists(atPath: plistURL.path),
+              let plist = readServicePlist(),
+              plist.hasLegacyJournalShape,
+              plist.rootMatch(journalRoot: journalRoot) == .same,
+              case .loaded(let job) = await loadLaunchdJob(),
+              job.pid == supervisorPID,
+              job.agrees(with: plist, plistURL: plistURL) else {
+            return false
+        }
+        return true
+    }
+
     public func retireLegacyService(journalRoot: URL) async -> LegacyJournalServiceRetirementResult {
         let plan = await retirementPlan(journalRoot: journalRoot)
         switch plan {
         case .noop(let verdict):
             Logger.setup.notice("journal-lifecycle: legacy-service verdict=\(verdict.rawValue, privacy: .public) action=noop")
             return .success(verdict)
-        case .retire(let verdict, let loaded):
+        case .retire(let verdict, let loaded, let runningPID):
             Logger.setup.notice("journal-lifecycle: legacy-service verdict=\(verdict.rawValue, privacy: .public) action=retire")
             if loaded {
+                if let runningPID {
+                    await stopRunningJob(pid: runningPID)
+                }
                 let booted = await bootoutAndWaitAbsent()
                 guard booted else {
                     return .blocked(.inspectionFailure, diagnostic("legacy service could not be unloaded"))
@@ -113,6 +140,9 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
                 }
                 return .success(verdict)
             } catch {
+                if !fileManager.fileExists(atPath: plistURL.path) {
+                    return .success(verdict)
+                }
                 return .blocked(.inspectionFailure, diagnostic("legacy service plist could not be removed"))
             }
         case .block(let verdict, let message):
@@ -123,7 +153,7 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
 
     private enum RetirementPlan {
         case noop(LegacyJournalServiceVerdict)
-        case retire(LegacyJournalServiceVerdict, loaded: Bool)
+        case retire(LegacyJournalServiceVerdict, loaded: Bool, runningPID: pid_t?)
         case block(LegacyJournalServiceVerdict, String)
     }
 
@@ -142,10 +172,20 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
     }
 
     fileprivate struct ServicePlist: Equatable {
+        static let journalTokenKey = "SOLSTONE_INSTALLATION_JOURNAL_TOKEN"
+        static let journalOverrideKey = "_SOLSTONE_JOURNAL_OVERRIDE"
+
         let label: String
         let programArguments: [String]
-        let standardOutPath: String
-        let standardErrorPath: String
+        // Written by the earlier service install, which logged to
+        // <journal>/health/service.log.
+        let standardOutPath: String?
+        let standardErrorPath: String?
+        // The current service install writes no log paths. It names its
+        // journal in this environment value: the path's bytes, lower-case hex.
+        let journalToken: String?
+        // Some earlier installs named a non-default journal here.
+        let journalOverride: String?
     }
 
     private func retirementPlan(journalRoot: URL) async -> RetirementPlan {
@@ -178,8 +218,8 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         switch plist.rootMatch(journalRoot: journalRoot) {
         case .same:
             return loadedJob == nil
-                ? .retire(.provenMatchUnloaded, loaded: false)
-                : .retire(.provenMatchLoaded, loaded: true)
+                ? .retire(.provenMatchUnloaded, loaded: false, runningPID: nil)
+                : .retire(.provenMatchLoaded, loaded: true, runningPID: loadedJob?.pid)
         case .different:
             return .block(.differentRoot, "legacy service belongs to a different journal")
         case .malformed:
@@ -216,6 +256,35 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         return .failed
     }
 
+    /// Asks a running job to stop and waits for it, before bootout unloads it.
+    /// bootout sends SIGTERM and, unless the plist sets ExitTimeOut (the
+    /// service install does not), SIGKILLs the job 5 seconds later: shorter than
+    /// the journal's own shutdown. The journal exits 0 on a signal, so KeepAlive
+    /// (SuccessfulExit = false) leaves it stopped. If it is not gone in time,
+    /// bootout below still unloads it.
+    private func stopRunningJob(pid: pid_t) async {
+        let output = LockedLegacyServiceOutput()
+        do {
+            let result = try await runner.run(
+                executable: launchctlURL,
+                arguments: ["kill", "SIGTERM", serviceDomain],
+                environment: nil,
+                timeout: commandTimeout,
+                stdoutHandler: { data in output.appendStdout(data) },
+                stderrHandler: { data in output.appendStderr(data) }
+            )
+            guard result.exitCode == 0 else { return }
+        } catch {
+            return
+        }
+        let deadline = clock.now() + gracefulStopTimeout
+        repeat {
+            guard case .loaded(let job) = await loadLaunchdJob(), job.pid == pid else { return }
+            await clock.sleep(for: absencePollInterval)
+        } while clock.now() < deadline
+        Logger.setup.warning("journal-lifecycle: legacy-service graceful-stop timed-out")
+    }
+
     private func bootoutAndWaitAbsent() async -> Bool {
         let output = LockedLegacyServiceOutput()
         do {
@@ -228,6 +297,8 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
                 stderrHandler: { data in output.appendStderr(data) }
             )
             guard result.exitCode == 0 else {
+                // Another start may have unloaded it a moment earlier.
+                if case .notLoaded = await loadLaunchdJob() { return true }
                 return false
             }
         } catch {
@@ -267,17 +338,40 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
         guard let data = try? Data(contentsOf: plistURL),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let label = plist["Label"] as? String,
-              let arguments = plist["ProgramArguments"] as? [String],
-              let stdout = plist["StandardOutPath"] as? String,
-              let stderr = plist["StandardErrorPath"] as? String else {
+              let arguments = plist["ProgramArguments"] as? [String] else {
+            return nil
+        }
+        guard let stdout = optionalString(plist["StandardOutPath"]),
+              let stderr = optionalString(plist["StandardErrorPath"]) else {
+            return nil
+        }
+        let environment: [String: Any]
+        if let value = plist["EnvironmentVariables"] {
+            guard let dictionary = value as? [String: Any] else { return nil }
+            environment = dictionary
+        } else {
+            environment = [:]
+        }
+        guard let journalToken = optionalString(environment[ServicePlist.journalTokenKey]),
+              let journalOverride = optionalString(environment[ServicePlist.journalOverrideKey]) else {
             return nil
         }
         return ServicePlist(
             label: label,
             programArguments: arguments,
             standardOutPath: stdout,
-            standardErrorPath: stderr
+            standardErrorPath: stderr,
+            journalToken: journalToken,
+            journalOverride: journalOverride
         )
+    }
+
+    /// `.some(nil)` when the key is absent, `nil` when it holds something that
+    /// is not a string.
+    private func optionalString(_ value: Any?) -> String?? {
+        guard let value else { return .some(nil) }
+        guard let string = value as? String else { return nil }
+        return .some(string)
     }
 
     private func parseLaunchdJob(_ output: String) -> LaunchdJob {
@@ -320,6 +414,13 @@ public struct LegacyJournalServiceRetirer: LegacyJournalServiceRetiring, @unchec
     }
 }
 
+/// Whether the journal running at `journalRoot` is kept by a Terminal-installed
+/// service for that journal, rather than by anything the app should leave alone.
+public func terminalServiceRunsJournal(journalRoot: URL) async -> Bool {
+    guard let pid = liveReadySupervisorPID(journalRoot: journalRoot) else { return false }
+    return await LegacyJournalServiceRetirer().runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: pid)
+}
+
 private enum RootMatch {
     case same
     case different
@@ -327,34 +428,94 @@ private enum RootMatch {
 }
 
 private extension LegacyJournalServiceRetirer.ServicePlist {
+    /// Every command line a journal service install has written: an absolute
+    /// `journal`, `sol` or `solstone` launcher, then `journal` (always, for
+    /// `solstone`), then `start <port>`, `supervisor <port>` or a bare
+    /// `supervisor`.
     var hasLegacyJournalShape: Bool {
-        guard label == LegacyJournalServiceRetirer.label else { return false }
-        if programArguments.count >= 3
-            && URL(fileURLWithPath: programArguments[0]).lastPathComponent == "journal"
-            && programArguments[1] == "start"
-            && programArguments[2] == "5015" {
+        guard label == LegacyJournalServiceRetirer.label,
+              let launcher = programArguments.first,
+              launcher.hasPrefix("/") else {
+            return false
+        }
+        let name = URL(fileURLWithPath: launcher).lastPathComponent
+        guard ["journal", "solstone", "sol"].contains(name) else { return false }
+        var tail = programArguments.dropFirst()
+        if tail.first == "journal" {
+            tail = tail.dropFirst()
+        } else if name == "solstone" {
+            return false
+        }
+        let words = Array(tail)
+        if words == ["supervisor"] {
             return true
         }
-        if programArguments.count >= 4
-            && URL(fileURLWithPath: programArguments[0]).lastPathComponent == "solstone"
-            && programArguments[1] == "journal"
-            && programArguments[2] == "start"
-            && programArguments[3] == "5015" {
-            return true
+        guard words.count == 2, words[0] == "start" || words[0] == "supervisor" else {
+            return false
         }
-        return false
+        let port = words[1]
+        return !port.isEmpty && port.utf8.allSatisfy { (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }
     }
 
+    /// Which journal the service runs: its token, else the journal it was
+    /// pointed at, else the journal whose `health` folder holds its logs.
     func rootMatch(journalRoot: URL) -> RootMatch {
-        guard standardOutPath == standardErrorPath,
-              standardOutPath.hasPrefix("/") else {
-            return .malformed
+        let serviceRoot: String
+        if let journalToken {
+            guard let tokenPath = decodeJournalToken(journalToken) else {
+                return .malformed
+            }
+            serviceRoot = tokenPath
+        } else if let journalOverride {
+            guard journalOverride.hasPrefix("/") else { return .malformed }
+            serviceRoot = journalOverride
+        } else {
+            guard let standardOutPath, let standardErrorPath,
+                  standardOutPath.hasPrefix("/"), standardErrorPath.hasPrefix("/") else {
+                return .malformed
+            }
+            let outDirectory = URL(fileURLWithPath: standardOutPath).deletingLastPathComponent()
+            let errDirectory = URL(fileURLWithPath: standardErrorPath).deletingLastPathComponent()
+            guard outDirectory.lastPathComponent == "health",
+                  canonicalPath(outDirectory) == canonicalPath(errDirectory) else {
+                return .malformed
+            }
+            serviceRoot = outDirectory.deletingLastPathComponent().path
         }
-        let expected = journalRoot
-            .appendingPathComponent("health/service.log")
-        let actualPath = canonicalPath(URL(fileURLWithPath: standardOutPath))
-        let expectedPath = canonicalPath(expected)
-        return actualPath == expectedPath ? .same : .different
+        let actualPath = canonicalPath(URL(fileURLWithPath: serviceRoot, isDirectory: true))
+        return actualPath == canonicalPath(journalRoot) ? .same : .different
+    }
+
+    private func decodeJournalToken(_ token: String) -> String? {
+        let digits = Array(token.utf8)
+        guard !digits.isEmpty, digits.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(digits.count / 2)
+        var index = 0
+        while index < digits.count {
+            guard let high = lowerHexValue(digits[index]),
+                  let low = lowerHexValue(digits[index + 1]) else {
+                return nil
+            }
+            bytes.append(high << 4 | low)
+            index += 2
+        }
+        guard let path = String(bytes: bytes, encoding: .utf8),
+              path.hasPrefix("/") else {
+            return nil
+        }
+        return path
+    }
+
+    private func lowerHexValue(_ digit: UInt8) -> UInt8? {
+        switch digit {
+        case UInt8(ascii: "0")...UInt8(ascii: "9"):
+            return digit - UInt8(ascii: "0")
+        case UInt8(ascii: "a")...UInt8(ascii: "f"):
+            return digit - UInt8(ascii: "a") + 10
+        default:
+            return nil
+        }
     }
 }
 

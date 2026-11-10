@@ -272,13 +272,9 @@ fn record_finished_import_at(
     .map_err(|error| error.to_string())
 }
 
-/// Save a source that renders into text segments: conversation exports, calendars, notes.
-///
-/// Admit, render, write, then publish and record under the import lock. Segment keys come
-/// from the source's own timestamps, so importing the same file again would rewrite the same
-/// segments and re-run every day they touch. Unless forced, a file already imported is
-/// skipped, as the web import refuses it.
-/// Whether these exact bytes already landed entries through an earlier import.
+/// Whether these exact bytes already landed entries through an import still in the
+/// journal. An import in the trash or erased has left `imports/`, so its file
+/// imports again and comes back.
 fn already_saved(journal: &Path, media: &Path) -> bool {
     solstone_core_import::hash_source(media)
         .ok()
@@ -293,6 +289,12 @@ fn already_saved(journal: &Path, media: &Path) -> bool {
         .is_some_and(|entries| entries > 0)
 }
 
+/// Save a source that renders into text segments: conversation exports, calendars, notes.
+///
+/// Admit, render, write, then publish and record under the import lock. Segment keys come
+/// from the source's own timestamps, so importing the same file again would rewrite the same
+/// segments and re-run every day they touch. Unless forced, a file an import still in the
+/// journal already brought in is skipped, as the web import refuses it.
 fn run_save(
     mut dispatch: RegistryDispatch,
     journal: &Path,
@@ -453,6 +455,7 @@ fn write_save_manifest(
         link_id: None,
         observer_handle: None,
         raw_retention: None,
+        span: None,
     })
     .map(|_| ())
     .map_err(|error| error.to_string())
@@ -1319,8 +1322,9 @@ fn run_strava_internal(
     );
     let held_back = crate::strava_convert::relocate_download(journal, &live, owner_chose);
     // Counted from where the records are now: a group that waited didn't move.
-    let listed_moved = owner_chose
-        .and_then(|facet| crate::strava_convert::listed_moved_now(journal, &would_move, facet));
+    let listed_moved = owner_chose.and_then(|facet| {
+        crate::strava_convert::listed_moved_now(journal, &would_move, facet, &held_back)
+    });
     conversion.moves_open = solstone_core_facets::open_body_moves(journal)
         .map_or(1, |open| u64::try_from(open.len()).unwrap_or(u64::MAX));
     let mut list_refiles = |tiles: &[(String, String)]| {
@@ -1445,6 +1449,7 @@ fn run_strava_internal(
             link_id: None,
             observer_handle: None,
             raw_retention: Some(STRAVA_RAW_RETENTION),
+            span: None,
         });
     if let Err(error) = manifest_res {
         let _ = finish(ImportTerminalInput::Failed(&publish_slice));
@@ -3886,7 +3891,6 @@ mod tests {
             Some(RegistrySource::Strava)
         );
         assert_eq!(RegistrySource::Strava.name(), "strava");
-        assert!(solstone_core_format::body::is_body_stream("import.strava"));
         assert!(
             !solstone_core_import_sources::registry::claims(RegistrySource::Strava, &csv_file)
                 .unwrap()

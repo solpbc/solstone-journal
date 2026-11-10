@@ -115,20 +115,14 @@ impl fmt::Display for JournalMaintenanceError {
 }
 impl std::error::Error for JournalMaintenanceError {}
 
-/// Body-history rebuild and full journal scan boundary used after a restore.
+/// Full journal scan boundary used after a restore.
 pub trait JournalMaintenance {
-    fn rebuild_body_history(&self, journal: &Path) -> Result<(), JournalMaintenanceError>;
     fn full_scan(&self, journal: &Path) -> Result<(), JournalMaintenanceError>;
 }
 
 /// Production implementation of post-restore journal maintenance.
 pub struct NativeJournalMaintenance;
 impl JournalMaintenance for NativeJournalMaintenance {
-    fn rebuild_body_history(&self, journal: &Path) -> Result<(), JournalMaintenanceError> {
-        solstone_core_body_rebuild::rebuild_body_store(journal)
-            .map(|_| ())
-            .map_err(|_| JournalMaintenanceError)
-    }
     fn full_scan(&self, journal: &Path) -> Result<(), JournalMaintenanceError> {
         solstone_core_indexer_store::todo::enqueue_token(
             journal,
@@ -4510,9 +4504,6 @@ mod tests {
         assert_eq!((check.indexed, check.removed), (0, 0));
     }
     impl JournalMaintenance for Maintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
         }

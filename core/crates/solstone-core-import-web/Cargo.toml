@@ -16,6 +16,7 @@ axum = { workspace = true, features = ["tokio", "multipart"] }
 chrono.workspace = true
 chrono-tz.workspace = true
 log.workspace = true
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-convey-http.workspace = true
@@ -24,6 +25,9 @@ solstone-core-facets.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
+solstone-core-indexer-store.workspace = true
+solstone-core-removals.workspace = true
+solstone-core-trash.workspace = true
 solstone-core-journal-archive.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true

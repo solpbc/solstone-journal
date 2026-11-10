@@ -5153,7 +5153,6 @@ dependencies = [
  "sha2 0.10.9",
  "socket2",
  "solstone-core-backup",
- "solstone-core-body-rebuild",
  "solstone-core-callosum",
  "solstone-core-distribution",
  "solstone-core-indexer-store",
@@ -5195,55 +5194,6 @@ dependencies = [
  "solstone-core-sol-link",
  "solstone-core-system",
  "tokio",
-]
-
-[[package]]
-name = "solstone-core-body-ingest"
-version = "2.0.73"
-dependencies = [
- "chrono",
- "chrono-tz",
- "getrandom 0.3.4",
- "nix 0.30.1",
- "quick-xml",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-auth-flow",
- "solstone-core-body-rebuild",
- "solstone-core-body-source",
- "solstone-core-journal-config",
- "solstone-core-journal-config-write",
- "solstone-core-journal-io",
- "ureq",
- "zip",
-]
-
-[[package]]
-name = "solstone-core-body-rebuild"
-version = "2.0.73"
-dependencies = [
- "nix 0.30.1",
- "rusqlite",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-body-source",
- "solstone-core-body-store",
- "solstone-core-journal-io",
-]
-
-[[package]]
-name = "solstone-core-body-source"
-version = "2.0.73"
-dependencies = [
- "ryu",
- "sha2 0.10.9",
-]
-
-[[package]]
-name = "solstone-core-body-store"
-version = "2.0.73"
-dependencies = [
- "solstone-core-body-source",
 ]
 
 [[package]]
@@ -5374,14 +5324,14 @@ version = "2.0.73"
 dependencies = [
  "axum",
  "chrono",
- "log",
- "rusqlite",
+ "chrono-tz",
  "serde_json",
- "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-convey-http",
+ "solstone-core-format",
+ "solstone-core-import",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-location",
 ]
 
 [[package]]
@@ -5404,6 +5354,7 @@ version = "2.0.73"
 dependencies = [
  "axum",
  "chrono",
+ "flate2",
  "futures-core",
  "log",
  "ndarray",
@@ -5742,7 +5693,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
@@ -5877,19 +5827,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
+ "solstone-core-auth-flow",
  "solstone-core-callosum",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-removals",
+ "solstone-core-retention",
  "solstone-core-segment",
+ "solstone-core-trash",
  "tempfile",
  "tokio",
+ "ureq",
 ]
 
 [[package]]
@@ -5904,7 +5858,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
  "solstone-core-callosum",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -5917,6 +5870,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
+ "solstone-core-location",
  "solstone-core-pdf",
  "solstone-core-processing-record",
  "solstone-core-retention",
@@ -5940,10 +5894,10 @@ dependencies = [
  "icalendar",
  "image",
  "nix 0.30.1",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
  "solstone-core-depict",
  "solstone-core-entity",
  "solstone-core-entity-matching",
@@ -5969,6 +5923,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "log",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-callosum",
@@ -5977,14 +5932,17 @@ dependencies = [
  "solstone-core-generate",
  "solstone-core-import",
  "solstone-core-import-sources",
+ "solstone-core-indexer-store",
  "solstone-core-journal-archive",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-removals",
  "solstone-core-segment",
  "solstone-core-system",
  "solstone-core-system-health",
+ "solstone-core-trash",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -6309,6 +6267,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-sol-link",
+ "solstone-core-trash",
 ]
 
 [[package]]
@@ -6321,6 +6280,7 @@ dependencies = [
  "serde_json",
  "solstone-core-backup-runtime",
  "solstone-core-brain",
+ "solstone-core-import",
  "solstone-core-indexer-store",
  "solstone-core-indexer-todo",
  "solstone-core-journal-config",
@@ -6714,6 +6674,7 @@ dependencies = [
  "solstone-core-describe-categories",
  "solstone-core-entity",
  "solstone-core-facets",
+ "solstone-core-import",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
  "solstone-core-journal-config-write",
@@ -7029,7 +6990,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",

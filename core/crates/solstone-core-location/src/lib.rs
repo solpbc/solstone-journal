@@ -23,6 +23,7 @@ mod cache;
 pub mod day;
 pub mod fingerprint;
 pub mod install;
+pub mod old_imports;
 pub mod pack;
 pub mod places;
 pub mod projection;
@@ -242,6 +243,8 @@ pub fn read_places(journal: &Path) -> Result<Vec<PlaceView>, area::AreaTierError
     let mut views: Vec<PlaceView> = store
         .places
         .iter()
+        // A dormant place's stays are in the trash: it isn't shown.
+        .filter(|place| !place.dormant)
         .map(|place| {
             let members: Vec<places::StayRecord> = by_place
                 .get(place.id.as_str())

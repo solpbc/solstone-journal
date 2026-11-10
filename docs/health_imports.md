@@ -5,9 +5,7 @@ body data entering the journal. The filename is retained for links; `health` in
 owner-facing language means the journal system's health, while physiological
 records are body data.
 
-Apple Health and Oura are moving onto the journal's ordinary segments.
-[`BODY_SEGMENTS.md`](BODY_SEGMENTS.md) is the contract for that move; no owner
-command writes those segments yet, and what follows on bundles stays true until one does.
+Apple Health and Oura land as ordinary journal segments. [`BODY_SEGMENTS.md`](BODY_SEGMENTS.md) is the contract: what a window holds, how an import is identified, and how readers use it.
 
 ## Strava workouts
 
@@ -20,181 +18,44 @@ Strava is the first body source an owner brings in from the import page (the **S
 - **The download is not kept:** an upload is removed when its import ends; one never started is removed once it is an hour old, the next time the journal starts.
 - **Deleting:** the body app deletes one workout (every piece, on every day it covers); a Strava import's own page deletes the whole import. A workout deleted on its own stays deleted when a download is imported again, unless its start time or length changed on Strava. A deleted import is released: importing the same download again brings its workouts back. Deletes don't reach copies made before them (encrypted backup, or wherever the journal folder was copied).
 
-## current ownership
+## Apple Health and Oura
 
-Rust owns every production mutation in this lane:
-
-- `solstone-core-body-ingest` reads Apple exports, performs Oura OAuth and API
-  sync, normalizes rows, computes identities, publishes immutable native
-  bundles, advances the Oura cursor, and requests dedupe rebuilds.
-- `solstone-core-body-source` owns the normalized row, hash, manifest,
-  envelope, and ledger contracts.
-- `solstone-core-body-store` replays row-agreed ledger events into dedupe
-  state; `solstone-core-body-rebuild` publishes that state as
-  `imports/health-dedupe.sqlite`.
-- `solstone-core-journal-io` owns the filesystem mutation mechanics around
-  bundle publication, cursor/config writes, locks, and database replacement.
-
-Python remains in two non-writing roles: `body_native.py` selects and validates
-the version-matched native process, while `apple_health.py` and `oura.py` keep
-read-only detect/preview parsers. There is no Python Apple/Oura writer,
-network client, OAuth/token owner, cursor writer, or dedupe writer. Native
-coverage for Apple save/preview, bounded ZIP/symlink detect refusals, and
-Oura missing-token refusal lives in
-`core/crates/solstone-core/tests/body_cli.rs`.
-
-## owner commands
-
-The existing dispatcher reaches the native owner:
+Both are command-line imports for now, with no import card. The import page's generic start can't save an Apple export, because it can't pass the go-ahead flag.
 
 ```text
-solstone journal importer /path/to/apple_health_export --confirm-body-save
-solstone journal importer --connect oura
-solstone journal importer --sync oura
-solstone journal importer --sync oura --save --confirm-body-save
+solstone journal importer <export> --confirm-body-save        # save an Apple export
+solstone journal importer <export> --dry-run [--json]         # say what a save would read; no scan
+solstone journal importer --connect oura                      # authorize Oura
+solstone journal importer --sync oura                         # say what a save would ask for; writes nothing
+solstone journal importer --sync oura --save                  # bring Oura in
 ```
 
-`--dry-run` / catalog mode makes no journal, token, cursor, bundle, or derived
-database mutation. The Apple preview and Oura catalog tests in
-`solstone-core-body-ingest` exercise that boundary. `--confirm-health-save`
-remains a hidden compatibility alias; new instructions use
-`--confirm-body-save`. Apple day-summary transcript generation is retired: the
-body app reads the normalized bundle rows directly.
+`--confirm-health-save` is a hidden alias of `--confirm-body-save`.
 
-The underlying native commands are:
+**Apple Health.** A folder or zip holding `export.xml`. The whole export is read each time, and importing it again changes nothing, so `--date-from`, `--date-to` and `--force` are refused. A finished run keeps no copy of the export; a stopped run's staging waits in `imports/.apple_health-run/`.
 
-```text
-solstone-core body apple --source PATH [--date-from DAY] [--date-to DAY] [--force] [--save --confirm-body-save]
-solstone-core body oura connect
-solstone-core body oura sync [--window-days N] [--save [--confirm-body-save | --scheduled]]
-solstone-core body rebuild
-```
+**Oura.** With no range, each endpoint asks for every stretch from 2015-01-01 to today that `imports/.oura-coverage.json` doesn't hold, and its trailing seven days. An endpoint that answers with nothing for a stretch has covered it. A stretch whose only trouble is a `Deferred` hole isn't asked, because asking can't fill it. A first run that stops part way carries on from what it holds. `--date-from` (with `--date-to`, which defaults to today) or `--window-days N` ask only what they name. `--scheduled` means nobody is there. A move across the owner's midnight is kept at the time first saved, and the summary says so.
 
-## durable native bundle
+**Facets.** `--facet F` and `--no-facet` mean what they mean for Strava. With neither, and without `--json` or `--scheduled`, a saving run with a terminal on stdin and stdout asks the question the card asks and remembers the answer; with nobody there it uses the remembered facet, if it's enabled, and never makes one. Flags are checked first, then the question, then everything else, so a refused flag writes nothing and a terminal left waiting holds no lock. Only an owner's answer for this import moves a record already listed under another facet. At the terminal the question says first how many could move, and the count is taken again once the run holds its lock: if more would move, none do and the summary says so. `--facet` on the command line says afterward how many moved.
 
-Each nonempty save publishes one immutable `imports/body-<ULID>/` directory:
+**An unfinished conversion.** Each import converts earlier Strava records first. A workout it can't get to can sit beside an Apple or Oura record of the same workout until it converts, and the summary counts it.
 
-```text
-body-bundle.json
-body-ledger.jsonl
-body-raw-inventory.jsonl        # only when raw assets are retained
-manifest.json
-normalized/<YYYY-MM>.jsonl
-raw/...                         # only when the approved policy retains it
-```
+**Tokens.** `refresh` holds Oura's answer in `config/oura-renewal.json` (mode 0600, backed up as the token's own config file is) until it reaches config. A run applies a held answer under `imports/oura.json`, only while config still holds the token it spent; a reconnect clears it.
 
-The manifest and envelope bind the source family, source hash, raw-retention
-decision, affected days, row count, shard inventory, and ledger digest. The
-ledger binds every normalized row to its identity/value hashes and physical
-reference. When raw assets are retained, a canonical inventory records every
-path, byte count, and SHA-256 digest; its own digest is bound into every
-normalized row. Rebuild verifies the complete raw inventory before accepting
-those rows, so a missing, replaced, or truncated retained source fails closed.
-Publication is staged, fsynced, and renamed only after the complete bundle
-validates.
+**The phone.** The embedded importer refuses Apple Health and every Oura connect and sync.
 
-`imports/health-dedupe.sqlite` is derived state, not source history. It is
-excluded by the existing `*.sqlite*` backup rule and rebuilt atomically from
-the immutable bundles. Restore runs this rebuild before saving destination,
-recovery-key, or recovery-confirmation state or reporting success; a torn or
-invalid native bundle records a `body_rebuild_failed` restore outcome rather
-than returning an empty body history. The `*.sqlite*` exclude list is pinned
-by `solstone-core-backup-runtime`'s `excludes_are_exact_and_keep_durable_health`.
-Torn native history is refused
-by `body_rebuild_command_emits_machine_result_and_refuses_torn_native_history`
-in `core/crates/solstone-core/tests/body_rebuild.rs`. Rebuild reconstructs
-Apple and Oura rows in
-`solstone-core-body-rebuild/tests/rebuild.rs`. There is no live restic
-backup/restore/rebuild end-to-end in `core/`.
+## Earlier body imports
 
-## source behavior
+An earlier release saved Apple Health and Oura data, and before it Python saved those and Dexcom Clarity, as bundles under `imports/`: a directory with `normalized/` and neither `body-touched.jsonl` nor `body-progress.json`. They stay on disk, untouched, and nothing reads their rows. So do `imports/health-dedupe.sqlite`, `imports/oura.json` as a cursor, and `imports/_approvals/`.
 
-Apple Health accepts a directory or zip containing `export.xml`, including
-DTD-bearing Apple exports without resolving external entities. Record and
-Workout elements stream through a 1 MiB per-event parser. A save first makes a
-private, bounded source snapshot; parsing, source hashing, and approved raw
-retention all use that one snapshot. One import accepts at most 50,000,000 XML
-events and 50,000,000 Record/Workout elements, 100,000 selected rows, 8 GiB of
-uncompressed `export.xml`,
-128 MiB of normalized JSONL, and 8 GiB of snapshotted source files. Use the
-inclusive date window to split an export that exceeds the selected-row or
-normalized-byte limit. Date windows use the local calendar date written in
-`startDate`. WorkoutStatistics are flattened into the persisted row after the
-pre-enrichment identity/value hash has been frozen, preserving the shipping
-compatibility contract.
+- The Body app lists each one with its source and span, and how to import again. Dexcom Clarity has no importer now, and the list says so.
+- A day page, and MCP's `list_transcripts` for a connection with Transcripts and every facet, say when an earlier import holds a source's data for a day the new path hasn't reached.
+- A restore doesn't read them, so a damaged one can't stop it.
+- Importing again retires the line for the days it read. An import's manifest records those days as `span`.
 
-Oura polls the supported v2 endpoint roster with bounded date chunks and
-pagination. A run accepts at most 16 MiB per response, 128 MiB across all
-responses, 5,000 pages, and 100,000 source items. Daily documents keep Oura's attributed day. Instant series such as
-heartrate convert their UTC timestamps into the journal timezone. A fresh
-cursor begins with a 30-day window, unfinished history walks back to
-2015-01-01, and completed endpoints retain a trailing revision window.
-Temporary permission loss is reported per endpoint without erasing prior
-backfill completion; membership loss and unknown 403 responses fail closed.
-One 401 refresh is allowed on save and the rotated token is persisted before
-the request is retried. Catalog mode refuses an expired token rather than
-consume a rotating refresh grant it cannot persist. Tokens and refresh
-rotation live only in journal config and the cursor advances only after
-successful publication.
-
-Oura authorization is owner-present: loopback binds only `127.0.0.1:8765`,
-uses a random state and PKCE S256, accepts one bounded callback request, and
-persists tokens only after state/code and token-response validation.
-
-## identity and dedupe
-
-Source family is part of every identity, so Apple and Oura records never
-collide at import. Stable source record IDs use the source-ID identity branch;
-records without one use record type, time, source name, value, unit, and
-canonical metadata. Replayed observations preserve first import and update
-last-seen/value/reference fields in ledger order.
-
-The body app may reconcile mirror overlap at presentation time. Import must
-not collapse records across source families.
-
-## privacy and approval gates
-
-Before any save:
-
-- show the target journal and require per-run confirmation;
-- validate every replication-destination decision;
-- apply exactly one raw-retention decision;
-- send body data only where the owner's other journal content goes; never send tokens, exports or fixtures to a model;
-- use only synthetic fixtures in the repository.
-
-Apple uses `imports/_approvals/health_import_preflight.json` with
-`solstone.health_import_preflight.checklist.v3`. Its retention choices are
-`discard`, `retain_parsed`, and `retain_complete`; complete retention requires
-`unparsed_sensitive_modalities_acknowledged: true`.
-
-Oura uses `imports/_approvals/oura_sync_preflight.json` with
-`solstone.oura_sync_preflight.checklist.v2`. Its choices are `discard` and
-`retain_parsed`; `retain_complete` is source-incompatible. Scheduled sync also
-requires unexpired, timezone-aware standing consent. The save gate runs before
-lock, network, token refresh, cursor, bundle, or database mutation.
-
-## deferred work
+## What stays out of scope
 
 - Oura webhooks.
-- A general owner-facing Oura file-import save path; the retained Python file
-  reader remains preview-only.
 - Health Auto Export or a custom HealthKit ingest service.
 - Any LAN, public, or phone-to-Mac body ingest service.
 - Medical advice, recommendations, or anomaly interpretation.
-
-## verification
-
-Focused gates:
-
-```text
-cargo test -p solstone-core-body-ingest
-cargo test --manifest-path core/Cargo.toml -p solstone-core --test core_journal_contracts
-cargo clippy -p solstone-core-body-ingest --all-targets -- -D warnings
-cargo clippy -p solstone-core --all-targets -- -D warnings
-```
-
-No new Python test may be used to prove a writer or process boundary in this
-lane. `rust_body_readers_match_the_frozen_synthetic_corpora` in
-`core/crates/solstone-core/tests/body_reader_corpus.rs` compares every
-synthetic Apple and Oura normalized row, identity, dedupe key, and value hash
-against the frozen native fixture.

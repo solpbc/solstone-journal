@@ -386,6 +386,8 @@ mod tests {
                 name: None,
                 alias: None,
                 hidden: false,
+                days: Vec::new(),
+                dormant: false,
             }],
         };
         let span = (at(15, 10), at(16, 0));
