@@ -20,11 +20,28 @@ Strava is the first body source an owner brings in from the import page (the **S
 
 ## Apple Health and Oura
 
-Both are command-line imports for now, with no import card. The import page's generic start can't save an Apple export, because it can't pass the go-ahead flag.
+Apple Health has an import card on a computer's journal: the **Apple Health** card on the import page. An Apple export dropped on quick import goes to that card with the upload, and is never asked for a date. Oura is a command-line import, with no card.
+
+**The Apple Health card.**
+- **Upload.** It takes `export.zip`. A zip over the page's 4 GiB upload limit is refused before it uploads, with the command to use instead, and a folder export goes through the command line.
+- **The facet.** It asks the facet question Strava's card asks, in words for body data.
+- **The preview.** It reads the export once, streaming and writing nothing, and says what it holds: its span, workouts, nights put together from sleep stages, mindful sessions, readings, daily totals, logged entries, and what it leaves out. With a facet chosen, it says how many records already listed elsewhere a yes could move at most. A preview can be cancelled. An export it can't read is refused there, in words.
+- **Space.** The preview also says how much space the import needs, against what's free on the tighter of the volume it stages on and the journal's. Start stays shut when it won't fit, and a start that no longer fits is refused. The need is worked out from the size of `export.xml` unpacked: 0.92 of it for staging (given back at the end), plus 1.30 for what a first import leaves in the journal, with 1.5 times headroom, plus 1 GiB. Those factors were measured on a synthetic six-year history. Staging already on disk is taken off.
+- **The go-ahead.** Only a start carrying the preview token the card showed is saved: the card's start is the go-ahead `--confirm-body-save` gives at the terminal.
+- **One import per start.** A start runs under the card's own import, never resumes another import's run (it takes it over, as another export does), and is refused if that import has already run. The upload is removed when the run ends, whatever happened. The import keeps running if the page is closed.
+
+**In the import history,** an Apple Health import reads as what it holds, worked out when the row is read:
+- **saved**;
+- **partly saved,** with how many parts of the journal didn't finish saving, until any later Apple Health import finishes with none failing;
+- **stopped,** in its reason's words, or naming the later import that ran after it;
+- **not brought in,** for an export or request that was refused;
+- **didn't start,** because another Apple Health import was running.
+
+A run records why it stopped in `imports/<id>/body-stop.json` before the write that ends its attempt.
 
 ```text
 solstone journal importer <export> --confirm-body-save        # save an Apple export
-solstone journal importer <export> --dry-run [--json]         # say what a save would read; no scan
+solstone journal importer <export> --dry-run [--json]         # say what an export holds; reads it once, writes nothing
 solstone journal importer --connect oura                      # authorize Oura
 solstone journal importer --sync oura                         # say what a save would ask for; writes nothing
 solstone journal importer --sync oura --save                  # bring Oura in
@@ -42,7 +59,7 @@ solstone journal importer --sync oura --save                  # bring Oura in
 
 **Tokens.** `refresh` holds Oura's answer in `config/oura-renewal.json` (mode 0600, backed up as the token's own config file is) until it reaches config. A run applies a held answer under `imports/oura.json`, only while config still holds the token it spent; a reconnect clears it.
 
-**The phone.** The embedded importer refuses Apple Health and every Oura connect and sync.
+**The phone.** The embedded importer refuses Apple Health and every Oura connect and sync, and the phone's import page has no Apple Health card.
 
 ## Earlier body imports
 
