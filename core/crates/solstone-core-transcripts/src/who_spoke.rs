@@ -366,6 +366,7 @@ mod tests {
                 ("pat".to_owned(), "Pat".to_owned()),
             ]
             .into(),
+            owner_name: None,
         }
     }
 

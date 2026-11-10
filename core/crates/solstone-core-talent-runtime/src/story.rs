@@ -863,6 +863,7 @@ mod tests {
                 ("pat".to_owned(), "Pat".to_owned()),
             ]
             .into(),
+            owner_name: None,
         };
         let record = json!({"segments":["090000_300"]})
             .as_object()

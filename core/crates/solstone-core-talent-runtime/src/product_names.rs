@@ -905,6 +905,7 @@ mod tests {
                 principal: "jordan".into(),
                 owner_voice_confirmed: false,
                 people: std::collections::BTreeMap::from([("priya".into(), "Priya".into())]),
+                owner_name: None,
             };
             let loaded = load(root.path(), Some(voices));
             let mut c = config(&loaded.text);

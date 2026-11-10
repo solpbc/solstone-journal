@@ -77,25 +77,26 @@ pub(crate) fn voice_names_from_entities(
         principal,
         owner_voice_confirmed,
         people,
+        owner_name: None,
     })
 }
 
 /// Who an agent's transcript read names: [`voice_names`], with the owner's own
 /// recognized lines named "<owner name> (owner)" so an agent can tell them from
-/// everyone else's. `None` without a single admitted principal.
+/// everyone else's. The same names read in `voices`. `None` without a single
+/// admitted principal.
 pub fn agent_speakers(journal: &Path) -> Option<solstone_core_transcripts::AgentSpeakers> {
     let entities = solstone_core_entity::load_all_journal_entities(journal).ok()?;
     let owner = crate::JournalOwner::from_entities(journal, &entities);
-    let voices = voice_names_from_entities(journal, &owner, &entities)?;
+    let mut voices = voice_names_from_entities(journal, &owner, &entities)?;
     let name = entities
         .into_iter()
         .find(|entity| entity.id == voices.principal)
         .and_then(|entity| Some(entity.value.get("name")?.as_str()?.trim().to_owned()))
         .filter(|name| !name.is_empty());
-    Some(solstone_core_transcripts::AgentSpeakers {
-        owner: name.map_or_else(|| "The owner".to_owned(), |name| format!("{name} (owner)")),
-        voices,
-    })
+    let owner = name.map_or_else(|| "The owner".to_owned(), |name| format!("{name} (owner)"));
+    voices.owner_name = Some(owner.clone());
+    Some(solstone_core_transcripts::AgentSpeakers { owner, voices })
 }
 
 pub(crate) fn sources_are_enabled(config: &Map<String, Value>) -> bool {
@@ -357,6 +358,7 @@ mod tests {
         );
         let speakers = agent_speakers(journal.path()).unwrap();
         assert_eq!(speakers.owner, "Olu (owner)");
+        assert_eq!(speakers.voices.owner_label(), "Olu (owner)");
         assert_eq!(speakers.voices.principal, "olu");
         assert_eq!(
             speakers.voices.people.get("mina").map(String::as_str),

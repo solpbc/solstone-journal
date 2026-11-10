@@ -56,6 +56,7 @@ solstone-core-speaker-resolve.workspace = true
 solstone-core-serving = { path = "../solstone-core-serving" }
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-talent-runtime.workspace = true
 solstone-core-transcripts.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }

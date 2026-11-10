@@ -87,9 +87,16 @@ pub struct VoiceNames {
     pub owner_voice_confirmed: bool,
     /// Entity id to display name for every other admitted person.
     pub people: BTreeMap<String, String>,
+    /// How a line heard as the owner reads. `None` reads [`OWNER_VOICE`].
+    pub owner_name: Option<String>,
 }
 
 impl VoiceNames {
+    /// The name a line heard as the owner reads under.
+    pub fn owner_label(&self) -> &str {
+        self.owner_name.as_deref().unwrap_or(OWNER_VOICE)
+    }
+
     /// The display name for one `speaker_labels.json` row, if its evidence names a speaker.
     pub fn name_for(&self, row: &Map<String, Value>) -> Option<String> {
         let speaker = row.get("speaker").and_then(Value::as_str)?;
@@ -105,7 +112,7 @@ impl VoiceNames {
                     .get("owner_margin_declined")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
-            (by_owner || heard).then(|| OWNER_VOICE.to_owned())
+            (by_owner || heard).then(|| self.owner_label().to_owned())
         } else if by_owner || matches!(method, "acoustic" | "acoustic_cluster") {
             self.people.get(speaker).cloned()
         } else {
@@ -1509,7 +1516,7 @@ pub fn owner_voice_lines(dir: &Path, voices: &VoiceNames) -> Vec<String> {
         .filter(|record| {
             next_line_coordinate(record, &mut ordinal)
                 .and_then(|id| names.get(&id))
-                .is_some_and(|name| name == OWNER_VOICE)
+                .is_some_and(|name| name == voices.owner_label())
         })
         .filter_map(|record| {
             ["corrected", "text"]
@@ -2791,6 +2798,7 @@ mod tests {
             principal: "owner".into(),
             owner_voice_confirmed: true,
             people: [("mina".to_owned(), "Mina".to_owned())].into(),
+            owner_name: None,
         };
         let mut heard = sources(true, false, TalentSource::Disabled);
         heard.voices = Some(voices.clone());

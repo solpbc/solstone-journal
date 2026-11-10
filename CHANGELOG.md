@@ -25,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - moving between home, the more page and transcripts, and to another day in transcripts, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - `--sync oura` without `--save` now says which days it would ask Oura for, from what your journal already holds, and doesn't ask Oura anything.
 - when your journal can confirm which workout an earlier Strava record belongs to, it now lists the workout the same way as new ones, each one once, keeping your edits and hides. it can join duplicate listings and split a listing that covered two workouts. records it can't match stay as they were, and the import summary counts them.
+- `solstone call transcripts read` now names who spoke, the same way your agent's transcript reads do. a line your journal recognized as your voice, or that you marked as yours, shows your name with "(owner)". someone it recognized by voice, or that you named, shows by name. every other line keeps its speaker number.
 
 ### Fixed
 

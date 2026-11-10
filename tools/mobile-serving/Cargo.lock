@@ -7243,6 +7243,7 @@ dependencies = [
  "solstone-core-speaker-resolve",
  "solstone-core-system",
  "solstone-core-system-health",
+ "solstone-core-talent-runtime",
  "solstone-core-transcripts",
  "solstone-core-trash",
  "tokio",

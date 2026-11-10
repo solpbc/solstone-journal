@@ -53,7 +53,10 @@ pub(crate) async fn api_read(
                 } else {
                     TalentSource::Disabled
                 },
-                voices: None,
+                // Named as an agent's read names them, through the same voice
+                // gate: an agent is this read's usual reader.
+                voices: solstone_core_talent_runtime::agent_speakers(&journal_root)
+                    .map(|speakers| speakers.voices),
                 heard_owner: None,
                 // The owner's own page keeps showing their workouts.
                 strava_tiles: true,
@@ -187,6 +190,114 @@ mod tests {
         let markdown = body["markdown"].as_str().unwrap();
         assert!(
             markdown.contains("## Strava workout: Morning Run"),
+            "{markdown}"
+        );
+    }
+
+    async fn read_markdown(root: &std::path::Path, uri: &str) -> String {
+        let app = router_with_delete_window(
+            root.to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap()),
+            || axum::response::Response::new(Body::from("shell")),
+            Duration::from_secs(600),
+        );
+        let response = app
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        body["markdown"].as_str().unwrap().to_owned()
+    }
+
+    /// The read names speakers as an agent's read does: the owner's lines by
+    /// recognized voice or the owner's own answer, a person by voice, and
+    /// everyone else by number.
+    #[tokio::test]
+    async fn the_read_names_the_owner_and_people_only_by_recognized_voice() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .unwrap();
+        for (id, entity) in [
+            (
+                "olu",
+                json!({"id": "olu", "name": "Olu", "type": "Person", "is_principal": true}),
+            ),
+            (
+                "mina",
+                json!({"id": "mina", "name": "Mina", "type": "Person"}),
+            ),
+        ] {
+            let dir = root.path().join("entities").join(id);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("entity.json"), entity.to_string()).unwrap();
+        }
+        let segment = root
+            .path()
+            .join("chronicle/20260810/device_watch-audio/090000_300");
+        fs::create_dir_all(segment.join("talents")).unwrap();
+        fs::write(
+            segment.join("audio.jsonl"),
+            [
+                r#"{"raw":"audio.flac"}"#,
+                r#"{"start":"00:00:01","speaker":1,"sentence_id":1,"text":"Heard as mine"}"#,
+                r#"{"start":"00:00:02","speaker":2,"sentence_id":2,"text":"Heard as Mina"}"#,
+                r#"{"start":"00:00:03","speaker":1,"sentence_id":3,"text":"Answered as mine"}"#,
+                r#"{"start":"00:00:04","speaker":2,"sentence_id":4,"text":"Guessed as Mina"}"#,
+                "",
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            segment.join("talents/speaker_labels.json"),
+            json!({"labels": [
+                {"sentence_id": 1, "speaker": "olu", "method": "owner_centroid", "confidence": "high", "owner_margin_declined": null},
+                {"sentence_id": 2, "speaker": "mina", "method": "acoustic", "confidence": "high"},
+                {"sentence_id": 3, "speaker": "olu", "method": "user_confirmed", "confidence": "high"},
+                {"sentence_id": 4, "speaker": "mina", "method": "contextual", "confidence": "medium"}
+            ]})
+            .to_string(),
+        )
+        .unwrap();
+        let uri = "/app/transcripts/api/read/20260810?transcripts=1";
+
+        // No confirmed voiceprint yet: a voice match alone names no owner.
+        let markdown = read_markdown(root.path(), uri).await;
+        assert!(markdown.contains("Speaker 1: Heard as mine"), "{markdown}");
+        assert!(markdown.contains("Mina: Heard as Mina"), "{markdown}");
+        assert!(
+            markdown.contains("Olu (owner): Answered as mine"),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains("Speaker 2: Guessed as Mina"),
+            "{markdown}"
+        );
+
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            root.path(),
+            "olu",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: vec![1.0, 0.0],
+                cluster_size: 1,
+                timestamp: "2026-08-01T00:00:00Z".to_owned(),
+                evidence_tier: "test".to_owned(),
+            },
+        )
+        .unwrap();
+        let markdown = read_markdown(root.path(), uri).await;
+        assert!(
+            markdown.contains("Olu (owner): Heard as mine"),
+            "{markdown}"
+        );
+        assert!(
+            markdown.contains("Speaker 2: Guessed as Mina"),
             "{markdown}"
         );
     }

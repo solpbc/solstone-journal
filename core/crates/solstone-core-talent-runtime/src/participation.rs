@@ -255,6 +255,7 @@ pub(crate) fn apply_result_cancellable(
             .filter_map(|person| Some((person.id.clone()?, person.name.clone())))
             .filter(|(id, _)| owner.id.as_ref() != Some(id))
             .collect(),
+        owner_name: None,
     };
     let mut voice_lines = BTreeMap::<String, usize>::new();
     let mut assigned = BTreeSet::new();
@@ -3435,6 +3436,7 @@ mod tests {
                     ("pat".to_owned(), "Pat".to_owned()),
                 ]
                 .into(),
+                owner_name: None,
             }
         }
 

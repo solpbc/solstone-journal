@@ -893,6 +893,7 @@ mod tests {
                 principal: "person-b".into(),
                 owner_voice_confirmed: true,
                 people: [("person-a".to_owned(), "Ada".to_owned())].into(),
+                owner_name: None,
             },
             owner: "Bea (owner)".into(),
         }

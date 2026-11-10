@@ -498,6 +498,7 @@ mod tests {
                 principal: "owner".to_owned(),
                 owner_voice_confirmed: false,
                 people: BTreeMap::new(),
+                owner_name: None,
             },
             owner: "The owner".to_owned(),
         };
@@ -574,6 +575,7 @@ mod tests {
                 principal: "owner".to_owned(),
                 owner_voice_confirmed: true,
                 people: BTreeMap::from([("pat".to_owned(), "Pat".to_owned())]),
+                owner_name: None,
             },
             owner: "The owner".to_owned(),
         };
