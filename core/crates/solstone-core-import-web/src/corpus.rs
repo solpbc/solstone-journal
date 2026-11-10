@@ -321,6 +321,7 @@ pub(crate) mod tests {
             "document",
             "image",
             "strava",
+            "apple_health",
             "quick",
         ];
         assert_eq!(body["total"], expected.len());

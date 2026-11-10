@@ -62,12 +62,52 @@ pub(crate) const COPY: &[(&str, &str)] = &[
     ),
 ];
 
-fn copy() -> Value {
-    Value::Object(
-        COPY.iter()
-            .map(|(key, text)| ((*key).to_owned(), json!(text)))
-            .collect(),
-    )
+/// Where the Apple Health card's words differ: its import holds workouts,
+/// sleep and readings, and no owner-written words, so no people or things come
+/// from it. These are the words the Apple Health terminal question uses.
+pub(crate) const APPLE_COPY: &[(&str, &str)] = &[
+    (
+        "ask_existing",
+        "file your workouts, sleep and other body data under the facet you named {facet}?",
+    ),
+    (
+        "ask_make_body",
+        "make a body facet for your workouts, sleep and other body data?",
+    ),
+    (
+        "ask_unmute",
+        "your body facet is muted. turn it back on for your workouts, sleep and other body data?",
+    ),
+    (
+        "no_means",
+        "if you say no, new workouts and sleep aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.",
+    ),
+    (
+        "files_earlier",
+        "this files everything in this export under {facet}, including what's already listed on the activities page. the preview says how many of those could move, at most.",
+    ),
+    (
+        "none_hint",
+        "new workouts and sleep in this import aren't listed on the activities page, and agents limited to some facets won't see them. search and the body app still show them.",
+    ),
+];
+
+/// Whether a request is from the Apple Health card.
+fn for_apple(source: Option<&str>) -> bool {
+    source == Some("apple_health")
+}
+
+fn copy(apple: bool) -> Value {
+    let mut words: serde_json::Map<String, Value> = COPY
+        .iter()
+        .map(|(key, text)| ((*key).to_owned(), json!(text)))
+        .collect();
+    if apple {
+        for (key, text) in APPLE_COPY {
+            words.insert((*key).to_owned(), json!(text));
+        }
+    }
+    Value::Object(words)
 }
 
 use solstone_core_facets::BodyFacetAsk as CardOffer;
@@ -88,7 +128,7 @@ fn offer_value(offer: &CardOffer) -> Value {
     json!({"state": state, "facet": facet})
 }
 
-fn body(root: &Path) -> Result<Value, String> {
+fn body(root: &Path, apple: bool) -> Result<Value, String> {
     let (offer, facets) = card_offer(root)?;
     Ok(json!({
         "offer": offer_value(&offer),
@@ -96,7 +136,7 @@ fn body(root: &Path) -> Result<Value, String> {
             .into_iter()
             .map(|(name, title)| json!({"name": name, "title": title}))
             .collect::<Vec<_>>(),
-        "copy": copy(),
+        "copy": copy(apple),
     }))
 }
 
@@ -113,10 +153,16 @@ fn text(key: &str) -> &'static str {
         .unwrap_or_default()
 }
 
-/// `GET /app/import/api/body-facet`: what the Strava card asks or remembers.
-pub(crate) async fn offer(State(state): State<AppState>) -> Response {
+/// `GET /app/import/api/body-facet[?source=apple_health]`: what the Strava or
+/// Apple Health card asks or remembers. The offer is one for every body
+/// importer; only the words differ.
+pub(crate) async fn offer(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
     let root = state.root.clone();
-    match tokio::task::spawn_blocking(move || body(&root)).await {
+    let apple = for_apple(query.get("source").map(String::as_str));
+    match tokio::task::spawn_blocking(move || body(&root, apple)).await {
         Ok(Ok(body)) => json_response(StatusCode::OK, body),
         Ok(Err(error)) => failed(StatusCode::INTERNAL_SERVER_ERROR, error),
         Err(error) => failed(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
@@ -153,9 +199,10 @@ pub(crate) async fn answer(State(state): State<AppState>, Json(data): Json<Value
         }
     };
     let shown = data.get("offer").cloned().unwrap_or(Value::Null);
+    let apple = for_apple(data.get("source").and_then(Value::as_str));
     let root = state.root.clone();
     match tokio::task::spawn_blocking(move || {
-        record_answer(&root, yes, &shown).and_then(|()| Ok(body(&root)?))
+        record_answer(&root, yes, &shown).and_then(|()| Ok(body(&root, apple)?))
     })
     .await
     {

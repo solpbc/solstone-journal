@@ -136,6 +136,16 @@ const SOURCES: &[SourceMetadata] = &[
         accept: ".zip,.csv",
     },
     SourceMetadata {
+        name: "apple_health",
+        display_name: "Apple Health",
+        icon: "heart-pulse",
+        description: "import your workouts, sleep and readings from an Apple Health export",
+        input_type: "file",
+        upload_prompt: "upload export.zip from the Health app on your iPhone",
+        has_guide: true,
+        accept: ".zip",
+    },
+    SourceMetadata {
         name: "quick",
         display_name: "quick import",
         icon: "zap",
@@ -343,8 +353,16 @@ pub(crate) fn source_display(name: &str) -> Option<String> {
     source(name).map(|item| item.display_name.to_owned())
 }
 
-pub(crate) async fn sources() -> Response {
-    let items: Vec<Value> = SOURCES.iter().map(|item| {
+/// Sources the journal on a phone doesn't take: an Apple Health export is
+/// brought in by a journal on a computer.
+const DESKTOP_ONLY: &[&str] = &["apple_health"];
+
+pub(crate) async fn sources(State(state): State<AppState>) -> Response {
+    let on_phone = state.route.is_some();
+    let offered = SOURCES
+        .iter()
+        .filter(|item| !(on_phone && DESKTOP_ONLY.contains(&item.name)));
+    let items: Vec<Value> = offered.map(|item| {
         let mut value = json!({
         "name": item.name, "display_name": item.display_name, "icon": item.icon,
         "description": item.description, "input_type": item.input_type, "upload_prompt": item.upload_prompt,
@@ -355,9 +373,10 @@ pub(crate) async fn sources() -> Response {
         }
         value
     }).collect();
+    let total = items.len();
     json_response(
         StatusCode::OK,
-        json!({"items": items, "total": SOURCES.len()}),
+        json!({"items": items, "total": total}),
     )
 }
 

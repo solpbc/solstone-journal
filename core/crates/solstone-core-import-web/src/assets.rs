@@ -18,6 +18,7 @@ const GEMINI_GUIDE: &[u8] = include_bytes!("../assets/guides/gemini.md");
 const ICS_GUIDE: &[u8] = include_bytes!("../assets/guides/ics.md");
 const JOURNAL_ARCHIVE_GUIDE: &[u8] = include_bytes!("../assets/guides/journal_archive.md");
 const STRAVA_GUIDE: &[u8] = include_bytes!("../assets/guides/strava.md");
+const APPLE_HEALTH_GUIDE: &[u8] = include_bytes!("../assets/guides/apple_health.md");
 
 pub(crate) async fn workspace() -> Response {
     bytes(WORKSPACE, "text/html; charset=utf-8").into_response()
@@ -64,6 +65,7 @@ pub(crate) async fn guide(Path(source): Path<String>) -> Response {
         "ics" => Some(ICS_GUIDE),
         "journal_archive" => Some(JOURNAL_ARCHIVE_GUIDE),
         "strava" => Some(STRAVA_GUIDE),
+        "apple_health" => Some(APPLE_HEALTH_GUIDE),
         _ => None,
     }) else {
         return error(
