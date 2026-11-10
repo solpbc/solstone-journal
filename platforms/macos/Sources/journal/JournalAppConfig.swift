@@ -61,6 +61,7 @@ final class JournalAppConfig {
 
     private enum Keys {
         static let journalRoot = "journalRoot"
+        static let knownJournalRoots = "knownJournalRoots"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
         static let loginItemRegistrationReceipt = "loginItemRegistrationReceipt"
     }
@@ -107,6 +108,23 @@ final class JournalAppConfig {
         set {
             defaults.set(newValue?.path, forKey: Keys.journalRoot)
         }
+    }
+
+    /// Every folder this app has kept a journal in that the owner has since left, least recent
+    /// first. Leaving a journal never changes its folder; this list is how the app finds it again.
+    var knownJournalRoots: [URL] {
+        (defaults.stringArray(forKey: Keys.knownJournalRoots) ?? []).map {
+            URL(fileURLWithPath: $0, isDirectory: true).standardizedFileURL
+        }
+    }
+
+    /// Records a journal folder as the most recent one left.
+    func rememberJournalRoot(_ root: URL) {
+        let path = root.standardizedFileURL.path
+        var paths = defaults.stringArray(forKey: Keys.knownJournalRoots) ?? []
+        paths.removeAll { $0 == path }
+        paths.append(path)
+        defaults.set(paths, forKey: Keys.knownJournalRoots)
     }
 
     var resolvedJournalRoot: URL {

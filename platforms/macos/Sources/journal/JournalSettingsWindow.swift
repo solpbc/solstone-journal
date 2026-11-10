@@ -15,13 +15,18 @@ struct JournalSettingsWindow: View {
 
     @Bindable var model: JournalWindowModel
     @Bindable var updateController: UpdateController
+    /// The journal's setup, which starts a new journal or keeps another one. Absent in previews.
+    var firstRunModel: JournalFirstRunModel?
     var openURL: @MainActor (URL) -> Bool
     private let clipboardWrite: @MainActor (String) -> Bool
     @State private var aboutCopyState: AboutCopyState?
+    @State private var confirmingNewJournal = false
+    @State private var switchTarget: URL?
 
     init(
         model: JournalWindowModel,
         updateController: UpdateController,
+        firstRunModel: JournalFirstRunModel? = nil,
         openURL: @escaping @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) },
         clipboardWrite: @escaping @MainActor (String) -> Bool = { text in
             let pasteboard = NSPasteboard.general
@@ -31,6 +36,7 @@ struct JournalSettingsWindow: View {
     ) {
         self.model = model
         self.updateController = updateController
+        self.firstRunModel = firstRunModel
         self.openURL = openURL
         self.clipboardWrite = clipboardWrite
     }
@@ -200,6 +206,75 @@ struct JournalSettingsWindow: View {
                 id: AXID.Journal.Pane.diskUsageState,
                 value: String(model.diskUsageBytes ?? 0)
             )
+
+            if let firstRunModel, let current = model.journalRoot {
+                anotherJournalSection(firstRunModel, current: current)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func anotherJournalSection(_ firstRun: JournalFirstRunModel, current: URL) -> some View {
+        let canChange = firstRun.canChangeJournal
+        VStack(alignment: .leading, spacing: 8) {
+            Button(JournalLocationCopy.startNewJournal) {
+                confirmingNewJournal = true
+            }
+            .disabled(!canChange)
+            .accessibilityIdentifier(AXID.Journal.Pane.startNewJournal)
+            Text(JournalLocationCopy.startNewJournalHelp)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .alert(JournalLocationCopy.startNewJournalConfirmTitle, isPresented: $confirmingNewJournal) {
+            Button(JournalLocationCopy.startNewJournal) {
+                Task { await firstRun.startNewJournal() }
+            }
+            .accessibilityIdentifier(AXID.Journal.Pane.startNewJournalConfirm)
+            Button(JournalLocationCopy.cancel, role: .cancel) {}
+        } message: {
+            Text(firstRun.newJournalConfirmMessage())
+        }
+
+        let others = firstRun.otherJournalRoots
+        if !others.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(JournalLocationCopy.otherJournals)
+                    .font(.headline)
+                ForEach(others, id: \.path) { root in
+                    HStack(spacing: 12) {
+                        Text(JournalLocationCopy.displayPath(root))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Spacer()
+                        Button(JournalLocationCopy.switchToJournal) {
+                            switchTarget = root
+                        }
+                        .disabled(!canChange)
+                        .accessibilityIdentifier(AXID.Journal.Pane.switchJournal)
+                    }
+                }
+                AXStateCompanion(
+                    id: AXID.Journal.Pane.otherJournalsState,
+                    value: others.map(\.path).joined(separator: "\n")
+                )
+            }
+            .alert(
+                switchTarget.map { JournalLocationCopy.switchConfirmTitle(target: $0) } ?? "",
+                isPresented: Binding(get: { switchTarget != nil }, set: { if !$0 { switchTarget = nil } })
+            ) {
+                Button(JournalLocationCopy.switchButton) {
+                    if let target = switchTarget {
+                        Task { await firstRun.switchToJournal(target) }
+                    }
+                    switchTarget = nil
+                }
+                .accessibilityIdentifier(AXID.Journal.Pane.switchJournalConfirm)
+                Button(JournalLocationCopy.cancel, role: .cancel) { switchTarget = nil }
+            } message: {
+                Text(switchTarget.map { firstRun.switchConfirmMessage(target: $0) } ?? "")
+            }
         }
     }
 

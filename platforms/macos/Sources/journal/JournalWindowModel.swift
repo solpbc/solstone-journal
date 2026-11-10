@@ -246,6 +246,10 @@ final class JournalWindowModel {
         config.journalRoot != nil
     }
 
+    var journalRoot: URL? {
+        config.journalRoot
+    }
+
     var journalRootPath: String {
         config.journalRoot?.path ?? "not set"
     }

@@ -13,6 +13,7 @@ struct JournalFirstRunView: View {
     @Bindable var model: JournalFirstRunModel
     var minSize: CGSize = CGSize(width: 880, height: 580)
     var background: SunArcBackgroundView = SunArcBackgroundView()
+    @State private var returnTarget: URL?
 
     var body: some View {
         Group {
@@ -46,6 +47,21 @@ struct JournalFirstRunView: View {
                 id: AXID.Journal.Ritual.outboundState,
                 value: model.outbound.axToken
             )
+        }
+        .alert(
+            returnTarget.map { JournalLocationCopy.switchConfirmTitle(target: $0) } ?? "",
+            isPresented: Binding(get: { returnTarget != nil }, set: { if !$0 { returnTarget = nil } })
+        ) {
+            Button(JournalLocationCopy.switchButton) {
+                if let target = returnTarget {
+                    Task { await model.switchToJournal(target) }
+                }
+                returnTarget = nil
+            }
+            .accessibilityIdentifier(AXID.Journal.Pane.switchJournalConfirm)
+            Button(JournalLocationCopy.cancel, role: .cancel) { returnTarget = nil }
+        } message: {
+            Text(returnTarget.map { model.switchConfirmMessage(target: $0) } ?? "")
         }
     }
 
@@ -216,6 +232,7 @@ struct JournalFirstRunView: View {
             } footer: {
                 stepFooter(
                     progress: progress,
+                    offersReturn: true,
                     primary: AnyView(
                         Button(JournalFirstRunCopy.startSetup) {
                             model.continueFromWelcome()
@@ -311,6 +328,7 @@ struct JournalFirstRunView: View {
                 stepFooter(
                     progress: progress,
                     back: back,
+                    offersReturn: true,
                     primary: AnyView(
                         Button(copy.folder.continueLabel) {
                             Task { await model.continueFromFolder() }
@@ -402,6 +420,7 @@ struct JournalFirstRunView: View {
             } footer: {
                 stepFooter(
                     progress: progress,
+                    offersReturn: true,
                     downloads: showsDownloadFooter,
                     primary: AnyView(
                         Button(copy.mark.continueLabel) {
@@ -505,6 +524,7 @@ struct JournalFirstRunView: View {
             } footer: {
                 stepFooter(
                     progress: progress,
+                    offersReturn: true,
                     downloads: showsDownloadFooter,
                     primary: model.canContinueThinking ? AnyView(
                         Button(JournalFirstRunCopy.continueInTheSolstoneApp) {
@@ -566,7 +586,8 @@ struct JournalFirstRunView: View {
             .accessibilityIdentifier(AXID.Journal.Ritual.card)
         } footer: {
             // Setting up never had a download footer; the rows belong to mark and thinking.
-            stepFooter()
+            // A journal that can't be set up or started can still be left for another one.
+            stepFooter(offersReturn: model.errorMessage != nil)
         }
     }
 
@@ -619,9 +640,7 @@ struct JournalFirstRunView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AXID.Journal.Ritual.card)
         } footer: {
-            SetupFooter()
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier(AXID.Journal.Ritual.footer)
+            stepFooter(offersReturn: true)
         }
     }
 
@@ -652,9 +671,7 @@ struct JournalFirstRunView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(AXID.Journal.Ritual.card)
         } footer: {
-            SetupFooter()
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier(AXID.Journal.Ritual.footer)
+            stepFooter(offersReturn: true)
         }
     }
 
@@ -704,22 +721,32 @@ struct JournalFirstRunView: View {
     private func stepFooter(
         progress: JournalProgressInfo? = nil,
         back: Bool = false,
+        offersReturn: Bool = false,
         downloads: Bool = false,
         primary: AnyView? = nil
     ) -> some View {
         SetupFooter(
             back: {
-                if back {
-                    Button {
-                        model.backFromFolder()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text(JournalFirstRunCopy.back)
+                HStack(spacing: 16) {
+                    if back {
+                        Button {
+                            model.backFromFolder()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text(JournalFirstRunCopy.back)
+                            }
                         }
+                        .buttonStyle(SetupTextButtonStyle())
+                        .accessibilityIdentifier(AXID.Journal.Ritual.back)
                     }
-                    .buttonStyle(SetupTextButtonStyle())
-                    .accessibilityIdentifier(AXID.Journal.Ritual.back)
+                    if offersReturn, let root = model.returnJournalRoot, model.canChangeJournal {
+                        Button(JournalFirstRunCopy.goBack(to: root)) {
+                            returnTarget = root
+                        }
+                        .buttonStyle(SetupTextButtonStyle())
+                        .accessibilityIdentifier(AXID.Journal.Ritual.returnToJournal)
+                    }
                 }
             },
             progress: {

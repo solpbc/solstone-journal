@@ -34,9 +34,33 @@ protocol JournalSetupRunning: Sendable {
         skipModelInstall: Bool,
         progress: @escaping @Sendable (JournalSetupProgressEvent) async -> Void
     ) async throws -> JournalSetupResult
+
+    /// Binds this mac's installation to the journal in `journalRoot`. One installation keeps one
+    /// journal: switching to a journal set up before needs setup to run again, every step.
+    func bindInstallation(to journalRoot: URL) async throws
 }
 
-extension JournalSetupRunner: JournalSetupRunning {}
+extension JournalSetupRunning {
+    func bindInstallation(to journalRoot: URL) async throws {}
+}
+
+extension JournalSetupRunner: JournalSetupRunning {
+    func run(
+        journalRoot: URL,
+        skipService: Bool,
+        skipModelInstall: Bool,
+        progress: @escaping @Sendable (JournalSetupProgressEvent) async -> Void
+    ) async throws -> JournalSetupResult {
+        try await run(
+            journalRoot: journalRoot, skipService: skipService,
+            skipModelInstall: skipModelInstall, force: false, progress: progress
+        )
+    }
+
+    func bindInstallation(to journalRoot: URL) async throws {
+        _ = try await run(journalRoot: journalRoot, skipService: true, skipModelInstall: true, force: true)
+    }
+}
 
 protocol JournalInitClienting: Sendable {
     func probeSetupComplete() async throws -> JournalInitSetupProbe
@@ -48,6 +72,7 @@ extension JournalInitClient: JournalInitClienting {}
 @Observable
 final class JournalFirstRunModel {
     typealias SupervisorStart = @MainActor @Sendable (URL) async -> Bool
+    typealias SupervisorStop = @MainActor @Sendable () async -> Void
     typealias URLOpener = @MainActor (URL) -> Bool
 
     static let setupBaseURL = "http://127.0.0.1:5015"
@@ -56,6 +81,7 @@ final class JournalFirstRunModel {
     @ObservationIgnored private let setupRunner: any JournalSetupRunning
     @ObservationIgnored private let initClient: any JournalInitClienting
     @ObservationIgnored private let startSupervisor: SupervisorStart
+    @ObservationIgnored private let stopSupervisor: SupervisorStop
     @ObservationIgnored private let handoffStore: any JournalHandoffStoring
     @ObservationIgnored private let journalFileReader: any OnDiskJournalFileReading
     @ObservationIgnored private let discoveryQualificationTimeout: TimeInterval
@@ -94,6 +120,8 @@ final class JournalFirstRunModel {
     var thinkingFailure: String?
     var speechFailure: String?
     var nativeFolderSetup = false
+    /// The other journal folders this app has kept, most recent first, that are still on disk.
+    private(set) var otherJournalRoots: [URL] = []
     var welcomeLaunchAtLogin: Binding<Bool> {
         Binding(
             get: { [weak self] in self?.launchAtLoginEnabled ?? false },
@@ -173,6 +201,7 @@ final class JournalFirstRunModel {
         setupRunner: any JournalSetupRunning = JournalSetupRunner(materializer: NativeJournalRuntimeMaterializer()),
         initClient: any JournalInitClienting = JournalInitClient(),
         startSupervisor: @escaping SupervisorStart,
+        stopSupervisor: @escaping SupervisorStop = {},
         handoffStore: any JournalHandoffStoring = JournalHandoffStore(),
         journalFileReader: any OnDiskJournalFileReading = LiveOnDiskJournalFileReader(),
         discoveryQualificationTimeout: TimeInterval = 1.0,
@@ -215,6 +244,7 @@ final class JournalFirstRunModel {
         self.setupRunner = setupRunner
         self.initClient = initClient
         self.startSupervisor = startSupervisor
+        self.stopSupervisor = stopSupervisor
         self.handoffStore = handoffStore
         self.journalFileReader = journalFileReader
         self.discoveryQualificationTimeout = discoveryQualificationTimeout
@@ -293,6 +323,7 @@ final class JournalFirstRunModel {
     }
 
     private func reconcileActivationBody() async {
+        refreshOtherJournals()
         epoch &+= 1
         let captured = epoch
         pendingDiscoveryHandoff = nil
@@ -399,10 +430,155 @@ final class JournalFirstRunModel {
         route = .ritual(.nameLocation)
     }
 
+    /// `~/journal`, unless this app has kept a journal before: then the first of `~/journal`,
+    /// `~/journal-2`, … that is not on disk and is clear of every journal folder it knows.
     private var defaultJournalRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("journal", isDirectory: true)
-            .standardizedFileURL
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let first = home.appendingPathComponent("journal", isDirectory: true).standardizedFileURL
+        let known = config.knownJournalRoots
+        guard !known.isEmpty else { return first }
+        for index in 1...999 {
+            let name = index == 1 ? "journal" : "journal-\(index)"
+            let candidate = home.appendingPathComponent(name, isDirectory: true).standardizedFileURL
+            if FileManager.default.fileExists(atPath: candidate.path) { continue }
+            if known.contains(where: { Self.journalFolders(candidate, overlap: $0) }) { continue }
+            return candidate
+        }
+        return first
+    }
+
+    /// Two journal folders overlap when they are the same folder or one holds the other. The
+    /// comparison ignores case, as this mac's disk usually does.
+    static func journalFolders(_ a: URL, overlap b: URL) -> Bool {
+        let left = a.standardizedFileURL.resolvingSymlinksInPath().path.lowercased()
+        let right = b.standardizedFileURL.resolvingSymlinksInPath().path.lowercased()
+        let trim: (String) -> String = { $0.count > 1 && $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
+        let l = trim(left), r = trim(right)
+        return l == r || l.hasPrefix(r == "/" ? r : r + "/") || r.hasPrefix(l == "/" ? l : l + "/")
+    }
+
+    // MARK: another journal on this mac
+
+    private func refreshOtherJournals() {
+        let current = config.journalRoot?.standardizedFileURL.path
+        var isDirectory: ObjCBool = false
+        otherJournalRoots = config.knownJournalRoots.reversed().filter {
+            $0.path != current
+                && FileManager.default.fileExists(atPath: $0.path, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
+    }
+
+    /// The journal setup goes back to: the one most recently left, while setup is for a new journal.
+    var returnJournalRoot: URL? { otherJournalRoots.first }
+
+    /// Setup that is continuing with the solstone app keeps its journal until it finishes there.
+    var canChangeJournal: Bool {
+        guard !isTerminating, wholeOperationDepth == 0, !userOperationInFlight,
+              pendingOperation == .none, setupTask == nil else { return false }
+        // Lock-free reads, as routing uses: an unreadable record keeps the journal where it is.
+        guard case .missing = continuation.loadContinuation(), case .missing = continuation.loadLocal() else {
+            return false
+        }
+        return true
+    }
+
+    /// What switching to `target` means, for its confirmation: the journal kept now stops and stays
+    /// where it is, and a backup the target shares with another journal here is named.
+    func switchConfirmMessage(target: URL) -> String {
+        var lines: [String] = []
+        if let current = config.journalRoot {
+            lines.append(JournalLocationCopy.switchConfirm(current: current))
+        } else {
+            lines.append(JournalLocationCopy.leaveSetupConfirm)
+        }
+        let others = config.knownJournalRoots + [config.journalRoot].compactMap { $0 }
+        if let share = JournalBackupShare.find(target: target, among: others) {
+            lines.append(JournalLocationCopy.shared(share))
+        }
+        if JournalInstance.sameMark(target: target, among: others) != nil {
+            lines.append(JournalLocationCopy.sameMarkTemplate)
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
+    /// What starting a new journal means, for its confirmation. A restore during setup carries this
+    /// journal's backup settings, so a journal with backup on is told what that does to its backup.
+    func newJournalConfirmMessage() -> String {
+        guard let current = config.journalRoot else { return "" }
+        var lines = [JournalLocationCopy.startNewJournalConfirm(current: current)]
+        switch JournalBackupPlace.read(journalRoot: current) {
+        case .hosted: lines.append(JournalLocationCopy.newJournalHostedShare)
+        case .own: lines.append(JournalLocationCopy.newJournalOwnShare)
+        case nil: break
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
+    /// The folder holds, or sits inside, another journal this app knows.
+    private func folderOverlapsAnotherJournal(_ root: URL) -> Bool {
+        let current = config.journalRoot?.standardizedFileURL.path
+        return config.knownJournalRoots.contains {
+            $0.path != current && Self.journalFolders(root, overlap: $0)
+        }
+    }
+
+    /// Stops this journal, leaves its folder as it is, and starts setup for a new one.
+    func startNewJournal() async {
+        guard route == .home, canChangeJournal, let current = config.journalRoot else { return }
+        await leaveJournal(current)
+        config.journalRoot = nil
+        await reconcileActivation()
+    }
+
+    /// Stops the journal kept now, if any, and keeps the one in `root` instead.
+    func switchToJournal(_ root: URL) async {
+        let target = root.standardizedFileURL
+        guard canChangeJournal, config.journalRoot?.standardizedFileURL.path != target.path else { return }
+        if let current = config.journalRoot {
+            await leaveJournal(current)
+        } else {
+            await leaveUnsavedSetup()
+        }
+        config.journalRoot = target
+        // Setting up the other journal moved this installation to it. Without this, the journal
+        // switched to refuses to start ("the saved installation binding is for a different
+        // journal"), and the start path's own setup skips the steps that would move it back.
+        do {
+            try await setupRunner.bindInstallation(to: target)
+        } catch {
+            Logger.journalApp.error("journal switch could not bind the installation: \(String(describing: error), privacy: .public)")
+        }
+        await reconcileActivation()
+    }
+
+    private func leaveJournal(_ root: URL) async {
+        config.rememberJournalRoot(root)
+        await leaveUnsavedSetup()
+    }
+
+    private func leaveUnsavedSetup() async {
+        wholeOperationDepth += 1
+        userOperationInFlight = true
+        epoch &+= 1
+        stopRefresh()
+        browserWaitTask?.cancel()
+        browserWaitTask = nil
+        pendingDiscoveryHandoff = nil
+        await stopSupervisor()
+        errorMessage = nil
+        adoptMessage = nil
+        handoffError = nil
+        markFailure = nil
+        thinkingFailure = nil
+        speechFailure = nil
+        setupState = nil
+        displayedProposalID = nil
+        draftThinkingChoice = nil
+        nativeFolderSetup = false
+        keepsChosenRootOnReturn = false
+        route = .deciding
+        finishWholeOperation()
     }
 
     func beginCreate() {
@@ -417,6 +593,10 @@ final class JournalFirstRunModel {
     }
 
     func continueFromNameLocation() async {
+        guard !folderOverlapsAnotherJournal(journalRoot.standardizedFileURL) else {
+            errorMessage = JournalFirstRunCopy.folderHoldsAnotherJournal
+            return
+        }
         if pendingDiscoveryHandoff != nil {
             consumeHandoffBestEffort()
             pendingDiscoveryHandoff = nil
@@ -871,6 +1051,12 @@ final class JournalFirstRunModel {
         defer { finishWholeOperation() }
         let captured = epoch
         let root = journalRoot.standardizedFileURL
+        guard !folderOverlapsAnotherJournal(root) else {
+            if failUserAction(captured, operation: .setup) {
+                errorMessage = JournalFirstRunCopy.folderHoldsAnotherJournal
+            }
+            return
+        }
         do {
             if let active = try continuation.loadActive() {
                 try continuation.bindRoot(step1: active.owner, root: root)

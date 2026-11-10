@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+import Foundation
+
 enum JournalFirstRunCopy {
     static let nameLocationTitle = "let's create your journal on this mac"
     static let adoptLandingLine = "nothing moved. your journal was always here. you know it by its mark."
@@ -48,6 +50,12 @@ enum JournalFirstRunCopy {
     static let continueInTheSolstoneApp = "continue in the solstone app"
     static let back = "back"
     static let stepProgressTemplate = "step {n} of 7"
+    static let folderHoldsAnotherJournal = "this folder overlaps another journal on this mac. choose a different folder."
+    static let goBackTemplate = "go back to the journal in {path}"
+
+    static func goBack(to root: URL) -> String {
+        "go back to the journal in \(JournalLocationCopy.displayPath(root))"
+    }
 
     static func stepProgress(_ n: Int) -> String {
         "step \(n) of 7"
@@ -97,5 +105,7 @@ enum JournalFirstRunCopy {
         continueInTheSolstoneApp,
         back,
         stepProgressTemplate,
+        folderHoldsAnotherJournal,
+        goBackTemplate,
     ]
 }

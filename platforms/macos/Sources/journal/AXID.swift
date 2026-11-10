@@ -72,6 +72,7 @@ enum AXID {
             static let handoffErrorState = "journal.ritual.handoff.error.state"
             static let handoffRetry = "journal.ritual.handoff.retry"
             static let back = "journal.ritual.back"
+            static let returnToJournal = "journal.ritual.returnToJournal"
             static let progress = "journal.ritual.progress"
             static let card = "journal.ritual.card"
             static let footer = "journal.ritual.footer"
@@ -89,6 +90,11 @@ enum AXID {
         enum Pane {
             static let locationPathState = "journal.journal.location.path.state"
             static let diskUsageState = "journal.journal.diskUsage.state"
+            static let startNewJournal = "journal.journal.startNew"
+            static let startNewJournalConfirm = "journal.journal.startNew.confirm"
+            static let switchJournalConfirm = "journal.journal.switch.confirm"
+            static let otherJournalsState = "journal.journal.others.state"
+            static let switchJournal = "journal.journal.switch"
         }
 
         enum RunState {

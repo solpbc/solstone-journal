@@ -726,6 +726,7 @@ func makeModel(
     continuation injectedContinuation: JournalSetupContinuationStore? = nil,
     supervisorIsLive: @escaping @MainActor (URL) -> Bool = { _ in false },
     didStartSupervisor: @escaping @MainActor (Bool) -> Void = { _ in },
+    willStartSupervisor: @escaping @MainActor (URL) -> Void = { _ in },
     externalSupervisorIsLive: @escaping @Sendable (URL) -> Bool = { _ in false },
     terminalServiceRunsJournal: @escaping @Sendable (URL) async -> Bool = { _ in false },
     refreshSleep: @escaping @Sendable () async -> Void = {
@@ -767,10 +768,12 @@ func makeModel(
         setupRunner: setupRunner,
         initClient: initClient,
         startSupervisor: { root in
+            willStartSupervisor(root)
             let started = await starts.start(root: root)
             didStartSupervisor(started)
             return started
         },
+        stopSupervisor: { await trace.append("stop") },
         handoffStore: handoffStore,
         journalFileReader: journalFileReader,
         discoveryQualificationTimeout: discoveryQualificationTimeout,
@@ -942,6 +945,9 @@ final class FakeSetupRunner: JournalSetupRunning, @unchecked Sendable {
         await progress(.stepStarted(step: "prepare", index: 1, total: 1))
         await progress(.completed(status: "ok"))
         return try JournalSetupResult(runtime: makeRuntime(), stdoutTail: "", renderedLog: "setup ok")
+    }
+    func bindInstallation(to journalRoot: URL) async throws {
+        await trace.append("bind:" + journalRoot.standardizedFileURL.lastPathComponent)
     }
 }
 

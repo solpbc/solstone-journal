@@ -139,6 +139,10 @@ struct JournalSetupRunnerTests {
             "--journal",
             journalRoot.path,
         ])
+        #expect(JournalSetupCommand.setupArguments(journalURL: journalRoot, skipService: true, force: true).suffix(2) == [
+            "--skip-service",
+            "--force",
+        ])
     }
 
     @Test func gateBlockedShortCircuitsMaterializeAndRun() async throws {
