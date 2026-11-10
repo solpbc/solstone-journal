@@ -312,7 +312,12 @@ pub fn record_interrupted(
     )
 }
 
-fn status_lock(path: &Path) -> Result<File, StatusError> {
+#[cfg(unix)]
+type StatusLock = nix::fcntl::Flock<File>;
+#[cfg(not(unix))]
+type StatusLock = File;
+
+fn status_lock(path: &Path) -> Result<StatusLock, StatusError> {
     let lock_path = PathBuf::from(format!("{}.lock", path.display()));
     if let Some(parent) = lock_path.parent() {
         fs::create_dir_all(parent)?;
@@ -324,9 +329,17 @@ fn status_lock(path: &Path) -> Result<File, StatusError> {
         .write(true)
         .open(lock_path)?;
     set_mode(&file)?;
-    file.lock()
-        .map_err(|err| StatusError::Lock(err.to_string()))?;
-    Ok(file)
+    #[cfg(unix)]
+    {
+        nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockExclusive)
+            .map_err(|(_file, error)| StatusError::Lock(error.to_string()))
+    }
+    #[cfg(not(unix))]
+    {
+        file.lock()
+            .map_err(|err| StatusError::Lock(err.to_string()))?;
+        Ok(file)
+    }
 }
 
 fn set_mode(_file: &File) -> Result<(), std::io::Error> {
@@ -741,6 +754,54 @@ mod tests {
 #[cfg(all(test, feature = "full-tests"))]
 mod full_tests {
     use super::*;
+
+    #[test]
+    fn status_writers_wait_for_the_owned_lock_then_reject_a_stale_revision() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = directory.path();
+        let original = begin_or_replace(
+            journal,
+            "local",
+            "{}".into(),
+            "fp".into(),
+            None,
+            "resolving",
+            None,
+        )
+        .unwrap();
+        let stale = transition(original.clone(), "verifying", None, None).unwrap();
+        let current = write_status(
+            journal,
+            transition(original, "downloading", None, None).unwrap(),
+        )
+        .unwrap();
+        let lock = status_lock(&status_path(journal, "local")).unwrap();
+        let path = journal.to_owned();
+        let (entered, ready) = std::sync::mpsc::channel();
+        let (completed, result) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            entered.send(()).unwrap();
+            completed.send(write_status(&path, stale)).unwrap();
+        });
+        ready.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(
+            result.recv_timeout(Duration::from_millis(50)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        drop(lock);
+        assert!(matches!(
+            result.recv_timeout(Duration::from_secs(2)).unwrap(),
+            Err(StatusError::Conflict(_))
+        ));
+        writer.join().unwrap();
+        assert_eq!(read_status(journal, "local").unwrap(), current);
+        let installed = write_status(
+            journal,
+            transition(current, "installed", None, None).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(installed.install_state, "installed");
+    }
 
     #[test]
     fn delayed_local_refusal_loses_to_a_newer_attempt() {

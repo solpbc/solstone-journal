@@ -326,7 +326,7 @@ impl GenerateExecutor for OwnerGenerate<'_> {
             &solstone_core_generate_wire::EndpointRuntime::default()
                 .with_brain_observation(self.observation.cloned()),
             self.root.canonical_path(),
-            |_| None,
+            crate::local_provider::authority,
             &solstone_core_generate_wire::GenerateCallContext {
                 priority: Default::default(),
                 cancellation: &cancellation,

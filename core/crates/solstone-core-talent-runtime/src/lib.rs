@@ -1177,7 +1177,43 @@ fn generate_response(
     if let Some(event) = prepared.participation_floor.take() {
         emit(writer, event);
     }
-    native_generate_response(prepared, generate, writer)
+    let timeout =
+        prepare::mobile_local_timeout(&prepared.config, &prepared.name).map_err(|error| {
+            RuntimeOutcome::StageFailed(stage_error(
+                "generate",
+                "runtime",
+                prepared,
+                error.to_string(),
+            ))
+        })?;
+    let generate = MobileLocalTimeoutExecutor {
+        inner: generate,
+        timeout: if cfg!(any(target_os = "android", target_os = "ios")) {
+            timeout
+        } else {
+            None
+        },
+    };
+    native_generate_response(prepared, &generate, writer)
+}
+
+struct MobileLocalTimeoutExecutor<'a> {
+    inner: &'a dyn solstone_core_generate::GenerateExecutor,
+    timeout: Option<std::time::Duration>,
+}
+
+impl solstone_core_generate::GenerateExecutor for MobileLocalTimeoutExecutor<'_> {
+    fn execute(
+        &self,
+        request: &GenerateRequest,
+    ) -> Result<GenerateResponse, solstone_core_generate::ClientError> {
+        match self.timeout {
+            Some(timeout) => self
+                .inner
+                .execute_with_mobile_local_timeout(request, timeout),
+            None => self.inner.execute(request),
+        }
+    }
 }
 
 /// A request fitted to the served window may have dropped the oldest input.
@@ -4353,6 +4389,112 @@ mod tests {
     fn retry_test_request(name: &str) -> GenerateRequest {
         generate_request(&PreparedTalent::new(name.into(), json!({"max_output_tokens":9216,"prompt":"document activity","json_schema":{"type":"object"}})
                 .as_object().unwrap().clone())).unwrap()
+    }
+
+    #[test]
+    fn mobile_allowance_reaches_each_tracked_retry_without_changing_the_base_request() {
+        use solstone_core_generate::{ClientError, GenerateExecutor};
+        use std::sync::Mutex;
+        use std::time::Duration;
+
+        #[derive(Default)]
+        struct Capture(Mutex<Vec<(Option<f64>, Duration)>>);
+        impl GenerateExecutor for Capture {
+            fn execute(&self, _: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                panic!("the talent allowance was lost");
+            }
+            fn execute_with_mobile_local_timeout(
+                &self,
+                request: &GenerateRequest,
+                timeout: Duration,
+            ) -> Result<GenerateResponse, ClientError> {
+                let mut calls = self.0.lock().unwrap();
+                calls.push((request.timeout_s, timeout));
+                let response =
+                    test_support::generated_response_value("{}", json!({"valid":calls.len() == 2}));
+                Ok(
+                    solstone_core_generate::decode_one_shot_response(&response.to_string())
+                        .unwrap(),
+                )
+            }
+        }
+        let mut request = retry_test_request("screen");
+        request.timeout_s = Some(480.0);
+        let capture = Capture::default();
+        let adapted = MobileLocalTimeoutExecutor {
+            inner: &capture,
+            timeout: Some(Duration::from_secs(1200)),
+        };
+        let tracked = usage::TrackingExecutor::new(&adapted);
+        execute_bounded_attempts(
+            &request,
+            Some(2),
+            |_, request| {
+                tracked.execute(request).map_err(|error| {
+                    StageError::new("generate", "test", "declared", error.to_string())
+                })
+            },
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            *capture.0.lock().unwrap(),
+            vec![(Some(480.0), Duration::from_secs(1200)); 2]
+        );
+        assert_eq!(tracked.usage().unwrap()["attempts"], 2);
+
+        let direct = |received: &GenerateRequest| {
+            assert_eq!(received, &request);
+            Ok(GenerateResponse::Cancelled)
+        };
+        assert_eq!(
+            direct
+                .execute_with_mobile_local_timeout(&request, Duration::from_secs(1200))
+                .unwrap(),
+            GenerateResponse::Cancelled
+        );
+    }
+
+    #[test]
+    fn runtime_only_forwards_the_talent_allowance_on_mobile() {
+        use solstone_core_generate::{ClientError, GenerateExecutor};
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Capture(Mutex<Vec<bool>>);
+        impl GenerateExecutor for Capture {
+            fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
+                self.0.lock().unwrap().push(false);
+                assert_eq!(request.timeout_s, Some(480.0));
+                Ok(solstone_core_generate::decode_one_shot_response(
+                    &test_support::generated_response_value("{}", json!({"valid":true}))
+                        .to_string(),
+                )
+                .unwrap())
+            }
+            fn execute_with_mobile_local_timeout(
+                &self,
+                request: &GenerateRequest,
+                timeout: std::time::Duration,
+            ) -> Result<GenerateResponse, ClientError> {
+                self.0.lock().unwrap().push(true);
+                assert_eq!(request.timeout_s, Some(480.0));
+                assert_eq!(timeout, std::time::Duration::from_secs(1200));
+                Ok(solstone_core_generate::decode_one_shot_response(
+                    &test_support::generated_response_value("{}", json!({"valid":true}))
+                        .to_string(),
+                )
+                .unwrap())
+            }
+        }
+        let mut prepared = PreparedTalent::new("declared".into(), json!({
+            "max_output_tokens":512,"timeout_s":480,"mobile_local_timeout_s":1200,"prompt":"literal source"
+        }).as_object().unwrap().clone());
+        let capture = Capture::default();
+        generate_response(&mut prepared, &capture, &mut Vec::new()).unwrap();
+        assert_eq!(
+            *capture.0.lock().unwrap(),
+            vec![cfg!(any(target_os = "android", target_os = "ios"))]
+        );
     }
 
     #[test]

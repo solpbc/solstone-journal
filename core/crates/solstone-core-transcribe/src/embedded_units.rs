@@ -183,7 +183,7 @@ where
 {
     let retained = retain_audio(masked, vad);
     let audio = retained.samples.as_deref().unwrap_or(masked);
-    transcribe_retained_intervals(audio, retained.mapping.as_ref(), dispatch)
+    transcribe_retained_intervals(audio, retained.mapping.as_ref(), vad, dispatch)
 }
 
 /// Run the embedded unit loop for a backend that [`select_backend`](crate::embedded::select_backend) already chose.

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 sol pbc
+cmake_minimum_required(VERSION 3.18)
+project(parakeet_load_lifecycle_control LANGUAGES CXX)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+function(add_load_control name source)
+    set(projected "${CMAKE_CURRENT_BINARY_DIR}/${name}.inc")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/emit.py"
+        --source "${source}" --output "${projected}" RESULT_VARIABLE code TIMEOUT 15)
+    if(NOT code EQUAL 0)
+        message(FATAL_ERROR "Exact load-body projection failed")
+    endif()
+    add_executable(${name} control.cpp)
+    target_compile_features(${name} PRIVATE cxx_std_17)
+    target_compile_definitions(${name} PRIVATE NDEBUG LOAD_SOURCE_INCLUDE="${projected}")
+endfunction()
+add_load_control(parakeet_load_lifecycle_control "${PARAKEET_SOURCE}")
+if(EXISTS "${PARAKEET_BASELINE_SOURCE}/src/parakeet_capi.cpp")
+    add_load_control(parakeet_load_lifecycle_baseline "${PARAKEET_BASELINE_SOURCE}")
+endif()
+enable_testing()
+add_test(NAME parakeet_load_lifecycle_control COMMAND parakeet_load_lifecycle_control)
+set_tests_properties(parakeet_load_lifecycle_control PROPERTIES TIMEOUT 10)

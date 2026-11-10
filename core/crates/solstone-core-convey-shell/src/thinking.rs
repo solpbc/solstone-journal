@@ -840,6 +840,7 @@ pub(crate) mod bootstrap_capability_test {
 
 async fn start_local_bootstrap(
     Extension(journal): Extension<Arc<JournalRoot>>,
+    admitted_root: Option<Extension<Arc<solstone_core_journal_io::JournalRoot>>>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     let journal = journal.as_ref();
@@ -888,17 +889,25 @@ async fn start_local_bootstrap(
         }
         solstone_core_thinking::local::BootstrapResponse::HostIneligible(reason) => envelope(
             "host_ineligible",
-            "local thinking won't start on this computer.",
+            "local thinking can't start on this device.",
             reason,
             StatusCode::BAD_REQUEST,
         ),
         solstone_core_thinking::local::BootstrapResponse::Start => {
-            let root = journal.0.clone();
+            let path = journal.0.clone();
             match tokio::task::spawn_blocking(move || {
-                if automatic {
-                    crate::thinking_install::start_automatic(&root, model)
+                if solstone_core_local::embedded::supports_key(
+                    &solstone_core_local::install::pins::platform_key(),
+                ) {
+                    let Extension(root) = admitted_root.ok_or("admitted journal unavailable")?;
+                    if root.canonical_path() != path {
+                        return Err("journal binding changed".into());
+                    }
+                    crate::thinking_install::start_mobile(root, model, automatic)
+                } else if automatic {
+                    crate::thinking_install::start_automatic(&path, model)
                 } else {
-                    crate::thinking_install::start(&root, model)
+                    crate::thinking_install::start(&path, model)
                 }
             })
             .await

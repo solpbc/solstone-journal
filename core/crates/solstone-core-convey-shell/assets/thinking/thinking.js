@@ -76,6 +76,7 @@
     },
   };
   let copy = {};
+  const confidentialAudio = {known: true, busy: false, epoch: 0, readSequence: 0};
   const CHATGPT_ATTEMPT_STORAGE_KEY = 'solstone.thinking.chatgptAttempt';
   let chatGptStartGateOwner = null;
 
@@ -2908,15 +2909,19 @@
     const active = activeLanePayload();
     const attestation = active.confidential_attestation || {state: 'off'};
     const audio = confidentialAudioRender(active, attestation, copy.confidential);
-    const deferral = confidentialAudioDeferralLine(active, attestation, copy.confidential);
+    const audioKnown = confidentialAudio.known && !confidentialAudio.busy;
+    const deferral = audioKnown ? confidentialAudioDeferralLine(active, attestation, copy.confidential) : '';
     setText('confidentialSetupHeading', beats.heading || '');
     setText('confidentialSetupSub', beats.sub || '');
     setText('confidentialTrustHeading', beats.heading || '');
     setText('confidentialTrustSub', beats.sub || '');
-    setText('confidentialTrustEgress', confidentialEgressLine(active, beats));
-    setHidden('confidentialAudioRow', audio.hidden);
+    setText('confidentialTrustEgress', audioKnown ? confidentialEgressLine(active, beats) : '');
+    setHidden('confidentialAudioRow', audio.hidden || !audioKnown);
     const audioToggle = $('confidentialAudioToggle');
-    if (audioToggle) audioToggle.checked = audio.on;
+    if (audioToggle) {
+      audioToggle.checked = audioKnown && audio.on;
+      audioToggle.disabled = !audioKnown;
+    }
     setText('confidentialAudioLabel', audio.label);
     setText('confidentialAudioDescription', audio.description);
     setText('confidentialAudioNote', audio.note);
@@ -4018,9 +4023,16 @@
     return api(`api/providers${suffix}`);
   }
 
-  async function refreshProviders() {
-    state.providers = await refreshProvidersPayload();
+  async function refreshProviders({confirmAudio = false} = {}) {
+    const epoch = confidentialAudio.epoch;
+    const canApply = !confidentialAudio.busy || confirmAudio;
+    const sequence = canApply ? ++confidentialAudio.readSequence : confidentialAudio.readSequence;
+    const providers = await refreshProvidersPayload();
+    if (!canApply || epoch !== confidentialAudio.epoch || sequence !== confidentialAudio.readSequence) return false;
+    state.providers = providers;
+    confidentialAudio.known = true;
     renderAll();
+    return true;
   }
 
   function stopLocalConfirmation() {
@@ -4260,7 +4272,7 @@
     return true;
   }
 
-  function startInstallPoll(initialStatus = null) {
+  function startInstallPoll(initialStatus = null, {afterCancel = false} = {}) {
     const model = selectedLocalModelId();
     if (!model) return null;
     stopInstallPoll();
@@ -4277,6 +4289,10 @@
         if (generation !== state.installPollGeneration) return;
         if (installIsTerminal(status)) {
           stopInstallPoll();
+          if (afterCancel) {
+            clearLocalSetupError();
+            renderLocal();
+          }
           if (status?.install_state === 'installed') {
             Promise.all([
               refreshProviders(),
@@ -4385,26 +4401,50 @@
   }
 
   async function setConfidentialAudio(enabled) {
-    setMessage('confidentialLaneOperation', '');
-    try {
-      await api('/app/settings/api/config', {
-        method: 'PUT',
-        body: JSON.stringify({
-          section: 'transcribe',
-          data: {confidential_audio: enabled},
-        }),
-      });
-    } catch (err) {
-      // The write never landed, so authoritative state is unchanged.
-      setMessage('confidentialLaneOperation', err.message, 'error');
-      renderConfidentialSetup();
+    if (confidentialAudio.busy || !confidentialAudio.known) {
+      renderConfidentialTrust();
       return;
     }
+    setMessage('confidentialLaneOperation', '');
+    const active = activeLanePayload();
+    const data = {confidential_audio: enabled};
+    if (Object.prototype.hasOwnProperty.call(active, 'speech_backend')) {
+      data.backend = enabled ? 'confidential'
+        : (['parakeet', 'parakeet-cpp'].includes(active.speech_backend) ? active.speech_backend : 'parakeet');
+    }
+    confidentialAudio.busy = true;
+    confidentialAudio.known = false;
+    confidentialAudio.epoch += 1;
+    stopConfidentialPoll();
+    renderConfidentialTrust();
     try {
-      await refreshProviders();
-    } catch (err) {
-      // The write landed but the re-read failed; stale payload may under-claim what leaves.
-      setMessage('confidentialLaneOperation', err.message, 'error');
+      try {
+        await api('/app/settings/api/config', {
+          method: 'PUT',
+          body: JSON.stringify({
+            section: 'transcribe',
+            data,
+          }),
+        });
+      } catch (err) {
+        // An interrupted answer can follow a successful write. Re-read the choice.
+        try {
+          await refreshProviders({confirmAudio: true});
+        } catch (readError) {
+          confidentialAudio.known = false;
+        }
+        setMessage('confidentialLaneOperation', err.message, 'error');
+        return;
+      }
+      try {
+        await refreshProviders({confirmAudio: true});
+      } catch (err) {
+        confidentialAudio.known = false;
+        setMessage('confidentialLaneOperation', err.message, 'error');
+      }
+    } finally {
+      confidentialAudio.busy = false;
+      renderConfidentialTrust();
     }
   }
 
@@ -4678,27 +4718,41 @@
   }
 
   let cancelPending = false;
+  async function localInstallAfterCancel({cancelFn, fetchStatus, previousStatus}) {
+    try {
+      return {status: await cancelFn(), error: null};
+    } catch (err) {
+      // A response deadline is not a failed cancellation. The retained worker
+      // may still be retiring, or its actual terminal status may now be durable.
+      let latest = await fetchStatus().catch(() => null);
+      if (!latest || (Number.isInteger(latest.revision) && Number.isInteger(previousStatus?.revision)
+        && latest.revision < previousStatus.revision)) latest = previousStatus;
+      return {status: latest, error: installIsTerminal(latest) ? null : localSetupRefusal(err, 'cancel')};
+    }
+  }
+
   async function cancelLocalBootstrap() {
     if (cancelPending) return;
     const attemptId = state.install?.attempt_id || '';
     if (!attemptId) return;
+    const model = selectedLocalModelId();
     cancelPending = true;
     clearLocalSetupError();
     stopInstallPoll();
     renderLocal();
     try {
       const url = `api/local/bootstrap/cancel?attempt_id=${encodeURIComponent(attemptId)}`;
-      let status;
-      try {
-        status = await api(url, {method: 'POST'});
-      } catch (err) {
-        throw localSetupRefusal(err, 'cancel');
-      }
+      const {status, error} = await localInstallAfterCancel({
+        cancelFn: () => api(url, {method: 'POST'}),
+        fetchStatus: () => fetchInstallStatus(model),
+        previousStatus: state.install,
+      });
       state.install = status || null;
       renderAll();
       if (installIsInFlight(status)) {
-        startInstallPoll(status);
+        startInstallPoll(status, {afterCancel: true});
       }
+      if (error) throw error;
     } finally {
       cancelPending = false;
       renderLocal();

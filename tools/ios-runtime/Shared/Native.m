@@ -54,3 +54,26 @@ char *journal_ios_backup_private_root(void) {
     }
 }
 void journal_ios_backup_private_root_free(char *result) { free(result); }
+
+bool journal_ios_qwen_host_process(void) {
+    @autoreleasepool {
+        return [NSBundle.mainBundle.bundleURL.pathExtension isEqualToString:@"app"];
+    }
+}
+
+char *journal_ios_qwen_package_root(void) {
+    @autoreleasepool {
+        NSURL *root = NSBundle.mainBundle.bundleURL;
+        if ([root.pathExtension isEqualToString:@"appex"]) {
+            if (![root.lastPathComponent isEqualToString:@"JournalWorker.appex"]) return NULL;
+            NSURL *extensions = root.URLByDeletingLastPathComponent;
+            if (![extensions.lastPathComponent isEqualToString:@"Extensions"]) return NULL;
+            root = extensions.URLByDeletingLastPathComponent;
+        }
+        if (![root.pathExtension isEqualToString:@"app"]) return NULL;
+        const char *value = root.fileSystemRepresentation;
+        if (!value || strlen(value) >= PATH_MAX) return NULL;
+        return strdup(value);
+    }
+}
+void journal_ios_qwen_package_root_free(char *result) { free(result); }

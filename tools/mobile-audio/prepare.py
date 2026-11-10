@@ -38,6 +38,32 @@ def stage_copy(source, destination):
 
 
 def verify_audio_pins(receipt, current):
+    repo = Path(__file__).resolve().parents[2]
+    runtime_patch = 'core/distribution/mobile/parakeet-mapped-weights.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == runtime_patch
+               and row.get('sha256') == digest(repo / runtime_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs the current mapped Parakeet loader; rebuild mobile media native inputs')
+    failure_patch = 'core/distribution/mobile/parakeet-graph-failure.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == failure_patch
+               and row.get('sha256') == digest(repo / failure_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs checked Parakeet graph failures; rebuild mobile media native inputs')
+    weight_patch = 'core/distribution/mobile/parakeet-weight-failure.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == weight_patch
+               and row.get('sha256') == digest(repo / weight_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs checked Parakeet weight preparation; rebuild mobile media native inputs')
+    load_patch = 'core/distribution/mobile/parakeet-load-lifecycle.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == load_patch
+               and row.get('sha256') == digest(repo / load_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs owned Parakeet load failure cleanup; rebuild mobile media native inputs')
+    retirement_patch = 'core/distribution/mobile/parakeet-error-retirement.patch'
+    if not any(row.get('component') == 'parakeet' and row.get('path') == retirement_patch
+               and row.get('sha256') == digest(repo / retirement_patch)
+               for row in receipt.get('patches', []) if isinstance(row, dict)):
+        raise ValueError('retained audio needs failed Parakeet backend retirement; rebuild mobile media native inputs')
     inputs = receipt.get('inputs', {})
     if not isinstance(inputs, dict):
         raise ValueError('retained audio source pins are missing')
@@ -74,7 +100,7 @@ def verify_audio_pins(receipt, current):
         if not isinstance(patch, dict) or set(patch) != {'source_component', 'path', 'sha256'}:
             raise ValueError('shared media GGML patch record is invalid')
         family, path, checksum = patch['source_component'], patch['path'], patch['sha256']
-        if family not in ('parakeet', 'rfdetr'):
+        if family not in ('parakeet', 'rfdetr', 'mobile'):
             raise ValueError('shared media GGML patch source is invalid')
         if not isinstance(path, str) or not path or '\\' in path or '\0' in path:
             raise ValueError('shared media GGML patch path is invalid')
@@ -88,8 +114,13 @@ def verify_audio_pins(receipt, current):
             raise ValueError('shared media GGML patch record is duplicated')
         identities.add(identity)
         families.add(family)
-    if families != {'parakeet', 'rfdetr'}:
+    if families != {'parakeet', 'rfdetr', 'mobile'}:
         raise ValueError('shared media GGML needs both Parakeet and RF-DETR patch families')
+    guard = 'core/distribution/mobile/ggml-metal-mapped-buffer-null.patch'
+    if ('mobile', guard) not in identities or not any(
+            row['source_component'] == 'mobile' and row['path'] == guard
+            and row['sha256'] == digest(repo / guard) for row in patches):
+        raise ValueError('shared media GGML needs the current mapped-buffer failure guard')
     return shared
 
 
@@ -127,6 +158,36 @@ def sound_ced_input(retained, repo, current, shared):
                     'driver_sha256': receipt['driver_sha256'], 'sha256': digest(source)}
 
 
+def retained_onnx_input(retained, expected_sha256):
+    receipt_path = retained / 'receipts/mobile-native-build.json'
+    retention_path = retained / 'retention.json'
+    for path in (receipt_path, retention_path):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('ONNX reuse requires regular producer and retention receipts')
+    receipt = json.loads(receipt_path.read_text())
+    if receipt.get('status') != 'passed' or receipt.get('exit') != 0 or receipt.get('platform') != 'ios':
+        raise ValueError('ONNX reuse needs a successful iOS native producer receipt')
+    produced = [row for row in receipt.get('artifacts', []) if row.get('component') == 'onnx-runtime']
+    retained_rows = [row for row in json.loads(retention_path.read_text()).get('artifacts', [])
+                     if row.get('component') == 'onnx-runtime']
+    if len(produced) != 1 or len(retained_rows) != 1:
+        raise ValueError('ONNX reuse needs one original producer and retained artifact')
+    built, kept = produced[0], retained_rows[0]
+    source = Path(kept.get('retained_path', ''))
+    if (source.name != 'libonnxruntime.a' or Path(built.get('path', '')).name != 'libonnxruntime.a'
+            or source.is_symlink() or not source.is_file() or source.stat().st_size <= 0
+            or built.get('path') != kept.get('path')
+            or built.get('sha256') != expected_sha256 or kept.get('sha256') != expected_sha256
+            or built.get('size_bytes') != kept.get('size_bytes')
+            or source.stat().st_size != built.get('size_bytes') or digest(source) != expected_sha256):
+        raise ValueError('retained ONNX differs from its producer or current iOS runtime pin')
+    return source, {'reused_from': str(retained), 'source_commit': receipt.get('source_commit'),
+                    'producer_receipt_sha256': digest(receipt_path),
+                    'retention_receipt_sha256': digest(retention_path),
+                    'sha256': expected_sha256, 'size_bytes': source.stat().st_size,
+                    'boundary': 'Unchanged pinned ONNX binary reused; not rebuilt by the current media producer.'}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--retained', type=Path, required=True)
@@ -134,6 +195,8 @@ def main():
     parser.add_argument('--model', type=Path)
     parser.add_argument('--ced-model', type=Path)
     parser.add_argument('--sound-ced-retained', type=Path)
+    parser.add_argument('--onnx-runtime', type=Path,
+                        help='original retained iOS native producer directory supplying unchanged pinned ONNX')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     receipt = json.loads((args.retained / 'receipts/mobile-native-build.json').read_text())
@@ -147,6 +210,9 @@ def main():
     if ort_pin is None:
         raise ValueError('iOS ONNX Runtime digest pin missing')
     retained = json.loads((args.retained / 'retention.json').read_text())
+    onnx_input = retained_onnx_input(args.onnx_runtime, ort_pin[1]) if args.onnx_runtime else None
+    if onnx_input and any(entry.get('component') == 'onnx-runtime' for entry in retained['artifacts']):
+        raise ValueError('ONNX must come from one retained input, not both media and explicit reuse')
     args.output.mkdir(parents=True, exist_ok=True)
     records = []
     for entry in retained['artifacts']:
@@ -164,6 +230,17 @@ def main():
         destination = directory / source.name
         stage_copy(source, destination)
         records.append({'path': str(destination), 'sha256': digest(destination), 'source': str(source)})
+    if onnx_input:
+        source, _ = onnx_input
+        directory = args.output / 'onnx'
+        directory.mkdir(exist_ok=True)
+        destination = directory / source.name
+        stage_copy(source, destination)
+        copied_sha256 = digest(destination)
+        if copied_sha256 != onnx_input[1]['sha256']:
+            raise ValueError('staged ONNX changed after retained input verification')
+        records.append({'path': str(destination), 'sha256': copied_sha256,
+                        'source': str(source), 'reused_from': str(args.onnx_runtime)})
     if len(records) != 9:
         raise ValueError('expected the maintained Parakeet archive set and ONNX Runtime')
     verified_sound = None
@@ -225,6 +302,7 @@ def main():
                   ('parakeet', 'parakeet-ced', 'parakeet-voice-detect', 'ggml', 'rfdetr')},
               'verified_media_shared_ggml': shared_ggml,
               'verified_sound_ced': verified_sound,
+              'verified_onnx_reuse': onnx_input[1] if onnx_input else None,
               'models': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(model_dir.iterdir())],
               'notices': [{'path': str(p), 'sha256': digest(p), 'size': p.stat().st_size} for p in sorted(notices.iterdir())]}
     (args.output / 'inputs.json').write_text(json.dumps(result, indent=2) + '\n')

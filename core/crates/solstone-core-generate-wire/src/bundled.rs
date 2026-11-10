@@ -35,6 +35,24 @@ pub fn bundled_generate_with_authority(
     ))
 }
 
+pub(crate) fn bundled_generate_with_context(
+    request: &GenerateRequest,
+    journal_path: &Path,
+    authority: Option<&mut LocalInferenceAuthority>,
+    context: &crate::dispatch::GenerateCallContext<'_>,
+) -> Result<GenerateResult, BundledError> {
+    let input = bundled_input(request, journal_path)?;
+    let cancelled = || context.cancellation.is_cancelled();
+    Ok(solstone_core_local::generate_with_authority_control(
+        input,
+        authority,
+        &solstone_core_local::GenerateControl {
+            priority: context.priority,
+            cancelled: &cancelled,
+        },
+    ))
+}
+
 pub fn bundled_input(
     request: &GenerateRequest,
     journal_path: &Path,
@@ -66,6 +84,8 @@ fn detect_platform() -> Result<Platform, BundledError> {
         "linux" => Ok(Platform::Linux),
         "macos" => Ok(Platform::Darwin),
         "windows" => Ok(Platform::Windows),
+        "android" => Ok(Platform::Android),
+        "ios" => Ok(Platform::Ios),
         _ => Err(BundledError::UnsupportedPlatform),
     }
 }

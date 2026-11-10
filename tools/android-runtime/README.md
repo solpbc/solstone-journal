@@ -8,6 +8,8 @@ The package is `app.solstone.development.journal`. It requests Internet and netw
 
 Install the repository's pinned Rust toolchain and `aarch64-linux-android` target, JDK 17, Android SDK platform 36, build-tools 35.0.0 and NDK r30. The [Android cross-build instructions](../../docs/ANDROID_CROSS_BUILD.md) provide the pinned NDK acquisition recipe. Set `ANDROID_HOME`, `JAVA_HOME` and `JOURNAL_NDK` to those installations. Cache the Cargo dependencies before the offline build. All native builds require `PARAKEET_LIB_DIR`, `SOLSTONE_FFMPEG_SOURCE_ARCHIVE` and `JOURNAL_ONNX_LIBRARY`, as described below.
 
+Build the app's Qwen library with `scripts/mobile_native_build.py --platform android --components llama --work-dir NATIVE_BUILD --cache-dir DOWNLOAD_CACHE`. Set `QWEN_PACKAGE_DIR` to `NATIVE_BUILD/artifacts/mobile-qwen`. The native builder verifies that package, links its separate shared library and stages its manifest and licenses for the APK. Qwen's model and projector are downloaded through the journal's local setup when the owner chooses it.
+
 From this directory:
 
 ```sh
@@ -39,7 +41,7 @@ python3 build_apk.py --root "$PWD" --sdk "$ANDROID_HOME" --java "$JAVA_HOME" \
 
 the builder verifies the speech model against the catalog and the checked-in voice models against their runtime pins. the APK includes those files and their notices. on first open, preparation copies missing files into app-private storage before starting the journal. existing model files must match; conflicting bytes are kept and startup refuses. no USB model provisioning is needed for this variant.
 
-install the exact signed APK with the retained signer. open `journal`, choose its mark, and choose thinking. local thinking is unavailable on android; select confidential processing, your own model, or decide later. pair devices from network.
+install the exact signed APK with the retained signer. open `journal`, choose its mark, and choose thinking. local thinking downloads its model during setup. you can also choose confidential processing, your own model, or decide later. pair devices from network.
 
 use this internal build on a dedicated, plugged-in device with the app in the foreground. it does not promise background hosting. keep the solstone app separate. test a new journal with a separate application ID; preserve the existing package's signer and private data when updating it. this build is not a store release.
 

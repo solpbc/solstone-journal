@@ -2,7 +2,7 @@
 
 ## ordinary owner app
 
-`make build-owner AUDIO_MODELS_DIR=<verified-mobile-models>` builds a separate development app, `app.solstone.journal.owner.dev`, with its own `group.app.solstone.journal.owner.dev` container. `make install-owner` adds installation to the same build. set `DEVICE` and a fresh `BUILD_ROOT`; keep the existing native audio library variables from the local-audio instructions below. the owner build requires bundled speech models. it does not read or update the older runtime development app or its journal.
+`make build-owner AUDIO_MODELS_DIR=<verified-mobile-models>` builds a separate development app, `app.solstone.journal.owner.dev`, with its own `group.app.solstone.journal.owner.dev` container. `make install-owner` adds installation to the same build. set `DEVICE` and a fresh `BUILD_ROOT`; keep the existing native audio library variables from the local-audio instructions below. the owner build requires bundled speech models and a verified Qwen native package. build that package with `make qwen-native`, or set `QWEN_PACKAGE_DIR` to an existing package from that producer. it does not read or update the older runtime development app or its journal.
 
 open **your journal** from its icon. the app opens the maintained journal setup page, where you choose the mark and an existing thinking provider. pair another device through the existing devices page. keep this device plugged in, on your Wi-Fi, with the app in the foreground. home and health show the journal's processing and service status.
 
@@ -10,7 +10,7 @@ the native bar keeps **stop** available if the page fails. stop saves your choic
 
 while stopped, **review storage recovery** checks temporary archive copies against their current originals. **remove temporary items** is a separate confirmation; it removes only the reviewed redundant copies and empty staging folders. an interrupted or partial cleanup keeps Start blocked until **check current storage** confirms the local state. this does not establish an earlier archive's remote outcome or restart the journal. `make check-owner-recovery` checks the host's saved-result behavior, not physical recovery.
 
-thinking can use an existing bring-your-own provider or confidential processing. the owner build compiles the native library with the `owner-app` feature, so backup and confidential-processing admission accept only this app's own signed resources and refuse the runtime development app's. the existing backup page offers your own storage and sol pbc's encrypted backup. keep your recovery key somewhere separate from this device. the native speech resources are bundled and verified by the existing audio adapter; no USB model provisioning is part of ordinary use.
+thinking can run on this device through the bundled Qwen native runtime, use an existing bring-your-own provider, or use confidential processing. the owner build compiles the native library with the `owner-app` feature, so backup and confidential-processing admission accept only this app's own signed resources and refuse the runtime development app's. the existing backup page offers your own storage and sol pbc's encrypted backup. keep your recovery key somewhere separate from this device. the native speech resources are bundled and verified by the existing audio adapter; no USB model provisioning is part of ordinary use.
 
 the web view uses a private custom-scheme adapter to the maintained owner router. it preserves response headers and streams binary originals and live events without an owner HTTP listener. it accepts only its own journal origin and shows other pages, such as a service consent page, in a Safari sheet over the app, so the journal keeps running while you finish there. you can choose a file on the import screen and save it through this private adapter. saving a file does not by itself run an import.
 
@@ -23,6 +23,20 @@ This development app exercises journal storage, indexing and search with a stand
 The helper owns persistent files in its private `Documents/journal-<suite>` directory. The host sends typed operations over XPC and receives results. A supplied host path conveys no file authority. The bridge retains an admitted `JournalRoot` and checks its canonical binding before each operation; bound publication uses the production journal IO primitives. Indexing and queries use the production crates. For LAN serving, the foreground host retains the shared [mobile serving runtime](../mobile-serving/README.md). The host and helper independently select the same dedicated app-group journal; the helper performs indexing and export. The maintained router payload is bundled as a signed resource. Exported synthetic results go to the host's Documents directory for independent checking.
 
 ## Build and install
+
+An isolated development identity must agree across `JOURNAL_BUNDLE_IDENTIFIER`,
+`JOURNAL_APP_GROUP`, `Shared/Identity.swift` and the host names in `Helper.swift`
+and `Appraisal.swift`. Pass that bundle identifier to `finalize.py`. The finalizer
+accepts owner/runtime development IDs under `app.solstone.journal` and checks the
+built host and worker identities. Owner identities retain all native Qwen and
+media admission requirements.
+
+An owner-only Extended Virtual Addressing comparison can select
+`JOURNAL_OWNER_ENTITLEMENTS=Shared/OwnerExtendedVA.entitlements`. The default
+remains `Shared/Serving.entitlements`; worker and appraisal entitlements stay
+separate. The selected profile must authorize EVA, and the final signature must
+contain it. This option requests address space, not an increased memory limit;
+it does not establish model coexistence or release qualification.
 
 On a mac with Xcode 26, XcodeGen, Rust's `aarch64-apple-ios` target and a paired device in Developer Mode:
 
