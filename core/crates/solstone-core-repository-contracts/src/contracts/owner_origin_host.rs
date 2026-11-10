@@ -50,6 +50,11 @@ const ALLOWLIST: &[AllowlistRow] = &[
         reason: "native updater's expected host for initial URL and every redirect",
     },
     AllowlistRow {
+        path: "core/crates/solstone-core-update/src/advisory.rs",
+        marker: "ADVISORY_HOST",
+        reason: "security advisory's expected host for initial URL and every redirect; a bare GET that sends no identifier, version or owner detail",
+    },
+    AllowlistRow {
         path: "core/crates/solstone-core-artifact-download/src/lib.rs",
         marker: "OWNER_ORIGIN_HOST",
         reason: "shared artifact downloader owner-host constant",
