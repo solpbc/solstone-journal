@@ -334,22 +334,7 @@ const MORE_STATE_FIELDS = [
     });
   }
 
-  async function mountMore(ctx) {
-    // A test may set a shorter bound before mount. Production stays at 4s.
-    const timeout = Number.isFinite(window.__moreStateTimeout) ? window.__moreStateTimeout : 4000;
-    delete window.__moreStateTimeout;
-
-    const root = document.getElementById('more-root');
-    ctx.on(document, 'keydown', (event) => {
-      if (!here(ctx, root)) return;
-      const input = root.querySelector('#more-filter');
-      if (!input || event.key !== 'Escape' || document.activeElement !== input) return;
-      if (!input.value) return;
-      input.value = '';
-      applyFilter(root);
-    });
-    if (!root) throw new Error('more has no root');
-
+  async function drawMore(ctx, root, timeout) {
     const shell = await shellFromPage();
     if (!shell || ctx.disposed) return;
 
@@ -381,6 +366,49 @@ const MORE_STATE_FIELDS = [
     installPins(root, shell, ctx);
     ctx.ready('content');
     await loadStates(root, ctx, timeout);
+  }
+
+  function mountMore(ctx) {
+    // A test may set a shorter bound before mount. Production stays at 4s.
+    const timeout = Number.isFinite(window.__moreStateTimeout) ? window.__moreStateTimeout : 4000;
+    delete window.__moreStateTimeout;
+
+    const root = document.getElementById('more-root');
+    ctx.on(document, 'keydown', (event) => {
+      if (!here(ctx, root)) return;
+      const input = root.querySelector('#more-filter');
+      if (!input || event.key !== 'Escape' || document.activeElement !== input) return;
+      if (!input.value) return;
+      input.value = '';
+      applyFilter(root);
+    });
+    if (!root) throw new Error('more has no root');
+
+    // The swap waits for mount to return, and the click paints that frame.
+    // The cards are drawn on the next task, after that paint.
+    let frame = 0;
+    const painted = new Promise((resolve, reject) => {
+      const start = () => {
+        if (ctx.disposed) { resolve(); return; }
+        Promise.resolve(drawMore(ctx, root, timeout)).then(resolve, reject);
+      };
+      if (typeof window.requestAnimationFrame !== 'function') {
+        ctx.setTimeout(start, 0);
+        return;
+      }
+      frame = window.requestAnimationFrame(() => {
+        if (ctx.disposed) { resolve(); return; }
+        ctx.setTimeout(start, 0);
+      });
+      ctx.on(ctx.signal, 'abort', () => {
+        if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frame);
+        resolve();
+      });
+    });
+    window.__morePainted = painted;
+    painted.catch((error) => {
+      if (!ctx.disposed) window.logError?.(error, { context: 'more' });
+    });
   }
 
   window.SolViews.register('more', { mount: mountMore });
