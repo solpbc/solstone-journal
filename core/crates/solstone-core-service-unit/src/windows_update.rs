@@ -42,9 +42,188 @@ pub fn windows_service_update_plan(running_instances: usize) -> WindowsServiceUp
     }
 }
 
+pub const WINDOWS_UPDATE_INTENT_SCHEMA: &str = "solstone-windows-update-intent-v1";
+
+/// The service's run and enabled state before an update quiesce.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OwnerRunIntent {
+    pub was_running: bool,
+    pub was_enabled: bool,
+}
+
+/// The settings applied to Task Scheduler before stopping the task for an update.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WindowsUpdateQuiesce {
+    pub disable_before_stop: bool,
+}
+
+/// A quiesce before an update disables the task before stopping it.
+pub const fn windows_update_quiesce() -> WindowsUpdateQuiesce {
+    WindowsUpdateQuiesce {
+        disable_before_stop: true,
+    }
+}
+
+/// The restore action derived from a saved owner intent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WindowsUpdateRestore {
+    pub start: bool,
+    pub enable_without_start: bool,
+}
+
+/// Derive the restore action from owner run intent.
+pub fn windows_update_restore(intent: OwnerRunIntent) -> WindowsUpdateRestore {
+    WindowsUpdateRestore {
+        start: intent.was_running,
+        enable_without_start: !intent.was_running && intent.was_enabled,
+    }
+}
+
+/// Derive the restore action after a failed stop attempt.
+pub fn windows_update_stop_failure_restore(was_enabled: bool) -> WindowsUpdateRestore {
+    WindowsUpdateRestore {
+        start: false,
+        enable_without_start: was_enabled,
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredUpdateIntent<'a> {
+    schema: &'a str,
+    was_running: bool,
+    was_enabled: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReadUpdateIntent {
+    schema: String,
+    was_running: bool,
+    was_enabled: bool,
+}
+
+/// Parse serialized update intent bytes, returning None on unknown fields,
+/// wrong schema, or invalid JSON.
+pub fn parse_windows_update_intent(bytes: &[u8]) -> Option<OwnerRunIntent> {
+    let read: ReadUpdateIntent = serde_json::from_slice(bytes).ok()?;
+    if read.schema != WINDOWS_UPDATE_INTENT_SCHEMA {
+        return None;
+    }
+    Some(OwnerRunIntent {
+        was_running: read.was_running,
+        was_enabled: read.was_enabled,
+    })
+}
+
+/// Serialize owner run intent using the canonical schema.
+pub fn windows_update_intent_bytes(intent: OwnerRunIntent) -> Vec<u8> {
+    let stored = StoredUpdateIntent {
+        schema: WINDOWS_UPDATE_INTENT_SCHEMA,
+        was_running: intent.was_running,
+        was_enabled: intent.was_enabled,
+    };
+    serde_json::to_vec(&stored).expect("serialize update intent")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_update_quiesce_disables_before_stop() {
+        assert!(windows_update_quiesce().disable_before_stop);
+    }
+
+    #[test]
+    fn windows_update_restore_four_rows() {
+        assert_eq!(
+            windows_update_restore(OwnerRunIntent {
+                was_running: true,
+                was_enabled: true,
+            }),
+            WindowsUpdateRestore {
+                start: true,
+                enable_without_start: false,
+            }
+        );
+        assert_eq!(
+            windows_update_restore(OwnerRunIntent {
+                was_running: true,
+                was_enabled: false,
+            }),
+            WindowsUpdateRestore {
+                start: true,
+                enable_without_start: false,
+            }
+        );
+        assert_eq!(
+            windows_update_restore(OwnerRunIntent {
+                was_running: false,
+                was_enabled: true,
+            }),
+            WindowsUpdateRestore {
+                start: false,
+                enable_without_start: true,
+            }
+        );
+        assert_eq!(
+            windows_update_restore(OwnerRunIntent {
+                was_running: false,
+                was_enabled: false,
+            }),
+            WindowsUpdateRestore {
+                start: false,
+                enable_without_start: false,
+            }
+        );
+    }
+
+    #[test]
+    fn windows_update_stop_failure_restore_rows() {
+        assert_eq!(
+            windows_update_stop_failure_restore(true),
+            WindowsUpdateRestore {
+                start: false,
+                enable_without_start: true,
+            }
+        );
+        assert_eq!(
+            windows_update_stop_failure_restore(false),
+            WindowsUpdateRestore {
+                start: false,
+                enable_without_start: false,
+            }
+        );
+    }
+
+    #[test]
+    fn windows_update_intent_codec_round_trip() {
+        let fixture = b"{\"schema\":\"solstone-windows-update-intent-v1\",\"was_running\":true,\"was_enabled\":true}";
+        let parsed = parse_windows_update_intent(fixture).expect("valid fixture parses");
+        assert_eq!(
+            parsed,
+            OwnerRunIntent {
+                was_running: true,
+                was_enabled: true,
+            }
+        );
+        let bytes = windows_update_intent_bytes(parsed);
+        let reparsed = parse_windows_update_intent(&bytes).expect("serialized bytes parse");
+        assert_eq!(parsed, reparsed);
+
+        // Unknown fields rejected
+        let with_unknown = b"{\"schema\":\"solstone-windows-update-intent-v1\",\"was_running\":true,\"was_enabled\":true,\"unknown\":1}";
+        assert!(parse_windows_update_intent(with_unknown).is_none());
+
+        // Wrong schema rejected
+        let wrong_schema =
+            b"{\"schema\":\"other-schema\",\"was_running\":true,\"was_enabled\":true}";
+        assert!(parse_windows_update_intent(wrong_schema).is_none());
+
+        // Bad JSON rejected
+        assert!(parse_windows_update_intent(b"not valid json").is_none());
+    }
 
     #[test]
     fn a_running_registration_is_stopped_for_the_update_and_started_again() {

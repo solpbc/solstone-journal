@@ -4302,6 +4302,12 @@ pub const SERVICE_BEFORE_UNINSTALL: &str = "__before-uninstall";
 /// The hidden service verb the Windows journal app polls for one JSON line.
 #[doc(hidden)]
 pub const SERVICE_APP_STATUS: &str = "__app-status";
+/// The hidden service verb the Windows journal app runs before applying an update.
+#[doc(hidden)]
+pub const SERVICE_STOP_FOR_UPDATE: &str = "__stop-for-update";
+/// The hidden service verb the Windows journal app runs to restore owner intent if an apply fails.
+#[doc(hidden)]
+pub const SERVICE_RESTORE_UPDATE_INTENT: &str = "__restore-update-intent";
 /// The hidden service verb the Windows journal app sets its sign-in switch with.
 #[doc(hidden)]
 pub const SERVICE_SIGN_IN: &str = "__sign-in";
@@ -4338,6 +4344,10 @@ pub enum ServiceAction {
     BeforeUninstall,
     /// Hidden: the Windows journal app's machine-readable status line.
     AppStatus,
+    /// Hidden: the verb the Windows journal app uses to stop the service before an update, disabling it and recording owner intent.
+    StopForUpdate,
+    /// Hidden: the verb the Windows journal app uses to restore saved owner intent after an update or failed apply.
+    RestoreUpdateIntent,
     /// Hidden: whether signing in starts the journal, set by the Windows
     /// journal app (`__sign-in on|off`).
     SignIn {
@@ -4708,6 +4718,10 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
         Some(ServiceAction::BeforeUninstall)
     } else if command == OsStr::new(SERVICE_APP_STATUS) && rest.is_empty() {
         Some(ServiceAction::AppStatus)
+    } else if command == OsStr::new(SERVICE_STOP_FOR_UPDATE) && rest.is_empty() {
+        Some(ServiceAction::StopForUpdate)
+    } else if command == OsStr::new(SERVICE_RESTORE_UPDATE_INTENT) && rest.is_empty() {
+        Some(ServiceAction::RestoreUpdateIntent)
     } else if command == OsStr::new(SERVICE_SIGN_IN) {
         match rest {
             [switch] if switch == OsStr::new("on") => Some(ServiceAction::SignIn { on: true }),
@@ -6072,6 +6086,22 @@ mod tests {
             ServiceParseOutcome::Exit { code: 1, .. }
         ));
         assert_eq!(
+            parse_service_args(&args(&["__stop-for-update"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::StopForUpdate)
+        );
+        assert!(matches!(
+            parse_service_args(&args(&["__stop-for-update", "extra"])),
+            ServiceParseOutcome::Exit { code: 1, .. }
+        ));
+        assert_eq!(
+            parse_service_args(&args(&["__restore-update-intent"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::RestoreUpdateIntent)
+        );
+        assert!(matches!(
+            parse_service_args(&args(&["__restore-update-intent", "extra"])),
+            ServiceParseOutcome::Exit { code: 1, .. }
+        ));
+        assert_eq!(
             parse_service_args(&args(&["__sign-in", "on"])),
             ServiceParseOutcome::Dispatch(ServiceAction::SignIn { on: true })
         );
@@ -6095,6 +6125,8 @@ mod tests {
             );
         }
         assert!(!SERVICE_USAGE.contains(SERVICE_APP_STATUS));
+        assert!(!SERVICE_USAGE.contains(SERVICE_STOP_FOR_UPDATE));
+        assert!(!SERVICE_USAGE.contains(SERVICE_RESTORE_UPDATE_INTENT));
         assert!(!SERVICE_USAGE.contains(SERVICE_SIGN_IN));
         let ServiceParseOutcome::Exit {
             code,

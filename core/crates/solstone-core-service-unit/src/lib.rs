@@ -40,4 +40,9 @@ pub use windows_task_readback::{
 
 pub use windows_task_reason::{WINDOWS_TASK_FAILURE_SCHEMA, windows_task_failure_reason};
 
-pub use windows_update::{WindowsServiceUpdatePlan, windows_service_update_plan};
+pub use windows_update::{
+    OwnerRunIntent, WINDOWS_UPDATE_INTENT_SCHEMA, WindowsServiceUpdatePlan, WindowsUpdateQuiesce,
+    WindowsUpdateRestore, parse_windows_update_intent, windows_service_update_plan,
+    windows_update_intent_bytes, windows_update_quiesce, windows_update_restore,
+    windows_update_stop_failure_restore,
+};

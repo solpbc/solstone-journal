@@ -75,6 +75,14 @@ pub fn stop() -> Result<(), String> {
     run(&["service", "stop"]).map(drop)
 }
 
+pub fn stop_for_update() -> Result<(), String> {
+    run(&["service", "__stop-for-update"]).map(drop)
+}
+
+pub fn restore_update_intent() -> Result<(), String> {
+    run(&["service", "__restore-update-intent"]).map(drop)
+}
+
 pub fn restart() -> Result<(), String> {
     run(&["service", "restart"]).map(drop)
 }

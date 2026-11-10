@@ -46,6 +46,7 @@ svgtypes = "=0.16.1"
 spl-core.workspace = true
 jsonschema.workspace = true
 getrandom.workspace = true
+semver = "=1.0.28"
 zip = { version = "=9.0.3", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
@@ -59,6 +60,6 @@ sha2 = { workspace = true }
 solstone-core-local-endpoint.workspace = true
 ureq = { workspace = true }
 velopack = { workspace = true, features = ["public-utils"] }
-windows = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
+windows = { workspace = true, features = ["Networking_Connectivity", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Storage_FileSystem", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 webview2-com = "=0.38.2"

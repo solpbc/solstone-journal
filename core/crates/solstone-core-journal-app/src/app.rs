@@ -791,20 +791,8 @@ fn handle(context: &Context, window: &Window, message: &str) {
                     Ok(updater.view())
                 }),
                 Some("prefs") => {
-                    let interval = match text("interval").as_deref() {
-                        Some("day") => CheckInterval::Day,
-                        Some("month") => CheckInterval::Month,
-                        _ => CheckInterval::Week,
-                    };
-                    updater.set_prefs(
-                        args.get("auto_check")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(true),
-                        args.get("auto_download")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                        interval,
-                    );
+                    let (auto_check, auto_download, interval) = prefs::parse_prefs_args(&args);
+                    updater.set_prefs(auto_check, auto_download, interval);
                     context.reply(&id, Ok(updater.view()));
                 }
                 _ => context.reply(&id, Ok(updater.view())),
@@ -865,16 +853,30 @@ fn set_icon(window: &Window, args: &Value) -> Result<Value, String> {
     std::fs::rename(&temporary, &path).map_err(|error| error.to_string())?;
     shell::set_window_icon(window.hwnd(), Some(&path));
     let shortcut = shell::set_shortcut_icon(Some(&path))?;
-    let mut saved = prefs::load();
-    saved.icon_mark = args.get("mark").cloned();
-    prefs::save(&saved);
+    prefs::update_icon_mark(args.get("mark").cloned());
     Ok(json!({"shortcut": shortcut}))
 }
 
 pub fn run(launch: Launch, update_feed: Option<String>) {
-    let Some(instance) = shell::SingleInstance::acquire() else {
+    let instance = shell::SingleInstance::acquire();
+    let launch_kind = match launch {
+        Launch::Plain => crate::update::LaunchKind::Plain,
+        Launch::SignIn => crate::update::LaunchKind::SignIn,
+        Launch::AfterUpdate => crate::update::LaunchKind::AfterUpdate,
+    };
+    let outcome = crate::update::apply_on_start(
+        instance.is_some(),
+        launch_kind,
+        crate::update::production_apply_hooks(update_feed.as_deref()),
+    );
+    let Some(instance) = instance else {
         return;
     };
+    if outcome == crate::update::StartApply::NotCandidate
+        && matches!(launch, Launch::Plain | Launch::SignIn)
+    {
+        let _ = crate::journal::restore_update_intent();
+    }
     // A sign-in start waits in the taskbar; the owner opens it from there.
     let window = Window::new("journal", launch == Launch::SignIn);
     let proxy = window.proxy();
@@ -903,6 +905,7 @@ pub fn run(launch: Launch, update_feed: Option<String>) {
             )));
         })
     };
+    updater.note_start(outcome);
     updater.run_schedule();
 
     let ipc_proxy = proxy.clone();

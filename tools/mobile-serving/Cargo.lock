@@ -6679,6 +6679,8 @@ version = "2.0.73"
 dependencies = [
  "plist",
  "quick-xml",
+ "serde",
+ "serde_json",
  "solstone-core-installation-identity",
  "unicode-general-category",
 ]

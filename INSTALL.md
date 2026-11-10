@@ -249,7 +249,7 @@ When setup replaces recognized legacy launchers, it keeps durable recovery backu
 
 ## Upgrading
 
-On windows, download and run the newer installer. It updates the journal in place, and a running journal starts again afterward.
+On windows, the solstone app checks once a day and downloads an update in the background when the connection allows it. The update installs the next time the app starts, including when you sign in. You can still check, download, and install from settings. A journal that was running starts again after the update. A journal you had stopped stays stopped.
 
 On mac, each app handles its own updates. The shell installer verifies an existing app and leaves it unchanged; it does not replace or upgrade app bundles.
 
