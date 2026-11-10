@@ -1215,6 +1215,39 @@ fn stderr_protocol_error(output: &Output) -> Value {
     serde_json::from_slice(&output.stderr).expect("one protocol error stderr record")
 }
 
+/// A refusal after an admitted local request may log its one bounded
+/// failure-timing observation to stderr; the wire client reads only stdout on
+/// exit 0. Nothing else may reach stderr, and the observation carries only
+/// timing fields.
+fn assert_stderr_only_failure_timing(output: &Output) {
+    let stderr = std::str::from_utf8(&output.stderr).expect("UTF-8 stderr");
+    let marker = "solstone_core_local] local_inference_failure ";
+    for line in stderr.lines() {
+        let (_, timing) = line
+            .split_once(marker)
+            .unwrap_or_else(|| panic!("unexpected stderr line: {line}"));
+        let timing: Value = serde_json::from_str(timing).expect("failure timing JSON");
+        let keys: BTreeSet<&str> = timing
+            .as_object()
+            .expect("failure timing object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            BTreeSet::from([
+                "admission_slot",
+                "attempt",
+                "client_total_ms",
+                "deadline_ms",
+                "phase",
+                "queue_wait_ms",
+                "timed_out",
+            ])
+        );
+    }
+}
+
 fn generated_body() -> &'static str {
     r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#
 }
@@ -1638,7 +1671,7 @@ fn bundled_failure_uses_provider_response_invalid_reason() {
     std::fs::write(journal.join("health/local.port"), port.to_string()).expect("write port");
     let output = one_shot(&journal, &fixture_vector("generated")["request"]);
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stderr, b"");
+    assert_stderr_only_failure_timing(&output);
     let response = stdout_json(&output);
     let expected = &fixture_vector("refused-provider-response-invalid")["response"];
     for name in ["reason", "provider"] {
