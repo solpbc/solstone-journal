@@ -286,9 +286,7 @@ fn moved_with(shown: Option<usize>) -> (tempfile::TempDir, String) {
 fn a_facet_named_on_the_command_line_says_how_many_moved_and_from_where() {
     let (journal, summary) = moved_with(None);
     assert!(
-        summary.contains(
-            "3 workouts already listed on the activities page moved to this import's facet, from your work facet."
-        ),
+        summary.contains("3 workouts moved to this import's facet, from your work facet."),
         "{summary}"
     );
     assert_eq!(records(journal.path(), "body", "20261004").len(), 1);
@@ -339,9 +337,7 @@ fn the_summary_counts_what_moved_and_not_what_was_going_to() {
     assert_eq!(run.exit_code, 0, "{}", run.stderr);
     let summary = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
     assert!(
-        summary.contains(
-            "2 workouts already listed on the activities page moved to this import's facet, from your work facet."
-        ),
+        summary.contains("2 workouts moved to this import's facet, from your work facet."),
         "{summary}"
     );
 }
@@ -361,7 +357,7 @@ fn more_to_move_than_the_owner_saw_moves_none_and_says_so() {
     let (journal, summary) = moved_with(Some(2));
     assert!(
         summary
-            .contains("nothing already listed moved: 3 workouts would have, and you were told 2."),
+            .contains("nothing already filed moved: 3 workouts would have, and you were told 2."),
         "{summary}"
     );
     assert!(!summary.contains("moved to this import"), "{summary}");
@@ -473,6 +469,359 @@ fn a_remembered_facet_files_a_new_strava_workout_separately_from_a_revised_one()
     );
     assert_eq!(records(root, "work", "20261004").len(), 1);
     assert_eq!(records(root, "body", "20261004").len(), 1);
+}
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn strava_keeps_an_earlier_filing_after_its_activity_record_is_removed() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    let (first, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(first.exit_code, 0, "{}", first.stderr);
+    fs::remove_file(root.join("facets/work/activities/20261004.jsonl")).unwrap();
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+    let csv = download(root, "revised with Sam");
+    let (result, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070000_300").as_deref(),
+        Some("work")
+    );
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn strava_changed_duration_keeps_the_original_tiling_and_creates_no_new_tile() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    let (first, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(first.exit_code, 0, "{}", first.stderr);
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+    let bytes = fs::read_to_string(&csv).unwrap().replace("600", "900");
+    fs::write(&csv, bytes).unwrap();
+    let (result, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(count(&result, "present_timing_changed"), 1);
+    assert!(!tile(root, "20261004", "071000_300").exists());
+    assert_eq!(
+        tile_facet(root, "20261004", "070500_300").as_deref(),
+        Some("work")
+    );
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[test]
+#[cfg(feature = "full-tests")]
+fn strava_a_recreated_tile_keeps_its_existing_workouts_facet() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    let (first, _) = import(
+        root,
+        &csv,
+        "20261010_100000",
+        ImportFacet::Facet("work".into()),
+        &model,
+    );
+    assert_eq!(first.exit_code, 0, "{}", first.stderr);
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+    fs::remove_dir_all(tile(root, "20261004", "070500_300")).unwrap();
+    let (result, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070500_300").as_deref(),
+        Some("work"),
+        "tiles: {:?}",
+        fs::read_dir(root.join("chronicle/20261004/import.strava"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(records(root, "work", "20261004").len(), 1);
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_no_facet_keeps_revised_tiles_filed_and_leaves_a_new_workout_unfiled() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    assert_eq!(
+        import(
+            root,
+            &csv,
+            "20261010_100000",
+            ImportFacet::Facet("work".into()),
+            &model
+        )
+        .0
+        .exit_code,
+        0
+    );
+    fs::remove_dir_all(tile(root, "20261004", "070500_300")).unwrap();
+    let mut bytes = fs::read_to_string(&csv).unwrap();
+    let another = bytes.lines().nth(1).unwrap().replacen("901", "904", 1);
+    bytes.push('\n');
+    bytes.push_str(&another);
+    bytes.push('\n');
+    fs::write(&csv, bytes).unwrap();
+    let (result, _) = import(root, &csv, "20261010_110000", ImportFacet::None, &model);
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert_eq!(
+        tile_facet(root, "20261004", "070500_300").as_deref(),
+        Some("work")
+    );
+    assert_eq!(tile_facet(root, "20261004", "070000_301"), None);
+    assert_eq!(count(&result, "filed"), 0);
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_tile_only_filings_obey_the_move_bound_and_new_workouts_use_the_run_facet() {
+    for shown in [0, 1] {
+        let journal = journal(&["body", "work"]);
+        let root = journal.path();
+        let model = Model {
+            lock: root.join("imports/.strava"),
+            calls: Cell::new(0),
+        };
+        let csv = download(root, "first with Sam");
+        let original = fs::read_to_string(&csv)
+            .unwrap()
+            .lines()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        fs::write(&csv, &original).unwrap();
+        assert_eq!(
+            import(
+                root,
+                &csv,
+                "20261010_100000",
+                ImportFacet::Facet("work".into()),
+                &model
+            )
+            .0
+            .exit_code,
+            0
+        );
+        fs::remove_file(root.join("facets/work/activities/20261004.jsonl")).unwrap();
+        let another = original.lines().nth(1).unwrap().replacen("901", "904", 1);
+        fs::write(&csv, format!("{original}{another}\n")).unwrap();
+        let (result, id) = import_shown(
+            root,
+            &csv,
+            "20261010_110000",
+            ImportFacet::Facet("body".into()),
+            &model,
+            Some(shown),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        assert_eq!(
+            tile_facet(root, "20261004", "070000_300").as_deref(),
+            Some(if shown == 0 { "work" } else { "body" })
+        );
+        assert_eq!(
+            tile_facet(root, "20261004", "070000_301").as_deref(),
+            Some("body")
+        );
+        let text = fs::read_to_string(root.join("imports").join(id).join("summary.md")).unwrap();
+        assert!(
+            text.contains(if shown == 0 {
+                "nothing already filed moved: 1 workout would have"
+            } else {
+                "1 workout moved"
+            }),
+            "{text}"
+        );
+    }
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_unreadable_prior_assignments_do_not_become_absent_filings() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    assert_eq!(
+        import(
+            root,
+            &csv,
+            "20261010_100000",
+            ImportFacet::Facet("work".into()),
+            &model
+        )
+        .0
+        .exit_code,
+        0
+    );
+    fs::remove_file(root.join("facets/work/activities/20261004.jsonl")).unwrap();
+    let path = tile(root, "20261004", "070000_300").join("talents/facets.json");
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&path).unwrap();
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+    let (result, _) = import(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_ne!(result.exit_code, 0);
+    assert!(
+        result.stderr.contains("couldn't be filed"),
+        "{}",
+        result.stderr
+    );
+    assert!(path.is_dir());
+    assert_eq!(
+        tile_facet(root, "20261004", "070500_300").as_deref(),
+        Some("work")
+    );
+    assert!(records(root, "body", "20261004").is_empty());
+}
+
+#[cfg(feature = "full-tests")]
+#[test]
+fn strava_a_retained_assignment_repair_uses_its_record_and_survives_until_publication() {
+    let journal = journal(&["body", "work"]);
+    let root = journal.path();
+    let model = Model {
+        lock: root.join("imports/.strava"),
+        calls: Cell::new(0),
+    };
+    let csv = download(root, "first with Sam");
+    assert_eq!(
+        import(
+            root,
+            &csv,
+            "20261010_100000",
+            ImportFacet::Facet("work".into()),
+            &model
+        )
+        .0
+        .exit_code,
+        0
+    );
+    for key in ["070000_300", "070500_300"] {
+        fs::remove_file(tile(root, "20261004", key).join("talents/facets.json")).unwrap();
+    }
+    solstone_core_journal_config_write::record_body_facet(
+        root,
+        &BodyFacetChoice::Facet("body".into()),
+    )
+    .unwrap();
+    let (stopped, _) = import_stopping(
+        root,
+        &csv,
+        "20261010_110000",
+        ImportFacet::Unattended,
+        &model,
+        true,
+    );
+    assert_eq!(stopped.exit_code, 0, "{}", stopped.stderr);
+    let pending: std::collections::BTreeSet<(String, String)> = serde_json::from_slice(
+        &fs::read(root.join(solstone_core_import::strava_refile::STRAVA_REFILE_FILE)).unwrap(),
+    )
+    .unwrap();
+    assert!(pending.contains(&("20261004".to_owned(), "070500_300".to_owned())));
+    assert_eq!(
+        tile_facet(root, "20261004", "070500_300").as_deref(),
+        Some("work")
+    );
+    let (result, id) = import(
+        root,
+        &csv,
+        "20261010_120000",
+        ImportFacet::Unattended,
+        &model,
+    );
+    assert_eq!(result.exit_code, 0, "{}", result.stderr);
+    assert!(
+        published(root, &id)
+            .iter()
+            .any(|key| key.ends_with("/070500_300"))
+    );
+    assert!(
+        !root
+            .join(solstone_core_import::strava_refile::STRAVA_REFILE_FILE)
+            .exists()
+    );
+    assert_eq!(count(&result, "filed"), 0);
+    assert!(records(root, "body", "20261004").is_empty());
 }
 
 #[test]

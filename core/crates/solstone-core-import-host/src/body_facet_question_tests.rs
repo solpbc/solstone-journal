@@ -169,9 +169,7 @@ fn a_yes_for_a_body_import_says_what_it_can_move_at_most() {
     ask_body_facet(root, "import.oura", &mut "n\n".as_bytes(), &mut output);
     let said = String::from_utf8(output).unwrap();
     assert!(
-        said.contains(
-            "a yes can move up to 1 record already listed on the activities page, from your work facet."
-        ),
+        said.contains("a yes can move up to 1 record already listed on the activities page, from your work facet."),
         "{said}"
     );
 }

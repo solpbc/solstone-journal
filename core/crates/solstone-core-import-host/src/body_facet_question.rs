@@ -64,7 +64,12 @@ pub(crate) fn ask_strava_facet(
     let ids = download_ids(media);
     ask_facet(
         journal,
-        (("workout", "workouts"), "moves", NO_MEANS_STRAVA),
+        (
+            ("workout", "workouts"),
+            "moves",
+            "already filed",
+            NO_MEANS_STRAVA,
+        ),
         &|facet| crate::strava_convert::listed_moves(journal, &ids, facet),
         input,
         output,
@@ -81,7 +86,12 @@ pub(crate) fn ask_body_facet(
 ) -> (ImportFacet, Option<usize>) {
     ask_facet(
         journal,
-        (("record", "records"), "can move up to", NO_MEANS_BODY),
+        (
+            ("record", "records"),
+            "can move up to",
+            "already listed on the activities page",
+            NO_MEANS_BODY,
+        ),
         &|facet| {
             let (count, from) = crate::body_activity::listed_elsewhere(journal, stream, facet);
             (count > 0).then(|| {
@@ -101,7 +111,7 @@ type ListedCount<'a> = &'a dyn Fn(&str) -> Option<(usize, Vec<String>)>;
 
 fn ask_facet(
     journal: &Path,
-    ((one, many), moves_verb, no_means): ((&str, &str), &str, &str),
+    ((one, many), moves_verb, earlier, no_means): ((&str, &str), &str, &str, &str),
     listed: ListedCount<'_>,
     input: &mut dyn BufRead,
     output: &mut dyn Write,
@@ -118,7 +128,7 @@ fn ask_facet(
     if let Some((count, from)) = &moves {
         let _ = writeln!(
             output,
-            "a yes {} {count} {} already listed on the activities page, from {}.",
+            "a yes {} {count} {} {earlier}, from {}.",
             moves_verb,
             if *count == 1 { one } else { many },
             solstone_core_import_sources::apple_health::facets_words(from)

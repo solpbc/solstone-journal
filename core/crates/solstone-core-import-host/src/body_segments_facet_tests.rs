@@ -109,6 +109,131 @@ pub(in crate::body_segments) fn entries(
 }
 
 #[test]
+fn a_new_apple_night_tile_inherits_the_experience_facet_across_midnight() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let initial_stage = stage_record(
+        "2026-10-10 23:50:00 -0600",
+        "2026-10-11 05:50:00 -0600",
+        "AsleepCore",
+    );
+    let first = export(
+        &scratch.path().join("first"),
+        std::slice::from_ref(&initial_stage),
+    );
+    let original = run(root, &first, "20261012_120000", Some("work"));
+    let next = export(
+        &scratch.path().join("next"),
+        &[
+            initial_stage,
+            stage_record(
+                "2026-10-11 05:50:00 -0600",
+                "2026-10-11 06:15:00 -0600",
+                "AsleepDeep",
+            ),
+            heart("2026-10-11 06:06:00 -0600", "7222"),
+        ],
+    );
+    let done = run_apple_health_segments(
+        root,
+        &AppleSegmentsRequest::new(&next, "20261012_130000", Some("body")),
+    )
+    .unwrap();
+    let body = entries(root, BODY_ID, "20261011", "Apple Health · imported")
+        .join("\n")
+        .replace('\\', "");
+    let work = entries(root, WORK_ID, "20261011", "Apple Health · imported")
+        .join("\n")
+        .replace('\\', "");
+    assert!(body.contains("7222"), "{body}");
+    assert!(
+        !body.contains("night") && !body.contains("23:50"),
+        "a new tile revealed the saved night: {body}"
+    );
+    assert!(
+        work.contains("night") && work.contains("23:50") && work.contains("06:15"),
+        "{work}"
+    );
+    assert!(
+        done.summary
+            .contains("1 updated entry stayed under your work facet"),
+        "{}",
+        done.summary
+    );
+    let new_rows = stored_windows_of_day(root, &APPLE, "20261011")
+        .unwrap()
+        .into_iter()
+        .flat_map(|(day, key)| {
+            decode_rows(
+                &fs::read_to_string(window(root, &day, &key).join(BODY_RECORDS_FILE)).unwrap(),
+            )
+            .unwrap()
+        })
+        .filter(|row| {
+            row.kind == RowKind::ExperienceTile
+                && row
+                    .start
+                    .as_deref()
+                    .is_some_and(|start| start.contains("23:50"))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        new_rows
+            .iter()
+            .any(|row| row.run.as_deref() == Some(done.import_id.as_str()))
+    );
+    assert_ne!(original.import_id, done.import_id);
+}
+
+#[test]
+fn a_new_source_entry_split_across_days_is_counted_once_after_resume() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = export(
+        &scratch.path().join("first"),
+        &[
+            heart("2026-10-10 23:55:00 -0600", "7111"),
+            heart("2026-10-11 00:10:00 -0600", "7222"),
+            heart("2026-10-11 06:10:00 -0600", "7333"),
+        ],
+    );
+    run(root, &first, "20261012_120000", Some("work"));
+    let next = export(
+        &scratch.path().join("next"),
+        &[stage_record(
+            "2026-10-10 23:50:00 -0600",
+            "2026-10-11 06:15:00 -0600",
+            "AsleepCore",
+        )],
+    );
+    let stop = stopping_at("published", 1);
+    let mut request = AppleSegmentsRequest::new(&next, "20261012_130000", Some("body"));
+    request.stop_at = Some(&stop);
+    run_apple_health_segments(root, &request).unwrap_err();
+    let Read::Trusted(state) = read_state(root, &APPLE) else {
+        panic!("no checkpoint");
+    };
+    request.stop_at = None;
+    let resumed = run_apple_health_segments(root, &request).unwrap();
+    assert_eq!(resumed.import_id, state.import_id);
+    assert!(
+        resumed
+            .summary
+            .contains("2 new entries were saved separately"),
+        "{}",
+        resumed.summary
+    );
+    assert_eq!(
+        entries(root, WORK_ID, "20261011", "Apple Health · imported").len(),
+        1
+    );
+}
+
+#[test]
 fn equivalent_facet_files_do_not_lose_updated_entry_counts_when_named() {
     let journal = journal();
     facets(journal.path());

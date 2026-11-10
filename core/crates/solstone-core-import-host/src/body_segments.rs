@@ -356,6 +356,8 @@ struct Totals {
     kept_facet: u64,
     #[serde(default)]
     split_rows: u64,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    split_source_ids: BTreeSet<String>,
     #[serde(default)]
     retained_revisions: BTreeMap<String, u64>,
     refiled: u64,
@@ -394,7 +396,13 @@ impl Totals {
         self.held_back += other.held_back;
         self.unreadable += other.unreadable;
         self.kept_facet += other.kept_facet;
-        self.split_rows += other.split_rows;
+        self.split_rows += other.split_rows.saturating_sub(
+            self.split_source_ids
+                .intersection(&other.split_source_ids)
+                .count() as u64,
+        );
+        self.split_source_ids
+            .extend(other.split_source_ids.iter().cloned());
         for (facet, count) in &other.retained_revisions {
             *self.retained_revisions.entry(facet.clone()).or_default() += count;
         }
@@ -959,10 +967,11 @@ impl Run<'_, '_> {
         let filed = if let Some(pending) = &redo {
             replay_filing(pending, windows)
         } else {
-            DayPlacement::load(self.journal, self.source, &day)?.file(
+            DayPlacement::load(self.journal, self.source, &day)?.file_for_import(
                 windows,
                 facet,
                 state.move_listed,
+                Some(&self.import_id),
             )?
         };
         let windows = filed.windows;
@@ -1001,6 +1010,7 @@ impl Run<'_, '_> {
         let mut unfinished = BTreeSet::new();
         let mut taken: BTreeMap<WindowId, String> = BTreeMap::new();
         let mut planned_rows = BTreeMap::new();
+        let mut planned_sources = BTreeMap::new();
         let mut planned_runs = BTreeMap::new();
         for (window, mut rows) in windows {
             let filing = filed.filings.get(&window.1).map(String::as_str);
@@ -1024,6 +1034,19 @@ impl Run<'_, '_> {
                     .filter(|row| row.kind != RowKind::Moved)
                     .map(|row| row.id.clone())
                     .collect::<Vec<_>>(),
+            );
+            planned_sources.insert(
+                window.clone(),
+                rows.values()
+                    .filter(|row| row.kind != RowKind::Moved)
+                    .map(|row| {
+                        if row.kind == RowKind::ExperienceTile {
+                            row.of.clone().unwrap_or_else(|| row.id.clone())
+                        } else {
+                            row.id.clone()
+                        }
+                    })
+                    .collect::<BTreeSet<_>>(),
             );
             planned_runs.insert(
                 window.clone(),
@@ -1114,14 +1137,19 @@ impl Run<'_, '_> {
                     let publish = decision.publish || taken.is_some();
                     window_counts.kept_facet = u64::from(facet.is_none() && decision.kept_facet);
                     if decision.contents.is_some() {
-                        window_counts.split_rows =
-                            filed.split_rows.get(&window.1).copied().unwrap_or_default();
-                        for (filing, count) in filed.revisions.get(&window.1).into_iter().flatten()
-                        {
+                        if let Some(ids) = filed.split_rows.get(&window.1) {
+                            window_counts.split_source_ids = ids
+                                .intersection(&planned_sources[window])
+                                .cloned()
+                                .collect();
+                            window_counts.split_rows = window_counts.split_source_ids.len() as u64;
+                        }
+                        for (filing, ids) in filed.revisions.get(&window.1).into_iter().flatten() {
                             *window_counts
                                 .retained_revisions
                                 .entry(filing.clone())
-                                .or_default() += count;
+                                .or_default() +=
+                                ids.intersection(&planned_sources[window]).count() as u64;
                         }
                     }
                     window_counts.refiled = u64::from(decision.refiled);
@@ -1883,7 +1911,7 @@ fn summary_counts(journal: &Path, state: &RunState) -> SummaryCounts {
     counts
 }
 
-fn filing_words(journal: &Path, filing: &str) -> String {
+pub(crate) fn filing_words(journal: &Path, filing: &str) -> String {
     let facets = serde_json::from_str::<serde_json::Value>(filing)
         .ok()
         .and_then(|value| value.as_array().cloned())

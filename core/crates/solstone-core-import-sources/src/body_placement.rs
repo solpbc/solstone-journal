@@ -3,12 +3,12 @@
 
 //! Physical body segments on a day's civil grid, including facet siblings.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 use solstone_core_format::content::body_records::{
-    BodyRow, RowKind, copy_rank, grid_length, same_grid,
+    BodyRow, RowKind, copy_rank, grid_length, parse_source_time, same_grid,
 };
 use solstone_core_segment::owner_deleted;
 
@@ -17,9 +17,19 @@ use crate::apple_health::{
 };
 use crate::body_stream::BodySource;
 
+#[cfg(all(test, feature = "full-tests"))]
+#[path = "body_placement_tests.rs"]
+mod tests;
+
 struct Stored {
     rows: Vec<BodyRow>,
     filing: Option<String>,
+}
+
+#[derive(Clone)]
+struct ParentFiling {
+    filing: Option<String>,
+    prior: bool,
 }
 
 /// A day's rows at their physical destinations, with any assignments to write.
@@ -27,9 +37,9 @@ struct Stored {
 pub struct FiledDay {
     pub windows: DayRows,
     pub filings: BTreeMap<String, String>,
-    pub split_rows: BTreeMap<String, u64>,
+    pub split_rows: BTreeMap<String, BTreeSet<String>>,
     /// Changed existing identities kept under their earlier assignment.
-    pub revisions: BTreeMap<String, BTreeMap<String, u64>>,
+    pub revisions: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
 }
 
 /// One read of each live window on a day, under the source's import lock.
@@ -122,39 +132,146 @@ impl<'a> DayPlacement<'a> {
         facet: Option<&str>,
         may_refile: bool,
     ) -> Result<FiledDay, String> {
+        self.file_for_import(windows, facet, may_refile, None)
+    }
+
+    pub fn file_for_import(
+        &self,
+        windows: DayRows,
+        facet: Option<&str>,
+        may_refile: bool,
+        import_id: Option<&str>,
+    ) -> Result<FiledDay, String> {
         let journal = self.journal;
         let source = self.source;
         let mut result = FiledDay::default();
         let mut placed: BTreeMap<String, BTreeMap<String, BodyRow>> = BTreeMap::new();
         let chosen = facet.map(facet_file_text);
-        for ((day, key), rows) in windows {
+        let prior = |row: &BodyRow| import_id.is_none() || row.run.as_deref() != import_id;
+        let mut parents = BTreeMap::new();
+        for id in self.ids.keys() {
+            if let Some((_, held, row)) = self.existing("", id)
+                && row.kind == RowKind::Experience
+            {
+                parents.insert(
+                    id.clone(),
+                    ParentFiling {
+                        filing: held.filing.clone(),
+                        prior: prior(row),
+                    },
+                );
+            }
+        }
+        let incoming_parents: BTreeSet<String> = windows
+            .iter()
+            .flat_map(|(_, rows)| rows.values())
+            .filter(|row| row.kind == RowKind::Experience)
+            .map(|row| row.id.clone())
+            .collect();
+        let mut parent_days = BTreeMap::new();
+        for (_, rows) in &windows {
+            for row in rows
+                .values()
+                .filter(|row| row.kind == RowKind::ExperienceTile)
+            {
+                let Some(parent) = &row.of else {
+                    continue;
+                };
+                if parents.contains_key(parent) || incoming_parents.contains(parent) {
+                    continue;
+                }
+                let zone = solstone_core_journal_config::placed_zone(journal, source.source)
+                    .ok_or(source.zone_unrecognised)?;
+                let Some(start) = row.start.as_deref().and_then(parse_source_time) else {
+                    continue;
+                };
+                let day = start.with_timezone(&zone).format("%Y%m%d").to_string();
+                if day == self.day {
+                    continue;
+                }
+                if !parent_days.contains_key(&day) {
+                    parent_days.insert(day.clone(), Self::load(journal, source, &day)?);
+                }
+                if let Some((_, held, first)) = parent_days[&day].existing("", parent)
+                    && first.kind == RowKind::Experience
+                {
+                    parents.insert(
+                        parent.clone(),
+                        ParentFiling {
+                            filing: held.filing.clone(),
+                            prior: prior(first),
+                        },
+                    );
+                }
+            }
+        }
+        // All parent choices precede synthetic tile choices, even in a repeated
+        // civil hour. Both passes only plan; the caller writes physical files.
+        let mut firsts = Vec::new();
+        let mut rest = Vec::new();
+        for (window, rows) in windows {
+            let (first, other): (BTreeMap<_, _>, BTreeMap<_, _>) = rows
+                .into_iter()
+                .partition(|(_, row)| row.kind == RowKind::Experience);
+            if !first.is_empty() {
+                firsts.push((window.clone(), first));
+            }
+            if !other.is_empty() {
+                rest.push((window, other));
+            }
+        }
+        for ((day, key), rows) in firsts.into_iter().chain(rest) {
             debug_assert_eq!(day, self.day);
             let original = stream_dir(journal, source, &day).join(&key);
-            // Preserve the original placement's existing refusals. A deleted
-            // sibling is never inferred to have held a particular incoming id.
             let blocked = owner_deleted(&original).map_err(|error| error.to_string())?
                 || matches!(
                     stored_rows(journal, source, &(day, key.clone())),
                     Err(StoredRowsError::NotRows)
                 );
-            let has_earlier_foreign_rows = chosen.is_some()
-                && self.held.iter().any(|(held_key, held)| {
+            let has_earlier_foreign_rows = !may_refile
+                && chosen.is_some()
+                && (self.held.iter().any(|(held_key, held)| {
                     same_grid(&key, held_key)
                         && held.filing.is_some()
                         && held.filing != chosen
                         && held.rows.iter().any(|row| row.kind != RowKind::Moved)
-                });
+                }) || result.filings.iter().any(|(held_key, filing)| {
+                    same_grid(&key, held_key) && Some(filing) != chosen.as_ref()
+                }) || rows.values().any(|row| {
+                    row.kind != RowKind::Moved
+                        && (self.existing(&key, &row.id).is_some_and(|(_, held, _)| {
+                            held.filing.is_some() && held.filing != chosen
+                        }) || (row.kind == RowKind::ExperienceTile
+                            && row.of.as_ref().and_then(|id| parents.get(id)).is_some_and(
+                                |parent| parent.filing.is_some() && parent.filing != chosen,
+                            )))
+                }));
             for (id, mut row) in rows {
-                if row.kind == RowKind::Moved || blocked {
+                let existing = self.existing(&key, &id);
+                let same_place = existing.filter(|(old, _, _)| same_grid(&key, old));
+                let parent = (row.kind == RowKind::ExperienceTile && existing.is_none())
+                    .then(|| row.of.as_ref().and_then(|id| parents.get(id)))
+                    .flatten()
+                    .cloned();
+                if row.kind == RowKind::ExperienceTile && existing.is_none() && parent.is_none() {
+                    // A refused/unreadable parent cannot become readable through
+                    // a new synthetic tile under this run's different facet.
+                    continue;
+                }
+                if row.kind == RowKind::Moved || (blocked && same_place.is_none()) {
                     let target = placed.entry(key.clone()).or_default();
                     if row.kind != RowKind::Moved || !target.contains_key(&id) {
                         target.insert(id, row);
                     }
                     continue;
                 }
-                let existing = self.existing(&key, &id);
-                let same_place = existing.filter(|(old, _, _)| same_grid(&key, old));
-                let filing = if facet.is_none() {
+                let inherited = parent
+                    .as_ref()
+                    .and_then(|parent| parent.filing.as_deref())
+                    .filter(|_| !may_refile);
+                let filing = if inherited.is_some() {
+                    inherited
+                } else if facet.is_none() {
                     None
                 } else if !may_refile {
                     existing
@@ -165,42 +282,91 @@ impl<'a> DayPlacement<'a> {
                 };
                 let destination = if let Some((old, _, _)) = same_place {
                     old.to_owned()
-                } else if facet.is_none() || (filing.is_none() && existing.is_none()) {
+                } else if (facet.is_none() && inherited.is_none())
+                    || (filing.is_none() && existing.is_none())
+                {
                     key.clone()
                 } else {
-                    self.destination(&key, filing, may_refile, &placed, &result.filings)?
+                    self.destination(
+                        &key,
+                        filing,
+                        if facet.is_none() {
+                            filing
+                        } else {
+                            chosen.as_deref()
+                        },
+                        may_refile,
+                        &placed,
+                        &result.filings,
+                    )?
                 };
                 if let Some((_, held, old)) = existing {
                     if facet.is_some() {
                         row.run.clone_from(&old.run);
                     }
-                    if !may_refile
+                    if row.kind != RowKind::ExperienceTile
+                        && !may_refile
                         && held.filing.is_some()
                         && chosen.is_some()
                         && held.filing.as_deref() != chosen.as_deref()
                         && !same_row(&row, old)
                     {
-                        *result
+                        result
                             .revisions
                             .entry(destination.clone())
                             .or_default()
                             .entry(held.filing.clone().unwrap_or_default())
-                            .or_default() += 1;
+                            .or_default()
+                            .insert(id.clone());
                     }
-                } else if has_earlier_foreign_rows && destination != key {
-                    *result.split_rows.entry(destination.clone()).or_default() += 1;
+                } else if has_earlier_foreign_rows
+                    && !parent.as_ref().is_some_and(|parent| parent.prior)
+                {
+                    result
+                        .split_rows
+                        .entry(destination.clone())
+                        .or_default()
+                        .insert(if row.kind == RowKind::ExperienceTile {
+                            row.of.clone().unwrap_or_else(|| id.clone())
+                        } else {
+                            id.clone()
+                        });
                 }
                 let assign = may_refile
                     || existing.is_none()
                     || same_place.is_none()
                     || existing.is_some_and(|(_, held, _)| held.filing.is_none());
                 if assign && let Some(filing) = filing {
+                    if result
+                        .filings
+                        .get(&destination)
+                        .is_some_and(|planned| planned != filing)
+                    {
+                        return Err("a part of your journal is now filed elsewhere. the entries waiting to be saved were left unwritten.".to_owned());
+                    }
                     result
                         .filings
                         .insert(destination.clone(), filing.to_owned());
                 }
-                // A live row wins over the mark staged at its former physical
-                // key when only its facet sibling, rather than its time, differs.
+                if row.kind == RowKind::Experience {
+                    let effective = result
+                        .filings
+                        .get(&destination)
+                        .cloned()
+                        .or_else(|| {
+                            self.held
+                                .get(&destination)
+                                .and_then(|held| held.filing.clone())
+                        })
+                        .or_else(|| existing.and_then(|(_, held, _)| held.filing.clone()));
+                    parents.insert(
+                        id.clone(),
+                        ParentFiling {
+                            filing: effective,
+                            prior: existing.is_some_and(|(_, _, old)| prior(old)),
+                        },
+                    );
+                }
                 placed.entry(destination).or_default().insert(id, row);
             }
         }
@@ -215,6 +381,7 @@ impl<'a> DayPlacement<'a> {
         &self,
         original: &str,
         filing: Option<&str>,
+        chosen: Option<&str>,
         may_refile: bool,
         placed: &BTreeMap<String, BTreeMap<String, BodyRow>>,
         filings: &BTreeMap<String, String>,
@@ -227,11 +394,15 @@ impl<'a> DayPlacement<'a> {
                 .get(original)
                 .and_then(|held| held.filing.as_deref())
         });
-        if may_refile
-            || (original_filing.is_none()
-                && !solstone_core_segment::holds_foreign_content(
-                    &stream_dir(journal, source, &self.day).join(original),
-                ))
+        if filings
+            .get(original)
+            .is_none_or(|planned| Some(planned.as_str()) == filing)
+            && (may_refile
+                || (original_filing.is_none()
+                    && filing == chosen
+                    && !solstone_core_segment::holds_foreign_content(
+                        &stream_dir(journal, source, &self.day).join(original),
+                    )))
         {
             return Ok(original.to_owned());
         }
@@ -240,7 +411,11 @@ impl<'a> DayPlacement<'a> {
             .iter()
             .find(|(key, held)| {
                 same_grid(key, original)
-                    && held.filing.as_deref() == filing
+                    && filings
+                        .get(*key)
+                        .map(String::as_str)
+                        .or(held.filing.as_deref())
+                        == filing
                     && !solstone_core_segment::holds_foreign_content(
                         &stream_dir(journal, source, &self.day).join(key),
                     )

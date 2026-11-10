@@ -599,7 +599,16 @@ impl Lookup<'_> {
             }
             // Moving into a first window the owner deleted: it stays deleted, and
             // nothing of it is staged anywhere.
-            if self.window_deleted(start, length)? {
+            let logical_first = self.tiling(id, row)?[0].0.clone();
+            let live_sibling = firsts.iter().any(|(day, placed)| {
+                day == &logical_first.0
+                    && solstone_core_format::content::body_records::same_grid(
+                        &placed.key,
+                        &logical_first.1,
+                    )
+                    && solstone_core_format::content::body_records::copy_rank(&placed.key) > 1
+            });
+            if !live_sibling && self.window_deleted(start, length)? {
                 return Ok(Verdict::StayedDeleted);
             }
         }
@@ -666,7 +675,13 @@ impl Lookup<'_> {
                     .into_iter()
                     .map(|(day, placed)| (day, placed.key))
                     .collect(),
-                first,
+                first: if solstone_core_format::content::body_records::copy_rank(&placed_first.1)
+                    > 1
+                {
+                    placed_first
+                } else {
+                    first
+                },
                 revised,
                 holes: holes_of([row], HoleReason::Converging),
             },
@@ -719,6 +734,9 @@ pub fn converging_dropped(
         }
     }
     let (day, key) = &converging.first;
+    if solstone_core_format::content::body_records::copy_rank(key) > 1 {
+        return deleted(day, key);
+    }
     let beside = key
         .split_once('_')
         .and_then(|(clock, length)| Some(format!("{clock}_{}", length.parse::<u64>().ok()? + 1)));

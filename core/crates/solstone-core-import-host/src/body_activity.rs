@@ -131,9 +131,13 @@ fn each_day_record(
     Ok(())
 }
 
-/// Whether a body record names `key` on `day`, in any facet folder.
-pub(crate) fn has_record(journal: &Path, day: &str, key: &str) -> Result<bool, (String, String)> {
-    recorded_keys(journal, day).map(|keys| keys.contains_key(key))
+/// The facet holding the body record for `key` on `day`, when it exists.
+pub(crate) fn record_facet(
+    journal: &Path,
+    day: &str,
+    key: &str,
+) -> Result<Option<String>, (String, String)> {
+    recorded_keys(journal, day).map(|mut keys| keys.remove(key).map(|record| record.facet))
 }
 
 /// Every account key a body record names on `day`, in any facet, with what
@@ -179,9 +183,9 @@ fn recorded_keys(
 /// Every segment key an activity record of Strava's stream names on `day`, in
 /// any facet folder, muted ones included: what an earlier reading of Strava's
 /// tiles filed. A record from any other stream names none here.
-fn sensed_keys(journal: &Path, day: &str) -> Result<BTreeSet<String>, (String, String)> {
-    let mut keys = BTreeSet::new();
-    each_day_record(journal, day, |_, record| {
+fn sensed_keys(journal: &Path, day: &str) -> Result<BTreeMap<String, String>, (String, String)> {
+    let mut keys = BTreeMap::new();
+    each_day_record(journal, day, |facet, record| {
         if record.get("stream").and_then(Value::as_str) == Some(STRAVA.stream) {
             keys.extend(
                 record
@@ -190,7 +194,7 @@ fn sensed_keys(journal: &Path, day: &str) -> Result<BTreeSet<String>, (String, S
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_str)
-                    .map(str::to_owned),
+                    .map(|key| (key.to_owned(), facet.to_owned())),
             );
         }
     })?;
@@ -253,12 +257,14 @@ pub(crate) fn day_windows(
 const STRAVA_TILE_SECONDS: i64 = 300;
 
 /// What deciding whether Strava workouts were already sensed reads, once per day.
+type SensedDay = Result<BTreeMap<String, String>, (String, String)>;
+
 #[derive(Default)]
 pub(crate) struct Sensed {
     /// Per day, the keys of each workout's live tiles.
     tiles: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Per day, the segment keys Strava's activity records name.
-    named: BTreeMap<String, Result<BTreeSet<String>, (String, String)>>,
+    named: BTreeMap<String, SensedDay>,
 }
 
 impl Sensed {
@@ -274,6 +280,17 @@ impl Sensed {
         window: &str,
         row: &BodyRow,
     ) -> Result<bool, (String, String)> {
+        self.facet(journal, day, window, row)
+            .map(|facet| facet.is_some())
+    }
+
+    pub(crate) fn facet(
+        &mut self,
+        journal: &Path,
+        day: &str,
+        window: &str,
+        row: &BodyRow,
+    ) -> Result<Option<String>, (String, String)> {
         let mut keys: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         keys.entry(day.to_owned())
             .or_default()
@@ -311,12 +328,15 @@ impl Sensed {
                 .entry(on.clone())
                 .or_insert_with(|| sensed_keys(journal, &on));
             match named {
-                Ok(named) if tiles.iter().any(|key| named.contains(key)) => return Ok(true),
-                Ok(_) => {}
+                Ok(named) => {
+                    if let Some(facet) = tiles.iter().find_map(|key| named.get(key)) {
+                        return Ok(Some(facet.clone()));
+                    }
+                }
                 Err(refused) => return Err(refused.clone()),
             }
         }
-        Ok(false)
+        Ok(None)
     }
 }
 
