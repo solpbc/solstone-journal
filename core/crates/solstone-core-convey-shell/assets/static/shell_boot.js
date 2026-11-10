@@ -307,9 +307,12 @@
   }
 
 
-  // The rest of the shell is a second file. It is fetched after the first
-  // view is ready, so the wait for that view does not include it. The flag
-  // latches only once the address is known.
+  // The rest of the shell is a second file. A fast view loads it when that
+  // view is ready, so the wait for the view does not include it. A view
+  // still reading loads it three seconds after this script starts, so a
+  // slow first read does not hold the rest of the page. The flag latches
+  // only once the address is known.
+  const SHELL_REST_AFTER_MS = 3000;
   let shellRestRequested = false;
   function loadShellRest() {
     if (shellRestRequested) return;
@@ -323,6 +326,7 @@
     document.head.appendChild(el);
   }
   window.loadShellRest = loadShellRest;
+  setTimeout(loadShellRest, SHELL_REST_AFTER_MS);
 
   async function boot() {
     performance.mark('shell:scripts-loaded');

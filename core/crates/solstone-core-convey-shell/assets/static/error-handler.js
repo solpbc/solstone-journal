@@ -317,8 +317,9 @@
     recordError(error, context);
   };
 
-  // The diagnostic console loads after the first view. An error that lands
-  // before then is kept and handed over when the console arrives.
+  // The diagnostic console loads with the rest of the shell, after the
+  // first view or a few seconds after boot. An error that lands before
+  // then is kept and handed over when the console arrives.
   window.convey = window.convey || {};
   window.convey.keepDiagnostic = function (entry) {
     const api = window.convey.diagnosticConsole;

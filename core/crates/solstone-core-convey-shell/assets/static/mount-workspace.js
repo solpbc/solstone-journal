@@ -27,8 +27,8 @@
       }
       mount.ready = true;
       performance.mark('view:ready', { detail: Object.assign({ view, state }, mount.detail || {}) });
-      // The rest of the shell waits for this mark, so its bytes are not part
-      // of the wait for the first view.
+      // A fast view loads the rest of the shell here, so those bytes stay
+      // out of the wait. A view still reading is caught by the boot timer.
       window.loadShellRest?.();
       window.settleEarly?.();
       if (state !== 'error') prefetchDateViewCode();

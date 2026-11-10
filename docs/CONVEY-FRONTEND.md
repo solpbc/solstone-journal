@@ -38,8 +38,8 @@ serving path.
   (`core/build-support/convey_shell_bundle.rs`), with a `/* file: … */` banner
   per file. The served page names the stylesheet and the boot script. The rest
   script is a placeholder with no `src` until boot fetches it, after the first
-  view is ready. Nothing is minified or transpiled, and no other toolchain is
-  involved.
+  view is ready, or about three seconds after boot, whichever is first.
+  Nothing is minified or transpiled, and no other toolchain is involved.
   - Each script runs inside its own function, so a file that throws stops only
     itself; its error still reaches `window`'s `error` event, named by its file
     and line (the diagnostic console maps bundle positions; `shell.js.map` and
