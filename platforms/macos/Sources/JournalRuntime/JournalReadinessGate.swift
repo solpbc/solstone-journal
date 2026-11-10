@@ -151,6 +151,21 @@ public func liveSupervisorMatchesReadyFiles(
     journalRoot: URL,
     kernelStartTime: (pid_t) -> Double?
 ) -> Bool {
+    liveReadySupervisorPID(journalRoot: journalRoot, kernelStartTime: kernelStartTime) != nil
+}
+
+/// The pid of the supervisor the journal's ready files name, when that process
+/// is alive and is the one that wrote them.
+public func liveReadySupervisorPID(journalRoot: URL) -> pid_t? {
+    liveReadySupervisorPID(journalRoot: journalRoot) { pid in
+        liveJournalProcessEvidence(for: pid)?.kernelStartTime
+    }
+}
+
+func liveReadySupervisorPID(
+    journalRoot: URL,
+    kernelStartTime: (pid_t) -> Double?
+) -> pid_t? {
     guard let marker = readSupervisorReadyMarker(
         from: journalRoot.appendingPathComponent("health/supervisor.ready")
     ),
@@ -162,9 +177,10 @@ public func liveSupervisorMatchesReadyFiles(
         ),
         marker.pid == recordedPID,
         let kernel = kernelStartTime(recordedPID),
-        kernel.isFinite else {
-        return false
+        kernel.isFinite,
+        abs(recordedStartTime - kernel) <= journalSupervisorStartTimeToleranceSeconds,
+        abs(marker.startTime - kernel) <= journalSupervisorStartTimeToleranceSeconds else {
+        return nil
     }
-    return abs(recordedStartTime - kernel) <= journalSupervisorStartTimeToleranceSeconds
-        && abs(marker.startTime - kernel) <= journalSupervisorStartTimeToleranceSeconds
+    return recordedPID
 }

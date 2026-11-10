@@ -19,7 +19,6 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::attach::{TranscriptSegment, attach_visible_streams_to_ranges};
-    use crate::shell::redirect_target;
     use crate::{Clock, router};
 
     const DAY: &str = "20260731";
@@ -1236,7 +1235,11 @@ mod tests {
             let (status, headers, body) =
                 response(router.clone(), case["path"].as_str().unwrap()).await;
             assert_eq!(status.as_u16(), case["status"].as_u64().unwrap() as u16);
-            if case["path"] == "/app/transcripts/20260731" && status == StatusCode::OK {
+            if matches!(
+                case["path"].as_str(),
+                Some("/app/transcripts/" | "/app/transcripts/20260731")
+            ) && status == StatusCode::OK
+            {
                 // The shared navigation shell is current; the capture predates it.
                 let shell = solstone_core_convey_shell::assets::served_from_source(include_bytes!(
                     "../../solstone-core-convey-shell/assets/static/shell.html"
@@ -1763,7 +1766,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn redirect_uses_segment_presence_and_short_circuits_newest_first() {
+    async fn the_root_opens_the_page_without_walking_the_journal() {
+        let root = root();
+        let (status, headers, _) = response(app(root.path()), "/app/transcripts/").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(headers.get(header::LOCATION).is_none());
+    }
+
+    #[tokio::test]
+    async fn open_day_picks_the_newest_day_with_segments() {
         let root = root();
         segment(
             root.path(),
@@ -1772,21 +1783,27 @@ mod tests {
             "090000_60",
             &[("imported.md", b"newest markdown")],
         );
-        let (status, headers, _) = response(app(root.path()), "/app/transcripts/").await;
-        assert_eq!(status, StatusCode::FOUND);
-        assert_eq!(headers[header::LOCATION], "/app/transcripts/20260802");
+        let (status, _, body) = response(app(root.path()), "/app/transcripts/api/open-day").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({ "day": "20260802" })
+        );
     }
 
     #[test]
-    fn redirect_target_prefers_populated_days_then_clock_day() {
-        let now = Utc.with_ymd_and_hms(2026, 8, 1, 12, 0, 0).unwrap();
+    fn an_empty_journal_opens_on_today_by_the_journals_clock() {
+        let root = TempDir::new().unwrap();
+        write(
+            root.path(),
+            "config/journal.json",
+            br#"{"identity":{"timezone":"America/Denver"}}"#,
+        );
+        // Past midnight in UTC, still the evening before in Denver.
+        let now = Utc.with_ymd_and_hms(2026, 8, 2, 3, 0, 0).unwrap();
         assert_eq!(
-            redirect_target(
-                &BTreeMap::from([("20260802".into(), 0), ("20260801".into(), 2)]),
-                now
-            ),
+            crate::shell::open_day_from_journal(root.path(), now).unwrap(),
             "20260801"
         );
-        assert_eq!(redirect_target(&BTreeMap::new(), now), "20260801");
     }
 }

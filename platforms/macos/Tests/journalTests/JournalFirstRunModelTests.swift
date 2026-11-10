@@ -106,6 +106,34 @@ struct JournalFirstRunModelTests {
         #expect(fixture.model.route == .home)
     }
 
+    @Test func resumingAJournalTheTerminalServiceRunsTakesItOver() async throws {
+        let trace = FirstRunTrace()
+        let fixture = makeModel(
+            trace: trace,
+            startResults: [true],
+            probeResults: [.complete],
+            externalSupervisorIsLive: { _ in true },
+            terminalServiceRunsJournal: { _ in true }
+        )
+        await fixture.model.resumeConfiguredRoot(try makeTemporaryDirectory())
+        #expect(await trace.snapshot() == ["supervisor", "probe"])
+        #expect(fixture.model.route == .home)
+    }
+
+    @Test func resumingAJournalAnotherSupervisorRunsLeavesItRunning() async throws {
+        let trace = FirstRunTrace()
+        let fixture = makeModel(
+            trace: trace,
+            startResults: [],
+            probeResults: [.complete],
+            externalSupervisorIsLive: { _ in true },
+            terminalServiceRunsJournal: { _ in false }
+        )
+        await fixture.model.resumeConfiguredRoot(try makeTemporaryDirectory())
+        #expect(await trace.snapshot() == ["probe"])
+        #expect(fixture.model.route == .home)
+    }
+
     @Test func legacyReopenPreservesUnfinishedSetupAndDoesNotOpenTheBrowser() async {
         let trace = FirstRunTrace()
         let fixture = makeModel(trace: trace, startResults: [], probeResults: [.complete])
@@ -699,6 +727,7 @@ func makeModel(
     supervisorIsLive: @escaping @MainActor (URL) -> Bool = { _ in false },
     didStartSupervisor: @escaping @MainActor (Bool) -> Void = { _ in },
     externalSupervisorIsLive: @escaping @Sendable (URL) -> Bool = { _ in false },
+    terminalServiceRunsJournal: @escaping @Sendable (URL) async -> Bool = { _ in false },
     refreshSleep: @escaping @Sendable () async -> Void = {
         try? await Task.sleep(for: .seconds(60))
     },
@@ -751,6 +780,7 @@ func makeModel(
         windowModel: attachWindow ? windowModel : nil,
         supervisorIsLive: supervisorIsLive,
         externalSupervisorIsLive: externalSupervisorIsLive,
+        terminalServiceRunsJournal: terminalServiceRunsJournal,
         loadSetupCopy: loadSetupCopy,
         localSetupCapability: localSetupCapability,
         peer: peer,

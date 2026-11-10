@@ -16,6 +16,7 @@
       }
       mount.ready = true;
       performance.mark('view:ready', { detail: { view, state } });
+      window.settleEarly?.();
       if (state !== 'error') prefetchDateViewCode();
     };
   };
@@ -25,12 +26,6 @@
   // has nothing extra to wait for. Where it's cached already, this costs no
   // request. A failure here is ignored: the view makes its own request and
   // reports its own error.
-  const DATE_VIEW_CODE = ['date-nav.css', 'date-nav.js', 'day-grid.css', 'day-grid.js'];
-  // Beside this script's own address: a file can't name its own hashed tree.
-  const OWN_DIRECTORY = (() => {
-    const src = document.currentScript && document.currentScript.src;
-    return src ? src.slice(0, src.lastIndexOf('/') + 1) : '/static/';
-  })();
   const PREFETCH_WAIT_MS = 2000;
   let prefetchScheduled = false;
 
@@ -38,8 +33,8 @@
     if (prefetchScheduled) return;
     prefetchScheduled = true;
     const start = () => {
-      for (const name of DATE_VIEW_CODE) {
-        fetch(OWN_DIRECTORY + name, { credentials: 'same-origin', priority: 'low' })
+      for (const path of window.__SOL_ENTRY_TABLE__?.dateViewCode || []) {
+        fetch(path, { credentials: 'same-origin', priority: 'low' })
           .then((response) => response.arrayBuffer())
           .catch(() => {});
       }
@@ -225,6 +220,7 @@
     }
 
     window.beginViewGeneration?.();
+    const startedEarly = window.claimEarlyView?.(options.appName || null) === true;
     activeMount = { view: options.appName || null, ready: false };
     const reportReady = window.createViewReady(activeMount.view);
     const chain = { ran: false };
@@ -269,7 +265,8 @@
       }
       const html = await request.readText();
       const fragment = parseFragment(html);
-      const preloads = preloadScripts(fragment);
+      // The head of the page already asked for these on a first mount.
+      const preloads = startedEarly ? [] : preloadScripts(fragment);
       try {
         await loadStylesheets(fragment);
         target.innerHTML = html;
@@ -286,6 +283,7 @@
         })
       );
     } catch (error) {
+      window.settleEarly?.();
       renderFailure(target, retry, error);
       reportReady('error');
       if (typeof options.onRetry === 'function') {

@@ -2361,7 +2361,8 @@ mod tests {
         assert!(deleted["trash"]["id"].is_string(), "{deleted}");
 
         for (path, expected) in [
-            ("/app/transcripts/", StatusCode::FOUND),
+            ("/app/transcripts/", StatusCode::OK),
+            ("/app/transcripts/api/open-day", StatusCode::OK),
             ("/app/transcripts/workspace", StatusCode::OK),
             ("/app/transcripts/20260731", StatusCode::OK),
             ("/app/transcripts/api/index", StatusCode::OK),

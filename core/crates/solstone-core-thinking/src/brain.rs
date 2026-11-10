@@ -136,6 +136,9 @@ fn action(
     if state == "ready" || state == "checking" || (state == "blocked" && progressing) {
         return Value::Null;
     }
+    if state == "unhealthy" && reason == Some("brain_refresh_timeout") {
+        return json!({"label":"check again","refresh":true});
+    }
     if matches!(state, "blocked" | "unhealthy") {
         return if bundled_runtime {
             json!({"label":"open local setup","href":"/app/thinking/#local-setup"})
@@ -331,6 +334,59 @@ fn projection_only(reason: Option<&str>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timed_out_check_offers_the_existing_refresh_action_on_each_lane() {
+        let refresh = action("unknown", None, None, None, false);
+        for lane in ["bundled", "byo-cloud", "byo-endpoint", "spp"] {
+            assert_eq!(
+                action(
+                    "unhealthy",
+                    Some("brain_refresh_timeout"),
+                    Some(lane),
+                    Some("generate"),
+                    false,
+                ),
+                refresh,
+                "{lane}: a timed-out check can be requested again",
+            );
+            for state in ["ready", "checking"] {
+                assert!(
+                    action(
+                        state,
+                        Some("brain_refresh_timeout"),
+                        Some(lane),
+                        Some("generate"),
+                        false,
+                    )
+                    .is_null(),
+                    "{lane}: {state} does not offer another check",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn retryable_timeout_does_not_replace_setup_and_credential_actions() {
+        let setup = action(
+            "unhealthy",
+            Some("local_runtime_not_ready"),
+            Some("bundled"),
+            Some("lane_prerequisites"),
+            false,
+        );
+        assert_eq!(setup["href"], "/app/thinking/#local-setup");
+        assert!(setup.get("refresh").is_none());
+        let credential = action(
+            "blocked",
+            Some("provider_key_invalid"),
+            Some("byo-cloud"),
+            Some("generate"),
+            false,
+        );
+        assert_eq!(credential["href"], "/app/thinking/#main");
+        assert!(credential.get("refresh").is_none());
+    }
 
     // Each test names and pins one public attestation return branch.
     fn inspection(

@@ -777,6 +777,35 @@ struct LegacyJournalServiceRetirerTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.plistURL.path))
     }
 
+    @Test func theServiceIsTheLiveSupervisorOnlyWhenItsJobIsThatPidForThisJournal() async throws {
+        let fixture = try ServiceFixture()
+        defer { fixture.clear() }
+        let journalRoot = fixture.root.appendingPathComponent("journal", isDirectory: true)
+        try FileManager.default.createDirectory(at: journalRoot, withIntermediateDirectories: true)
+        let argv = [fixture.root.appendingPathComponent("bin/solstone").path, "journal", "start", "5015"]
+        let loaded = Data(canonicalLoadedLaunchctlOutput(plistPath: fixture.plistURL.path, programArguments: argv, pid: 777).utf8)
+        func retirer(_ print: FakeSubprocessRunner.Response) -> LegacyJournalServiceRetirer {
+            let runner = FakeSubprocessRunner()
+            runner.enqueue("print", print)
+            return LegacyJournalServiceRetirer(runner: runner, clock: NoopLegacyClock(), plistURL: fixture.plistURL, uid: 501)
+        }
+
+        try fixture.writeInstalledServicePlist(programArguments: argv, journalTokenPath: journalRoot.path)
+        #expect(await retirer(.success(stdout: loaded)).runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: 777))
+        // Another process runs the journal.
+        #expect(!(await retirer(.success(stdout: loaded)).runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: 778)))
+        // The job is loaded but not running.
+        #expect(!(await retirer(.success(stdout: Data(stoppedLaunchctlOutput(plistPath: fixture.plistURL.path, programArguments: argv).utf8))).runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: 777)))
+        // launchd could not be asked.
+        #expect(!(await retirer(.failure("launchctl failed")).runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: 777)))
+
+        try fixture.writeInstalledServicePlist(programArguments: argv, journalTokenPath: fixture.root.appendingPathComponent("other").path)
+        #expect(!(await retirer(.success(stdout: loaded)).runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: 777)))
+
+        try FileManager.default.removeItem(at: fixture.plistURL)
+        #expect(!(await retirer(.success(stdout: loaded)).runsLiveSupervisor(journalRoot: journalRoot, supervisorPID: 777)))
+    }
+
     @Test func basenameOnlySolstoneBlocksWithoutMutation() async throws {
         let fixture = try ServiceFixture()
         defer { fixture.clear() }

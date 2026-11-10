@@ -471,6 +471,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_file_whose_import_is_in_the_trash_imports_again() {
+        let root = journal();
+        let file = root.path().join("report.pdf");
+        fs::write(&file, b"%PDF report").unwrap();
+        let hash = solstone_core_import::hash_source(&file).unwrap();
+        write(
+            root.path(),
+            &format!("imports/{ID}/manifest.json"),
+            json!({"source_type": "document", "source_hash": hash.as_str(), "entry_count": 1})
+                .to_string()
+                .as_bytes(),
+        );
+        let save = |item: &str| json!({"client_item_id": item, "path": file});
+
+        // While its import is still in the journal, the same file is refused.
+        let (status, live) = call(
+            root.path(),
+            Method::POST,
+            "/app/import/api/save-path",
+            save("again"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{live}");
+        assert_eq!(live["kind"], "already_imported");
+
+        let (status, body) = call(
+            root.path(),
+            Method::DELETE,
+            &format!("/app/import/api/imports/{ID}"),
+            json!({}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        // In the trash, it is no longer what's in the journal: the file comes back.
+        let (status, again) = call(
+            root.path(),
+            Method::POST,
+            "/app/import/api/save-path",
+            save("back"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{again}");
+        assert_ne!(again["timestamp"], ID);
+    }
+
+    #[tokio::test]
     async fn erase_now_leaves_nothing_in_the_trash() {
         let root = journal();
         let (status, body) = call(

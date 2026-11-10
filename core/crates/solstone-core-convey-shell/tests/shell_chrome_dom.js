@@ -524,6 +524,8 @@ function createHarness(options = {}) {
     href: 'http://localhost' + (options.pathname || '/app/home/'),
     origin: 'http://localhost',
     pathname: options.pathname || '/app/home/',
+    search: '',
+    hash: '',
     assigned: null,
     reloads: 0,
     assign(url) { this.assigned = url; },
@@ -1183,28 +1185,6 @@ asyncCase('curation, agents, and backup state lines skip rejection, hang, and wr
   }
 });
 
-async function settleEarly() {
-  for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
-}
-
-function earlyShell(response, aborted) {
-  return {
-    response,
-    controller: { abort() { aborted.push(true); } },
-  };
-}
-
-function jsonResponse(body, overrides = {}) {
-  return Object.assign({
-    ok: true,
-    status: 200,
-    redirected: false,
-    headers: { get: (name) => (name.toLowerCase() === 'content-type' ? 'application/json' : null) },
-    json: async () => body,
-    body: { cancel: async () => {} },
-  }, overrides);
-}
-
 function bootFetches() {
   return {
     '/app/support/background': { status: 200, body: '' },
@@ -1212,105 +1192,69 @@ function bootFetches() {
   };
 }
 
-asyncCase('boot takes the shell page\'s early /api/shell answer and reads it no second time', async () => {
-  const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
-  const shell = harness.readyCalls;
-  let reads = 0;
-  const stub = harness.window.apiJson;
-  harness.window.apiJson = (url, opts) => {
-    if (url === '/api/shell') reads += 1;
-    return stub(url, opts);
-  };
-  const aborted = [];
-  const registry = harness.window.SOL_SHELL_REGISTRY;
-  harness.window.__solShellEarly = earlyShell(Promise.resolve(jsonResponse({
-    app_names: ['home', 'more', 'settings'],
-    clock: null,
-    pinned: [],
-    version: '9.9.9',
-  })), aborted);
-  await harness.boot();
-  assert.strictEqual(reads, 0);
-  assert.strictEqual(aborted.length, 0);
-  assert.strictEqual(harness.window.__solShellEarly, null);
-  const ready = shell[shell.length - 1];
-  assert.deepStrictEqual(ready.apps.map((app) => app.name), ['home', 'more', 'settings']);
-  assert.strictEqual(ready.settings, registry.settings);
-  assert.strictEqual(ready.version, '9.9.9');
-  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'more', 'settings']);
-});
-
-for (const [label, response] of [
-  ['a refusal', () => Promise.resolve(jsonResponse({}, { ok: false, status: 401 }))],
-  ['a redirect to setup', () => Promise.resolve(jsonResponse({}, { redirected: true }))],
-  ['not JSON', () => Promise.resolve(jsonResponse({}, { headers: { get: () => 'text/html' } }))],
-  ['a network failure', () => Promise.reject(new TypeError('Failed to fetch'))],
-]) {
-  asyncCase(`boot asks /api/shell again through apiJson when the early answer is ${label}`, async () => {
-    const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
-    let reads = 0;
-    const stub = harness.window.apiJson;
-    harness.window.apiJson = (url, opts) => {
-      if (url === '/api/shell') {
-        reads += 1;
-        assert.strictEqual(opts && opts.scope, 'shell');
-      }
-      return stub(url, opts);
-    };
-    const aborted = [];
-    harness.window.__solShellEarly = earlyShell(response(), aborted);
-    await harness.boot();
-    assert.strictEqual(reads, 1);
-    assert.strictEqual(aborted.length, 1);
-    assert.ok(namedApps(harness.document.querySelector('#app-rail')).includes('home'));
-  });
-}
-
 asyncCase('a served app this bundle has no definition for reloads the page once', async () => {
   const harness = createHarness({ boot: true, fetchResponses: bootFetches() });
   const reloads = [];
   harness.window.reloadOnce = (key) => { reloads.push(key); return true; };
-  const aborted = [];
-  harness.window.__solShellEarly = earlyShell(Promise.resolve(jsonResponse({
-    app_names: ['home', 'a-view-from-a-newer-build', 'more'],
-    clock: null,
-    pinned: [],
-    version: '9.9.9',
-  })), aborted);
+  harness.window.apiJson = (url) => {
+    assert.strictEqual(url, '/api/shell');
+    return Promise.resolve({
+      app_names: ['home', 'a-view-from-a-newer-build', 'more'],
+      clock: null,
+      pinned: [],
+      version: '9.9.9',
+    });
+  };
   await harness.boot();
   assert.deepStrictEqual(reloads, ['solstone.shellBuildReloadAt']);
   const ready = harness.readyCalls[harness.readyCalls.length - 1];
   assert.deepStrictEqual(ready.apps.map((app) => app.name), ['home', 'more']);
 });
 
-asyncCase('an early /api/shell answer that never comes is given up at the read bound', async () => {
-  const timers = [];
+asyncCase('an undated route takes the address its first read names before the view mounts', async () => {
   const harness = createHarness({
     boot: true,
-    setTimeout: (cb, delay) => { timers.push({ cb, delay }); return timers.length; },
-    clearTimeout: () => {},
+    pathname: '/app/transcripts/',
+    fetchResponses: { ...bootFetches(), '/app/transcripts/workspace': { status: 200, body: '<div></div>' } },
+  });
+  const replaced = [];
+  harness.window.history = {
+    state: null,
+    replaceState(_state, _title, url) { replaced.push(url); harness.window.location.pathname = url; },
+  };
+  harness.window.__SOL_ENTRY_TABLE__ = {
+    views: { transcripts: { openDay: { route: '/app/transcripts/', url: '/app/transcripts/api/open-day' } } },
+  };
+  const mountedAt = [];
+  const stub = harness.window.apiJson;
+  harness.window.apiJson = (url, opts) => (
+    url === '/app/transcripts/api/open-day' ? Promise.resolve({ day: '20260801' }) : stub(url, opts)
+  );
+  harness.window.mountWorkspaceFragment = async () => { mountedAt.push(harness.window.location.pathname); };
+  await harness.boot();
+  assert.deepStrictEqual(replaced, ['/app/transcripts/20260801']);
+  assert.deepStrictEqual(mountedAt, ['/app/transcripts/20260801'], 'the view runs with the day in its path');
+});
+
+asyncCase('an open-day read that fails ends in the shell error state, not a mount', async () => {
+  const harness = createHarness({
+    boot: true,
+    pathname: '/app/transcripts/',
     fetchResponses: bootFetches(),
   });
-  harness.window.READ_BOUNDS = { read: { firstByteMs: 30000 } };
-  let reads = 0;
-  const stub = harness.window.apiJson;
-  harness.window.apiJson = (url, opts) => {
-    if (url === '/api/shell') reads += 1;
-    return stub(url, opts);
+  harness.window.history = { state: null, replaceState() { throw new Error('no address change'); } };
+  harness.window.__SOL_ENTRY_TABLE__ = {
+    views: { transcripts: { openDay: { route: '/app/transcripts/', url: '/app/transcripts/api/open-day' } } },
   };
-  const aborted = [];
-  harness.window.__solShellEarly = earlyShell(new Promise(() => {}), aborted);
-  const booting = harness.boot();
-  await settleEarly();
-  const bound = timers.find((timer) => timer.delay === 30000);
-  assert.ok(bound, 'the early read is bounded by the ordinary first-byte bound');
-  assert.strictEqual(reads, 0);
-  bound.cb();
-  await settleEarly();
-  for (const timer of timers.filter((t) => t !== bound)) timer.cb();
-  await booting;
-  assert.strictEqual(aborted.length, 1);
-  assert.strictEqual(reads, 1);
+  let mounted = 0;
+  const stub = harness.window.apiJson;
+  harness.window.apiJson = (url, opts) => (
+    url === '/app/transcripts/api/open-day' ? Promise.reject(new Error('no answer')) : stub(url, opts)
+  );
+  harness.window.mountWorkspaceFragment = async () => { mounted += 1; };
+  await harness.boot();
+  assert.strictEqual(mounted, 0);
+  assert.ok(harness.document.querySelector('[data-surface-state="error"]'), 'the error state shows');
 });
 
 testCase('presentation mode is decided once, by the shell page, before the first paint', () => {
@@ -2218,6 +2162,9 @@ asyncCase('date view code comes into the cache once, after a view is ready', asy
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     fetchResponses: { '/app/home/workspace': { status: 200, body: '<section id="view"></section>' } },
   });
+  h.window.__SOL_ENTRY_TABLE__ = {
+    dateViewCode: ['/static/date-nav.css', '/static/date-nav.js', '/static/day-grid.css', '/static/day-grid.js'],
+  };
   const dateCode = () => h.fetchCalls.filter((url) => /\/(date-nav|day-grid)\.(js|css)$/.test(url));
   const runTimers = () => timers.splice(0).forEach((fn) => fn());
   const mount = () => h.window.mountWorkspaceFragment('/app/home/workspace', { appName: 'home' });

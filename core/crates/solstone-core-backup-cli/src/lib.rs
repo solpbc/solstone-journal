@@ -1168,13 +1168,12 @@ fn restore_command(
     restore_from_payload(
         &payload,
         |destination, recovery_key| {
-            solstone_core_backup_runtime::restore::restore_during_setup(
-                journal,
-                services,
-                recorder,
-                destination,
-                recovery_key,
-            )
+            #[cfg(not(target_os = "ios"))]
+            let restore = solstone_core_backup_runtime::restore::restore_during_setup;
+            // iOS restores during its in-app setup, never from here.
+            #[cfg(target_os = "ios")]
+            let restore = solstone_core_backup_runtime::restore::restore_journal;
+            restore(journal, services, recorder, destination, recovery_key)
         },
         json_output,
     )

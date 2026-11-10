@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 
 include!("../../build-support/convey_asset_refs.rs");
 include!("../../build-support/convey_shell_bundle.rs");
+include!("../../build-support/convey_entry_table.rs");
 
 // The app table is generated from the same source the shell serves from.
 #[allow(dead_code)]
@@ -455,6 +456,52 @@ fn sibling_records() -> Vec<(Kind, String, String, PathBuf)> {
     records
 }
 
+/// What each view needs at the start of a page, read from its fragment. Views
+/// come from the registry; each fragment from the asset records, by the address
+/// the registry gives it, whichever crate carries the file.
+fn entry_table_json(
+    records: &[Record],
+    index: &BTreeMap<String, usize>,
+    hashed: &dyn Fn(&str) -> Option<String>,
+) -> String {
+    let payload = registry::shell_registry();
+    let mut views = serde_json::Map::new();
+    let mut date_code: BTreeSet<String> = BTreeSet::new();
+    for app in &payload.apps {
+        let record = &records[*index.get(&app.workspace_url).unwrap_or_else(|| {
+            panic!("view {} has no fragment at {}", app.name, app.workspace_url)
+        })];
+        let text = std::str::from_utf8(&record.bytes).expect("a view fragment is UTF-8");
+        let facts =
+            fragment_facts(&app.workspace_url, text).unwrap_or_else(|error| panic!("{error}"));
+        if app.date_nav.is_some() {
+            let shared = |path: &String| {
+                path.starts_with("/static/") && !path.starts_with("/static/vendor/")
+            };
+            date_code.extend(
+                facts
+                    .styles
+                    .iter()
+                    .filter(|p| shared(p))
+                    .filter_map(|p| hashed(p)),
+            );
+            date_code.extend(
+                facts
+                    .scripts
+                    .iter()
+                    .map(|s| &s.src)
+                    .filter(|p| shared(p))
+                    .filter_map(|p| hashed(p)),
+            );
+        }
+        views.insert(
+            app.name.to_owned(),
+            entry_row(&app.workspace_url, &facts, hashed),
+        );
+    }
+    entry_table_text(&serde_json::json!({ "views": views, "dateViewCode": date_code }))
+}
+
 /// Hash every asset tree in dependency order, rewrite each reference to a tree
 /// file to its hashed path, and emit the inventory the shell serves from.
 fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Path) -> String {
@@ -592,6 +639,9 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
     }
 
     let mut hashes: BTreeMap<String, String> = BTreeMap::new();
+    // Set once every tree is hashed; only the shell page reads it, and the
+    // shell page is in no tree.
+    let entry_table: std::cell::OnceCell<String> = std::cell::OnceCell::new();
     let hashed_of = |target: &str, hashes: &BTreeMap<String, String>| -> String {
         let tree = records[index[target]]
             .tree
@@ -619,6 +669,12 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
                         .any(|(from, to, _)| start < to && from < end)
                 });
                 edits.extend(replaced);
+                if let Some(table) = entry_table.get() {
+                    let at = page
+                        .find(ENTRY_TABLE_MARKER)
+                        .expect("the shell page has the entry table's marker");
+                    edits.push((at, at + ENTRY_TABLE_MARKER.len(), table.clone()));
+                }
                 edits.sort();
             }
             edits
@@ -643,6 +699,14 @@ fn inventory(own: &[(String, PathBuf)], shell_tags: &ShellPageTags, output: &Pat
         );
         hashes.insert(tree.clone(), hash);
     }
+    entry_table
+        .set(entry_table_json(&records, &index, &|target: &str| {
+            index
+                .get(target)
+                .filter(|found| records[**found].tree.is_some())
+                .map(|_| hashed_of(target, &hashes))
+        }))
+        .expect("the entry table is set once");
 
     let gzip_directory = output.join("gzip");
     fs::create_dir_all(&gzip_directory).expect("gzip directory");

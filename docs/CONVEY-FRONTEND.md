@@ -65,11 +65,12 @@ serving path.
 ## Shell boot sequence
 
 1. Static shell parses with `#app-rail`, `#app-dock`, and `#status-instrument`
-   slots. An inline script in its `<head>` starts `GET /api/shell` at once, so
-   the read runs beside the download of the shell's two files, not after them.
-2. `shell_boot.js` takes that answer, or asks again through `apiJson` with
-   `scope: 'shell'` if it failed, wasn't JSON or outlasted the ordinary
-   first-byte bound (so sign-in, setup and refusals behave as for any read). It
+   slots. An inline script in its `<head>` starts, beside the download of the
+   shell's two files, `GET /api/shell`, the stream labels, and from the entry
+   table (below) the view's fragment, its scripts and styles, and its first
+   reads.
+2. `shell_boot.js` reads `/api/shell` through `apiJson` with `scope: 'shell'`,
+   which takes the answer the head started (below). It
    joins `app_names` with the app table the bundle carries
    (`window.SOL_SHELL_REGISTRY`, generated from the registry at build time) and
    hands the rest of the shell one object with `apps`, `settings`, `version`,
@@ -88,6 +89,41 @@ serving path.
 Facet selection is workspace-local and uses the owning workspace's URL/query
 contract. The day, where an app is day-scoped, lives in the URL path
 (`/app/{name}/{YYYYMMDD}`). The server never embeds workspace state in HTML.
+
+## The entry table and early reads
+
+**The table** (`window.__SOL_ENTRY_TABLE__`) is generated at build time from
+each view's fragment and written into the served shell page
+(`core/build-support/convey_entry_table.rs`): per view, its fragment, its
+scripts (hashed, with any `data-route-prefix`) and styles, and its first reads.
+The shell page is `no-cache` with a validator, so the table always matches the
+names the journal is serving.
+
+**A fragment declares its first reads** in a comment beside its markup:
+
+```html
+<!-- first-read: /app/home/ -> /app/home/api/pulse /app/home/api/briefing -->
+<!-- first-read: /app/transcripts/{day} -> /app/transcripts/api/day/{day} -->
+```
+
+The route is a whole path; `{day}` (eight digits) is its only variable. Declare
+only what the view's own code asks for at that route with no other state, and
+never a date the path doesn't carry: the page doesn't work out dates. A query
+string or a hash on the address starts no reads, so the view asks for itself.
+`<!-- open-day: ROUTE -> URL -->` names a read that picks the day of an undated
+route; the shell moves to that address before the view mounts, so the view only
+ever sees a day in its path (transcripts' root).
+
+**Early reads are taken by exact address, once.** `boundedRequest` and the
+`fetch` wrapper in `api.js` take a read the head started instead of asking
+again. It keeps its in-flight request whatever its age, under what's left of
+its first-byte bound counted from when it started, and past that it ends in the
+view's error state, like any read. It's asked for again only for an answer the
+ordinary path has to handle itself: a redirect, a non-OK status or the wrong
+type (a `502`, `503` or `504` spends one of the ordinary retries). A view's
+mount owns the early reads: a different view or a later mount ends them, and
+`view:ready` ends whatever nothing took. Nothing is kept: early answers stay in
+memory, and reads stay `no-store`.
 
 ## `GET /api/shell` (contract sketch)
 

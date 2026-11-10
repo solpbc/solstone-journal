@@ -291,42 +291,26 @@
     });
   }
 
-  function earlyShellBoundMs() {
-    return window.READ_BOUNDS?.read?.firstByteMs || 30000;
+  // The answer the page's head started is taken inside apiJson, by its address.
+  async function readShell() {
+    return shellFrom(await window.apiJson('/api/shell', { scope: 'shell' }));
   }
 
-  // The shell page asks `/api/shell` before any shell script runs. Take that
-  // answer if it is a plain JSON success within the ordinary first-byte bound;
-  // otherwise ask again through apiJson, which handles sign-in, setup, a
-  // refusal and retries exactly as before.
-  async function readShell() {
-    const early = window.__solShellEarly;
-    window.__solShellEarly = null;
-    if (early && early.response) {
-      let timer = null;
-      try {
-        const bounded = new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error('early shell read took too long')), earlyShellBoundMs());
-        });
-        const state = await Promise.race([
-          early.response.then((response) => {
-            const type = response.headers.get('content-type') || '';
-            if (!response.ok || response.redirected || !type.includes('application/json')) {
-              response.body?.cancel?.().catch?.(() => {});
-              throw new Error('early shell read not usable');
-            }
-            return response.json();
-          }),
-          bounded
-        ]);
-        if (state && typeof state === 'object') return shellFrom(state);
-      } catch (_) {
-        early.controller?.abort?.();
-      } finally {
-        clearTimeout(timer);
-      }
+  // A view can open on an address with no day, and name a read that picks one
+  // on the journal's clock. The page takes that address before the view runs,
+  // so the view only ever sees a day in its path.
+  async function openDay(app) {
+    const open = window.__SOL_ENTRY_TABLE__?.views?.[app.name]?.openDay;
+    if (!open || window.location.pathname !== open.route) return;
+    const { day } = await window.apiJson(open.url);
+    if (typeof day !== 'string' || !DAY_RE.test(day)) {
+      throw new Error('No day to open');
     }
-    return shellFrom(await window.apiJson('/api/shell', { scope: 'shell' }));
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${open.route}${day}${window.location.search}${window.location.hash}`
+    );
   }
 
   async function boot() {
@@ -352,6 +336,7 @@
       renderAppDock(shell, app.name);
       renderStatusInstrument();
       applyBodyState(app);
+      await openDay(app);
       window.resolveSolShellReady(shell);
 
       for (const backgroundApp of shell.apps || []) {

@@ -400,6 +400,93 @@
     return Math.round(ms * (0.7 + Math.random() * 0.6));
   }
 
+  // The page's head starts a view's first reads beside the shell's own files
+  // (`window.__solEarly`). A read here takes one of those by its exact address,
+  // once, instead of asking again. It takes the request whatever its age, under
+  // what is left of the bound from the moment it started, so it behaves as if
+  // the view had sent it then. Only an answer the ordinary path has to handle
+  // itself is asked for again: a redirect, a refusal or the wrong type.
+  function earlyTable() {
+    const table = window.__solEarly;
+    return table && table.reads ? table : null;
+  }
+
+  function takeEarly(url, init) {
+    const table = earlyTable();
+    if (!table) return null;
+    if (String(init?.method || 'GET').toUpperCase() !== 'GET' || init?.body) return null;
+    let href;
+    try {
+      href = new URL(url, window.location.href).href;
+    } catch (_) {
+      return null;
+    }
+    const entry = table.reads[href];
+    if (!entry) return null;
+    delete table.reads[href];
+    return entry;
+  }
+
+  function earlyIsPlain(entry, response) {
+    const type = response.headers?.get?.('content-type') || '';
+    const wanted = entry.expect === 'html' ? 'text/html' : 'application/json';
+    return response.ok && !response.redirected && type.includes(wanted);
+  }
+
+  function countEarly(field) {
+    const stats = window.__solEarly?.stats;
+    if (stats) stats[field] = (stats[field] || 0) + 1;
+  }
+
+  // Resolves as the request would. `ask` makes the ordinary request. A gateway
+  // failure comes back as itself, so it spends one of the ordinary retries.
+  function adoptEarly(entry, signal, ask) {
+    const abort = () => entry.controller?.abort();
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
+    return entry.response.then((response) => {
+      if (earlyIsPlain(entry, response) || isGatewayFailure(response)) {
+        countEarly('adopted');
+        return response;
+      }
+      countEarly('refetched');
+      try {
+        response.body?.cancel?.()?.catch?.(() => {});
+      } catch (_) {}
+      abort();
+      return ask();
+    });
+  }
+
+  function earlyFirstByteMs(entry, boundMs) {
+    return Math.max(1, boundMs - Math.max(0, Date.now() - entry.startedAt));
+  }
+
+  // The mount that owns the early reads. A different view, or a later mount,
+  // ends whatever hasn't been taken.
+  function claimEarlyView(view) {
+    const table = earlyTable();
+    if (!table) return false;
+    if (table.claimed || table.view !== view) {
+      settleEarly();
+      return false;
+    }
+    table.claimed = true;
+    return true;
+  }
+
+  // Ends every early read nothing took. After this nothing is adopted.
+  function settleEarly() {
+    const table = earlyTable();
+    if (!table) return;
+    for (const href of Object.keys(table.reads)) {
+      countEarly('unclaimed');
+      table.reads[href].controller?.abort();
+      delete table.reads[href];
+    }
+    table.reads = null;
+  }
+
   // One attempt of one request, under both clocks. Resolves with the
   // response once its headers are in; `readText()` then reads the body under
   // the stall clock. Any signal in `signals` aborts it.
@@ -417,17 +504,30 @@
       stopTimer(timer);
       live.forEach(signal => signal.removeEventListener('abort', onAbort));
     };
-    const arm = (kind, ms) => {
+    const arm = (kind, ms, delay = ms) => {
       stopTimer(timer);
       if (!ms) return;
       timer = startTimer(() => {
         failure = new ReadDeadlineError(kind, ms, url);
         controller.abort();
-      }, ms);
+      }, delay);
+    };
+    const ask = () => {
+      arm('first-byte', bounds?.firstByteMs);
+      return rawFetch()(url, { ...fetchOptions, signal: controller.signal });
     };
 
-    arm('first-byte', bounds?.firstByteMs);
-    return rawFetch()(url, { ...fetchOptions, signal: controller.signal }).then(
+    let started;
+    const early = takeEarly(url, fetchOptions);
+    if (early) {
+      if (bounds?.firstByteMs) {
+        arm('first-byte', bounds.firstByteMs, earlyFirstByteMs(early, bounds.firstByteMs));
+      }
+      started = adoptEarly(early, controller.signal, ask);
+    } else {
+      started = ask();
+    }
+    return started.then(
       (response) => {
         arm('stall', bounds?.stallMs);
         const readText = async () => {
@@ -592,15 +692,26 @@
       stopTimer(timer);
       callerSignal?.removeEventListener('abort', onAbort);
     };
-    const arm = (kind, ms) => {
+    const arm = (kind, ms, delay = ms) => {
       stopTimer(timer);
       timer = startTimer(() => {
         failure = new ReadDeadlineError(kind, ms, url);
         controller.abort();
-      }, ms);
+      }, delay);
     };
-    arm('first-byte', bounds.firstByteMs);
-    return fetchImpl(input, { ...(init || {}), signal: controller.signal }).then(
+    const ask = () => {
+      arm('first-byte', bounds.firstByteMs);
+      return fetchImpl(input, { ...(init || {}), signal: controller.signal });
+    };
+    let started;
+    const early = isRequest(input) ? null : takeEarly(url, init);
+    if (early) {
+      arm('first-byte', bounds.firstByteMs, earlyFirstByteMs(early, bounds.firstByteMs));
+      started = adoptEarly(early, controller.signal, ask);
+    } else {
+      started = ask();
+    }
+    return started.then(
       (response) => {
         arm('stall', bounds.stallMs);
         return streamedResponse({
@@ -844,6 +955,8 @@
   window.ReadDeadlineError = ReadDeadlineError;
   window.boundedRequest = boundedRequest;
   window.beginViewGeneration = beginViewGeneration;
+  window.claimEarlyView = claimEarlyView;
+  window.settleEarly = settleEarly;
   window.READ_BOUNDS = { read: READ_BOUNDS, coalesced: COALESCED_READ_BOUNDS };
   window.apiJson = apiJson;
   window.isLoopbackRefusal = isLoopbackRefusal;

@@ -185,7 +185,7 @@ impl OwnerReadRole {
             Self::SpeakersDismissals => "/app/speakers/api/discovery/dismissals",
             Self::SpeakersIdentifyOperations => "/app/speakers/api/discovery/identify/operations",
             Self::SpeakersIdentifyOperation => "/app/speakers/api/discovery/identify/operations/1",
-            Self::TranscriptsRoot => "/app/transcripts/",
+            Self::TranscriptsRoot => "/app/transcripts/api/open-day",
             Self::TranscriptsIndex => "/app/transcripts/api/index",
             Self::TranscriptsMonthStats => "/app/transcripts/api/stats/202609",
             Self::TranscriptsRanges => "/app/transcripts/api/ranges/20260901",
