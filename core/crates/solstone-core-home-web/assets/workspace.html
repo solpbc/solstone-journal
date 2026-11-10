@@ -2,6 +2,19 @@
 <!-- view-contract -->
 <style>
 /* Pulse Landing Page */
+.security-banner {
+  border-left: 4px solid var(--danger);
+  background: var(--danger-wash);
+  border-radius: 5px;
+  padding: 13px 15px;
+  color: var(--ink);
+}
+.security-banner p {
+  margin: 0;
+}
+.security-banner p + p {
+  margin-top: 6px;
+}
 .pulse-dashboard {
   padding: 1.5rem 2rem 5rem;
   background: var(--cream-bright);
@@ -1191,6 +1204,7 @@
 </style>
 
 <div class="pulse-dashboard" id="pulse-dashboard" data-home-root>
+  <section id="security-banner" class="security-banner" role="status" hidden></section>
   <div id="pulse-surface" data-pulse-surface style="display: contents;">
     <div class="surface-state surface-state--loading" role="status">
       <div class="surface-state-spinner" aria-hidden="true"></div>

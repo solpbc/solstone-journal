@@ -90,6 +90,23 @@ pub fn clear(
     clear_with_transport(journal, portal, key, text, now, &UreqRelay::default())
 }
 
+/// The active episode keys in `family`, the part of a key before its first
+/// `:`, so a producer can end episodes for facts that no longer hold.
+#[must_use]
+pub fn active_keys(journal: &Path, family: &str) -> Vec<String> {
+    fs::read(state_path(journal))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<State>(&bytes).ok())
+        .map(|state| {
+            state
+                .active
+                .into_keys()
+                .filter(|key| kind_for(key) == family)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(crate) fn raise_with_transport(
     journal: &Path,
     portal: &str,
@@ -303,6 +320,23 @@ mod tests {
             raise_with_transport(journal.path(), "", "a:2", &notice, now, &relay),
             Transition::AlreadyActive
         );
+    }
+
+    #[test]
+    fn active_keys_lists_one_family_and_follows_clears() {
+        let journal = TempDir::new().expect("journal");
+        let relay = CountingTransport {
+            calls: AtomicUsize::new(0),
+        };
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let notice = text("n");
+        assert!(active_keys(journal.path(), "a").is_empty());
+        for key in ["a:1", "a:2", "b:1"] {
+            raise_with_transport(journal.path(), "", key, &notice, now, &relay);
+        }
+        assert_eq!(active_keys(journal.path(), "a"), ["a:1", "a:2"]);
+        clear_with_transport(journal.path(), "", "a:1", None, now, &relay);
+        assert_eq!(active_keys(journal.path(), "a"), ["a:2"]);
     }
 
     #[test]

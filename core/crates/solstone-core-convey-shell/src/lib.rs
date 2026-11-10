@@ -171,6 +171,8 @@ pub mod registry;
 mod relay_access;
 mod relay_admission;
 #[cfg(feature = "host")]
+mod security_advisory;
+#[cfg(feature = "host")]
 mod service_handoffs;
 #[cfg(feature = "host")]
 pub mod session;
@@ -789,6 +791,7 @@ async fn bind_embedded_router(
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
     system::start_update_check();
+    security_advisory::start(service_root.clone());
     let (link_health_task, service_token_renewal_task) = start_relay_health_tasks(
         service_root.clone(),
         cache,
@@ -1070,6 +1073,7 @@ pub async fn bind_with_authorization(
     let _ = door.ensure_started().await;
     let local_network_task = tokio::spawn(local_network::watch(door.clone()));
     system::start_update_check();
+    security_advisory::start(options.journal_root.clone());
     let door_outcome = door.clone_outcome().expect("door start records an outcome");
     Ok(ConveyServeHandle {
         loopback_ipv4,

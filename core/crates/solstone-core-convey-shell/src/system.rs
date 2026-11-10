@@ -93,12 +93,18 @@ fn refresh_update_listing() -> bool {
 /// The status body every platform answers with; only how the version is
 /// worked out differs between them.
 fn status_body(version: Value, capture: Value) -> Value {
-    json!({
+    let mut body = json!({
         "version": version,
         "capture": capture,
         "capabilities": CAPABILITIES,
         "ok": true,
-    })
+    });
+    // What the security advisory check last found, on a desktop journal.
+    #[cfg(feature = "host")]
+    if let Some(security) = crate::security_advisory::status() {
+        body["security"] = security;
+    }
+    body
 }
 
 #[allow(clippy::needless_return)]
