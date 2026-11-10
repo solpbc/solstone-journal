@@ -148,13 +148,13 @@ pub fn read_export(reader: impl BufRead) -> ReadExport {
                 }
                 if in_note {
                     stack.pop();
-                    if name == "resource" {
-                        if let Some(resource) = note.resources.last_mut() {
-                            if resource.md5.is_empty() && !resource.b64.is_empty() {
-                                decode_resource(resource);
-                            }
-                            resource.b64.clear();
+                    if name == "resource"
+                        && let Some(resource) = note.resources.last_mut()
+                    {
+                        if resource.md5.is_empty() && !resource.b64.is_empty() {
+                            decode_resource(resource);
                         }
+                        resource.b64.clear();
                     }
                     if name == "note" {
                         seal_resources(&mut note);
@@ -259,30 +259,31 @@ fn resolve_resources(
             referenced.insert(hash.clone());
             match mime_kind(&resource.mime) {
                 MimeKind::Image => {
-                    if seen_image.insert(hash) {
-                        if let Some(bytes) = &resource.bytes {
-                            images.push(HeldBytes {
-                                file_name: resource.file_name.clone().unwrap_or_else(|| {
-                                    format!("image.{}", image_ext(&resource.mime))
-                                }),
-                                mime: resource.mime.clone(),
-                                bytes: bytes.clone(),
-                            });
-                        }
+                    if seen_image.insert(hash)
+                        && let Some(bytes) = &resource.bytes
+                    {
+                        images.push(HeldBytes {
+                            file_name: resource
+                                .file_name
+                                .clone()
+                                .unwrap_or_else(|| format!("image.{}", image_ext(&resource.mime))),
+                            mime: resource.mime.clone(),
+                            bytes: bytes.clone(),
+                        });
                     }
                 }
                 MimeKind::Pdf => {
-                    if seen_pdf.insert(hash) {
-                        if let Some(bytes) = &resource.bytes {
-                            pdfs.push(HeldBytes {
-                                file_name: resource
-                                    .file_name
-                                    .clone()
-                                    .unwrap_or_else(|| "note.pdf".to_owned()),
-                                mime: resource.mime.clone(),
-                                bytes: bytes.clone(),
-                            });
-                        }
+                    if seen_pdf.insert(hash)
+                        && let Some(bytes) = &resource.bytes
+                    {
+                        pdfs.push(HeldBytes {
+                            file_name: resource
+                                .file_name
+                                .clone()
+                                .unwrap_or_else(|| "note.pdf".to_owned()),
+                            mime: resource.mime.clone(),
+                            bytes: bytes.clone(),
+                        });
                     }
                 }
                 MimeKind::Other => {
@@ -369,6 +370,8 @@ fn render_enml(content: &str) -> Enml {
     let mut link: Option<String> = None;
     let mut link_text = String::new();
     let mut table: Option<Table> = None;
+    // The event borrows `buf`, so the read stays in the body.
+    #[allow(clippy::while_let_loop)]
     loop {
         let event = match xml.read_event_into(&mut buf) {
             Ok(event) => event,
@@ -406,10 +409,10 @@ fn render_enml(content: &str) -> Enml {
                     pending_check =
                         Some(attr(&start, "checked").is_some_and(|value| value == "true"));
                 } else if matches!(name.as_str(), "td" | "th") {
-                    if let Some(table) = table.as_mut() {
-                        if let Some(row) = table.rows.last_mut() {
-                            row.push(String::new());
-                        }
+                    if let Some(table) = table.as_mut()
+                        && let Some(row) = table.rows.last_mut()
+                    {
+                        row.push(String::new());
                     }
                 } else if matches!(name.as_str(), "br") {
                     out.push('\n');
@@ -488,10 +491,10 @@ fn render_enml(content: &str) -> Enml {
                     if !out.ends_with('\n') {
                         out.push('\n');
                     }
-                } else if name == "table" {
-                    if let Some(table) = table.take() {
-                        out.push_str(&table.render());
-                    }
+                } else if name == "table"
+                    && let Some(table) = table.take()
+                {
+                    out.push_str(&table.render());
                 }
             }
             Event::Eof => break,

@@ -577,20 +577,12 @@ fn run_evernote(
     }
 
     let mut held = Vec::new();
-    let mut attachment_segments = Vec::new();
-    let mut attachment_files = Vec::new();
-    if let Err(error) = install_evernote_attachments(
-        journal,
-        &import_id,
-        &zone,
-        seams,
-        &planned,
-        &mut held,
-        &mut attachment_segments,
-        &mut attachment_files,
+    let (attachment_segments, attachment_files) = match install_evernote_attachments(
+        journal, &import_id, &zone, seams, &planned, &mut held,
     ) {
-        return fail(format!("{name} import failed: {error}\n"));
-    }
+        Ok(installed) => installed,
+        Err(error) => return fail(format!("{name} import failed: {error}\n")),
+    };
 
     let rendered = evernote_rendered(&planned);
     let written = save::write_rendered(journal, Some(&import_id), &rendered);
@@ -762,9 +754,9 @@ fn install_evernote_attachments(
     seams: &SourceSeams<'_>,
     plan: &evernote::Plan,
     held: &mut Vec<tempfile::NamedTempFile>,
-    segments: &mut Vec<solstone_core_import::CreatedSegment>,
-    files: &mut Vec<PathBuf>,
-) -> Result<(), String> {
+) -> Result<(Vec<solstone_core_import::CreatedSegment>, Vec<PathBuf>), String> {
+    let mut segments = Vec::new();
+    let mut files = Vec::new();
     for image_file in &plan.images {
         let path = hold_bytes(held, &image_file.file_name, &image_file.bytes)?;
         let prepared = image::prepare_image(
@@ -783,7 +775,7 @@ fn install_evernote_attachments(
         segments.push(installed.created_segment);
     }
     if plan.pdfs.is_empty() {
-        return Ok(());
+        return Ok((segments, files));
     }
     seams.pdf.prepare()?;
     let import_dir = journal.join("imports").join(import_id);
@@ -825,7 +817,7 @@ fn install_evernote_attachments(
         }
         segments.extend(created);
     }
-    Ok(())
+    Ok((segments, files))
 }
 
 fn hold_bytes(

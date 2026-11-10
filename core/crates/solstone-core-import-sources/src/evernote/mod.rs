@@ -202,7 +202,7 @@ where
         return Ok(refused(notebook, copy::EMPTY_EXPORT));
     }
     let stored = load_state(journal, notebook)?;
-    Ok(decide(
+    decide(
         journal,
         notebook,
         &parsed.notes,
@@ -210,7 +210,7 @@ where
         parsed.ended_early,
         zone,
         today,
-    )?)
+    )
 }
 
 /// Write the private record after the segments exist.
@@ -527,16 +527,16 @@ where
     }
 
     let files = compose(journal, &writes)?;
-    let summary = finish_lines(
+    let summary = finish_lines(FinishCounts {
         new_count,
         changed,
-        (images.len() + pdfs.len()) as u64,
+        attachments: (images.len() + pdfs.len()) as u64,
         future,
         undated,
         ended_early,
         trash,
         matched,
-    );
+    });
     let updates = changed_notes(stored, &working);
     Ok(Plan {
         refusal: None,
@@ -597,7 +597,7 @@ fn compose(journal: &Path, writes: &[Write]) -> Result<Vec<PlannedFile>, String>
     Ok(files)
 }
 
-fn finish_lines(
+struct FinishCounts {
     new_count: u64,
     changed: u64,
     attachments: u64,
@@ -606,7 +606,19 @@ fn finish_lines(
     ended_early: bool,
     trash: bool,
     matched: u64,
-) -> String {
+}
+
+fn finish_lines(counts: FinishCounts) -> String {
+    let FinishCounts {
+        new_count,
+        changed,
+        attachments,
+        future,
+        undated,
+        ended_early,
+        trash,
+        matched,
+    } = counts;
     let mut lines = Vec::new();
     if new_count > 0 && changed > 0 {
         lines.push(copy::brought_in_new_and_changed(new_count, changed));
