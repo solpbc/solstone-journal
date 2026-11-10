@@ -58,9 +58,13 @@ fn split_bundles() -> (String, String) {
         "// rest breaks on its first statement\nthrow new Error('rest broke');\n".to_owned(),
     )];
     (
-        bundle::script_bundle(&boot, "globalThis.SOL_SHELL_REGISTRY = {};\n", "shell.js.map")
-            .expect("boot bundle")
-            .text,
+        bundle::script_bundle(
+            &boot,
+            "globalThis.SOL_SHELL_REGISTRY = {};\n",
+            "shell.js.map",
+        )
+        .expect("boot bundle")
+        .text,
         bundle::script_bundle(&rest, "", "shell-rest.js.map")
             .expect("rest bundle")
             .text,

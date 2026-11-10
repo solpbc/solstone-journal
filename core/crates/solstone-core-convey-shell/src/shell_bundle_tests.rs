@@ -80,10 +80,7 @@ fn source(path: &str) -> &'static str {
     std::str::from_utf8(assets::record(path).unwrap().bytes).unwrap()
 }
 
-fn files_of<'a>(
-    tags: &'a [bundle::BundledTag],
-    which: &str,
-) -> Vec<&'a bundle::BundledTag> {
+fn files_of<'a>(tags: &'a [bundle::BundledTag], which: &str) -> Vec<&'a bundle::BundledTag> {
     tags.iter()
         .filter(|tag| bundle::script_bundle_of(tag) == which)
         .collect()
@@ -154,7 +151,10 @@ fn the_bundles_hold_the_shell_page_files_in_order_one_banner_each_unchanged() {
 fn the_served_shell_page_loads_the_two_bundles_and_keeps_its_inline_scripts() {
     let page = String::from_utf8(assets::served_bytes("/static/shell.html")).unwrap();
     let script = assets::record("/static/shell.js").unwrap().hashed.unwrap();
-    let rest = assets::record("/static/shell-rest.js").unwrap().hashed.unwrap();
+    let rest = assets::record("/static/shell-rest.js")
+        .unwrap()
+        .hashed
+        .unwrap();
     let style = assets::record("/static/shell.css").unwrap().hashed.unwrap();
     assert_eq!(page.matches("<script src=").count(), 1, "{page}");
     assert_eq!(page.matches("rel=\"stylesheet\"").count(), 1, "{page}");
@@ -374,7 +374,10 @@ fn assert_source_map(script_path: &str, map_path: &str, which: &str) {
         assert_eq!(lines[index], original, "bundle line {}", index + 1);
         mapped += 1;
     }
-    let source_lines: usize = paths.iter().map(|path| source(path).matches('\n').count()).sum();
+    let source_lines: usize = paths
+        .iter()
+        .map(|path| source(path).matches('\n').count())
+        .sum();
     assert!(
         mapped * 2 > source_lines,
         "{script_path} mapped {mapped} of {source_lines} source lines"
@@ -422,9 +425,13 @@ fn a_tags_part_chooses_its_bundle() {
             .cloned()
             .collect();
         (
-            bundle::script_bundle(&boot, "globalThis.SOL_SHELL_REGISTRY = {};\n", "shell.js.map")
-                .unwrap()
-                .text,
+            bundle::script_bundle(
+                &boot,
+                "globalThis.SOL_SHELL_REGISTRY = {};\n",
+                "shell.js.map",
+            )
+            .unwrap()
+            .text,
             bundle::script_bundle(&rest, "", "shell-rest.js.map")
                 .unwrap()
                 .text,
