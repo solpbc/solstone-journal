@@ -229,6 +229,7 @@ async function main() {
   source = source.replace(
     '  init();\n})();',
     `  window.__thinkingRuns = {
+    loadAfterFirstPaint,
     state,
     localCopy,
     localIsReady,
@@ -4015,7 +4016,11 @@ async function main() {
     const checks = [];
     const baseApiJson = window.apiJson;
     window.apiJson = (url, options) => {
-      if (url === 'api/brain/check') return checks.shift()();
+      if (url === 'api/brain/check') {
+        assert.strictEqual(options.method, 'POST', 'use the existing owner check route');
+        assert.strictEqual(options.body, '{}', 'the owner action does not select another provider or request');
+        return checks.shift()();
+      }
       return baseApiJson(url, options);
     };
     const base = thinking.state.providers;
@@ -4058,6 +4063,75 @@ async function main() {
     await tick(30000);
     assert.strictEqual(reads() - start, 40, 'the follow is bounded');
     assert.strictEqual(thinking.state.providers.brain.state, 'unknown', 'an unanswered check is never shown as ready');
+
+    // A timed-out check offers the same explicit owner action on every lane.
+    // A new terminal timeout is a result, even though the owner can retry it.
+    for (const lane of ['bundled', 'byo-cloud', 'byo-endpoint', 'spp']) {
+      const timeout = {
+        reason_code: 'brain_refresh_timeout',
+        failing_component: 'generate',
+        identity: {lane, provider: lane === 'byo-cloud' ? 'openai' : 'local', model: 'selected-model'},
+        action: due,
+      };
+      thinking.state.providers = withBrain('unhealthy', 'timeout-old', timeout);
+      thinking.renderGlance();
+      const retry = nodes.get('brainCheckAction');
+      assert.strictEqual(retry.hidden, false, `${lane}: the timed-out check has an ordinary recovery action`);
+      assert.strictEqual(typeof retry.onclick, 'function');
+      let posts = 0;
+      checks.push(() => {
+        posts += 1;
+        return Promise.resolve({ok: true, brain: withBrain('checking', 'timeout-old').brain});
+      });
+      providerResponses.push(() => Promise.resolve(withBrain('unhealthy', 'timeout-new', timeout)));
+      start = reads();
+      await retry.onclick();
+      assert.strictEqual(posts, 1, `${lane}: one click submits one check`);
+      assert.strictEqual(thinking.state.providers.brain.state, 'checking', 'submission never establishes readiness');
+      assert.strictEqual(retry.hidden, true, 'a running check does not offer another check');
+      await tick(3000);
+      assert.strictEqual(thinking.state.providers.brain.state, 'unhealthy', 'the actual failed result remains unhealthy');
+      assert.strictEqual(retry.hidden, false, 'a new timeout permits another owner-requested check');
+      await tick(30000);
+      assert.strictEqual(reads() - start, 1, 'following stops on a new terminal timeout');
+      assert.strictEqual(posts, 1, 'rendering and following never retry inference automatically');
+    }
+
+    thinking.state.providers = withBrain('unhealthy', 'timeout-old', {
+      reason_code: 'brain_refresh_timeout', action: due,
+    });
+    thinking.renderGlance();
+    checks.push(() => Promise.resolve({ok: true, brain: withBrain('checking', 'timeout-old').brain}));
+    providerResponses.push(() => Promise.resolve(withBrain('ready', 'timeout-recovered')));
+    start = reads();
+    await nodes.get('brainCheckAction').onclick();
+    assert.strictEqual(thinking.state.providers.brain.state, 'checking');
+    await tick(3000);
+    assert.strictEqual(thinking.state.providers.brain.state, 'ready', 'only the new journal result establishes recovery');
+    assert.strictEqual(nodes.get('brainCheckAction').hidden, true);
+    await tick(30000);
+    assert.strictEqual(reads() - start, 1, 'a recovered check stops following');
+
+    // A refused or unreachable submission retains the failure and permits
+    // recovery without synthesizing checking or readiness.
+    for (const refuse of [
+      () => Promise.reject(new Error('check unavailable')),
+      () => Promise.resolve({ok: false, error: 'check_not_started'}),
+    ]) {
+      thinking.state.providers = withBrain('unhealthy', 'timeout-old', {
+        reason_code: 'brain_refresh_timeout', action: due,
+      });
+      thinking.renderGlance();
+      checks.push(refuse);
+      start = reads();
+      await nodes.get('brainCheckAction').onclick();
+      assert.strictEqual(thinking.state.providers.brain.state, 'unhealthy');
+      assert.strictEqual(nodes.get('brainCheckAction').hidden, false);
+      assert(nodes.get('thinkingActiveDetail').textContent, 'the existing request failure is visible');
+      assert.strictEqual(nodes.get('thinkingActiveDetail').dataset.tone, 'error');
+      await tick(30000);
+      assert.strictEqual(reads() - start, 0, 'a refused check does not start a follow or another inference');
+    }
 
     // A check the owner asks for waits for new evidence, even from a ready card.
     thinking.state.providers = withBrain('ready', 't1');
@@ -4159,6 +4233,43 @@ async function main() {
     assert.strictEqual(checks, 0, 'a superseded poll cannot request a check');
     thinking.state.providers = previousProviders;
     window.apiJson = baseApiJson;
+  }
+
+  {
+    // After the first paint, the independent reads go out together; only the
+    // providers read waits for the model list, whose selection it names. (The
+    // ChatGPT status reads providers too, at once, with no model.)
+    executedCases += 1;
+    const base = window.apiJson;
+    const asked = [];
+    const answers = [];
+    window.apiJson = (url) => {
+      asked.push(url);
+      const pending = deferred();
+      answers.push([url, pending]);
+      return pending.promise;
+    };
+    const providerReads = () => asked.filter((url) => url.startsWith('api/providers')).length;
+    const loading = thinking.loadAfterFirstPaint();
+    await settle();
+    assert(asked.some((url) => url.startsWith('api/keys')), 'keys right away');
+    assert(asked.some((url) => url.startsWith('api/local/models')), 'models right away');
+    assert(!asked.some((url) => url.startsWith('api/local/runtime')), 'local reads wait for the model list');
+    const providersBefore = providerReads();
+    answers.find(([url]) => url.startsWith('api/local/models'))[1].resolve([{name: 'local/a'}]);
+    await settle();
+    await settle();
+    for (const prefix of ['api/local/bootstrap/status', 'api/local/runtime', 'api/local/availability']) {
+      assert(asked.some((url) => url.startsWith(prefix)), `${prefix} goes out once the model list is in`);
+    }
+    assert.strictEqual(providerReads(), providersBefore + 1, 'the providers read goes out with them, not before');
+    for (let round = 0; round < 3; round += 1) {
+      for (const [url, pending] of answers) pending.resolve(url.startsWith('api/local/availability') ? {available: true} : {});
+      await settle();
+    }
+    await loading.catch(() => {});
+    window.apiJson = base;
+    passedCases += 1;
   }
 
   console.log(`DOM CASES: ${passedCases}/${executedCases} passed`);

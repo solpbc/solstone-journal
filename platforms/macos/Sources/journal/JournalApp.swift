@@ -30,7 +30,9 @@ final class JournalAppModel {
         config: JournalAppConfig = JournalAppConfig(),
         supervisor: JournalSupervisor? = nil
     ) {
-        let supervisor = supervisor ?? JournalSupervisor(portAvailable: { JournalLocalHTTPClient.portAvailable(5015) })
+        let supervisor = supervisor ?? JournalSupervisor(
+            gate: SingleSupervisorGate(portBindable: { JournalLocalHTTPClient.portAvailable(5015) })
+        )
         let local = JournalLocalHTTPClient(root: { await MainActor.run { config.resolvedJournalRoot } })
         let loader: @Sendable (URLRequest) async throws -> (Data, URLResponse) = { try await local.data(for: $0) }
         self.config = config

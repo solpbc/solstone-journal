@@ -19,15 +19,18 @@ use chrono::{DateTime, Duration, FixedOffset, TimeZone, Timelike};
 use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use solstone_core_body_ingest::{AppleElement, AppleItem};
-#[cfg(test)]
-use solstone_core_body_ingest::{BodyIngestError, scan_apple_export};
 use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, DATED_WINDOW, RowKind, decode_rows, encode_rows, parse_source_time,
     plain_words, sort_rows, source_words,
 };
+#[cfg(test)]
+use solstone_core_import::BodyIngestError;
 use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
+
+#[cfg(test)]
+use crate::apple_export::scan_apple_export;
+use crate::apple_export::{AppleElement, AppleItem};
 use solstone_core_segment::{holds_foreign_content, owner_deleted};
 
 use crate::body_stream::{APPLE, BodySource, SpanPolicy, TileIds};
@@ -1493,7 +1496,14 @@ fn count_of_records(count: u64) -> String {
 /// home facets".
 #[must_use]
 pub fn facets_words(titles: &[String]) -> String {
-    match titles {
+    // Two facets can share a title.
+    let unique = titles
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    match unique.as_slice() {
         [] => "another facet".to_owned(),
         [one] => format!("your {one} facet"),
         [rest @ .., last] => format!("your {} and {last} facets", rest.join(", ")),
@@ -1724,11 +1734,7 @@ pub fn summary_text(
         );
     }
     if !counts.activities_refused.is_empty() {
-        let facets = match counts.activities_refused.as_slice() {
-            [one] => format!("the {one} facet"),
-            [rest @ .., last] => format!("the {} and {last} facets", rest.join(", ")),
-            [] => String::new(),
-        };
+        let facets = facets_words(&counts.activities_refused);
         let _ = writeln!(
             text,
             "Some workouts, nights of sleep or mindfulness sessions couldn't be shown under {facets}. The next import tries again.\n"

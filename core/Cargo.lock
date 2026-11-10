@@ -69,12 +69,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "allocation-counter"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "beb9e990c0a33699f1984d85a6abead615ccc72dd8130bf3e15dcabe2ca149c9"
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4194,8 +4188,6 @@ dependencies = [
  "solstone-core-backfill-cli",
  "solstone-core-backup",
  "solstone-core-backup-cli",
- "solstone-core-body-ingest",
- "solstone-core-body-rebuild",
  "solstone-core-brain",
  "solstone-core-brain-owner",
  "solstone-core-callosum",
@@ -4383,7 +4375,6 @@ dependencies = [
  "socket2",
  "solstone-core-backup",
  "solstone-core-backup-runtime",
- "solstone-core-body-rebuild",
  "solstone-core-callosum",
  "solstone-core-distribution",
  "solstone-core-indexer-store",
@@ -4429,61 +4420,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
-]
-
-[[package]]
-name = "solstone-core-body-ingest"
-version = "2.0.73"
-dependencies = [
- "chrono",
- "chrono-tz",
- "getrandom 0.3.4",
- "nix 0.30.1",
- "quick-xml",
- "rusqlite",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-auth-flow",
- "solstone-core-body-rebuild",
- "solstone-core-body-source",
- "solstone-core-journal-config",
- "solstone-core-journal-config-write",
- "solstone-core-journal-io",
- "ureq",
- "zip",
-]
-
-[[package]]
-name = "solstone-core-body-rebuild"
-version = "2.0.73"
-dependencies = [
- "nix 0.30.1",
- "rusqlite",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-body-source",
- "solstone-core-body-store",
- "solstone-core-journal-io",
-]
-
-[[package]]
-name = "solstone-core-body-source"
-version = "2.0.73"
-dependencies = [
- "allocation-counter",
- "ryu",
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-brain",
-]
-
-[[package]]
-name = "solstone-core-body-store"
-version = "2.0.73"
-dependencies = [
- "serde_json",
- "sha2 0.10.9",
- "solstone-core-body-source",
 ]
 
 [[package]]
@@ -5063,7 +4999,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
@@ -5240,18 +5175,20 @@ dependencies = [
  "chrono-tz",
  "getrandom 0.3.4",
  "log",
+ "nix 0.30.1",
  "regex",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
+ "solstone-core-auth-flow",
  "solstone-core-callosum",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-generate",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-removals",
@@ -5260,6 +5197,7 @@ dependencies = [
  "solstone-core-trash",
  "tempfile",
  "tokio",
+ "ureq",
 ]
 
 [[package]]
@@ -5275,7 +5213,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
  "solstone-core-callosum",
  "solstone-core-entity-matching",
  "solstone-core-facets",
@@ -5316,11 +5253,11 @@ dependencies = [
  "image",
  "nix 0.30.1",
  "pulldown-cmark",
+ "quick-xml",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-ingest",
  "solstone-core-depict",
  "solstone-core-entity",
  "solstone-core-entity-matching",
@@ -6712,7 +6649,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "solstone-core-body-source",
  "solstone-core-depict",
  "solstone-core-format",
  "solstone-core-generate",

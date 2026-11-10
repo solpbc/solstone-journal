@@ -543,6 +543,24 @@ fn strip_permanent_more_addition_from_actual(actual: &mut Value) {
     apps.retain(|app| app["name"] != "more");
 }
 
+/// Permanent documented divergence, introduced 2026-11-09, with no expiry
+/// condition: `sources` is served with the shell and is not in the frozen
+/// corpus. The corpus cannot be regenerated, so this one added entry is taken
+/// out of the live payload after its metadata has been validated. Narrowness
+/// is the safeguard: it is keyed to that one name and removes exactly that
+/// element. Never generalize this into a rule over app names.
+fn strip_permanent_sources_addition_from_actual(actual: &mut Value) {
+    let apps = actual["apps"]
+        .as_array_mut()
+        .expect("shell apps are an array");
+    assert_eq!(
+        apps.iter().filter(|app| app["name"] == "sources").count(),
+        1,
+        "the live shell contains exactly one sources app"
+    );
+    apps.retain(|app| app["name"] != "sources");
+}
+
 fn strip_permanent_pinned_from_actual(actual: &mut Value) {
     let pinned = actual
         .get("pinned")
@@ -773,6 +791,29 @@ fn strip_permanent_more_addition_requires_exactly_one_more_app() {
 }
 
 #[test]
+fn strip_permanent_sources_addition_requires_exactly_one_sources_app() {
+    for actual in [
+        json!({"apps": []}),
+        json!({"apps": [{"name": "sources"}, {"name": "sources"}]}),
+    ] {
+        let mut actual = actual;
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                strip_permanent_sources_addition_from_actual(&mut actual);
+            }))
+            .is_err()
+        );
+    }
+    let mut actual =
+        json!({"apps": [{"name": "settings"}, {"name": "sources"}, {"name": "speakers"}]});
+    strip_permanent_sources_addition_from_actual(&mut actual);
+    assert_eq!(
+        actual,
+        json!({"apps": [{"name": "settings"}, {"name": "speakers"}]})
+    );
+}
+
+#[test]
 fn strip_permanent_pinned_requires_a_string_array() {
     for actual in [
         json!({}),
@@ -946,6 +987,7 @@ async fn corpus_gate_and_converted_surface_match_all_non_deferred_cases() {
                     strip_permanent_app_metadata_from_actual(&mut actual);
                     strip_permanent_map_addition_from_actual(&mut actual);
                     strip_permanent_more_addition_from_actual(&mut actual);
+                    strip_permanent_sources_addition_from_actual(&mut actual);
                     strip_permanent_pinned_from_actual(&mut actual);
                     actual.as_object_mut().unwrap().remove("clock");
                 }
@@ -1080,7 +1122,7 @@ async fn registry_contract_is_stable() {
     assert!(shell.get("chat_bar").is_none());
     // `/api/shell` names the served apps; their definitions ship with the code.
     let names = shell["app_names"].as_array().expect("app names");
-    assert_eq!(names.len(), 18);
+    assert_eq!(names.len(), 19);
     let apps = solstone_core_convey_shell::registry::shell_payload().apps;
     assert_eq!(
         names

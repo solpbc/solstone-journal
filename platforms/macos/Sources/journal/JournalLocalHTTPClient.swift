@@ -11,7 +11,7 @@ import os
 /// Redirects are returned to the consumer and are never followed by this transport.
 struct JournalLocalHTTPClient: Sendable {
     typealias RootProvider = @Sendable () async -> URL
-    static let portInUse = "your journal can't start because another app is using the connection it needs on this mac. on a shared mac, this is usually another account's journal."
+    static let portInUse = UICopy.JOURNAL_SPAWN_PORT_HELD_ELSEWHERE
     let root: RootProvider
     var environment = ProcessInfo.processInfo.environment
 

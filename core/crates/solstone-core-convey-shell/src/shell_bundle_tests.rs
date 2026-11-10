@@ -19,6 +19,7 @@ use crate::registry::{served_apps, shell_payload_with_agents, shell_registry};
 
 mod bundle {
     include!("../../../build-support/convey_shell_bundle.rs");
+    include!("../../../build-support/convey_entry_table.rs");
 }
 
 fn established_journal() -> tempfile::TempDir {
@@ -507,4 +508,213 @@ async fn gzip_is_chosen_exactly_when_the_compression_layer_would_choose_it() {
             "Accept-Encoding: {value:?}"
         );
     }
+}
+
+fn served_entry_table(page: &[u8]) -> Value {
+    let page = std::str::from_utf8(page).unwrap();
+    let start = page
+        .find("window.__SOL_ENTRY_TABLE__ = ")
+        .expect("the page carries the table")
+        + "window.__SOL_ENTRY_TABLE__ = ".len();
+    let end = start
+        + page[start..]
+            .find(";\n")
+            .expect("the table ends its statement");
+    serde_json::from_str(&page[start..end]).expect("the table is JSON")
+}
+
+fn stem(path: &str) -> String {
+    // A hashed path is its stable path with one 16-hex directory added.
+    path.split('/')
+        .filter(|part| !(part.len() == 16 && part.chars().all(|c| c.is_ascii_hexdigit())))
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+#[tokio::test]
+async fn the_entry_table_is_every_views_fragment_tags_at_names_the_journal_serves() {
+    let journal = established_journal();
+    let app = served(journal.path());
+    let (status, _, page) = get(&app, "/app/home/", &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let table = served_entry_table(&page);
+    let views = table["views"].as_object().unwrap();
+    let registry = shell_registry();
+    assert_eq!(
+        views.len(),
+        registry.apps.len(),
+        "one row per registry view"
+    );
+    for view in &registry.apps {
+        let row = &views[view.name];
+        assert_eq!(row["fragment"], view.workspace_url.as_str());
+        let (status, _, fragment) = get(&app, &view.workspace_url, &[]).await;
+        // The agents app is mounted only on routers that carry its routes.
+        if view.name == "agents" && status == StatusCode::NOT_FOUND {
+            continue;
+        }
+        assert_eq!(status, StatusCode::OK, "{}", view.name);
+        // The served fragment names hashed files; the table must name the same.
+        let facts =
+            bundle::fragment_facts(view.name, std::str::from_utf8(&fragment).unwrap()).unwrap();
+        let scripts: Vec<&str> = row["scripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|script| script["src"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            scripts,
+            facts
+                .scripts
+                .iter()
+                .map(|s| s.src.as_str())
+                .collect::<Vec<_>>(),
+            "{} scripts",
+            view.name
+        );
+        let styles: Vec<&str> = row["styles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|style| style.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            styles,
+            facts.styles.iter().map(String::as_str).collect::<Vec<_>>(),
+            "{} styles",
+            view.name
+        );
+        for path in scripts.iter().chain(styles.iter()) {
+            assert_ne!(stem(path), *path, "{path} is a hashed name");
+            let (status, _, _) = get(&app, path, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{path}");
+        }
+    }
+    let date_code: Vec<String> = table["dateViewCode"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|path| stem(path.as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        date_code.iter().collect::<BTreeSet<_>>(),
+        [
+            "/static/date-nav.css",
+            "/static/date-nav.js",
+            "/static/day-grid.css",
+            "/static/day-grid.js"
+        ]
+        .iter()
+        .map(|path| path.to_string())
+        .collect::<BTreeSet<_>>()
+        .iter()
+        .collect::<BTreeSet<_>>(),
+    );
+}
+
+#[test]
+fn a_fragment_change_changes_its_row() {
+    let hashed = |path: &str| Some(format!("/hashed{path}"));
+    let before = bundle::fragment_facts("v", "<script src=\"/a.js\"></script>").unwrap();
+    let after = bundle::fragment_facts(
+        "v",
+        "<script src=\"/b.js\" data-route-prefix=\"/app/v/x/\"></script><link rel=\"stylesheet\" href=\"/c.css\">",
+    )
+    .unwrap();
+    let before_row = bundle::entry_row("/app/v/workspace", &before, &hashed);
+    let after_row = bundle::entry_row("/app/v/workspace", &after, &hashed);
+    assert_ne!(before_row, after_row);
+    assert_eq!(after_row["scripts"][0]["src"], "/hashed/b.js");
+    assert_eq!(after_row["scripts"][0]["routePrefix"], "/app/v/x/");
+    assert_eq!(after_row["styles"][0], "/hashed/c.css");
+}
+
+#[test]
+fn a_fragment_reads_only_real_tags_and_its_declared_reads() {
+    let facts = bundle::fragment_facts(
+        "v",
+        "<!-- first-read: /app/v/{day} -> /app/v/api/day/{day} /app/v/api/other -->\n\
+         <script>const x = '<script src=\"/inline.js\"></' + 'script>';</script>\n\
+         <template><script src=\"/template.js\"></script></template>\n\
+         <style>/* <link rel=\"stylesheet\" href=\"/style.css\"> */</style>\n\
+         <!-- a comment with <script src=\"/comment.js\"></script> inside -->\n\
+         <script src=\"/real.js\"></script>\n\
+         <!-- open-day: /app/v/ -> /app/v/api/open -->",
+    )
+    .unwrap();
+    assert_eq!(
+        facts.scripts,
+        vec![bundle::FragmentScript {
+            src: "/real.js".into(),
+            route_prefix: None
+        }]
+    );
+    assert!(facts.styles.is_empty());
+    assert_eq!(facts.reads[0].route, "/app/v/{day}");
+    assert_eq!(
+        facts.reads[0].urls,
+        ["/app/v/api/day/{day}", "/app/v/api/other"]
+    );
+    assert_eq!(facts.open_day.unwrap().urls, ["/app/v/api/open"]);
+}
+
+#[test]
+fn a_declaration_a_page_could_not_honour_stops_the_build() {
+    for text in [
+        // A date the route doesn't carry would have to come from the page.
+        "<!-- first-read: /app/v/ -> /app/v/api/day/{day} -->",
+        "<!-- first-read: /app/v/{facet} -> /app/v/api/x -->",
+        "<!-- first-read: app/v/ -> /app/v/api/x -->",
+        "<!-- first-read: /app/v/ -> api/x -->",
+        "<!-- first-read: /app/v/ -->",
+        "<!-- open-day: /app/v/{day} -> /app/v/api/open -->",
+        "<!-- open-day: /app/v -> /app/v/api/open -->",
+    ] {
+        assert!(bundle::fragment_facts("v", text).is_err(), "{text}");
+    }
+}
+
+/// A declared first read that the view never sends would be a wasted server
+/// run on every open, so each declared address has to be in the view's code.
+#[tokio::test]
+async fn every_declared_first_read_is_one_the_views_code_asks_for() {
+    let journal = established_journal();
+    let app = served(journal.path());
+    let mut checked = 0;
+    for view in &shell_registry().apps {
+        let (_, _, fragment) = get(&app, &view.workspace_url, &[]).await;
+        let fragment = String::from_utf8(fragment).unwrap();
+        let facts = bundle::fragment_facts(view.name, &fragment).unwrap();
+        if facts.reads.is_empty() {
+            continue;
+        }
+        let mut code = fragment.clone();
+        for script in &facts.scripts {
+            if script.src.starts_with("/static/vendor/") {
+                continue;
+            }
+            let (status, _, body) = get(&app, &script.src, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{}", script.src);
+            code.push_str(&String::from_utf8_lossy(&body));
+        }
+        for row in &facts.reads {
+            for url in &row.urls {
+                // A query the view builds at run time is matched on its path
+                // here; the lab's early-read counts prove the whole address.
+                let asked = url
+                    .split('?')
+                    .next()
+                    .unwrap_or_default()
+                    .replace("{day}", "${day}");
+                assert!(
+                    code.contains(&asked),
+                    "{}: nothing asks for {asked}",
+                    view.name
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked >= 6, "the declared reads were found");
 }

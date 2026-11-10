@@ -536,6 +536,303 @@ asyncCase('generations: a caller\'s own abort still rejects, as before', async (
 
 // ---- the mount
 
+// ---- reads started in the page's head
+
+function earlyTable(page, view = 'x') {
+  const table = { view, claimed: false, reads: Object.create(null), stats: {} };
+  page.window.__solEarly = table;
+  return table;
+}
+
+function earlyRead(page, path, expect = 'json') {
+  const table = page.window.__solEarly;
+  const controller = new AbortController();
+  const response = page.server.fetch(path, { signal: controller.signal });
+  response.catch(() => {});
+  table.reads[ORIGIN + path] = { response, controller, startedAt: page.context.Date.now(), expect };
+  return { controller, call: page.server.last() };
+}
+
+function earlyAnswer(page, path, response, expect = 'json') {
+  const controller = new AbortController();
+  page.window.__solEarly.reads[ORIGIN + path] = {
+    response: Promise.resolve(response), controller, startedAt: page.context.Date.now(), expect,
+  };
+  return controller;
+}
+
+const JSON_TYPE = { 'Content-Type': 'application/json' };
+
+asyncCase('early: a plain success is adopted and asked once', async () => {
+  const page = makePage();
+  earlyTable(page);
+  const { call } = earlyRead(page, '/app/home/api/pulse');
+  const read = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  assert.strictEqual(page.server.calls.length, 1, 'no second request');
+  call.respond(200, '{"a":1}', JSON_TYPE);
+  await flush();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(read.value)), { a: 1 });
+  assert.strictEqual(page.window.__solEarly.stats.adopted, 1);
+});
+
+asyncCase('early: a plain fetch adopts by its exact address too', async () => {
+  const page = makePage();
+  earlyTable(page);
+  const { call } = earlyRead(page, '/app/stats/api/stats');
+  const read = settledState(page.window.fetch('/app/stats/api/stats', { credentials: 'same-origin' }));
+  await flush();
+  call.respond(200, '{"b":2}', JSON_TYPE);
+  await flush();
+  assert.strictEqual(page.server.calls.length, 1);
+  assert.strictEqual(read.value.status, 200);
+});
+
+const UNUSABLE = [
+  ['a redirect', () => ({ ok: true, status: 200, redirected: true, headers: new Headers(JSON_TYPE), body: null })],
+  ['a 401', () => new Response('{}', { status: 401, headers: JSON_TYPE })],
+  ['a 403', () => new Response('{}', { status: 403, headers: JSON_TYPE })],
+  ['a page where JSON was expected', () => new Response('<html>', { status: 200, headers: { 'Content-Type': 'text/html' } })],
+];
+for (const [label, response] of UNUSABLE) {
+  asyncCase(`early: ${label} is thrown away and the view asks through apiJson`, async () => {
+    const page = makePage();
+    earlyTable(page);
+    earlyAnswer(page, '/app/home/api/pulse', response());
+    const read = settledState(page.window.apiJson('/app/home/api/pulse'));
+    await flush();
+    assert.strictEqual(page.server.calls.length, 1, 'the real request went out');
+    page.server.last().respond(200, '{"c":3}', JSON_TYPE);
+    await flush();
+    assert.strictEqual(read.value.c, 3);
+    assert.strictEqual(page.window.__solEarly.stats.refetched, 1);
+  });
+}
+
+asyncCase('early: a 401 on the real request still signs in, exactly as today', async () => {
+  const page = makePage();
+  earlyTable(page);
+  earlyAnswer(page, '/app/home/api/pulse', new Response('{}', { status: 401, headers: JSON_TYPE }));
+  const read = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  page.server.last().respond(401, '{}', JSON_TYPE);
+  await flush();
+  assert.deepStrictEqual(page.assigned, ['/']);
+  assert.ok(read.error);
+});
+
+asyncCase('early: a gateway failure spends one of the two ordinary retries, never an extra one', async () => {
+  const page = makePage();
+  earlyTable(page);
+  earlyAnswer(page, '/app/home/api/pulse', new Response('', { status: 503 }));
+  const read = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await page.clock.advance(2000);
+  assert.strictEqual(page.server.calls.length, 1, 'first retry');
+  page.server.last().respond(503);
+  await page.clock.advance(5000);
+  assert.strictEqual(page.server.calls.length, 2, 'second and last retry');
+  page.server.last().respond(503);
+  await page.clock.advance(10000);
+  assert.strictEqual(page.server.calls.length, 2, 'no third request');
+  assert.ok(read.error);
+});
+
+asyncCase('early: in flight past the bound is kept, and expires with no second request', async () => {
+  const page = makePage();
+  earlyTable(page);
+  earlyRead(page, '/app/stats/api/stats');
+  await page.clock.advance(25000);
+  const read = settledState(page.window.apiJson('/app/stats/api/stats'));
+  await page.clock.advance(4000);
+  assert.strictEqual(read.done, false, 'adopted, with what is left of its bound');
+  await page.clock.advance(2000);
+  assert.strictEqual(read.error?.name, 'TimeoutError');
+  assert.strictEqual(read.error?.deadline, 'first-byte');
+  assert.strictEqual(page.server.calls.length, 1, 'a read past its bound is not asked again');
+});
+
+asyncCase('early: a single-flight route keeps its own longer bound', async () => {
+  const page = makePage();
+  earlyTable(page);
+  earlyRead(page, '/app/health/api/state');
+  await page.clock.advance(40000);
+  const read = settledState(page.window.apiJson('/app/health/api/state'));
+  await page.clock.advance(15000);
+  assert.strictEqual(read.done, false, 'inside the 60 s bound');
+  await page.clock.advance(6000);
+  assert.strictEqual(read.error?.name, 'TimeoutError');
+  assert.strictEqual(page.server.calls.length, 1);
+});
+
+asyncCase('early: a near-miss address is never adopted', async () => {
+  const page = makePage();
+  earlyTable(page);
+  earlyRead(page, '/app/entities/api/journal/summary?offset=0&limit=50');
+  const read = settledState(page.window.apiJson('/app/entities/api/journal/summary?offset=0&limit=25'));
+  await flush();
+  assert.strictEqual(page.server.calls.length, 2, 'it asked for its own');
+  page.server.last().respond(200, '{"own":true}', JSON_TYPE);
+  await flush();
+  assert.strictEqual(read.value.own, true);
+});
+
+asyncCase('early: taken once, so a later read of the same address asks the journal', async () => {
+  const page = makePage();
+  earlyTable(page);
+  const { call } = earlyRead(page, '/app/home/api/pulse');
+  const first = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  call.respond(200, '{"n":1}', JSON_TYPE);
+  await flush();
+  assert.strictEqual(first.value.n, 1);
+  const again = settledState(page.window.apiJson('/app/home/api/pulse'));
+  await flush();
+  assert.strictEqual(page.server.calls.length, 2);
+  page.server.last().respond(200, '{"n":2}', JSON_TYPE);
+  await flush();
+  assert.strictEqual(again.value.n, 2);
+});
+
+asyncCase('early: settle aborts what nothing took, and nothing is adopted after it', async () => {
+  const page = makePage();
+  earlyTable(page);
+  const { controller } = earlyRead(page, '/app/home/api/briefing');
+  page.window.settleEarly();
+  assert.strictEqual(controller.signal.aborted, true);
+  assert.strictEqual(page.window.__solEarly.stats.unclaimed, 1);
+  const read = settledState(page.window.apiJson('/app/home/api/briefing'));
+  await flush();
+  assert.strictEqual(page.server.calls.length, 2, 'asked for itself');
+  page.server.last().respond(200, '{"d":1}', JSON_TYPE);
+  await flush();
+  assert.strictEqual(read.value.d, 1);
+});
+
+asyncCase('early: a view the owner left aborts the read and it is never drawn', async () => {
+  const page = makePage();
+  earlyTable(page, 'home');
+  const { controller, call } = earlyRead(page, '/app/home/api/pulse');
+  assert.strictEqual(page.window.claimEarlyView('settings'), false);
+  assert.strictEqual(controller.signal.aborted, true);
+  assert.strictEqual(call.aborted, true);
+  assert.strictEqual(page.window.__solEarly.reads, null);
+});
+
+asyncCase('early: the mount adopts the fragment, and a second mount adopts nothing', async () => {
+  const page = mountPage();
+  earlyTable(page, 'x');
+  const { call } = earlyRead(page, '/app/x/workspace', 'html');
+  const first = settledState(page.window.mountWorkspaceFragment('/app/x/workspace', { appName: 'x' }));
+  await flush();
+  assert.strictEqual(page.server.calls.length, 1);
+  call.respond(200, '<div id="v"></div>', { 'Content-Type': 'text/html; charset=utf-8' });
+  await page.clock.advance(100);
+  assert.ok(first.done && !first.error, 'mounted');
+  assert.strictEqual(page.window.__solEarly.stats.adopted, 1);
+  earlyRead(page, '/app/x/api/state');
+  const second = settledState(page.window.mountWorkspaceFragment('/app/x/workspace', { appName: 'x' }));
+  await flush();
+  assert.strictEqual(page.server.calls.length, 3, 'the second mount asked for its own fragment');
+  page.server.last().respond(200, '<div></div>', { 'Content-Type': 'text/html' });
+  await page.clock.advance(100);
+  assert.ok(second.done);
+  assert.strictEqual(page.window.__solEarly.reads, null, 'the first mount\'s leftovers are gone');
+});
+
+asyncCase('early: an adopted read belongs to the mount that used it', async () => {
+  const page = mountPage();
+  earlyTable(page, 'x');
+  const { controller } = earlyRead(page, '/app/x/api/state');
+  page.window.beginViewGeneration();
+  page.window.claimEarlyView('x');
+  const read = settledState(page.window.apiJson('/app/x/api/state'));
+  await flush();
+  page.window.beginViewGeneration();
+  await flush();
+  assert.strictEqual(controller.signal.aborted, true);
+  assert.strictEqual(read.done, false, 'never delivered to the view that left');
+});
+
+// The page's own head script, against a table like the one the build writes.
+function runHead({ pathname, search = '', hash = '', table }) {
+  const page = fs.readFileSync(path.join(crateDir, 'assets/static/shell.html'), 'utf8');
+  const script = page.match(/<script>\s*\/\/ The journal's front door[\s\S]*?<\/script>/)[0]
+    .replace(/^<script>/, '').replace(/<\/script>$/, '')
+    .replace('{/*entry-table*/}', JSON.stringify(table));
+  const asked = [];
+  const links = [];
+  const location = { pathname, search, hash };
+  Object.defineProperty(location, 'href', { get: () => ORIGIN + location.pathname + location.search + location.hash });
+  const window = { location, addEventListener() {} };
+  window.history = {
+    state: null,
+    replaceState(_state, _title, url) {
+      const next = new URL(url, ORIGIN);
+      location.pathname = next.pathname;
+      location.hash = next.hash;
+    },
+  };
+  const context = {
+    window,
+    document: {
+      createElement: () => ({}),
+      head: { appendChild: (link) => links.push(link) },
+    },
+    fetch: (url) => { asked.push(new URL(url).pathname); return Promise.resolve(); },
+    AbortController,
+    URL,
+    URLSearchParams,
+    Date,
+    Object,
+  };
+  vm.runInNewContext(script, context);
+  return { asked, links, window };
+}
+
+const HEAD_TABLE = {
+  views: {
+    home: {
+      fragment: '/app/home/workspace',
+      scripts: [{ src: '/h/home.js' }, { src: '/h/week.js', routePrefix: '/app/home/week/' }],
+      styles: ['/h/home.css'],
+      reads: [{ route: '/app/home/', urls: ['/app/home/api/pulse', '/app/home/api/briefing'] }],
+    },
+    transcripts: {
+      fragment: '/app/transcripts/workspace',
+      scripts: [],
+      styles: [],
+      reads: [{ route: '/app/transcripts/{day}', urls: ['/app/transcripts/api/day/{day}'] }],
+      openDay: { route: '/app/transcripts/', url: '/app/transcripts/api/open-day' },
+    },
+  },
+};
+const SHELL_READS = ['/api/shell', '/api/streams/labels'];
+
+asyncCase('head: a cold / starts home, read from the path after it becomes /app/home/', async () => {
+  const { asked, links } = runHead({ pathname: '/', table: HEAD_TABLE });
+  assert.deepStrictEqual(asked, [...SHELL_READS, '/app/home/workspace', '/app/home/api/pulse', '/app/home/api/briefing']);
+  assert.deepStrictEqual(links.map((link) => [link.href, link.as]), [['/h/home.js', 'script'], ['/h/home.css', 'style']]);
+});
+
+asyncCase('head: a dated route reads its own day; an undated one reads what picks the day', async () => {
+  assert.ok(runHead({ pathname: '/app/transcripts/20260731', table: HEAD_TABLE }).asked.includes('/app/transcripts/api/day/20260731'));
+  const undated = runHead({ pathname: '/app/transcripts/', table: HEAD_TABLE }).asked;
+  assert.ok(undated.includes('/app/transcripts/api/open-day'));
+  assert.ok(!undated.some((url) => url.startsWith('/app/transcripts/api/day/')), 'the page never works out a date');
+});
+
+asyncCase('head: a query or a hash leaves the reads to the view; the code still starts', async () => {
+  for (const extra of [{ search: '?facet=work' }, { hash: '#runs' }]) {
+    const { asked } = runHead({ pathname: '/app/home/', table: HEAD_TABLE, ...extra });
+    assert.deepStrictEqual(asked, [...SHELL_READS, '/app/home/workspace']);
+  }
+});
+
+asyncCase('head: a route without a declaration, or an unknown view, starts no reads', async () => {
+  assert.deepStrictEqual(runHead({ pathname: '/app/home/week/2026-W31/', table: HEAD_TABLE }).asked, [...SHELL_READS, '/app/home/workspace']);
+  assert.deepStrictEqual(runHead({ pathname: '/app/constructor/', table: HEAD_TABLE }).asked, SHELL_READS);
+});
+
 function mountPage() {
   const page = makePage({ scripts: ['api.js', 'mount-workspace.js'] });
   page.window.SurfaceState = {

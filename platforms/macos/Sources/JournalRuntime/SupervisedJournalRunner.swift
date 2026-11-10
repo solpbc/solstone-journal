@@ -234,6 +234,7 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
     private var currentKey: String?
     private var stopping = false
     private var breakerTripped = false
+    private var consecutiveGateBlocks = 0
     private var terminalDiagnostic: JournalDiagnostic?
     private var generationRecords: [UInt64: GenerationRecord] = [:]
     private var activeGeneration: UInt64?
@@ -321,6 +322,7 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
         )
         currentKey = runtime.key
         breakerTripped = false
+        consecutiveGateBlocks = 0
         terminalDiagnostic = nil
         stopping = false
         try await launch(
@@ -352,6 +354,7 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
         guard operation == preparationGeneration else { throw CancellationError() }
         stopping = false
         breakerTripped = false
+        consecutiveGateBlocks = 0
         terminalDiagnostic = nil
         try await launch(
             runtime: launchRequest.runtime,
@@ -733,32 +736,39 @@ public actor SupervisedJournalRunner: SupervisedChildRunning {
                 receiptContext: launchRequest.receiptContext,
                 automaticReplacement: true
             )
-        } catch SupervisedJournalRunnerError.gateBlocked(let blockage) {
-            // A start, restart or stop that began while the gate ran owns the
-            // runner now; this attempt has nothing left to report.
+            consecutiveGateBlocks = 0
+        } catch {
+            // A start, restart or stop that began while this launch was in
+            // flight owns the runner now; this attempt has nothing to report,
+            // and reporting it would stop the journal that start brought up.
             guard preparationGeneration == preparationBeforeLaunch &+ 1,
                   !stopping,
                   activeGeneration == nil,
-                  pendingRelaunchGeneration == nil else { return }
-            // A blocked gate is one more failed attempt, not the end: the check
-            // may not have been able to run (launchd slow under memory pressure,
-            // ports not yet released). The usual breaker still bounds retries.
-            recordUnexpectedExit()
-            if unexpectedExitTimes.count < restartLimit, let exitedRecord {
-                Logger.journal.warning("journal-lifecycle: runner-backoff-gate-blocked retry=true unexpectedCount=\(self.unexpectedExitTimes.count, privacy: .public)")
-                generationRecords[generation] = exitedRecord
-                scheduleBackoffRelaunch(afterGeneration: generation)
+                  pendingRelaunchGeneration == nil,
+                  !(error is CancellationError) else { return }
+            if case SupervisedJournalRunnerError.gateBlocked(let blockage) = error {
+                // A blocked gate is one more failed attempt, not the end: the
+                // check may not have been able to run (launchd slow under memory
+                // pressure, ports not yet released). Counted without a time
+                // window, so a slow gate cannot retry forever.
+                consecutiveGateBlocks += 1
+                if consecutiveGateBlocks < restartLimit, let exitedRecord {
+                    Logger.journal.warning("journal-lifecycle: runner-backoff-gate-blocked retry=true count=\(self.consecutiveGateBlocks, privacy: .public)")
+                    generationRecords[generation] = exitedRecord
+                    statusSink(.restarting(generation: nil))
+                    scheduleBackoffRelaunch(afterGeneration: generation)
+                    return
+                }
+                Logger.journal.error("journal-lifecycle: runner-backoff-gate-blocked retry=false count=\(self.consecutiveGateBlocks, privacy: .public)")
+                let diagnostic = JournalDiagnostic(
+                    commandLabel: blockage.diagnostic.commandLabel,
+                    outputExcerpt: blockage.ownerMessage
+                )
+                terminalDiagnostic = diagnostic
+                breakerTripped = true
+                statusSink(.stopped(diagnostic))
                 return
             }
-            Logger.journal.error("journal-lifecycle: runner-backoff-gate-blocked retry=false unexpectedCount=\(self.unexpectedExitTimes.count, privacy: .public)")
-            let diagnostic = JournalDiagnostic(
-                commandLabel: blockage.diagnostic.commandLabel,
-                outputExcerpt: blockage.ownerMessage
-            )
-            terminalDiagnostic = diagnostic
-            breakerTripped = true
-            statusSink(.stopped(diagnostic))
-        } catch {
             Logger.journal.error("journal-lifecycle: runner-backoff-relaunch-failed")
             let diagnostic = JournalDiagnostic(
                 commandLabel: "solstone journal start --hosted-parent",

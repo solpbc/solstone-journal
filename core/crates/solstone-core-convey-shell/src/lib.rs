@@ -1804,6 +1804,9 @@ fn router_with_roots(
         .route("/app/more/", get(more_shell))
         .route("/app/more/workspace", get(more_workspace))
         .route("/app/more/static/{*rest}", get(more_static))
+        .route("/app/sources/", get(sources_shell))
+        .route("/app/sources/workspace", get(sources_workspace))
+        .route("/app/sources/static/{*rest}", get(sources_static))
         .merge(solstone_core_entities::api_router(journal_root.clone()))
         .merge(solstone_core_settings_web::routes(journal_root.clone()))
         .merge(solstone_core_health_web::routes(journal_root.clone()))
@@ -1995,6 +1998,18 @@ async fn more_workspace() -> Response {
 
 async fn more_static(Path(rest): Path<String>) -> Response {
     asset_response(&format!("/app/more/static/{rest}"))
+}
+
+async fn sources_shell() -> Response {
+    asset_response("/static/shell.html")
+}
+
+async fn sources_workspace() -> Response {
+    asset_response("/app/sources/workspace")
+}
+
+async fn sources_static(Path(rest): Path<String>) -> Response {
+    asset_response(&format!("/app/sources/static/{rest}"))
 }
 
 async fn streams_labels_api(Extension(journal): Extension<Arc<JournalRoot>>) -> Response {
@@ -2190,6 +2205,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sources_shell_and_workspace_are_served() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        fs::create_dir_all(journal.path().join("config")).expect("config directory");
+        fs::write(
+            journal.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        )
+        .expect("journal config");
+        let app = router(journal.path().to_path_buf());
+        for path in [
+            "/app/sources/",
+            "/app/sources/workspace",
+            "/app/sources/static/sources.js",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).expect("request"))
+                .await
+                .expect("router responds");
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body");
+            let text = String::from_utf8(body.to_vec()).expect("utf-8");
+            assert!(!text.contains("404 Not Found"), "{path}");
+            if path.ends_with("workspace") {
+                assert!(text.contains("id=\"sources-root\""), "{path}");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn every_served_app_redirects_its_bare_path_including_the_mounted_agents_app() {
         let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
         fs::create_dir_all(journal.path().join("config")).expect("config directory");
@@ -2361,7 +2408,8 @@ mod tests {
         assert!(deleted["trash"]["id"].is_string(), "{deleted}");
 
         for (path, expected) in [
-            ("/app/transcripts/", StatusCode::FOUND),
+            ("/app/transcripts/", StatusCode::OK),
+            ("/app/transcripts/api/open-day", StatusCode::OK),
             ("/app/transcripts/workspace", StatusCode::OK),
             ("/app/transcripts/20260731", StatusCode::OK),
             ("/app/transcripts/api/index", StatusCode::OK),

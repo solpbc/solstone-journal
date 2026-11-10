@@ -1,3 +1,4 @@
+<!-- first-read: /app/import/ -> /app/import/api/sources /app/import/api/list?page=1&per_page=100&source= -->
 <script src="/static/vendor/marked/marked.min.js"></script>
 <script src="/static/vendor/dompurify/dompurify.min.js"></script>
 <style>
@@ -789,6 +790,9 @@
 function importErrorMessage(data, fallback) {
   if (data?.reason_code === 'invalid_operation_for_state') {
     switch (data.detail) {
+      case 'content already imported':
+      case 'content already imported; will not start':
+        return "you've already imported this file.";
       case 'import already started or processed':
         return 'this import has already started. check its progress in your imports.';
       default:
@@ -2084,11 +2088,15 @@ async function loadImports() {
   loadingMoreGeneration = null;
   const url = `/app/import/api/list?page=1&per_page=${IMPORT_PAGE_SIZE}&source=${encodeURIComponent(currentSourceFilter)}`;
   try {
-    // A source list that can't load ends in the history's error state below,
-    // not in a loading spinner that never resolves.
+    // The history read starts beside the source list; the history is drawn
+    // after the list, which names its sources. A source list that can't load
+    // ends in the history's error state below, not in a loading spinner that
+    // never resolves.
+    const listRead = window.apiJson(url);
+    listRead.catch(() => {});
     await loadSourceGrid();
     if (generation !== historyRequestGeneration) return false;
-    const data = await window.apiJson(url);
+    const data = await listRead;
     if (generation !== historyRequestGeneration) return false;
     if (!Array.isArray(data.imports) || !Array.isArray(data.source_options) || typeof data.total !== 'number' || typeof data.page !== 'number' || typeof data.pages !== 'number') {
       throw malformedImportHistoryResponse(url);
@@ -3899,7 +3907,6 @@ function initImportWorkspace() {
       }
     };
     window.addEventListener('pagehide', teardown);
-    window.addEventListener('unload', teardown);
   }
 
   // The progress panel renders from the import list, so the list has to be in
@@ -4398,7 +4405,6 @@ function initImportDetail() {
       }
     };
     window.addEventListener('pagehide', detailTeardown);
-    window.addEventListener('unload', detailTeardown);
   }
 }
 

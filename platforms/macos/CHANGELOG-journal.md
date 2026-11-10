@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- if you also set up your journal from Terminal, the journal app now takes over when it opens. before, it could stop on "couldn't verify journal service ownership" and not start your journal.
-- if your journal stops unexpectedly and the journal app can't check right away whether something else is running it, the app now tries again. if it still can't start your journal, it says why.
+- if you also set up your journal from Terminal, the journal app now takes over from the Terminal setup when it opens or starts your journal, after letting your journal stop cleanly. before, it could stop on "couldn't verify journal service ownership" and not start your journal.
+- if your journal stops unexpectedly and the journal app can't check right away whether something else is running it, the app now tries again and shows your journal as starting. if it still can't start your journal, it says why.
+- pressing start or stop while your journal is starting, or restart while it's recovering, now does what you pressed. before, the earlier attempt could stop your journal again or show the wrong state.
 
 ## [2.0.73 (build 125)] - 2026-11-09
 

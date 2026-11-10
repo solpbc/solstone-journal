@@ -296,6 +296,7 @@ final class JournalWindowModel {
         UICopy.JOURNAL_SPAWN_SERVICE_CHECK_FAILED,
         UICopy.JOURNAL_SPAWN_BLOCKED_PORTS,
         UICopy.JOURNAL_SPAWN_PORT_CHECK_FAILED,
+        UICopy.JOURNAL_SPAWN_PORT_HELD_ELSEWHERE,
     ]
 
     var homeOffer: JournalHomeOffer {

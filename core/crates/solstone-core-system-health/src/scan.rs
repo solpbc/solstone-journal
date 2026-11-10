@@ -461,8 +461,12 @@ fn archive_audio_state(
     DataState::Pending
 }
 
+/// The streams that held body day-summary cards, retired but still in journals.
+const RETIRED_BODY_CARD_STREAMS: [&str; 3] =
+    ["import.apple_health", "import.oura", "import.strava"];
+
 fn is_markdown_only_body_card_segment(stream_parent_name: &str, files: &[PathBuf]) -> bool {
-    if !solstone_core_body_source::health_card_streams().any(|stream| stream == stream_parent_name)
+    if !RETIRED_BODY_CARD_STREAMS.contains(&stream_parent_name)
         || !markdown_transcript_files(files)
             .iter()
             .any(|path| has_nonempty_text(path))
@@ -810,8 +814,7 @@ mod tests {
 
     #[test]
     fn health_card_streams_registry_scan_exemption() {
-        let streams = solstone_core_body_source::health_card_streams().collect::<Vec<_>>();
-        assert!(!streams.is_empty());
+        let streams = RETIRED_BODY_CARD_STREAMS.to_vec();
         assert!(streams.contains(&"import.apple_health"));
         assert!(streams.contains(&"import.oura"));
 

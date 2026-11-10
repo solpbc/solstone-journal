@@ -34,6 +34,8 @@ pub enum PreviewError {
     InvalidRequest(String),
     NotFound(String),
     PlanFailed(String),
+    /// The importer's own words for what the page can't start, shown as they are.
+    Refused(String),
 }
 
 impl PreviewError {
@@ -44,7 +46,7 @@ impl PreviewError {
             Self::SourceChanged(_) => ImportErrorKind::SourceChanged,
             Self::InvalidRequest(_) => ImportErrorKind::InvalidRequest,
             Self::NotFound(_) => ImportErrorKind::NotFound,
-            Self::PlanFailed(_) => ImportErrorKind::PlanFailed,
+            Self::PlanFailed(_) | Self::Refused(_) => ImportErrorKind::PlanFailed,
         }
     }
 
@@ -57,7 +59,7 @@ impl PreviewError {
             Self::NotFound(_) => {
                 "this import or its source wasn't found, so choose the source again."
             }
-            Self::PlanFailed(_) => "the import could not be prepared.",
+            Self::PlanFailed(_) | Self::Refused(_) => "the import could not be prepared.",
         }
     }
 
@@ -68,14 +70,18 @@ impl PreviewError {
             Self::SourceChanged(s)
             | Self::InvalidRequest(s)
             | Self::NotFound(s)
-            | Self::PlanFailed(s) => s.as_str(),
+            | Self::PlanFailed(s)
+            | Self::Refused(s) => s.as_str(),
         }
     }
 }
 
 pub(crate) fn preview_error_body(reason_code: &str, error: &PreviewError) -> Value {
     json!({
-        "error": error.owner_sentence(),
+        "error": match error {
+            PreviewError::Refused(words) => words.as_str(),
+            other => other.owner_sentence(),
+        },
         "reason_code": reason_code,
         "detail": error.detail(),
         "kind": error.kind().as_wire(),
@@ -245,16 +251,15 @@ fn preview_command(
 
 fn size_from_preview(run: CliRun) -> Result<Value, PreviewError> {
     if run.exit_code != 0 {
+        if run.stderr.trim() == solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL {
+            return Err(PreviewError::Refused(run.stderr.trim().to_owned()));
+        }
         return Err(PreviewError::PlanFailed(run.stderr));
     }
     let size: Value = serde_json::from_str(&run.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
-    // What the page can't start says so here: a queued run's own words don't
-    // reach the page, only that it failed.
-    if let Some(words) = size.get("page_refusal").and_then(Value::as_str) {
-        return Err(PreviewError::PlanFailed(words.to_owned()));
-    }
+    refuse_what_the_page_cant_start(&size)?;
     require_size_preview(size)
 }
 
@@ -280,6 +285,15 @@ fn checked_input(root: &Path, data: &Value) -> Result<Input, PreviewError> {
         ));
     }
     Ok(input)
+}
+
+/// What the page can't start says so here: a queued run's own words don't reach
+/// the page, only that it failed.
+fn refuse_what_the_page_cant_start(size: &Value) -> Result<(), PreviewError> {
+    match size.get("page_refusal").and_then(Value::as_str) {
+        Some(words) => Err(PreviewError::Refused(words.to_owned())),
+        None => Ok(()),
+    }
 }
 
 fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
@@ -649,6 +663,7 @@ async fn plan_using(
     let size: Value = serde_json::from_slice(&output.stdout).map_err(|_| {
         PreviewError::PlanFailed("the importer did not return a size preview".to_owned())
     })?;
+    refuse_what_the_page_cant_start(&size)?;
     require_size_preview(size)
 }
 
@@ -1004,6 +1019,50 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// The route a desktop page takes: the importer as its own process.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_programs_refusal_reaches_the_page_on_the_desktop_route() {
+        use std::os::unix::fs::PermissionsExt as _;
+        const WORDS: &str = "saving an Apple Health export needs your go-ahead";
+        let root = tempfile::tempdir().unwrap();
+        let program = root.path().join("importer");
+        fs::write(
+            &program,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' '{{\"source\":\"apple_health\",\"page_refusal\":\"{WORDS}\"}}'\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        let options = json!({"zone": "UTC", "timestamp": "20261012_120000"});
+        let error = plan_using(
+            &program,
+            root.path(),
+            &options,
+            &ImportMetadata::new(),
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap_err();
+        let body = preview_error_body("import_preview_failed", &error);
+        assert_eq!(body["error"], WORDS, "{body}");
+    }
+
+    /// The route the phone takes: the importer in process, refused before it previews.
+    #[test]
+    fn the_phones_refusal_is_what_the_page_shows() {
+        let words = solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL;
+        let run = CliRun {
+            stdout: String::new(),
+            stderr: format!("{words}\n"),
+            exit_code: 1,
+        };
+        let error = size_from_preview(run).unwrap_err();
+        let body = preview_error_body("import_preview_failed", &error);
+        assert_eq!(body["error"], words, "{body}");
+    }
+
     #[test]
     fn a_preview_the_page_cant_start_shows_the_importers_own_words() {
         const WORDS: &str =
@@ -1018,7 +1077,7 @@ mod tests {
         };
         let error = size_from_preview(run).unwrap_err();
         let body = preview_error_body("import_preview_failed", &error);
-        assert!(body.to_string().contains(WORDS), "{body}");
+        assert_eq!(body["error"], WORDS, "{body}");
     }
     const ID: &str = "20261011_120000";
     fn fixture() -> (tempfile::TempDir, Value) {

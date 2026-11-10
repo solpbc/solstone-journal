@@ -39,7 +39,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2 = { workspace = true }
 log.workspace = true
-solstone-core-body-ingest.workspace = true
 solstone-core-callosum = { workspace = true, features = ["wire"] }
 solstone-core-entity-matching.workspace = true
 solstone-core-facets.workspace = true

@@ -31,13 +31,13 @@ use std::time::Duration;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use solstone_core_body_ingest::oura_sync::OuraHttp;
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
 use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
 use solstone_core_import::metadata::{
     AttemptRead, AttemptState, hold_import_lock, read_attempt_facts, read_provenance,
     record_unconfirmed_attempt_unlocked,
 };
+use solstone_core_import::oura_http::OuraHttp;
 use solstone_core_import::publish::{
     CreatedSegment, DayMarkerStatus, NativePublicationOperations, PublicationInput,
     PublicationStatus, PublishError, SegmentBindingOutcome, publish_with_operations,
@@ -188,7 +188,7 @@ pub struct OuraImportRequest<'a> {
     /// Oura, or something answering as it.
     pub transport: &'a mut dyn OuraHttp,
     pub auth: OuraAuth,
-    /// How long a refresh waits for the old sync's lock.
+    /// How long a refresh waits for the token lock.
     pub old_lock_timeout: Duration,
     /// How much a spill buffer holds; `DEFAULT_SPILL_BYTES` unless a test says.
     pub spill_bytes: usize,
@@ -1606,17 +1606,44 @@ fn recount_listed(journal: &Path, source: &BodySource, state: &mut RunState) {
     if total > shown {
         state.move_listed = false;
         state.listed_over = Some((shown, total));
+        keep_half_done_day_filed(journal, source, state);
     }
+}
+
+/// The stopped day's decisions were made with moving on. A window it hadn't
+/// refiled yet stays under the facet it has.
+fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut RunState) {
+    let Some(facet) = state.facet.clone() else {
+        return;
+    };
+    let Some(pending) = state.pending.as_mut() else {
+        return;
+    };
+    let target = facet_file_text(&facet);
+    let day = pending.day.clone();
+    let mut kept = 0;
+    for window in pending.windows.iter_mut().filter(|window| window.facet) {
+        let file = window_dir(journal, source, &(day.clone(), window.key.clone()))
+            .join("talents/facets.json");
+        if fs::read_to_string(&file).is_ok_and(|held| held != target) {
+            window.facet = false;
+            kept += 1;
+        }
+    }
+    pending.counts.refiled = pending.counts.refiled.saturating_sub(kept);
 }
 
 /// The summary's counts, with facets named by their titles.
 fn summary_counts(journal: &Path, state: &RunState) -> SummaryCounts {
     let mut counts = summary_of(state);
-    counts.listed_moved_from = counts
-        .listed_moved_from
-        .iter()
-        .map(|facet| crate::strava_convert::facet_title(journal, facet))
-        .collect();
+    let titles = |facets: &[String]| {
+        facets
+            .iter()
+            .map(|facet| crate::strava_convert::facet_title(journal, facet))
+            .collect::<Vec<_>>()
+    };
+    counts.listed_moved_from = titles(&counts.listed_moved_from);
+    counts.activities_refused = titles(&counts.activities_refused);
     counts
 }
 
@@ -1679,14 +1706,15 @@ pub fn run_apple_health_segments(
         let source_hash = solstone_core_import::hash_source(request.source)
             .map_err(|error| error.to_string())?
             .into_inner();
-        let export_hash = match solstone_core_body_ingest::apple_folder_export(request.source)
-            .map_err(|error| refusal_text(&error.to_string()))?
-        {
-            Some(export) => solstone_core_import::hash_source(&export)
-                .map_err(|error| error.to_string())?
-                .into_inner(),
-            None => String::new(),
-        };
+        let export_hash =
+            match solstone_core_import_sources::apple_export::apple_folder_export(request.source)
+                .map_err(|error| refusal_text(&error.to_string()))?
+            {
+                Some(export) => solstone_core_import::hash_source(&export)
+                    .map_err(|error| error.to_string())?
+                    .into_inner(),
+                None => String::new(),
+            };
         Ok((source_hash, export_hash))
     })
     .map(|outcome| AppleSegmentsOutcome {
@@ -1732,7 +1760,7 @@ pub fn run_oura_segments(
 /// Ask Oura for a range of days, with the journal's own tokens or through any
 /// transport that answers as Oura does, and publish what it answers as body
 /// windows, on the writer Apple's exports use. Runs under Oura's own lock, and
-/// takes the old sync's lock only around a token refresh. A run that stopped
+/// takes the token lock only around a token refresh. A run that stopped
 /// carries on when asked again with the same range, or with none.
 pub fn import_oura(
     journal: &Path,
@@ -1918,10 +1946,11 @@ fn refusal_text(error: &str) -> String {
     if error.contains("export_size_limit") {
         format!(
             "this export is larger than {} GiB, the most one import reads",
-            solstone_core_body_ingest::apple_scan_byte_bound() / (1024 * 1024 * 1024)
+            solstone_core_import_sources::apple_export::apple_scan_byte_bound()
+                / (1024 * 1024 * 1024)
         )
-    } else if error.contains(solstone_core_body_ingest::EXPORT_INCOMPLETE) {
-        solstone_core_body_ingest::EXPORT_INCOMPLETE_TEXT.to_owned()
+    } else if error.contains(solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE) {
+        solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT.to_owned()
     } else {
         error.to_owned()
     }
@@ -1979,6 +2008,8 @@ fn run_phases(
             // What the old run couldn't write whole stays a hole: this run won't
             // redo its days.
             let mut holes = holes_in(&old);
+            // It moved on an answer given to the run it's taking over.
+            recount_listed(journal, source, &mut old);
             // Another export, or a finished run's leftovers: everything the old
             // run wrote is bound and queued before its staging goes.
             // Its half-done day's windows are on disk as far as they got; what it

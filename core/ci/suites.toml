@@ -364,51 +364,6 @@ runtime = "none"
 features = ["full-tests"]
 
 [[package_suites]]
-id = "package::solstone-core-body-ingest"
-package = "solstone-core-body-ingest"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-body-rebuild"
-package = "solstone-core-body-rebuild"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-runtime = "none"
-features = ["full-tests"]
-
-[[package_suites]]
-id = "package::solstone-core-body-source"
-package = "solstone-core-body-source"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-body-store"
-package = "solstone-core-body-store"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-brain"
 package = "solstone-core-brain"
 set = "component"
@@ -2193,201 +2148,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-body-ingest::apple_ingest"
-package = "solstone-core-body-ingest"
-target = "apple_ingest"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-ingest::apple_export_shapes"
-package = "solstone-core-body-ingest"
-target = "apple_export_shapes"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-ingest::oura_ingest"
-package = "solstone-core-body-ingest"
-target = "oura_ingest"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-rebuild::rebuild"
-package = "solstone-core-body-rebuild"
-target = "rebuild"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-source::body_source_allocation"
-package = "solstone-core-body-source"
-target = "body_source_allocation"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-source::body_source_envelope"
-package = "solstone-core-body-source"
-target = "body_source_envelope"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-source::body_source_ledger"
-package = "solstone-core-body-source"
-target = "body_source_ledger"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-source::body_source_manifest"
-package = "solstone-core-body-source"
-target = "body_source_manifest"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-source::body_source_sources"
-package = "solstone-core-body-source"
-target = "body_source_sources"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-store::bundle_replay"
-package = "solstone-core-body-store"
-target = "bundle_replay"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-store::fixture_integration"
-package = "solstone-core-body-store"
-target = "fixture_integration"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-store::legacy_replay"
-package = "solstone-core-body-store"
-target = "legacy_replay"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-store::state_errors"
-package = "solstone-core-body-store"
-target = "state_errors"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-store::state_tables"
-package = "solstone-core-body-store"
-target = "state_tables"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-body-store::state_upsert"
-package = "solstone-core-body-store"
-target = "state_upsert"
-set = "component"
-areas = ["body"]
-platforms = ["linux", "macos", "windows"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-brain::brain_writer_component"
 package = "solstone-core-brain"
 target = "brain_writer_component"
@@ -2783,6 +2543,20 @@ runtime = "none"
 id = "solstone-core-convey-shell::network_pairing_dom"
 package = "solstone-core-convey-shell"
 target = "network_pairing_dom"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-convey-shell::sources_dom"
+package = "solstone-core-convey-shell"
+target = "sources_dom"
 set = "component"
 areas = ["services"]
 platforms = ["linux", "macos"]

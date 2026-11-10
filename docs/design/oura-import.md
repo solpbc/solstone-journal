@@ -31,9 +31,8 @@ The original stack recorded below is historical. Its current ownership is:
 
 | Piece | File | Role |
 |---|---|---|
-| Native body ingress | `core/crates/solstone-core-body-ingest/` | Oura OAuth, API sync, cursor, normalization, immutable native-bundle publication |
-| Native body contracts | `core/crates/solstone-core-body-source/` | Row/hash, manifest, envelope, ledger, and validation contracts |
-| Native body store | `core/crates/solstone-core-body-store/` + `solstone-core-body-rebuild/` | Ordered replay and atomic `imports/health-dedupe.sqlite` reconstruction |
+| Oura connection | `core/crates/solstone-core-import/` (`oura_connect`, `oura_http`) | Oura OAuth, HTTP transport, settings, token refresh and the held renewal |
+| Body import | `core/crates/solstone-core-import-host/` (`body_segments`, `oura_fetch`) | Asking Oura for days and writing them as body segments |
 | Python Oura reader | `solstone/think/importers/oura.py` | Preview and independent parse/normalization differential oracle only |
 | Process adapter | `solstone/think/body_native.py` | Version-matched native helper dispatch and result validation only |
 | Native body surface | `core/crates/solstone-core-convey-shell/` | Read-only archive and day presentation over normalized shards and the dedupe DB |

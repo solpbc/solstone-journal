@@ -594,10 +594,6 @@ mod composed_tests {
     struct Hooks;
 
     impl JournalMaintenance for Hooks {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            panic!("maintenance routines do not restore")
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             panic!("maintenance routines do not restore")
         }

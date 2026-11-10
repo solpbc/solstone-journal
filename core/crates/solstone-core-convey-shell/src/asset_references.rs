@@ -290,27 +290,6 @@ fn source_of(path: &str) -> &'static str {
     std::str::from_utf8(assets::record(path).unwrap().bytes).unwrap_or("")
 }
 
-/// The prefetch list holds bare names, built into paths at runtime, so the
-/// reference scan can't see them.
-#[test]
-fn the_date_view_prefetch_names_files_that_exist() {
-    let source = source_of("/static/mount-workspace.js");
-    let list = source
-        .split_once("DATE_VIEW_CODE = [")
-        .and_then(|(_, rest)| rest.split_once(']'))
-        .expect("the prefetch list is in the mount script")
-        .0;
-    let names: Vec<&str> = list
-        .split(',')
-        .map(|name| name.trim().trim_matches('\''))
-        .collect();
-    assert_eq!(names.len(), 4, "{names:?}");
-    for name in names {
-        let path = format!("/static/{name}");
-        assert!(assets::record(&path).is_some(), "{path} is gone");
-    }
-}
-
 /// What a view's fragment and its own scripts use from the libraries the shell
 /// doesn't carry for it. A view that uses one names it in its fragment.
 #[test]

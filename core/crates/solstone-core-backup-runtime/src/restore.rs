@@ -1459,10 +1459,6 @@ mod tests {
 
     struct Maintenance;
     impl JournalMaintenance for Maintenance {
-        fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-            Ok(())
-        }
-
         fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
             Ok(())
         }
@@ -2172,9 +2168,6 @@ mod tests {
     fn mobile_writer_refusal_precedes_copy_drain_maintenance_and_outcome() {
         struct ForbiddenMaintenance;
         impl JournalMaintenance for ForbiddenMaintenance {
-            fn rebuild_body_history(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
-                panic!("unsupported mobile writer must not rebuild")
-            }
             fn full_scan(&self, _: &Path) -> Result<(), JournalMaintenanceError> {
                 panic!("unsupported mobile writer must not scan")
             }

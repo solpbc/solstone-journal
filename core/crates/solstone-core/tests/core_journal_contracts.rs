@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[path = "body_reader_corpus.rs"]
-mod body_reader_corpus;
 #[path = "contract_process_isolation.rs"]
 mod contract_process_isolation;
 #[path = "importer_reachability.rs"]

@@ -118,6 +118,59 @@ struct SingleSupervisorGateTests {
         #expect(runner.invocations.allSatisfy { $0.arguments.first != "setup" })
     }
 
+    @Test func portHeldElsewhereIsCheckedOnlyAfterTheServiceAndPortsClear() async throws {
+        let fixture = try JournalRootFixture()
+        defer { fixture.clear() }
+        let runner = FakeSubprocessRunner()
+        runner.enqueueLsof(port: 7657, .success(exitCode: 1))
+        runner.enqueueLsof(port: 5015, .success(exitCode: 1))
+        let probes = BindProbeCounter()
+        let gate = SingleSupervisorGate(
+            runner: runner,
+            serviceRetirer: NoLegacyServiceRetirer(),
+            evidenceReader: NoJournalProcessEvidenceReader(),
+            pidExists: { _ in false },
+            terminate: { _, _ in 0 },
+            clock: GateClock(),
+            orphanGracePeriod: .zero,
+            portBindable: { probes.probe(); return false }
+        )
+
+        let result = await gate.prepareForSpawn(journalRoot: fixture.rootURL)
+
+        guard case .blocked(let blockage) = result, case .portHeldElsewhere = blockage else {
+            Issue.record("expected port-held-elsewhere, got \(result)")
+            return
+        }
+        #expect(blockage.ownerMessage == UICopy.JOURNAL_SPAWN_PORT_HELD_ELSEWHERE)
+        #expect(probes.count == 1)
+        #expect(runner.lsofPorts() == [7657, 5015])
+    }
+
+    @Test func aServiceForThisJournalIsRetiredBeforeThePortIsTested() async throws {
+        let fixture = try JournalRootFixture()
+        defer { fixture.clear() }
+        let probes = BindProbeCounter()
+        let gate = SingleSupervisorGate(
+            runner: FakeSubprocessRunner(),
+            serviceRetirer: BlockingLegacyServiceRetirer(),
+            evidenceReader: NoJournalProcessEvidenceReader(),
+            pidExists: { _ in false },
+            terminate: { _, _ in 0 },
+            clock: GateClock(),
+            orphanGracePeriod: .zero,
+            portBindable: { probes.probe(); return false }
+        )
+
+        let result = await gate.prepareForSpawn(journalRoot: fixture.rootURL)
+
+        guard case .blocked(.legacyServiceVerificationFailed) = result else {
+            Issue.record("expected the service check to answer first, got \(result)")
+            return
+        }
+        #expect(probes.count == 0)
+    }
+
     private func makeGate(
         runner: FakeSubprocessRunner,
         clock: GateClock,
@@ -135,6 +188,23 @@ struct SingleSupervisorGateTests {
         )
     }
 
+}
+
+private final class BindProbeCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var probes = 0
+    var count: Int { lock.withLock { probes } }
+    func probe() { lock.withLock { probes += 1 } }
+}
+
+private struct BlockingLegacyServiceRetirer: LegacyJournalServiceRetiring {
+    func retireLegacyService(journalRoot: URL) async -> LegacyJournalServiceRetirementResult {
+        .blocked(.inspectionFailure, JournalDiagnostic(commandLabel: "legacy journal service", outputExcerpt: "legacy service could not be inspected"))
+    }
+
+    func currentLegacyServicePID() async -> LegacyJournalServicePIDLookup {
+        .known(nil)
+    }
 }
 
 private struct NoLegacyServiceRetirer: LegacyJournalServiceRetiring {

@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- the journal dashboard now has sources. it shows when your devices last added something, and the source when the device named one.
 - you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. workouts, sleep and readings land on their own days, and show in the body app and to your agents. workouts and sleep show in search too. the import asks once which facet to file them under.
 - agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health or Oura and says where it holds nothing, and `get_transcript` pages through those readings.
 - you can delete a whole import from its page. its segments, any original file it kept and its row in your import history go to the trash together, and recovering it puts them all back. this covers every import except Strava, Apple Health, Oura and journal archives.

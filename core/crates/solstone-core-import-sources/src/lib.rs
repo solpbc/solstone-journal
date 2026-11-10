@@ -6,6 +6,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+pub mod apple_export;
 pub mod apple_health;
 pub mod apple_health_run;
 pub mod archive;
@@ -18,6 +19,7 @@ pub mod gemini;
 pub mod ics;
 pub mod ics_notes;
 pub mod image;
+mod nofollow_open;
 pub mod oura;
 pub mod oura_run;
 pub mod producer;

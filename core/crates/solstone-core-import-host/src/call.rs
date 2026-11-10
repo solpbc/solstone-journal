@@ -19,15 +19,13 @@
 //! waiting. Cancellation is not reported while a native call is still inside
 //! its owner.
 //!
-//! Apple Health import and Oura connect stay on the desktop importer. An
-//! ordinary Oura sync does too. A stored Oura sync that already carries
-//! `--confirm-body-save` or `--scheduled` keeps the existing handwritten
-//! approval and is not given a new connect, card, or schedule entry.
+//! Apple Health import, Oura connect and every Oura sync stay on the desktop
+//! importer.
 //!
 //! [`crate::cli_argv::admit_arguments`] parses the same grammar and touches
 //! no journal, supervisor, or source bytes. [`classify_arguments`] returns
 //! that parse: the sync backend, `--path` when present, and whether the
-//! command is a held Body entry or a stored Oura sync. It does not load saved
+//! command is a held Body entry. It does not load saved
 //! audio settings. [`WorkStop::linked`] observes a
 //! parent cancellation flag and a deadline at each check.
 //! [`WorkStop::linked_with_checkpoint`] also calls the caller's retained
@@ -777,6 +775,23 @@ mod tests {
         .unwrap();
         assert_eq!(document.body, BodyAdmission::NotBody);
         assert!(classify_arguments(&["--nope".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn an_apple_export_previewed_on_the_phone_says_it_stays_on_the_desktop() {
+        let journal = tempfile::tempdir().unwrap();
+        let export = journal.path().join("apple_health_export");
+        std::fs::create_dir_all(&export).unwrap();
+        std::fs::write(
+            export.join("export.xml"),
+            "<?xml version=\"1.0\"?>\n<HealthData locale=\"en_US\"></HealthData>\n",
+        )
+        .unwrap();
+        let seams = idle_seams(journal.path());
+        let args = vec![export.to_str().unwrap().to_owned()];
+        let run = preview(&args, journal.path(), &seams);
+        assert_eq!(run.exit_code, 1, "{}", run.stderr);
+        assert!(run.stderr.contains("desktop importer"), "{}", run.stderr);
     }
 
     #[test]

@@ -88,9 +88,16 @@
 
   // Initial paint and live updates share the same observation. Event bursts
   // must not queue whole-journal reads while that observation is in flight.
+  // Whether home's last pulse or briefing read failed: a page that opened into
+  // an outage reads again on the stream's first connect (connectionRecovery).
+  let lastReadFailed = false;
+
   function readPulse() {
     if (!pulseRequest) {
-      pulseRequest = apiJson(PULSE_URL).finally(function () { pulseRequest = null; });
+      pulseRequest = apiJson(PULSE_URL).then(
+        function (data) { lastReadFailed = false; return data; },
+        function (error) { lastReadFailed = true; throw error; },
+      ).finally(function () { pulseRequest = null; });
     }
     return pulseRequest;
   }
@@ -1748,6 +1755,7 @@
       renderBriefing(data, lastPulse);
       clearPulseRefreshError('pulse-briefing');
     } catch (error) {
+      lastReadFailed = true;
       logError(error, 'home: refreshBriefing failed');
       renderBriefingError(error);
     }
@@ -1818,15 +1826,24 @@
 
   // Events sent while the stream is down are not replayed, so the first
   // connected state after a disconnect re-reads what those events would have
-  // refreshed. The state reported at subscription is the baseline, not a
-  // reconnect; a page that subscribed while still connecting recovers on connect.
-  function connectionRecovery(refresh) {
-    let lastConnected = null;
+  // refreshed. The stream's first connect re-reads only when `firstReadFailed`
+  // says the page's own read didn't succeed (it opened into an outage);
+  // otherwise that read is what the connect would refresh.
+  function connectionRecovery(refresh, firstReadFailed) {
+    let everConnected = false;
+    let lost = false;
     return function (state) {
       const connected = !!(state && state.connected);
-      const recovered = connected && lastConnected === false;
-      lastConnected = connected;
-      if (recovered) refresh();
+      if (!connected) {
+        if (everConnected) lost = true;
+        return;
+      }
+      const first = !everConnected;
+      everConnected = true;
+      if (lost || (first && firstReadFailed && firstReadFailed())) {
+        lost = false;
+        refresh();
+      }
     };
   }
 
@@ -1936,7 +1953,7 @@
     const recover = connectionRecovery(function () {
       refreshChangedPulse();
       refreshBriefing();
-    });
+    }, function () { return lastReadFailed; });
     window.appEvents.onConnectionState?.(function (state) {
       if (!state?.connected) {
         pulseAppliedVersion = ++pulseReadVersion;
