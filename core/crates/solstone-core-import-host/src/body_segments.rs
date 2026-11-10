@@ -1645,7 +1645,11 @@ fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut Run
         }
         // Its facet was the only reason to publish it: its rows are unchanged
         // and it's already bound, so the summary counts it unchanged.
-        if window.publish && !window.write && window.taken.is_none() && dir.join("stream.json").exists() {
+        if window.publish
+            && !window.write
+            && window.taken.is_none()
+            && dir.join("stream.json").exists()
+        {
             window.publish = false;
             pending.counts.published = pending.counts.published.saturating_sub(1);
             pending.counts.unchanged += 1;
@@ -1872,18 +1876,28 @@ fn run_segments_text(
     // import. Once admitted, the run recorded it itself, before its terminal write.
     if let (Err(Err(error)), Some(import_id)) = (&result, request.exact_import)
         && !admitted.get()
+        // Another run (one from the command line, say) may have bound it meanwhile:
+        // nothing is written on an import that's its.
+        && latest_generation(journal, import_id) == 0
     {
         let code = if error.starts_with("another ") && error.contains(" import is running") {
             "busy"
         } else if error.contains(crate::cli_argv::FACET_REFUSAL_MARKER) {
             "facet"
-        } else if solstone_core_import_sources::body_status::code_for_run_error(error) == "disk_full"
+        } else if solstone_core_import_sources::body_status::code_for_run_error(error)
+            == "disk_full"
         {
             "disk_full"
         } else {
             "not_started"
         };
-        record_stop(journal, source, import_id, code, latest_generation(journal, import_id) + 1);
+        record_stop(
+            journal,
+            source,
+            import_id,
+            code,
+            latest_generation(journal, import_id) + 1,
+        );
     }
     result
 }
@@ -1919,7 +1933,9 @@ fn run_segments_bound(
         && (latest_generation(journal, exact) > 0 || holds_a_run(journal, exact))
     {
         admitted.set(true);
-        return Err(Err("this import has already run, so nothing was brought in.".to_owned()));
+        return Err(Err(
+            "this import has already run, so nothing was brought in.".to_owned(),
+        ));
     }
     let zone = read_or_create_zone(journal, source).map_err(Err)?;
     // Before anything touches an earlier run: an export that can't be read this
@@ -1978,7 +1994,13 @@ fn run_segments_bound(
         }
     };
     let refused_before_admission = |code: &str| {
-        record_stop(journal, source, &import_id, code, latest_generation(journal, &import_id) + 1);
+        record_stop(
+            journal,
+            source,
+            &import_id,
+            code,
+            latest_generation(journal, &import_id) + 1,
+        );
     };
     if solstone_core_import::refuse_if_live_running(journal, &import_id, source.stream).is_some() {
         refused_before_admission("busy");

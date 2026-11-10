@@ -125,23 +125,32 @@ fn apple_card_already_ran(root: &Path, import_id: &str, stopped_only: bool) -> b
     if stopped_only {
         // A recorded stop for the attempt as it stands, on an import that hasn't
         // finished: a finished one replays as it always has.
-        let applies = solstone_core_import_sources::body_status::read(root, import_id)
-            .is_some_and(|(_, generation)| match latest {
+        let applies = solstone_core_import_sources::body_status::read(root, import_id).is_some_and(
+            |(_, generation)| match latest {
                 Some(latest) => generation == latest,
                 None => generation == 1,
-            });
+            },
+        );
         return applies
             && solstone_core_import::project_import_result(root, import_id).status
                 != solstone_core_import::ProjectionStatus::Success;
     }
-    if dir.join(solstone_core_import_sources::body_status::STOP_FILE).exists() {
+    if dir
+        .join(solstone_core_import_sources::body_status::STOP_FILE)
+        .exists()
+    {
         return true;
     }
     let has_attempt = latest.is_some();
     has_attempt
-        || ["body-touched.jsonl", "body-progress.json", "summary.md", "manifest.json"]
-            .iter()
-            .any(|name| dir.join(name).exists())
+        || [
+            "body-touched.jsonl",
+            "body-progress.json",
+            "summary.md",
+            "manifest.json",
+        ]
+        .iter()
+        .any(|name| dir.join(name).exists())
 }
 
 fn already_ran() -> Response {
@@ -157,7 +166,10 @@ fn already_ran() -> Response {
 /// The arguments an Apple Health card start adds: the go-ahead, only when the
 /// start carries the preview token the card showed.
 #[cfg(test)]
-pub(crate) fn apple_card_arguments_for_tests(data: &Value, metadata: &ImportMetadata) -> Vec<String> {
+pub(crate) fn apple_card_arguments_for_tests(
+    data: &Value,
+    metadata: &ImportMetadata,
+) -> Vec<String> {
     apple_card_arguments(data, metadata, "20261010_120000")
 }
 
@@ -199,7 +211,10 @@ pub(crate) fn sweep_abandoned_strava_uploads(root: &Path) {
         let Ok(metadata) = read_import_metadata(root, &id) else {
             continue;
         };
-        if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE) {
+        if !matches!(
+            source_hint(&metadata).as_deref(),
+            Some(STRAVA_SOURCE | APPLE_SOURCE)
+        ) {
             continue;
         }
         let old_enough = entry
@@ -230,11 +245,14 @@ fn discard_terminal_strava_download(root: &Path, id: &str) {
     ) {
         return;
     }
-    if read_import_metadata(root, id)
-        .is_ok_and(|metadata| source_hint(&metadata).as_deref() == Some(STRAVA_SOURCE))
-        && let Err(error) = solstone_core_import::snapshot::discard_download(root, id)
+    if read_import_metadata(root, id).is_ok_and(|metadata| {
+        matches!(
+            source_hint(&metadata).as_deref(),
+            Some(STRAVA_SOURCE | APPLE_SOURCE)
+        )
+    }) && let Err(error) = solstone_core_import::snapshot::discard_download(root, id)
     {
-        log::warn!("could not remove the Strava download for {id}: {error}");
+        log::warn!("could not remove the upload for {id}: {error}");
     }
 }
 
@@ -1262,7 +1280,10 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
             source_hint(&metadata).as_deref(),
             Some(STRAVA_SOURCE | APPLE_SOURCE)
         ) {
-            return invalid_state("only a Strava or Apple Health import takes a facet here", None);
+            return invalid_state(
+                "only a Strava or Apple Health import takes a facet here",
+                None,
+            );
         }
         if !crate::body_facet::valid_import_facet(value) {
             return invalid_state("that isn't a facet choice", None);
@@ -1672,19 +1693,37 @@ pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>
 fn settle_on_exit(watch: TaskWatch, root: PathBuf, task_id: &str, timestamp: &str) {
     let task_id = task_id.to_owned();
     let timestamp = timestamp.to_owned();
+    // An Apple Health import holds its own attempt for as long as it runs, which
+    // can be hours, so its exit is waited for without the bound.
+    let apple =
+        read_import_metadata(&root, &timestamp).is_ok_and(|metadata| is_apple_card(&metadata));
     tokio::spawn(async move {
-        let bound = Duration::from_millis(solstone_core_import::RUNNING_ATTEMPT_BOUND_MS);
-        let Ok(Some(exit_code)) = tokio::time::timeout(bound, watch.exit_code(&task_id)).await
-        else {
+        let exit = if apple {
+            watch.exit_code(&task_id).await
+        } else {
+            let bound = Duration::from_millis(solstone_core_import::RUNNING_ATTEMPT_BOUND_MS);
+            tokio::time::timeout(bound, watch.exit_code(&task_id))
+                .await
+                .ok()
+                .flatten()
+        };
+        let Some(exit_code) = exit else {
             return;
         };
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = solstone_core_import::settle_exited_import(
-                &root,
-                &timestamp,
-                exit_code,
-                u64::try_from(now_ms()).unwrap_or_default(),
-            );
+            // An Apple Health import a live run holds (a command-line run that
+            // bound it while this one waited) isn't this exit's to settle.
+            let held = apple
+                && solstone_core_import::metadata::attempt_holder(&root, &timestamp)
+                    == solstone_core_import::metadata::AttemptHolder::Held;
+            if !held {
+                let _ = solstone_core_import::settle_exited_import(
+                    &root,
+                    &timestamp,
+                    exit_code,
+                    u64::try_from(now_ms()).unwrap_or_default(),
+                );
+            }
             announce_exit(&root, &timestamp);
         })
         .await;
@@ -1702,7 +1741,24 @@ fn announce_exit(root: &Path, timestamp: &str) {
     discard_terminal_strava_download(root, timestamp);
     let projection = solstone_core_import::project_import_result(root, timestamp);
     let emitter = solstone_core_import::EventEmitter::new(root, None);
-    match exit_event(timestamp, &projection) {
+    // An Apple Health import ends as its row reads: finished in full, or with
+    // its own words for anything else, never a bare "import failed".
+    let apple = crate::body_state::apple_imports(root);
+    let event = match crate::body_state::apple_row(root, timestamp, &apple) {
+        Some((state, words)) if state != "saved" => {
+            Some(ExitEvent::Error(solstone_core_import::ImporterError {
+                import_id: timestamp.to_owned(),
+                stage: state.to_owned(),
+                error: words,
+                duration_ms: projection.duration_ms.unwrap_or_default(),
+                partial_outputs: vec![],
+                generation: projection.generation,
+                attempt_id: projection.attempt_id.clone(),
+            }))
+        }
+        _ => exit_event(timestamp, &projection),
+    };
+    match event {
         Some(ExitEvent::Completed(value)) => {
             solstone_core_import::emit_importer_completed(&emitter, &value);
         }

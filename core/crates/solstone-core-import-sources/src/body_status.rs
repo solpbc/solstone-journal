@@ -67,7 +67,8 @@ pub fn code_for_source_stage(stage: &str) -> &'static str {
 /// reads the same whatever the system's language.
 #[must_use]
 pub fn code_for_error_text(text: &str) -> &'static str {
-    if text.contains(crate::apple_export::EXPORT_INCOMPLETE) || text.contains(EXPORT_INCOMPLETE_TEXT)
+    if text.contains(crate::apple_export::EXPORT_INCOMPLETE)
+        || text.contains(EXPORT_INCOMPLETE_TEXT)
     {
         return "export_incomplete";
     }
@@ -148,7 +149,9 @@ pub fn words(code: &str) -> &'static str {
         "not_this_import" => "this import doesn't hold that export, so nothing was brought in.",
         "facet" => "the facet chosen for it is muted or gone, so nothing was brought in.",
         "go_ahead" => "it didn't have your go-ahead, so nothing was brought in.",
-        "whole_export" => "an Apple Health import always reads the whole export, so nothing was brought in.",
+        "whole_export" => {
+            "an Apple Health import always reads the whole export, so nothing was brought in."
+        }
         _ => "it stopped before it finished.",
     }
 }
@@ -169,10 +172,18 @@ mod tests {
 
     #[test]
     fn a_runs_own_error_is_known_by_its_stage_its_marker_or_its_number() {
-        assert_eq!(code_for_run_error("body-ingest source: permission"), "permission");
-        assert_eq!(code_for_run_error("body-ingest source: archive"), "export_unreadable");
         assert_eq!(
-            code_for_run_error(&format!("stopped: 64 segments {STUCK_MARKER}; import again")),
+            code_for_run_error("body-ingest source: permission"),
+            "permission"
+        );
+        assert_eq!(
+            code_for_run_error("body-ingest source: archive"),
+            "export_unreadable"
+        );
+        assert_eq!(
+            code_for_run_error(&format!(
+                "stopped: 64 segments {STUCK_MARKER}; import again"
+            )),
             "windows_not_saving"
         );
         assert_eq!(code_for_run_error("something else"), "other");
@@ -182,10 +193,17 @@ mod tests {
     fn a_stop_is_recorded_beside_its_import_and_read_back() {
         let journal = tempfile::tempdir().unwrap();
         record(journal.path(), "20261010_120000", "busy", 1);
-        assert_eq!(read(journal.path(), "20261010_120000"), None, "no import, nothing written");
+        assert_eq!(
+            read(journal.path(), "20261010_120000"),
+            None,
+            "no import, nothing written"
+        );
         std::fs::create_dir_all(journal.path().join("imports/20261010_120000")).unwrap();
         record(journal.path(), "20261010_120000", "busy", 1);
-        assert_eq!(read(journal.path(), "20261010_120000"), Some(("busy".to_owned(), 1)));
+        assert_eq!(
+            read(journal.path(), "20261010_120000"),
+            Some(("busy".to_owned(), 1))
+        );
     }
 
     #[test]

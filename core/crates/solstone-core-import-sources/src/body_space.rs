@@ -32,7 +32,9 @@ pub struct Space {
 
 /// The nearest existing directory at or above `path`.
 fn existing(path: &Path) -> Option<PathBuf> {
-    path.ancestors().find(|candidate| candidate.is_dir()).map(Path::to_path_buf)
+    path.ancestors()
+        .find(|candidate| candidate.is_dir())
+        .map(Path::to_path_buf)
 }
 
 /// The free space an Apple import of an `export.xml` this size can count on.
@@ -44,7 +46,8 @@ fn free_for_apple_with(
     journal: &Path,
     available: &dyn Fn(&Path) -> Result<u64, String>,
 ) -> Result<u64, String> {
-    let staging = existing(&journal.join(APPLE.run_dir_rel)).ok_or("the journal folder is missing")?;
+    let staging =
+        existing(&journal.join(APPLE.run_dir_rel)).ok_or("the journal folder is missing")?;
     let at_staging = available(&staging)?;
     let at_journal = available(journal)?;
     Ok(at_staging.min(at_journal))
@@ -156,6 +159,10 @@ mod tests {
         let full = |_: &Path| Ok(RESERVE / 2);
         let short = apple_space_with(journal.path(), 0, true, &full).unwrap();
         assert!(!short.fits);
-        assert!(too_full_words(&short).contains("free up about 537 MB"), "{}", too_full_words(&short));
+        assert!(
+            too_full_words(&short).contains("free up about 537 MB"),
+            "{}",
+            too_full_words(&short)
+        );
     }
 }

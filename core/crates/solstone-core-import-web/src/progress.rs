@@ -32,10 +32,14 @@ fn body_progress(root: &Path, import_id: &str) -> Option<Value> {
     if !crate::lifecycle::is_apple_card(&metadata) {
         return None;
     }
-    let progress = std::fs::read(root.join("imports").join(import_id).join("body-progress.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .unwrap_or(Value::Null);
+    let progress = std::fs::read(
+        root.join("imports")
+            .join(import_id)
+            .join("body-progress.json"),
+    )
+    .ok()
+    .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    .unwrap_or(Value::Null);
     let live = solstone_core_import::project_import_result(root, import_id).status
         == solstone_core_import::ProjectionStatus::Running;
     Some(json!({"status": "body", "live": live, "body": progress}))
@@ -268,7 +272,10 @@ mod tests {
         solstone_core_import::write_import_metadata(root.path(), ID, &metadata).unwrap();
 
         fs::write(
-            root.path().join("imports").join(ID).join("body-progress.json"),
+            root.path()
+                .join("imports")
+                .join(ID)
+                .join("body-progress.json"),
             br#"{"phase":"write","days_done":3,"days_total":9}"#,
         )
         .unwrap();

@@ -1016,11 +1016,17 @@ mod tests {
             // Running as a user who can read anything, so nothing to show.
             return;
         }
-        assert_eq!(scan_apple_export(&zip, &mut |_| {}).unwrap_err().stage(), "permission");
+        assert_eq!(
+            scan_apple_export(&zip, &mut |_| {}).unwrap_err().stage(),
+            "permission"
+        );
         let folder = directory.0.join("folder");
         fs::create_dir(&folder).unwrap();
         fs::write(folder.join("export.xml"), b"<HealthData/>").unwrap();
         fs::set_permissions(folder.join("export.xml"), fs::Permissions::from_mode(0o000)).unwrap();
-        assert_eq!(detect_apple_source(&folder).unwrap_err().stage(), "permission");
+        assert_eq!(
+            detect_apple_source(&folder).unwrap_err().stage(),
+            "permission"
+        );
     }
 }

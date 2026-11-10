@@ -63,14 +63,23 @@ const ALREADY_RAN: &str = "this import has already run, so nothing was brought i
 /// was made by the page for this export and has never run; refuse otherwise
 /// before anything else is checked, so a start aimed at an import that already
 /// ran never changes it.
-pub(crate) fn accept_page_import(journal: &Path, import_id: &str, media: &str) -> Result<(), CliRun> {
+pub(crate) fn accept_page_import(
+    journal: &Path,
+    import_id: &str,
+    media: &str,
+) -> Result<(), CliRun> {
     let refuse = |words: &str| failure("", words, 1);
     if solstone_core_import::validate_timestamp(import_id).is_err() {
-        return Err(refuse("--import-id names no import, so nothing was brought in.\n"));
+        return Err(refuse(
+            "--import-id names no import, so nothing was brought in.\n",
+        ));
     }
     let dir = journal.join("imports").join(import_id);
-    let Ok(Some(metadata)) = solstone_core_import::metadata::read_provenance(journal, import_id) else {
-        return Err(refuse("--import-id names no import, so nothing was brought in.\n"));
+    let Ok(Some(metadata)) = solstone_core_import::metadata::read_provenance(journal, import_id)
+    else {
+        return Err(refuse(
+            "--import-id names no import, so nothing was brought in.\n",
+        ));
     };
     let has_attempt = !matches!(
         solstone_core_import::metadata::read_attempt_facts(&metadata),
@@ -78,7 +87,9 @@ pub(crate) fn accept_page_import(journal: &Path, import_id: &str, media: &str) -
     );
     if has_attempt
         || crate::body_segments::holds_a_run(journal, import_id)
-        || dir.join(solstone_core_import_sources::body_status::STOP_FILE).exists()
+        || dir
+            .join(solstone_core_import_sources::body_status::STOP_FILE)
+            .exists()
     {
         return Err(refuse(ALREADY_RAN));
     }
@@ -88,7 +99,9 @@ pub(crate) fn accept_page_import(journal: &Path, import_id: &str, media: &str) -
     };
     if !inside {
         solstone_core_import_sources::body_status::record(journal, import_id, "not_this_import", 1);
-        return Err(refuse("that import doesn't hold this export, so nothing was brought in.\n"));
+        return Err(refuse(
+            "that import doesn't hold this export, so nothing was brought in.\n",
+        ));
     }
     Ok(())
 }
@@ -116,12 +129,32 @@ pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: O
             "whole_export"
         } else if words.contains(crate::cli_argv::FACET_REFUSAL_MARKER) {
             "facet"
-        } else if solstone_core_import_sources::body_status::code_for_error_text(words) == "disk_full" {
+        } else if solstone_core_import_sources::body_status::code_for_error_text(words)
+            == "disk_full"
+        {
             "disk_full"
         } else {
             "not_started"
         };
         solstone_core_import_sources::body_status::record(journal, import_id, code, 1);
+    }
+    // An import another run has taken (a command-line run of the same export
+    // bound it while this one waited) keeps what it holds: this run ended
+    // nothing there.
+    let latest = match solstone_core_import::metadata::read_provenance(journal, import_id)
+        .ok()
+        .flatten()
+        .map(|metadata| solstone_core_import::metadata::read_attempt_facts(&metadata))
+    {
+        Some(solstone_core_import::metadata::AttemptRead::Present(facts)) => facts.generation,
+        _ => 0,
+    };
+    let ours = failed_with.is_none()
+        || latest == 0
+        || solstone_core_import_sources::body_status::read(journal, import_id)
+            .is_some_and(|(_, generation)| generation == latest);
+    if !ours {
+        return;
     }
     if let Err(error) = solstone_core_import::snapshot::discard_download(journal, import_id) {
         log::warn!("could not remove the Apple Health export for {import_id}: {error}");
@@ -173,10 +206,12 @@ pub(crate) fn preview_apple(
     facet: &ImportFacet,
     json_output: bool,
 ) -> CliRun {
-    let preview = match solstone_core_import_sources::apple_health::preview_export(Path::new(media)) {
+    let preview = match solstone_core_import_sources::apple_health::preview_export(Path::new(media))
+    {
         Ok(preview) => preview,
         Err(error) => {
-            let code = solstone_core_import_sources::body_status::code_for_source_stage(error.stage());
+            let code =
+                solstone_core_import_sources::body_status::code_for_source_stage(error.stage());
             let words = solstone_core_import_sources::body_status::words(code);
             return if json_output {
                 success(format!(

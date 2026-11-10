@@ -652,7 +652,11 @@ pub fn preview_export(source: &Path) -> Result<ApplePreview, BodyIngestError> {
                             .map(|time| time.timestamp())
                     };
                     if let (Some(begin), Some(end)) = (at("startDate"), at("endDate")) {
-                        let by = element.attributes.get("sourceName").cloned().unwrap_or_default();
+                        let by = element
+                            .attributes
+                            .get("sourceName")
+                            .cloned()
+                            .unwrap_or_default();
                         stages.entry(by).or_default().push((begin, end));
                     } else {
                         preview.refused += 1;

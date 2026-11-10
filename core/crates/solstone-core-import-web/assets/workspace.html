@@ -1266,6 +1266,14 @@ function sourceLabel(imp) {
 // `picking` adds select mode's first column: a checkbox for an import that can
 // be deleted, and an empty cell for one that can't.
 function renderImportRow(imp, picking = false) {
+  // What an Apple Health import's row says, by its state. Owner copy: voice-checked.
+  const BODY_STATE_WORDS = {
+    saved: 'saved',
+    partly_saved: 'partly saved',
+    stopped: 'stopped',
+    failed: 'not brought in',
+    didnt_start: "didn't start",
+  };
   const importedAtMs = (imp.imported_at || imp.created_at) * 1000;
   const importedAt = window.JournalFormat.timestamp(importedAtMs);
   const targetDayDisplay = imp.target_day ? window.JournalFormat.day(imp.target_day) : '—';
@@ -1275,17 +1283,22 @@ function renderImportRow(imp, picking = false) {
   let statusDetail = '';
   if (imp.status === 'success') {
     statusClass = 'success';
-    statusText = 'completed';
+    statusText = imp.body_state === 'saved' ? BODY_STATE_WORDS.saved : 'completed';
   } else if (imp.status === 'failed') {
     statusClass = 'failed';
-    statusText = 'failed';
-    if (imp.error) {
+    statusText = BODY_STATE_WORDS[imp.body_state] || 'failed';
+    if (imp.body_words) {
+      statusDetail = `<div class="progress-detail">${escapeHtml(imp.body_words)}</div>`;
+    } else if (imp.error) {
       const errorStage = imp.error_stage ? ` (${capitalizeStage(imp.error_stage)})` : '';
       statusDetail = `<div class="progress-detail">${escapeHtml(imp.error)}${escapeHtml(errorStage)}</div>`;
     }
   } else if (imp.status === 'unconfirmed') {
     statusClass = 'unconfirmed';
     statusText = 'unconfirmed';
+  } else if (imp.status === 'noted') {
+    statusClass = 'unconfirmed';
+    statusText = BODY_STATE_WORDS[imp.body_state] || 'stopped';
   } else if (imp.status === 'unavailable') {
     statusClass = 'unavailable';
     statusText = 'status unavailable';
@@ -1297,6 +1310,9 @@ function renderImportRow(imp, picking = false) {
     statusText = 'pending';
   }
 
+  if (imp.status === 'noted' && imp.body_words) {
+    statusDetail = `<div class="progress-detail">${escapeHtml(imp.body_words)}</div>`;
+  }
   if (imp.has_gaps) {
     statusDetail += `<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:var(--warn-ink);">contains gaps</div>`;
   }
@@ -3654,7 +3670,7 @@ async function reconcileImportState(importId, options = {}) {
     const canonicalStatus = archive && (res.archive_lookup_unknown || res.archive_active === false) ? 'unconfirmed' : res.status;
     const eventName = canonicalStatus === 'success'
       ? 'completed'
-      : (canonicalStatus === 'failed' || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable')
+      : (canonicalStatus === 'failed' || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable' || canonicalStatus === 'noted')
         ? 'error'
         : (canonicalStatus === 'running')
           ? 'status'
@@ -3674,9 +3690,12 @@ async function reconcileImportState(importId, options = {}) {
       has_gaps: res.has_gaps,
       duration_ms: res.duration_ms,
       date_range: res.date_range,
-      error: res.error,
-      error_stage: res.error_stage,
-      fromStall: fromStall
+      error: res.body_words || res.error,
+      error_stage: res.body_words ? null : res.error_stage,
+      body_state: res.body_state,
+      body_words: res.body_words,
+      // An Apple Health import that's still going isn't stalled, however long it takes.
+      fromStall: fromStall && !(res.thinking?.status === 'body' && res.thinking.live === true)
     };
     if (archive) {
       eventData.source_type = 'audio_archive';
@@ -3686,7 +3705,7 @@ async function reconcileImportState(importId, options = {}) {
         if (res[key] !== undefined) eventData[key] = res[key];
       }
     }
-    if (IMPORT_TERMINAL_EVENTS.has(eventName) || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable') {
+    if (IMPORT_TERMINAL_EVENTS.has(eventName) || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable' || canonicalStatus === 'noted') {
       clearPendingImport(importId);
     } else if (canonicalStatus === 'running') {
       trackPendingImport(importId);

@@ -115,18 +115,29 @@ fn a_preview_counts_what_an_export_holds_and_writes_nothing() {
     assert_eq!(size["schema"], "solstone.import.size.v1");
     assert_eq!(size["source"], "apple_health");
     let held = &size["apple_health"];
-    assert_eq!(held["span"], serde_json::json!(["2026-10-09", "2026-10-11"]));
+    assert_eq!(
+        held["span"],
+        serde_json::json!(["2026-10-09", "2026-10-11"])
+    );
     assert_eq!(held["workouts"], 1);
     assert_eq!(held["nights"], 2);
     assert_eq!(held["readings"], 1);
     assert_eq!(held["daily_totals"], 1);
-    assert_eq!(held["not_read"]["HKQuantityTypeIdentifierActiveEnergyBurned"], 1);
+    assert_eq!(
+        held["not_read"]["HKQuantityTypeIdentifierActiveEnergyBurned"],
+        1
+    );
     assert_eq!(
         held["export_bytes"],
-        std::fs::metadata(export.path().join("export.xml")).unwrap().len()
+        std::fs::metadata(export.path().join("export.xml"))
+            .unwrap()
+            .len()
     );
     // The page refuses an empty preview, so what's read is its unit.
-    assert_eq!(size["other_units"], serde_json::json!(["Apple Health records", 5]));
+    assert_eq!(
+        size["other_units"],
+        serde_json::json!(["Apple Health records", 5])
+    );
     assert_eq!(size["go_ahead"], apple_confirm_words().trim_end());
     assert!(size.get("page_refusal").is_none(), "{size}");
     assert_eq!(std::fs::read_dir(journal.path()).unwrap().count(), 0);
@@ -167,7 +178,12 @@ fn a_preview_with_a_facet_says_how_many_a_yes_could_move_at_most() {
     let journal = tempfile::tempdir().unwrap();
     let export = small_export();
     let media = export.path().to_str().unwrap();
-    let none = preview_apple(media, journal.path(), &ImportFacet::Facet("body".to_owned()), true);
+    let none = preview_apple(
+        media,
+        journal.path(),
+        &ImportFacet::Facet("body".to_owned()),
+        true,
+    );
     let size: serde_json::Value = serde_json::from_str(&none.stdout).unwrap();
     assert!(size.get("listed_moves").is_none(), "{size}");
 }
@@ -335,7 +351,11 @@ mod page_start {
     /// The page's record for an upload, with the export (a folder, here) where
     /// its preview snapshot would be.
     fn page_record(root: &Path, id: &str, records: &[String]) -> std::path::PathBuf {
-        let snapshot = root.join("imports").join(id).join("preview-x").join("export");
+        let snapshot = root
+            .join("imports")
+            .join(id)
+            .join("preview-x")
+            .join("export");
         fs::create_dir_all(&snapshot).unwrap();
         fs::write(
             snapshot.join("export.xml"),
@@ -382,7 +402,9 @@ mod page_start {
         match crate::cli_argv::run_cli_with(args, root, lookup_env, || false) {
             crate::cli_argv::CliOutcome::Rendered(run)
             | crate::cli_argv::CliOutcome::Imported { run, .. } => run,
-            crate::cli_argv::CliOutcome::Registry(_) => panic!("an Apple export isn't a registry import"),
+            crate::cli_argv::CliOutcome::Registry(_) => {
+                panic!("an Apple export isn't a registry import")
+            }
         }
     }
 
@@ -413,13 +435,21 @@ mod page_start {
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
         assert_eq!(imports(root), vec![P.to_owned()]);
         let dir = root.join("imports").join(P);
-        for name in ["manifest.json", "summary.md", "body-touched.jsonl", "body-progress.json"] {
+        for name in [
+            "manifest.json",
+            "summary.md",
+            "body-touched.jsonl",
+            "body-progress.json",
+        ] {
             assert!(dir.join(name).is_file(), "{name}");
         }
         let solstone_core_import::metadata::AttemptRead::Present(facts) = attempt(root, P) else {
             panic!("no attempt");
         };
-        assert_eq!(facts.state, solstone_core_import::metadata::AttemptState::Completed);
+        assert_eq!(
+            facts.state,
+            solstone_core_import::metadata::AttemptState::Completed
+        );
         assert!(!media.exists(), "the uploaded export isn't kept");
         assert!(solstone_core_import_sources::body_status::read(root, P).is_none());
     }
@@ -430,14 +460,19 @@ mod page_start {
         let root = journal.path();
         // Missing: nothing is made.
         let elsewhere = tempfile::tempdir().unwrap();
-        fs::write(elsewhere.path().join("export.xml"), "<HealthData></HealthData>").unwrap();
+        fs::write(
+            elsewhere.path().join("export.xml"),
+            "<HealthData></HealthData>",
+        )
+        .unwrap();
         let run = run_page(root, &page_args(elsewhere.path(), P, true));
         assert_eq!(run.exit_code, 1);
         assert!(!root.join("imports").join(P).exists());
         // Already ran: byte for byte the same after.
         let media = page_record(root, P, &[heart("2026-10-09 06:40:00 -0600")]);
         assert_eq!(run_page(root, &page_args(&media, P, true)).exit_code, 0);
-        let before = solstone_core_import::snapshot::fingerprint(&root.join("imports").join(P)).unwrap();
+        let before =
+            solstone_core_import::snapshot::fingerprint(&root.join("imports").join(P)).unwrap();
         fs::create_dir_all(&media).unwrap();
         fs::write(media.join("export.xml"), "<HealthData></HealthData>").unwrap();
         let again = run_page(root, &page_args(&media, P, true));
@@ -456,7 +491,10 @@ mod page_start {
             solstone_core_import_sources::body_status::read(root, other),
             Some(("not_this_import".to_owned(), 1))
         );
-        assert!(matches!(attempt(root, other), solstone_core_import::metadata::AttemptRead::Absent));
+        assert!(matches!(
+            attempt(root, other),
+            solstone_core_import::metadata::AttemptRead::Absent
+        ));
     }
 
     #[test]
@@ -470,7 +508,10 @@ mod page_start {
             solstone_core_import_sources::body_status::read(root, P),
             Some(("go_ahead".to_owned(), 1))
         );
-        assert!(matches!(attempt(root, P), solstone_core_import::metadata::AttemptRead::Absent));
+        assert!(matches!(
+            attempt(root, P),
+            solstone_core_import::metadata::AttemptRead::Absent
+        ));
         assert!(!media.exists());
     }
 
@@ -500,7 +541,10 @@ mod page_start {
     fn a_page_start_takes_over_a_stopped_command_line_run_and_its_rows_keep_their_import() {
         let journal = journal();
         let root = journal.path();
-        let records = [heart("2026-10-09 06:40:00 -0600"), heart("2026-10-11 06:40:00 -0600")];
+        let records = [
+            heart("2026-10-09 06:40:00 -0600"),
+            heart("2026-10-11 06:40:00 -0600"),
+        ];
         let scratch = tempfile::tempdir().unwrap();
         let export = scratch.path().join("export");
         fs::create_dir_all(&export).unwrap();
@@ -511,24 +555,35 @@ mod page_start {
         .unwrap();
         // The command line's run, stopped after its first day.
         let stop = |point: &str| point == "published";
-        let mut stopped = crate::body_segments::AppleSegmentsRequest::new(&export, "20261012_120000", None);
+        let mut stopped =
+            crate::body_segments::AppleSegmentsRequest::new(&export, "20261012_120000", None);
         stopped.stop_at = Some(&stop);
         assert!(crate::body_segments::run_apple_health_segments(root, &stopped).is_err());
         // The same export from the page: never a resume, so it takes the stopped run over.
         let media = page_record(root, P, &records);
         let run = run_page(root, &page_args(&media, P, true));
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
-        assert_eq!(imports(root), vec!["20261012_120000".to_owned(), P.to_owned()]);
+        assert_eq!(
+            imports(root),
+            vec!["20261012_120000".to_owned(), P.to_owned()]
+        );
         let first_day = fs::read_dir(root.join("chronicle/20261009/import.apple_health"))
             .unwrap()
             .flatten()
             .find(|entry| entry.path().join("body.jsonl").is_file())
             .unwrap();
         let row: serde_json::Value = serde_json::from_str(
-            fs::read_to_string(first_day.path().join("body.jsonl")).unwrap().lines().next().unwrap(),
+            fs::read_to_string(first_day.path().join("body.jsonl"))
+                .unwrap()
+                .lines()
+                .next()
+                .unwrap(),
         )
         .unwrap();
-        assert_eq!(row["run"], "20261012_120000", "a row keeps the import that first wrote it");
+        assert_eq!(
+            row["run"], "20261012_120000",
+            "a row keeps the import that first wrote it"
+        );
         let manifest: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(root.join("imports").join(P).join("manifest.json")).unwrap(),
         )
