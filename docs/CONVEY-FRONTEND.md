@@ -176,8 +176,10 @@ and changes only the query or the hash is the view's (a transcript segment),
 and the router leaves it to the view. A move starts the next view's declared
 first reads at once, in a table of their own, adopted as the head's are. The
 swap runs in a view transition once those reads answer or 300 ms pass. Focus
-moves to the new view's first heading, `#view-announcer` says the view's name,
-and scroll is restored per history entry. Code is fetched ahead on a press or
+moves to the first heading in the view's own markup, or to `<main>` when the
+view draws its headings itself (a drawn heading can be drawn again, which would
+drop focus to the page). `#view-announcer` says the view's name, and scroll is
+restored per history entry. Code is fetched ahead on a press or
 a hover on a rail entry; data never is. A view whose first load ended in its
 error state reads again when the live stream next connects, once per connect.
 
