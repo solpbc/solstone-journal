@@ -2016,6 +2016,7 @@ dependencies = [
  "solstone-core-journal",
  "solstone-core-processing-record",
  "solstone-core-talent-config",
+ "unicode-normalization",
 ]
 
 [[package]]

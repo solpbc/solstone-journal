@@ -279,6 +279,65 @@ pub(crate) fn prepare(prepared: &mut PreparedTalent, context: &ExecutionContext)
     }))
 }
 
+/// Lines one tmux pane showed at one capture, each at its first appearance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ShownLines {
+    /// Milliseconds from the segment start.
+    pub offset_ms: i64,
+    /// Distinguishes panes (and sessions) within a segment, for grouping.
+    pub pane: usize,
+    pub lines: Vec<String>,
+}
+
+/// What a segment's tmux captures showed, for the screen-text record: each
+/// pane's screen when first seen, then only lines that later appeared on it,
+/// each once, in time order. The same reading Sense and Screen follow, without
+/// the separate typed-input entries: what was typed is here only as the pane
+/// echoed it, which is what was visible. `None` when any frame is not a
+/// canonical tmux capture.
+#[must_use]
+pub fn terminal_shown_lines(frames: &[Value]) -> Option<Vec<ShownLines>> {
+    if frames.iter().any(|frame| !valid_frame(frame)) {
+        return None;
+    }
+    let mut frames = frames.to_vec();
+    frames.sort_by(|a, b| {
+        a["timestamp"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&b["timestamp"].as_f64().unwrap_or(0.0))
+    });
+    let mut sessions: Vec<(String, Vec<Value>)> = Vec::new();
+    for frame in frames {
+        let name = frame["content"]["tmux"]["session"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned();
+        match sessions.iter_mut().find(|(known, _)| *known == name) {
+            Some((_, list)) => list.push(frame),
+            None => sessions.push((name, vec![frame])),
+        }
+    }
+    let mut shown = Vec::new();
+    let mut pane_base = 0;
+    for (name, frames) in &sessions {
+        let session = screen::read(name, frames, 0);
+        for item in session.items {
+            if item.kind == screen::Kind::Typed {
+                continue;
+            }
+            shown.push(ShownLines {
+                offset_ms: (item.time * 1000.0).round() as i64,
+                pane: pane_base + item.pane,
+                lines: item.lines,
+            });
+        }
+        pane_base += session.panes.len();
+    }
+    shown.sort_by_key(|item| item.offset_ms);
+    Some(shown)
+}
+
 fn valid_frame(frame: &Value) -> bool {
     let tmux = &frame["content"]["tmux"];
     frame["timestamp"].as_f64().is_some_and(f64::is_finite)

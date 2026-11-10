@@ -3123,6 +3123,7 @@ pub(crate) fn write_sense_and_change<W: std::io::Write>(
             &mut published,
         )?;
         publish_segment_objects(context, log, segment_name, stream, segment, &mut published);
+        publish_terminal_screen_text(context, log, segment_name, stream, segment, &mut published);
         Ok(change)
     })();
     if assignment_published {
@@ -3355,6 +3356,46 @@ fn publish_segment_objects<W: std::io::Write>(
                         "path".to_owned(),
                         Value::String(objects_path.display().to_string()),
                     ),
+                    ("cause".to_owned(), Value::String(cause)),
+                ]),
+            ),
+        ),
+    }
+}
+
+/// Publish a terminal-only segment's `talents/screen_text.md`, emptying a
+/// previous one when its panes show nothing now. A segment with screen frames
+/// is describe's, and is left alone. Like objects, this is enrichment: a failed
+/// write is logged and never fails the segment.
+fn publish_terminal_screen_text<W: std::io::Write>(
+    context: &ThinkContext,
+    log: &mut RunLogWriter<W>,
+    segment_name: &str,
+    stream: Option<&str>,
+    segment_dir: &std::path::Path,
+    published: &mut BTreeSet<std::path::PathBuf>,
+) {
+    use crate::terminal_screen_text::{TerminalScreenText, segment_terminal_screen_text};
+    let TerminalScreenText::Record(markdown) = segment_terminal_screen_text(segment_dir) else {
+        return;
+    };
+    let path = segment_dir.join("talents").join("screen_text.md");
+    if markdown.is_none() && !path.exists() {
+        return;
+    }
+    match replace_text_checked(context, &path, markdown.as_deref().unwrap_or("")) {
+        Ok(()) => {
+            published.insert(path);
+        }
+        Err(cause) => log.log(
+            "sense.screen_text_failed",
+            context.event_now_ms(),
+            segment_event(
+                context,
+                segment_name,
+                stream,
+                Map::from_iter([
+                    ("path".to_owned(), Value::String(path.display().to_string())),
                     ("cause".to_owned(), Value::String(cause)),
                 ]),
             ),

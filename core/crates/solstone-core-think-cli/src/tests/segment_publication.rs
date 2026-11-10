@@ -1530,3 +1530,66 @@ fn hosted_checkpoint_skips_activity_provenance_and_work_removal_and_uncancelled_
             .unwrap();
     assert!(after_finish.is_none());
 }
+
+#[test]
+fn a_terminal_segment_publishes_and_indexes_its_screen_text() {
+    let (_journal, context) = fixture_journal();
+    solstone_core_facets::create_facet(context.journal.as_path(), "work", "Work", "", "", "", None)
+        .unwrap();
+    let segment_dir = context
+        .journal
+        .join("chronicle")
+        .join(DAY)
+        .join("default")
+        .join("120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    let frame = serde_json::json!({"timestamp": 2.0, "content": {"tmux": {
+        "session": "main",
+        "window": {"id": "@1", "index": 0, "name": "work"},
+        "panes": [{"id": "%0", "index": 0, "active": true,
+                   "content": "$ tmux show -g status-left-length\nzebraquartzmarker 40\n"}],
+    }}});
+    fs::write(segment_dir.join("tmux_0_screen.jsonl"), frame.to_string()).unwrap();
+    let sense_val = serde_json::json!({
+        "density": "active",
+        "content_type": "coding",
+        "activity_summary": "Terminal work",
+        "facets": [{"facet": "work", "level": "high"}],
+        "entities": [],
+    });
+
+    let mut log = RunLogWriter::open(&context.journal, DAY, "segment");
+    write_sense_and_change(
+        &context,
+        &mut log,
+        "120000_60",
+        Some("default"),
+        &segment_dir,
+        sense_val.as_object().unwrap(),
+    )
+    .unwrap();
+    log.finish().unwrap();
+
+    let rel = "20260813/default/120000_60/talents/screen_text.md";
+    let record = fs::read_to_string(segment_dir.join("talents/screen_text.md")).unwrap();
+    assert!(record.contains("zebraquartzmarker 40"), "{record}");
+    // The record indexes as its provenance line and then one chunk per timed group.
+    solstone_core_indexer_store::todo::drain(&context.journal, Default::default()).unwrap();
+    let conn = open_index(&context.journal).expect("open index db");
+    let mut statement = conn
+        .prepare("SELECT content FROM chunks WHERE path=?")
+        .unwrap();
+    let chunks = statement
+        .query_map([rel], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.contains("zebraquartzmarker 40")),
+        "{chunks:?}"
+    );
+    let spec = resolve_spec(rel).expect("screen text resolves to spec");
+    assert_eq!(spec.family, Family::ScreenText);
+}

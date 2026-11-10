@@ -1158,11 +1158,11 @@ pub(crate) fn execute_get_sources(
     let segments = record.get("segments").and_then(Value::as_array);
     let Some(segment_vals) = segments else {
         return Ok(Prepared::new(json!({ "units": [] }), 0, vec![rel_path])
-            .when_empty("This activity has no transcript sources."));
+            .when_empty(crate::dispatch::ACTIVITY_SOURCES_EMPTY));
     };
     if segment_vals.is_empty() {
         return Ok(Prepared::new(json!({ "units": [] }), 0, vec![rel_path])
-            .when_empty("This activity has no transcript sources."));
+            .when_empty(crate::dispatch::ACTIVITY_SOURCES_EMPTY));
     }
 
     let activity_kind = record.get("activity").and_then(Value::as_str).unwrap_or("");
@@ -1349,7 +1349,7 @@ pub(crate) fn execute_get_sources(
                 activity_ref.facet_id, activity_ref.record_identity
             );
             return Ok(Prepared::new(json!({ "units": [] }), 0, vec![target])
-                .when_empty("This activity has no transcript sources."));
+                .when_empty(crate::dispatch::ACTIVITY_SOURCES_EMPTY));
         }
     }
 
@@ -1467,7 +1467,7 @@ pub(crate) fn execute_get_sources(
         activity_ref.facet_id, activity_ref.record_identity
     );
     Ok(Prepared::new(response_val, count, vec![target])
-        .when_empty("This activity has no transcript sources."))
+        .when_empty(crate::dispatch::ACTIVITY_SOURCES_EMPTY))
 }
 
 struct SourcedLine {

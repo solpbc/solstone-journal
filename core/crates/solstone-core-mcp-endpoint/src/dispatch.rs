@@ -82,7 +82,13 @@ match. This is a complete answer, not an error.";
 const LIST_TRANSCRIPTS_BODY_ELSEWHERE: &str = "No transcript segments, but this journal holds body data. List a day to see which body sources it holds in other_sources.";
 const LIST_TRANSCRIPTS_OTHER_SOURCES: &str = "No transcript segments, but this day holds body data. Pass a label from other_sources as source to list it.";
 const LIST_TRANSCRIPTS_WORKOUTS: &str = "This list leaves out Strava workouts, counted in omitted_workouts. No source label lists them: search finds a workout by its words, and list_activities lists the activity recorded for it, when it has one.";
-const GET_TRANSCRIPT_EMPTY: &str = "This segment has no transcript text.";
+// Screen and terminal text is never transcript, so an empty read says where it is.
+const GET_TRANSCRIPT_EMPTY: &str = "This segment has no transcript text. Text shown on a \
+screen or in a terminal is not transcript: search with category screen_text finds it, when \
+this connection may read screen text.";
+pub(crate) const ACTIVITY_SOURCES_EMPTY: &str = "This activity has no transcript sources. Text \
+shown on a screen or in a terminal is not a transcript source: search with category screen_text \
+finds it, when this connection may read screen text.";
 
 /// A prepared response together with the owner coordinates it was built from.
 ///

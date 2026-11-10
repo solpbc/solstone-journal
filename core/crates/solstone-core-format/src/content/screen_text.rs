@@ -14,6 +14,8 @@
 //! - **Chunks**: Derived on UTF-8 char boundaries (<= 65536 bytes) carrying the group offset.
 //! - **Fetch**: Returns exact file bytes without lossy conversions or Markdown chunk fallbacks.
 
+use unicode_normalization::UnicodeNormalization;
+
 use super::{IndexChunk, ProducedChunks};
 
 pub const SCREEN_TEXT_CHUNK_LIMIT: usize = 65536;
@@ -25,6 +27,202 @@ pub fn append_screen_text_line(record: &mut String, text: &str) {
         record.push_str(&crate::markdown::literal_text(line));
         record.push('\n');
     }
+}
+
+/// Best-effort masking of credential shapes in recognized or captured screen
+/// text, one published line per non-empty input line. Every producer of this
+/// family masks through here: a password prompt's value (and, for a bare prompt,
+/// the line after it, carried in `redact_following`), secret URL parameters and
+/// long high-entropy tokens. Nothing here claims complete redaction.
+pub fn safe_lines_with_state(text: &str, redact_following: &mut bool) -> Vec<String> {
+    let normalized = text.nfc().collect::<String>();
+    let mut result = Vec::new();
+    for line in normalized.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if *redact_following {
+            result.push("[REDACTED]".to_owned());
+            *redact_following = mask_password_line(trimmed).1;
+            continue;
+        }
+        let (line, next_secret) = mask_password_line(trimmed);
+        *redact_following = next_secret;
+        let line = mask_secret_url_parameters(&line);
+        let line = mask_high_entropy_tokens(&line);
+        let line = line.trim().to_owned();
+        if line.chars().any(char::is_alphanumeric) {
+            result.push(line);
+        }
+    }
+    result
+}
+
+fn mask_password_line(line: &str) -> (String, bool) {
+    let lower = line.to_ascii_lowercase();
+    let Some(position) = ["password", "passphrase", "passwd"]
+        .iter()
+        .filter_map(|needle| lower.find(needle))
+        .min()
+    else {
+        return (line.to_owned(), false);
+    };
+    let suffix = &line[position..];
+    if let Some(separator) = suffix.find([':', '=']) {
+        let value_start = position + separator + 1;
+        if line[value_start..].trim().is_empty() {
+            return ("[REDACTED]".to_owned(), true);
+        }
+        let mut masked = line[..value_start].to_owned();
+        masked.push_str("[REDACTED]");
+        return (masked, false);
+    }
+    (line.to_owned(), false)
+}
+
+fn mask_secret_url_parameters(line: &str) -> String {
+    let mut output = String::with_capacity(line.len());
+    let mut cursor = 0;
+    while cursor < line.len() {
+        let rest = &line[cursor..];
+        let start = ["https://", "http://"]
+            .iter()
+            .filter_map(|scheme| rest.find(scheme).map(|offset| cursor + offset))
+            .min();
+        let Some(start) = start else {
+            output.push_str(rest);
+            break;
+        };
+        output.push_str(&line[cursor..start]);
+        let end = line[start..]
+            .find(char::is_whitespace)
+            .map_or(line.len(), |offset| start + offset);
+        let (url, suffix) = trim_url_suffix(&line[start..end]);
+        output.push_str(&mask_url_query(url));
+        output.push_str(suffix);
+        cursor = end;
+    }
+    output
+}
+
+fn trim_url_suffix(url: &str) -> (&str, &str) {
+    let end = url
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !matches!(ch, '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}'))
+        .map_or(0, |(index, ch)| index + ch.len_utf8());
+    (&url[..end], &url[end..])
+}
+
+fn mask_url_query(url: &str) -> String {
+    let Some(query_start) = url.find('?') else {
+        return url.to_owned();
+    };
+    let query_end = url[query_start + 1..]
+        .find('#')
+        .map_or(url.len(), |offset| query_start + 1 + offset);
+    let mut output = url[..query_start + 1].to_owned();
+    for (index, pair) in url[query_start + 1..query_end].split('&').enumerate() {
+        if index > 0 {
+            output.push('&');
+        }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        output.push_str(key);
+        if pair.contains('=') {
+            output.push('=');
+            if is_secret_parameter(key) && !value.is_empty() {
+                output.push_str("[REDACTED]");
+            } else {
+                output.push_str(value);
+            }
+        }
+    }
+    output.push_str(&url[query_end..]);
+    output
+}
+
+fn is_secret_parameter(key: &str) -> bool {
+    let key = key.to_ascii_lowercase().replace(['-', '.'], "_");
+    [
+        "token",
+        "access_token",
+        "refresh_token",
+        "auth",
+        "authorization",
+        "secret",
+        "password",
+        "passwd",
+        "api_key",
+        "apikey",
+        "credential",
+        "session",
+        "signature",
+        "sig",
+    ]
+    .iter()
+    .any(|secret| key == *secret || key.ends_with(&format!("_{secret}")))
+}
+
+fn mask_high_entropy_tokens(line: &str) -> String {
+    let mut output = String::with_capacity(line.len());
+    for token in line.split_inclusive(char::is_whitespace) {
+        let trimmed = token.trim_end_matches(char::is_whitespace);
+        let whitespace = &token[trimmed.len()..];
+        let (leading, candidate, trailing) = secret_token_parts(trimmed);
+        if looks_like_secret(candidate) {
+            output.push_str(leading);
+            output.push_str("[REDACTED]");
+            output.push_str(trailing);
+        } else if let Some((key, value)) = candidate.split_once('=')
+            && !key.contains("://")
+            && looks_like_secret(value)
+        {
+            // An assignment, as a shell shows `export API_KEY=…`.
+            output.push_str(leading);
+            output.push_str(key);
+            output.push_str("=[REDACTED]");
+            output.push_str(trailing);
+        } else {
+            output.push_str(trimmed);
+        }
+        output.push_str(whitespace);
+    }
+    output
+}
+
+fn secret_token_parts(token: &str) -> (&str, &str, &str) {
+    let Some(start) = token.find(|ch: char| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    else {
+        return (token, "", "");
+    };
+    let end = token
+        .rfind(|ch: char| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        .map_or(start, |index| index + 1);
+    (&token[..start], &token[start..end], &token[end..])
+}
+
+fn looks_like_secret(token: &str) -> bool {
+    if token.len() < 32 || token.starts_with("http") {
+        return false;
+    }
+    let mut counts = [0_u32; 256];
+    for byte in token.bytes() {
+        if !byte.is_ascii_alphanumeric() && byte != b'_' && byte != b'-' {
+            return false;
+        }
+        counts[usize::from(byte)] += 1;
+    }
+    let length = token.len() as f64;
+    let entropy = counts
+        .iter()
+        .filter(|count| **count > 0)
+        .map(|count| {
+            let probability = f64::from(*count) / length;
+            -probability * probability.log2()
+        })
+        .sum::<f64>();
+    entropy >= 4.0
 }
 
 /// Parse a column 0 heading defining a group offset.
@@ -246,6 +444,19 @@ mod tests {
         resolve_content_shape, resolve_spec,
     };
     use crate::test_support::reserve_temp_path;
+
+    #[test]
+    fn an_assigned_secret_is_masked_and_its_name_kept() {
+        let secret = "q8XzT3vLm9Kp2RwN7sYbF4cHdJ6aUeG1oVi5";
+        assert_eq!(
+            safe_lines_with_state(&format!("$ export API_KEY={secret}"), &mut false),
+            vec!["$ export API_KEY=[REDACTED]".to_owned()]
+        );
+        assert_eq!(
+            safe_lines_with_state("$ export EDITOR=vim", &mut false),
+            vec!["$ export EDITOR=vim".to_owned()]
+        );
+    }
     use std::fs;
     use std::path::PathBuf;
 

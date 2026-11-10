@@ -35,6 +35,7 @@ mod run_log;
 mod segment;
 mod settle;
 pub mod snapshot;
+mod terminal_screen_text;
 mod topics;
 pub use snapshot::compute_daily_evidence_revision;
 mod weekly;

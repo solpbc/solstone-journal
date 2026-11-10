@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the android development app opens the dashboard after setup and keeps the screen awake while your journal runs in the foreground. a dim screen lets you leave it running; tap once to return to the controls.
 - the journal on iphone opens its dashboard when ready and has a dim screen you can tap to wake.
 - private troubleshooting evidence now keeps connection details and how far the attempt got when confidential processing refuses a connection.
+- text that showed in your terminal is now screen text, as text on your screens already was. search finds it, and an agent you let read screen text can read it, with the same best-effort masking of passwords and other secrets. it starts with terminal text your journal thinks about after you update. when an agent asks for a transcript or an activity's sources and gets nothing back, the answer now says where screen and terminal text is. thanks @dvanduzer for the report (#415).
 - the android development app can review interrupted storage work while your journal stays stopped. it can remove temporary copies after checking that the originals are still complete.
 
 ### Changed

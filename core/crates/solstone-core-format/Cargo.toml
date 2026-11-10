@@ -19,6 +19,7 @@ sha2.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-processing-record.workspace = true
+unicode-normalization.workspace = true
 
 [dev-dependencies]
 chrono-tz.workspace = true

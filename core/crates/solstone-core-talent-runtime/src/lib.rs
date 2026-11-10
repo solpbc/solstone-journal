@@ -61,6 +61,7 @@ pub mod writers;
 mod test_support;
 
 use contract::{CommitDisposition, GateDecision, PrePostState, resolve_hook};
+pub use terminal_reading::{ShownLines, terminal_shown_lines};
 pub use transcript::{activity_span_transcript, agent_speakers, voice_names};
 
 /// Config key honored by the speaker_attribution and possible-names pre-steps,
