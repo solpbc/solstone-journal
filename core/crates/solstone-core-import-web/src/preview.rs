@@ -301,13 +301,11 @@ fn refuse_what_the_page_cant_start(size: &Value, from_card: bool) -> Result<(), 
     }
 }
 
-/// Whether a staged import was previewed from the Apple Health card.
+/// Whether a staged import was previewed from the Apple Health card, which
+/// names its source when it stages the export.
 pub(crate) fn from_body_card(metadata: &ImportMetadata) -> bool {
-    metadata.get(BODY_CARD).and_then(Value::as_bool) == Some(true)
+    crate::lifecycle::is_apple_card(metadata)
 }
-
-/// Set on an import the Apple Health card staged.
-pub(crate) const BODY_CARD: &str = "body_card";
 
 fn require_size_preview(size: Value) -> Result<Value, PreviewError> {
     if let Some(size) = crate::audio_archive::size(&size) {
@@ -1112,7 +1110,7 @@ mod tests {
         assert_eq!(words, "looks incomplete");
         let mut card = ImportMetadata::new();
         assert!(!from_body_card(&card));
-        card.insert(BODY_CARD.to_owned(), json!(true));
+        card.insert("source_hint".to_owned(), json!("apple_health"));
         assert!(from_body_card(&card));
     }
 

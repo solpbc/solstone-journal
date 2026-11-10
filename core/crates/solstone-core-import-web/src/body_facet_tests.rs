@@ -350,3 +350,24 @@ fn the_run_is_told_how_many_listed_workouts_the_page_showed() {
     );
     assert_eq!(shown(json!({"preview": preview(json!({}))})), None);
 }
+
+#[test]
+fn only_the_apple_cards_start_with_the_token_it_showed_carries_the_go_ahead() {
+    let card = |hint: &str| {
+        json!({"source_hint": hint, "preview": {"digest": "d", "token": "shown"}})
+            .as_object()
+            .unwrap()
+            .clone()
+    };
+    let go_ahead = |data: Value, metadata: &solstone_core_import::ImportMetadata| {
+        crate::lifecycle::apple_card_arguments_for_tests(&data, metadata)
+            .contains(&"--confirm-body-save".to_owned())
+    };
+    assert!(go_ahead(json!({"body_confirmed": "shown"}), &card("apple_health")));
+    assert!(!go_ahead(json!({"body_confirmed": "another"}), &card("apple_health")));
+    assert!(!go_ahead(json!({}), &card("apple_health")));
+    assert!(!go_ahead(json!({"body_confirmed": true}), &card("apple_health")));
+    assert!(!go_ahead(json!({"body_confirmed": "shown"}), &card("strava")));
+    let unpreviewed = json!({"source_hint": "apple_health"}).as_object().unwrap().clone();
+    assert!(!go_ahead(json!({"body_confirmed": null}), &unpreviewed));
+}

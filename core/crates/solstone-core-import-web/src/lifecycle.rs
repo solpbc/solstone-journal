@@ -99,6 +99,36 @@ fn clean_optional(value: Option<&Value>) -> Option<String> {
 /// string "null", which names no importer source, so it reads as absent too.
 /// The import card that brings in a Strava download.
 const STRAVA_SOURCE: &str = "strava";
+/// The import card that brings in an Apple Health export.
+pub(crate) const APPLE_SOURCE: &str = "apple_health";
+
+/// Whether a staged import is the Apple Health card's.
+pub(crate) fn is_apple_card(metadata: &ImportMetadata) -> bool {
+    source_hint(metadata).as_deref() == Some(APPLE_SOURCE)
+}
+
+/// The arguments an Apple Health card start adds: the go-ahead, only when the
+/// start carries the preview token the card showed.
+#[cfg(test)]
+pub(crate) fn apple_card_arguments_for_tests(data: &Value, metadata: &ImportMetadata) -> Vec<String> {
+    apple_card_arguments(data, metadata)
+}
+
+fn apple_card_arguments(data: &Value, metadata: &ImportMetadata) -> Vec<String> {
+    if !is_apple_card(metadata) {
+        return Vec::new();
+    }
+    let shown = metadata
+        .get("preview")
+        .and_then(|preview| preview.get("token"))
+        .and_then(Value::as_str);
+    let confirmed = data.get("body_confirmed").and_then(Value::as_str);
+    if shown.is_some() && confirmed == shown {
+        vec!["--confirm-body-save".to_owned()]
+    } else {
+        Vec::new()
+    }
+}
 
 /// How long a Strava upload may wait to be started before it is removed.
 const ABANDONED_STRAVA_UPLOAD: Duration = Duration::from_secs(60 * 60);
@@ -1180,8 +1210,11 @@ pub(crate) async fn meta(State(state): State<AppState>, Json(data): Json<Value>)
     // The facet the Strava card chose for this import alone. It is the
     // import's own: the remembered default is never changed here.
     if let Some(value) = data.get(solstone_core_import::BODY_FACET_METADATA) {
-        if source_hint(&metadata).as_deref() != Some(STRAVA_SOURCE) {
-            return invalid_state("only a Strava import takes a facet here", None);
+        if !matches!(
+            source_hint(&metadata).as_deref(),
+            Some(STRAVA_SOURCE | APPLE_SOURCE)
+        ) {
+            return invalid_state("only a Strava or Apple Health import takes a facet here", None);
         }
         if !crate::body_facet::valid_import_facet(value) {
             return invalid_state("that isn't a facet choice", None);
@@ -2027,7 +2060,8 @@ where
         );
     }
 
-    let cmd = command(&plan.command_path, timestamp, &plan.metadata, force);
+    let mut cmd = command(&plan.command_path, timestamp, &plan.metadata, force);
+    cmd.extend(apple_card_arguments(data, &plan.metadata));
     let previous_task_id = plan
         .metadata
         .get("task_id")
