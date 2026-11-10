@@ -555,8 +555,12 @@
   };
 
   window.convey.diagnosticConsole = api;
-
   loadEntries();
+  // After the stored entries, so a reload of storage does not drop an error
+  // that arrived before this file.
+  if (typeof window.convey.deliverPendingDiagnostics === 'function') {
+    window.convey.deliverPendingDiagnostics(api);
+  }
 
   window.whenShellReady(() => {
     bindDrawer();

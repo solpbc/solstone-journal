@@ -80,38 +80,37 @@ fn source(path: &str) -> &'static str {
     std::str::from_utf8(assets::record(path).unwrap().bytes).unwrap()
 }
 
-#[test]
-fn the_bundles_hold_the_shell_page_files_in_order_one_banner_each_unchanged() {
-    let page = source("/static/shell.html");
-    let tags = bundle::shell_page_tags(page).unwrap();
-    let script = source("/static/shell.js");
-    let style = source("/static/shell.css");
-    for (text, files) in [(script, &tags.scripts), (style, &tags.styles)] {
-        let mut cursor = 0;
-        for tag in files.iter() {
-            let banner = format!("/* file: {} */\n", tag.path);
-            assert_eq!(text.matches(&banner).count(), 1, "{}", tag.path);
-            let at = text[cursor..]
-                .find(&banner)
-                .unwrap_or_else(|| panic!("{} is out of order", tag.path))
-                + cursor;
-            let body = source(&tag.path);
-            let body_at = text[at..]
-                .find(body)
-                .unwrap_or_else(|| panic!("{} isn't in the bundle unchanged", tag.path))
-                + at;
-            cursor = body_at + body.len();
-        }
+fn files_of<'a>(
+    tags: &'a [bundle::BundledTag],
+    which: &str,
+) -> Vec<&'a bundle::BundledTag> {
+    tags.iter()
+        .filter(|tag| bundle::script_bundle_of(tag) == which)
+        .collect()
+}
+
+fn assert_bundle_holds(text: &str, files: &[&bundle::BundledTag]) {
+    let mut cursor = 0;
+    for tag in files {
+        let banner = format!("/* file: {} */\n", tag.path);
+        assert_eq!(text.matches(&banner).count(), 1, "{}", tag.path);
+        let at = text[cursor..]
+            .find(&banner)
+            .unwrap_or_else(|| panic!("{} is out of order", tag.path))
+            + cursor;
+        let body = source(&tag.path);
+        let body_at = text[at..]
+            .find(body)
+            .unwrap_or_else(|| panic!("{} isn't in the bundle unchanged", tag.path))
+            + at;
+        cursor = body_at + body.len();
     }
-    assert!(tags.scripts.len() > 20 && tags.styles.len() == 3);
-    // The segment table names each script's first line in the bundle.
-    let lines: Vec<&str> = script.split('\n').collect();
-    let table_start = script.find("var segments = [").unwrap() + "var segments = ".len();
-    let table_end = table_start + script[table_start..].find("];").unwrap() + 1;
-    let table: Vec<(usize, String)> =
-        serde_json::from_str(&script[table_start..table_end]).unwrap();
-    assert_eq!(table.len(), tags.scripts.len());
-    for ((line, name), tag) in table.iter().zip(&tags.scripts) {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let table_start = text.find("var segments = [").unwrap() + "var segments = ".len();
+    let table_end = table_start + text[table_start..].find("];").unwrap() + 1;
+    let table: Vec<(usize, String)> = serde_json::from_str(&text[table_start..table_end]).unwrap();
+    assert_eq!(table.len(), files.len());
+    for ((line, name), tag) in table.iter().zip(files) {
         assert_eq!(format!("/{name}"), tag.path);
         let first = source(&tag.path).split('\n').next().unwrap();
         assert_eq!(lines[line - 1], first, "{name}");
@@ -119,13 +118,52 @@ fn the_bundles_hold_the_shell_page_files_in_order_one_banner_each_unchanged() {
 }
 
 #[test]
+fn the_bundles_hold_the_shell_page_files_in_order_one_banner_each_unchanged() {
+    let page = source("/static/shell.html");
+    let tags = bundle::shell_page_tags(page).unwrap();
+    let boot = files_of(&tags.scripts, bundle::SHELL_SCRIPT_BUNDLE);
+    let rest = files_of(&tags.scripts, bundle::SHELL_REST_BUNDLE);
+    assert!(boot.len() >= 20 && rest.len() >= 5 && tags.styles.len() == 3);
+    let script = source("/static/shell.js");
+    let rest_script = source("/static/shell-rest.js");
+    assert_bundle_holds(script, &boot);
+    assert_bundle_holds(rest_script, &rest);
+    assert!(script.contains("SOL_SHELL_REGISTRY"));
+    assert!(!rest_script.contains("SOL_SHELL_REGISTRY"));
+    assert!(!script.contains("/* file: /static/sunarc.js */"));
+    assert!(rest_script.contains("/* file: /static/sunarc.js */"));
+    let mut cursor = 0;
+    let style = source("/static/shell.css");
+    for tag in &tags.styles {
+        let banner = format!("/* file: {} */\n", tag.path);
+        assert_eq!(style.matches(&banner).count(), 1, "{}", tag.path);
+        let at = style[cursor..]
+            .find(&banner)
+            .unwrap_or_else(|| panic!("{} is out of order", tag.path))
+            + cursor;
+        let body = source(&tag.path);
+        let body_at = style[at..]
+            .find(body)
+            .unwrap_or_else(|| panic!("{} isn't in the bundle unchanged", tag.path))
+            + at;
+        cursor = body_at + body.len();
+    }
+}
+
+#[test]
 fn the_served_shell_page_loads_the_two_bundles_and_keeps_its_inline_scripts() {
     let page = String::from_utf8(assets::served_bytes("/static/shell.html")).unwrap();
     let script = assets::record("/static/shell.js").unwrap().hashed.unwrap();
+    let rest = assets::record("/static/shell-rest.js").unwrap().hashed.unwrap();
     let style = assets::record("/static/shell.css").unwrap().hashed.unwrap();
     assert_eq!(page.matches("<script src=").count(), 1, "{page}");
     assert_eq!(page.matches("rel=\"stylesheet\"").count(), 1, "{page}");
-    assert!(page.contains(&format!("<script src=\"{script}\" defer></script>")));
+    assert!(page.contains(&format!(
+        "<script src=\"{script}\" defer data-shell-part=\"boot\"></script>"
+    )));
+    let rest_tag = format!("<script data-shell-part=\"rest\" data-src=\"{rest}\"></script>");
+    assert!(page.contains(&rest_tag), "{page}");
+    assert!(!rest_tag.contains(" src="));
     assert!(page.contains(&format!("<link rel=\"stylesheet\" href=\"{style}\">")));
     // The cross-document opt-in stays in the document, ahead of the bundled
     // sheet. A sheet that is parsed but not yet active is not seen when the
@@ -165,8 +203,10 @@ fn a_change_to_any_file_changes_its_bundle_and_the_shell_tree_hash() {
     // The bundles are files of the shell's tree, so their bytes are in its hash.
     for path in [
         "/static/shell.js",
+        "/static/shell-rest.js",
         "/static/shell.css",
         "/static/shell.js.map",
+        "/static/shell-rest.js.map",
     ] {
         assert_eq!(
             assets::record(path).unwrap().tree,
@@ -235,6 +275,7 @@ fn the_bundle_refuses_a_shared_or_reserved_top_level_name() {
         end: 0,
         path: path.to_owned(),
         media: None,
+        part: "boot".to_owned(),
     };
     let twice = [
         (tag("/static/a.js"), "var shared = 1;\n".to_owned()),
@@ -242,6 +283,12 @@ fn the_bundle_refuses_a_shared_or_reserved_top_level_name() {
     ];
     let error = bundle::script_bundle(&twice, "", "m").err().unwrap();
     assert!(error.contains("shared"), "{error}");
+    // Built apart, each file is fine. The page check is what still refuses
+    // the name, which is how the two bundles are produced.
+    assert!(bundle::script_bundle(&twice[..1], "", "m").is_ok());
+    assert!(bundle::script_bundle(&twice[1..], "", "m").is_ok());
+    let across = bundle::refuse_shared_top_level_names(&twice).err().unwrap();
+    assert!(across.contains("shared"), "{across}");
     let reserved = [(tag("/static/a.js"), "var location = 1;\n".to_owned())];
     assert!(bundle::script_bundle(&reserved, "", "m").is_err());
 }
@@ -270,9 +317,8 @@ fn a_stylesheet_with_a_media_query_keeps_it_and_its_place() {
     assert!(bundle::check_stylesheet("a.css", "a { color: red;\n").is_err());
 }
 
-#[test]
-fn the_source_map_maps_each_bundle_line_to_its_file_line() {
-    let map: Value = serde_json::from_str(source("/static/shell.js.map")).unwrap();
+fn assert_source_map(script_path: &str, map_path: &str, which: &str) {
+    let map: Value = serde_json::from_str(source(map_path)).unwrap();
     let sources: Vec<&str> = map["sources"]
         .as_array()
         .unwrap()
@@ -280,10 +326,15 @@ fn the_source_map_maps_each_bundle_line_to_its_file_line() {
         .map(|value| value.as_str().unwrap())
         .collect();
     let tags = bundle::shell_page_tags(source("/static/shell.html")).unwrap();
-    let paths: Vec<&str> = tags.scripts.iter().map(|tag| tag.path.as_str()).collect();
-    assert_eq!(sources, paths);
+    let paths: Vec<&str> = tags
+        .scripts
+        .iter()
+        .filter(|tag| bundle::script_bundle_of(tag) == which)
+        .map(|tag| tag.path.as_str())
+        .collect();
+    assert_eq!(sources, paths, "{map_path}");
     // Decode: every mapped line names a file and a line holding the same text.
-    let lines: Vec<&str> = source("/static/shell.js").split('\n').collect();
+    let lines: Vec<&str> = source(script_path).split('\n').collect();
     let decode = |segment: &str| -> Vec<i64> {
         let mut values = Vec::new();
         let (mut value, mut shift) = (0i64, 0);
@@ -323,7 +374,72 @@ fn the_source_map_maps_each_bundle_line_to_its_file_line() {
         assert_eq!(lines[index], original, "bundle line {}", index + 1);
         mapped += 1;
     }
-    assert!(mapped > 8000, "{mapped}");
+    let source_lines: usize = paths.iter().map(|path| source(path).matches('\n').count()).sum();
+    assert!(
+        mapped * 2 > source_lines,
+        "{script_path} mapped {mapped} of {source_lines} source lines"
+    );
+}
+
+#[test]
+fn the_source_map_maps_each_bundle_line_to_its_file_line() {
+    assert_source_map(
+        "/static/shell.js",
+        "/static/shell.js.map",
+        bundle::SHELL_SCRIPT_BUNDLE,
+    );
+    assert_source_map(
+        "/static/shell-rest.js",
+        "/static/shell-rest.js.map",
+        bundle::SHELL_REST_BUNDLE,
+    );
+}
+
+#[test]
+fn a_tags_part_chooses_its_bundle() {
+    let page = source("/static/shell.html");
+    let moved = page.replacen(
+        "<script src=\"/static/sunarc.js\" defer data-shell-part=\"rest\"></script>",
+        "<script src=\"/static/sunarc.js\" defer data-shell-part=\"boot\"></script>",
+        1,
+    );
+    assert_ne!(moved, page);
+    let build = |page: &str| {
+        let tags = bundle::shell_page_tags(page).unwrap();
+        let files: Vec<_> = tags
+            .scripts
+            .iter()
+            .map(|tag| (tag.clone(), source(&tag.path).to_owned()))
+            .collect();
+        let boot: Vec<_> = files
+            .iter()
+            .filter(|(tag, _)| bundle::script_bundle_of(tag) == bundle::SHELL_SCRIPT_BUNDLE)
+            .cloned()
+            .collect();
+        let rest: Vec<_> = files
+            .iter()
+            .filter(|(tag, _)| bundle::script_bundle_of(tag) == bundle::SHELL_REST_BUNDLE)
+            .cloned()
+            .collect();
+        (
+            bundle::script_bundle(&boot, "globalThis.SOL_SHELL_REGISTRY = {};\n", "shell.js.map")
+                .unwrap()
+                .text,
+            bundle::script_bundle(&rest, "", "shell-rest.js.map")
+                .unwrap()
+                .text,
+        )
+    };
+    let (boot, rest) = build(page);
+    assert!(rest.contains("/* file: /static/sunarc.js */"));
+    assert!(!boot.contains("/* file: /static/sunarc.js */"));
+    let (boot, rest) = build(&moved);
+    assert!(boot.contains("/* file: /static/sunarc.js */"));
+    assert!(!rest.contains("/* file: /static/sunarc.js */"));
+    let bare = "<link rel=\"stylesheet\" href=\"/static/app.css\">\n\
+                <script src=\"/static/error-handler.js\" defer></script>\n";
+    let error = bundle::shell_page_tags(bare).unwrap_err();
+    assert!(error.contains("data-shell-part"), "{error}");
 }
 
 // The app table in the bundle, with the names `/api/shell` gives, is exactly

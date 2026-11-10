@@ -27,6 +27,9 @@
       }
       mount.ready = true;
       performance.mark('view:ready', { detail: Object.assign({ view, state }, mount.detail || {}) });
+      // The rest of the shell waits for this mark, so its bytes are not part
+      // of the wait for the first view.
+      window.loadShellRest?.();
       window.settleEarly?.();
       if (state !== 'error') prefetchDateViewCode();
     };
@@ -408,6 +411,9 @@
         }
       }
       performance.mark('view:scripts-loaded');
+      // A contract view reports ready later, from its own first read. Loading
+      // the rest of the shell here would put that request ahead of the mark.
+      if (!contract) window.loadShellRest?.();
       document.dispatchEvent(
         new CustomEvent('workspace:mounted', {
           detail: { appName: options.appName || null, url: url }
