@@ -9,9 +9,13 @@
 //! 0. A name the segment's input never says or shows is not in this segment,
 //!    and is dropped. Sense also reads the owner's known entities in the facet
 //!    list, and a name from there alone is the journal's memory, not something
-//!    seen or heard now. The check is the lenient heard test below over the
-//!    whole input, so a name the model spelled out in full ("Avery Nguyen" for
-//!    "AN") stays.
+//!    seen or heard now. The input must hold the name as written: the whole
+//!    name, its words run together, one of its significant words, a 4+ letter
+//!    part either way ("Homebrew" for `brew`), or its initials in capitals
+//!    ("AN" for "Avery Nguyen"). Only what may have been heard gets leeway for
+//!    speech recognition: a 5+ letter word of the name spelled close enough.
+//!    The heard test below is too loose for this over a whole screen or
+//!    terminal, where "been" would name Ben and "app" would name Apple.
 //! 1. With no transcript in its input, nothing was heard: `voice` and
 //!    `transcript` become `screen`, or `other` without screen input either.
 //!    A `speaker_label` with screen input becomes `screen` too: a participant
@@ -43,6 +47,7 @@ const HEARD: [&str; 2] = ["voice", "transcript"];
 const CLOSE_ENOUGH: f64 = 75.0;
 const MIN_WORD: usize = 3;
 const MIN_PART: usize = 4;
+const MIN_MISHEARD: usize = 5;
 const FILLER: [&str; 6] = ["the", "and", "for", "inc", "llc", "app"];
 
 /// The response with grounded entity sources and roles, or `None` when nothing changed.
@@ -53,38 +58,50 @@ pub(crate) fn ground(prepared: &PreparedTalent, journal: &Path, response: &str) 
     let mut output = serde_json::from_str::<Value>(response).ok()?;
     let entities = output.get_mut("entities")?.as_array_mut()?;
     let mut changed = false;
+    let counts = prepared.config.get("source_counts");
+    let transcripts = counts
+        .and_then(|counts| counts.get("transcripts"))
+        .and_then(Value::as_u64);
+    // Evidence and the owner are read only when rules 0, 2 and 4 need them: the
+    // owner means reading every entity. Either one missing changes nothing.
+    let mut evidence = None;
     if let Some(input) = prepared
         .config
         .get("transcript")
         .and_then(Value::as_str)
         .filter(|input| !input.trim().is_empty())
     {
-        let input = Heard::new(input);
+        let written = Written::new(input);
+        // With no transcript nothing was heard, so nothing was misheard either.
+        let whole;
+        let heard = if transcripts == Some(0) {
+            None
+        } else if let Some(evidence) = evidence
+            .get_or_insert_with(|| Evidence::read(prepared))
+            .as_ref()
+        {
+            Some(&evidence.heard)
+        } else {
+            whole = Heard::new(input);
+            Some(&whole)
+        };
         let before = entities.len();
         entities.retain(|entity| {
-            input.named(
-                entity
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-            )
+            let name = entity
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            written.names(name) || heard.is_some_and(|heard| heard.misheard(name))
         });
         changed = entities.len() != before;
     }
-    let counts = prepared.config.get("source_counts");
-    let Some(transcripts) = counts
-        .and_then(|counts| counts.get("transcripts"))
-        .and_then(Value::as_u64)
-    else {
+    let Some(transcripts) = transcripts else {
         return changed.then(|| output.to_string());
     };
     let percepts = counts
         .and_then(|counts| counts.get("percepts"))
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    // Evidence and the owner are read only when rules 2 and 4 need them: the
-    // owner means reading every entity. Either one missing changes nothing.
-    let mut evidence = None;
     let mut owner = None;
     for entity in entities.iter_mut() {
         let Some(row) = entity.as_object_mut() else {
@@ -238,12 +255,75 @@ impl Heard {
 }
 
 impl Heard {
-    /// Rule 0's test: said, or a word of the name and a word of the input
-    /// where one holds the other ("Homebrew" for `brew`), at least
-    /// `MIN_PART` letters long.
-    fn named(&self, name: &str) -> bool {
-        self.said(name)
-            || words(name)
+    /// Rule 0's leeway for speech recognition: a 5+ letter significant word of
+    /// the name spelled close enough to a word that may have been heard.
+    fn misheard(&self, name: &str) -> bool {
+        words(name)
+            .iter()
+            .filter(|word| word.chars().count() >= MIN_MISHEARD && !FILLER.contains(&word.as_str()))
+            .any(|word| self.close(word))
+    }
+
+    fn close(&self, word: &str) -> bool {
+        let length = word.chars().count();
+        self.words.contains(word)
+            || self.words.iter().any(|heard| {
+                // Two lengths this far apart cannot score close enough.
+                let other = heard.chars().count();
+                2.0 * length.min(other) as f64 * 100.0 >= CLOSE_ENOUGH * (length + other) as f64
+                    && solstone_core_entity_matching::token_sort_ratio(word, heard) >= CLOSE_ENOUGH
+            })
+    }
+}
+
+/// Rule 0's test of whether the input holds a name as written.
+struct Written {
+    /// Every word.
+    words: BTreeSet<String>,
+    /// Every two neighbouring words run together ("red hat" → "redhat").
+    pairs: BTreeSet<String>,
+    /// The words in order, space-separated and space-bounded.
+    joined: String,
+    /// Words written in capitals, lowercased: where initials stand for a name.
+    capitals: BTreeSet<String>,
+}
+
+impl Written {
+    fn new(text: &str) -> Self {
+        let all = words(text);
+        let capitals = folded(text)
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| word.chars().count() >= 2 && word.chars().all(char::is_uppercase))
+            .map(str::to_lowercase)
+            .collect();
+        Self {
+            words: all.iter().cloned().collect(),
+            pairs: all.windows(2).map(|pair| pair.concat()).collect(),
+            joined: format!(" {} ", all.join(" ")),
+            capitals,
+        }
+    }
+
+    fn names(&self, name: &str) -> bool {
+        let name_words = words(name);
+        let significant = name_words
+            .iter()
+            .filter(|word| word.chars().count() >= MIN_WORD && !FILLER.contains(&word.as_str()))
+            .collect::<Vec<_>>();
+        if significant.is_empty()
+            || self.words.contains(&name_words.concat())
+            || self.pairs.contains(&name_words.concat())
+            || self.joined.contains(&format!(" {} ", name_words.join(" ")))
+            || significant.iter().any(|word| self.words.contains(*word))
+        {
+            return true;
+        }
+        let initials = name_words
+            .iter()
+            .filter_map(|word| word.chars().next())
+            .collect::<String>();
+        (name_words.len() > 1 && self.capitals.contains(&initials))
+            || name_words
                 .iter()
                 .filter(|word| word.chars().count() >= MIN_PART)
                 .any(|word| {
@@ -307,11 +387,16 @@ impl Evidence {
     }
 }
 
-/// Lowercase words with accents folded, so "José" and "Jose" are one word.
-fn words(text: &str) -> Vec<String> {
+/// Text with accents folded, case kept.
+fn folded(text: &str) -> String {
     text.nfkd()
         .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
-        .collect::<String>()
+        .collect()
+}
+
+/// Lowercase words with accents folded, so "José" and "Jose" are one word.
+fn words(text: &str) -> Vec<String> {
+    folded(text)
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|word| !word.is_empty())
@@ -480,6 +565,55 @@ mod tests {
                 ("Sam Ortiz", "screen"),
                 ("Avery Nguyen", "screen")
             ])
+        );
+    }
+
+    #[test]
+    fn a_name_near_a_common_word_is_not_in_the_segment() {
+        // Roster names a busy terminal only comes close to: "been", "read",
+        // "app" and "is" are not Ben, Red Hat, Apple or Ian Smith.
+        let terminal = sense(
+            0,
+            1,
+            vec![source(
+                "tmux_0_screen.jsonl",
+                &[
+                    "warning: this crate has been yanked; read the notes in the app config",
+                    "Is it fixed? see map pleasant.toml",
+                ],
+            )],
+        );
+        assert_eq!(
+            grounded(
+                &terminal,
+                vec![
+                    entity("Ben Affleck", "Person", "screen"),
+                    entity("Red Hat", "Company", "screen"),
+                    entity("Apple", "Company", "screen"),
+                    entity("Ian Smith", "Person", "screen"),
+                ]
+            ),
+            pairs(&[])
+        );
+        // Speech keeps its leeway for a longer misheard word, and only that.
+        let speech = sense(
+            1,
+            0,
+            vec![source(
+                "audio.jsonl",
+                &["[09:00:01] Speaker 1: Kubernets has been down since the read replica"],
+            )],
+        );
+        assert_eq!(
+            grounded(
+                &speech,
+                vec![
+                    entity("Kubernetes", "Tool", "transcript"),
+                    entity("Ben Affleck", "Person", "transcript"),
+                    entity("Red Hat", "Company", "transcript"),
+                ]
+            ),
+            pairs(&[("Kubernetes", "transcript")])
         );
     }
 

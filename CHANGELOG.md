@@ -27,6 +27,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the people and things a moment is about no longer include a name from earlier in your journal just because the moment holds a word that looks like part of it, such as "been" for someone called Ben, or "read" for Red Hat. thanks @dvanduzer for the report (#404).
 - screen text in search results now shows punctuation and symbols as written, without extra backslashes or codes such as `&amp;`.
 - photos from your android phone's camera now show in a segment's transcript and on its photos tab as soon as you open it. before, they showed only after you opened that segment's screen tab, so in a segment with no screen tab they never showed.
 - on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
