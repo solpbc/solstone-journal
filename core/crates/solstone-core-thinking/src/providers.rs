@@ -32,6 +32,9 @@ use solstone_core_journal_config_write::{
 };
 use solstone_core_journal_io::{JournalRoot, ObjectIdentity};
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
+use solstone_core_system::stt_backend_choice::{
+    SttRuntimeKind, configured_stt_backend, stt_host_policy,
+};
 
 use crate::{MutationError, brain, local, read_config};
 
@@ -115,13 +118,21 @@ pub fn payload(
             json!({"enabled":true,"endpoint_url":value.base_url,"served_model_id":value.served_model_id,"credential_configured":value.credential.is_some()})
         }
     };
+    let active_lane = active_lane_on(
+        config,
+        spp_configured,
+        confidential_operation,
+        &brain_view["confidential_attestation"],
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+    );
     json!({
         "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"chatgpt","label":"ChatGPT","env_key":""},{"name":"local","label":"Local (on-device)","env_key":""}],
         "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
         // The owner's one thinking choice for their own model, normalized: 0 is off.
         "byo_thinking_budget":solstone_core_generate_wire::byo_thinking(config).budget(),
-        "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation,"confidential_attestation":brain_view["confidential_attestation"]},
+        "active_lane":active_lane,
         "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"metal"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
     })
 }
@@ -1883,6 +1894,32 @@ fn confidential_audio(config: &Map<String, Value>) -> bool {
     crate::brain::confidential_audio_enabled(config)
 }
 
+fn active_lane_on(
+    config: &Map<String, Value>,
+    spp_configured: bool,
+    confidential_operation: Value,
+    confidential_attestation: &Value,
+    os: &str,
+    arch: &str,
+) -> Value {
+    let mut active_lane = json!({
+        "lane":ui_lane(config),
+        "confidential_enabled":spp_configured,
+        "confidential_provenance_configured":spp_configured,
+        "confidential_audio":confidential_audio(config),
+        "confidential_operation":confidential_operation,
+        "confidential_attestation":confidential_attestation,
+    });
+    if stt_host_policy(os, arch).runtime_kind == Some(SttRuntimeKind::MobileEmbeddedCpp) {
+        let backend = configured_stt_backend(config).ok().flatten();
+        active_lane["speech_backend"] = json!(backend);
+        active_lane["confidential_audio"] = json!(
+            confidential_audio(config) && !matches!(backend, Some("parakeet" | "parakeet-cpp"))
+        );
+    }
+    active_lane
+}
+
 fn google_exact_model_advisory(config: &Map<String, Value>) -> Value {
     const PROVIDER: &str = "google";
     const PRO_ALIAS: &str = "gemini-pro-latest";
@@ -2104,6 +2141,85 @@ mod tests {
     impl ManagedKeyValidator for FailureValidator {
         fn validate(&self, _provider: &str, _key: &str) -> Result<Value, String> {
             Err("provider rejected the key".to_owned())
+        }
+    }
+
+    #[test]
+    fn mobile_active_lane_reports_the_explicit_speech_override() {
+        for os in ["android", "ios"] {
+            for arch in ["aarch64", "arm64"] {
+                for backend in [
+                    None,
+                    Some("parakeet"),
+                    Some("parakeet-cpp"),
+                    Some("confidential"),
+                ] {
+                    for flag in [
+                        None,
+                        Some(json!(true)),
+                        Some(json!(false)),
+                        Some(json!("true")),
+                    ] {
+                        let mut config = json!({"transcribe":{}});
+                        if let Some(backend) = backend {
+                            config["transcribe"]["backend"] = json!(backend);
+                        }
+                        if let Some(flag) = &flag {
+                            config["transcribe"]["confidential_audio"] = flag.clone();
+                        }
+                        let lane = super::active_lane_on(
+                            config.as_object().unwrap(),
+                            false,
+                            Value::Null,
+                            &json!({"state":"off"}),
+                            os,
+                            arch,
+                        );
+                        assert_eq!(lane["speech_backend"], json!(backend), "{os}/{arch}");
+                        assert_eq!(
+                            lane["confidential_audio"],
+                            flag.as_ref().is_none_or(|flag| flag == &json!(true))
+                                && !matches!(backend, Some("parakeet" | "parakeet-cpp")),
+                            "{os}/{arch}: {config}"
+                        );
+                        assert_eq!(lane["confidential_enabled"], false);
+                        assert_eq!(lane["confidential_provenance_configured"], false);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn desktop_active_lane_keeps_its_existing_audio_flag_projection() {
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("linux", "aarch64"),
+            ("windows", "x86_64"),
+            ("macos", "aarch64"),
+            ("android", "x86_64"),
+            ("ios", "x86_64"),
+        ] {
+            let config = json!({"transcribe":{"backend":"parakeet-cpp","confidential_audio":true}});
+            assert_eq!(
+                super::active_lane_on(
+                    config.as_object().unwrap(),
+                    false,
+                    Value::Null,
+                    &json!({"state":"off"}),
+                    os,
+                    arch,
+                ),
+                json!({
+                    "lane":"none",
+                    "confidential_enabled":false,
+                    "confidential_provenance_configured":false,
+                    "confidential_audio":true,
+                    "confidential_operation":null,
+                    "confidential_attestation":{"state":"off"},
+                }),
+                "{os}/{arch}"
+            );
         }
     }
 

@@ -917,10 +917,17 @@ pub(crate) fn process_one_with(
             dispatch_confidential_with_cap(
                 statement_audio.len(),
                 reduced_seconds.unwrap_or(audio_seconds),
-                || transcribe_retained_intervals(statement_audio, reduction.as_ref(), dispatch),
+                || {
+                    transcribe_retained_intervals(
+                        statement_audio,
+                        reduction.as_ref(),
+                        &vad,
+                        dispatch,
+                    )
+                },
             )
         } else {
-            transcribe_retained_intervals(statement_audio, reduction.as_ref(), dispatch)
+            transcribe_retained_intervals(statement_audio, reduction.as_ref(), &vad, dispatch)
         }
     };
     let dispatched = dispatch();
@@ -1266,9 +1273,60 @@ where
     dispatch()
 }
 
+/// Partition retained PCM at the midpoint of each detected pause. Silence
+/// reduction is an independent optimization: even an unreduced recording can
+/// contain distinct utterances whose combined context suppresses later speech.
+fn recognition_intervals(
+    samples: usize,
+    reduction: Option<&solstone_core_observe_audio::AudioReduction>,
+    vad: &solstone_core_observe_audio::VadResult,
+) -> Vec<std::ops::Range<usize>> {
+    let rate = f64::from(SAMPLE_RATE);
+    let pauses = vad
+        .speech_segments
+        .windows(2)
+        .filter(|pair| pair[0].1 < pair[1].0)
+        .map(|pair| (((pair[0].1 + pair[1].0) / 2.0) * rate).round() as usize)
+        .collect::<Vec<_>>();
+    let retained = reduction.map_or_else(
+        || vec![(0, samples, 0)],
+        |mapping| {
+            mapping
+                .segments
+                .iter()
+                .map(|segment| {
+                    (
+                        (segment.reduced_start_s * rate).round() as usize,
+                        (segment.reduced_end_s * rate).round() as usize,
+                        (segment.original_start_s * rate).round() as usize,
+                    )
+                })
+                .collect()
+        },
+    );
+    let mut intervals = Vec::new();
+    for (start, end, original_start) in retained {
+        let mut cursor = start;
+        for &pause in &pauses {
+            if pause > original_start && pause - original_start < end - start {
+                let cut = start + pause - original_start;
+                if cut > cursor {
+                    intervals.push(cursor..cut);
+                    cursor = cut;
+                }
+            }
+        }
+        if cursor < end {
+            intervals.push(cursor..end);
+        }
+    }
+    intervals
+}
+
 pub(crate) fn transcribe_retained_intervals<F>(
     audio: &[f32],
     reduction: Option<&solstone_core_observe_audio::AudioReduction>,
+    vad: &solstone_core_observe_audio::VadResult,
     mut dispatch: F,
 ) -> Result<(parakeet_cpp::TranscriptionResponse, parakeet_cpp::ModelInfo), TranscribeError>
 where
@@ -1279,27 +1337,26 @@ where
         TranscribeError,
     >,
 {
-    let Some(reduction) = reduction else {
+    let intervals = recognition_intervals(audio.len(), reduction, vad);
+    if reduction.is_none() && intervals.len() == 1 {
         return dispatch(audio);
-    };
+    }
     let mut combined = parakeet_cpp::TranscriptionResponse {
         words: Vec::new(),
         text: String::new(),
     };
     let mut model_info = None;
-    // Recognize each continuous retained interval once. Joining unrelated intervals
-    // changes utterance normalization/context and can blank an otherwise audible clip.
-    for segment in &reduction.segments {
-        let start = (segment.reduced_start_s * f64::from(SAMPLE_RATE)).round() as usize;
-        let end = (segment.reduced_end_s * f64::from(SAMPLE_RATE)).round() as usize;
-        let (mut transcript, info) = dispatch(&audio[start..end])?;
+    // Every retained sample belongs to exactly one call, including the silence
+    // surrounding each pause. No speech-span crop, overlap or speculative retry.
+    for interval in intervals {
+        let start_s = interval.start as f64 / f64::from(SAMPLE_RATE);
+        let end_s = interval.end as f64 / f64::from(SAMPLE_RATE);
+        let (mut transcript, info) = dispatch(&audio[interval])?;
         for word in &mut transcript.words {
             // Bound each local result to its own interval. Offset addition can round
             // an exclusive end past a cut into the next original interval.
-            word.start = (word.start + segment.reduced_start_s)
-                .clamp(segment.reduced_start_s, segment.reduced_end_s);
-            word.end = (word.end + segment.reduced_start_s)
-                .clamp(segment.reduced_start_s, segment.reduced_end_s);
+            word.start = (word.start + start_s).clamp(start_s, end_s);
+            word.end = (word.end + start_s).clamp(start_s, end_s);
         }
         if !combined.text.is_empty() && !transcript.text.is_empty() {
             combined.text.push(' ');
@@ -1310,7 +1367,7 @@ where
     }
     Ok((
         combined,
-        model_info.expect("a speech reduction contains retained intervals"),
+        model_info.expect("speech contains retained samples"),
     ))
 }
 
@@ -2987,6 +3044,171 @@ mod tests {
     }
 
     #[test]
+    fn pauses_split_unreduced_pcm_once_and_place_the_later_words() {
+        let rate = super::SAMPLE_RATE as usize;
+        let audio = (0..6 * rate)
+            .map(|sample| sample as f32)
+            .collect::<Vec<_>>();
+        let vad = utterance_vad(6.0, vec![(0.25, 1.0), (2.0, 3.0), (3.0, 4.0), (5.0, 5.75)]);
+        assert!(solstone_core_observe_audio::reduce_audio(&audio, &vad).is_none());
+        let mut calls = Vec::new();
+        let (transcript, _) = super::transcribe_retained_intervals(&audio, None, &vad, |pcm| {
+            calls.push(pcm.to_vec());
+            let text = format!("utterance {}.", calls.len());
+            Ok((
+                crate::backend::parakeet_cpp::TranscriptionResponse {
+                    words: vec![crate::backend::parakeet_cpp::TranscriptionWord {
+                        word: text.clone(),
+                        start: 0.25,
+                        end: 0.5,
+                        probability: Some(0.9),
+                    }],
+                    text,
+                },
+                utterance_model(),
+            ))
+        })
+        .unwrap();
+        assert_eq!(
+            calls.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![24_000, 48_000, 24_000]
+        );
+        assert_eq!(
+            calls.concat(),
+            audio,
+            "no sample is lost, repeated or changed"
+        );
+        assert_eq!(transcript.text, "utterance 1. utterance 2. utterance 3.");
+        for (word, start) in transcript.words.iter().zip([0.25, 1.75, 4.75]) {
+            assert_eq!(word.start, start);
+            assert_eq!(word.end, start + 0.25);
+            assert_eq!(word.probability, Some(0.9));
+        }
+    }
+
+    #[test]
+    fn short_and_long_continuous_speech_keep_the_whole_native_call() {
+        for seconds in [1, 120] {
+            let audio = vec![0.25; seconds * super::SAMPLE_RATE as usize];
+            let vad = utterance_vad(seconds as f64, vec![(0.0, seconds as f64)]);
+            let mut calls = 0;
+            let (response, _) = super::transcribe_retained_intervals(&audio, None, &vad, |pcm| {
+                assert_eq!(pcm, audio);
+                calls += 1;
+                Ok((
+                    crate::backend::parakeet_cpp::TranscriptionResponse {
+                        words: Vec::new(),
+                        text: "unchanged".into(),
+                    },
+                    utterance_model(),
+                ))
+            })
+            .unwrap();
+            assert_eq!(calls, 1);
+            assert_eq!(response.text, "unchanged");
+        }
+    }
+
+    #[test]
+    fn later_utterance_failure_returns_no_partial_result_or_further_call() {
+        for cancelled in [true, false] {
+            let audio = vec![0.0; 6 * super::SAMPLE_RATE as usize];
+            let vad = utterance_vad(6.0, vec![(0.0, 1.0), (2.0, 3.0), (4.0, 6.0)]);
+            let mut calls = 0;
+            let result = super::transcribe_retained_intervals(&audio, None, &vad, |_| {
+                calls += 1;
+                if calls == 2 {
+                    return Err(if cancelled {
+                        TranscribeError::Cancelled
+                    } else {
+                        TranscribeError::ParakeetCppFailure {
+                            reason: "inference_failed".into(),
+                            detail: "recognizer failed".into(),
+                        }
+                    });
+                }
+                Ok((
+                    crate::backend::parakeet_cpp::TranscriptionResponse {
+                        words: Vec::new(),
+                        text: "first utterance".into(),
+                    },
+                    utterance_model(),
+                ))
+            });
+            assert_eq!(calls, 2);
+            if cancelled {
+                assert!(matches!(result, Err(TranscribeError::Cancelled)));
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(TranscribeError::ParakeetCppFailure { .. })
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn pauses_inside_retained_spans_keep_exact_samples_and_original_times() {
+        let rate = super::SAMPLE_RATE as usize;
+        let audio = (0..20 * rate)
+            .map(|sample| sample as f32)
+            .collect::<Vec<_>>();
+        let vad = utterance_vad(20.0, vec![(5.0, 6.0), (6.5, 7.0), (15.0, 16.0)]);
+        let (reduced, mapping) = solstone_core_observe_audio::reduce_audio(&audio, &vad).unwrap();
+        let intervals = super::recognition_intervals(reduced.len(), Some(&mapping), &vad);
+        assert_eq!(intervals, vec![0..36_000, 36_000..64_000, 64_000..112_000]);
+        let mut seen = Vec::new();
+        let (response, _) =
+            super::transcribe_retained_intervals(&reduced, Some(&mapping), &vad, |pcm| {
+                seen.extend_from_slice(pcm);
+                Ok((
+                    crate::backend::parakeet_cpp::TranscriptionResponse {
+                        words: vec![crate::backend::parakeet_cpp::TranscriptionWord {
+                            word: "word.".into(),
+                            start: 0.125,
+                            end: 0.25,
+                            probability: None,
+                        }],
+                        text: "word.".into(),
+                    },
+                    utterance_model(),
+                ))
+            })
+            .unwrap();
+        assert_eq!(seen, reduced);
+        let restored = crate::transcript::restore_statement_timestamps(
+            &super::statements_from_words(&response.words),
+            &mapping,
+        );
+        for (statement, start) in restored.iter().zip([4.125, 6.375, 14.125]) {
+            assert_eq!(statement["start"], json!(start));
+            assert_eq!(statement["words"][0]["start"], json!(start));
+        }
+        assert_eq!(restored.len(), 3);
+    }
+
+    fn utterance_vad(duration_s: f64, speech_segments: Vec<(f64, f64)>) -> VadResult {
+        VadResult {
+            duration_s,
+            speech_duration_s: speech_segments.iter().map(|(start, end)| end - start).sum(),
+            has_speech: !speech_segments.is_empty(),
+            speech_segments,
+            noisy_rms: None,
+            noisy_s: 0.0,
+            loud_windows: 0,
+            speech_loud_windows: 0,
+        }
+    }
+
+    fn utterance_model() -> crate::backend::parakeet_cpp::ModelInfo {
+        crate::backend::parakeet_cpp::ModelInfo {
+            model: "fixture".into(),
+            device: "cpu".into(),
+            compute_type: "float32".into(),
+        }
+    }
+
+    #[test]
     fn retained_intervals_are_recognized_once_and_restore_word_and_statement_times() {
         let rate = super::SAMPLE_RATE as usize;
         let audio = (0..20 * rate).map(|index| index as f32).collect::<Vec<_>>();
@@ -3003,7 +3225,7 @@ mod tests {
         let (reduced, mapping) = solstone_core_observe_audio::reduce_audio(&audio, &vad).unwrap();
         let mut calls = 0;
         let (transcript, _) =
-            super::transcribe_retained_intervals(&reduced, Some(&mapping), |samples| {
+            super::transcribe_retained_intervals(&reduced, Some(&mapping), &vad, |samples| {
                 let start = if calls == 0 { 4 } else { 14 };
                 assert_eq!(samples, &audio[start * rate..(start + 3) * rate]);
                 calls += 1;
@@ -3042,7 +3264,7 @@ mod tests {
             assert_eq!(statement["words"][0]["end"], json!(start + 0.5));
         }
         let mut calls = 0;
-        let failed = super::transcribe_retained_intervals(&reduced, Some(&mapping), |_| {
+        let failed = super::transcribe_retained_intervals(&reduced, Some(&mapping), &vad, |_| {
             calls += 1;
             Err(TranscribeError::Cancelled)
         });
@@ -3068,7 +3290,7 @@ mod tests {
         let (audio, mapping) =
             solstone_core_observe_audio::reduce_audio(&vec![0.0; 12 * 16_000], &vad).unwrap();
         let (transcript, _) =
-            super::transcribe_retained_intervals(&audio, Some(&mapping), |samples| {
+            super::transcribe_retained_intervals(&audio, Some(&mapping), &vad, |samples| {
                 Ok((
                     crate::backend::parakeet_cpp::TranscriptionResponse {
                         words: vec![crate::backend::parakeet_cpp::TranscriptionWord {

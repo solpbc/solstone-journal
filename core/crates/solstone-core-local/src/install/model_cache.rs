@@ -97,6 +97,14 @@ fn read(directory: &Path) -> Option<Generation> {
 }
 
 pub(super) fn collect_legacy(journal: &Path, current: &Generation) -> io::Result<()> {
+    collect_legacy_with_cancel(journal, current, None)
+}
+
+pub(super) fn collect_legacy_with_cancel(
+    journal: &Path,
+    current: &Generation,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> io::Result<()> {
     let predecessor = match solstone_core_assets::windows_predecessor::retention_predecessor() {
         Some(Ok(p)) => Some(p),
         Some(Err(reason)) => {
@@ -131,7 +139,7 @@ pub(super) fn collect_legacy(journal: &Path, current: &Generation) -> io::Result
     if read(&flat).as_ref() != Some(&record) {
         return Ok(());
     }
-    record.retire(&flat)
+    record.retire_with_cancel(&flat, cancelled)
 }
 
 #[cfg(all(test, feature = "runtime-fetch-test"))]

@@ -207,7 +207,17 @@ fn install_lease_held(path: &Path) -> bool {
     let Ok(file) = fs::File::open(path) else {
         return false;
     };
-    matches!(file.try_lock_shared(), Err(fs::TryLockError::WouldBlock))
+    #[cfg(unix)]
+    {
+        matches!(
+            nix::fcntl::Flock::lock(file, nix::fcntl::FlockArg::LockSharedNonblock),
+            Err((_file, nix::errno::Errno::EWOULDBLOCK))
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        matches!(file.try_lock_shared(), Err(fs::TryLockError::WouldBlock))
+    }
 }
 
 pub fn inspect_runtime_health(journal_path: &Path) -> RuntimeRecordInspection {
@@ -815,6 +825,10 @@ mod tests {
         let record = journal.0.join("health/providers/local.json");
         let installer = fs::File::create(journal.0.join("health/providers/local.lease"))
             .expect("install lease");
+        #[cfg(unix)]
+        let installer = nix::fcntl::Flock::lock(installer, nix::fcntl::FlockArg::LockExclusive)
+            .expect("installer holds the lease");
+        #[cfg(not(unix))]
         installer.lock().expect("installer holds the lease");
         for (state, in_flight) in [
             ("resolving", true),
@@ -830,6 +844,7 @@ mod tests {
         }
         fs::write(&record, b"not json").expect("record");
         assert!(!local_install_in_flight(&journal.0));
+        drop(installer);
     }
 
     #[test]
@@ -845,11 +860,50 @@ mod tests {
         assert!(!local_install_in_flight(&journal.0), "no lease file");
 
         let installer = fs::File::create(&lease).expect("install lease");
+        #[cfg(unix)]
+        let installer = nix::fcntl::Flock::lock(installer, nix::fcntl::FlockArg::LockExclusive)
+            .expect("installer holds the lease");
+        #[cfg(not(unix))]
         installer.lock().expect("installer holds the lease");
         assert!(local_install_in_flight(&journal.0), "installer running");
 
         drop(installer);
         assert!(!local_install_in_flight(&journal.0), "installer exited");
+    }
+
+    #[cfg(all(unix, feature = "full-tests"))]
+    #[test]
+    fn install_observers_share_the_lease_and_never_create_a_missing_one() {
+        let journal = TestJournal::new();
+        fs::create_dir_all(journal.0.join("health/providers")).unwrap();
+        fs::write(
+            journal.0.join("health/providers/local.json"),
+            json!({"install_state": "downloading"}).to_string(),
+        )
+        .unwrap();
+        let lease = journal.0.join("health/providers/local.lease");
+        assert!(!local_install_in_flight(&journal.0));
+        assert!(!lease.exists());
+        fs::File::create(&lease).unwrap();
+        let observer = nix::fcntl::Flock::lock(
+            fs::File::open(&lease).unwrap(),
+            nix::fcntl::FlockArg::LockSharedNonblock,
+        )
+        .unwrap();
+        assert!(!local_install_in_flight(&journal.0));
+        drop(observer);
+        let installer = nix::fcntl::Flock::lock(
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&lease)
+                .unwrap(),
+            nix::fcntl::FlockArg::LockExclusiveNonblock,
+        )
+        .unwrap();
+        assert!(local_install_in_flight(&journal.0));
+        drop(installer);
+        assert!(!local_install_in_flight(&journal.0));
     }
 
     impl Drop for TestJournal {

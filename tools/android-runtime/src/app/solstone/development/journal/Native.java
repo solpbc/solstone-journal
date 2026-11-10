@@ -22,4 +22,5 @@ public final class Native {
     // Called only by first-party Service startup with app metadata and APK assets.
     static native String admitServiceTools(String nativeDirectory, String resourceRoot,
                                           byte[] manifest, byte[] buildReceipt);
+    static native String admitQwenRuntime(String nativeDirectory, String manifestPath);
 }

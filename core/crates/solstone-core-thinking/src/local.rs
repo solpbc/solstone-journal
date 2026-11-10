@@ -96,7 +96,11 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
     let total_memory_gb = memory.total_bytes().map(bytes_to_gb);
     let available_memory_gb = memory.available_bytes().map(bytes_to_gb);
     let min_ram_gb = if cfg!(target_os = "macos") { 16 } else { 8 };
-    let download_bytes = if cfg!(target_os = "macos") {
+    let download_bytes = if solstone_core_local::embedded::supports_key(
+        &solstone_core_local::install::pins::platform_key(),
+    ) {
+        solstone_core_local::install::mobile::download_bytes(model).unwrap_or(0)
+    } else if cfg!(target_os = "macos") {
         solstone_core_local::install::pins::MLX_QWEN_PINS
             .iter()
             .map(|pin| pin.size)
@@ -104,7 +108,13 @@ fn availability_payload(model: &str, readiness: Value) -> Value {
     } else {
         3_413_361_504_u64
     };
-    let (available, reason, reason_code) = if !platform_supported {
+    let (available, reason, reason_code) = if readiness_reason == "embedded_runtime_unavailable" {
+        (
+            false,
+            "local thinking isn't available in this app",
+            "embedded_runtime_unavailable",
+        )
+    } else if !platform_supported {
         (
             false,
             "local thinking needs supported hardware on this computer.",
@@ -882,6 +892,16 @@ mod tests {
             }),
         );
         assert_eq!(unsupported["reason_code"], "gpu_unavailable");
+        let absent_app_runtime = super::availability_payload(
+            default_model(),
+            json!({"status":"host-ineligible", "reason_code":"embedded_runtime_unavailable",
+                "host":{"platform_supported":false}, "artifacts":{}}),
+        );
+        assert_eq!(
+            absent_app_runtime["reason_code"],
+            "embedded_runtime_unavailable"
+        );
+        assert_eq!(absent_app_runtime["available"], false);
     }
 
     fn write_runtime_health(journal: &std::path::Path, phase: &str, reason_code: &str) {

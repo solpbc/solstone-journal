@@ -48,6 +48,10 @@ pub mod foreground;
 #[cfg(feature = "processing")]
 pub mod import_route;
 #[cfg(feature = "processing")]
+mod local_provider;
+#[cfg(all(feature = "audio", feature = "processing"))]
+mod packaged_speech;
+#[cfg(feature = "processing")]
 mod rfdetr;
 #[cfg(feature = "processing")]
 mod screen_ocr;
@@ -62,6 +66,8 @@ pub struct OwnerResponse {
 /// Retain this value in the app's ordinary worker, alongside its private root.
 /// Owner requests must be admitted by private in-process or app-owned IPC.
 pub struct MobileServing {
+    #[cfg(all(feature = "audio", feature = "processing"))]
+    packaged_speech: Arc<packaged_speech::Slot>,
     #[cfg(feature = "audio")]
     audio: Option<audio::AudioWorker>,
     bus: solstone_core_callosum::CallosumSocketServer,
@@ -91,6 +97,7 @@ pub struct MobileServingStop {
     backup: solstone_core_backup_web::BackupRouteLifetime,
     imports: std::sync::Weak<ImportRouteSlot>,
     brain_startup: Arc<solstone_core_callosum::BrainStartupCapture>,
+    installer_root: std::sync::Weak<JournalRoot>,
 }
 
 struct ServingStartup {
@@ -100,12 +107,17 @@ struct ServingStartup {
 
 impl MobileServingStop {
     pub fn request_stop(&self) {
+        let first_stop = !self.services.send_replace(true);
+        if first_stop && let Some(root) = self.installer_root.upgrade() {
+            solstone_core_convey_shell::request_stop_mobile_local_installer(root.canonical_path());
+            #[cfg(feature = "processing")]
+            local_provider::request_stop(root.canonical_path());
+        }
         self.brain_startup.close();
         if let Some(imports) = self.imports.upgrade() {
             imports.request_stop();
         }
         self.backup.request_stop();
-        self.services.send_replace(true);
         self.convey.request_stop();
     }
     pub fn is_stopping(&self) -> bool {
@@ -151,6 +163,14 @@ struct AppServices {
     shutdown: watch::Sender<bool>,
     tasks: Vec<JoinHandle<()>>,
     backup: JoinHandle<Result<(), tokio::task::JoinError>>,
+}
+
+fn require_bundled_runtime_registration() -> Result<(), String> {
+    #[cfg(feature = "qwen-native")]
+    if solstone_core_local::embedded::factory().is_none() {
+        return Err("the bundled local runtime was not registered before journal startup".into());
+    }
+    Ok(())
 }
 
 impl MobileServing {
@@ -238,6 +258,13 @@ impl MobileServing {
         payload_root: Option<PathBuf>,
         startup: Option<ServingStartup>,
     ) -> Result<Self, StartupFailure> {
+        if startup
+            .as_ref()
+            .is_some_and(|startup| (startup.cancelled)())
+        {
+            return Err("stop requested during startup".into());
+        }
+        require_bundled_runtime_registration()?;
         let root = Arc::new(JournalRoot::open(&root).map_err(|e| e.to_string())?);
         Self::start_with_root_owned(root, address, payload_root, startup)
     }
@@ -267,6 +294,15 @@ impl MobileServing {
         payload_root: Option<PathBuf>,
         startup: Option<ServingStartup>,
     ) -> Result<Self, StartupFailure> {
+        let startup_cancelled = || {
+            startup
+                .as_ref()
+                .is_some_and(|startup| (startup.cancelled)())
+        };
+        if startup_cancelled() {
+            return Err("stop requested during startup".into());
+        }
+        require_bundled_runtime_registration()?;
         if address.ip().is_unspecified() || address.ip().is_multicast() || address.port() == 0 {
             return Err("an explicit interface address and nonzero port are required".into());
         }
@@ -275,12 +311,26 @@ impl MobileServing {
         // Creator recovery runs while stopped, before ordinary startup can
         // publish config, start services, or dispatch due work.
         creator_recovery::require_ordinary_start(&root)?;
+        if startup_cancelled() {
+            return Err("stop requested during startup".into());
+        }
+        solstone_core_convey_shell::prepare_mobile_local_installer(root.canonical_path())?;
+        if startup_cancelled() {
+            solstone_core_convey_shell::request_stop_mobile_local_installer(root.canonical_path());
+            return Err("stop requested during startup".into());
+        }
         // A pending restore must stay reachable without materializing config.
         if !solstone_core_journal_io::whole_journal_restore::whole_journal_restore_blocks(
             root.canonical_path(),
         ) {
-            direct_restore::persist_bound_port(&root, address.port(), &|| Ok(()))
-                .map_err(|e| e.to_string())?;
+            direct_restore::persist_bound_port(&root, address.port(), &|| {
+                if startup_cancelled() {
+                    Err("stop requested during startup".into())
+                } else {
+                    Ok(())
+                }
+            })
+            .map_err(|e| e.to_string())?;
         }
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -300,6 +350,14 @@ impl MobileServing {
         let bus = bus.map_err(|e| e.to_string())?;
         let (brain_connection, brain_observation, brain_startup) = brain::connection(&root);
         let (shutdown, stop) = watch::channel(false);
+        #[cfg(feature = "processing")]
+        let local_worker = match local_provider::start(Arc::clone(&root), stop.clone()) {
+            Ok(worker) => worker,
+            Err(error) => {
+                runtime.block_on(bus.stop());
+                return Err(error.into());
+            }
+        };
         let early_shutdown = shutdown.clone();
         let cancelled = startup
             .as_ref()
@@ -326,8 +384,15 @@ impl MobileServing {
         let route_for_bind = Arc::clone(&import_route);
         let early_imports = Arc::downgrade(&import_route);
         let early_brain_startup = Arc::clone(&brain_startup);
+        let early_installer_root = Arc::downgrade(&root);
+        #[cfg(all(feature = "audio", feature = "processing"))]
+        let packaged_speech = Arc::new(packaged_speech::Slot::default());
         let handle = runtime.block_on(async {
             let startup = solstone_core_convey_shell::EmbeddedStartup {
+                #[cfg(all(feature = "audio", feature = "processing"))]
+                packaged_speech: Some(packaged_speech.clone()),
+                #[cfg(not(all(feature = "audio", feature = "processing")))]
+                packaged_speech: None,
                 brain_startup: Some(Arc::clone(&brain_startup)),
                 #[cfg(feature = "processing")]
                 backup_offload_dispatch: Some(verification::offload_dispatch_probe(
@@ -357,6 +422,7 @@ impl MobileServing {
                         backup,
                         imports: early_imports.clone(),
                         brain_startup: Arc::clone(&early_brain_startup),
+                        installer_root: early_installer_root.clone(),
                     };
                     stop_ready(signal.clone());
                     if early_cancelled() {
@@ -436,11 +502,24 @@ impl MobileServing {
             backup: handle.backup_dependencies().lifetime(),
             imports: Arc::downgrade(&import_route),
             brain_startup,
+            installer_root: Arc::downgrade(&root),
+        };
+        let service_tasks = vec![brain_task, relay_task, mcp_task, direct_task];
+        #[cfg(feature = "processing")]
+        let service_tasks = {
+            let mut service_tasks = service_tasks;
+            service_tasks.push(execution_task);
+            if let Some(worker) = local_worker {
+                service_tasks.push(runtime.spawn(worker));
+            }
+            service_tasks
         };
         let owner = Self {
             stop: stop_handle,
             #[cfg(feature = "audio")]
             audio: None,
+            #[cfg(all(feature = "audio", feature = "processing"))]
+            packaged_speech,
             bus,
             brain_observation,
             handle: Arc::new(handle),
@@ -450,14 +529,7 @@ impl MobileServing {
             interface_address: address,
             services: Mutex::new(Some(AppServices {
                 shutdown,
-                tasks: vec![
-                    brain_task,
-                    relay_task,
-                    mcp_task,
-                    direct_task,
-                    #[cfg(feature = "processing")]
-                    execution_task,
-                ],
+                tasks: service_tasks,
                 backup: backup_task,
             })),
             shutdown_complete: std::sync::atomic::AtomicBool::new(false),
@@ -505,17 +577,8 @@ impl MobileServing {
                 });
             }
             if !ready {
-                self.stop.brain_startup.close();
-                self.handle.backup_dependencies().lifetime().request_stop();
+                self.stop.request_stop();
                 self.handle.shutdown();
-                if let Some(services) = self
-                    .services
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .as_ref()
-                {
-                    services.shutdown.send_replace(true);
-                }
                 return Err(StartupFailure {
                     message: message.into(),
                     owner: Some(Box::new(self)),
@@ -524,17 +587,8 @@ impl MobileServing {
         }
         #[cfg(target_os = "ios")]
         if self.root.revalidate_canonical_binding().is_err() {
-            self.stop.brain_startup.close();
-            self.handle.backup_dependencies().lifetime().request_stop();
+            self.stop.request_stop();
             self.handle.shutdown();
-            if let Some(services) = self
-                .services
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .as_ref()
-            {
-                services.shutdown.send_replace(true);
-            }
             return Err(StartupFailure {
                 message: "embedded journal root changed during startup".into(),
                 owner: Some(Box::new(self)),
@@ -555,6 +609,20 @@ impl MobileServing {
                 .map_or(json!({"state":"disabled"}), |a| a.status());
         }
         value
+    }
+
+    /// Bind setup to the foreground worker's actual immutable app model source.
+    /// Readiness still requires pinned-byte verification; this is no Ready flag.
+    #[cfg(all(feature = "audio", feature = "processing"))]
+    pub fn bind_packaged_speech(
+        &self,
+        host: &foreground::ForegroundProcessingHost,
+    ) -> Result<(), String> {
+        if self.stop.is_stopping() {
+            return Err("server stop pending".into());
+        }
+        self.packaged_speech
+            .bind(host.packaged_speech_setup(&self.root)?)
     }
 
     /// Enable the dedicated foreground app's local processing pass. Successful
@@ -787,6 +855,16 @@ impl MobileServing {
             .is_err()
         {
             self.shutdown_failed.store(true, Ordering::Release);
+            return Err(ShutdownFailure::Unconfirmed);
+        }
+        if Phase::LocalInstallerRetire
+            .run(|| {
+                solstone_core_convey_shell::stop_mobile_local_installer(self.root.canonical_path())
+            })
+            .is_err()
+        {
+            // A pending installer remains owned and closed; a later retirement
+            // observation may retry the join without permitting a new Start.
             return Err(ShutdownFailure::Unconfirmed);
         }
         #[cfg(all(test, feature = "full-tests"))]

@@ -11,6 +11,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - you can bring an Evernote export into your journal from the import page. each note lands on the day it was last changed in Evernote, and a later export adds only what changed. scans, PDFs and images come in with the note. a part of a note that is encrypted in Evernote stays there, and the note says so.
 - the journal dashboard now has sources. it shows when your devices last added something, and the source when the device named one.
 - you can now bring an Apple Health export into your journal with `solstone journal importer <export> --confirm-body-save`, and Oura with `solstone journal importer --connect oura` and then `--sync oura --save`. workouts, sleep and readings land on their own days, and show in the body app and to your agents. workouts and sleep show in search too. the import asks once which facet to file them under.
+- an Apple Health import in your import history now says whether it was saved, partly saved, stopped or not brought in, and why. one that stopped part way, or whose missing parts a later import saved, no longer reads as failed.
 - agents can now ask for one source's readings on a day: `list_transcripts` takes a `source` of Apple Health or Oura and says where it holds nothing, and `get_transcript` pages through those readings.
 - you can delete a whole import from its page. its segments, any original file it kept and its row in your import history go to the trash together, and recovering it puts them all back. this covers every import except Strava, Apple Health, Oura and journal archives.
 - on the import page and the transcripts page you can select several imports or segments and delete them with one confirmation. each one waits in the trash on its own.
@@ -35,6 +36,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
+- the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
+- home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.
 - an agent connected to your journal now gets a plain reason when a call is refused, such as a single day sent alongside a date range, so it can correct the call and try again.
 - a terminal segment from a computer with eight or more tmux sessions open is no longer turned away. one that was turned away before goes into your journal on its next try.
 - recovering a segment from the trash now puts back the name you gave a place on the map, and a place you hid stays hidden while its segments wait in the trash.

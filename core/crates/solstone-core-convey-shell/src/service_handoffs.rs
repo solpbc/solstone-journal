@@ -579,6 +579,7 @@ mod tests {
             None,
             Some(backup.clone()),
             None,
+            None,
         )
         .layer(Extension(crate::SmeRuntimeOverride {
             portal_base_url: "https://synthetic.invalid".to_owned(),

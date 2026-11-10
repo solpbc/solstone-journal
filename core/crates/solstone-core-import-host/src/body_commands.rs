@@ -27,6 +27,8 @@ const FIRST_OURA_DAY: (i32, u32, u32) = (2015, 1, 1);
 
 /// What a body import command was given, from its own flags.
 pub(crate) struct BodyCommand<'a> {
+    /// The import a page start runs under, which `run_import` has accepted.
+    pub import_id: Option<&'a str>,
     pub facet: ImportFacet,
     pub listed_moves_shown: Option<usize>,
     pub scheduled: bool,
@@ -53,6 +55,112 @@ fn apple_confirm_words() -> String {
 }
 const APPLE_WHOLE_WORDS: &str = "an Apple Health import always reads the whole export, and importing it again changes nothing, so it doesn't take --date-from, --date-to or --force. nothing was saved; run it again without them.\n";
 
+/// What a page start of an import that already ran is told; the page shows
+/// its own words for it.
+const ALREADY_RAN: &str = "this import has already run, so nothing was brought in. start a new one from the Apple Health card.\n";
+
+/// A page start names the import it runs under. Accept it only when that import
+/// was made by the page for this export and has never run; refuse otherwise
+/// before anything else is checked, so a start aimed at an import that already
+/// ran never changes it.
+pub(crate) fn accept_page_import(
+    journal: &Path,
+    import_id: &str,
+    media: &str,
+) -> Result<(), CliRun> {
+    let refuse = |words: &str| failure("", words, 1);
+    if solstone_core_import::validate_timestamp(import_id).is_err() {
+        return Err(refuse(
+            "--import-id names no import, so nothing was brought in.\n",
+        ));
+    }
+    let dir = journal.join("imports").join(import_id);
+    let Ok(Some(metadata)) = solstone_core_import::metadata::read_provenance(journal, import_id)
+    else {
+        return Err(refuse(
+            "--import-id names no import, so nothing was brought in.\n",
+        ));
+    };
+    let has_attempt = !matches!(
+        solstone_core_import::metadata::read_attempt_facts(&metadata),
+        solstone_core_import::metadata::AttemptRead::Absent
+    );
+    if has_attempt
+        || crate::body_segments::holds_a_run(journal, import_id)
+        || dir
+            .join(solstone_core_import_sources::body_status::STOP_FILE)
+            .exists()
+    {
+        return Err(refuse(ALREADY_RAN));
+    }
+    let inside = match (Path::new(media).canonicalize(), dir.canonicalize()) {
+        (Ok(media), Ok(dir)) => media.starts_with(dir),
+        _ => false,
+    };
+    if !inside {
+        solstone_core_import_sources::body_status::record(journal, import_id, "not_this_import", 1);
+        return Err(refuse(
+            "that import doesn't hold this export, so nothing was brought in.\n",
+        ));
+    }
+    Ok(())
+}
+
+/// After a page start: a refusal before its attempt was admitted says why on its
+/// import, and the uploaded export goes, whatever happened, as Strava's does.
+pub(crate) fn settle_page_import(journal: &Path, import_id: &str, failed_with: Option<&str>) {
+    let stop = solstone_core_import_sources::body_status::read(journal, import_id);
+    let no_attempt = matches!(
+        solstone_core_import::metadata::read_provenance(journal, import_id)
+            .ok()
+            .flatten()
+            .map(|metadata| solstone_core_import::metadata::read_attempt_facts(&metadata)),
+        Some(solstone_core_import::metadata::AttemptRead::Absent) | None
+    );
+    if let Some(words) = failed_with
+        && no_attempt
+        && stop.is_none()
+    {
+        let code = if words.contains("preview again") {
+            "preview_again"
+        } else if words.trim_end() == apple_confirm_words().trim_end() {
+            "go_ahead"
+        } else if words.trim_end() == APPLE_WHOLE_WORDS.trim_end() {
+            "whole_export"
+        } else if words.contains(crate::cli_argv::FACET_REFUSAL_MARKER) {
+            "facet"
+        } else if solstone_core_import_sources::body_status::code_for_error_text(words)
+            == "disk_full"
+        {
+            "disk_full"
+        } else {
+            "not_started"
+        };
+        solstone_core_import_sources::body_status::record(journal, import_id, code, 1);
+    }
+    // An import another run has taken (a command-line run of the same export
+    // bound it while this one waited) keeps what it holds: this run ended
+    // nothing there.
+    let latest = match solstone_core_import::metadata::read_provenance(journal, import_id)
+        .ok()
+        .flatten()
+        .map(|metadata| solstone_core_import::metadata::read_attempt_facts(&metadata))
+    {
+        Some(solstone_core_import::metadata::AttemptRead::Present(facts)) => facts.generation,
+        _ => 0,
+    };
+    let ours = failed_with.is_none()
+        || latest == 0
+        || solstone_core_import_sources::body_status::read(journal, import_id)
+            .is_some_and(|(_, generation)| generation == latest);
+    if !ours {
+        return;
+    }
+    if let Err(error) = solstone_core_import::snapshot::discard_download(journal, import_id) {
+        log::warn!("could not remove the Apple Health export for {import_id}: {error}");
+    }
+}
+
 /// Save an Apple Health export.
 pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path) -> CliRun {
     if !command.confirm {
@@ -68,6 +176,7 @@ pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path)
     let earlier_waiting = sweep_first(journal);
     let timestamp = owner_timestamp(journal);
     let mut request = AppleSegmentsRequest::new(Path::new(media), &timestamp, facet.as_deref());
+    request.import_id = command.import_id;
     request.listed = listed;
     request.earlier_waiting = earlier_waiting;
     match run_apple_health_segments(journal, &request) {
@@ -86,25 +195,105 @@ pub(crate) fn save_apple(media: &str, command: &BodyCommand<'_>, journal: &Path)
     }
 }
 
-/// What an Apple export would bring: nothing is read beyond telling it's one.
-pub(crate) fn preview_apple(json_output: bool) -> CliRun {
-    if json_output {
-        return success(format!(
-            "{}\n",
-            json!({
-                "schema": "solstone.body.import.preview.v2",
-                "source": "apple_health",
-                "mode": "preview",
-                "reads": APPLE_READS,
-                "page_refusal": apple_confirm_words().trim_end(),
-            })
-        ));
+/// A count as a person reads a large one: 2,000,000.
+fn grouped(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
     }
-    success(format!(
+    out
+}
+
+/// What an Apple export holds, counted in one pass that stages and writes
+/// nothing. With a facet named, it also says how many records already listed
+/// elsewhere a run could move: an upper bound, because what an export touches
+/// isn't known until it's read in full. A refused export answers in words with
+/// `--json` (exit 0), so the page shows them and can't start it.
+pub(crate) fn preview_apple(
+    media: &str,
+    journal: &Path,
+    facet: &ImportFacet,
+    json_output: bool,
+) -> CliRun {
+    let preview = match solstone_core_import_sources::apple_health::preview_export(Path::new(media))
+    {
+        Ok(preview) => preview,
+        Err(error) => {
+            let code =
+                solstone_core_import_sources::body_status::code_for_source_stage(error.stage());
+            let words = solstone_core_import_sources::body_status::words(code);
+            return if json_output {
+                success(format!(
+                    "{}\n",
+                    json!({
+                        "schema": "solstone.import.size.v1",
+                        "source": "apple_health",
+                        "mode": "preview",
+                        "refusal": code,
+                        "page_refusal": words,
+                    })
+                ))
+            } else {
+                failure("", &format!("{words}\n"), 1)
+            };
+        }
+    };
+    let listed = match facet {
+        ImportFacet::Facet(name) => {
+            let (count, from) =
+                crate::body_activity::listed_elsewhere(journal, APPLE.records().stream, name);
+            (count > 0).then(|| (count, from.into_iter().collect::<Vec<_>>()))
+        }
+        _ => None,
+    };
+    if json_output {
+        let mut size = json!({
+            "schema": "solstone.import.size.v1",
+            "source": "apple_health",
+            "mode": "preview",
+            "recordings": 0,
+            "days": 0,
+            "skipped": 0,
+            "other_units": ["Apple Health records", preview.read()],
+            "apple_health": preview,
+            "reads": APPLE_READS,
+            "go_ahead": apple_confirm_words().trim_end(),
+        });
+        if let Some((count, from)) = listed {
+            size["listed_moves"] = json!({"count": count, "from": from, "upper_bound": true});
+        }
+        return success(format!("{size}\n"));
+    }
+    let mut text = format!(
         "this looks like an Apple Health export. saving it reads {}, and {}.\n",
         APPLE_READS[..APPLE_READS.len() - 1].join(", "),
         APPLE_READS[APPLE_READS.len() - 1]
-    ))
+    );
+    if let Some((first, last)) = &preview.span {
+        let count = |n: u64, one: &str, many: &str| {
+            format!("{} {}", grouped(n), if n == 1 { one } else { many })
+        };
+        text.push_str(&format!(
+            "it runs from {first} to {last}: {}, {} put together from sleep stages, {}, {}, {} and {}.\n",
+            count(preview.workouts, "workout", "workouts"),
+            count(preview.nights, "night", "nights"),
+            count(preview.mindful_sessions, "mindful session", "mindful sessions"),
+            count(preview.readings, "reading", "readings"),
+            count(preview.daily_totals, "daily total", "daily totals"),
+            count(preview.logged, "logged entry", "logged entries")
+        ));
+    }
+    if let Some((count, _)) = listed {
+        text.push_str(&format!(
+            "saying yes can move up to {count} {} already listed under another facet.\n",
+            if count == 1 { "record" } else { "records" }
+        ));
+    }
+    success(text)
 }
 
 const APPLE_READS: &[&str] = &[

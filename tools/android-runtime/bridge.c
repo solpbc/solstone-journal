@@ -12,6 +12,7 @@ extern char *journal_owner_poll(unsigned long long);
 extern char *journal_owner_reclaim(const char *, const char *, const char *);
 extern void journal_owner_cancel(unsigned long long);
 extern char *journal_admit_service_tools(const char *, const char *, const unsigned char *, size_t, const unsigned char *, size_t);
+extern char *journal_admit_qwen_runtime(const char *, const char *);
 
 JNIEXPORT jbyteArray JNICALL Java_app_solstone_development_journal_Native_openOwner(JNIEnv *e, jclass c, jstring r, jbyteArray q, jint fd) {
     (void)c;
@@ -123,6 +124,28 @@ cleanup:
     if (manifest) (*e)->ReleaseByteArrayElements(e,m,manifest,JNI_ABORT);
     if (resources) (*e)->ReleaseStringUTFChars(e,r,resources);
     if (native) (*e)->ReleaseStringUTFChars(e,n,native);
+    return result;
+}
+
+JNIEXPORT jstring JNICALL Java_app_solstone_development_journal_Native_admitQwenRuntime(JNIEnv *e, jclass c, jstring n, jstring m) {
+    (void)c;
+    if (!n || !m) {
+        jclass argument_error=(*e)->FindClass(e,"java/lang/IllegalArgumentException");
+        if (argument_error) (*e)->ThrowNew(e,argument_error,"app metadata and signed local runtime record are required");
+        return NULL;
+    }
+    const char *native=(*e)->GetStringUTFChars(e,n,0);
+    if (!native) return NULL;
+    const char *manifest=(*e)->GetStringUTFChars(e,m,0);
+    if (!manifest) {
+        (*e)->ReleaseStringUTFChars(e,n,native);
+        return NULL;
+    }
+    char *out=journal_admit_qwen_runtime(native,manifest);
+    jstring result=(*e)->NewStringUTF(e,out);
+    journal_free(out);
+    (*e)->ReleaseStringUTFChars(e,m,manifest);
+    (*e)->ReleaseStringUTFChars(e,n,native);
     return result;
 }
 

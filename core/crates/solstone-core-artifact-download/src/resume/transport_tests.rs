@@ -4,6 +4,7 @@
 use super::*;
 use sha2::{Digest, Sha256};
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
 use std::time::Instant;
@@ -93,6 +94,7 @@ fn fetch(server: &Server, target: &Path, pin: &[u8]) -> Result<bool, ArchiveErro
             allow_http: true,
         },
         &mut |_, _| {},
+        None,
     )
 }
 
@@ -102,6 +104,185 @@ fn seed(target: &Path, pin: &[u8], prefix: &[u8]) -> (PathBuf, PathBuf) {
     fs::write(&partial, prefix).unwrap();
     fs::write(&metadata, serde_json::to_vec(&binding).unwrap()).unwrap();
     (partial, metadata)
+}
+
+fn cancelled(error: ArchiveError) {
+    assert!(matches!(error, ArchiveError::Io(error) if error.kind() == io::ErrorKind::Interrupted));
+}
+
+#[test]
+fn cancellation_before_download_does_not_create_a_destination_or_partial() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("absent/model");
+    cancelled(
+        download_verified_url_internal(
+            "http://127.0.0.1:1/file",
+            &digest(b"abcd"),
+            Some(4),
+            &target,
+            &DownloadHostPolicy {
+                allowed_hosts: &["127.0.0.1"],
+                allow_http: true,
+            },
+            &mut |_, _| panic!("cancelled download made progress"),
+            Some(&|| true),
+        )
+        .unwrap_err(),
+    );
+    assert!(!target.parent().unwrap().exists());
+}
+
+#[test]
+fn cancellation_mid_transfer_preserves_a_pinned_prefix_for_ordinary_resume() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("model");
+    let bytes = vec![b'x'; 128 * 1024];
+    let server = Server::new(vec![response(
+        "200 OK",
+        &format!("Content-Length: {}\r\n", bytes.len()),
+        &bytes,
+    )]);
+    let stop = AtomicBool::new(false);
+    cancelled(
+        download_verified_url_internal(
+            &server.url,
+            &digest(&bytes),
+            Some(bytes.len() as u64),
+            &target,
+            &DownloadHostPolicy {
+                allowed_hosts: &["127.0.0.1"],
+                allow_http: true,
+            },
+            &mut |received, _| {
+                if received > 0 {
+                    stop.store(true, Ordering::Release);
+                }
+            },
+            Some(&|| stop.load(Ordering::Acquire)),
+        )
+        .unwrap_err(),
+    );
+    server.finish();
+    assert!(!target.exists());
+    let prefix = retained_prefix_bytes(&target, &digest(&bytes), bytes.len() as u64) as usize;
+    assert!(prefix > 0 && prefix < bytes.len());
+    let (partial, _, _) = partial_paths(&target, &digest(&bytes)).unwrap();
+    assert_eq!(fs::read(partial).unwrap(), bytes[..prefix]);
+    let server = Server::new(vec![response(
+        "206 Partial Content",
+        &format!(
+            "Content-Range: bytes {}-{}/{}\r\nContent-Length: {}\r\n",
+            prefix,
+            bytes.len() - 1,
+            bytes.len(),
+            bytes.len() - prefix
+        ),
+        &bytes[prefix..],
+    )]);
+    assert!(fetch(&server, &target, &bytes).unwrap());
+    assert_eq!(fs::read(target).unwrap(), bytes);
+    assert!(server.finish()[0].contains(&format!("range: bytes={prefix}-\r\n")));
+}
+
+#[test]
+fn cancellation_while_waiting_for_a_destination_lease_retires_without_fetching() {
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("model");
+    let _held = hold_lock(&target, LockOptions::default()).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let cancel = stop.clone();
+    let started = Instant::now();
+    let worker = thread::spawn(move || {
+        download_verified_url_internal(
+            "http://127.0.0.1:1/file",
+            &digest(b"abcd"),
+            Some(4),
+            &target,
+            &DownloadHostPolicy {
+                allowed_hosts: &["127.0.0.1"],
+                allow_http: true,
+            },
+            &mut |_, _| panic!("held-lease download made progress"),
+            Some(&|| cancel.load(Ordering::Acquire)),
+        )
+    });
+    thread::sleep(Duration::from_millis(100));
+    stop.store(true, Ordering::Release);
+    cancelled(worker.join().unwrap().unwrap_err());
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn idle_reads_remain_resumable_network_failures_or_cancel_without_losing_the_prefix() {
+    for should_cancel in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("model");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/file", listener.local_addr().unwrap());
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            connection
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                connection.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            connection
+                .write_all(&response("200 OK", "Content-Length: 4\r\n", b"ab"))
+                .unwrap();
+            ready_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(6)).unwrap();
+        });
+        let stop = Arc::new(AtomicBool::new(false));
+        let cancel = stop.clone();
+        let worker_target = target.clone();
+        let worker = thread::spawn(move || {
+            download_verified_url_internal(
+                &url,
+                &digest(b"abcd"),
+                Some(4),
+                &worker_target,
+                &DownloadHostPolicy {
+                    allowed_hosts: &["127.0.0.1"],
+                    allow_http: true,
+                },
+                &mut |_, _| {},
+                Some(&|| cancel.load(Ordering::Acquire)),
+            )
+        });
+        ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        // Let the first body bytes reach the partial before cancelling a blocked read.
+        thread::sleep(Duration::from_millis(100));
+        let stopped = Instant::now();
+        stop.store(should_cancel, Ordering::Release);
+        let result = worker.join().unwrap();
+        release_tx.send(()).unwrap();
+        server.join().unwrap();
+        if should_cancel {
+            cancelled(result.unwrap_err());
+        } else {
+            assert!(matches!(
+                result.unwrap_err(),
+                ArchiveError::OriginUnavailable { .. }
+            ));
+        }
+        assert!(stopped.elapsed() < Duration::from_secs(4));
+        assert_eq!(retained_prefix_bytes(&target, &digest(b"abcd"), 4), 2);
+        assert!(!target.exists());
+        let server = Server::new(vec![response(
+            "206 Partial Content",
+            "Content-Range: bytes 2-3/4\r\nContent-Length: 2\r\n",
+            b"cd",
+        )]);
+        assert!(fetch(&server, &target, b"abcd").unwrap());
+        assert_eq!(fs::read(target).unwrap(), b"abcd");
+        server.finish();
+    }
 }
 
 #[test]
@@ -272,6 +453,7 @@ fn simultaneous_writers_share_one_verified_publication() {
                         allow_http: true,
                     },
                     &mut |_, _| {},
+                    None,
                 )
                 .unwrap()
             })

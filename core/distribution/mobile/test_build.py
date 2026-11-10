@@ -20,6 +20,69 @@ import mobile_native_build as mobile
 
 
 class BuildControls(unittest.TestCase):
+    def test_cpp_only_ios_build_does_not_acquire_or_modify_rust_toolchains(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
+                                      jobs=1, platform="ios", components=["llama"], full_run=False)
+            build = mobile.Build(args)
+            with (
+                mock.patch.object(mobile, "require_current_pins"),
+                mock.patch.object(mobile.platform, "system", return_value="Darwin"),
+                mock.patch.object(mobile.platform, "machine", return_value="arm64"),
+                mock.patch.object(build, "output", return_value="/fixture/sdk"),
+                mock.patch.object(build, "run") as calls,
+            ):
+                build.setup()
+            commands = [row.args[1] for row in calls.call_args_list]
+            self.assertFalse(any(command[0] in ("rustup", "rustc") for command in commands))
+            self.assertTrue(any(command[0] == "cmake" for command in commands))
+
+    def test_qwen_rejects_a_4k_relro_end_even_with_16k_load_segments(self):
+        # Captured from the first NDK r30 Qwen link: max-page-size alone leaves
+        # GNU_RELRO at 0x100d000, which is unsafe on a 16 KiB Android runtime.
+        loads = "LOAD 0xf60710 0xf68710 0xf68710 0xa4770 0xa48f0 RW 0x4000\n"
+        bad = loads + "GNU_RELRO 0xf60710 0xf68710 0xf68710 0xa4770 0xa48f0 R 0x1\n"
+        with self.assertRaisesRegex(ValueError, "GNU_RELRO"):
+            mobile.require_android_qwen_geometry(bad)
+        with self.assertRaises(ValueError):
+            mobile.require_android_qwen_geometry(loads)
+
+    def test_qwen_dynamic_exports_are_exact_on_both_platforms(self):
+        for apple in (False, True):
+            symbols = ["_" + name if apple else name for name in mobile.QWEN_EXPORTS]
+            text = "\n".join("000000001 T " + name for name in symbols)
+            self.assertEqual(set(mobile.require_qwen_exports(text, apple)), mobile.QWEN_EXPORTS)
+            with self.assertRaisesRegex(ValueError, "unexpected"):
+                mobile.require_qwen_exports(text + "\n000000002 T ggml_init", apple)
+            with self.assertRaisesRegex(ValueError, "missing"):
+                mobile.require_qwen_exports("\n".join(text.splitlines()[1:]), apple)
+
+    def test_qwen_identity_binds_platform_patch_and_adapter_without_model_duplication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory)
+            revision = "1" * 40
+            for name in mobile.QWEN_SOURCE_FILES:
+                (wrapper / name).write_text("adapter " + name)
+            (wrapper / "CMakeLists.txt").write_text('JOURNAL_MOBILE_QWEN_SOURCE_REVISION="' + revision + '"')
+            pin = {"revision": revision, "sha256": "2" * 64}
+            patches = [{"path": "lifecycle.patch", "sha256": "3" * 64}]
+            binding, first = mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})
+            self.assertEqual(binding["policy"]["context_tokens"], 32768)
+            self.assertEqual(binding["policy"]["parallel_slots"], 1)
+            self.assertEqual((binding["policy"]["batch_tokens"], binding["policy"]["ubatch_tokens"]), (128, 128))
+            self.assertEqual(binding["policy"]["metal_resource_residency"], "encoder-managed")
+            android = mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[0]
+            self.assertEqual((android["policy"]["batch_tokens"], android["policy"]["ubatch_tokens"]), (2048, 512))
+            self.assertNotIn("metal_resource_residency", android["policy"])
+            self.assertEqual(mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
+            self.assertNotEqual(mobile.qwen_runtime_binding("android", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
+            (wrapper / "journal_mobile_qwen.cpp").write_text("changed adapter")
+            self.assertNotEqual(mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})[1], first)
+            pin["revision"] = "5" * 40
+            with self.assertRaisesRegex(ValueError, "source revision"):
+                mobile.qwen_runtime_binding("ios", pin, "4" * 64, patches, wrapper, {"compiler": "test-compiler"})
+
     def test_default_sources_can_supply_patches_before_their_engine_build(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -58,25 +121,29 @@ class BuildControls(unittest.TestCase):
             self.assertEqual(set(binding["sources"]), {"ggml", "parakeet", "rfdetr"})
             # The duplicated common patch appears once; both distinct engine
             # requirements survive in each resulting tree and receipt.
-            self.assertEqual(len(binding["patches"]), 4)
+            self.assertEqual(len(binding["patches"]), 5)
             self.assertEqual({p["source_component"] for p in binding["patches"]}, {"parakeet", "rfdetr", "mobile"})
             for component in (*mobile.MEDIA_GGML_COMPONENTS, "sound-ced"):
                 self.assertEqual(build.summary["inputs"][component + "-patched-ggml"]["tree_sha256"], binding["tree_sha256"])
                 ggml = sources[component] / "third_party/ggml"
-                for file in ("common.c", "metal.metal", "cpu.c", "leaf.c"):
+                for file in ("common.c", "metal.metal", "cpu.c", "leaf.c", "guard.c"):
                     self.assertEqual((ggml / file).read_text(), "fixed\n")
 
-    def test_android_llama_patch_binds_only_a_successfully_patched_tree(self):
-        for before, succeeds in (("base", True), ("different", False)):
-            with self.subTest(before=before), tempfile.TemporaryDirectory() as directory:
+    def test_platform_llama_patch_binds_only_a_successfully_patched_tree(self):
+        cases = ((platform, name, before, succeeds)
+                 for platform, name in (("android", "llama-android-dotprod-repack.patch"),
+                                        ("ios", "llama-metal-ios-residency.patch"))
+                 for before, succeeds in (("base", True), ("different", False)))
+        for platform, name, before, succeeds in cases:
+            with self.subTest(platform=platform, before=before), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
-                                          jobs=1, platform="android", components=["llama"], full_run=False)
+                                          jobs=1, platform=platform, components=["llama"], full_run=False)
                 build = mobile.Build(args)
                 source = build.sources / "llama"
                 source.mkdir()
                 (source / "kernel.cpp").write_text(before + "\n")
-                patch = root / "core/distribution/mobile/llama-android-dotprod-repack.patch"
+                patch = root / "core/distribution/mobile" / name
                 patch.parent.mkdir(parents=True)
                 patch.write_text(self.patch("kernel.cpp"))
                 with mock.patch.object(mobile, "ROOT", root), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -92,17 +159,6 @@ class BuildControls(unittest.TestCase):
                 else:
                     self.assertNotIn("llama-patched-source", build.summary["inputs"])
                     self.assertEqual(build.summary["patches"], [])
-
-    def test_ios_llama_does_not_require_or_apply_the_android_patch(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            args = argparse.Namespace(work_dir=root / "build", cache_dir=root / "cache",
-                                      jobs=1, platform="ios", components=["llama"], full_run=False)
-            build = mobile.Build(args)
-            with mock.patch.object(mobile, "ROOT", root), mock.patch.object(build, "run", side_effect=AssertionError("unexpected patch")):
-                build.patch_llama(root / "missing-source")
-            self.assertEqual(build.summary["patches"], [])
-            self.assertNotIn("llama-patched-source", build.summary["inputs"])
 
     def test_conflicting_media_patch_cannot_publish_a_closure_binding(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -141,7 +197,7 @@ class BuildControls(unittest.TestCase):
         build.source_roots.update(sources)
         base = root / "base-ggml"
         base.mkdir()
-        for file in ("common.c", "metal.metal", "cpu.c", "leaf.c"):
+        for file in ("common.c", "metal.metal", "cpu.c", "leaf.c", "guard.c"):
             (base / file).write_text("base\n")
         archive = root / "ggml.tar.gz"
         with tarfile.open(archive, "w:gz") as bundle:
@@ -152,6 +208,7 @@ class BuildControls(unittest.TestCase):
         patch = root / "core/distribution/mobile/ggml-android-q8-dotprod.patch"
         patch.parent.mkdir(parents=True)
         patch.write_text(self.patch("leaf.c"))
+        (patch.parent / "ggml-metal-mapped-buffer-null.patch").write_text(self.patch("guard.c"))
         patcher = mock.patch.object(mobile, "ROOT", root)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -177,8 +234,20 @@ class BuildControls(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 build.ggml("parakeet", sources["parakeet"])
             binding = build.summary["inputs"]["media-shared-ggml"]
-            self.assertEqual(len(binding["patches"]), 3)
+            self.assertEqual(len(binding["patches"]), 4)
             self.assertEqual((sources["parakeet"] / "third_party/ggml/leaf.c").read_text(), "base\n")
+
+    def test_mapped_buffer_guard_is_identical_when_detector_builds_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            build, sources = self.media_fixture(Path(directory))
+            build.args.platform = "ios"
+            with contextlib.redirect_stdout(io.StringIO()):
+                for component in ("rfdetr", "parakeet"):
+                    build.ggml(component, sources[component])
+            first = build.summary["inputs"]["rfdetr-patched-ggml"]
+            self.assertEqual(first, build.summary["inputs"]["parakeet-patched-ggml"])
+            for source in sources.values():
+                self.assertEqual((source / "third_party/ggml/guard.c").read_text(), "fixed\n")
 
     def test_cargo_binary_selection_excludes_host_build_scripts_and_launchers(self):
         with tempfile.TemporaryDirectory() as directory:

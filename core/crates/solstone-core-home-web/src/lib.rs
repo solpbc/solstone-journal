@@ -12,6 +12,7 @@ use axum::{
 };
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+use solstone_core_home::first_minutes::SetupProgressReader;
 
 mod assets;
 mod clock;
@@ -105,13 +106,17 @@ pub fn routes(journal_root: PathBuf, clock: Clock, is_moment: fn(&str) -> bool) 
         )
         .route(
             "/app/home/api/first-minutes",
-            get(move |basis: Option<Extension<AccessBasis>>| {
-                first_minutes(
-                    first_minutes_root.clone(),
-                    first_minutes_clock.clone(),
-                    basis.map(|Extension(basis)| basis),
-                )
-            }),
+            get(
+                move |basis: Option<Extension<AccessBasis>>,
+                      setup_reader: Option<Extension<SetupProgressReader>>| {
+                    first_minutes(
+                        first_minutes_root.clone(),
+                        first_minutes_clock.clone(),
+                        basis.map(|Extension(basis)| basis),
+                        setup_reader.map(|Extension(reader)| reader),
+                    )
+                },
+            ),
         )
         .route(
             "/app/home/api/briefing",
@@ -125,6 +130,7 @@ async fn first_minutes(
     journal_root: PathBuf,
     clock: Clock,
     basis: Option<AccessBasis>,
+    setup_reader: Option<SetupProgressReader>,
 ) -> Response {
     let now = clock.now();
     // Setup actions answer only on the journal's own computer, the same rule
@@ -132,11 +138,15 @@ async fn first_minutes(
     let setup_actions = matches!(basis, Some(AccessBasis::Localhost));
     spawn_blocking_response(OwnerReadRole::HomeFirstMinutes, move || {
         let context = solstone_core_home::HomeContext::new(journal_root, now);
-        Json(solstone_core_home::first_minutes::read_first_minutes(
-            &context,
-            setup_actions,
-        ))
-        .into_response()
+        let value = match setup_reader {
+            Some(reader) => solstone_core_home::first_minutes::read_first_minutes_with(
+                &context,
+                setup_actions,
+                |journal| reader(journal),
+            ),
+            None => solstone_core_home::first_minutes::read_first_minutes(&context, setup_actions),
+        };
+        Json(value).into_response()
     })
     .await
 }
@@ -393,6 +403,35 @@ mod tests {
     }
 
     // An open window reads setup progress, which probes this computer.
+    #[cfg(feature = "full-tests")]
+    #[tokio::test]
+    async fn first_minutes_without_host_reader_preserves_the_default_setup_projection() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir(root.path().join("config")).unwrap();
+        let completed_at = 1_700_000_000_000i64;
+        fs::write(
+            root.path().join("config/journal.json"),
+            json!({
+                "setup": {"completed_at": completed_at, "thinking_choice": "byo"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let now = chrono::DateTime::from_timestamp_millis(completed_at + 86_400_000).unwrap();
+        let context = solstone_core_home::HomeContext::new(root.path(), now);
+        let expected = solstone_core_home::first_minutes::read_first_minutes(&context, false);
+        let response = get(
+            super::routes(root.path().to_path_buf(), super::Clock::fixed(now), |_| {
+                false
+            }),
+            "/app/home/api/first-minutes",
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::OK);
+        let body: Value = serde_json::from_slice(&response.3).unwrap();
+        assert_eq!(body["setup"], expected["setup"]);
+    }
+
     #[cfg(feature = "full-tests")]
     #[tokio::test]
     async fn first_minutes_route_window_timing() {

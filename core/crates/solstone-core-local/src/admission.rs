@@ -25,6 +25,24 @@ pub enum AdmissionError {
     Io(std::io::Error),
 }
 
+#[derive(Debug)]
+pub enum CheckedAdmissionError {
+    Cancelled,
+    Admission(AdmissionError),
+}
+
+impl From<AdmissionError> for CheckedAdmissionError {
+    fn from(error: AdmissionError) -> Self {
+        Self::Admission(error)
+    }
+}
+
+impl From<std::io::Error> for CheckedAdmissionError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Admission(AdmissionError::Io(error))
+    }
+}
+
 impl From<std::io::Error> for AdmissionError {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error)
@@ -193,18 +211,58 @@ pub fn acquire_local_slot(
     exclusive_admission: bool,
     priority: WorkPriority,
 ) -> Result<LocalSlotPermit, AdmissionError> {
+    match acquire_local_slot_checked(
+        root,
+        capacity,
+        timeout,
+        exclusive_admission,
+        priority,
+        &|| false,
+        &mut || {},
+    ) {
+        Ok(permit) => Ok(permit),
+        Err(CheckedAdmissionError::Admission(error)) => Err(error),
+        Err(CheckedAdmissionError::Cancelled) => unreachable!("uncancellable admission"),
+    }
+}
+
+/// The same priority queue with an owner/generation checkpoint. `on_wait` runs
+/// once, only after immediate admission failed, with arbitration released. A
+/// caller may release an idle cached native model before waiting for compute.
+#[allow(clippy::too_many_arguments)]
+pub fn acquire_local_slot_checked(
+    root: &Path,
+    capacity: u32,
+    timeout: Option<Duration>,
+    exclusive_admission: bool,
+    priority: WorkPriority,
+    cancelled: &dyn Fn() -> bool,
+    on_wait: &mut dyn FnMut(),
+) -> Result<LocalSlotPermit, CheckedAdmissionError> {
+    let checkpoint = || {
+        if cancelled() {
+            Err(CheckedAdmissionError::Cancelled)
+        } else {
+            Ok(())
+        }
+    };
+    checkpoint()?;
     if capacity == 0 {
         return Err(AdmissionError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "local admission capacity must be positive",
-        )));
+        ))
+        .into());
     }
     let started = Instant::now();
     fs::create_dir_all(root)?;
     let mut ticket = None;
+    let mut notified_wait = false;
     loop {
+        checkpoint()?;
         check_deadline(started, timeout)?;
         if let Some(arbitration) = try_arbitrate(root)? {
+            checkpoint()?;
             check_deadline(started, timeout)?;
             if ticket.is_none() {
                 ticket = Some(create_ticket(root, priority)?);
@@ -217,6 +275,7 @@ pub fn acquire_local_slot(
                     try_acquire(root, capacity, started)?
                 };
                 if let Some(permit) = permit {
+                    checkpoint()?;
                     check_deadline(started, timeout)?;
                     // Publication and selection share arbitration. Retire this
                     // waiter before letting another caller select the next one.
@@ -226,6 +285,11 @@ pub fn acquire_local_slot(
             }
             drop(arbitration);
         }
+        if !notified_wait {
+            on_wait();
+            notified_wait = true;
+        }
+        checkpoint()?;
         check_deadline(started, timeout)?;
         let sleep_for = timeout
             .and_then(|deadline| deadline.checked_sub(started.elapsed()))
@@ -461,6 +525,98 @@ mod tests {
     use crate::test_support::lock_released;
 
     static NEXT_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn checked_wait_cancels_without_native_entry_and_retires_its_ticket() {
+        use std::sync::{Arc, atomic::AtomicBool, mpsc};
+        let root = tempfile::tempdir().unwrap();
+        let held =
+            acquire_local_slot(root.path(), 1, None, false, WorkPriority::default()).unwrap();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (queued, observed) = mpsc::sync_channel(1);
+        let worker_root = root.path().to_owned();
+        let worker_cancelled = Arc::clone(&cancelled);
+        let entered = Arc::new(AtomicBool::new(false));
+        let worker_entered = Arc::clone(&entered);
+        let worker = thread::spawn(move || {
+            let permit = acquire_local_slot_checked(
+                &worker_root,
+                1,
+                Some(Duration::from_secs(2)),
+                false,
+                WorkPriority::default(),
+                &|| worker_cancelled.load(Ordering::Acquire),
+                &mut || {
+                    queued.send(()).unwrap();
+                },
+            );
+            if permit.is_ok() {
+                worker_entered.store(true, Ordering::Release);
+            }
+            permit
+        });
+        observed.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(wait_tickets(root.path()).unwrap().len(), 1);
+        cancelled.store(true, Ordering::Release);
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(CheckedAdmissionError::Cancelled)
+        ));
+        assert!(!entered.load(Ordering::Acquire));
+        assert!(wait_tickets(root.path()).unwrap().is_empty());
+        drop(held);
+        assert!(
+            acquire_local_slot(
+                root.path(),
+                1,
+                Some(ACQUIRE_DEADLINE),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn checked_immediate_path_keeps_cache_and_precancel_publishes_no_ticket() {
+        use std::cell::Cell;
+        let root = tempfile::tempdir().unwrap();
+        let evictions = Cell::new(0);
+        let permit = acquire_local_slot_checked(
+            root.path(),
+            1,
+            None,
+            false,
+            WorkPriority::default(),
+            &|| false,
+            &mut || evictions.set(evictions.get() + 1),
+        )
+        .unwrap();
+        assert_eq!(evictions.get(), 0);
+        drop(permit);
+        let result = acquire_local_slot_checked(
+            root.path(),
+            1,
+            None,
+            false,
+            WorkPriority::default(),
+            &|| true,
+            &mut || evictions.set(evictions.get() + 1),
+        );
+        assert!(matches!(result, Err(CheckedAdmissionError::Cancelled)));
+        assert_eq!(evictions.get(), 0);
+        assert!(wait_tickets(root.path()).unwrap().is_empty());
+        assert!(
+            acquire_local_slot(
+                root.path(),
+                1,
+                Some(ACQUIRE_DEADLINE),
+                false,
+                WorkPriority::default()
+            )
+            .is_ok()
+        );
+    }
 
     /// Deadline for an acquisition the test expects to succeed. A loaded
     /// Windows runner can take well over 100 ms to create and lock the first

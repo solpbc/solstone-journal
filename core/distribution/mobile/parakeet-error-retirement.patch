@@ -1,0 +1,509 @@
+--- a/examples/cli/main.cpp
++++ b/examples/cli/main.cpp
+@@ -1602,7 +1602,7 @@
+     // as model.cpp's transcribe path does.
+     std::vector<float> feats;
+     int n_mels = 0, T = 0;
+-    if (std::string(pk::global_backend().device_name()) != "cpu") {
++    if (std::string(pk::backend_device_name()) != "cpu") {
+         pk::GpuMel gmel(ml);
+         gmel.compute(a.samples, feats, n_mels, T);
+     } else {
+@@ -1692,7 +1692,7 @@
+         "\nbench-decode: clip Tout=%d frames, d_model=%d, decoder=%s, threads=%d, "
+         "reps=%d (best-of), backend=%s\n",
+         Tout, dm, use_tdt ? "tdt" : "rnnt", reported_threads, reps,
+-        pk::global_backend().device_name());
++        pk::backend_device_name().c_str());
+     std::fprintf(stderr, "  %-6s %-12s %-12s %-10s %-14s %-14s\n",
+                  "B", "serial_ms", "batched_ms", "speedup", "serial_cps", "batched_cps");
+     for (const Row& r : rows) {
+@@ -1719,7 +1719,7 @@
+         out += ",\"decoder\":";
+         bench_json_string(out, use_tdt ? std::string("tdt") : std::string("ctc"));
+         out += ",\"backend\":";
+-        bench_json_string(out, std::string(pk::global_backend().device_name()));
++        bench_json_string(out, std::string(pk::backend_device_name()));
+         char nb[64];
+         std::snprintf(nb, sizeof(nb), ",\"threads\":%d", reported_threads);
+         out += nb;
+--- a/src/backend.cpp
++++ b/src/backend.cpp
+@@ -1,6 +1,6 @@
+ #include "backend.hpp"
+ #include "common.hpp"
+-#include "ggml_graph.hpp"   // pk::global_backend()
++#include "ggml_graph.hpp"   // pk::GlobalBackendBorrow
+ #include "model_loader.hpp"
+ 
+ #include "ggml.h"
+@@ -382,17 +382,13 @@
+ 
+ void ensure_weights_realized(const ModelLoader& ml) {
+     if (ml.weights_realized()) return;
+-    // Two threads may reach a never-realized loader together (a diarization or
+-    // tagger model used from several threads). Serialize the one-time setup.
+-    static std::mutex realize_mu;
+-    std::lock_guard<std::mutex> lk(realize_mu);
++    // One recursive global lock serves eager loads and graph-build callbacks;
++    // a separate realize_mu would invert the graph->realize lock order.
++    GlobalBackendBorrow borrow;
+     if (ml.weights_realized()) return;
+-    // realize_weights mutates tensor->buffer; the ModelLoader is held by `const`
+-    // ref throughout the inference path (the components are read-only views), but
+-    // realizing the backend buffer is a one-time, semantically-const setup of the
+-    // weight storage. Cast away const for that single call.
+     ModelLoader& mut = const_cast<ModelLoader&>(ml);
+-    if (!mut.realize_weights(global_backend().handle())) {
++    if (!mut.realize_weights(borrow.backend().handle())) {
++        borrow.failed();
+         throw std::runtime_error("Parakeet model weights could not be prepared");
+     }
+ }
+--- a/src/ggml_graph.cpp
++++ b/src/ggml_graph.cpp
+@@ -18,23 +18,29 @@
+ int  num_threads()          { return g_num_threads.load(std::memory_order_relaxed); }
+ 
+ namespace {
+-// Process-global persistent backend. Created on first use with the configured
+-// thread count and reused across every graph computation. Holding it here (vs.
+-// per-Model) keeps the migration minimal: the components call pk::run_graph,
+-// which routes through this single Backend, so the per-call ggml_init/ggml_free
+-// churn is eliminated without threading a Backend handle through every layer.
+-// Task 2+ will fuse graphs on top of the same Backend.
+-std::unique_ptr<Backend> g_backend;
+-int g_backend_threads = 0;
+-// Serializes access to the process-global Backend and guards its lazy creation.
+-// The shared Backend (one gallocr + pending-input list, not re-entrant) is not
+-// safe for concurrent compute, so run_graph serializes it. Callers that need
+-// real parallelism lease a backend from a pool (backend_pool.hpp); a thread
+-// with a lease never takes this lock for compute.
+-// Recursive: run_graph holds it while the build lambda runs, and a build lambda
+-// that touches a loader whose weights are not yet realized calls
+-// global_backend() (through ensure_weights_realized) on the same thread.
+-std::recursive_mutex g_backend_mutex;
++struct BackendState {
++    std::recursive_mutex mutex;
++    std::unique_ptr<Backend> backend;
++    int threads = 0;
++    size_t owners = 0;
++    size_t borrows = 0;
++    bool retire_pending = false;
++};
++
++// Constructed before a first owner completes, so ordinary static owners also
++// retire before this registry. Process exit still requires explicit shutdown
++// after model/stream/call retirement, while the device driver is alive.
++BackendState& backend_state() {
++    static BackendState state;
++    return state;
++}
++
++void retire_if_unused(BackendState& state) {
++    if (!state.retire_pending || state.owners || state.borrows) return;
++    state.backend.reset();
++    state.threads = 0;
++    state.retire_pending = false;
++}
+ } // namespace
+ 
+ // Default ggml compute-thread count when --threads is unset. On this class of
+@@ -53,62 +59,83 @@
+     return g > 0 ? g : kDefaultThreads;
+ }
+ 
+-// Apply changes between complete calls. Synchronizing here also restores the
+-// default on clear without disturbing a run_graph per-call scoped setting when
+-// it recursively asks global_backend() to realize weights.
+ void set_num_threads(int n) {
+-    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
++    auto& state = backend_state();
++    std::lock_guard<std::recursive_mutex> lock(state.mutex);
+     g_num_threads.store(n < 0 ? 0 : n, std::memory_order_relaxed);
+-    if (g_backend) {
+-        const int threads = effective_threads();
+-        g_backend->set_n_threads(threads);
+-        g_backend_threads = threads;
++    if (state.backend && !state.retire_pending) {
++        state.threads = effective_threads();
++        state.backend->set_n_threads(state.threads);
+     }
+ }
+ 
+-// Caller holds g_backend_mutex.
+-static Backend& global_backend_locked() {
+-    // Lazy create (reset-safe: shutdown_backend() can free it, and a later call
+-    // recreates it).
+-    if (!g_backend) {
+-        const int g = g_num_threads.load(std::memory_order_relaxed);
+-        const int n = g > 0 ? g : kDefaultThreads;
+-        g_backend = std::make_unique<Backend>(n);
+-        g_backend_threads = n;
++// Caller holds state.mutex, and has refused pending failed generations.
++static Backend& global_backend_locked(BackendState& state) {
++    if (!state.backend) {
++        const int threads = effective_threads();
++        state.backend = std::make_unique<Backend>(threads);
++        state.threads = threads;
+     }
+-    // Honor a late --threads override: keep the live backend's thread count in
+-    // sync with the global override (the override is set once before inference).
+     const int g = g_num_threads.load(std::memory_order_relaxed);
+-    if (g > 0 && g != g_backend_threads) {
+-        g_backend->set_n_threads(g);
+-        g_backend_threads = g;
++    if (g > 0 && g != state.threads) {
++        state.backend->set_n_threads(g);
++        state.threads = g;
+     }
+-    return *g_backend;
++    return *state.backend;
+ }
+ 
+-Backend& global_backend() {
+-    // Taken for the lazy create and the late thread-count sync. Concurrent
+-    // requests on pooled backends still ask the global backend for its device
+-    // name, so this must be safe to call from several threads.
+-    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
+-    return global_backend_locked();
++BackendWeightOwner::BackendWeightOwner() {
++    auto& state = backend_state();
++    std::lock_guard<std::recursive_mutex> lock(state.mutex);
++    ++state.owners; // Registration alone never initializes a backend.
++}
++
++BackendWeightOwner::~BackendWeightOwner() {
++    auto& state = backend_state();
++    std::lock_guard<std::recursive_mutex> lock(state.mutex);
++    --state.owners;
++    retire_if_unused(state);
++}
++
++GlobalBackendBorrow::GlobalBackendBorrow() : lock_(backend_state().mutex) {
++    auto& state = backend_state();
++    retire_if_unused(state);
++    if (state.retire_pending) {
++        throw std::runtime_error("Parakeet backend needs a fresh context");
++    }
++    backend_ = &global_backend_locked(state);
++    ++state.borrows; // Failed construction cannot leave a phantom borrow.
++}
++
++GlobalBackendBorrow::~GlobalBackendBorrow() {
++    auto& state = backend_state();
++    --state.borrows;
++    retire_if_unused(state); // Still locked; Restore has already finished.
++}
++
++void GlobalBackendBorrow::failed() { backend_state().retire_pending = true; }
++
++std::string backend_device_name() {
++    GlobalBackendBorrow borrow;
++    return borrow.backend().device_name();
++}
++
++bool backend_is_cpu() {
++    GlobalBackendBorrow borrow;
++    return borrow.backend().is_cpu();
+ }
+ 
+ int backend_thread_count() {
+-    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
+-    return g_backend_threads;
++    auto& state = backend_state();
++    std::lock_guard<std::recursive_mutex> lock(state.mutex);
++    return state.threads;
+ }
+ 
+ void shutdown_backend() {
+-    // Free the process-global backend explicitly. Required for GPU backends: the
+-    // backend (and its gallocr's device buffer) must be released while the CUDA/
+-    // etc. driver is still alive. Relying on static destruction frees it during
+-    // process exit, AFTER the driver's atexit handler, which aborts with
+-    // "driver shutting down". Call from main() before returning (model objects,
+-    // which hold their own device weight buffers, must already be destroyed).
+-    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
+-    g_backend.reset();
+-    g_backend_threads = 0;
++    auto& state = backend_state();
++    std::lock_guard<std::recursive_mutex> lock(state.mutex);
++    state.retire_pending = true;
++    retire_if_unused(state);
+ }
+ 
+ bool run_graph(size_t /*mem_bytes*/, int n_threads,
+@@ -125,8 +152,9 @@
+         }
+         return true;
+     }
+-    std::lock_guard<std::recursive_mutex> lock(g_backend_mutex);
+-    Backend& be = global_backend_locked();
++    GlobalBackendBorrow borrow;
++    Backend& be = borrow.backend();
++    auto& state = backend_state();
+     // When no global override is set, honor the caller's per-call n_threads (the
+     // historical behavior, used by the unit tests) for THIS call only. The
+     // backend is process-global, so a count left behind would slow every later
+@@ -135,20 +163,21 @@
+     // A positive global override already pinned the backend's thread count in
+     // global_backend_locked() and wins over the per-call value.
+     const int g = g_num_threads.load(std::memory_order_relaxed);
+-    const int prev_threads = g_backend_threads;
++    const int prev_threads = state.threads;
+     const bool scoped = g <= 0 && n_threads > 0 && n_threads != prev_threads;
+     if (scoped) {
+         be.set_n_threads(n_threads);
+-        g_backend_threads = n_threads;
++        state.threads = n_threads;
+     }
+ 
+     // Backend::compute builds the graph in a no_alloc context, allocates via the
+     // persistent gallocr, pushes inputs AFTER alloc, computes, and reads back.
+     struct Restore {
+-        Backend& be; bool on; int prev;
+-        ~Restore() { if (on) { be.set_n_threads(prev); g_backend_threads = prev; } }
+-    } restore{be, scoped, prev_threads};
++        Backend& be; BackendState& state; bool on; int prev;
++        ~Restore() { if (on) { be.set_n_threads(prev); state.threads = prev; } }
++    } restore{be, state, scoped, prev_threads};
+     if (!be.compute(build, out)) {
++        borrow.failed();
+         throw std::runtime_error("Parakeet graph execution failed");
+     }
+     return true;
+--- a/src/ggml_graph.hpp
++++ b/src/ggml_graph.hpp
+@@ -1,5 +1,7 @@
+ #pragma once
+ #include <functional>
++#include <mutex>
++#include <string>
+ #include <vector>
+ 
+ struct ggml_context;
+@@ -49,15 +51,41 @@
+ size_t last_graph_alloc_bytes();
+ 
+ class Backend;
+-// The process-global persistent Backend (created lazily on first use). Exposed
+-// so the weight-realization path can give the loader's tensors a backend buffer
+-// on the SAME CPU backend that graphs run on.
+-Backend& global_backend();
++
++// Register a weight lifetime before it can borrow a global backend. Declare
++// this FIRST in its model/loader so it is destroyed AFTER buffers and members.
++class BackendWeightOwner {
++public:
++    BackendWeightOwner();
++    ~BackendWeightOwner();
++    BackendWeightOwner(const BackendWeightOwner&) = delete;
++    BackendWeightOwner& operator=(const BackendWeightOwner&) = delete;
++};
++
++// Scoped access owns the recursive graph lock and a live borrow. No Backend
++// reference or handle may outlive it. Declare before any thread Restore guard.
++class GlobalBackendBorrow {
++public:
++    GlobalBackendBorrow();
++    ~GlobalBackendBorrow();
++    GlobalBackendBorrow(const GlobalBackendBorrow&) = delete;
++    GlobalBackendBorrow& operator=(const GlobalBackendBorrow&) = delete;
++    Backend& backend() const { return *backend_; }
++    void failed();
++private:
++    std::unique_lock<std::recursive_mutex> lock_;
++    Backend* backend_ = nullptr;
++};
++
++// Values are copied while the global borrow remains live.
++std::string backend_device_name();
++bool backend_is_cpu();
+ 
+ // Free the process-global backend. Call once at program exit (after all model
+ // objects are destroyed) so GPU backends release device memory while the driver
+ // is still alive — otherwise static destruction frees it after the CUDA atexit
+-// handler and aborts. A later global_backend() call recreates it.
++// handler and aborts. A request with live owners/borrows is deferred; a later
++// admitted borrow recreates it only after they are gone.
+ void shutdown_backend();
+ 
+ } // namespace pk
+--- a/src/model.cpp
++++ b/src/model.cpp
+@@ -74,7 +74,7 @@
+     // Packed ternary weights run on the CPU kernel only. Fail at load with a
+     // clear message instead of crashing inside a GPU graph.
+     if (m->loader_.config().ternary.present &&
+-        std::string(pk::global_backend().device_name()) != "cpu") {
++        std::string(pk::backend_device_name()) != "cpu") {
+         PK_LOG("this GGUF holds packed ternary weights, which run on the CPU backend only; "
+                "re-convert with --ternary dequant to use a GPU backend, or set PARAKEET_DEVICE=cpu");
+         return nullptr;
+@@ -134,7 +134,7 @@
+ int Model::set_concurrency(int backends, int threads_each) {
+     if (backends < 1) backends = 1;
+     // GPU keeps one backend and the global mutex: the pool is CPU only.
+-    if (backends > 1 && std::string(pk::global_backend().device_name()) != "cpu") {
++    if (backends > 1 && std::string(pk::backend_device_name()) != "cpu") {
+         PK_LOG("set_concurrency(%d): the compute device is not the CPU; keeping 1 backend", backends);
+         backends = 1;
+     }
+@@ -229,7 +229,7 @@
+ 
+     std::vector<float> feats;
+     int n_mels = 0, T = 0;
+-    if (std::string(pk::global_backend().device_name()) != "cpu") {
++    if (std::string(pk::backend_device_name()) != "cpu") {
+         GpuMel gmel(loader);
+         gmel.compute(pcm16k, feats, n_mels, T);
+     } else {
+@@ -327,7 +327,7 @@
+     // 1. Log-mel front end -> feats [n_mels, T]. Mirrors transcribe_16k exactly.
+     std::vector<float> feats;
+     int n_mels = 0, Tmel = 0;
+-    if (std::string(pk::global_backend().device_name()) != "cpu") {
++    if (std::string(pk::backend_device_name()) != "cpu") {
+         GpuMel gmel(loader_);
+         gmel.compute(pcm16k, feats, n_mels, Tmel);
+     } else {
+@@ -383,7 +383,7 @@
+     if (!cfg.vad.present) throw std::runtime_error("model has no VAD head");
+     const double fs = cfg.vad.frame_sec;
+     if (!(fs > 0.0) || !std::isfinite(fs)) throw std::runtime_error("invalid VAD frame size");
+-    const bool gpu_mel = std::string(pk::global_backend().device_name()) != "cpu";
++    const bool gpu_mel = std::string(pk::backend_device_name()) != "cpu";
+     const size_t block = (size_t)std::llround(kVadBlockSec * 16000.0);
+     const size_t min_tail = (size_t)std::llround(kVadMinTailSec * 16000.0);
+     const size_t block_frames = (size_t)std::llround(kVadBlockSec / fs);
+@@ -568,7 +568,7 @@
+ // true frame count.
+ static MelBatch build_mel_batch(const ModelLoader& loader,
+                                 const std::vector<std::vector<float>>& pcms16k) {
+-    const bool gpu = std::string(pk::global_backend().device_name()) != "cpu";
++    const bool gpu = std::string(pk::backend_device_name()) != "cpu";
+     MelBatch mb;
+     mb.B = (int)pcms16k.size();
+     std::vector<std::vector<float>> feats(mb.B);
+--- a/src/model_loader.hpp
++++ b/src/model_loader.hpp
+@@ -1,4 +1,5 @@
+ #pragma once
++#include "ggml_graph.hpp"
+ #include <atomic>
+ #include <memory>
+ #include <string>
+@@ -126,6 +127,7 @@
+     float rotary_fraction=1.0f;      // fraction of head_dim rotated
+ };
+ class ModelLoader {
++    BackendWeightOwner backend_owner_;
+ public:
+     ModelLoader() = default;
+     ~ModelLoader();
+--- a/src/parakeet_capi.cpp
++++ b/src/parakeet_capi.cpp
+@@ -1461,8 +1461,8 @@
+     g_load_error.clear();
+     try {
+         pk::set_num_threads(n_threads);
+-        pk::global_backend();
+-        return pk::backend_thread_count();
++        pk::GlobalBackendBorrow borrow;
++        return borrow.backend().n_threads();
+     } catch (const std::exception& e) {
+         g_load_error = e.what();
+         return 0;
+@@ -1475,8 +1475,8 @@
+ extern "C" int parakeet_capi_get_threads(void) {
+     g_load_error.clear();
+     try {
+-        pk::global_backend();
+-        return pk::backend_thread_count();
++        pk::GlobalBackendBorrow borrow;
++        return borrow.backend().n_threads();
+     } catch (const std::exception& e) {
+         g_load_error = e.what();
+         return 0;
+--- a/src/silero_vad.cpp
++++ b/src/silero_vad.cpp
+@@ -183,7 +183,7 @@
+ 
+ }  // namespace
+ 
+-std::unique_ptr<SileroVad> SileroVad::load(const std::string& path, std::string* err, const std::string& component) {
++std::unique_ptr<SileroVad> SileroVad::load(const std::string& path, std::string* err, const std::string& component) try {
+     // A component of a bundle GGUF (docs/bundle.md): every key and tensor name has
+     // the "<component>." prefix, and only those tensors are read.
+     std::string pfx;
+@@ -339,8 +339,9 @@
+         m->w_.push_back(w);
+     }
+ 
+-    m->buf_ = ggml_backend_alloc_ctx_tensors(m->ctx_, global_backend().handle());
+-    if (!m->buf_) return fail("cannot allocate the weight buffer");
++    GlobalBackendBorrow borrow;
++    m->buf_ = ggml_backend_alloc_ctx_tensors(m->ctx_, borrow.backend().handle());
++    if (!m->buf_) { borrow.failed(); return fail("cannot allocate the weight buffer"); }
+     std::ifstream f(path, std::ios::binary);
+     if (!f) return fail("cannot reopen the file to read the weights");
+     const uint64_t base = gguf_get_data_offset(g);
+@@ -362,6 +363,9 @@
+         }
+     }
+     return m;
++} catch (...) {
++    set_err(err, "Silero model initialization failed");
++    return nullptr;
+ }
+ 
+ bool SileroVad::run_chunk(const RateWeights& w, const float* input, std::vector<float>& h, std::vector<float>& c,
+--- a/src/silero_vad.hpp
++++ b/src/silero_vad.hpp
+@@ -1,4 +1,5 @@
+ #pragma once
++#include "ggml_graph.hpp"
+ // Silero VAD (https://github.com/snakers4/silero-vad, MIT licence) as a small
+ // standalone ggml model. One GGUF holds the 16 kHz and the 8 kHz weight sets
+ // (schema in docs/conversion.md, usage in docs/vad.md).
+@@ -72,6 +73,7 @@
+ }  // namespace silero
+ 
+ class SileroVad {
++    BackendWeightOwner backend_owner_;
+ public:
+     // Returns nullptr on failure and writes a one-line reason to *err (when not null).
+     // With a non-empty `component`, `gguf_path` is a bundle GGUF (docs/bundle.md):
+--- a/src/vad_json.cpp
++++ b/src/vad_json.cpp
+@@ -153,7 +153,7 @@
+     std::snprintf(buf, sizeof(buf), "\",\"duration\":%.3f,\"frame_sec\":%.3f,\"backend\":\"",
+                   total, frame_sec);
+     j += buf;
+-    j += pk::global_backend().device_name();
++    j += pk::backend_device_name();
+     j += "\",\"segments\":[";
+     for (size_t i = 0; i < segs.size(); ++i) {
+         std::snprintf(buf, sizeof(buf), "%s{\"start\":%.3f,\"end\":%.3f}", i ? "," : "",
+--- a/tests/test_backend_pool.cpp
++++ b/tests/test_backend_pool.cpp
+@@ -73,7 +73,7 @@
+ static void test_global_backend_inside_build() {
+     std::vector<float> a(8, 1.0f), b(8, 2.0f), out;
+     const bool ok = pk::run_graph(0, 0, [&](ggml_context* ctx) -> ggml_tensor* {
+-        const char* name = pk::global_backend().device_name();
++        const std::string name = pk::backend_device_name();
+         (void)name;
+         const int64_t ne[1] = {8};
+         ggml_tensor* ta = pk::graph_input_tensor(ctx, GGML_TYPE_F32, 1, ne, a.data(), 32);
+--- a/tests/test_exact_batch.cpp
++++ b/tests/test_exact_batch.cpp
+@@ -218,7 +218,7 @@
+         }
+     }
+     if (paths.empty()) { std::fprintf(stderr, "no model env set; skip\n"); return 77; }
+-    if (!pk::global_backend().is_cpu()) { std::fprintf(stderr, "not a CPU backend; skip\n"); return 77; }
++    if (!pk::backend_is_cpu()) { std::fprintf(stderr, "not a CPU backend; skip\n"); return 77; }
+     bool ok = true;
+     for (const std::string& p : paths) ok = check_model(p.c_str()) && ok;
+     return ok ? 0 : 1;

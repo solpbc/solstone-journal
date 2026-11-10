@@ -482,7 +482,8 @@ mod tests {
             assert_eq!(run.exit_code, 1, "{args:?} {}", run.stderr);
             assert!(id.is_none(), "{args:?}");
             assert!(
-                run.stderr.contains("desktop importer"),
+                run.stderr
+                    .contains(solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL),
                 "{args:?} {}",
                 run.stderr
             );
@@ -688,7 +689,11 @@ mod tests {
             &seams,
         );
         assert_eq!(connect.exit_code, 1, "{}", connect.stderr);
-        assert!(connect.stderr.contains("desktop importer"));
+        assert!(
+            connect
+                .stderr
+                .contains(solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL)
+        );
         assert!(!journal.path().join("config").exists());
     }
 
@@ -791,7 +796,12 @@ mod tests {
         let args = vec![export.to_str().unwrap().to_owned()];
         let run = preview(&args, journal.path(), &seams);
         assert_eq!(run.exit_code, 1, "{}", run.stderr);
-        assert!(run.stderr.contains("desktop importer"), "{}", run.stderr);
+        assert!(
+            run.stderr
+                .contains(solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL),
+            "{}",
+            run.stderr
+        );
     }
 
     #[test]
@@ -816,7 +826,8 @@ mod tests {
             assert_eq!(run.exit_code, 1, "{args:?} {}", run.stderr);
             assert!(id.is_none(), "{args:?}");
             assert!(
-                run.stderr.contains("desktop importer"),
+                run.stderr
+                    .contains(solstone_core_import::cli_render::EMBEDDED_BODY_REFUSAL),
                 "{args:?} {}",
                 run.stderr
             );

@@ -2,20 +2,29 @@
 // Copyright (c) 2026 sol pbc
 
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
 
 use solstone_core_sol_link::http::{
     SetupDownloads, SetupHost, SetupProgressError, SetupRetryError, packaged_speech_retry,
-    read_setup_downloads,
+    read_setup_downloads, read_setup_downloads_with_packaged_speech,
 };
 use solstone_core_thinking_copy::{
     DownloadMember, SetupCatalogFacts, current_setup_facts, sum_download_bytes,
 };
 
+/// App-owned setup evidence. Implementations bind the actual packaged model
+/// source, verify pinned bytes, and invalidate changed or retired sources.
+pub trait PackagedSpeechSetup: Send + Sync {
+    fn status(&self) -> Result<(), String>;
+    fn retry(&self) -> Result<(), String>;
+}
+
 pub(crate) struct ConveySetupHost {
     backup: solstone_core_backup_web::BackupWebDeps,
     executor: Option<tokio::runtime::Handle>,
+    packaged_speech: Option<Arc<dyn PackagedSpeechSetup>>,
 }
 
 impl ConveySetupHost {
@@ -23,13 +32,49 @@ impl ConveySetupHost {
         Self {
             backup,
             executor: tokio::runtime::Handle::try_current().ok(),
+            packaged_speech: None,
+        }
+    }
+
+    pub(crate) fn with_packaged_speech(
+        mut self,
+        speech: Option<Arc<dyn PackagedSpeechSetup>>,
+    ) -> Self {
+        self.packaged_speech = speech;
+        self
+    }
+
+    fn packaged_speech(&self, journal: &Path) -> Result<&Arc<dyn PackagedSpeechSetup>, String> {
+        if journal != self.backup.journal_root {
+            return Err("journal binding changed".into());
+        }
+        self.packaged_speech
+            .as_ref()
+            .ok_or_else(|| "packaged speech proof unavailable".into())
+    }
+
+    fn start_local_for_key(&self, journal: &Path, key: &str) -> Result<(), String> {
+        if solstone_core_local::embedded::supports_key(key) {
+            let root = self
+                .backup
+                .retained_root()
+                .map_err(|error| error.to_string())?;
+            if root.canonical_path() != journal {
+                return Err("journal binding changed".into());
+            }
+            crate::thinking_install::start_mobile(root, "local/qwen3.5-4b", false).map(|_| ())
+        } else {
+            crate::thinking_install::start(journal, "local/qwen3.5-4b").map(|_| ())
         }
     }
 }
 
 impl SetupHost for ConveySetupHost {
     fn start_local(&self, journal_root: &Path) -> Result<(), String> {
-        crate::thinking_install::start(journal_root, "local/qwen3.5-4b").map(|_| ())
+        self.start_local_for_key(
+            journal_root,
+            &solstone_core_local::install::pins::platform_key(),
+        )
     }
 
     fn cancel_local(&self, journal_root: &Path, attempt_id: &str) -> Result<(), String> {
@@ -37,6 +82,12 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn retry_speech(&self, journal_root: &Path) -> Result<(), SetupRetryError> {
+        if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
+            return packaged_speech_retry(
+                self.packaged_speech(journal_root)
+                    .and_then(|speech| speech.retry()),
+            );
+        }
         #[cfg(target_os = "windows")]
         let work = SpeechWork::WindowsPackage(
             solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package()
@@ -56,7 +107,15 @@ impl SetupHost for ConveySetupHost {
     }
 
     fn project_downloads(&self, journal_root: &Path) -> Result<SetupDownloads, SetupProgressError> {
-        read_setup_downloads(journal_root)
+        if self.packaged_speech.is_some() || cfg!(any(target_os = "android", target_os = "ios")) {
+            read_setup_downloads_with_packaged_speech(
+                journal_root,
+                self.packaged_speech(journal_root)
+                    .and_then(|speech| speech.status()),
+            )
+        } else {
+            read_setup_downloads(journal_root)
+        }
     }
 
     fn thinking_download_bytes(&self, journal: &Path) -> Option<u64> {
@@ -416,6 +475,237 @@ fn persist_speech_refusal(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn home_and_init_share_the_same_packaged_speech_proof() {
+        use axum::{
+            Extension,
+            body::{Body, to_bytes},
+            http::Request,
+        };
+        use solstone_core_convey_http::identity::AccessBasis;
+        use std::sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tower::ServiceExt;
+
+        struct FixtureSpeech {
+            result: Mutex<Result<(), String>>,
+            reads: AtomicUsize,
+        }
+        impl PackagedSpeechSetup for FixtureSpeech {
+            fn status(&self) -> Result<(), String> {
+                self.reads.fetch_add(1, Ordering::Relaxed);
+                self.result.lock().unwrap().clone()
+            }
+            fn retry(&self) -> Result<(), String> {
+                self.status()
+            }
+        }
+        async fn read(app: axum::Router, uri: &str) -> serde_json::Value {
+            let response = app
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), axum::http::StatusCode::OK, "{uri}");
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap()
+        }
+
+        let directory = TempDir::new().unwrap();
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap());
+        let path = root.canonical_path().to_owned();
+        std::fs::create_dir(path.join("config")).unwrap();
+        std::fs::write(path.join("config/journal.json"), serde_json::json!({
+            "setup": {"completed_at": chrono::Utc::now().timestamp_millis(), "thinking_choice": "later"}
+        }).to_string()).unwrap();
+        solstone_core_local::install::status::record_terminal_refusal_if_unchanged(
+            &path,
+            "parakeet",
+            None,
+            0,
+            "fixture_desktop_unavailable",
+            "desktop source is unavailable",
+        )
+        .unwrap();
+        let proof = Arc::new(FixtureSpeech {
+            result: Mutex::new(Ok(())),
+            reads: AtomicUsize::new(0),
+        });
+        let app = crate::router_with_roots(
+            path,
+            None,
+            None,
+            None,
+            Some(solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap()),
+            None,
+            Some(proof.clone()),
+        )
+        .layer(Extension(AccessBasis::Localhost));
+        for (name, result, expected) in [
+            ("verified", Ok(()), "complete"),
+            ("failed", Err("fixture verification failed".into()), "error"),
+            (
+                "unbound",
+                Err("packaged speech has not been configured".into()),
+                "error",
+            ),
+            (
+                "retired",
+                Err("speech processing is stopped".into()),
+                "error",
+            ),
+        ] {
+            *proof.result.lock().unwrap() = result;
+            let init = read(app.clone(), "/init/api/state").await;
+            let home = read(app.clone(), "/app/home/api/first-minutes").await;
+            let init_speech = &init["downloads"]["speech"];
+            let home_speech = &home["setup"]["downloads"]["speech"];
+            assert_eq!(init_speech["state"], expected, "{name}");
+            assert_eq!(
+                home_speech, init_speech,
+                "{name}: Home and init must use the same proof"
+            );
+        }
+        assert_eq!(proof.reads.load(Ordering::Relaxed), 8);
+    }
+
+    #[tokio::test]
+    async fn embedded_speech_init_status_and_retry_use_the_app_proof_not_desktop_manifests() {
+        use axum::{
+            Extension,
+            body::{Body, to_bytes},
+            http::Request,
+        };
+        use solstone_core_convey_http::identity::AccessBasis;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tower::ServiceExt;
+
+        struct FixtureSpeech {
+            model: std::path::PathBuf,
+            retries: AtomicUsize,
+        }
+        impl PackagedSpeechSetup for FixtureSpeech {
+            fn status(&self) -> Result<(), String> {
+                if std::fs::read(&self.model).unwrap() == b"verified fixture" {
+                    Ok(())
+                } else {
+                    Err("fixture model corrupt".into())
+                }
+            }
+            fn retry(&self) -> Result<(), String> {
+                self.retries.fetch_add(1, Ordering::Relaxed);
+                self.status()
+            }
+        }
+        let directory = TempDir::new().unwrap();
+        let root = Arc::new(solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap());
+        let path = root.canonical_path().to_owned();
+        let model = path.join("fixture-model");
+        std::fs::write(&model, b"verified fixture").unwrap();
+        let proof = Arc::new(FixtureSpeech {
+            model: model.clone(),
+            retries: AtomicUsize::new(0),
+        });
+        let legacy = path.join("health/providers/parakeet.json");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, b"invalid desktop install history").unwrap();
+        let host = Arc::new(
+            ConveySetupHost::new(solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap())
+                .with_packaged_speech(Some(proof.clone())),
+        );
+        let app = solstone_core_sol_link::http::init_router_with_host(&path, host)
+            .layer(Extension(AccessBasis::Localhost));
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/init/api/state")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let value: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(value["downloads"]["speech"]["state"], "complete");
+        for (bytes, expected) in [
+            (
+                b"corrupt fixture".as_slice(),
+                axum::http::StatusCode::CONFLICT,
+            ),
+            (b"verified fixture".as_slice(), axum::http::StatusCode::OK),
+        ] {
+            std::fs::write(&model, bytes).unwrap();
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/init/api/action")
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"action":"retry_speech_download"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+        }
+        assert_eq!(proof.retries.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            std::fs::read(legacy).unwrap(),
+            b"invalid desktop install history"
+        );
+        // The fixture proves the host's route composition, not a signed model/native package.
+    }
+
+    #[test]
+    fn mobile_first_run_uses_the_retained_installer_instead_of_a_sibling_executable() {
+        for key in ["aarch64-android", "aarch64-ios"] {
+            let directory = TempDir::new().unwrap();
+            let root = std::sync::Arc::new(
+                solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap(),
+            );
+            let path = root.canonical_path().to_owned();
+            let host = ConveySetupHost::new(
+                solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap(),
+            );
+            crate::thinking_install::prepare_mobile_local_installer(&path).unwrap();
+            crate::thinking_install::request_stop_mobile_local_installer(&path);
+            assert_eq!(
+                host.start_local_for_key(&path, key).unwrap_err(),
+                "local installer is stopped"
+            );
+            crate::thinking_install::prepare_mobile_local_installer(&path).unwrap();
+            // The ordinary host test has no registered native mobile factory.
+            // Reach the real retained worker and fail closed before any model fetch.
+            assert_eq!(
+                host.start_local_for_key(&path, key).unwrap_err(),
+                "the journal app does not provide this local runtime"
+            );
+            crate::thinking_install::stop_mobile_local_installer(&path).unwrap();
+            assert!(!path.join("cache/providers/local").exists());
+        }
+    }
+
+    #[test]
+    fn mobile_first_run_refuses_a_journal_other_than_its_retained_owner() {
+        let directory = TempDir::new().unwrap();
+        let other = TempDir::new().unwrap();
+        let root = std::sync::Arc::new(
+            solstone_core_journal_io::JournalRoot::open(directory.path()).unwrap(),
+        );
+        let host =
+            ConveySetupHost::new(solstone_core_backup_web::BackupWebDeps::with_root(root).unwrap());
+        assert_eq!(
+            host.start_local_for_key(other.path(), "aarch64-android")
+                .unwrap_err(),
+            "journal binding changed"
+        );
+    }
 
     #[cfg(unix)]
     #[tokio::test]

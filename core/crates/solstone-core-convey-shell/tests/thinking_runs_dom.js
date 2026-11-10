@@ -252,6 +252,9 @@ async function main() {
     localSetupRefusals,
     localSetupRefusal,
     localInstallAfterStart,
+    localInstallAfterCancel,
+    cancelLocalBootstrap,
+    stopInstallPoll,
     startLocalBootstrap,
     pollLocalInstallUntilTerminal,
     applyLocalInstallStatus,
@@ -283,6 +286,8 @@ async function main() {
     buildNotice,
     openConsentTab,
     enableConfidential,
+    setConfidentialAudio,
+    refreshProviders,
     stopConfidentialPoll,
     openLane,
     renderLaneSwitch,
@@ -1640,6 +1645,64 @@ async function main() {
   for (let i = 0; i < 6; i += 1) await settle();
   assert.strictEqual(localMessage.textContent, refusals.cancel, 'a refused cancel says so in owner words');
   assert.strictEqual(localMessage.dataset.tone, 'error', 'a refused cancel reads as an error');
+  thinking.stopInstallPoll();
+  // A lost cancel reply does not determine whether the retained worker stopped.
+  const downloading = {install_state: 'downloading', attempt_id: 'cancel-observed', revision: 10};
+  const stopped = {install_state: 'failed', error_code: 'install_cancelled', attempt_id: null, revision: 12};
+  for (const terminal of [stopped, {install_state: 'installed', revision: 12}]) {
+    const result = await thinking.localInstallAfterCancel({
+      cancelFn: () => Promise.reject(new Error('response unavailable')),
+      fetchStatus: () => Promise.resolve(terminal),
+      previousStatus: downloading,
+    });
+    assert.strictEqual(result.status, terminal, 'durable terminal status wins over a lost cancel reply');
+    assert.strictEqual(result.error, null, 'actual completion is not called a cancel failure');
+  }
+  for (const fetchStatus of [
+    () => Promise.resolve({...downloading, install_state: 'verifying', revision: 11}),
+    () => Promise.reject(new Error('status unavailable')),
+    () => Promise.resolve({install_state: 'failed', revision: 9}),
+  ]) {
+    const result = await thinking.localInstallAfterCancel({
+      cancelFn: () => Promise.reject(new Error('still stopping')),
+      fetchStatus,
+      previousStatus: downloading,
+    });
+    assert.notStrictEqual(result.error, null, 'unconfirmed cancellation remains a visible refusal');
+    assert.ok(['downloading', 'verifying'].includes(result.status.install_state), 'unconfirmed or stale reads never manufacture cancellation');
+  }
+  const savedCancelModels = thinking.state.localModels;
+  thinking.state.localModels = [{name: 'local/qwen3.5-4b'}];
+  thinking.state.install = downloading;
+  const cancelGeneration = thinking.state.installPollGeneration;
+  localResponses.push(() => Promise.reject(new Error('still stopping')));
+  localResponses.push(() => Promise.resolve({...downloading, install_state: 'verifying', revision: 11}));
+  localResponses.push(() => Promise.resolve(stopped));
+  const savedSetTimeout = context.setTimeout;
+  const cancelSleeps = [];
+  context.setTimeout = (callback) => { cancelSleeps.push(callback); return 0; };
+  try {
+    await thinking.cancelLocalBootstrap().catch((error) => thinking.showLocalSetupFailure(error));
+    assert.strictEqual(thinking.state.install.install_state, 'verifying', 'cancel failure reconciles actual phase');
+    assert.notStrictEqual(thinking.state.localSetupError, '', 'pending cancellation stays visibly unconfirmed');
+    assert.ok(thinking.state.installPollGeneration > cancelGeneration + 1, 'cancel failure restarts observation');
+    assert.strictEqual(cancelSleeps.length, 1, 'the reconciled in-flight worker is polled');
+    cancelSleeps.shift()();
+    await settle();
+    await settle();
+    assert.strictEqual(thinking.state.install, stopped, 'polling observes actual retirement after the response failed');
+    assert.strictEqual(thinking.state.localSetupError, '', 'actual retirement clears the obsolete cancel refusal');
+  } finally {
+    context.setTimeout = savedSetTimeout;
+  }
+  thinking.stopInstallPoll();
+  thinking.state.install = downloading;
+  localResponses.push(() => Promise.reject(new Error('response unavailable')));
+  localResponses.push(() => Promise.resolve(stopped));
+  await thinking.cancelLocalBootstrap();
+  assert.strictEqual(thinking.state.install, stopped, 'the public cancel action accepts confirmed retirement');
+  assert.strictEqual(thinking.state.localSetupError, '', 'confirmed retirement clears a stale cancel error');
+  thinking.state.localModels = savedCancelModels;
   // A state the page couldn't read, whatever broke, is told the same way.
   for (const failure of [
     Object.assign(new Error('Request failed (HTTP 500)'), {status: 500}),
@@ -3388,8 +3451,8 @@ async function main() {
       attestation_states: {off: '', inactive: 'SENTINEL_AVAILABLE', failed: 'SENTINEL_FAILED', not_on_platform: notOnPlatformLine},
       actions: {off: 'SENTINEL_TURN_ON', enabled: 'SENTINEL_TURN_OFF', recheck: 'SENTINEL_RECHECK'},
       lane_detail: {early_access: sentinelEarlyAccess},
-      setup: {trust_beats: {}},
-      audio: {},
+      setup: {trust_beats: {egress_audio_on: 'AUDIO_EGRESS_ON', egress_audio_off: 'AUDIO_EGRESS_OFF'}},
+      audio: {on: 'AUDIO_ON', off: 'AUDIO_OFF'},
       operation_states: {
         subscribing: sentinelSubscribing,
         journal_limit: sentinelJournalLimit,
@@ -3410,6 +3473,9 @@ async function main() {
     'confidentialDisable',
     'confidentialRecheck',
     'confidentialAudioRow',
+    'confidentialAudioToggle',
+    'confidentialAudioDescription',
+    'confidentialTrustEgress',
     'confidentialTrustEarlyAccess',
     'confidentialLaneOperation',
     'confidentialLaneOperationLink',
@@ -3428,6 +3494,129 @@ async function main() {
     provider_status: {local: {generate_ready: false, issues: []}},
   });
   const notOnPlatform = {state: 'not_on_platform', reason: 'nvattest_platform_unsupported', observed_at: null, expires_at: null};
+  {
+    const previousProviders = thinking.state.providers;
+    const audioProviders = (backend, enabled, mobile = true) => {
+      const providers = confidentialProviders(true, {state: 'active'});
+      providers.active_lane.confidential_audio = enabled;
+      if (mobile) providers.active_lane.speech_backend = backend;
+      return providers;
+    };
+    for (const backend of ['parakeet', 'parakeet-cpp', 'confidential', null]) {
+      for (const enabled of [true, false]) {
+        thinking.state.providers = audioProviders(backend, false);
+        const nextBackend = enabled ? 'confidential'
+          : (['parakeet', 'parakeet-cpp'].includes(backend) ? backend : 'parakeet');
+        settingsResponses.push((url, options) => {
+          assert.strictEqual(url, '/app/settings/api/config');
+          assert.deepStrictEqual(JSON.parse(options.body), {
+            section: 'transcribe', data: {confidential_audio: enabled, backend: nextBackend},
+          });
+          return Promise.resolve({success: true});
+        });
+        providerResponses.push(() => Promise.resolve(audioProviders(nextBackend, enabled)));
+        await thinking.setConfidentialAudio(enabled);
+        assert.strictEqual(nodes.get('confidentialAudioToggle').checked, enabled);
+        assert.strictEqual(nodes.get('confidentialAudioDescription').textContent, enabled ? 'AUDIO_ON' : 'AUDIO_OFF');
+        assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, enabled ? 'AUDIO_EGRESS_ON' : 'AUDIO_EGRESS_OFF');
+      }
+    }
+    for (const enabled of [true, false]) {
+      thinking.state.providers = audioProviders(null, !enabled, false);
+      settingsResponses.push((_url, options) => {
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          section: 'transcribe', data: {confidential_audio: enabled},
+        });
+        return Promise.resolve({success: true});
+      });
+      providerResponses.push(() => Promise.resolve(audioProviders(null, enabled, false)));
+      await thinking.setConfidentialAudio(enabled);
+      assert.strictEqual(nodes.get('confidentialAudioToggle').checked, enabled);
+    }
+    // The server can store the choice before an interrupted answer reaches us.
+    thinking.state.providers = audioProviders('parakeet', false);
+    settingsResponses.push(() => Promise.reject(new Error('interrupted answer')));
+    providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+    await thinking.setConfidentialAudio(true);
+    assert.strictEqual(thinking.state.providers.active_lane.speech_backend, 'confidential');
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, 'AUDIO_EGRESS_ON');
+    for (const writeFailed of [true, false]) {
+      thinking.state.providers = audioProviders('parakeet', false);
+      settingsResponses.push(() => writeFailed
+        ? Promise.reject(new Error('interrupted answer')) : Promise.resolve({success: true}));
+      providerResponses.push(() => Promise.reject(new Error('read unavailable')));
+      await thinking.setConfidentialAudio(true);
+      assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true, 'an unreadable stored choice is hidden');
+      assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, true);
+      assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '', 'unknown audio cannot make an egress claim');
+      providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+      await thinking.refreshProviders();
+      assert.strictEqual(nodes.get('confidentialAudioRow').hidden, false);
+      assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, false);
+      assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+      assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, 'AUDIO_EGRESS_ON');
+    }
+    thinking.state.providers = audioProviders('parakeet-cpp', false);
+    const pendingAudioWrite = deferred();
+    const audioWritesBefore = apiCalls.filter((call) => call.url === '/app/settings/api/config').length;
+    settingsResponses.push(() => pendingAudioWrite.promise);
+    providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+    const savingAudio = thinking.setConfidentialAudio(true);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, true);
+    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '');
+    await thinking.setConfidentialAudio(false);
+    assert.strictEqual(apiCalls.filter((call) => call.url === '/app/settings/api/config').length, audioWritesBefore + 1);
+    pendingAudioWrite.resolve({success: true});
+    await savingAudio;
+    assert.strictEqual(nodes.get('confidentialAudioToggle').disabled, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    // A read begun before a mutation cannot restore its old egress claim.
+    thinking.state.providers = audioProviders('parakeet', false);
+    const beforeAudioRead = deferred();
+    providerResponses.push(() => beforeAudioRead.promise);
+    const readingBeforeAudio = thinking.refreshProviders();
+    settingsResponses.push(() => Promise.reject(new Error('interrupted answer')));
+    providerResponses.push(() => Promise.reject(new Error('read unavailable')));
+    await thinking.setConfidentialAudio(true);
+    beforeAudioRead.resolve(audioProviders('parakeet', false));
+    assert.strictEqual(await readingBeforeAudio, false);
+    assert.strictEqual(nodes.get('confidentialAudioRow').hidden, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, '');
+    providerResponses.push(() => Promise.resolve(audioProviders('parakeet', false)));
+    await thinking.refreshProviders();
+
+    // An unrelated read begun during the write cannot overwrite confirmation.
+    const delayedAudioWrite = deferred();
+    settingsResponses.push(() => delayedAudioWrite.promise);
+    const confirmingAudio = thinking.setConfidentialAudio(true);
+    const duringAudioRead = deferred();
+    providerResponses.push(() => duringAudioRead.promise);
+    const readingDuringAudio = thinking.refreshProviders();
+    providerResponses.push(() => Promise.resolve(audioProviders('confidential', true)));
+    delayedAudioWrite.resolve({success: true});
+    await confirmingAudio;
+    duringAudioRead.resolve(audioProviders('parakeet', false));
+    assert.strictEqual(await readingDuringAudio, false);
+    assert.strictEqual(thinking.state.providers.active_lane.speech_backend, 'confidential');
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    assert.strictEqual(nodes.get('confidentialTrustEgress').textContent, 'AUDIO_EGRESS_ON');
+
+    // Among eligible reads, the latest start owns the resulting projection.
+    const olderAudioRead = deferred();
+    const newerAudioRead = deferred();
+    providerResponses.push(() => olderAudioRead.promise);
+    const readingOlderAudio = thinking.refreshProviders();
+    providerResponses.push(() => newerAudioRead.promise);
+    const readingNewerAudio = thinking.refreshProviders();
+    newerAudioRead.resolve(audioProviders('confidential', true));
+    assert.strictEqual(await readingNewerAudio, true);
+    olderAudioRead.resolve(audioProviders('parakeet', false));
+    assert.strictEqual(await readingOlderAudio, false);
+    assert.strictEqual(nodes.get('confidentialAudioToggle').checked, true);
+    thinking.state.providers = previousProviders;
+  }
   for (const configured of [false, true]) {
     const who = configured ? 'a lane turned on before' : 'a journal that never turned it on';
     thinking.state.providers = confidentialProviders(configured, notOnPlatform);

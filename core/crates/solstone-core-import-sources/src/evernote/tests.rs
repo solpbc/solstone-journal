@@ -471,7 +471,7 @@ fn attachments_follow_the_note_or_leave_a_line() {
     let png_hash = md5_hex(&png);
     let pdf_hash = md5_hex(pdf);
     let wav_hash = md5_hex(wav);
-    let png_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png);
+    let png_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, png);
     let pdf_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, pdf);
     let wav_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, wav);
     let inner = format!(
@@ -522,7 +522,7 @@ fn an_oversized_resource_leaves_the_line_and_not_the_bytes() {
     )
     .unwrap();
     let chunk = vec![b'A'; 1024 * 1024];
-    let need = (MAX_RESOURCE_BYTES as usize) / 3 * 4 + 4;
+    let need = MAX_RESOURCE_BYTES / 3 * 4 + 4;
     let mut left = need;
     while left > 0 {
         let take = left.min(chunk.len());

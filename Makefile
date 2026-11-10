@@ -1068,6 +1068,8 @@ check-mobile-native-driver:
 	python3 -m unittest discover -s core/distribution/mobile -p test_build.py -v
 	python3 scripts/test_mobile_media.py
 	python3 -O scripts/test_mobile_media.py
+	python3 scripts/test_mobile_qwen.py
+	python3 -O scripts/test_mobile_qwen.py
 build-mobile-android: check-mobile-native-android
 build-mobile-ios: check-mobile-native-ios
 check-mobile-native-android: check-mobile-native-driver
@@ -1560,6 +1562,7 @@ STANDALONE_LOCK_MANIFESTS := \
 	tools/i18n/Cargo.toml \
 	tools/local_thinking_install/helper/Cargo.toml \
 	tools/mobile-audio/Cargo.toml \
+	tools/mobile-qwen-engine/Cargo.toml \
 	tools/mobile-serving/Cargo.toml \
 	tools/mobile-serving/client/Cargo.toml
 .PHONY: check-standalone-lockfiles

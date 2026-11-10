@@ -1446,7 +1446,7 @@ fn map_provider_reason(component: &str, reason: Option<&str>) -> String {
     let reason = reason.map(|reason| match reason {
         "local_endpoint_unreachable" => "endpoint_unreachable",
         "local_endpoint_contract_failed" => "endpoint_contract_failed",
-        "local_request_timeout" => "brain_refresh_timeout",
+        "local_request_timeout" | "admission_timeout" => "brain_refresh_timeout",
         other => other,
     });
     match reason {
@@ -1953,6 +1953,52 @@ mod tests {
             generate_client_failure_reason(&protocol),
             "provider_key_invalid"
         );
+        let ClientError::Protocol(mut failure) = protocol else {
+            unreachable!()
+        };
+        failure.error.reason = "admission_timeout".into();
+        assert_eq!(
+            generate_client_failure_reason(&ClientError::Protocol(failure)),
+            "brain_refresh_timeout"
+        );
+    }
+
+    #[test]
+    fn typed_local_admission_timeout_is_a_brain_timeout_without_credential_or_contract_changes() {
+        let now = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        for (reason, expected) in [
+            ("admission_timeout", "brain_refresh_timeout"),
+            ("local_request_timeout", "brain_refresh_timeout"),
+            ("model_not_ready", "probe_internal_error"),
+            ("future_local_probe_code", "probe_internal_error"),
+        ] {
+            let probe = StaticProbe {
+                generate: Mutex::new(Box::new(move || {
+                    Ok(GenerateResponse::Refused(
+                        solstone_core_generate_wire::refusal_for(
+                            &solstone_core_generate_wire::LaneOutcome::BundledFailure(Box::new(
+                                solstone_core_local::GenerateFailure {
+                                    schema: "test".into(),
+                                    outcome: "failure".into(),
+                                    reason_code: Some(reason.into()),
+                                    detail: "local inference admission outcome".into(),
+                                    inference: None,
+                                },
+                            )),
+                            "local",
+                            None,
+                        ),
+                    ))
+                })),
+                after_permit: None,
+            };
+            let (component, credential_valid, credential_reason) =
+                generate_component(Path::new("/unused"), &Map::new(), now, &probe, &|| false);
+            assert_eq!(component["reason_code"], expected, "{reason}");
+            assert!(is_valid_evidence_reason("generate", expected));
+            assert!(!credential_valid);
+            assert_eq!(credential_reason, None);
+        }
     }
 
     pub(super) fn generated_response(

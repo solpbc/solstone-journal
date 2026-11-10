@@ -397,6 +397,7 @@ pub(crate) async fn list(
     };
     let mut rows = Vec::new();
     let mut source_options = BTreeSet::new();
+    let apple = crate::body_state::apple_imports(&state.root);
     for entry in entries.flatten() {
         let timestamp = entry.file_name().to_string_lossy().into_owned();
         if timestamp.len() != 15 || timestamp.matches('_').count() != 1 || !entry.path().is_dir() {
@@ -449,6 +450,7 @@ pub(crate) async fn list(
                     .as_deref()
                     .is_none_or(solstone_core_import::import_trash::deletes_here);
             info.values.insert("deletable".into(), json!(deletable));
+            crate::body_state::overlay(&state.root, &timestamp, &mut info.values, &apple);
             rows.push(info);
         }
     }
@@ -706,6 +708,8 @@ fn detail_sync(state: AppState, timestamp: String) -> Response {
         "thinking".into(),
         crate::progress::read(&state.root, &timestamp),
     );
+    let apple = crate::body_state::apple_imports(&state.root);
+    crate::body_state::overlay(&state.root, &timestamp, &mut body, &apple);
     json_response(StatusCode::OK, Value::Object(body))
 }
 

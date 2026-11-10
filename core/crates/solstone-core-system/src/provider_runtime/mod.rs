@@ -4,6 +4,7 @@
 //! Provider runtime reconciliation primitives without supervisor wiring.
 
 mod admission;
+mod embedded;
 mod events;
 mod gate;
 mod launch;

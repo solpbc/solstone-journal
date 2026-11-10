@@ -1,0 +1,130 @@
+--- a/src/model.cpp
++++ b/src/model.cpp
+@@ -44,7 +44,7 @@
+ }
+ } // namespace
+ 
+-std::unique_ptr<Model> Model::load(const std::string& gguf_path, const std::string& component) {
++std::unique_ptr<Model> Model::load(const std::string& gguf_path, const std::string& component) try {
+     // unique_ptr<Model> via private ctor: construct then load. We avoid
+     // std::make_unique (private ctor) and never throw out of here.
+     std::unique_ptr<Model> m(new (std::nothrow) Model());
+@@ -94,9 +94,12 @@
+     ensure_weights_realized(m->loader_);
+     if (!m->loader_.weights_realized()) return nullptr;
+     return m;
+-}
+-
+-std::unique_ptr<Model> Model::load_vad_only(const std::string& gguf_path, const std::string& component) {
++} catch (...) {
++    PK_LOG("model load failed");
++    return nullptr;
++}
++
++std::unique_ptr<Model> Model::load_vad_only(const std::string& gguf_path, const std::string& component) try {
+     std::unique_ptr<Model> m(new (std::nothrow) Model());
+     if (!m) return nullptr;
+     if (!(component.empty() ? m->loader_.load(gguf_path) : m->loader_.load_component(gguf_path, component)))
+@@ -118,6 +121,9 @@
+     ensure_weights_realized(m->loader_);
+     if (!m->loader_.weights_realized()) return nullptr;
+     return m;
++} catch (...) {
++    PK_LOG("model load failed");
++    return nullptr;
+ }
+ 
+ std::shared_ptr<BackendPool> Model::pool_snapshot() const {
+--- a/src/diarization.cpp
++++ b/src/diarization.cpp
+@@ -13,7 +13,7 @@
+ 
+ namespace pk {
+ 
+-std::unique_ptr<DiarizationModel> DiarizationModel::load(const std::string& path, const std::string& component) {
++std::unique_ptr<DiarizationModel> DiarizationModel::load(const std::string& path, const std::string& component) try {
+     // unique_ptr<DiarizationModel> via private ctor: construct then load.
+     std::unique_ptr<DiarizationModel> m(new (std::nothrow) DiarizationModel());
+     if (!m) return nullptr;
+@@ -40,6 +40,9 @@
+     m->head_    = std::make_unique<DiarizationHead>(m->loader_);
+ 
+     return m;
++} catch (...) {
++    PK_LOG("model load failed");
++    return nullptr;
+ }
+ 
+ DiarizationResult DiarizationModel::diarize_path(const std::string& wav_path) {
+--- a/src/parakeet_capi.cpp
++++ b/src/parakeet_capi.cpp
+@@ -343,15 +343,14 @@
+ parakeet_ctx* load_plain(const char* gguf_path) {
+     if (!gguf_path) return nullptr;
+     try {
+-        auto* ctx = new (std::nothrow) parakeet_ctx();
++        std::unique_ptr<parakeet_ctx> ctx(new (std::nothrow) parakeet_ctx());
+         if (!ctx) return nullptr;
+ 
+         // A CED GGUF (general.architecture "ced") is a sound tagger. Check the
+         // header first: the ASR loader would misread it.
+         if (pk::gguf_is_ced(gguf_path)) {
+             ctx->tagger = pk::CedTagger::load(gguf_path);
+-            if (ctx->tagger) return ctx;
+-            delete ctx;
++            if (ctx->tagger) return ctx.release();
+             return nullptr;
+         }
+ 
+@@ -359,8 +358,7 @@
+         if (pk::gguf_is_silero(gguf_path)) {
+             std::string err;
+             ctx->silero = pk::SileroVad::load(gguf_path, &err);
+-            if (ctx->silero) return ctx;
+-            delete ctx;
++            if (ctx->silero) return ctx.release();
+             return nullptr;
+         }
+ 
+@@ -368,8 +366,7 @@
+         // the VAD calls accept it.
+         if (pk::gguf_is_vad_only(gguf_path)) {
+             ctx->vad_model = pk::Model::load_vad_only(gguf_path);
+-            if (ctx->vad_model) return ctx;
+-            delete ctx;
++            if (ctx->vad_model) return ctx.release();
+             return nullptr;
+         }
+ 
+@@ -378,9 +375,8 @@
+             ctx->speaker = pk::SpeakerEncoder::load(gguf_path);   // hashes the file on both sides of the load
+             if (ctx->speaker) {
+                 ctx->speaker_identity = ctx->speaker->fingerprint().weights;
+-                return ctx;
++                return ctx.release();
+             }
+-            delete ctx;
+             return nullptr;
+         }
+ 
+@@ -390,18 +386,17 @@
+         std::unique_ptr<pk::Model> model = pk::Model::load(gguf_path);
+         if (model) {
+             ctx->model = std::move(model);
+-            return ctx;
++            return ctx.release();
+         }
+ 
+         // Not an ASR model — try diarization.
+         std::unique_ptr<pk::DiarizationModel> diar = pk::DiarizationModel::load(gguf_path);
+         if (diar) {
+             ctx->diar = std::move(diar);
+-            return ctx;
++            return ctx.release();
+         }
+ 
+         // Neither — load failed entirely.
+-        delete ctx;
+         return nullptr;
+     } catch (...) {
+         // Never let an exception cross the boundary.

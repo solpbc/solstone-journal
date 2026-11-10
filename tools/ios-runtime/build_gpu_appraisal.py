@@ -85,6 +85,18 @@ def _record_digest(record: dict[str, Any]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def _prepare_host_build_profile(build: Build) -> None:
+    configuration = build.work / ".cargo/config.toml"
+    configuration.parent.mkdir()
+    configuration.write_text('[profile.release.build-override]\nstrip = "none"\n')
+    build.summary["inputs"]["appraisal-host-build-profile"] = {
+        "path": ".cargo/config.toml",
+        "sha256": sha256(configuration),
+        "release_build_override": {"strip": "none"},
+    }
+    build.save()
+
+
 def _read_required_symbols(build: Build, aggregate: pathlib.Path) -> str:
     """Read Darwin's partial table while rejecting any unexpected nm failure."""
     argv = ["nm", "-gU", aggregate]
@@ -147,6 +159,7 @@ def build_static(args: argparse.Namespace) -> None:
     )
     build = Build(mobile_args)
     try:
+        _prepare_host_build_profile(build)
         build.setup()
         build.nvattest()
 

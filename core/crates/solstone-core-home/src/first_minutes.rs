@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use chrono::{Offset, TimeDelta, TimeZone};
 use chrono_tz::Tz;
@@ -623,9 +624,9 @@ pub fn project_first_minutes(input: &FirstMinutesInput) -> Value {
     })
 }
 
-/// Reads the journal's setup download progress and whether local thinking can
-/// run. Production reads the same records `/init/api/state` does.
-type SetupProgressReader = fn(&Path) -> Result<SetupProgress, SetupProgressError>;
+/// Trusted host reader for the same setup evidence used by `/init/api/state`.
+pub type SetupProgressReader =
+    Arc<dyn Fn(&Path) -> Result<SetupProgress, SetupProgressError> + Send + Sync>;
 
 /// The setup facts the card shows: download progress and local capability from
 /// the setup reader, the saved thinking choice from the journal config, and
@@ -667,10 +668,11 @@ pub fn read_first_minutes(context: &HomeContext, setup_actions: bool) -> Value {
     )
 }
 
-fn read_first_minutes_with(
+/// Read first minutes with the embedding host's setup authority.
+pub fn read_first_minutes_with(
     context: &HomeContext,
     setup_actions: bool,
-    read_progress: SetupProgressReader,
+    read_progress: impl FnOnce(&Path) -> Result<SetupProgress, SetupProgressError>,
 ) -> Value {
     let config_path = context.journal_root().join("config/journal.json");
     let Ok(bytes) = std::fs::read(&config_path) else {

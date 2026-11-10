@@ -1,0 +1,12 @@
+{
+  global:
+    journal_mobile_qwen_abi_version;
+    journal_mobile_qwen_source_revision;
+    journal_mobile_qwen_runtime_identity;
+    journal_mobile_qwen_create_v1;
+    journal_mobile_qwen_run_v1;
+    journal_mobile_qwen_request_stop_v1;
+    journal_mobile_qwen_get_snapshot_v1;
+    journal_mobile_qwen_destroy_v1;
+  local: *;
+};
