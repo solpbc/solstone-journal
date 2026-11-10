@@ -1961,6 +1961,28 @@ fn is_unattributed(record: &StreamRecord) -> bool {
     record.cid.is_none() || record.source.is_none()
 }
 
+/// Name an unbound stream that publication created with no source.
+///
+/// The record is left alone when it is missing, already named, or bound to a
+/// device. A later call does not replace a source that was set.
+pub fn record_unbound_source(
+    journal: &Path,
+    stream: &str,
+    source: &str,
+) -> Result<(), SegmentError> {
+    let path = stream_record_path(journal, stream);
+    let _lock = hold_lock(&path, LockOptions::default())?;
+    let Some(mut record) = read_typed_stream_record(&path)? else {
+        return Ok(());
+    };
+    if record.cid.is_some() || record.source.is_some() {
+        return Ok(());
+    }
+    record.source = Some(source.to_owned());
+    write_json(&path, &record, JsonWriteOptions::default())?;
+    Ok(())
+}
+
 fn now_unix_seconds() -> Result<u64, SegmentError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

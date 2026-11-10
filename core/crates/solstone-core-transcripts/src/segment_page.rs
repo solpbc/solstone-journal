@@ -460,7 +460,7 @@ fn source_channel(segment_origin: &str, name: &str, speech: bool) -> &'static st
         ContentResolution::Indexed(Family::BodyRecords) => "Body Records",
         _ if speech => "Transcript",
         _ => match stream {
-            Some("import.obsidian") => "Note",
+            Some("import.obsidian") | Some("import.evernote") => "Note",
             Some("import.kindle") => "Highlights",
             Some("import.ics") => "Calendar Event",
             Some(stream) if solstone_core_format::obsidian::is_obsidian_stream_name(stream) => {

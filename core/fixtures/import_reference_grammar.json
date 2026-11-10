@@ -23,7 +23,8 @@
       "journal_archive",
       "apple_health",
       "oura",
-      "strava"
+      "strava",
+      "evernote"
     ],
     "why_it_matters": "six importers claim *.zip, so insertion order decides which one receives an owner's archive. A hash-ordered native registry routes zips nondeterministically.",
     "patterns_claimed_by_more_than_one": {
@@ -95,6 +96,10 @@
     ],
     [
       "strava",
+      "native"
+    ],
+    [
+      "evernote",
       "native"
     ]
   ],
@@ -190,6 +195,14 @@
         "*.csv"
       ],
       "description": "Workouts from a Strava download (only its activities.csv is read)"
+    },
+    {
+      "name": "evernote",
+      "display_name": "Evernote",
+      "file_patterns": [
+        "*.enex"
+      ],
+      "description": "Notes from an Evernote export"
     }
   ],
   "syncable_registry_ordered": [
