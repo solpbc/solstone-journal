@@ -354,7 +354,8 @@ fn shell_bundles(
 /// The edits that make the served shell page load the bundles: the first
 /// stylesheet becomes the style bundle, the first boot script becomes the
 /// boot bundle, and the first rest script becomes a placeholder whose
-/// address the boot script fetches after the first view is ready.
+/// address the boot script fetches when the first view is ready, or about
+/// three seconds after boot, whichever is first.
 fn bundle_edits(
     page: &str,
     tags: &ShellPageTags,

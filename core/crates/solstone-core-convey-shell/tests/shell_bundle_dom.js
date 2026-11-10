@@ -250,6 +250,69 @@ function host() {
   return sandbox;
 }
 
+check('a view that is not ready by three seconds still gets the rest file', () => {
+  const timers = [];
+  const created = [];
+  const restSrc = '/static/0123456789abcdef/shell-rest.js';
+  const holder = {
+    getAttribute(name) {
+      return name === 'data-src' ? restSrc : null;
+    },
+  };
+  const sandbox = vm.createContext({
+    console: { warn() {}, error() {}, debug() {} },
+    setTimeout(fn, ms) {
+      timers.push({ fn, ms });
+      return timers.length;
+    },
+    clearTimeout() {},
+    URL,
+    performance: { mark() {} },
+    AppServices: {
+      escapeHtml(value) {
+        return String(value == null ? '' : value);
+      },
+    },
+  });
+  sandbox.window = sandbox;
+  sandbox.location = { pathname: '/app/journal/' };
+  sandbox.document = {
+    currentScript: null,
+    getElementById() { return null; },
+    querySelector(selector) {
+      return selector === 'script[data-shell-part="rest"]' ? holder : null;
+    },
+    createElement() {
+      const el = { async: true, src: '' };
+      created.push(el);
+      return el;
+    },
+    head: { appendChild() {} },
+  };
+  // The promise has to be born in this context. One from outside does not
+  // suspend the await, and the boot failure path would load the file at once.
+  vm.runInContext(
+    'window.apiJson = function () { return new Promise(function () {}); };',
+    sandbox
+  );
+  vm.runInContext(
+    fs.readFileSync(path.join(staticDir, 'shell_boot.js'), 'utf8'),
+    sandbox,
+    { filename: '/static/shell_boot.js' }
+  );
+  assert.strictEqual(
+    created.length,
+    0,
+    `rest loaded before the delay; timers ${timers.map((timer) => timer.ms).join(',')}`
+  );
+  const wait = timers.filter((timer) => timer.ms === 3000);
+  assert.strictEqual(wait.length, 1);
+  wait[0].fn();
+  assert.strictEqual(created.length, 1);
+  assert.strictEqual(created[0].src, restSrc);
+  assert.strictEqual(created[0].async, false);
+});
+
 check('an error before the diagnostic console loads is shown once the console loads', () => {
   const sandbox = host();
   vm.runInContext(
