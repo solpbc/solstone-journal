@@ -175,17 +175,27 @@
       transition = null;
     }
     if (!canAnimate()) return Promise.resolve(place());
+    // The engine can keep a finished transition, and its callback, reachable
+    // after it ends. The callback lets go of the swap once it has run, so a
+    // finished transition never keeps a view that has since gone.
+    let job = place;
+    const run = () => {
+      const fn = job;
+      job = null;
+      return fn ? Promise.resolve(fn()) : Promise.resolve();
+    };
     let ran = null;
     const started = document.startViewTransition(() => {
-      ran = Promise.resolve(place());
+      ran = run();
       return ran;
     });
     transition = started;
     ['ready', 'finished'].forEach((name) => started[name]?.catch?.(() => {}));
     return started.updateCallbackDone.then(
       () => ran,
-      () => ran || Promise.resolve(place())
+      () => ran || run()
     ).finally(() => {
+      ran = null;
       if (transition === started) transition = null;
     });
   }
