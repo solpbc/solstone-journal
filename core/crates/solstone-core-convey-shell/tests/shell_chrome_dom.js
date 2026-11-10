@@ -328,6 +328,13 @@ class Element {
     (this.listeners[type] ||= []).push(listener);
   }
 
+  removeEventListener(type, listener) {
+    const list = this.listeners[type];
+    if (!list) return;
+    const index = list.indexOf(listener);
+    if (index !== -1) list.splice(index, 1);
+  }
+
   dispatchEvent(event) {
     event.target ||= this;
     event.currentTarget = this;
@@ -383,6 +390,13 @@ class Document {
 
   addEventListener(type, listener) {
     (this.listeners[type] ||= []).push(listener);
+  }
+
+  removeEventListener(type, listener) {
+    const list = this.listeners[type];
+    if (!list) return;
+    const index = list.indexOf(listener);
+    if (index !== -1) list.splice(index, 1);
   }
 
   dispatchEvent(event) {
@@ -874,8 +888,10 @@ function viewBlob(app) {
 }
 
 async function paintMore(harness, options) {
-  const root = addStaticElement(harness.document, 'div', { id: 'more-root' });
-  await harness.window.renderMorePage(root, harness.shell, options || { timeout: 30 });
+  const root = harness.document.getElementById('more-root')
+    || addStaticElement(harness.document, 'div', { id: 'more-root' });
+  harness.window.__moreStateTimeout = options && options.timeout != null ? options.timeout : 30;
+  await harness.window.SolViews.mount('more');
   return root;
 }
 
@@ -1188,6 +1204,114 @@ asyncCase('curation, agents, and backup state lines skip rejection, hang, and wr
     assert.strictEqual(root.querySelector('.more-live').textContent, '');
     assert.ok(!root.innerHTML.includes("couldn't"));
   }
+});
+
+asyncCase('more dispose removes the document keydown, and a thrown mount takes it back', async () => {
+  const harness = createHarness({ pinned: [] });
+  const root = await paintMore(harness);
+  const input = root.querySelector('#more-filter');
+  input.focus();
+  input.value = 'map';
+  input.dispatchEvent(event('input'));
+  assert.strictEqual(root.querySelectorAll('.more-card[hidden]').length > 0, true);
+  harness.window.SolViews.dispose();
+  harness.document.dispatchEvent(event('keydown', { key: 'Escape' }));
+  assert.strictEqual(input.value, 'map', 'escape does nothing once more is gone');
+  assert.strictEqual(harness.window.BackupStatus && typeof harness.window.BackupStatus.initialPanel, 'function');
+
+  const added = [];
+  const removed = [];
+  const doc = harness.document;
+  const add = doc.addEventListener.bind(doc);
+  const remove = doc.removeEventListener.bind(doc);
+  doc.addEventListener = (type, listener) => { added.push(type); add(type, listener); };
+  doc.removeEventListener = (type, listener) => { removed.push(type); remove(type, listener); };
+  root.remove();
+  await assert.rejects(() => harness.window.SolViews.mount('more'));
+  assert.ok(added.includes('keydown'));
+  assert.ok(removed.includes('keydown'));
+});
+
+asyncCase('backup card state is right on the first mount and the next', async () => {
+  const harness = createHarness({ pinned: [] });
+  harness.window.apiJson = (url) => {
+    if (url === '/app/backup/status') return Promise.resolve({ success: true, enabled: false, mode: 'byo', operation: null });
+    return Promise.reject(new Error(url));
+  };
+  const root = await paintMore(harness, { timeout: 40 });
+  const line = () => root.querySelector('.more-card[data-app-name="backup"] .more-state');
+  assert.strictEqual(line().textContent, 'not set up yet');
+  assert.strictEqual(line().hidden, false);
+  const helper = harness.window.BackupStatus;
+  harness.window.SolViews.dispose();
+  assert.strictEqual(harness.window.BackupStatus, helper, 'the backup helper stays for the page');
+  await paintMore(harness, { timeout: 40 });
+  assert.strictEqual(line().textContent, 'not set up yet');
+  assert.strictEqual(line().hidden, false);
+  assert.strictEqual(harness.window.BackupStatus, helper);
+});
+
+asyncCase('a pin save in flight is not marked failed once more is gone', async () => {
+  const harness = createHarness({ pinned: ['search'] });
+  renderChrome(harness, 'more');
+  let release;
+  const pending = new Promise((_resolve, reject) => { release = reject; });
+  let shellReads = 0;
+  let shellScope = null;
+  harness.window.apiJson = (url, options) => {
+    if (url === '/api/shell/pins') return pending;
+    if (url === '/api/shell') {
+      shellReads += 1;
+      shellScope = options && options.scope;
+      return Promise.resolve({ pinned: ['entities'] });
+    }
+    return Promise.reject(new Error(url));
+  };
+  const root = await paintMore(harness);
+  root.querySelector('[data-pin-view="map"]').dispatchEvent(event('click', { bubbles: true }));
+  await settle();
+  harness.window.SolViews.dispose();
+  release(new Error('save failed'));
+  await settle();
+  await settle();
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.strictEqual(shellReads, 0, 'the failure read waits until more is mounted again');
+  await paintMore(harness, { timeout: 30 });
+  await settle();
+  assert.strictEqual(shellReads, 1);
+  assert.strictEqual(shellScope, 'shell');
+  assert.strictEqual(root.querySelector('[data-pin-view="entities"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+});
+
+asyncCase('a pin save that lands after leaving updates the rail and not the old page', async () => {
+  const harness = createHarness({ pinned: ['search'] });
+  renderChrome(harness, 'home');
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  let shellReads = 0;
+  harness.window.apiJson = (url) => {
+    if (url === '/api/shell/pins') return pending;
+    if (url === '/api/shell') {
+      shellReads += 1;
+      return Promise.resolve({ pinned: ['search'] });
+    }
+    return Promise.reject(new Error(url));
+  };
+  const root = await paintMore(harness);
+  root.querySelector('[data-pin-view="map"]').dispatchEvent(event('click', { bubbles: true }));
+  await settle();
+  harness.window.SolViews.dispose();
+  release({ pinned: ['entities'] });
+  await settle();
+  await settle();
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.deepStrictEqual(namedApps(harness.document.querySelector('#app-rail')), ['home', 'entities', 'more', 'import', 'settings', 'network', 'sources', 'agents']);
+  await paintMore(harness, { timeout: 30 });
+  assert.strictEqual(shellReads, 0, 'an applied save does not read the shell again');
+  assert.strictEqual(root.querySelector('.more-live').textContent, '');
+  assert.strictEqual(root.querySelector('[data-pin-view="entities"]').getAttribute('aria-pressed'), 'true');
 });
 
 function bootFetches() {
