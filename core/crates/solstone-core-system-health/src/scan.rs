@@ -1006,6 +1006,41 @@ mod tests {
         assert_eq!(states.0.get("audio").map(String::as_str), Some("pending"));
     }
 
+    #[test]
+    fn a_transcript_from_before_the_processing_record_completes_its_speech() {
+        // An early desktop recording: `capture.m4a`, transcribed before the
+        // processing record into `capture.jsonl`, beside a screen video that
+        // never finished writing.
+        let now = DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH);
+        let temporary = tempfile::tempdir().unwrap();
+        let segment_dir = temporary.path().join("093732_305");
+        fs::create_dir_all(&segment_dir).unwrap();
+        fs::write(segment_dir.join("capture.m4a"), vec![0_u8; 64]).unwrap();
+        fs::write(
+            segment_dir.join("capture.jsonl"),
+            concat!(
+                r#"{"raw":"capture.m4a","model":"medium.en","device":"cuda","compute_type":"float32","topics":"pump","setting":"workplace"}"#,
+                "\n",
+                r#"{"start":"09:37:32","text":"Maya checked the orchard irrigation pump."}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        fs::write(segment_dir.join("center_1_screen.mov"), vec![0_u8; 64]).unwrap();
+        fs::write(
+            segment_dir.join("center_1_screen.jsonl"),
+            "{\"_solstone_processing\":{\"schema\":\"solstone.processing.v1\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\",\"handler\":\"describe\",\"attempts\":1}}\n",
+        )
+        .unwrap();
+        let (states, _) = detect_data_state(&segment_dir, "20260113", now).unwrap();
+        assert_eq!(states.0.get("audio").map(String::as_str), Some("analyzed"));
+        assert_eq!(
+            states.0.get("screen").map(String::as_str),
+            Some("failed_final")
+        );
+        assert!(crate::segment_fully_sensed(&states));
+    }
+
     fn device_ingest_event_line(stream: &str, day: &str, segment: &str) -> String {
         serde_json::json!({
             "record_type": "device_ingest",

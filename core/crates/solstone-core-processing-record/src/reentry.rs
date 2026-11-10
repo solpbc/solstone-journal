@@ -62,7 +62,12 @@ pub fn header_names_transcribe(header: &serde_json::Map<String, Value>) -> bool 
 /// Only transcribe writes its processing record, so no other JSONL passes, and
 /// the header stays with the transcript after its recording is released.
 ///
-/// Only the first line is read, so asking this of a large JSONL costs little.
+/// Transcripts from before the processing record carry no record. One still
+/// counts while its recording sits beside it under the same name, its header
+/// names the transcription model, and transcript rows follow that header.
+///
+/// At most the first two lines are read, so asking this of a large JSONL costs
+/// little.
 pub fn is_transcribe_output(path: &Path) -> bool {
     if path.extension().and_then(|extension| extension.to_str()) != Some("jsonl") {
         return false;
@@ -77,11 +82,34 @@ pub fn is_transcribe_output(path: &Path) -> bool {
     {
         return false;
     }
-    serde_json::from_slice::<Value>(line.trim_ascii_end())
+    let Some(header) = serde_json::from_slice::<Value>(line.trim_ascii_end())
         .ok()
-        .as_ref()
-        .and_then(Value::as_object)
-        .is_some_and(header_names_transcribe)
+        .and_then(|value| match value {
+            Value::Object(header) => Some(header),
+            _ => None,
+        })
+    else {
+        return false;
+    };
+    if header.contains_key("_solstone_processing") {
+        return header_names_transcribe(&header);
+    }
+    header_is_early_transcribe(&header)
+        && beside_its_recording(path)
+        && jsonl_has_row_with_key(path, vocab::AUDIO_TRANSCRIPT_ROW_KEY)
+}
+
+/// Whether a JSONL header is one transcribe wrote before it kept a processing
+/// record: it names the transcription model and holds no speech itself.
+pub fn header_is_early_transcribe(header: &serde_json::Map<String, Value>) -> bool {
+    !header.contains_key("_solstone_processing")
+        && header.contains_key("model")
+        && !header.contains_key(vocab::AUDIO_TRANSCRIPT_ROW_KEY)
+}
+
+/// Whether an audio recording with this JSONL's name sits beside it.
+fn beside_its_recording(path: &Path) -> bool {
+    crate::media::audio_extensions().any(|extension| path.with_extension(extension).is_file())
 }
 
 /// Return whether either of the first two nonblank JSONL rows carries `row_key`
@@ -415,6 +443,52 @@ mod tests {
         fs::copy(&transcript, &not_jsonl).expect("copy transcript");
         assert!(!is_transcribe_output(&not_jsonl));
         assert!(!is_transcribe_output(&segment.join("absent.jsonl")));
+        fs::remove_dir_all(segment).expect("remove segment");
+    }
+
+    #[test]
+    fn a_transcript_from_before_the_processing_record_counts_beside_its_recording() {
+        // Header shape captured from an owner journal's January `capture.jsonl`,
+        // written before transcribe kept a processing record.
+        let segment = reserve_temp_path("solstone-processing-record-legacy-transcript");
+        fs::create_dir(&segment).expect("create segment");
+        let transcript = segment.join("capture.jsonl");
+        write(
+            &transcript,
+            concat!(
+                r#"{"raw":"capture.m4a","model":"medium.en","device":"cuda","compute_type":"float32","topics":"pump, orchard","setting":"workplace"}"#,
+                "\n",
+                r#"{"start":"09:37:32","text":"Maya checked the orchard irrigation pump."}"#,
+                "\n",
+            ),
+        );
+        let recording = segment.join("capture.m4a");
+        write(&recording, "audio");
+        assert!(is_transcribe_output(&transcript));
+
+        fs::remove_file(&recording).expect("remove recording");
+        assert!(!is_transcribe_output(&transcript));
+
+        let video = segment.join("capture.mov");
+        write(&video, "video");
+        assert!(!is_transcribe_output(&transcript));
+        fs::remove_file(&video).expect("remove video");
+
+        let rows_only = segment.join("note.jsonl");
+        write(
+            &rows_only,
+            "{\"start\":\"14:00:00\",\"text\":\"not a transcript\"}\n",
+        );
+        write(&segment.join("note.wav"), "audio");
+        assert!(!is_transcribe_output(&rows_only));
+
+        let header_only = segment.join("noise.jsonl");
+        write(
+            &header_only,
+            "{\"raw\":\"noise.flac\",\"model\":\"medium.en\"}\n",
+        );
+        write(&segment.join("noise.flac"), "audio");
+        assert!(!is_transcribe_output(&header_only));
         fs::remove_dir_all(segment).expect("remove segment");
     }
 }

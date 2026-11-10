@@ -261,14 +261,14 @@ pub fn is_speech_transcript_file(path: &Path) -> bool {
 }
 
 impl EntrySource {
-    /// Whether this source is a speech transcript, by name or by the
-    /// processing record transcribe wrote at its head.
+    /// Whether this source is a speech transcript, by name or by the header
+    /// transcribe wrote at its head, with or without a processing record.
     pub fn is_speech_transcript(&self) -> bool {
         self.file.ends_with("audio.jsonl")
-            || self
-                .records
-                .first()
-                .is_some_and(solstone_core_processing_record::header_names_transcribe)
+            || self.records.first().is_some_and(|header| {
+                solstone_core_processing_record::header_names_transcribe(header)
+                    || solstone_core_processing_record::header_is_early_transcribe(header)
+            })
     }
 }
 

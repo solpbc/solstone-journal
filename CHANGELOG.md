@@ -35,6 +35,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - original screen recordings can now finish opening in the android development journal when the player seeks ahead in the video.
 - the android development journal can save journal exports, its recovery key and troubleshooting logs to a file you choose.
 - local speech-to-text takes less time in the android and iphone development journals. the iphone development journal uses less memory when working through speech.
+- some recordings transcribed by early versions of the journal read as never transcribed, so that day's daily briefing was never made. they now count as transcribed, and that day's daily briefing is made.
 - the iphone development journal can save its recovery key and journal exports through the native share sheet.
 - home and health now show daily processing status in the iphone development journal.
 - fixed another android permission error when downloading a journal archive.
