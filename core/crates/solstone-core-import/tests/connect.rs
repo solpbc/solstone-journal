@@ -10,6 +10,7 @@ fn connect_routes_to_the_native_owner_before_any_retired_file_import_path() {
     let error = connect_oura(&OuraConnectRequest {
         journal_root: PathBuf::from("relative-journal"),
         timeout_seconds: 1,
+        app: None,
     })
     .unwrap_err();
     assert_eq!(error.stage(), "target_journal_not_absolute");

@@ -38,14 +38,40 @@ const OAUTH_SCOPES: [&str; 9] = [
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OuraConnectOptions {
     pub timeout_seconds: u64,
+    /// The owner's own Oura app, given at the terminal. It is saved with the
+    /// tokens, only once Oura has said yes, so a mistyped one leaves nothing
+    /// behind. `None` uses the app this journal already holds.
+    pub app: Option<OuraApp>,
 }
 
 impl Default for OuraConnectOptions {
     fn default() -> Self {
         Self {
             timeout_seconds: 300,
+            app: None,
         }
     }
+}
+
+/// An Oura app the owner registered with Oura themselves.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OuraApp {
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+impl std::fmt::Debug for OuraApp {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OuraApp")
+            .field("client_id", &self.client_id)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Whether a connect stopped because this journal holds no Oura app yet.
+pub fn needs_oura_app(error: &BodyIngestError) -> bool {
+    matches!(error.stage(), "oura_config_missing" | "client_id_missing")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -108,6 +134,7 @@ impl ConnectPlatform for LiveConnectPlatform {
                 Ok((mut stream, _)) => match read_callback(&mut stream, expected_state) {
                     Ok(Some(code)) => return Ok(code),
                     Ok(None) => {}
+                    Err(error) if error.stage() == "authorization_declined" => return Err(error),
                     Err(_) => {
                         let _ = callback_response(&mut stream, 400, "Oura authorization rejected.");
                     }
@@ -143,7 +170,13 @@ fn connect_with_platform(
     if options.timeout_seconds == 0 {
         return Err(source("authorization_timeout"));
     }
-    let client = read_client(journal)?;
+    let client = match &options.app {
+        Some(app) => OuraClient {
+            client_id: app.client_id.clone(),
+            client_secret: Some(app.client_secret.clone()),
+        },
+        None => read_client(journal)?,
+    };
     let state = random_token(32).map_err(|_| source("authorization_random"))?;
     let verifier = random_token(64).map_err(|_| source("authorization_random"))?;
     let challenge = code_challenge_s256(&verifier);
@@ -170,7 +203,7 @@ fn connect_with_platform(
     }
     let payload = platform.exchange(&form)?;
     let tokens = token_values(&payload)?;
-    persist_tokens(journal, tokens)?;
+    persist_tokens(journal, tokens, options.app.as_ref())?;
     Ok(OuraConnectReport { scopes })
 }
 
@@ -236,23 +269,41 @@ fn token_values(payload: &Value) -> Result<TokenValues, BodyIngestError> {
     })
 }
 
-fn persist_tokens(journal: &Path, tokens: TokenValues) -> Result<(), BodyIngestError> {
+fn persist_tokens(
+    journal: &Path,
+    tokens: TokenValues,
+    app: Option<&OuraApp>,
+) -> Result<(), BodyIngestError> {
+    let app = app.cloned();
     mutate_journal_config(
         journal,
         solstone_core_journal_config_write::LockOptions::default(),
         move |config| {
-            let section = config
+            let entry = config
                 .entry("oura".to_owned())
-                .or_insert_with(|| Value::Object(Map::new()))
-                .as_object_mut()
-                .expect("the client configuration was checked as an object");
+                .or_insert_with(|| Value::Object(Map::new()));
+            if !entry.is_object() {
+                *entry = Value::Object(Map::new());
+            }
+            let section = entry.as_object_mut().expect("made an object above");
+            let mut changed = false;
+            if let Some(app) = app {
+                for (key, value) in [
+                    ("client_id", app.client_id),
+                    ("client_secret", app.client_secret),
+                ] {
+                    let value = Value::String(value);
+                    changed |= section.get(key) != Some(&value);
+                    section.insert(key.to_owned(), value);
+                }
+            }
             let next = json!({
                 "access_token": tokens.access_token,
                 "refresh_token": tokens.refresh_token,
                 "expires_at": tokens.expires_at,
                 "token_type": tokens.token_type,
             });
-            let changed = section.get("tokens") != Some(&next);
+            changed |= section.get("tokens") != Some(&next);
             section.insert("tokens".to_owned(), next);
             JournalConfigMutation { changed, value: () }
         },
@@ -319,13 +370,23 @@ fn read_callback(
     if parts.next() != Some("HTTP/1.1") || parts.next().is_some() {
         return Err(source("authorization_callback"));
     }
-    let code = callback_code(target, expected_state)?;
+    let code = match callback_code(target, expected_state) {
+        Err(error) if error.stage() == "authorization_declined" => {
+            callback_response(
+                stream,
+                200,
+                "Oura wasn't connected. you can close this tab.",
+            )?;
+            return Err(error);
+        }
+        other => other?,
+    };
     match code {
         Some(code) => {
             callback_response(
                 stream,
                 200,
-                "Oura authorization received. You can return to Solstone.",
+                "you allowed it at Oura. you can close this tab; the terminal says when it's connected.",
             )?;
             Ok(Some(code))
         }
@@ -357,6 +418,10 @@ fn callback_code(target: &str, expected_state: &str) -> Result<Option<String>, B
     };
     if one("state") != Some(expected_state) {
         return Ok(None);
+    }
+    // Oura sends the owner back with an error and no code when they decline.
+    if one("code").is_none() && values.contains_key("error") {
+        return Err(source("authorization_declined"));
     }
     Ok(one("code").map(str::to_owned))
 }
@@ -535,6 +600,74 @@ mod tests {
         assert!(!url.contains("synthetic-secret"));
     }
 
+    fn app_options() -> OuraConnectOptions {
+        OuraConnectOptions {
+            app: Some(OuraApp {
+                client_id: "typed-client".to_owned(),
+                client_secret: "typed-secret".to_owned(),
+            }),
+            ..OuraConnectOptions::default()
+        }
+    }
+
+    fn platform_answering(exchange: Value) -> FakePlatform {
+        FakePlatform {
+            expected_url: None,
+            expected_state: None,
+            exchange,
+            form: None,
+        }
+    }
+
+    #[test]
+    fn a_journal_without_an_app_asks_for_one_and_a_typed_app_is_kept_once_oura_says_yes() {
+        let journal = TempDir::new();
+        fs::write(journal.0.join("config/journal.json"), b"{}").expect("config");
+        let mut platform = platform_answering(json!({}));
+        let error =
+            connect_with_platform(&journal.0, &OuraConnectOptions::default(), &mut platform)
+                .unwrap_err();
+        assert!(needs_oura_app(&error), "{error}");
+        assert!(platform.expected_url.is_none(), "no browser before an app");
+
+        let mut platform = platform_answering(json!({
+            "access_token": "synthetic-access",
+            "refresh_token": "synthetic-refresh",
+            "expires_in": 3600
+        }));
+        connect_with_platform(&journal.0, &app_options(), &mut platform).expect("connect");
+        assert!(
+            platform
+                .expected_url
+                .expect("authorization URL")
+                .contains("client_id=typed-client")
+        );
+        let form = platform.form.expect("token form");
+        assert_eq!(form["client_id"], "typed-client");
+        assert_eq!(form["client_secret"], "typed-secret");
+        let config: Value = serde_json::from_slice(
+            &fs::read(journal.0.join("config/journal.json")).expect("saved config"),
+        )
+        .expect("saved config JSON");
+        assert_eq!(config["oura"]["client_id"], "typed-client");
+        assert_eq!(config["oura"]["client_secret"], "typed-secret");
+        assert_eq!(config["oura"]["tokens"]["access_token"], "synthetic-access");
+        assert!(!format!("{:?}", app_options()).contains("typed-secret"));
+    }
+
+    #[test]
+    fn a_typed_app_oura_turns_down_leaves_nothing_saved() {
+        let journal = TempDir::new();
+        fs::write(journal.0.join("config/journal.json"), b"{}").expect("config");
+        let mut platform = platform_answering(json!({"error": "invalid_client"}));
+        connect_with_platform(&journal.0, &app_options(), &mut platform).unwrap_err();
+        let config: Value = serde_json::from_slice(
+            &fs::read(journal.0.join("config/journal.json")).expect("config"),
+        )
+        .expect("config JSON");
+        assert!(config.get("oura").is_none(), "{config}");
+    }
+
     #[test]
     fn connecting_clears_a_held_renewal() {
         let journal = TempDir::new();
@@ -549,6 +682,7 @@ mod tests {
                 token_type: "Bearer".to_owned(),
                 expires_at: 1.0,
             },
+            None,
         )
         .expect("tokens");
         assert!(!journal.0.join("config/oura-renewal.json").exists());
@@ -571,6 +705,16 @@ mod tests {
             None
         );
         assert!(callback_code("/callback?code=%GG&state=expected", "expected").is_err());
+        assert_eq!(
+            callback_code("/callback?error=access_denied&state=expected", "expected")
+                .unwrap_err()
+                .stage(),
+            "authorization_declined"
+        );
+        assert_eq!(
+            callback_code("/callback?error=access_denied&state=wrong", "expected").unwrap(),
+            None
+        );
         assert_eq!(
             callback_code("/other?code=one&state=expected", "expected").unwrap(),
             None
