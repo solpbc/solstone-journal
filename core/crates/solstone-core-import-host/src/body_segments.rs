@@ -103,6 +103,9 @@ pub struct AppleSegmentsRequest<'a> {
     /// Test seam: called at each named point, and the run stops there, as if
     /// killed, when it returns true.
     pub stop_at: Option<&'a dyn Fn(&str) -> bool>,
+    /// The import a page start runs under, exactly. It never resumes another
+    /// import's run: one it finds is taken over, and this import holds what it writes.
+    pub import_id: Option<&'a str>,
 }
 
 impl<'a> AppleSegmentsRequest<'a> {
@@ -116,6 +119,7 @@ impl<'a> AppleSegmentsRequest<'a> {
             earlier_waiting: 0,
             spill_bytes: DEFAULT_SPILL_BYTES,
             stop_at: None,
+            import_id: None,
         }
     }
 }
@@ -270,6 +274,8 @@ struct RunRequest<'a> {
     spill_bytes: usize,
     stop_at: Option<&'a dyn Fn(&str) -> bool>,
     clock: Option<&'a dyn Fn() -> DateTime<Utc>>,
+    /// See `AppleSegmentsRequest::import_id`.
+    exact_import: Option<&'a str>,
 }
 
 /// What a run may do with what's already filed under another facet.
@@ -424,6 +430,10 @@ struct PendingWindow {
     #[serde(default)]
     units: u64,
     facet: bool,
+    /// Whether this window counted toward the run's `refiled`. A state from
+    /// before this field says nothing, so it's taken as counted, as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    refiled: Option<bool>,
     publish: bool,
     /// Under a run that names no facet, the facet a document this window now
     /// holds had where it was before it moved here.
@@ -815,8 +825,9 @@ impl Run<'_, '_> {
         let count = self.failed_in_a_row.get();
         if count >= MAX_FAILED_IN_A_ROW {
             return Err(Stop::Failed(format!(
-                "the import stopped after {}: {count} segments in a row couldn't be finished; import the same file again to carry on from there",
-                readable_day(day)
+                "the import stopped after {}: {count} parts of your journal {}; import the same file again to carry on from there",
+                readable_day(day),
+                solstone_core_import_sources::body_status::STUCK_MARKER
             )));
         }
         Ok(())
@@ -1143,6 +1154,7 @@ impl Run<'_, '_> {
                             .map(text_sha),
                         units: decision.units,
                         facet: false,
+                        refiled: Some(decision.refiled),
                         publish,
                         taken,
                         filing: decision
@@ -1716,7 +1728,7 @@ fn close_attempt_unlocked(journal: &Path, import_id: &str) {
 
 /// Whether an earlier run left its record in this import, which a run that isn't
 /// resuming it must not overwrite.
-fn holds_a_run(journal: &Path, import_id: &str) -> bool {
+pub(crate) fn holds_a_run(journal: &Path, import_id: &str) -> bool {
     let dir = journal.join("imports").join(import_id);
     [LISTING_FILE, PROGRESS_FILE, "summary.md", "manifest.json"]
         .iter()
@@ -1799,31 +1811,37 @@ fn keep_half_done_day_filed(journal: &Path, source: &BodySource, state: &mut Run
         .iter_mut()
         .filter(|window| window.facet || window.filing.is_some())
     {
-        let file = window_dir(journal, source, &(day.clone(), window.key.clone()))
-            .join("talents/facets.json");
-        if fs::read_to_string(&file).is_ok_and(|held| held != target) {
-            window.facet = false;
-            window.filing = None;
-            if let Some(counts) = &mut window.counts {
-                counts.refiled = 0;
-            }
+        let dir = window_dir(journal, source, &(day.clone(), window.key.clone()));
+        if !fs::read_to_string(dir.join("talents/facets.json")).is_ok_and(|held| held != target) {
+            continue;
+        }
+        window.facet = false;
+        window.filing = None;
+        if window
+            .counts
+            .as_ref()
+            .map_or(window.refiled != Some(false), |counts| counts.refiled > 0)
+        {
             kept += 1;
-            if window.publish
-                && !window.write
-                && window.taken.is_none()
-                && file
-                    .parent()
-                    .and_then(Path::parent)
-                    .is_some_and(|dir| dir.join("stream.json").exists())
-            {
-                window.publish = false;
-                pending.counts.published = pending.counts.published.saturating_sub(1);
-                pending.counts.unchanged += 1;
-                if let Some(counts) = &mut window.counts {
-                    counts.published = 0;
-                    counts.unchanged = 1;
-                    counts.days.clear();
-                }
+        }
+        window.refiled = Some(false);
+        if let Some(counts) = &mut window.counts {
+            counts.refiled = 0;
+        }
+        // Its facet was the only reason to publish it; keep per-window and
+        // day counts aligned when takeover later sums reached windows.
+        if window.publish
+            && !window.write
+            && window.taken.is_none()
+            && dir.join("stream.json").exists()
+        {
+            window.publish = false;
+            pending.counts.published = pending.counts.published.saturating_sub(1);
+            pending.counts.unchanged += 1;
+            if let Some(counts) = &mut window.counts {
+                counts.published = 0;
+                counts.unchanged = 1;
+                counts.days.clear();
             }
         }
     }
@@ -1925,6 +1943,7 @@ pub fn run_apple_health_segments(
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
         clock: None,
+        exact_import: request.import_id,
     };
     run_segments(journal, &APPLE, &run, &|| {
         let source_hash = solstone_core_import::hash_source(request.source)
@@ -1966,6 +1985,7 @@ pub fn run_oura_segments(
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
         clock: None,
+        exact_import: None,
     };
     // The pages' own hashes say what they hold, so nothing else needs checking.
     run_segments(journal, &OURA, &run, &|| {
@@ -2005,6 +2025,7 @@ pub fn import_oura(
         spill_bytes: request.spill_bytes,
         stop_at: request.stop_at,
         clock: request.clock,
+        exact_import: None,
     };
     // A fetched run is known by what it asked; its pages' hash is set once fetched.
     let outcome = run_segments(journal, &OURA, &run, &|| Ok((String::new(), String::new())))
@@ -2038,11 +2059,69 @@ fn run_segments(
     })
 }
 
+/// The latest attempt generation an import has, or 0 for none.
+fn latest_generation(journal: &Path, import_id: &str) -> u64 {
+    match read_provenance(journal, import_id) {
+        Ok(Some(metadata)) => match read_attempt_facts(&metadata) {
+            AttemptRead::Present(facts) => facts.generation,
+            _ => 0,
+        },
+        _ => 0,
+    }
+}
+
+/// Record why an Apple run's attempt ends, before the write that ends it. A
+/// refusal before any attempt names the one settle then makes: the latest + 1.
+fn record_stop(journal: &Path, source: &BodySource, import_id: &str, code: &str, generation: u64) {
+    if source.source == APPLE.source {
+        solstone_core_import_sources::body_status::record(journal, import_id, code, generation);
+    }
+}
+
 fn run_segments_text(
     journal: &Path,
     source: &BodySource,
     request: &RunRequest<'_>,
     identity: &dyn Fn() -> Result<(String, String), String>,
+) -> Result<RunOutcome, Result<OuraStop, String>> {
+    let admitted = Cell::new(false);
+    let result = run_segments_bound(journal, source, request, identity, &admitted);
+    // A page start refused before its attempt was admitted says why on its own
+    // import. Once admitted, the run recorded it itself, before its terminal write.
+    if let (Err(Err(error)), Some(import_id)) = (&result, request.exact_import)
+        && !admitted.get()
+        // Another run (one from the command line, say) may have bound it meanwhile:
+        // nothing is written on an import that's its.
+        && latest_generation(journal, import_id) == 0
+    {
+        let code = if error.starts_with("another ") && error.contains(" import is running") {
+            "busy"
+        } else if error.contains(crate::cli_argv::FACET_REFUSAL_MARKER) {
+            "facet"
+        } else if solstone_core_import_sources::body_status::code_for_run_error(error)
+            == "disk_full"
+        {
+            "disk_full"
+        } else {
+            "not_started"
+        };
+        record_stop(
+            journal,
+            source,
+            import_id,
+            code,
+            latest_generation(journal, import_id) + 1,
+        );
+    }
+    result
+}
+
+fn run_segments_bound(
+    journal: &Path,
+    source: &BodySource,
+    request: &RunRequest<'_>,
+    identity: &dyn Fn() -> Result<(String, String), String>,
+    admitted: &Cell<bool>,
 ) -> Result<RunOutcome, Result<OuraStop, String>> {
     if let Some(facet) = request.facet {
         crate::cli_argv::require_enabled_facet(facet, journal).map_err(Err)?;
@@ -2062,6 +2141,16 @@ fn run_segments_text(
             source_owner_name(source)
         ))
     })?;
+    // A page start's import is checked again under the lock: a command-line run
+    // of the same export may have bound it while this one waited.
+    if let Some(exact) = request.exact_import
+        && (latest_generation(journal, exact) > 0 || holds_a_run(journal, exact))
+    {
+        admitted.set(true);
+        return Err(Err(
+            "this import has already run, so nothing was brought in.".to_owned(),
+        ));
+    }
     let zone = read_or_create_zone(journal, source).map_err(Err)?;
     // Before anything touches an earlier run: an export that can't be read this
     // moment says nothing about whether that run should carry on.
@@ -2082,6 +2171,8 @@ fn run_segments_text(
         false
     };
     let resumable = match &previous {
+        // A page start never carries on another import: it takes over.
+        _ if request.exact_import.is_some() => None,
         Read::Trusted(state)
             if !replan
                 && state.facet.as_deref() == request.facet
@@ -2106,9 +2197,14 @@ fn run_segments_text(
         }
         _ => None,
     };
-    let import_id = match resumable.clone() {
-        Some(id) => id,
-        None => {
+    let import_id = match (resumable.clone(), request.exact_import) {
+        (Some(id), _) => id,
+        (None, Some(exact)) => {
+            solstone_core_import::bind_exact_import_record(journal, exact)
+                .map_err(|error| Err(error.to_string()))?;
+            exact.to_owned()
+        }
+        (None, None) => {
             let requested = solstone_core_import::validate_timestamp(request.timestamp)
                 .map_err(|e| Err(e.to_string()))?;
             solstone_core_import::bind_import_record_where(
@@ -2123,17 +2219,40 @@ fn run_segments_text(
             .to_owned()
         }
     };
+    let refused_before_admission = |code: &str| {
+        record_stop(
+            journal,
+            source,
+            &import_id,
+            code,
+            latest_generation(journal, &import_id) + 1,
+        );
+    };
     if solstone_core_import::refuse_if_live_running(journal, &import_id, source.stream).is_some() {
+        refused_before_admission("busy");
+        admitted.set(true);
         return Err(Err("this import is already running".to_owned()));
     }
-    let generation = solstone_core_import::admit_running_attempt(
+    let generation = match solstone_core_import::admit_running_attempt(
         journal,
         &import_id,
         now_ms(),
         Some(source.registry.name()),
-    )
-    .map_err(|error| Err(error.to_string()))?
-    .generation;
+    ) {
+        Ok(facts) => facts.generation,
+        Err(error) => {
+            let text = error.to_string();
+            refused_before_admission(
+                match solstone_core_import_sources::body_status::code_for_error_text(&text) {
+                    "disk_full" => "disk_full",
+                    _ => "not_started",
+                },
+            );
+            admitted.set(true);
+            return Err(Err(text));
+        }
+    };
+    admitted.set(true);
     let run = Run {
         journal,
         source,
@@ -2170,10 +2289,18 @@ fn run_segments_text(
         }
         Err(Stop::Superseded) => Err(Err("this import was superseded".to_owned())),
         Err(Stop::Stopped) => {
+            record_stop(journal, source, &import_id, "other", generation);
             let _ = finish(ImportTerminalInput::Failed(&[]), &[]);
             Err(Err("import stopped".to_owned()))
         }
         Err(Stop::Failed(error)) => {
+            record_stop(
+                journal,
+                source,
+                &import_id,
+                solstone_core_import_sources::body_status::code_for_run_error(&error),
+                generation,
+            );
             let _ = finish(ImportTerminalInput::Failed(&[]), &[]);
             Err(Err(refusal_text(&error)))
         }
@@ -2187,11 +2314,7 @@ fn run_segments_text(
 /// What a run's failure says, in plain words where the export is why.
 fn refusal_text(error: &str) -> String {
     if error.contains("export_size_limit") {
-        format!(
-            "this export is larger than {} GiB, the most one import reads",
-            solstone_core_import_sources::apple_export::apple_scan_byte_bound()
-                / (1024 * 1024 * 1024)
-        )
+        solstone_core_import_sources::body_status::too_large_words()
     } else if error.contains(solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE) {
         solstone_core_import_sources::apple_export::EXPORT_INCOMPLETE_TEXT.to_owned()
     } else {

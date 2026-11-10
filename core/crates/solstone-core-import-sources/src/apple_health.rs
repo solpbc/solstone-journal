@@ -23,12 +23,10 @@ use solstone_core_format::content::body_records::{
     BODY_RECORDS_FILE, BodyRow, DATED_WINDOW, RowKind, decode_rows, encode_rows, parse_source_time,
     plain_words, sort_rows, source_words,
 };
-#[cfg(test)]
 use solstone_core_import::BodyIngestError;
 use solstone_core_journal_config::{owner_zone, parse_zone};
 use solstone_core_journal_io::{AtomicWriteOptions, day_dirs, write_bytes_exclusive};
 
-#[cfg(test)]
 use crate::apple_export::scan_apple_export;
 use crate::apple_export::{AppleElement, AppleItem};
 use solstone_core_segment::{holds_foreign_content, owner_deleted};
@@ -569,6 +567,125 @@ fn workout_event(workout: &BodyRow, event: &BTreeMap<String, String>) -> Option<
         .map(|(key, value)| (key.clone(), Value::String(value.clone())))
         .collect();
     Some(row)
+}
+
+/// What an export holds, by the read list, counted without holding a row.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct ApplePreview {
+    /// The first and last day anything read starts on, as the export states it.
+    pub span: Option<(String, String)>,
+    pub workouts: u64,
+    /// Put together from sleep stages by the import's own rule, not reported as nights.
+    pub nights: u64,
+    pub mindful_sessions: u64,
+    pub readings: u64,
+    pub daily_totals: u64,
+    pub logged: u64,
+    /// Everything the import counts and doesn't read, by its type or element name.
+    pub not_read: BTreeMap<String, u64>,
+    /// Records that can't be read, which the import will refuse the same way.
+    pub refused: u64,
+    /// The uncompressed size of `export.xml`.
+    pub export_bytes: u64,
+}
+
+impl ApplePreview {
+    /// How many things an import of this export would read.
+    #[must_use]
+    pub fn read(&self) -> u64 {
+        self.workouts
+            + self.nights
+            + self.mindful_sessions
+            + self.readings
+            + self.daily_totals
+            + self.logged
+    }
+}
+
+/// Count what an export holds in one streaming pass: nothing is staged or
+/// written, and only sleep stages' times are held, to count nights.
+pub fn preview_export(source: &Path) -> Result<ApplePreview, BodyIngestError> {
+    let mut preview = ApplePreview {
+        export_bytes: crate::apple_export::apple_export_bytes(source)?,
+        ..ApplePreview::default()
+    };
+    let mut stages: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new();
+    let mut span: Option<(String, String)> = None;
+    let mut see = |start: Option<&String>| -> bool {
+        let Some(time) = start.and_then(|text| parse_source_time(text)) else {
+            return false;
+        };
+        let day = time.date_naive().format("%Y-%m-%d").to_string();
+        span = Some(match span.take() {
+            Some((first, last)) => (first.min(day.clone()), last.max(day)),
+            None => (day.clone(), day),
+        });
+        true
+    };
+    scan_apple_export(source, &mut |item| match item {
+        AppleItem::Workout(element) => {
+            if see(element.attributes.get("startDate")) {
+                preview.workouts += 1;
+            } else {
+                preview.refused += 1;
+            }
+        }
+        AppleItem::Record(element) => {
+            let record_type = element.attributes.get("type").cloned().unwrap_or_default();
+            let kind = read_kind(&record_type);
+            if kind == ReadKind::NotRead {
+                *preview.not_read.entry(record_type).or_default() += 1;
+                return;
+            }
+            let start = element.attributes.get("startDate");
+            if !see(start) {
+                preview.refused += 1;
+                return;
+            }
+            match kind {
+                ReadKind::Sleep => {
+                    let at = |key: &str| {
+                        element
+                            .attributes
+                            .get(key)
+                            .and_then(|text| parse_source_time(text))
+                            .map(|time| time.timestamp())
+                    };
+                    if let (Some(begin), Some(end)) = (at("startDate"), at("endDate")) {
+                        let by = element
+                            .attributes
+                            .get("sourceName")
+                            .cloned()
+                            .unwrap_or_default();
+                        stages.entry(by).or_default().push((begin, end));
+                    } else {
+                        preview.refused += 1;
+                    }
+                }
+                ReadKind::Mindful => preview.mindful_sessions += 1,
+                ReadKind::Reading => preview.readings += 1,
+                ReadKind::Count => preview.daily_totals += 1,
+                ReadKind::Logged => preview.logged += 1,
+                ReadKind::NotRead => {}
+            }
+        }
+        AppleItem::NotRead(name) => *preview.not_read.entry(name).or_default() += 1,
+        AppleItem::Refused(_) => preview.refused += 1,
+    })?;
+    preview.span = span;
+    for intervals in stages.values_mut() {
+        intervals.sort_unstable();
+        let mut reach = i64::MIN;
+        for &(begin, end) in intervals.iter() {
+            if reach == i64::MIN || begin - reach > NIGHT_GAP_SECONDS {
+                preview.nights += 1;
+                reach = end;
+            } else {
+                reach = reach.max(end);
+            }
+        }
+    }
+    Ok(preview)
 }
 
 /// The whole-export reference the streaming path is tested against.

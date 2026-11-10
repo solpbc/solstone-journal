@@ -38,13 +38,13 @@ pub struct DayPlacement<'a> {
     source: &'a BodySource,
     day: String,
     held: BTreeMap<String, Stored>,
-    ids: BTreeMap<String, Vec<String>>,
+    ids: BTreeMap<String, Vec<(String, usize)>>,
 }
 
 impl<'a> DayPlacement<'a> {
     pub fn load(journal: &'a Path, source: &'a BodySource, day: &str) -> Result<Self, String> {
         let mut held = BTreeMap::new();
-        let mut ids: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut ids: BTreeMap<String, Vec<(String, usize)>> = BTreeMap::new();
         let dir = stream_dir(journal, source, day);
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => Some(entries),
@@ -77,13 +77,21 @@ impl<'a> DayPlacement<'a> {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                 Err(error) => return Err(format!("{}: {error}", file.display())),
             };
-            for row in rows.iter().filter(|row| row.kind != RowKind::Moved) {
-                ids.entry(row.id.clone()).or_default().push(key.clone());
+            for (index, row) in rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| row.kind != RowKind::Moved)
+            {
+                ids.entry(row.id.clone())
+                    .or_default()
+                    .push((key.clone(), index));
             }
             held.insert(key, Stored { rows, filing });
         }
         for keys in ids.values_mut() {
-            keys.sort_by(|left, right| (copy_rank(left), left).cmp(&(copy_rank(right), right)));
+            keys.sort_by(|left, right| {
+                (copy_rank(&left.0), &left.0).cmp(&(copy_rank(&right.0), &right.0))
+            });
         }
         Ok(Self {
             journal,
@@ -96,15 +104,12 @@ impl<'a> DayPlacement<'a> {
 
     fn existing(&self, grid: &str, id: &str) -> Option<(&str, &Stored, &BodyRow)> {
         let keys = self.ids.get(id)?;
-        let key = keys
+        let (key, index) = keys
             .iter()
-            .find(|key| same_grid(grid, key))
+            .find(|(key, _)| same_grid(grid, key))
             .or_else(|| keys.first())?;
         let held = &self.held[key];
-        let row = held
-            .rows
-            .iter()
-            .find(|row| row.id == id && row.kind != RowKind::Moved)?;
+        let row = held.rows.get(*index)?;
         Some((key, held, row))
     }
 

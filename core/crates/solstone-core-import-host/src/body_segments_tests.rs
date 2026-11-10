@@ -1957,7 +1957,10 @@ fn a_stream_that_takes_no_window_stops_the_run_though_each_day_holds_only_one() 
     fs::create_dir_all(record.parent().unwrap()).unwrap();
     fs::write(&record, "not a record").unwrap();
     let error = run_apple_health_segments(root, &request(&source, "20261104_120000")).unwrap_err();
-    assert!(error.contains("64 segments in a row"), "{error}");
+    assert!(
+        error.contains("64 parts of your journal in a row"),
+        "{error}"
+    );
     assert!(error.contains("carry on"), "{error}");
 }
 
@@ -2276,7 +2279,7 @@ fn a_day_with_more_stuck_windows_than_the_bound_is_recorded_and_the_next_run_goe
         assert!(error.contains("carry on"), "{error}");
         assert!(error.contains("after 2026-10-10"), "{error}");
         assert!(
-            error.contains(&format!("{slots} segments in a row")),
+            error.contains(&format!("{slots} parts of your journal in a row")),
             "{error}"
         );
         // It stopped having recorded the day, and said so truly: the next run is past it.
@@ -3278,4 +3281,284 @@ fn an_apple_runs_state_holds_nothing_of_moves_and_its_tiles_keep_their_index_ids
         }
     }
     assert!(tiles > 0);
+}
+
+/// The first line's counts, in order: written, unchanged, stayed deleted, unreadable.
+fn first_line_counts(summary: &str) -> [u64; 4] {
+    let line = summary
+        .lines()
+        .find(|line| line.contains(" written, "))
+        .unwrap_or_else(|| panic!("no counts line: {summary}"));
+    let numbers: Vec<u64> = line
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .take(4)
+        .map(|part| part.parse().unwrap())
+        .collect();
+    [numbers[0], numbers[1], numbers[2], numbers[3]]
+}
+
+fn listed_windows(root: &Path, import: &str) -> u64 {
+    fs::read_to_string(root.join("imports").join(import).join("body-touched.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["windows"]
+                .as_array()
+                .map_or(0, Vec::len) as u64
+        })
+        .sum()
+}
+
+#[test]
+fn a_refused_resumes_half_done_day_still_adds_up_in_the_summary() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    // The same export under another facet: its rows are unchanged, and only the
+    // facet would publish them. It stops with the second day half done.
+    let stop = stopping_at("pending", 2);
+    let mut told = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    run_apple_health_segments(root, &told).unwrap_err();
+    add_listed_elsewhere(root, "20261001", "later");
+    let quiet = AppleSegmentsRequest::new(&source, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    // A refiled window is counted on its own line, so with it the counts cover
+    // every window the import listed.
+    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(&outcome.summary);
+    let refiled = outcome
+        .summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"))
+        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert_eq!(
+        written + unchanged + stayed_deleted + unreadable + refiled,
+        listed_windows(root, "20261012_130000"),
+        "{}",
+        outcome.summary
+    );
+    // What's still under work on the kept day isn't counted as refiled.
+    let kept: u64 = fs::read_dir(root.join("chronicle/20261011").join(STREAM))
+        .unwrap()
+        .flatten()
+        .filter(|entry| {
+            fs::read_to_string(entry.path().join("talents/facets.json"))
+                .is_ok_and(|held| held == facet_file_text("work"))
+        })
+        .count() as u64;
+    assert!(kept > 0, "{}", outcome.summary);
+    let refiled_line = outcome
+        .summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"));
+    let refiled_windows: u64 = fs::read_dir(root.join("chronicle"))
+        .unwrap()
+        .flatten()
+        .filter_map(|day| fs::read_dir(day.path().join(STREAM)).ok())
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            fs::read_to_string(entry.path().join("talents/facets.json"))
+                .is_ok_and(|held| held == facet_file_text("body"))
+        })
+        .count() as u64;
+    match refiled_line {
+        Some(line) => assert!(
+            line.starts_with(&format!("{refiled_windows} part")),
+            "{line} against {refiled_windows}"
+        ),
+        None => assert_eq!(refiled_windows, 0, "{}", outcome.summary),
+    }
+}
+
+#[test]
+fn a_refused_resume_lowers_refiled_only_for_windows_that_counted() {
+    let journal = journal();
+    let root = journal.path();
+    two_facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let source = export(&scratch.path().join("1"), &[workout(10), workout(11)]);
+    run(root, &source, "20261012_120000", Some("work"));
+    // A window that carries a facet and no records yet: a new reading there takes
+    // a facet without ever having been refiled.
+    let bare = root
+        .join("chronicle/20261011")
+        .join(STREAM)
+        .join("200000_3600/talents");
+    fs::create_dir_all(&bare).unwrap();
+    fs::write(bare.join("facets.json"), facet_file_text("work")).unwrap();
+    let more = export(
+        &scratch.path().join("2"),
+        &[
+            workout(10),
+            workout(11),
+            heart("2026-10-11 20:10:00 -0600", "70"),
+        ],
+    );
+    // Stopped once its new reading is written: the day's tiles have taken the new
+    // facet and the bare window hasn't.
+    let stop = stopping_at("written", 1);
+    let mut told = AppleSegmentsRequest::new(&more, "20261012_130000", Some("body"));
+    told.listed = ListedMoves::MoveAtMost(2);
+    told.stop_at = Some(&stop);
+    run_apple_health_segments(root, &told).unwrap_err();
+    add_listed_elsewhere(root, "20261001", "later");
+    let quiet = AppleSegmentsRequest::new(&more, "20261012_130000", Some("body"));
+    let outcome = run_apple_health_segments(root, &quiet).unwrap();
+    let [written, unchanged, stayed_deleted, unreadable] = first_line_counts(&outcome.summary);
+    let refiled = outcome
+        .summary
+        .lines()
+        .find(|line| line.contains("now filed under this facet instead"))
+        .and_then(|line| line.split(' ').next()?.parse::<u64>().ok())
+        .unwrap_or(0);
+    assert_eq!(
+        written + unchanged + stayed_deleted + unreadable + refiled,
+        listed_windows(root, "20261012_130000"),
+        "{}",
+        outcome.summary
+    );
+}
+
+// The import page reads an import that left hours as saved once a later Apple
+// import finishes listing none failing. That holds only because every later run
+// carries what earlier runs left and retries it, or repairs the whole stream.
+// Each kind of later run, here: with the window still stuck its record must list
+// it (a run that dropped the carry wouldn't); healed, it must bind it.
+mod a_later_run_carries_what_an_earlier_one_left {
+    use super::*;
+
+    const DAY: &str = "20261011";
+    const KEY: &str = "063000_300";
+
+    fn lists_failing(root: &Path, import: &str) -> bool {
+        let record: serde_json::Value = serde_json::from_slice(
+            &fs::read(root.join("imports").join(import).join("imported.json")).unwrap(),
+        )
+        .unwrap();
+        record["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|segment| {
+                segment["day"] == DAY
+                    && segment["segment"] == KEY
+                    && segment["outcome"].get("Bound").is_none()
+                    && segment["outcome"]["kind"] != "bound"
+            })
+    }
+
+    fn bound_for_real(root: &Path) -> bool {
+        let marker: serde_json::Value =
+            serde_json::from_slice(&fs::read(window(root, DAY, KEY).join("stream.json")).unwrap())
+                .unwrap();
+        marker["seq"] != 999
+    }
+
+    /// S leaves the window failing, then `later` runs; returns the import whose
+    /// record says how it ended.
+    fn after(heal: bool, later: &dyn Fn(&Path, &Path, &Path) -> String) {
+        let journal = journal();
+        let root = journal.path();
+        let scratch = tempfile::tempdir().unwrap();
+        stuck_window(root, DAY, KEY);
+        let first = days_export(&scratch.path().join("1"));
+        let s = run_apple_health_segments(root, &request(&first, "20261104_100000")).unwrap();
+        assert!(!s.finished);
+        assert!(lists_failing(root, "20261104_100000"), "S left it");
+        let mut records = days_records(true);
+        records.push(heart("2026-10-12 12:00:10 -0600", "71"));
+        let second = export(&scratch.path().join("2"), &records);
+        records.push(heart("2026-10-12 13:00:10 -0600", "72"));
+        let third = export(&scratch.path().join("3"), &records);
+        if heal {
+            fs::remove_file(window(root, DAY, KEY).join("stream.json")).unwrap();
+        }
+        let last = later(root, &second, &third);
+        if heal {
+            assert!(!lists_failing(root, &last), "{last} healed it");
+            assert!(bound_for_real(root));
+        } else {
+            assert!(lists_failing(root, &last), "{last} still lists what S left");
+        }
+    }
+
+    fn each(later: &dyn Fn(&Path, &Path, &Path) -> String) {
+        after(false, later);
+        after(true, later);
+    }
+
+    #[test]
+    fn a_different_export_taking_over_a_finished_runs_leftovers() {
+        each(&|root, second, _| {
+            run_apple_health_segments(root, &request(second, "20261104_110000")).unwrap();
+            "20261104_110000".to_owned()
+        });
+    }
+
+    #[test]
+    fn a_takeover_of_a_run_stopped_part_way() {
+        each(&|root, second, third| {
+            let stop = stopping_at("pending", 2);
+            let mut stopped = request(second, "20261104_110000");
+            stopped.stop_at = Some(&stop);
+            run_apple_health_segments(root, &stopped).unwrap_err();
+            run_apple_health_segments(root, &request(third, "20261104_120000")).unwrap();
+            "20261104_120000".to_owned()
+        });
+    }
+
+    #[test]
+    fn a_resume_of_a_run_stopped_part_way() {
+        each(&|root, second, _| {
+            let stop = stopping_at("pending", 2);
+            let mut stopped = request(second, "20261104_110000");
+            stopped.stop_at = Some(&stop);
+            run_apple_health_segments(root, &stopped).unwrap_err();
+            run_apple_health_segments(root, &request(second, "20261104_120000")).unwrap();
+            // A resume carries on under the import it began as.
+            "20261104_110000".to_owned()
+        });
+    }
+
+    /// A repair brings the stream's record level with its windows' own markers,
+    /// so a window stuck only on its record is bound by the repair itself: the
+    /// run ends listing nothing failing either way, and nothing is owed.
+    #[test]
+    fn a_repair_after_its_staging_went() {
+        for heal in [false, true] {
+            let journal = journal();
+            let root = journal.path();
+            let scratch = tempfile::tempdir().unwrap();
+            stuck_window(root, DAY, KEY);
+            let first = days_export(&scratch.path().join("1"));
+            run_apple_health_segments(root, &request(&first, "20261104_100000")).unwrap();
+            assert!(lists_failing(root, "20261104_100000"));
+            let mut records = days_records(true);
+            records.push(heart("2026-10-12 12:00:10 -0600", "71"));
+            let second = export(&scratch.path().join("2"), &records);
+            if heal {
+                fs::remove_file(window(root, DAY, KEY).join("stream.json")).unwrap();
+            }
+            let stop = stopping_at("pending", 2);
+            let mut stopped = request(&second, "20261104_110000");
+            stopped.stop_at = Some(&stop);
+            run_apple_health_segments(root, &stopped).unwrap_err();
+            fs::remove_dir_all(root.join(RUN_DIR_REL).join("placed")).unwrap();
+            let done =
+                run_apple_health_segments(root, &request(&second, "20261104_120000")).unwrap();
+            assert!(
+                !lists_failing(root, "20261104_120000"),
+                "heal {heal}: {}",
+                done.summary
+            );
+            assert!(window(root, DAY, KEY).join("stream.json").is_file());
+        }
+    }
 }

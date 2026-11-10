@@ -350,3 +350,207 @@ fn the_run_is_told_how_many_listed_workouts_the_page_showed() {
     );
     assert_eq!(shown(json!({"preview": preview(json!({}))})), None);
 }
+
+#[test]
+fn only_the_apple_cards_start_with_the_token_it_showed_carries_the_go_ahead() {
+    let card = |hint: &str| {
+        json!({"source_hint": hint, "preview": {"digest": "d", "token": "shown"}})
+            .as_object()
+            .unwrap()
+            .clone()
+    };
+    let go_ahead = |data: Value, metadata: &solstone_core_import::ImportMetadata| {
+        crate::lifecycle::apple_card_arguments_for_tests(&data, metadata)
+            .contains(&"--confirm-body-save".to_owned())
+    };
+    assert!(go_ahead(
+        json!({"body_confirmed": "shown"}),
+        &card("apple_health")
+    ));
+    assert!(!go_ahead(
+        json!({"body_confirmed": "another"}),
+        &card("apple_health")
+    ));
+    assert!(!go_ahead(json!({}), &card("apple_health")));
+    assert!(!go_ahead(
+        json!({"body_confirmed": true}),
+        &card("apple_health")
+    ));
+    assert!(!go_ahead(
+        json!({"body_confirmed": "shown"}),
+        &card("strava")
+    ));
+    let unpreviewed = json!({"source_hint": "apple_health"})
+        .as_object()
+        .unwrap()
+        .clone();
+    assert!(!go_ahead(json!({"body_confirmed": null}), &unpreviewed));
+}
+
+fn staged_apple(root: &Path, export_bytes: u64) -> (String, String) {
+    let id = "20261010_130000";
+    let path = root.join("imports").join(id).join("export.zip");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"PK").unwrap();
+    let mut metadata = solstone_core_import::ImportMetadata::new();
+    metadata.insert("file_path".into(), json!(path.to_str().unwrap()));
+    metadata.insert("source_hint".into(), json!("apple_health"));
+    metadata.insert(
+        "preview".into(),
+        json!({"digest": "d", "token": "shown",
+            "size": {"schema": "solstone.import.size.v1", "recordings": 0,
+                "other_units": ["Apple Health records", 1],
+                "apple_health": {"export_bytes": export_bytes}}}),
+    );
+    solstone_core_import::write_import_metadata(root, id, &metadata).unwrap();
+    (id.to_owned(), path.to_str().unwrap().to_owned())
+}
+
+#[tokio::test]
+async fn a_card_import_that_no_longer_fits_isnt_started() {
+    let root = journal(&[]);
+    // Far more than any disk holds.
+    let (id, path) = staged_apple(root.path(), u64::MAX / 4);
+    let (status, body) = call(
+        root.path(),
+        "POST",
+        crate::mobile_import_contract::START_PATH,
+        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "body_space");
+    assert!(
+        body["error"].as_str().unwrap().contains("free up about"),
+        "{body}"
+    );
+    // Nothing was queued or written for it.
+    let metadata = solstone_core_import::read_import_metadata(root.path(), &id).unwrap();
+    assert!(metadata.get("task_id").is_none(), "{metadata:?}");
+}
+
+#[test]
+fn a_card_preview_carries_space_beside_its_size_and_a_small_one_fits() {
+    let root = journal(&[]);
+    let (id, _) = staged_apple(root.path(), 1_000);
+    let mut preview = json!({"size": {"apple_health": {"export_bytes": 1_000}}});
+    crate::apple_card::add_space(root.path(), &id, &mut preview);
+    assert_eq!(preview["space"]["fits"], true, "{preview}");
+    assert!(preview["size"].get("space").is_none());
+    assert!(preview["space"]["words"].is_null());
+    let mut other = json!({"size": {"apple_health": {"export_bytes": 1_000}}});
+    let (strava, _) = staged_strava(root.path());
+    crate::apple_card::add_space(root.path(), &strava, &mut other);
+    assert!(other.get("space").is_none());
+}
+
+async fn post_start(root: &Path, id: &str, path: &str) -> (StatusCode, Value) {
+    call(
+        root,
+        "POST",
+        crate::mobile_import_contract::START_PATH,
+        Some(json!({"path": path, "timestamp": id, "import_id": id, "body_confirmed": "shown"})),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn an_apple_import_that_has_run_is_never_started_again_but_a_finished_one_replays() {
+    let root = journal(&[]);
+    // Refused before it ran, while its queued task would still read as running.
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let mut metadata = solstone_core_import::read_import_metadata(root.path(), &id).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    metadata.insert("task_id".into(), json!(now.to_string()));
+    solstone_core_import::write_import_metadata(root.path(), &id, &metadata).unwrap();
+    solstone_core_import_sources::body_status::record(root.path(), &id, "go_ahead", 1);
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["reason_code"], "body_already_ran");
+
+    // Stopped after it ran: an attempt that didn't finish.
+    let root = journal(&[]);
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let facts =
+        solstone_core_import::admit_running_attempt(root.path(), &id, 1, Some("apple_health"))
+            .unwrap();
+    solstone_core_import::record_unconfirmed_attempt(root.path(), &id, facts.generation, 2, None)
+        .unwrap();
+    solstone_core_import::metadata::release_attempt(root.path(), &id);
+    let before = fs::read(root.path().join("imports").join(&id).join("import.json")).unwrap();
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        fs::read(root.path().join("imports").join(&id).join("import.json")).unwrap(),
+        before
+    );
+
+    // Finished, with a stop file beside it: a double post replays as it always has.
+    let root = journal(&[]);
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let facts =
+        solstone_core_import::admit_running_attempt(root.path(), &id, 1, Some("apple_health"))
+            .unwrap();
+    solstone_core_import::record_completed_attempt(
+        root.path(),
+        &id,
+        facts.generation,
+        2,
+        None,
+        None,
+    )
+    .unwrap();
+    solstone_core_import::metadata::release_attempt(root.path(), &id);
+    solstone_core_import_sources::body_status::record(root.path(), &id, "other", facts.generation);
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["replay"], true, "{body}");
+}
+
+#[tokio::test]
+async fn a_finished_apple_import_that_left_hours_and_a_stop_isnt_started_again() {
+    use solstone_core_import::publish::*;
+    let root = journal(&[]);
+    let (id, path) = staged_apple(root.path(), 1_000);
+    let facts =
+        solstone_core_import::admit_running_attempt(root.path(), &id, 1, Some("apple_health"))
+            .unwrap();
+    write_publication_record(
+        Some(&root.path().join("imports").join(&id)),
+        &PublicationRecord {
+            schema: PUBLICATION_SCHEMA.to_owned(),
+            status: PublicationStatus::Failure,
+            segments: vec![SegmentPublicationOutcome {
+                day: "20261009".into(),
+                segment: "070000_3600".into(),
+                stream: "import.apple_health".into(),
+                outcome: SegmentBindingOutcome::FailedAtAdvance { error: "x".into() },
+                body_only: true,
+            }],
+            indexing: IndexPublicationOutcomes::default(),
+            day_markers: vec![],
+        },
+    )
+    .unwrap();
+    solstone_core_import::record_completed_attempt(
+        root.path(),
+        &id,
+        facts.generation,
+        2,
+        None,
+        None,
+    )
+    .unwrap();
+    solstone_core_import::metadata::release_attempt(root.path(), &id);
+    solstone_core_import_sources::body_status::record(root.path(), &id, "other", facts.generation);
+    let before = fs::read(root.path().join("imports").join(&id).join("import.json")).unwrap();
+    let (status, body) = post_start(root.path(), &id, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(
+        fs::read(root.path().join("imports").join(&id).join("import.json")).unwrap(),
+        before
+    );
+}

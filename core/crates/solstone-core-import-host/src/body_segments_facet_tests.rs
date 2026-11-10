@@ -192,6 +192,7 @@ fn the_remembered_default_command_splits_a_foreign_hour_without_an_answer() {
         &[old, heart("2026-10-10 06:42:00 -0600", "7222")],
     );
     let command = crate::body_commands::BodyCommand {
+        import_id: None,
         facet: crate::cli_argv::ImportFacet::Unattended,
         listed_moves_shown: None,
         scheduled: true,
