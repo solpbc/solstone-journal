@@ -1897,7 +1897,7 @@ fn transcript_header(stream: Option<&str>) -> &'static str {
         Some("import.claude") => "Claude Conversation",
         Some("import.gemini") => "Gemini Conversation",
         Some("import.ics") => "Calendar Event",
-        Some("import.obsidian") => "Note",
+        Some("import.obsidian") | Some("import.evernote") => "Note",
         Some("import.kindle") => "Highlights",
         Some(stream) if solstone_core_format::obsidian::is_obsidian_stream_name(stream) => "Note",
         _ => "Transcript",
@@ -2004,6 +2004,7 @@ mod tests {
         assert!(segment.contains("meet at the lighthouse"), "{segment}");
         assert_eq!(counts.total(), 1);
         assert_eq!(transcript_header(Some("import.obsidian")), "Note");
+        assert_eq!(transcript_header(Some("import.evernote")), "Note");
     }
 
     #[test]

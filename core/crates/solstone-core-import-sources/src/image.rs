@@ -749,30 +749,20 @@ fn allocate_image_segment(
     })
 }
 
-/// Install original, transcript, and manifest for a prepared image.
-pub fn install_and_publish_image(
+/// Install the original and transcript at `start`, without an image import record.
+///
+/// The note's time is `start`. The image import record is a separate import, and
+/// this path does not write one.
+pub fn install_image_at(
     prepared: &PreparedImage,
     journal_root: &Path,
-    import_id: &str,
+    start: NaiveDateTime,
     publication: &dyn PublicationOperations,
-    mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
 ) -> Result<ImageImportResult, ImageImportError> {
     if !solstone_core_import::work_continues() {
         return Err(ImageImportError::Stopped);
     }
-    let effective_start = solstone_core_import::read_provenance(journal_root, import_id)
-        .ok()
-        .flatten()
-        .and_then(|m| solstone_core_import::stored_source_timestamp(&m, import_id).ok())
-        .and_then(|ts| NaiveDateTime::parse_from_str(ts.as_str(), "%Y%m%d_%H%M%S").ok())
-        .unwrap_or_else(|| prepared.timestamp.naive_local());
-
-    let claimed = claim_image_segment(
-        journal_root,
-        effective_start,
-        &prepared.path,
-        &prepared.extension,
-    )?;
+    let claimed = claim_image_segment(journal_root, start, &prepared.path, &prepared.extension)?;
 
     let original_path = claimed
         .directory
@@ -839,24 +829,6 @@ pub fn install_and_publish_image(
     drop(commit);
     let days_affected = vec![claimed.day.clone()];
     let files_created = vec![transcript_path.clone()];
-    write_import_manifest(
-        &prepared.path,
-        journal_root,
-        import_id,
-        &days_affected,
-        &files_created,
-    )?;
-
-    if let Some(callback) = progress.as_mut() {
-        callback(&ProgressUpdate {
-            current: 1,
-            total: 1,
-            earliest_date: claimed.day.clone(),
-            latest_date: claimed.day.clone(),
-            entities_found: 0,
-        });
-    }
-
     Ok(ImageImportResult {
         files_created,
         created_segment: CreatedSegment {
@@ -868,6 +840,44 @@ pub fn install_and_publish_image(
         days_affected,
         description: prepared.description.clone(),
     })
+}
+
+/// Install original, transcript, and manifest for a prepared image.
+pub fn install_and_publish_image(
+    prepared: &PreparedImage,
+    journal_root: &Path,
+    import_id: &str,
+    publication: &dyn PublicationOperations,
+    mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
+) -> Result<ImageImportResult, ImageImportError> {
+    if !solstone_core_import::work_continues() {
+        return Err(ImageImportError::Stopped);
+    }
+    let effective_start = solstone_core_import::read_provenance(journal_root, import_id)
+        .ok()
+        .flatten()
+        .and_then(|m| solstone_core_import::stored_source_timestamp(&m, import_id).ok())
+        .and_then(|ts| NaiveDateTime::parse_from_str(ts.as_str(), "%Y%m%d_%H%M%S").ok())
+        .unwrap_or_else(|| prepared.timestamp.naive_local());
+    let result = install_image_at(prepared, journal_root, effective_start, publication)?;
+    write_import_manifest(
+        &prepared.path,
+        journal_root,
+        import_id,
+        &result.days_affected,
+        &result.files_created,
+    )?;
+    if let Some(callback) = progress.as_mut() {
+        let day = result.days_affected.first().cloned().unwrap_or_default();
+        callback(&ProgressUpdate {
+            current: 1,
+            total: 1,
+            earliest_date: day.clone(),
+            latest_date: day,
+            entities_found: 0,
+        });
+    }
+    Ok(result)
 }
 
 /// Install, describe, and record one image import segment.

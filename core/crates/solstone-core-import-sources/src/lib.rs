@@ -17,6 +17,7 @@ pub mod chatgpt;
 pub mod claude;
 pub mod conversations;
 pub mod document;
+pub mod evernote;
 pub mod gemini;
 pub mod ics;
 pub mod ics_notes;

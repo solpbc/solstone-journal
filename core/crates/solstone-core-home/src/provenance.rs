@@ -452,6 +452,7 @@ pub fn provenance_label(part: &ProvenancePart, parenthetical: Option<&str>) -> S
                 "gemini" => "Gemini".to_owned(),
                 "kindle" => "Kindle".to_owned(),
                 "obsidian" => "notes".to_owned(),
+                "evernote" => "Evernote".to_owned(),
                 "ics" => "calendar".to_owned(),
                 "document" => "documents".to_owned(),
                 "image" => "images".to_owned(),
@@ -1223,6 +1224,10 @@ mod tests {
             source: "obsidian".to_owned(),
         };
         assert_eq!(provenance_label(&part, None), "notes · imported");
+        let evernote = ProvenancePart::Import {
+            source: "evernote".to_owned(),
+        };
+        assert_eq!(provenance_label(&evernote, None), "Evernote · imported");
     }
 
     #[test]
