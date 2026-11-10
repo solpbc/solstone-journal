@@ -215,9 +215,10 @@ pub(crate) fn file_strava_workouts(
     facet: Option<&str>,
     may_move_listed: bool,
     before_write: BeforeRefile<'_>,
+    legacy: &crate::strava_convert::LegacyMatches,
 ) -> Result<Filing, String> {
     let mut filing = Filing::default();
-    let mut sensed = Sensed::default();
+    let mut sensed = Sensed::with_matches(legacy);
     let wanted = facet.map(facet_file_text);
     // Per workout to file: whether a tile had another facet, and its tiles
     // that change.
@@ -236,18 +237,17 @@ pub(crate) fn file_strava_workouts(
         let (day, window) = first
             .clone()
             .unwrap_or_else(|| (lowest.day.clone(), lowest.segment.clone()));
-        let listed = sensed
-            .facet(journal, &day, &window, &row)
-            .and_then(|sensed| {
-                if sensed.is_some() {
-                    return Ok(sensed);
-                }
-                crate::body_activity::record_facet(
-                    journal,
-                    &day,
-                    &crate::body_activity::account_key(STRAVA_STREAM, &activity_id.to_string()),
-                )
-            });
+        let listed = crate::body_activity::record_facet(
+            journal,
+            &day,
+            &crate::body_activity::account_key(STRAVA_STREAM, &activity_id.to_string()),
+        )
+        .and_then(|record| {
+            if record.is_some() {
+                return Ok(record);
+            }
+            sensed.facet(journal, &day, &window, &row)
+        });
         let listed = match listed {
             Ok(facet) => facet,
             Err(_) => {

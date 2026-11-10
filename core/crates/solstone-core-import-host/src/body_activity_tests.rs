@@ -392,6 +392,16 @@ fn strava_tile(
         "activity_id": activity_id, "zone": "America/Denver",
         "tile": {"index": index, "count": count, "start": start, "end": start, "seconds": 300},
         "workout": workout});
+    let import = root.join("imports/20261010_120000");
+    fs::create_dir_all(&import).unwrap();
+    fs::write(
+        import.join("import.json"),
+        json!({"attempt": {
+            "attempt_id":"20261010_120000:1", "generation":1, "state":"completed", "started_at_ms":0
+        }})
+        .to_string(),
+    )
+    .unwrap();
     let dir = root
         .join("chronicle")
         .join(day)
@@ -556,6 +566,19 @@ fn a_workout_whose_first_tile_was_sensed_keeps_that_record_alone() {
     let root = journal.path();
     sense_record(root, "other", DAY, "import.strava", &["070000_300"]);
     let before = fs::read(file(root, "other")).unwrap();
+    let row = window_rows(
+        &root.join(format!("chronicle/{DAY}/import.strava/070000_300")),
+        WindowFile::StravaTile,
+    )
+    .unwrap()
+    .remove(0);
+    assert_eq!(
+        Sensed::default()
+            .facet(root, DAY, "070000_300", &row)
+            .unwrap()
+            .as_deref(),
+        Some("other")
+    );
     let counts = write_strava_records(root, DAY);
     assert_eq!((counts.written, counts.sensed), (0, 1), "{counts:?}");
     assert!(strava_records(root, "body").is_empty());
@@ -587,7 +610,21 @@ fn a_record_naming_a_deleted_later_tile_counts_as_sensed() {
     )
     .unwrap();
     sense_record(root, "body", DAY, "import.strava", &["070500_300"]);
+    let before = fs::read(file(root, "body")).unwrap();
+    let row = window_rows(
+        &root.join(format!("chronicle/{DAY}/import.strava/070000_300")),
+        WindowFile::StravaTile,
+    )
+    .unwrap()
+    .remove(0);
+    assert!(
+        Sensed::default()
+            .facet(root, DAY, "070000_300", &row)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(write_strava_records(root, DAY).sensed, 1);
+    assert_eq!(fs::read(file(root, "body")).unwrap(), before);
 }
 
 /// A tile the import placed beside older content, under another key, is

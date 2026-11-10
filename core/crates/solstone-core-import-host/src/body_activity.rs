@@ -265,9 +265,16 @@ pub(crate) struct Sensed {
     tiles: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Per day, the segment keys Strava's activity records name.
     named: BTreeMap<String, SensedDay>,
+    legacy: Option<crate::strava_convert::LegacyMatches>,
 }
 
 impl Sensed {
+    pub(crate) fn with_matches(matches: &crate::strava_convert::LegacyMatches) -> Self {
+        Self {
+            legacy: Some(matches.clone()),
+            ..Self::default()
+        }
+    }
     /// Whether an activity record of Strava's stream names any tile of the
     /// workout `row`, which starts on `day` in `window`, on any day it covers.
     /// A tile is known by what its window holds and by where Strava's import
@@ -280,11 +287,27 @@ impl Sensed {
         window: &str,
         row: &BodyRow,
     ) -> Result<bool, (String, String)> {
-        self.facet(journal, day, window, row)
+        // Geometry remains a display-only alias: keep the legacy row and avoid
+        // adding another. It never supplies a filing or a conversion identity.
+        self.alias_facet(journal, day, window, row)
             .map(|facet| facet.is_some())
     }
 
     pub(crate) fn facet(
+        &mut self,
+        journal: &Path,
+        day: &str,
+        window: &str,
+        row: &BodyRow,
+    ) -> Result<Option<String>, (String, String)> {
+        self.alias_facet(journal, day, window, row)?;
+        let legacy = self
+            .legacy
+            .get_or_insert_with(|| crate::strava_convert::legacy_matches(journal));
+        Ok(legacy.facet(&row.id))
+    }
+
+    fn alias_facet(
         &mut self,
         journal: &Path,
         day: &str,
@@ -467,6 +490,7 @@ pub(crate) fn write_records_at(
         now,
         &BTreeSet::new(),
         move_listed,
+        None,
     )
 }
 
@@ -522,13 +546,24 @@ pub(crate) fn listed_elsewhere(
 /// record of Strava's stream already names (any of its tiles, on any day it
 /// covers, in any facet) gets none: that record stays its only one. A day file
 /// that can't be read refuses the workouts it would decide, counted.
+#[cfg(test)]
 pub(crate) fn write_strava_records_at(
     journal: &Path,
     day: &str,
     now: chrono::DateTime<chrono::Utc>,
     held_back: &BTreeSet<String>,
 ) -> RecordCounts {
-    write_stream_records_at(journal, &STRAVA, day, now, held_back, false)
+    write_stream_records_at(journal, &STRAVA, day, now, held_back, false, None)
+}
+
+pub(crate) fn write_strava_records_with_matches(
+    journal: &Path,
+    day: &str,
+    now: chrono::DateTime<chrono::Utc>,
+    held_back: &BTreeSet<String>,
+    legacy: &crate::strava_convert::LegacyMatches,
+) -> RecordCounts {
+    write_stream_records_at(journal, &STRAVA, day, now, held_back, false, Some(legacy))
 }
 
 fn write_stream_records_at(
@@ -538,6 +573,7 @@ fn write_stream_records_at(
     now: chrono::DateTime<chrono::Utc>,
     held_back: &BTreeSet<String>,
     move_listed: bool,
+    legacy: Option<&crate::strava_convert::LegacyMatches>,
 ) -> RecordCounts {
     let mut counts = RecordCounts::default();
     let Some(windows) = day_windows(journal, day, source.stream) else {
@@ -554,7 +590,7 @@ fn write_stream_records_at(
         .with_timezone(&solstone_core_journal_config::owner_zone(journal))
         .format("%Y%m%d")
         .to_string();
-    let mut sensed = Sensed::default();
+    let mut sensed = legacy.map_or_else(Sensed::default, Sensed::with_matches);
     for window in windows {
         let Some((facet, experiences)) = window_experiences(&window, source.file) else {
             continue;

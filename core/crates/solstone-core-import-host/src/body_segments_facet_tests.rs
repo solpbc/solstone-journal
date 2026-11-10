@@ -210,13 +210,16 @@ fn a_new_source_entry_split_across_days_is_counted_once_after_resume() {
             "AsleepCore",
         )],
     );
-    let stop = stopping_at("published", 1);
+    let stop = stopping_at("pending", 2);
     let mut request = AppleSegmentsRequest::new(&next, "20261012_130000", Some("body"));
     request.stop_at = Some(&stop);
     run_apple_health_segments(root, &request).unwrap_err();
     let Read::Trusted(state) = read_state(root, &APPLE) else {
         panic!("no checkpoint");
     };
+    assert_eq!(state.done_through.as_deref(), Some("20261010"));
+    assert_eq!(state.totals.split_source_ids.len(), 2);
+    assert_eq!(state.totals.split_source_ends.len(), 2);
     request.stop_at = None;
     let resumed = run_apple_health_segments(root, &request).unwrap();
     assert_eq!(resumed.import_id, state.import_id);
@@ -230,6 +233,109 @@ fn a_new_source_entry_split_across_days_is_counted_once_after_resume() {
     assert_eq!(
         entries(root, WORK_ID, "20261011", "Apple Health · imported").len(),
         1
+    );
+}
+
+#[test]
+fn orphan_night_tiles_stay_unfiled_while_new_readings_get_the_run_facet() {
+    for (deleted, repeat) in [(false, false), (true, false), (true, true)] {
+        let journal = journal();
+        let root = journal.path();
+        facets(root);
+        let scratch = tempfile::tempdir().unwrap();
+        let night = stage_record(
+            "2026-10-10 23:50:00 -0600",
+            "2026-10-11 06:15:00 -0600",
+            "AsleepCore",
+        );
+        let first = export(&scratch.path().join("first"), std::slice::from_ref(&night));
+        run(root, &first, "20261012_120000", Some("work"));
+        let original = window(root, "20261011", "060000_3600");
+        fs::remove_file(original.join("talents/facets.json")).unwrap();
+        let unfiled = export(
+            &scratch.path().join("unfiled"),
+            &[heart("2026-10-11 06:10:00 -0600", "7111")],
+        );
+        run(root, &unfiled, "20261012_130000", None);
+        let first_window = window(root, "20261010", "230000_3600");
+        if deleted {
+            delete(root, "20261010", "230000_3600");
+        } else {
+            fs::remove_file(first_window.join(BODY_RECORDS_FILE)).unwrap();
+        }
+        let mut records = vec![heart("2026-10-11 06:12:00 -0600", "7333")];
+        if repeat {
+            records.push(night);
+        }
+        let next = export(&scratch.path().join("next"), &records);
+        let before = fs::read(original.join(BODY_RECORDS_FILE)).unwrap();
+        let stop = stopping_at("pending", 1);
+        let mut saving = AppleSegmentsRequest::new(&next, "20261012_140000", Some("body"));
+        saving.stop_at = Some(&stop);
+        run_apple_health_segments(root, &saving).unwrap_err();
+        let denied = |root: &Path| {
+            let body = entries(root, BODY_ID, "20261011", "Apple Health · imported")
+                .join("\n")
+                .replace('\\', "");
+            let work = entries(root, WORK_ID, "20261011", "Apple Health · imported").join("\n");
+            assert!(
+                !body.contains("night") && !body.contains("23:50") && !body.contains("7111"),
+                "{body}"
+            );
+            assert!(!work.contains("7111") && !work.contains("7333"), "{work}");
+            assert!(!original.join("talents/facets.json").exists());
+        };
+        denied(root);
+        saving.stop_at = None;
+        run_apple_health_segments(root, &saving).unwrap();
+        denied(root);
+        assert_eq!(fs::read(original.join(BODY_RECORDS_FILE)).unwrap(), before);
+        let body = entries(root, BODY_ID, "20261011", "Apple Health · imported").join("\n");
+        assert!(body.contains("7333"), "{body}");
+    }
+}
+
+#[test]
+fn split_count_checkpoints_forget_source_ids_after_their_last_day() {
+    let journal = journal();
+    let root = journal.path();
+    facets(root);
+    let scratch = tempfile::tempdir().unwrap();
+    let first = export(
+        &scratch.path().join("first"),
+        &[
+            heart("2026-10-10 23:55:00 -0600", "7111"),
+            heart("2026-10-11 06:10:00 -0600", "7222"),
+        ],
+    );
+    run(root, &first, "20261012_120000", Some("work"));
+    let next = export(
+        &scratch.path().join("next"),
+        &[
+            heart("2026-10-10 23:56:00 -0600", "8111"),
+            heart("2026-10-11 06:11:00 -0600", "8222"),
+        ],
+    );
+    let stop = stopping_at("pending", 2);
+    let mut request = AppleSegmentsRequest::new(&next, "20261012_130000", Some("body"));
+    request.stop_at = Some(&stop);
+    run_apple_health_segments(root, &request).unwrap_err();
+    let Read::Trusted(state) = read_state(root, &APPLE) else {
+        panic!("no checkpoint");
+    };
+    assert_eq!(state.done_through.as_deref(), Some("20261010"));
+    assert_eq!(state.totals.split_rows, 1);
+    assert!(state.totals.split_source_ids.is_empty());
+    assert!(state.totals.split_source_ends.is_empty());
+    request.stop_at = None;
+    let resumed = run_apple_health_segments(root, &request).unwrap();
+    assert_eq!(resumed.import_id, state.import_id);
+    assert!(
+        resumed
+            .summary
+            .contains("2 new entries were saved separately"),
+        "{}",
+        resumed.summary
     );
 }
 

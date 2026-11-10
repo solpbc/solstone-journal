@@ -64,7 +64,18 @@ fn tile_of(
     elapsed: u64,
     facet: Option<&str>,
 ) {
-    let tile = json!({"schema": "solstone.import.strava.tile.v1", "import_id": "i",
+    // Authoritative first-write start precedes the synthetic sense timestamps.
+    let import = root.join("imports/20250101_000000");
+    fs::create_dir_all(&import).unwrap();
+    fs::write(
+        import.join("import.json"),
+        json!({"attempt": {
+            "attempt_id":"20250101_000000:1", "generation":1, "state":"completed", "started_at_ms":0
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let tile = json!({"schema": "solstone.import.strava.tile.v1", "import_id": "20250101_000000",
         "activity_id": id, "zone": "UTC",
         "tile": {"index": index, "count": 2, "start": start, "end": start, "seconds": 300},
         "workout": {"name": "Morning Run", "type": "Run", "start": start,
@@ -366,7 +377,7 @@ fn a_deleted_first_tile_files_on_the_first_live_tiles_day() {
 }
 
 #[test]
-fn a_tile_placed_at_the_misread_time_is_still_matched_and_a_live_match_wins() {
+fn a_misread_alias_needs_a_live_named_anchor_before_it_can_convert() {
     let journal = journal(&["a"]);
     let root = journal.path();
     // The zone was Denver, and an earlier version read the UTC start as wall time.
@@ -393,8 +404,51 @@ fn a_tile_placed_at_the_misread_time_is_still_matched_and_a_live_match_wins() {
         "20260102",
         sense(json!({"id": "exercise_080000_300", "segments": ["080000_300"]})),
     );
-    assert_eq!(run(root).converted, 1, "the misread key names the workout");
+    let before = fs::read(file(root, "a", "20260102")).unwrap();
+    assert_eq!(
+        run(root).converted,
+        0,
+        "geometry alone supplies no identity"
+    );
+    assert_eq!(fs::read(file(root, "a", "20260102")).unwrap(), before);
+    let mut anchored = lines(root, "a", "20260102").remove(0);
+    anchored["segments"] = json!(["080000_300", "010000_300"]);
+    fs::write(file(root, "a", "20260102"), anchored.to_string() + "\n").unwrap();
+    mark_conversion_needed(root).unwrap();
+    assert_eq!(
+        run(root).converted,
+        1,
+        "the live named tile establishes identity"
+    );
     assert_eq!(lines(root, "a", "20260102")[0]["source"], "body");
+}
+
+#[test]
+fn a_legacy_record_needs_a_verifiable_original_attempt_that_predates_it() {
+    for state in ["missing", "unreadable", "later"] {
+        let journal = journal(&["a"]);
+        let root = journal.path();
+        workout(root, Some("a"));
+        add_line(root, "a", DAY, sense(json!({})));
+        let metadata = root.join("imports/20250101_000000/import.json");
+        match state {
+            "missing" => fs::remove_file(metadata).unwrap(),
+            "unreadable" => fs::write(metadata, "not json").unwrap(),
+            _ => {
+                let mut value: Value =
+                    serde_json::from_str(&fs::read_to_string(&metadata).unwrap()).unwrap();
+                value["attempt"]["started_at_ms"] = json!(2);
+                fs::write(metadata, value.to_string()).unwrap();
+            }
+        }
+        let before = fs::read(file(root, "a", DAY)).unwrap();
+        assert!(
+            legacy_matches(root).facet(&WORKOUT.to_string()).is_none(),
+            "{state}"
+        );
+        assert_eq!(run(root).converted, 0, "{state}");
+        assert_eq!(fs::read(file(root, "a", DAY)).unwrap(), before, "{state}");
+    }
 }
 
 #[test]
@@ -722,7 +776,11 @@ fn only_a_record_now_in_the_facet_counts_as_moved() {
     workout(root, Some("a"));
     add_line(root, "a", DAY, sense(json!({})));
     run(root);
-    let counted = vec![(WORKOUT.to_string(), BTreeSet::from(["a".to_owned()]))];
+    let counted = vec![ListedMove {
+        activity: WORKOUT.to_string(),
+        facets: BTreeSet::from(["a".to_owned()]),
+        record_required: true,
+    }];
     let none = BTreeSet::new();
     assert_eq!(listed_moved_now(root, &counted, "b", &none), None);
     assert_eq!(

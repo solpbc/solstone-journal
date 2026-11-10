@@ -6,9 +6,7 @@
 //! `docs/BODY_SEGMENTS.md` is the contract. Only the scan is each source's own;
 //! placing, deciding, writing, publishing and resuming are one writer.
 //!
-//! No owner route reaches this yet: every owner command still saves a bundle, and
-//! the only callers outside tests are `examples/apple_body_segments.rs` and
-//! `examples/oura_body_segments.rs`.
+//! Owner commands and examples share this writer.
 //!
 //! A run keeps one small state file, `imports/.<source>-run/state.json`, replaced
 //! atomically. Its cursor and the day being written move in one replace, so a kill
@@ -32,7 +30,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_format::content::body_records::BODY_RECORDS_FILE;
-use solstone_core_format::content::body_records::{BodyRow, RowKind, decode_rows};
+use solstone_core_format::content::body_records::{
+    BodyRow, RowKind, decode_rows, parse_source_time,
+};
 use solstone_core_import::metadata::{
     AttemptRead, AttemptState, hold_import_lock, read_attempt_facts, read_provenance,
     record_continued_attempt_unlocked, record_unconfirmed_attempt_unlocked,
@@ -46,12 +46,13 @@ use solstone_core_import::publish::{
 use solstone_core_import::text::TextCreated;
 use solstone_core_import_sources::apple_health::{
     DayRows, Decision, SummaryCounts, WindowId, decide_filing, facet_file_text,
-    read_or_create_zone, settle_readings_noting, stored_windows_of_day, stream_days, summary_text,
+    read_or_create_zone, settle_readings_noting, stored_rows, stored_windows_of_day, stream_days,
+    summary_text,
 };
 use solstone_core_import_sources::apple_health_run::{
     DEFAULT_SPILL_BYTES, Days, PlaceResult, ScanCounts, place, runs_in, scan, sync_folder,
 };
-use solstone_core_import_sources::body_placement::{DayPlacement, FiledDay};
+use solstone_core_import_sources::body_placement::{DayPlacement, FiledDay, TileRepair};
 use solstone_core_import_sources::body_stream::{APPLE, BodySource, OURA};
 use solstone_core_import_sources::oura::{Hole, HoleReason, holes_of};
 use solstone_core_import_sources::oura_run::{
@@ -358,8 +359,13 @@ struct Totals {
     split_rows: u64,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     split_source_ids: BTreeSet<String>,
+    /// Only spans that can repeat after this day need cross-day deduplication.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    split_source_ends: BTreeMap<String, String>,
     #[serde(default)]
     retained_revisions: BTreeMap<String, u64>,
+    #[serde(default)]
+    kept_unfiled: bool,
     refiled: u64,
     published: u64,
     entries: u64,
@@ -403,9 +409,16 @@ impl Totals {
         );
         self.split_source_ids
             .extend(other.split_source_ids.iter().cloned());
+        for (id, end) in &other.split_source_ends {
+            self.split_source_ends
+                .entry(id.clone())
+                .and_modify(|held| *held = held.clone().max(end.clone()))
+                .or_insert_with(|| end.clone());
+        }
         for (facet, count) in &other.retained_revisions {
             *self.retained_revisions.entry(facet.clone()).or_default() += count;
         }
+        self.kept_unfiled |= other.kept_unfiled;
         self.refiled += other.refiled;
         self.published += other.published;
         self.activities += other.activities;
@@ -420,6 +433,12 @@ impl Totals {
             .extend(other.activities_refused.iter().cloned());
         self.entries += other.entries;
         self.days.extend(other.days.iter().cloned());
+    }
+
+    fn finish_split_day(&mut self, day: &str) {
+        self.split_source_ends.retain(|_, end| end.as_str() > day);
+        self.split_source_ids
+            .retain(|id| self.split_source_ends.contains_key(id));
     }
 }
 
@@ -460,12 +479,16 @@ struct PendingWindow {
 }
 
 /// The day being written: its decisions, made before any of its files.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 struct Pending {
     day: String,
     /// Physical destinations and their exact filings were selected by the day placer.
     #[serde(default)]
     filing_plan: bool,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    reserved_unfiled: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tile_repairs: Vec<TileRepair>,
     windows: Vec<PendingWindow>,
     counts: Totals,
     /// Per window: key, rows new, updated and unchanged.
@@ -481,7 +504,7 @@ struct Pending {
     unfinished: BTreeSet<String>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 struct RunState {
     schema: u32,
     phase: Phase,
@@ -1011,8 +1034,19 @@ impl Run<'_, '_> {
         let mut taken: BTreeMap<WindowId, String> = BTreeMap::new();
         let mut planned_rows = BTreeMap::new();
         let mut planned_sources = BTreeMap::new();
+        let mut planned_source_ends: BTreeMap<String, String> = BTreeMap::new();
         let mut planned_runs = BTreeMap::new();
+        let zone = solstone_core_journal_config::placed_zone(self.journal, self.source.source)
+            .ok_or_else(|| self.source.zone_unrecognised.to_owned())?;
         for (window, mut rows) in windows {
+            if filed.reserved_unfiled.contains(&window.1)
+                && window_dir(self.journal, self.source, &window)
+                    .join("talents/facets.json")
+                    .try_exists()
+                    .map_err(|error| error.to_string())?
+            {
+                return Err(Stop::Failed("a part of your journal is now filed elsewhere. the entries waiting to be saved were left unwritten.".to_owned()));
+            }
             let filing = filed.filings.get(&window.1).map(String::as_str);
             if let Some(filing) = filing.filter(|_| !state.move_listed) {
                 let dir = window_dir(self.journal, self.source, &window);
@@ -1048,6 +1082,22 @@ impl Run<'_, '_> {
                     })
                     .collect::<BTreeSet<_>>(),
             );
+            for row in rows.values().filter(|row| row.kind != RowKind::Moved) {
+                if let Some(end) = row.end.as_deref().and_then(parse_source_time) {
+                    let end = end.with_timezone(&zone).format("%Y%m%d").to_string();
+                    if end > day {
+                        let id = if row.kind == RowKind::ExperienceTile {
+                            row.of.as_ref().unwrap_or(&row.id)
+                        } else {
+                            &row.id
+                        };
+                        planned_source_ends
+                            .entry(id.clone())
+                            .and_modify(|held| *held = held.clone().max(end.clone()))
+                            .or_insert(end);
+                    }
+                }
+            }
             planned_runs.insert(
                 window.clone(),
                 rows.values()
@@ -1062,6 +1112,7 @@ impl Run<'_, '_> {
             // connection that read it there still does. A window with another facet
             // keeps its own.
             if facet.is_none()
+                && !filed.reserved_unfiled.contains(&window.1)
                 && !window_dir(self.journal, self.source, &window)
                     .join("talents/facets.json")
                     .exists()
@@ -1074,11 +1125,20 @@ impl Run<'_, '_> {
             {
                 taken.insert(window.clone(), had);
             }
-            let marks_first = rows.values().any(first_mark);
+            let repair_ids: BTreeSet<&str> = filed
+                .tile_repairs
+                .iter()
+                .filter(|repair| repair.source_key == window.1)
+                .map(|repair| repair.mark.id.as_str())
+                .collect();
+            let marks_first = rows.values().any(first_mark) || !repair_ids.is_empty();
             if marks_first {
                 let before: BTreeMap<String, BodyRow> = rows
                     .iter()
-                    .filter(|(_, row)| !first_mark(row))
+                    .filter(|(_, row)| {
+                        !first_mark(row)
+                            && !(row.kind == RowKind::Moved && repair_ids.contains(row.id.as_str()))
+                    })
                     .map(|(id, row)| (id.clone(), row.clone()))
                     .collect();
                 if !before.is_empty() {
@@ -1109,6 +1169,16 @@ impl Run<'_, '_> {
             }
             decided.push((window, decision, marks_first));
         }
+        for repair in &filed.tile_repairs {
+            if !decided.iter().any(|((_, key), decision, _)| {
+                key == &repair.destination_key
+                    && !decision.stayed_deleted
+                    && !decision.unreadable
+                    && !decision.absent
+            }) {
+                return Err(Stop::Failed("a part of your journal is now filed elsewhere. the entries waiting to be saved were left unwritten.".to_owned()));
+            }
+        }
         let pending = match redo {
             // The recorded decisions stand: a window written last time now
             // reads as unchanged, and must still be published and counted.
@@ -1130,7 +1200,10 @@ impl Run<'_, '_> {
                     if decision.stayed_deleted || decision.unreadable {
                         continue;
                     }
-                    let mut window_counts = Totals::default();
+                    let mut window_counts = Totals {
+                        kept_unfiled: filed.kept_unfiled.contains(&window.1),
+                        ..Totals::default()
+                    };
                     let taken = taken.remove(window);
                     window_counts.took_facet = u64::from(taken.is_some());
                     // Search reclassifies a window that takes a facet.
@@ -1143,6 +1216,15 @@ impl Run<'_, '_> {
                                 .cloned()
                                 .collect();
                             window_counts.split_rows = window_counts.split_source_ids.len() as u64;
+                            window_counts.split_source_ends = window_counts
+                                .split_source_ids
+                                .iter()
+                                .filter_map(|id| {
+                                    planned_source_ends
+                                        .get(id)
+                                        .map(|end| (id.clone(), end.clone()))
+                                })
+                                .collect();
                         }
                         for (filing, ids) in filed.revisions.get(&window.1).into_iter().flatten() {
                             *window_counts
@@ -1196,6 +1278,8 @@ impl Run<'_, '_> {
                 Pending {
                     day: day.clone(),
                     filing_plan: true,
+                    reserved_unfiled: filed.reserved_unfiled.clone(),
+                    tile_repairs: filed.tile_repairs.clone(),
                     windows: recorded,
                     counts,
                     listing,
@@ -1227,7 +1311,27 @@ impl Run<'_, '_> {
         let mut written = 0;
         for (pass, writes) in passes.into_iter().enumerate() {
             if pass == 1 && !writes.is_empty() {
+                self.write_facets(&day, &pending.windows, facet)?;
                 self.point("marking")?;
+                for repair in &pending.tile_repairs {
+                    let target = (day.clone(), repair.destination_key.clone());
+                    let dir = window_dir(self.journal, self.source, &target);
+                    let ready = !solstone_core_segment::owner_deleted(&dir)
+                        .map_err(|error| error.to_string())?
+                        && fs::read_to_string(dir.join("talents/facets.json"))
+                            .is_ok_and(|text| text == repair.filing)
+                        && stored_rows(self.journal, self.source, &target)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|(_, rows)| {
+                                rows.iter().any(|row| {
+                                    row.id == repair.mark.id && row.kind != RowKind::Moved
+                                })
+                            });
+                    if !ready {
+                        return Err(Stop::Failed("a part of your journal is now filed elsewhere. the entries waiting to be saved were left unwritten.".to_owned()));
+                    }
+                }
             }
             for (window, decision) in writes {
                 let Some(contents) = decision.contents else {
@@ -1258,6 +1362,7 @@ impl Run<'_, '_> {
         }
         self.append_listing(state, &pending)?;
         state.totals.add(&pending.counts);
+        state.totals.finish_split_day(&day);
         let records = activity_totals(
             self.journal,
             self.source,
@@ -1437,6 +1542,14 @@ fn replay_filing(pending: &Pending, windows: DayRows) -> FiledDay {
             }
         }
     }
+    for repair in &pending.tile_repairs {
+        placed
+            .entry((pending.day.clone(), repair.source_key.clone()))
+            .or_default()
+            .insert(repair.mark.id.clone(), repair.mark.clone());
+    }
+    filed.reserved_unfiled.clone_from(&pending.reserved_unfiled);
+    filed.tile_repairs.clone_from(&pending.tile_repairs);
     filed.windows = placed.into_iter().collect();
     filed.filings = pending
         .windows
@@ -1642,6 +1755,7 @@ fn summary_of(state: &RunState) -> SummaryCounts {
         kept_facet: state.totals.kept_facet,
         split_rows: state.totals.split_rows,
         retained_revisions: state.totals.retained_revisions.clone(),
+        kept_unfiled: state.totals.kept_unfiled,
         refiled: state.totals.refiled,
         activities: state.totals.activities,
         activities_no_facet: state.totals.activities_no_facet,

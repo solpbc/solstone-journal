@@ -210,6 +210,15 @@ impl StravaRunSummary {
                 "some earlier workouts couldn't be updated yet. your journal tries again the next time it starts.\n"
             );
         }
+        if self.conversion.no_workout > 0 {
+            let count = self.conversion.no_workout;
+            let _ = writeln!(
+                text,
+                "{} left unchanged because your journal couldn't confirm which {} belonged to.\n",
+                plural(count, "earlier record was", "earlier records were"),
+                either(count, "workout it", "workouts they"),
+            );
+        }
         if self.conversion.moves_open > 0 {
             let _ = writeln!(
                 text,
