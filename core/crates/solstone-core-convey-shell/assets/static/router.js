@@ -24,6 +24,7 @@
   const STILL_WORKING_MS = 10000;
   const SCROLL_ENTRIES = 50;
   const HOVER_INTENT_MS = 100;
+  const MOVE_MARKS = ['view:ready', 'view:update', 'router:start', 'router:reread', 'workspace:inserted', 'view:scripts-loaded'];
 
   let active = false;
   let mountedPath = null;
@@ -284,6 +285,9 @@
     if (navigation) navigation.abort();
     const controller = window.SolStore.createAbort();
     navigation = controller;
+    // A page that stays would keep every move's marks for its whole life:
+    // only the latest move's are kept.
+    MOVE_MARKS.forEach((mark) => performance.clearMarks?.(mark));
     try {
       return await move(url, mode, name, app, controller);
     } finally {
