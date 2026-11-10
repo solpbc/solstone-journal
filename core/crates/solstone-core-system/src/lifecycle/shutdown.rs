@@ -112,7 +112,7 @@ fn shutdown_app_supervised(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
 /// 🔴 One absolute budget for the whole standard shutdown. Every phase below
 /// is capped at its own maximum AND at what is left of this budget, so the
 /// supervisor is out well inside every service manager's kill boundary:
-/// launchd and systemd SIGKILL at 20 s. Measured on the reference host
+/// the generated launchd plist and systemd unit both SIGKILL at 20 s. Measured on the reference host
 /// 2026-09-15: the old shape (an unbounded task drain, then each hosted child
 /// granted 15 s in turn) overran the timeout and the control group was
 /// SIGKILLed with the lifecycle still open.

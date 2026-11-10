@@ -1130,8 +1130,8 @@ fn launchd_managed(bytes: &[u8], launcher: &Path, expected_label: &str) -> bool 
     let Some(dict) = value.as_dictionary() else {
         return false;
     };
-    // `ExitTimeOut` is accepted a release before the renderer writes it, so
-    // the release before that one still manages a plist the next one wrote.
+    // The renderer writes `ExitTimeOut`; a plist an older release wrote
+    // without it is still ours.
     let allowed = BTreeSet::from([
         "EnvironmentVariables",
         "ExitTimeOut",
@@ -2369,15 +2369,22 @@ mod tests {
 
     /// A service manager must never SIGKILL a supervisor that is still making
     /// progress through its own bounded shutdown. 2026-09-15: a stop overran
-    /// systemd's 30 s and both lifecycle authorities died. launchd's default
-    /// is tighter still, and the generated plist does not raise it.
+    /// systemd's 30 s and both lifecycle authorities died. launchd's bootout
+    /// kills 5 s after SIGTERM unless the plist sets `ExitTimeOut`, so the
+    /// launchd boundary is read from the plist the service install writes.
     #[test]
     fn the_shutdown_budget_clears_every_service_managers_kill_boundary_with_margin() {
-        use solstone_core_service_unit::LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS;
-
         let ceiling = solstone_core_system::lifecycle::standard_shutdown_ceiling().as_secs();
+        let plist =
+            render_launchd_plist(&BTreeMap::new(), "/home/owner/.local/bin/journal", "5015");
+        let launchd = plist::Value::from_reader_xml(plist.as_slice())
+            .unwrap()
+            .as_dictionary()
+            .and_then(|dict| dict.get("ExitTimeOut"))
+            .and_then(plist::Value::as_unsigned_integer)
+            .expect("the rendered plist sets ExitTimeOut");
         for (manager, timeout) in [
-            ("launchd", u64::from(LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS)),
+            ("launchd", launchd),
             ("systemd", u64::from(SERVICE_STOP_TIMEOUT_SECONDS)),
         ] {
             assert!(
@@ -2497,9 +2504,9 @@ mod tests {
         assert!(!launchd_managed(&partial_bytes, launcher, LABEL));
     }
 
-    /// The next release writes `ExitTimeOut` so launchd's bootout allows a
-    /// full shutdown. This release must still uninstall, stop and replace
-    /// that plist, through both the ordinary and the stale-plist paths.
+    /// `ExitTimeOut` lets launchd's bootout allow a full shutdown. A plist
+    /// carrying it must be uninstalled, stopped and replaced through both the
+    /// ordinary and the stale-plist paths, and a malformed value is not ours.
     #[test]
     fn a_plist_carrying_exit_timeout_is_still_ours() {
         let launcher = Path::new("/home/owner/.local/bin/journal");
@@ -2532,6 +2539,17 @@ mod tests {
             let (_, bytes) = with_exit_timeout(malformed);
             assert!(!launchd_managed(&bytes, launcher, LABEL));
         }
+
+        let mut older = plist::Value::from_reader_xml(plist.as_slice()).unwrap();
+        older.as_dictionary_mut().unwrap().remove("ExitTimeOut");
+        let mut older_bytes = Vec::new();
+        older.to_writer_xml(&mut older_bytes).unwrap();
+        assert!(launchd_managed(&older_bytes, launcher, LABEL));
+        assert!(stale_launchd_managed(
+            older.as_dictionary().unwrap(),
+            LABEL,
+            launcher
+        ));
     }
 
     #[test]
