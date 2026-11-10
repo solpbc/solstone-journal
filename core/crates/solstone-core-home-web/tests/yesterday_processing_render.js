@@ -9,16 +9,17 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { withViewRuntime, EXPORT_ANCHOR } = require('./view_runtime');
 
 const manifestDir = process.argv[2];
 if (!manifestDir) throw new Error('manifest directory required');
 
 let source = fs.readFileSync(path.join(manifestDir, 'assets/home.js'), 'utf8');
 source = source.replace(
-  '  window.selectAccountSide = selectAccountSide;\n',
+  EXPORT_ANCHOR,
   `  window.__night = { nightRows,
     paint: (side, briefing) => { paintedSide = side; briefingData = briefing; } };
-  window.selectAccountSide = selectAccountSide;\n`,
+${EXPORT_ANCHOR}`,
 );
 
 const document = {
@@ -30,7 +31,7 @@ const window = { createViewReady: () => () => {}, location: { href: '' }, docume
 window.window = window;
 document.defaultView = window;
 
-vm.runInNewContext(source, { window, document, console }, { filename: 'home.js' });
+vm.runInNewContext(withViewRuntime(source), { window, document, console }, { filename: 'home.js' });
 const { nightRows, paint } = window.__night;
 
 const runs = '/app/thinking/#runs/20261023';

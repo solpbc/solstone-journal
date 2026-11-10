@@ -2,7 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
-  const reportHomeReady = window.createViewReady('home');
+  // The originals page is part of home. Home's mount hands it its context,
+  // and the list goes with home.
+  let reportHomeReady = function () {};
+  let originalsCtx = null;
   const COPY = Object.freeze({
     "card.heading": "originals waiting on you",
     "card.subhead": "original audio and video marked for deletion, plus anything a deletion left unfinished. nothing marked here is deleted until you say so.",
@@ -94,7 +97,6 @@
   const RECOVER_URL = '/app/home/api/recover';
   const MAX_SELECTED_MARKS = 32;
   const POLL_INTERVAL_MS = 2000;
-  if (typeof window.__homeRemovalsCleanup === 'function') window.__homeRemovalsCleanup();
   let retired = false;
   let mountEpoch = 0;
   let activeAction = null;
@@ -144,6 +146,8 @@
   }
 
   function request(url, options) {
+    // Every read of the list asks for the list as it is now.
+    if (originalsCtx) return originalsCtx.read(url, Object.assign({ fresh: true }, options));
     if (typeof window.apiJson !== 'function') return Promise.reject(new Error());
     return window.apiJson(url, options);
   }
@@ -899,17 +903,23 @@
     refresh();
   }
 
-  function workspaceMounted(event) {
-    if (event?.detail?.appName !== 'home') { detach(); return; }
-    mount();
-  }
-
-  function cleanup() {
-    retired = true;
-    detach();
-    document.removeEventListener('workspace:mounted', workspaceMounted);
-    if (window.__homeRemovalsCleanup === cleanup) delete window.__homeRemovalsCleanup;
-  }
-  window.__homeRemovalsCleanup = cleanup;
-  document.addEventListener('workspace:mounted', workspaceMounted);
+  window.HomeOriginals = {
+    mount(ctx) {
+      originalsCtx = ctx;
+      reportHomeReady = ctx.ready;
+      retired = false;
+      ctx.onDispose(function () {
+        detach();
+        if (originalsCtx === ctx) {
+          originalsCtx = null;
+          reportHomeReady = function () {};
+        }
+      });
+      mount();
+    },
+    // The list read again, on the page it is already on.
+    refresh() {
+      mount();
+    }
+  };
 })();

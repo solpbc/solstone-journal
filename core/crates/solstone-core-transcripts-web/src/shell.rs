@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 
 use crate::day::{invalid_day, prepare_day, valid_day};
-use crate::{AppState, workspace_response};
+use crate::{AppState, script_response, workspace_response};
 
 /// The transcripts root opens at once; its first read picks the day.
 pub(crate) async fn root(State(state): State<Arc<AppState>>) -> Response {
@@ -85,4 +85,8 @@ pub(crate) async fn day(
 }
 pub(crate) async fn workspace() -> Response {
     workspace_response()
+}
+
+pub(crate) async fn script() -> Response {
+    script_response()
 }

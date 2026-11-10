@@ -1,4 +1,5 @@
 <!-- first-read: /app/home/ -> /app/home/api/pulse /app/home/api/briefing -->
+<!-- view-contract -->
 <style>
 /* Pulse Landing Page */
 .pulse-dashboard {
@@ -1191,10 +1192,10 @@
 
 <div class="pulse-dashboard" id="pulse-dashboard" data-home-root>
   <div id="pulse-surface" data-pulse-surface style="display: contents;">
-    <div class="surface-state surface-state--loading" role="status" aria-busy="true">
+    <div class="surface-state surface-state--loading" role="status">
       <div class="surface-state-spinner" aria-hidden="true"></div>
       <span class="surface-state-text" data-role="loading-status">loading your day…</span>
-      <span class="surface-state-still" data-role="still-working">still working&hellip;</span>
+      <span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>
     </div>
   </div>
 </div>

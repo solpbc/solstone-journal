@@ -474,15 +474,14 @@ class History {
 }
 
 function loadTranscriptsScript() {
-  const html = fs.readFileSync(path.join(crateDir, 'assets/transcripts/workspace.html'), 'utf8');
-  const startTag = '<script>';
-  const endTag = '</script>';
-  const startIdx = html.indexOf(startTag);
-  assert.ok(startIdx >= 0, '<script> tag found in workspace.html');
-  const endIdx = html.indexOf(endTag, startIdx);
-  assert.ok(endIdx > startIdx, '</script> tag found in workspace.html');
-  return html.slice(startIdx + startTag.length, endIdx);
+  return fs.readFileSync(path.join(crateDir, 'assets/transcripts/transcripts.js'), 'utf8');
 }
+
+// Transcripts is on the view contract: its script registers, and the page
+// mounts it. The harness runs the page's read store and view contract.
+const viewRuntimeSource = ['store.js', 'views.js']
+  .map((name) => fs.readFileSync(path.join(crateDir, '../solstone-core-convey-shell/assets/static', name), 'utf8'))
+  .join('\n');
 
 const scriptSource = loadTranscriptsScript();
 
@@ -795,9 +794,11 @@ async function createEnvironment(
   const pendingLocationGets = [];
 
   const posts = [];
+  const requested = [];
   const mockFetch = (url, fetchOpts = {}) => {
     const urlStr = String(url);
     const signal = fetchOpts.signal;
+    requested.push(urlStr);
 
     if (fetchOpts.method === 'POST') {
       const headers = fetchOpts.headers;
@@ -885,6 +886,9 @@ async function createEnvironment(
       }
       if (options.dayHold) {
         return options.dayHold.then(() => ({ ok: true, status: 200, json: async () => dayPayload }));
+      }
+      if (options.dayAnswer) {
+        return options.dayAnswer(urlStr, dayPayload, signal);
       }
       return Promise.resolve({
         ok: true,
@@ -1067,10 +1071,15 @@ async function createEnvironment(
     encodeURIComponent,
   };
 
+  for (const name of ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'ResizeObserver', 'MutationObserver', 'IntersectionObserver']) {
+    if (windowObj[name] === undefined) windowObj[name] = sandbox[name];
+  }
   const context = vm.createContext(sandbox);
   vm.runInContext(apiSource, context);
   vm.runInContext(drawerSource, context);
+  vm.runInContext(viewRuntimeSource, context);
   vm.runInContext(scriptSource, context);
+  const mounted = await vm.runInContext("window.SolViews.mount('transcripts')", context);
 
   // Flush microtasks for day load
   await new Promise((r) => setTimeout(r, 10));
@@ -1085,6 +1094,10 @@ async function createEnvironment(
     pendingLocationGets,
     posts,
     deletes,
+    view: mounted,
+    context,
+    requested,
+    windowListeners,
     timelineResizeObserver: resizeObserverCallbacks[0],
     zoomResizeObserver: resizeObserverCallbacks[1],
     flushHashchanges: async () => {
@@ -2944,7 +2957,7 @@ test('a timed-out decoder cannot supply late pixels to queued or retried selecti
 
 test('frame selection distinguishes video frames sharing a raw path and still images', () => {
   const start = scriptSource.indexOf('  function findFrameIndex(chunk) {');
-  const end = scriptSource.indexOf('\n  // Get video URL', start);
+  const end = scriptSource.indexOf('\n    // Get video URL', start);
   assert.ok(start >= 0 && end > start);
   const frame = (filename, frame_id, raw) => ({ source_ref: { filename, frame_id, raw } });
   const first = frame('screen.mp4', 1, 'screen.mp4');
@@ -3157,6 +3170,77 @@ process.on('beforeExit', () => {
     console.error(`FAILED: unfinished asynchronous test: ${runningTest}`);
     process.exitCode = 1;
   }
+});
+
+
+// The view on the contract: a day step and the view going away.
+
+function heldDayAnswers() {
+  const held = [];
+  return {
+    held,
+    dayAnswer(url, payload, signal) {
+      return new Promise((resolve, reject) => {
+        const entry = { url, resolve: () => resolve({ ok: true, status: 200, json: async () => payload }) };
+        held.push(entry);
+        signal?.addEventListener?.('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    },
+  };
+}
+
+test('a day step reads only the new day, and nothing answered for the old day is drawn', async () => {
+  const days = heldDayAnswers();
+  const env = await createEnvironment(undefined, 'analyzed', false, null, { dayAnswer: days.dayAnswer });
+  // The first day's read is still out when the owner steps to the next day.
+  assert.strictEqual(days.held.length, 1);
+  const oldDay = days.held[0];
+  const before = env.requested.length;
+  env.window.history.pushState(null, '', '/app/transcripts/20200116');
+  env.view.handle.update({ day: '20200116' });
+  await new Promise((r) => setTimeout(r, 10));
+  const after = env.requested.slice(before).filter((url) => /\/\d{8}(\/|$|\?)/.test(url));
+  assert.ok(after.length > 0, 'the new day is read');
+  assert.ok(after.every((url) => url.includes('20200116') && !url.includes('20200115')), `every read after the step is the new day's: ${after.join(', ')}`);
+  // The old day's answer arrives late: it is never drawn.
+  oldDay.resolve();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(getZoomPills(env.doc).length, 0, 'nothing from the old day is drawn');
+  days.held.filter((entry) => entry.url.includes('20200116')).forEach((entry) => entry.resolve());
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(getZoomPills(env.doc).length > 0, 'the new day is drawn');
+  assert.ok(env.requested.slice(before).every((url) => !url.includes('20200115')));
+});
+
+test('a day step drops the old day\'s selection and keeps the view mounted', async () => {
+  const env = await createEnvironment();
+  const pill = getZoomPills(env.doc)[0];
+  pill.dispatchEvent({ type: 'click' });
+  await env.releasePendingSegmentGets();
+  assert.ok(env.window.location.hash.includes(pill.dataset.key));
+  const intervalsBefore = env.intervals.size;
+  env.window.history.pushState(null, '', '/app/transcripts/20200116');
+  env.view.handle.update({ day: '20200116' });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(isDeleteBtnVisible(env.doc), false, 'no segment of the old day stays selected');
+  assert.ok(env.intervals.size <= intervalsBefore, 'the old day leaves no timer running');
+  assert.strictEqual(env.window.SolViews.current(), env.view, 'the same mounted view');
+});
+
+test('dispose takes back the listeners, timers, observers and globals the view added', async () => {
+  const env = await createEnvironment();
+  const globals = ['closeDeleteSegmentModal', 'confirmDeleteSegment', 'selectLocationSegment'];
+  assert.ok(globals.every((name) => typeof env.window[name] === 'function'));
+  const held = env.view.ctx.held();
+  assert.ok(held.listeners > 0 && held.observers > 0, 'the view added to the page');
+  env.window.SolViews.dispose();
+  const after = env.view.ctx.held();
+  assert.deepStrictEqual({ ...after }, { listeners: 0, timeouts: 0, intervals: 0, observers: 0, undo: 0, bodyClasses: 0, reads: 0 });
+  assert.ok(globals.every((name) => env.window[name] === undefined), 'its globals are gone');
+  for (const type of ['popstate', 'hashchange', 'click', 'pagehide', 'resize', 'scroll', 'pointermove', 'pointerup']) {
+    assert.strictEqual((env.windowListeners[type] || []).length, 0, `no ${type} listener on the window`);
+  }
+  assert.strictEqual(env.intervals.size, 0, 'no timer left');
 });
 
 async function run() {

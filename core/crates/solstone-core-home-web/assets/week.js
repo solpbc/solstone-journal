@@ -2,7 +2,14 @@
 // Copyright (c) 2026 sol pbc
 
 (function () {
-  const reportHomeReady = window.createViewReady('home');
+  // The week page is part of home. Home's mount hands it its context, and
+  // what the page adds goes with home.
+  let reportHomeReady = function () {};
+  let weekCtx = null;
+
+  function read(url, init) {
+    return weekCtx ? weekCtx.fetch(url, init) : fetch(url, init);
+  }
   function esc(s) {
     return String(s ?? '')
       .replace(/&/g, '&amp;')
@@ -31,20 +38,20 @@
     }
   }
 
-  document.addEventListener('click', function (e) {
+  function onDocumentClick(e) {
     if (activeMenu && !activeMenu.wrapper.contains(e.target)) {
       closeOpenMenu();
     }
-  });
+  }
 
-  document.addEventListener('keydown', function (e) {
+  function onDocumentKeydown(e) {
     if (e.key === 'Escape' && activeMenu) {
       e.preventDefault();
       const btn = activeMenu.btn;
       closeOpenMenu();
       if (btn) btn.focus();
     }
-  });
+  }
 
   function rowForKey(model, key) {
     const memoryRow = (model.rows || []).find(function (row) { return row.key === key; });
@@ -259,7 +266,7 @@
         })
         .catch(function (_postErr) {
           // POST failed: re-fetch to see if disk state changed
-          fetch('/app/home/api/week/' + encodeURIComponent(day))
+          read('/app/home/api/week/' + encodeURIComponent(day))
             .then(function (res) {
               if (!res.ok) {
                 throw new Error("couldn't load this week. reload to try again.");
@@ -326,12 +333,12 @@
   function initWeek(stem) {
     const surface = document.querySelector('[data-pulse-surface]') || document.querySelector('[data-home-root]');
     if (!surface) return;
-    surface.innerHTML = '<div class="surface-state surface-state--loading" role="status" aria-busy="true">'
+    surface.innerHTML = '<div class="surface-state surface-state--loading" role="status">'
       + '<div class="surface-state-spinner" aria-hidden="true"></div>'
       + '<span class="surface-state-text">loading your week…</span>'
-      + '<span class="surface-state-still" data-role="still-working">still working&hellip;</span>'
+      + '<span class="surface-state-still" data-role="still-working" aria-hidden="true">still working&hellip;</span>'
       + '</div>';
-    fetch('/app/home/api/week/' + encodeURIComponent(stem))
+    read('/app/home/api/week/' + encodeURIComponent(stem))
       .then(function (res) {
         if (!res.ok) {
           throw new Error("couldn't load this week. reload to try again.");
@@ -350,6 +357,22 @@
       });
   }
 
+  function mount(ctx, stem) {
+    weekCtx = ctx;
+    reportHomeReady = ctx.ready;
+    ctx.on(document, 'click', onDocumentClick);
+    ctx.on(document, 'keydown', onDocumentKeydown);
+    ctx.onDispose(function () {
+      activeMenu = null;
+      if (weekCtx === ctx) {
+        weekCtx = null;
+        reportHomeReady = function () {};
+      }
+    });
+    initWeek(stem);
+  }
+
+  window.HomeWeek = { mount };
   window.initWeek = initWeek;
   window.renderWeekPage = renderWeekPage;
   window.renderWeekHtml = renderWeekHtml;
