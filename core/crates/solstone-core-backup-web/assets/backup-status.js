@@ -65,7 +65,7 @@
     const outcomes = verification
       ? { ok: 'completed', error: 'failed', skipped: "couldn't run" }
       : { ok: 'completed', error: 'failed', never: 'no completed attempt recorded',
-        // A restored copy took over encrypted backup, so this copy turned its own off.
+        // Another copy of the journal took over encrypted backup, so this one turned its own off.
         cleared_superseded: "couldn't run" };
     const outcome = Object.hasOwn(outcomes, result.status) ? outcomes[result.status] : null;
     if (!outcome) return "isn't known";
