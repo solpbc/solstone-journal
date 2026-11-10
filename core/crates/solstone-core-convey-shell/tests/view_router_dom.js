@@ -910,7 +910,7 @@ asyncCase('router: home, more and transcripts stay in the page, and settings doe
   assert.deepStrictEqual(settings.record.assigned, ['/app/more/']);
 });
 
-asyncCase('router: leaving the page aborts a view read, and a same-path link does not', async () => {
+asyncCase('router: leaving the page does not abort a view read', async () => {
   const page = makePage();
   page.answerAll();
   await page.boot('home');
@@ -920,31 +920,29 @@ asyncCase('router: leaving the page aborts a view read, and a same-path link doe
   await flush();
   const call = page.server.pending('/app/home/api/hold')[0];
   assert.ok(call, 'the read is in flight');
-  page.window.dispatchEvent({ type: 'pagehide' });
+  page.window.dispatchEvent({ type: 'pagehide', persisted: true });
   await flush();
-  assert.strictEqual(call.aborted, true, 'pagehide aborts a view read');
-  assert.strictEqual(settled, false, 'a cut view read never settles');
-
-  const put = page.window.apiJson('/api/shell/pins', { method: 'PUT', body: '{}' });
-  let putSettled = false;
-  put.then(() => { putSettled = true; }, () => { putSettled = true; });
+  assert.strictEqual(call.aborted, false, 'pagehide leaves a view read in flight');
+  assert.strictEqual(settled, false);
+  page.window.dispatchEvent({ type: 'pageshow', persisted: true });
   await flush();
-  const write = page.server.pending('/api/shell/pins')[0];
-  page.window.dispatchEvent({ type: 'pagehide' });
+  assert.strictEqual(call.aborted, false, 'a restored page still has its read');
+  call.respond(200, JSON.stringify({ ok: true }), { 'content-type': 'application/json' });
   await flush();
-  assert.strictEqual(write.aborted, false, 'a write is not cut short');
-  assert.strictEqual(putSettled, false);
+  assert.strictEqual(settled, true, 'the read can still answer after the page returns');
 
   const again = makePage();
   again.answerAll();
   await again.boot('home');
   const reading = again.window.apiJson('/app/home/api/hold');
-  reading.then(() => {}, () => {});
+  let readSettled = false;
+  reading.then(() => { readSettled = true; }, () => { readSettled = true; });
   await flush();
   const open = again.server.pending('/app/home/api/hold')[0];
   again.click('/app/settings/');
   await flush();
-  assert.strictEqual(open.aborted, true, 'a click the router declines aborts the read first');
+  assert.strictEqual(open.aborted, false, 'a full-load click leaves the read in flight');
+  assert.strictEqual(readSettled, false);
   assert.deepStrictEqual(again.record.assigned, ['/app/settings/']);
 
   const stayed = makePage();

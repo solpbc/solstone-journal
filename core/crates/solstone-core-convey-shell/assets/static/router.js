@@ -92,7 +92,8 @@
   }
 
   function fullLoad(url, stampKey, mode) {
-    window.beginViewGeneration?.();
+    // Assign and reload can still be declined. Aborting a view read first
+    // would leave the page that stays with a read that never settles.
     if (stampKey) {
       try {
         window.sessionStorage.setItem(stampKey, String(Date.now()));
@@ -130,12 +131,8 @@
       return;
     }
     if (!decide(url)) {
-      // A full load from this page. Abort view reads now: the browser can cut
-      // the fetch before pagehide runs. A same-path link stays here and keeps
-      // its reads.
-      if (url.origin !== window.location.origin || url.pathname !== window.location.pathname) {
-        window.beginViewGeneration?.();
-      }
+      // A download, or a navigation the owner cancels, leaves this page up.
+      // Its reads stay with it until a new view actually mounts.
       return;
     }
     event.preventDefault();
