@@ -745,6 +745,15 @@
     viewGeneration = new Abort();
   }
 
+  // Leaving the page cuts a view read in flight. Abort it here, before the
+  // browser drops the fetch. Writes and shell-scoped reads are not in this
+  // generation, so they are left to finish.
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('pagehide', () => {
+      beginViewGeneration();
+    });
+  }
+
   const NEVER = new Promise(() => {});
 
   async function apiJson(url, opts) {

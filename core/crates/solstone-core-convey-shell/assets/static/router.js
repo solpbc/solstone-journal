@@ -92,6 +92,7 @@
   }
 
   function fullLoad(url, stampKey, mode) {
+    window.beginViewGeneration?.();
     if (stampKey) {
       try {
         window.sessionStorage.setItem(stampKey, String(Date.now()));
@@ -128,7 +129,15 @@
     } catch (_) {
       return;
     }
-    if (!decide(url)) return;
+    if (!decide(url)) {
+      // A full load from this page. Abort view reads now: the browser can cut
+      // the fetch before pagehide runs. A same-path link stays here and keeps
+      // its reads.
+      if (url.origin !== window.location.origin || url.pathname !== window.location.pathname) {
+        window.beginViewGeneration?.();
+      }
+      return;
+    }
     event.preventDefault();
     go(url, url.pathname === window.location.pathname ? 'replace' : 'push');
   }
