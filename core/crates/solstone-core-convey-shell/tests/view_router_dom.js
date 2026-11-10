@@ -393,8 +393,21 @@ const ENTRY_TABLE = {
       openDay: { route: '/app/transcripts/', url: '/app/transcripts/api/open-day' },
       contract: true,
     },
+    more: {
+      fragment: '/app/more/workspace',
+      scripts: [{ src: '/m/more.js' }],
+      styles: [],
+      reads: [],
+      contract: true,
+    },
     entities: {
       fragment: '/app/entities/workspace',
+      scripts: [],
+      styles: [],
+      reads: [],
+    },
+    settings: {
+      fragment: '/app/settings/workspace',
       scripts: [],
       styles: [],
       reads: [],
@@ -405,7 +418,9 @@ const ENTRY_TABLE = {
 const FRAGMENTS = {
   '/app/home/workspace': '<div class="home"><h2>your day</h2><div id="home-root"></div></div><script src="/h/home.js"></script>',
   '/app/transcripts/workspace': '<link rel="stylesheet" href="/t/date-nav.css"><div class="tr"><h2 data-day-heading>day</h2><div id="tr-root"></div></div><script src="/t/transcripts.js"></script>',
+  '/app/more/workspace': '<div class="more"><div id="more-root"></div><a href="/app/transcripts/">transcripts</a><a href="/app/home/">home</a><a href="/app/settings/">settings</a></div><script src="/m/more.js"></script>',
   '/app/entities/workspace': '<div><h2>entities</h2></div>',
+  '/app/settings/workspace': '<div><h2>settings</h2></div>',
 };
 
 // Each pilot view adds one of everything the contract takes back, and reads
@@ -467,6 +482,15 @@ const VIEW_CODE = {
           },
           dispose() { views.disposes += 1; }
         };
+      }
+    });`,
+  '/m/more.js': `
+    window.SolViews.register('more', {
+      mount(ctx) {
+        window.__views.more.mounts += 1;
+        ctx.on(document, 'keydown', () => {});
+        ctx.ready('content');
+        return () => { window.__views.more.disposes += 1; };
       }
     });`,
 };
@@ -546,8 +570,9 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a>' +
-    '<div id="status-instrument"></div></nav><div id="view-announcer" role="status" aria-live="polite"></div>' +
+    '<a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a>' +
+    '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
+    '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
   if (transitions) {
     document.startViewTransition = (update) => {
@@ -606,11 +631,12 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
     __views: {
       home: { mounts: 0, disposes: 0, draws: [], throwAfterAdding: false },
       transcripts: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
+      more: { mounts: 0, disposes: 0 },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'entities', 'sources'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'entities', 'sources', 'settings'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -815,6 +841,126 @@ asyncCase('router: to or from another view is a page load, sources included', as
   const event = other.click('/app/home/');
   assert.ok(!event.defaultPrevented);
   assert.deepStrictEqual(other.record.assigned, ['/app/home/']);
+});
+
+asyncCase('router: home, more and transcripts stay in the page, and settings does not', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  await page.boot('home');
+  const rail = page.document.getElementById('app-rail');
+  const status = page.document.getElementById('status-instrument');
+  page.window.scrollY = 240;
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  assert.strictEqual(page.window.__views.more.mounts, 1);
+  assert.strictEqual(page.document.getElementById('app-rail'), rail, 'the rail stays');
+  assert.strictEqual(page.document.getElementById('status-instrument'), status, 'the status mark stays');
+  assert.strictEqual(page.window.scrollY, 0, 'a new view starts at the top');
+  assert.strictEqual(page.document.activeElement, page.main(), 'more draws its own heading, so focus is on the workspace');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'more');
+  assert.deepStrictEqual(page.record.assigned, []);
+  assert.deepStrictEqual(page.record.reloads, []);
+
+  // more's own card, not the rail.
+  page.main().querySelector('a[href="/app/transcripts/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.location.pathname, '/app/transcripts/20260101');
+  assert.strictEqual(page.window.__views.more.disposes, 1);
+  page.window.scrollY = 80;
+
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  assert.strictEqual(page.window.scrollY, 0, 'more is where it was left');
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.strictEqual(page.window.scrollY, 240, 'home is where it was left');
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('transcripts'));
+  assert.strictEqual(page.window.scrollY, 80);
+
+  // The dock, still in this page.
+  page.document.getElementById('app-dock').querySelector('a[href="/app/more/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  page.document.getElementById('app-dock').querySelector('a[href="/app/home/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.click('/app/settings/');
+  assert.ok(!page.view('settings'));
+  assert.deepStrictEqual(page.record.assigned, ['/app/settings/']);
+
+  const settings = makePage({ pathname: '/app/settings/' });
+  settings.answerAll();
+  await settings.boot('settings');
+  assert.strictEqual(settings.window.solRouter.isActive(), false, 'a page opened on settings never turns the router on');
+  const leaving = settings.click('/app/more/');
+  assert.ok(!leaving.defaultPrevented);
+  assert.deepStrictEqual(settings.record.assigned, ['/app/more/']);
+});
+
+asyncCase('router: leaving the page aborts a view read, and a same-path link does not', async () => {
+  const page = makePage();
+  page.answerAll();
+  await page.boot('home');
+  const hold = page.window.apiJson('/app/home/api/hold');
+  let settled = false;
+  hold.then(() => { settled = true; }, () => { settled = true; });
+  await flush();
+  const call = page.server.pending('/app/home/api/hold')[0];
+  assert.ok(call, 'the read is in flight');
+  page.window.dispatchEvent({ type: 'pagehide' });
+  await flush();
+  assert.strictEqual(call.aborted, true, 'pagehide aborts a view read');
+  assert.strictEqual(settled, false, 'a cut view read never settles');
+
+  const put = page.window.apiJson('/api/shell/pins', { method: 'PUT', body: '{}' });
+  let putSettled = false;
+  put.then(() => { putSettled = true; }, () => { putSettled = true; });
+  await flush();
+  const write = page.server.pending('/api/shell/pins')[0];
+  page.window.dispatchEvent({ type: 'pagehide' });
+  await flush();
+  assert.strictEqual(write.aborted, false, 'a write is not cut short');
+  assert.strictEqual(putSettled, false);
+
+  const again = makePage();
+  again.answerAll();
+  await again.boot('home');
+  const reading = again.window.apiJson('/app/home/api/hold');
+  reading.then(() => {}, () => {});
+  await flush();
+  const open = again.server.pending('/app/home/api/hold')[0];
+  again.click('/app/settings/');
+  await flush();
+  assert.strictEqual(open.aborted, true, 'a click the router declines aborts the read first');
+  assert.deepStrictEqual(again.record.assigned, ['/app/settings/']);
+
+  const stayed = makePage();
+  stayed.answerAll();
+  await stayed.boot('home');
+  const same = stayed.window.apiJson('/app/home/api/hold');
+  same.then(() => {}, () => {});
+  await flush();
+  const kept = stayed.server.pending('/app/home/api/hold')[0];
+  const link = stayed.document.createElement('a');
+  link.setAttribute('href', '/app/home/#section');
+  stayed.document.body.appendChild(link);
+  link.click();
+  await flush();
+  assert.strictEqual(kept.aborted, false, 'a same-path link keeps the view\'s reads');
+  assert.deepStrictEqual(stayed.record.assigned, []);
 });
 
 asyncCase('router: a day step on another dated view stays a page load', async () => {
