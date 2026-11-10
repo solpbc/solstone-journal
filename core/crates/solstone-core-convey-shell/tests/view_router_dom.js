@@ -899,6 +899,19 @@ asyncCase('router: a page that learned a new build loads the destination as a ne
   assert.deepStrictEqual(unknown.record.assigned, ['/app/transcripts/']);
 });
 
+asyncCase('router: a fragment naming code from another build loads the whole page, never runs it here', async () => {
+  const page = makePage();
+  page.answerAll();
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260101' }));
+  page.server.answers.set('/app/transcripts/workspace', page.server.html('<div class="tr"><h2>day</h2></div><script src="/app/transcripts/static/0123456789abcdef/transcripts.js"></script>'));
+  await page.boot('home');
+  page.click('/app/transcripts/');
+  await page.clock.advance(400);
+  assert.deepStrictEqual(page.record.reloads, ['/app/transcripts/20260101'], 'one whole page load of the destination');
+  assert.strictEqual(page.window.__views.transcripts.mounts, 0, 'the other build\'s code never ran');
+  assert.ok(page.writes.includes('solstone.serverBuildReloadAt'));
+});
+
 asyncCase('router: a quick second move ends the first one\'s reads, and the second view adopts its own', async () => {
   const page = makePage();
   page.answerAll();
@@ -1003,6 +1016,17 @@ asyncCase('store: a view whose first read failed reads again on the stream\'s co
   assert.strictEqual(reads(), first + 2, 'the next connect reads again');
   assert.strictEqual(page.window.SolViews.current().state, 'content');
   assert.deepStrictEqual(page.window.__views.transcripts.draws, ['20260101']);
+  // After a day step whose read fails, the next connect still reads again.
+  page.server.answers.set('/app/transcripts/api/day/20260102', (call) => call.respond(500, '{}', { 'content-type': 'application/json' }));
+  page.window.solRouter.navigate('/app/transcripts/20260102');
+  await page.clock.advance(5000);
+  assert.strictEqual(page.window.SolViews.current().state, 'error');
+  const stepped = page.server.of('/app/transcripts/api/day/20260102').length;
+  page.server.answers.set('/app/transcripts/api/day/20260102', dayAnswer('20260102'));
+  page.setConnected(false);
+  page.setConnected(true);
+  await page.clock.advance(5000);
+  assert.ok(page.server.of('/app/transcripts/api/day/20260102').length > stepped, 'a failed day step reads again on the connect');
 });
 
 // ---- what a screen reader hears

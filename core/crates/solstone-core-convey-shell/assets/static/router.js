@@ -284,6 +284,14 @@
     if (navigation) navigation.abort();
     const controller = window.SolStore.createAbort();
     navigation = controller;
+    try {
+      return await move(url, mode, name, app, controller);
+    } finally {
+      if (navigation === controller) navigation = null;
+    }
+  }
+
+  async function move(url, mode, name, app, controller) {
     if (mode === 'push') {
       rememberScroll();
       entryId = newEntryId();
@@ -340,7 +348,6 @@
       window.logError?.(error, { context: 'router-navigate', view: name });
     }
     if (controller.signal.aborted) return true;
-    if (navigation === controller) navigation = null;
     window.solShellChrome?.markCurrent?.(name);
     document.title = `${app.label} - journal`;
     settleAfterMove(mode, app.label);

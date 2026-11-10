@@ -241,6 +241,18 @@
     }
   }
 
+  // A fragment that names hashed code this page's entry table doesn't list
+  // comes from another build of the journal: its code mustn't run in this
+  // page.
+  const HASHED_CODE = /\/[0-9a-f]{16}\//;
+  function fromAnotherBuild(appName, fragment) {
+    const listed = new Set((window.__SOL_ENTRY_TABLE__?.views?.[appName]?.scripts || []).map((script) => script.src));
+    return Array.from(fragment.querySelectorAll('script[src]')).some((script) => {
+      const src = script.getAttribute('src') || '';
+      return HASHED_CODE.test(src) && !listed.has(src);
+    });
+  }
+
   function isContractView(appName) {
     return !!(appName && window.SolViews && window.__SOL_ENTRY_TABLE__?.views?.[appName]?.contract);
   }
@@ -353,6 +365,10 @@
       const { html } = fetched;
       const fragment = parseFragment(html);
       if (contract) {
+        if (fromAnotherBuild(options.appName, fragment)) {
+          if (window.reloadOnce?.(BUILD_RELOAD_STAMP_KEY)) return;
+          throw new Error('The view is from another build of the journal');
+        }
         // The scripts of the view only register it, so they run first; the
         // view draws once it is mounted into its markup.
         await loadStylesheets(fragment);
