@@ -217,6 +217,24 @@ pub(crate) fn apple_row(
             return Some((state, words));
         }
     }
+    // The run that carried this one on, as that run recorded it on the attempt
+    // it ended (a takeover does); otherwise the run order says which ran after.
+    let carried_by = match &attempt {
+        AttemptRead::Present(facts) => facts.continued_by.as_deref(),
+        _ => None,
+    }
+    .and_then(|id| all.iter().find(|seen| seen.id == id));
+    if let Some(seen) = carried_by {
+        let at = when(root, seen.started_ms.unwrap_or_default());
+        let words = if seen.running {
+            format!(
+                "stopped before it finished. carried on by the import of {at}, which is running now."
+            )
+        } else {
+            format!("stopped before it finished. carried on by the import of {at}.")
+        };
+        return Some(("stopped", words));
+    }
     let after = all
         .iter()
         .filter(later)
@@ -657,6 +675,47 @@ mod tests {
             body_status::record(root, id, code, 1);
             assert_eq!(row(root, id).unwrap().0, state, "{id}");
         }
+    }
+
+    #[test]
+    fn a_stopped_import_names_the_run_that_carried_it_on_before_any_inference() {
+        let journal = journal();
+        let root = journal.path();
+        ran(root, "20261010_120000", 5_000, false, None);
+        // A clean import ran after it in this journal's order...
+        ran(root, "20261010_130000", 6_000, true, Some(clean()));
+        // ...but the takeover that carried it on, recorded on its attempt, is
+        // another, started at a later time.
+        ran(root, "20261010_140000", 9_000_000, true, Some(clean()));
+        let carried = |successor: &str| {
+            solstone_core_import::metadata::record_continued_attempt_unlocked(
+                root,
+                "20261010_120000",
+                1,
+                5_001,
+                successor,
+            )
+            .unwrap();
+        };
+        carried("20261010_140000");
+        let (state, words) = row(root, "20261010_120000").unwrap();
+        assert_eq!(state, "stopped");
+        assert!(
+            words.starts_with("stopped before it finished. carried on by the import of "),
+            "{words}"
+        );
+        assert!(
+            words.contains(&when(root, 9_000_000)),
+            "names the recorded successor: {words}"
+        );
+        // A successor that isn't here any more falls back to the run order.
+        carried("20261010_150000");
+        assert!(
+            row(root, "20261010_120000")
+                .unwrap()
+                .1
+                .contains("ran after it")
+        );
     }
 
     #[test]
