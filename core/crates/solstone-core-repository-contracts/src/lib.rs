@@ -75,7 +75,9 @@ mod facet_read_purity;
 #[cfg(test)]
 #[path = "contracts/generated_native_inventory.rs"]
 mod generated_native_inventory;
-#[cfg(all(test, feature = "full-tests"))]
+// Routine: it reads a closed list of named sources at compile time and walks
+// nothing, so a new crate-root module fails `make ci` in the landing.
+#[cfg(test)]
 #[path = "contracts/hosted_launch_admission_boundary.rs"]
 mod hosted_launch_admission_boundary;
 #[cfg(test)]

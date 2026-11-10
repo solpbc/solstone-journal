@@ -72,5 +72,6 @@ if [ -n "${HOPPER_LID:-}" ]; then
 	say "  (ci-full is not supported inside this automated build; run the scoped ci-full after landing)"
 else
 	say "  make ci-full PACKAGES=\"$(printf '%s' "$suites" | sed 's/^ //; s/ /,/g')\""
+	say "  (keep solstone-core-repository-contracts in that list: its full-tests scan every crate's sources, so a change elsewhere can red it)"
 fi
 exit 0
