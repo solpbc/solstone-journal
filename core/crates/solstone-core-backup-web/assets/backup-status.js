@@ -20,7 +20,7 @@
     "broker_error": "encrypted backup didn't return usable settings.",
     "hosted_entitlement_inactive": "encrypted backup isn't turned on in the services portal.",
     "binding_invalid": "this computer's link to encrypted backup was refused.",
-    "binding_superseded": "this computer's link to encrypted backup was replaced.",
+    "binding_superseded": "another copy of your journal took over encrypted backup.",
     "repository_unsupported": "the repository in your backup settings doesn't start with s3: or b2: to match its backend, so backup stopped. change the destination to a repository that starts with s3: or b2:."
 };
   const VERIFICATION_SUBSET = {
@@ -64,7 +64,9 @@
     if (!record(result)) return "isn't known";
     const outcomes = verification
       ? { ok: 'completed', error: 'failed', skipped: "couldn't run" }
-      : { ok: 'completed', error: 'failed', never: 'no completed attempt recorded' };
+      : { ok: 'completed', error: 'failed', never: 'no completed attempt recorded',
+        // A restored copy took over encrypted backup, so this copy turned its own off.
+        cleared_superseded: "couldn't run" };
     const outcome = Object.hasOwn(outcomes, result.status) ? outcomes[result.status] : null;
     if (!outcome) return "isn't known";
     const when = date(result.time);
@@ -100,7 +102,10 @@
     let text, tone = 'neutral';
     // A pause is the owner's choice: neutral, and never read as failing or stale.
     const paused = snapshot.enabled && Number.isInteger(snapshot.paused_at);
-    if (!snapshot.enabled) text = 'backup is off.';
+    if (!snapshot.enabled && attempt?.status === 'cleared_superseded') {
+      text = `backup is off. ${BACKUP_ERROR_REASONS.binding_superseded}`;
+      tone = 'attention';
+    } else if (!snapshot.enabled) text = 'backup is off.';
     else if (paused) {
       text = date(snapshot.paused_at) ? `you paused backup on ${date(snapshot.paused_at)}.`
         : "you paused backup. the date isn't known.";

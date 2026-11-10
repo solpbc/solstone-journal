@@ -98,3 +98,145 @@ fn a_restore_outside_setup_asks_restic_for_no_report() {
     );
     assert_ne!(outcome.reason_code.as_deref(), Some("restore_failed"));
 }
+
+const NEWER_ID: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+const ARCHIVE_ID: &str = "abababababababababababababababababababababababababababababababab";
+const OFFLOAD_ID: &str = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+/// The restored snapshot, an archive and offloaded media newer than it, and
+/// optionally a journal backup newer than it.
+fn catalog_after(with_newer: bool) -> String {
+    let mut entries = vec![
+        format!(
+            "{{\"id\":\"{SNAPSHOT_ID}\",\"time\":\"2026-01-01T00:00:00Z\",\"paths\":[\"/journal\"]}}"
+        ),
+        format!(
+            "{{\"id\":\"{ARCHIVE_ID}\",\"time\":\"2026-01-01T00:30:00Z\",\"paths\":[\"/journal/chronicle\"],\"tags\":[\"solstone-archive\"]}}"
+        ),
+        format!(
+            "{{\"id\":\"{OFFLOAD_ID}\",\"time\":\"2026-01-01T00:40:00Z\",\"paths\":[\"/journal/chronicle\"],\"tags\":[\"spb-offload-archive\"]}}"
+        ),
+    ];
+    if with_newer {
+        entries.push(format!(
+            "{{\"id\":\"{NEWER_ID}\",\"time\":\"2026-01-01T00:20:00Z\",\"paths\":[\"/journal\"]}}"
+        ));
+    }
+    format!("[{}]", entries.join(","))
+}
+
+/// Answers the catalog and the free-space report, records every other call,
+/// answers `tag` with `tag_code`, and fails the test if a restore copies.
+struct KeepNewer {
+    with_newer: bool,
+    tag_code: i32,
+    calls: RefCell<Vec<Vec<String>>>,
+}
+
+impl ToolRunner for KeepNewer {
+    fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+        let argv: Vec<String> = request
+            .argv
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        match argv.first().map(String::as_str) {
+            Some("snapshots") => Ok(output(0, &catalog_after(self.with_newer))),
+            Some("restore") if is_dry_run(request) => Ok(empty_report()),
+            Some("unlock") => {
+                self.calls.borrow_mut().push(argv);
+                Ok(output(0, ""))
+            }
+            Some("tag") => {
+                self.calls.borrow_mut().push(argv);
+                Ok(output(self.tag_code, ""))
+            }
+            other => panic!("this test stops before the copy: {other:?}"),
+        }
+    }
+}
+
+fn restore_older(runner: &KeepNewer) -> (tempfile::TempDir, RestoreOutcome) {
+    let journal = tempfile::tempdir().unwrap();
+    let stored = solstone_core_backup::generate_and_store_keys(journal.path()).unwrap();
+    restore_sweep::mark_init_restore(journal.path()).unwrap();
+    write(journal.path(), "notes/untouched.md", "untouched");
+    let clock = TestClock;
+    let maintenance = Maintenance;
+    let outcome = restore_mobile_journal(
+        Arc::new(solstone_core_journal_io::JournalRoot::open(journal.path()).unwrap()),
+        &services(runner, &clock, &maintenance),
+        &Recorder::new(),
+        destination(),
+        &stored.recovery_key,
+        MobileRestoreIdentity::Byo,
+        MobileSelection {
+            snapshot_id: SNAPSHOT_ID.to_owned(),
+            subtree: "/journal".to_owned(),
+        },
+        &mut || Err("stop before the copy".to_owned()),
+    );
+    (journal, outcome)
+}
+
+#[test]
+fn restoring_an_older_backup_keeps_only_the_newer_journal_backups() {
+    let runner = KeepNewer {
+        with_newer: true,
+        tag_code: 0,
+        calls: RefCell::new(Vec::new()),
+    };
+    restore_older(&runner);
+    let calls = runner.calls.borrow();
+    assert_eq!(calls[0], ["unlock"], "stale locks clear first: {calls:?}");
+    let tag = &calls[1];
+    assert_eq!(&tag[..3], ["tag", "--add", "solstone-kept-before-restore"]);
+    assert!(
+        tag.windows(2).any(|pair| pair[0] == "--retry-lock"),
+        "{tag:?}"
+    );
+    assert!(tag.contains(&NEWER_ID.to_owned()), "{tag:?}");
+    for untouched in [SNAPSHOT_ID, ARCHIVE_ID, OFFLOAD_ID] {
+        assert!(
+            !tag.contains(&untouched.to_owned()),
+            "{untouched} keeps its id: {tag:?}"
+        );
+    }
+}
+
+#[test]
+fn restoring_the_newest_backup_asks_restic_for_nothing_more() {
+    let runner = KeepNewer {
+        with_newer: false,
+        tag_code: 0,
+        calls: RefCell::new(Vec::new()),
+    };
+    restore_older(&runner);
+    assert!(
+        runner.calls.borrow().is_empty(),
+        "{:?}",
+        runner.calls.borrow()
+    );
+}
+
+#[test]
+fn a_locked_repository_stops_the_restore_before_it_is_recorded_or_copied() {
+    let runner = KeepNewer {
+        with_newer: true,
+        tag_code: 11,
+        calls: RefCell::new(Vec::new()),
+    };
+    let (journal, outcome) = restore_older(&runner);
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some(crate::runner::reason_for_returncode(11))
+    );
+    assert!(
+        matches!(
+            read_whole_journal_restore(journal.path()),
+            WholeJournalRestoreReadiness::Absent
+        ),
+        "nothing recorded, so the owner can still pick another date"
+    );
+    assert_eq!(read(journal.path(), "notes/untouched.md"), "untouched");
+}
