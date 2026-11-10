@@ -3232,7 +3232,7 @@ function applePreviewText(size, space) {
   if (space) {
     text += space.fits === false
       ? ` · ${space.words}`
-      : ` · needs about ${space.need_words} free while it runs, and ${space.free_words} is free`;
+      : ` · needs about ${space.need_words} free, and ${space.free_words} is free`;
   }
   if (!size.other_units?.[1]) text += ' · nothing to import';
   return text;
