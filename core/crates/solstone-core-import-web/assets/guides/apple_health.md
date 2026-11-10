@@ -10,6 +10,6 @@ if the export finishes almost at once and the file is tiny, it didn't work. expo
 
 ### before you import
 
-this import reads workouts, sleep, mindful time, heart rate and other readings, daily totals like steps and distance, and logged entries like food and symptoms. everything else in the export is counted and left out, and the summary names it. it's kept in your journal folder, so it goes wherever that folder is copied, and encrypted backup, if you use it, includes it. the export itself isn't kept after the import.
+this import reads workouts, sleep, mindful time, heart rate and other readings, daily totals like steps and distance, and logged entries like food and symptoms. everything else in the export is left out, and the summary names the other kinds of records it skipped. it's kept in your journal folder, so it goes wherever that folder is copied, and encrypted backup, if you use it, includes it. the export itself isn't kept after the import.
 
 importing the same export again changes nothing, and a newer export adds what's new.

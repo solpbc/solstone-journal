@@ -209,7 +209,7 @@ pub fn words(code: &str) -> &'static str {
         }
         "not_started" => "it didn't start, so nothing was brought in.",
         "no_room" => {
-            "there wasn't room on this disk to start it, so nothing was brought in. free up space, then import the export again."
+            "there wasn't room on the computer your journal runs on to start it, so nothing was brought in. free up space, then import the export again."
         }
         _ => "it stopped before it finished.",
     }

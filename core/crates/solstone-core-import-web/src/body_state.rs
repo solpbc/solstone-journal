@@ -228,10 +228,10 @@ pub(crate) fn apple_row(
         let at = when(root, seen.started_ms.unwrap_or_default());
         let words = if seen.running {
             format!(
-                "stopped before it finished. carried on by the import of {at}, which is running now."
+                "stopped before it finished. carried on by your import of {at}, which is running now."
             )
         } else {
-            format!("stopped before it finished. carried on by the import of {at}.")
+            format!("stopped before it finished. carried on by your import of {at}.")
         };
         return Some(("stopped", words));
     }
@@ -701,7 +701,7 @@ mod tests {
         let (state, words) = row(root, "20261010_120000").unwrap();
         assert_eq!(state, "stopped");
         assert!(
-            words.starts_with("stopped before it finished. carried on by the import of "),
+            words.starts_with("stopped before it finished. carried on by your import of "),
             "{words}"
         );
         assert!(
