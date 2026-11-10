@@ -493,8 +493,9 @@ final class JournalFirstRunModel {
             lines.append(JournalLocationCopy.leaveSetupConfirm)
         }
         let others = config.knownJournalRoots + [config.journalRoot].compactMap { $0 }
-        if let share = JournalBackupShare.find(target: target, among: others) {
-            lines.append(JournalLocationCopy.shared(share))
+        if let share = JournalBackupShare.find(target: target, among: others),
+           let line = JournalLocationCopy.shared(share) {
+            lines.append(line)
         }
         if JournalInstance.sameMark(target: target, among: others) != nil {
             lines.append(JournalLocationCopy.sameMarkTemplate)
@@ -503,14 +504,13 @@ final class JournalFirstRunModel {
     }
 
     /// What starting a new journal means, for its confirmation. A restore during setup carries this
-    /// journal's backup settings, so a journal with backup on is told what that does to its backup.
+    /// journal's backup settings; on sol pbc's storage only one journal can use that backup.
     func newJournalConfirmMessage() -> String {
         guard let current = config.journalRoot else { return "" }
         var lines = [JournalLocationCopy.startNewJournalConfirm(current: current)]
         switch JournalBackupPlace.read(journalRoot: current) {
         case .hosted: lines.append(JournalLocationCopy.newJournalHostedShare)
-        case .own: lines.append(JournalLocationCopy.newJournalOwnShare)
-        case nil: break
+        case .own, nil: break
         }
         return lines.joined(separator: "\n\n")
     }

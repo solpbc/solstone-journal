@@ -107,7 +107,8 @@ struct JournalNewJournalRouteTests {
         await fixture.model.resumeConfiguredRoot(root)
         #expect(fixture.model.newJournalConfirmMessage() == JournalLocationCopy.startNewJournalConfirm(current: root))
         try writeBackup(root, mode: "byo", repository: "s3:https://example.invalid/r")
-        #expect(fixture.model.newJournalConfirmMessage().hasSuffix(JournalLocationCopy.newJournalOwnShare))
+        // A restore keeps the backups made before it on the owner's own storage: nothing to say.
+        #expect(fixture.model.newJournalConfirmMessage() == JournalLocationCopy.startNewJournalConfirm(current: root))
         try writeBackup(root, mode: "operated", prefix: "acct/inst")
         #expect(fixture.model.newJournalConfirmMessage().hasSuffix(JournalLocationCopy.newJournalHostedShare))
     }
@@ -148,7 +149,8 @@ struct JournalNewJournalRouteTests {
 
         let message = fixture.model.switchConfirmMessage(target: old)
         #expect(message.contains(JournalLocationCopy.switchConfirm(current: clone)))
-        #expect(message.contains(JournalLocationCopy.shared(JournalBackupShare(place: .hosted(prefix: "acct/inst"), other: clone))))
+        #expect(message.contains(try #require(JournalLocationCopy.shared(JournalBackupShare(place: .hosted(prefix: "acct/inst"), other: clone)))))
+        #expect(JournalLocationCopy.shared(JournalBackupShare(place: .own(repository: "r"), other: clone)) == nil)
         #expect(message.contains(JournalLocationCopy.sameMarkTemplate))
 
         try writeInstance(clone, "fresh")

@@ -213,6 +213,14 @@ echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
 echo === cargo test --locked (credential-bound publication and lease controls) ===
 call :run_exact_library "solstone-core-journal-io" "whole_journal_restore::windows_tests::admitted_use_and_drain_share_the_canonical_windows_key" "full-tests" || exit /b 1
+echo === cargo test --locked (a restore during setup on the recorded path) ===
+call :run_exact_library "solstone-core-journal-io" "whole_journal_restore::windows_tests::publication_pauses_the_journal_and_only_its_own_attempt_clears_it" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-journal-io" "whole_journal_restore::windows_tests::publication_never_overwrites_and_adoption_retires_the_previous_attempt" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-journal-io" "whole_journal_restore::windows_tests::a_changed_or_unreadable_record_stays_paused_and_is_never_rewritten" "full-tests" || exit /b 1
+call :run_exact_library "solstone-core-backup-runtime" "restore::tests::init_sweep::a_setup_restore_runs_on_the_record_and_leaves_only_the_snapshot" || exit /b 1
+call :run_exact_library "solstone-core-backup-runtime" "restore::tests::init_sweep::a_stopped_setup_restore_keeps_the_journal_paused_at_setup" || exit /b 1
+call :run_exact_library "solstone-core-backup-runtime" "restore::tests::mobile_restore_publishes_before_copy_and_clears_after_postwork" || exit /b 1
+call :run_exact_library "solstone-core-backup-web" "recovery_owner::tests::changed_retry_selection_is_refused_before_tools_or_drain" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-io" "atomic::windows_tests::checked_bound_replace_windows_cancellation_keeps_original_and_normal_publication_works" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-io" "atomic::windows_tests::checked_bound_replace_windows_root_replacement_receives_no_stage_or_destination" "full-tests" || exit /b 1
 call :run_exact_library "solstone-core-journal-io" "lease::bound_lease_tests::checked_bound_lease_contends_with_the_original_path_lease_and_releases" "full-tests" || exit /b 1

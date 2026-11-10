@@ -150,6 +150,45 @@ impl Fixture {
         }
     }
 
+    fn restic(&self, args: &[&str]) -> crate::runner::ResticResult {
+        let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        let output = run_restic(
+            &crate::runner::SystemToolRunner,
+            &args,
+            &self.destination.repository,
+            &self.key,
+            self.binary.as_path(),
+            None,
+            args[0] == "snapshots",
+            None,
+            None,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(output.returncode, 0, "{args:?}");
+        output
+    }
+
+    /// Every snapshot as (time, tags), oldest first.
+    fn snapshots(&self) -> Vec<(String, Vec<String>)> {
+        let listed = self.restic(&["snapshots"]).json.unwrap();
+        let mut found: Vec<(String, Vec<String>)> = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| {
+                let tags = entry["tags"].as_array().map_or_else(Vec::new, |tags| {
+                    tags.iter()
+                        .map(|tag| tag.as_str().unwrap().to_owned())
+                        .collect()
+                });
+                (entry["time"].as_str().unwrap().to_owned(), tags)
+            })
+            .collect();
+        found.sort();
+        found
+    }
+
     fn snapshot_id(&self) -> String {
         let output = run_restic(
             &crate::runner::SystemToolRunner,
@@ -296,4 +335,53 @@ fn without_the_marker_a_restore_stays_an_overlay() {
     is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
     assert_eq!(read(root, "notes/changed.md"), "as backed up");
     assert_eq!(read(root, "notes/newer.md"), "written since");
+}
+
+#[test]
+#[ignore = "requires native restic; set SOLSTONE_NATIVE_RESTIC"]
+fn restoring_an_older_backup_keeps_the_newer_one_through_the_first_prune() {
+    let fixture = Fixture::lived_in();
+    let root = fixture.journal.path();
+    // The journal backs up again as it was lived in: the newest backup.
+    fixture.restic(&["backup", &root.display().to_string()]);
+    let before = fixture.snapshots();
+    assert_eq!(before.len(), 2);
+    let newest = before[1].0.clone();
+
+    // The older one is restored, then the restored journal backs up and
+    // prunes within the same hour, as its scheduler does in its first minute.
+    is_ok(&fixture.restore(&Restic::stopping(Stop::Never)));
+    fixture.assert_is_the_snapshot();
+    solstone_core_backup::set_enabled(root, true).unwrap();
+    // The journal's own key opens the repository for its backups and prunes.
+    let config = solstone_core_backup::get_backup_config(root).unwrap();
+    let daily = tempfile::NamedTempFile::new().unwrap();
+    fs::write(daily.path(), config["daily_key"].as_str().unwrap()).unwrap();
+    fixture.restic(&[
+        "key",
+        "add",
+        "--new-password-file",
+        &daily.path().display().to_string(),
+    ]);
+    fixture.restic(&["backup", &root.display().to_string()]);
+    let clock = TestClock;
+    let maintenance = Maintenance;
+    let runner = crate::runner::SystemToolRunner;
+    let services = BackupServices {
+        restic: Some(fixture.binary.as_path().into()),
+        ..services(&runner, &clock, &maintenance)
+    };
+    let pruned = crate::engine::run_prune(root, &services);
+    assert_eq!(
+        (pruned.status.as_str(), pruned.error_reason.as_deref()),
+        ("ok", None)
+    );
+
+    let after = fixture.snapshots();
+    assert!(
+        after.iter().any(|(time, tags)| *time == newest
+            && *tags == [crate::engine::KEPT_BEFORE_RESTORE_TAG.to_owned()]),
+        "the backup newer than the one restored survives rotation: {after:?}"
+    );
+    assert_eq!(after.len(), 3, "{after:?}");
 }

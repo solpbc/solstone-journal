@@ -27,10 +27,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on windows, restoring a journal from a backup now works while you set one up: choose restore from a backup, pick a backup by date, and your journal starts as that backup. a journal that's already set up can't be restored over, so the backup page no longer offers it. to go back to an older copy, start a new journal and choose restore during setup.
 - security fix: updated the journal's database library to fix a flaw that could expose memory when opening specially crafted database files.
 - security fix: new Apple Health and Oura entries could inherit an earlier import's facet, making them readable to an agent limited to that facet. new entries now use the import's chosen facet. earlier entries filed elsewhere stay there unless you agree to move them, and the summary names any updated entries that kept their earlier facet.
+- restoring an older backup while you set up a new journal on a computer now keeps the backups made after it. before, the restored journal's own backups could push them out, the newest first.
 - a stopped Apple Health import now says when the disk on the computer running your journal is full. the body page's empty state also makes clear that Apple Health and Oura imports need a journal running on a computer.
 - a stopped Apple Health import's own page now says what its row in your import history says, in place of "import failed".
+- the backup and health pages now say when another copy of your journal took over encrypted backup, in place of only "backup is off."
 - fixed a problem that could make the android and iphone development journals close unexpectedly when you stopped local thinking.
 - the iphone development journal now runs local thinking and speech-to-text one at a time to reduce memory pressure. if a local thinking request is interrupted, the same model may need to load again before the next request.
 - home could show a speech repair message in the android and iphone development journals even when speech was ready. it now uses the same check as setup.

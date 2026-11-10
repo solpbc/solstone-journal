@@ -25,6 +25,10 @@ use crate::hosted_runtime::{
 use crate::runner::{ToolRunner, reason_for_returncode, run_restic, select_summary};
 
 pub const ARCHIVE_TAG: &str = "solstone-archive";
+/// A restore during setup puts this on every backup newer than the one it
+/// restored. Those hold what the restored journal doesn't, so rotation keeps
+/// them, as it keeps archives.
+pub const KEPT_BEFORE_RESTORE_TAG: &str = "solstone-kept-before-restore";
 use solstone_core_backup::archive_activity::{
     ArchiveOperationPreparationFailure, OwnedArchivePreparationFailure, OwnedPreparedArchiveHold,
     OwnedPreparedArchiveOperation, OwnedUnusedArchiveRetirement, PreparedArchiveOperation,
@@ -1494,7 +1498,7 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
-    let args = vec![
+    let mut args: Vec<String> = vec![
         "forget".into(),
         "--keep-hourly".into(),
         retention
@@ -1524,6 +1528,13 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
         ARCHIVE_TAG.into(),
         "--keep-tag".into(),
         OFFLOAD_ARCHIVE_TAG.into(),
+    ];
+    // iOS's linked restic takes exactly the two tags above, and an iOS
+    // restore never tags, so only the desktop prune names the third.
+    if !cfg!(target_os = "ios") {
+        args.extend(["--keep-tag".into(), KEPT_BEFORE_RESTORE_TAG.into()]);
+    }
+    args.extend([
         // A repository holds one journal, so rotation spans every machine name
         // and journal path its snapshots were taken under. restic's default
         // host+paths grouping leaves an older name's or path's snapshots in a
@@ -1531,7 +1542,7 @@ pub fn run_prune(journal: &Path, services: &BackupServices<'_>) -> PruneResult {
         "--group-by".into(),
         "tags".into(),
         "--prune".into(),
-    ];
+    ]);
     let result = match restic(
         services,
         &runtime,
@@ -7048,7 +7059,7 @@ mod tests {
             .iter()
             .find(|request| request.argv.iter().any(|arg| arg == "forget"))
             .expect("prune runs forget");
-        for tag in [ARCHIVE_TAG, OFFLOAD_ARCHIVE_TAG] {
+        for tag in [ARCHIVE_TAG, OFFLOAD_ARCHIVE_TAG, KEPT_BEFORE_RESTORE_TAG] {
             assert!(
                 forget
                     .argv

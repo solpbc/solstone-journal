@@ -14,9 +14,7 @@ enum JournalLocationCopy {
     static let switchConfirmTitleTemplate = "switch to the journal in {path}?"
     static let switchConfirmTemplate = "your journal in {path} stops and stays there, unchanged. you can come back to it here."
     static let sharedHostedTemplate = "the one in {path} shares this encrypted backup operated by sol pbc, and only one can use it. if this journal stops backing up, turn it on again in the backup pane."
-    static let sharedOwnTemplate = "the one in {path} backs up to the same place, and whichever is running removes the other's most recent backups."
     static let newJournalHostedShare = "if you restore this journal's backup there, the new journal takes it over, and this one stops backing up until you turn it on again."
-    static let newJournalOwnShare = "if you restore this journal's backup there, the new journal backs up to the same place, and its cleanup removes this one's most recent backups."
     static let sameMarkTemplate = "both have the same mark, so your devices reach whichever one is running."
     static let leaveSetupConfirm = "setup stops."
     static let switchButton = "switch"
@@ -34,13 +32,15 @@ enum JournalLocationCopy {
         switchConfirmTemplate.replacingOccurrences(of: "{path}", with: displayPath(current))
     }
 
-    static func shared(_ share: JournalBackupShare) -> String {
-        let template: String
+    /// Only sol pbc's storage has something to say: one journal at a time can use it. On the
+    /// owner's own storage a restore keeps the backups made before it, so nothing is lost there.
+    static func shared(_ share: JournalBackupShare) -> String? {
         switch share.place {
-        case .hosted: template = sharedHostedTemplate
-        case .own: template = sharedOwnTemplate
+        case .hosted:
+            return sharedHostedTemplate.replacingOccurrences(of: "{path}", with: displayPath(share.other))
+        case .own:
+            return nil
         }
-        return template.replacingOccurrences(of: "{path}", with: displayPath(share.other))
     }
 
     /// A folder as the owner reads it in Finder's path bar: home shown as `~`.
@@ -58,9 +58,7 @@ enum JournalLocationCopy {
         switchConfirmTitleTemplate,
         switchConfirmTemplate,
         sharedHostedTemplate,
-        sharedOwnTemplate,
         newJournalHostedShare,
-        newJournalOwnShare,
         sameMarkTemplate,
         leaveSetupConfirm,
         switchButton,
