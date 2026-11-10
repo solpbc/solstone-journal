@@ -562,6 +562,7 @@ function createHarness(options = {}) {
       return { matches, addEventListener() {} };
     },
     requestAnimationFrame(callback) { callback(); },
+    cancelAnimationFrame() {},
     getComputedStyle(element) {
       return {
         display: element.hidden || element.style.display === 'none' ? 'none' : 'block',
@@ -892,6 +893,8 @@ async function paintMore(harness, options) {
     || addStaticElement(harness.document, 'div', { id: 'more-root' });
   harness.window.__moreStateTimeout = options && options.timeout != null ? options.timeout : 30;
   await harness.window.SolViews.mount('more');
+  // The cards are drawn after mount returns, so the click can paint first.
+  if (harness.window.__morePainted) await harness.window.__morePainted;
   return root;
 }
 
