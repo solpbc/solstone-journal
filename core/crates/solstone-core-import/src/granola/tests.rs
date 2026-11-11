@@ -63,13 +63,7 @@ fn now() -> DateTime<Utc> {
 }
 fn output(root: &Path) -> PathBuf {
     let s = state(root).unwrap();
-    directory(
-        root,
-        &ID.to_ascii_lowercase(),
-        &s.notes[&ID.to_ascii_lowercase()],
-    )
-    .unwrap()
-    .join(OUTPUT)
+    directory(root, ID, &s.notes[ID]).unwrap().join(OUTPUT)
 }
 fn good(_: &Path, _: &str, _: &Placement, _: &Path) -> Result<(), Error> {
     Ok(())
@@ -83,13 +77,49 @@ fn run_once(root: &Path, note: Value, revision: &str) -> Result<(), Error> {
 }
 
 #[test]
+fn case_distinct_remote_ids_have_distinct_meetings_on_every_filesystem() {
+    let root = root();
+    let other_id = ID.to_ascii_lowercase();
+    let mut other = note(REV);
+    other["id"] = json!(other_id);
+    other["transcript"][0]["text"] = json!("A different meeting.");
+    let listing = json!({"notes":[{"id":ID,"updated_at":REV},{"id":other_id,"updated_at":REV}],"hasMore":false});
+    sync_with(
+        root.path(),
+        &mut Fake::new(vec![(200, listing), (200, note(REV)), (200, other)]),
+        &mut good,
+    )
+    .unwrap();
+    let saved = state(root.path()).unwrap();
+    assert_eq!(saved.notes.len(), 2);
+    let first = directory(root.path(), ID, &saved.notes[ID])
+        .unwrap()
+        .join(OUTPUT);
+    let second = directory(root.path(), &other_id, &saved.notes[&other_id])
+        .unwrap()
+        .join(OUTPUT);
+    assert_ne!(
+        stream(ID).to_ascii_lowercase(),
+        stream(&other_id).to_ascii_lowercase()
+    );
+    assert!(fs::read_to_string(&first).unwrap().contains("First words."));
+    assert!(
+        fs::read_to_string(&second)
+            .unwrap()
+            .contains("A different meeting.")
+    );
+    assert_eq!(legacy_id(ID), Some(ID.into()));
+    assert_ne!(legacy_id(ID), legacy_id(&other_id));
+}
+
+#[test]
 fn edits_replace_one_meeting_and_null_transcripts_preserve_it() {
     let root = root();
     run_once(root.path(), note(REV), REV).unwrap();
     let output = output(root.path());
     let first = fs::read(&output).unwrap();
     let s = state(root.path()).unwrap();
-    let p = &s.notes[&ID.to_ascii_lowercase()];
+    let p = &s.notes[ID];
     assert_eq!(p.day, "20261101");
     assert_eq!(p.segment, "015800_182");
     let rows = fs::read_to_string(&output).unwrap();
@@ -131,11 +161,7 @@ fn a_failed_publication_retries_the_same_placement_and_remote_deletion_keeps_it(
     let path = output(root.path());
     assert!(path.is_file());
     assert!(state(root.path()).unwrap().watermark.is_none());
-    assert!(
-        state(root.path()).unwrap().notes[&ID.to_ascii_lowercase()]
-            .revision
-            .is_none()
-    );
+    assert!(state(root.path()).unwrap().notes[ID].revision.is_none());
     run_once(root.path(), note(REV), REV).unwrap();
     assert_eq!(path, output(root.path()));
     let before = fs::read(&path).unwrap();
@@ -277,14 +303,10 @@ fn old_exact_ids_are_untouched_but_equal_titles_and_times_do_not_dedupe() {
     .unwrap();
     let s = state(root.path()).unwrap();
     assert!(
-        directory(
-            root.path(),
-            &new_id.to_ascii_lowercase(),
-            &s.notes[&new_id.to_ascii_lowercase()]
-        )
-        .unwrap()
-        .join(OUTPUT)
-        .is_file()
+        directory(root.path(), new_id, &s.notes[new_id])
+            .unwrap()
+            .join(OUTPUT)
+            .is_file()
     );
 }
 #[test]
@@ -350,12 +372,12 @@ fn a_note_without_spoken_turns_is_ready_for_thinking() {
     summary_only["transcript"] = json!([]);
     run_once(root.path(), summary_only, REV).unwrap();
     let saved = state(root.path()).unwrap();
-    let p = &saved.notes[&ID.to_ascii_lowercase()];
+    let p = &saved.notes[ID];
     let status = solstone_core_system_health::read_segment_data_state(
         root.path(),
         &p.day,
         &p.segment,
-        Some(&format!("import.granola.{}", ID.to_ascii_lowercase())),
+        Some(&stream(ID)),
         now(),
     );
     assert!(solstone_core_system_health::segment_fully_sensed(&status));

@@ -153,13 +153,36 @@ fn instant(value: &str) -> Result<DateTime<Utc>, Error> {
 fn note_id(value: &str) -> Result<String, Error> {
     if value.is_ascii()
         && value.len() == 18
-        && value[..4].eq_ignore_ascii_case("not_")
+        && value.starts_with("not_")
         && value[4..].bytes().all(|b| b.is_ascii_alphanumeric())
     {
-        Ok(value.to_ascii_lowercase())
+        Ok(value.to_owned())
     } else {
         Err(Error::Response)
     }
+}
+fn stream(id: &str) -> String {
+    // Preserve every API ID byte on case-insensitive filesystems.
+    let encoded: String = id.bytes().map(|byte| format!("{byte:02x}")).collect();
+    format!(
+        "{}{encoded}",
+        solstone_core_format::content::granola::STREAM_PREFIX
+    )
+}
+fn legacy_id(value: &str) -> Option<String> {
+    if let Ok(id) = note_id(value) {
+        return Some(id);
+    }
+    // Only UUID document IDs have a case-insensitive canonical spelling.
+    (value.len() == 36
+        && value.bytes().enumerate().all(|(i, byte)| {
+            if [8, 13, 18, 23].contains(&i) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        }))
+    .then(|| value.to_ascii_lowercase())
 }
 fn state(root: &Path) -> Result<State, Error> {
     match fs::read(root.join(STATE)) {
@@ -350,12 +373,7 @@ fn run(
             let transcript = note.transcript.as_ref().ok_or(Error::Transcript)?;
             let origin = validate_note(&note, transcript)?;
             if !state.notes.contains_key(&id) {
-                let old_id = note
-                    .web_url
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
+                let old_id = note.web_url.rsplit('/').next().and_then(legacy_id);
                 let local = origin.with_timezone(&solstone_core_journal_config::owner_zone(root));
                 let end = transcript
                     .iter()
@@ -377,7 +395,7 @@ fn run(
                         removed: false,
                         placed: false,
                         legacy: legacy.contains(&id)
-                            || (!old_id.is_empty() && legacy.contains(&old_id)),
+                            || old_id.as_ref().is_some_and(|id| legacy.contains(id)),
                     },
                 );
                 save(root, state)?;
@@ -530,18 +548,10 @@ fn validate_note(note: &Note, turns: &[Turn]) -> Result<DateTime<Utc>, Error> {
     Ok(start.or(calendar_start).unwrap_or(created))
 }
 fn directory(root: &Path, id: &str, p: &Placement) -> Result<PathBuf, Error> {
-    Ok(SegmentDir::resolve(
-        root,
-        &p.day,
-        &p.segment,
-        &format!(
-            "{}{id}",
-            solstone_core_format::content::granola::STREAM_PREFIX
-        ),
-    )
-    .map_err(storage)?
-    .path()
-    .to_path_buf())
+    Ok(SegmentDir::resolve(root, &p.day, &p.segment, &stream(id))
+        .map_err(storage)?
+        .path()
+        .to_path_buf())
 }
 fn rows(note: &Note, placement: &Placement, zone: chrono_tz::Tz) -> Result<Vec<Value>, Error> {
     let origin = instant(&placement.origin)?;
@@ -582,10 +592,7 @@ fn publish(root: &Path, id: &str, placement: &Placement, output: &Path) -> Resul
     let segments = [crate::CreatedSegment {
         day: placement.day.clone(),
         segment: placement.segment.clone(),
-        stream: format!(
-            "{}{id}",
-            solstone_core_format::content::granola::STREAM_PREFIX
-        ),
+        stream: stream(id),
         hints: StreamHints {
             kind: Some(Kind::Imported(ImportSource::Named("granola".into()))),
             host: None,
@@ -638,8 +645,9 @@ fn legacy_ids(root: &Path) -> Result<BTreeSet<String>, Error> {
                     .get("imported")
                     .and_then(|v| v.get("id"))
                     .and_then(Value::as_str)
+                    .and_then(legacy_id)
                 {
-                    ids.insert(id.to_ascii_lowercase());
+                    ids.insert(id);
                 }
             }
         }
