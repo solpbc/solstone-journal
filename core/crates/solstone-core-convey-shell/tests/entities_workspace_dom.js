@@ -630,7 +630,7 @@ async function detectedHideCases(workspace, copy) {
       function selectEntityScope(facet) { __log.scope = facet; }
       function navigateToEntity(id) { __log.navigated.push(id); }
       ${workspace.slice(start, end)}
-      this.api = { renderDetectedTable, data: () => entitiesData, setFacet(f) { currentFacet = f; } };
+      this.api = { renderDetectedTable, detectedNameKey, data: () => entitiesData, setFacet(f) { currentFacet = f; } };
     `.replace(/__log/g, 'this.__log'), h.context);
     h.context.__log = h.log;
     return h;
@@ -763,7 +763,11 @@ async function detectedHideCases(workspace, copy) {
     h.answers['GET api/work'] = { attached: [], detected: [row('Ada'), row('Dr. Ellis'), row('the clinic')], hidden: [], hidden_unreadable: false };
     unhideButtons(h)[0].fire('click');
     await flush();
-    check(h.doc.activeElement === el(h, 'entity-search') && el(h, 'detected-hidden-foot').hidden === true, 'none left: the foot line goes and focus moves on');
+    check(el(h, 'detected-hidden-foot').hidden === true, 'none left: the foot line goes');
+    const focused = h.doc.activeElement;
+    check(focused && focused !== el(h, 'entity-search') && String(focused.className).includes('ent-hide-btn')
+      && focused.dataset.nameKey === h.context.api.detectedNameKey('the clinic'),
+      'none left: focus goes to the restored row\'s hide');
 
     h.context.api.setFacet('home');
     h.context.api.data().hidden = hidden;

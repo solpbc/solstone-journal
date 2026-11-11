@@ -943,7 +943,7 @@ tr:hover .entity-delete-btn {
 .ent-hidden-row .entity-desc { display: flex; align-items: center; justify-content: space-between; gap: 1em; flex-wrap: wrap; }
 .ent-hidden-last { color: var(--ink-soft); font-size: .9em; }
 .ent-unhide-btn { min-height: 2.25rem; }
-@media (max-width: 480px) { .ent-unhide-btn { min-height: 44px; } .ent-hidden-row td:first-child, .ent-hidden-row .entity-type { display: none; } .ent-hidden-last { white-space: nowrap; } }
+@media (max-width: 480px) { .ent-unhide-btn { min-height: 44px; } .ent-hidden-row td:first-child, .ent-hidden-row .entity-type { display: none; } .ent-hidden-list .entities-table { table-layout: fixed; } .ent-hidden-row td { padding-left: .75em; padding-right: .75em; } .ent-hidden-last { white-space: normal; } .ent-hidden-row .journal-row-badge, .ent-hidden-row .mention-count-badge { display: inline-block; } }
 
 /* Section headers */
 .entities-section {
@@ -2255,7 +2255,7 @@ body.presentation-mode .entity-desc { color: var(--ink-soft); }
           <input type="text" id="entity-search" class="entity-search-input" placeholder="search entities…" aria-label="search detected entities">
         </h3>
         <p class="entities-subtitle">found by AI in the last 30 days. star to add to your journal</p>
-        <div id="detected-action-error" class="error-message" style="display: none;"></div>
+        <div id="detected-action-error" class="error-message" role="status" style="display: none;"></div>
         <table class="entities-table">
           <thead>
             <tr>
@@ -6963,6 +6963,7 @@ function createDetectedRow(entity) {
   const hideBtn = document.createElement('button');
   hideBtn.type = 'button';
   hideBtn.className = 'entity-delete-btn ent-hide-btn';
+  hideBtn.dataset.nameKey = detectedNameKey(entity.name);
   hideBtn.title = detectedFill('ENT_DETECTED_HIDE_ACTION', { name: entity.name, facet: detectedFacetTitle() });
   hideBtn.setAttribute('aria-label', hideBtn.title);
   hideBtn.innerHTML = `<span aria-hidden="true">${(window.ConveyIcons?.svg('eye-off') || '')}</span>`;
@@ -7170,7 +7171,11 @@ async function unhideDetectedName(name, button) {
   if (position !== -1) {
     const left = Array.from(document.getElementById('detected-hidden-tbody').querySelectorAll('.ent-unhide-btn'));
     const toggle = document.getElementById('detected-hidden-toggle');
-    (left[Math.min(position, left.length - 1)] || (toggle && !document.getElementById('detected-hidden-foot').hidden ? toggle : document.getElementById('entity-search')))?.focus();
+    // With none left to unhide, the restored row's hide button is the only
+    // sign the unhide worked, so focus goes there.
+    const restored = Array.from(document.getElementById('all-entities-tbody').querySelectorAll('.ent-hide-btn'))
+      .find(btn => btn.dataset.nameKey === key);
+    (left[Math.min(position, left.length - 1)] || restored || (toggle && !document.getElementById('detected-hidden-foot').hidden ? toggle : document.getElementById('entity-search')))?.focus();
   }
   const still = answer && answer.still_hidden_by;
   if (still && still.id) {
