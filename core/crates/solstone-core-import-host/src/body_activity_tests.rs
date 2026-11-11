@@ -138,7 +138,8 @@ fn each_experience_gets_one_record_that_refers_to_its_account() {
     );
     // A reference only: nothing of the row is copied, and no talent can select it.
     let text = fs::read_to_string(file(root, "body")).unwrap();
-    for absent in ["Synthetic Watch", "Running", "segments", "120"] {
+    // The value is matched quoted: a bare "120" also turns up inside a random id.
+    for absent in ["Synthetic Watch", "Running", "segments", "\"120\""] {
         assert!(!text.contains(absent), "{absent} in {text}");
     }
     // No default reader returns it.
