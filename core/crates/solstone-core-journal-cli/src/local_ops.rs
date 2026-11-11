@@ -1179,13 +1179,54 @@ fn facet_doctor_all(journal: &Path, fix: bool, adopt: bool, merge: bool) -> Outc
 
     entity_link_section(journal, fix, &mut stdout, &mut failures);
 
-    let (leftovers, hidden) = facet_names::scan_dot_directories(journal);
-    if !leftovers.is_empty() {
-        stdout.push_str(&format!(
-            "\nLeftover folders from an interrupted facet merge, safe to delete once no merge is running: {}\n",
-            leftovers.join(", ")
-        ));
+    // Held while the leftovers are sorted and moved, so no merge is part-way
+    // through one of them.
+    let trust = hold_facet_trust_lock(journal);
+    if let Err(error) = &trust {
+        failures.push(format!("the facet lock wasn't taken: {error}"));
     }
+    let (leftovers, hidden) = facet_names::scan_dot_directories(journal);
+    match facet_names::sort_merge_leftovers(journal, leftovers) {
+        Ok((copies, kept)) => {
+            if !copies.is_empty() {
+                stdout.push_str(&format!(
+                    "\nLeftover folders from an interrupted facet merge, safe to delete once no merge is running: {}\n",
+                    copies.join(", ")
+                ));
+            }
+            if !kept.is_empty() && fix && trust.is_ok() {
+                let index = solstone_core_indexer_store::RetentionIndex::new(journal);
+                let drops = solstone_core_facets::facet_trash::FacetDrops::new(&index);
+                let mut moved = Vec::new();
+                for folder in &kept {
+                    match drops.trash(
+                        journal,
+                        folder,
+                        solstone_core_removals::Action::FacetMerge,
+                        solstone_core_removals::Surface::Cli,
+                    ) {
+                        Ok(_) | Err(solstone_core_trash::TrashError::Unfinished(_)) => {
+                            moved.push(folder.clone());
+                        }
+                        Err(error) => failures.push(format!("{folder}: {error}")),
+                    }
+                }
+                if !moved.is_empty() {
+                    stdout.push_str(&format!(
+                        "\nMoved leftover folders from a facet merge to the trash, as they were: {}\n",
+                        moved.join(", ")
+                    ));
+                }
+            } else if !kept.is_empty() {
+                stdout.push_str(&format!(
+                    "\nLeftover folders from a facet merge that may hold the only copy of some files. Don't delete them; run with --fix to move them to the trash: {}\n",
+                    kept.join(", ")
+                ));
+            }
+        }
+        Err(error) => failures.push(format!("merge leftovers couldn't be read: {error}")),
+    }
+    drop(trust);
     if !hidden.is_empty() {
         stdout.push_str(&format!(
             "\nFolders whose names start with a dot are never facets, so these facet declarations are ignored: {}\n",
@@ -1274,7 +1315,7 @@ fn facet_doctor_orphans(
         String::new()
     } else {
         format!(
-            "These folders have content under facet names that were deleted or merged, so they are not registered as facets; their files are left in place: {}\n",
+            "These folders have content under facet names that were merged or renamed into another facet, so they are not registered as facets; their files are left in place: {}\n",
             retired_orphans.join(", ")
         )
     };
@@ -2127,7 +2168,7 @@ fn facet_merge_preview_text(
     let before = text.len();
     if !report.regular_file_collisions.is_empty() {
         text.push_str(&format!(
-            "Files both facets have that can't be combined. '{destination}' would keep its own copy, and the copy in '{source}' would be deleted with that facet:\n"
+            "Files both facets have that can't be combined. '{destination}' would keep its own copy, and the copy in '{source}' would go to the trash:\n"
         ));
         for path in &report.regular_file_collisions {
             text.push_str(&format!("  {}\n", path.display()));
@@ -2231,9 +2272,9 @@ fn facet_merge_collision_notice(
         return String::new();
     }
     let fate = if source_removed {
-        "was deleted with that facet"
+        "is in the trash"
     } else {
-        "was not carried over"
+        "was kept, and 'solstone journal facet doctor --fix' moves it to the trash"
     };
     let mut notice = format!(
         "Both facets had these files. '{destination}' kept its own copy; the copy in '{source}' {fate}:\n"
@@ -2453,33 +2494,113 @@ fn facet_merge_commit_locked(
             rollback,
         ));
     }
-    if let Err(error) = remove_tree_pair(&backup, &source_backup) {
+    // The merge has committed. The source's copy of each file both facets
+    // had goes to the trash as one item before the source tree goes.
+    let dropped = format!(".facet-merge-{transaction}.dropped");
+    if let Err(error) = trash_dropped_files(
+        journal,
+        &source_backup,
+        &dropped,
+        &admission.destination_id,
+        destination,
+        &report.regular_file_collisions,
+    ) {
         return Ok(FacetMergeCommit {
             report,
             source_removed: false,
             post_commit_failure: Some(failure(
                 "facet merge",
                 &format!(
-                    "the merge finished, but its leftover folders couldn't be removed: {error}; run 'solstone journal facet doctor' to list them, remove them, then run 'solstone journal facet doctor --fix'"
+                    "the merge finished, but the files it replaced couldn't be moved to the trash: {error}; they're kept, and 'solstone journal facet doctor --fix' moves them there"
                 ),
                 EXIT_IO,
             )),
         });
     }
-    // The source's copy of each colliding file went with the source facet.
-    let removal = solstone_core_removals::Removal::begin(
-        journal,
-        solstone_core_removals::Action::FacetMerge,
-        solstone_core_removals::Surface::Cli,
-    );
-    for _ in &report.regular_file_collisions {
-        removal.record(solstone_core_removals::Unit::FacetFile);
+    if let Err(error) = remove_tree_pair(journal, &backup, &source_backup) {
+        return Ok(FacetMergeCommit {
+            report,
+            source_removed: false,
+            post_commit_failure: Some(failure(
+                "facet merge",
+                &format!(
+                    "the merge finished, but its leftover folders couldn't be removed: {error}; run 'solstone journal facet doctor --fix' to tidy them"
+                ),
+                EXIT_IO,
+            )),
+        });
     }
     Ok(FacetMergeCommit {
         report,
         post_commit_failure: None,
         source_removed: true,
     })
+}
+
+/// Move the source's copy of each file both facets had out of the merge's
+/// `source` folder into `facets/<folder>`, its manifest first, and that folder
+/// to the trash as one item. Nothing to do when no file collided.
+#[cfg(not(target_os = "ios"))]
+fn trash_dropped_files(
+    journal: &Path,
+    source_backup: &Path,
+    folder: &str,
+    dest_id: &str,
+    dest_name: &str,
+    collisions: &[PathBuf],
+) -> Result<(), String> {
+    use solstone_core_facets::facet_trash::{DROPPED_FILES, DropManifest, FacetDrops, MANIFEST};
+    if collisions.is_empty() {
+        return Ok(());
+    }
+    let files = collisions
+        .iter()
+        .map(|path| {
+            path.components()
+                .map(|part| match part {
+                    std::path::Component::Normal(part) => part
+                        .to_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| format!("{} isn't UTF-8", path.display())),
+                    _ => Err(format!("{} isn't a plain path", path.display())),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|parts| parts.join("/"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let staging = journal.join("facets").join(folder);
+    create_private_dir_exclusive(&staging).map_err(|error| error.to_string())?;
+    let manifest = DropManifest {
+        dest_id: dest_id.to_owned(),
+        dest_name: dest_name.to_owned(),
+        files: files.clone(),
+    };
+    let bytes = serde_json::to_vec_pretty(&manifest).map_err(|error| error.to_string())?;
+    write_bytes_exclusive(
+        staging.join(MANIFEST),
+        &bytes,
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|error| error.to_string())?;
+    for rel in &files {
+        let from = source_backup.join(rel);
+        let to = staging.join(DROPPED_FILES).join(rel);
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::rename(&from, &to).map_err(|error| format!("{rel}: {error}"))?;
+    }
+    let index = solstone_core_indexer_store::RetentionIndex::new(journal);
+    match FacetDrops::new(&index).trash(
+        journal,
+        folder,
+        solstone_core_removals::Action::FacetMerge,
+        solstone_core_removals::Surface::Cli,
+    ) {
+        // In the trash, finishing on the next sweep.
+        Ok(_) | Err(solstone_core_trash::TrashError::Unfinished(_)) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 enum ExistingPathKind {
@@ -2512,9 +2633,19 @@ fn rollback_facet_trees(
     Ok(())
 }
 
-fn remove_tree_pair(first: &Path, second: &Path) -> Result<(), String> {
-    fs::remove_dir_all(first).map_err(|error| error.to_string())?;
-    fs::remove_dir_all(second).map_err(|error| error.to_string())
+/// Remove a committed merge's two scratch trees: the destination as it was,
+/// which the merged facet holds a copy of, and the source, once what it alone
+/// held is in the trash.
+fn remove_tree_pair(journal: &Path, first: &Path, second: &Path) -> Result<(), String> {
+    for tree in [first, second] {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "system internal: a committed facet merge's own scratch trees; the files only the source held are in the trash first"
+        )]
+        solstone_core_journal_io::removal::remove_contained_tree(journal, tree)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 fn transaction_failure(token: &str, primary: &str, rollback: Result<(), String>) -> Outcome {
@@ -2646,7 +2777,7 @@ mod facet_merge_tests {
             panic!("merge succeeds");
         };
         assert!(
-            stdout.contains("the copy in 'source' was deleted with that facet:\n  collision.md\n"),
+            stdout.contains("the copy in 'source' is in the trash:\n  collision.md\n"),
             "{stdout}"
         );
         assert_eq!(fs::read(config).expect("convey config after merge"), before);
@@ -3016,6 +3147,216 @@ mod facet_merge_tests {
             "staging artifacts remain: {leftovers:?}"
         );
     }
+
+    fn merge_items(root: &Path) -> Vec<solstone_core_trash::Item> {
+        solstone_core_trash::list(root)
+            .expect("trash")
+            .into_iter()
+            .filter(|item| item.unit == solstone_core_removals::Unit::FacetFile)
+            .collect()
+    }
+
+    fn recover_drops(root: &Path, id: &str) {
+        let index = solstone_core_indexer_store::RetentionIndex::new(root);
+        let drops = solstone_core_facets::facet_trash::FacetDrops::new(&index);
+        solstone_core_trash::attach(
+            root,
+            &[&drops],
+            id,
+            solstone_core_removals::Action::Recover,
+            solstone_core_removals::Surface::Cli,
+        )
+        .expect("recover");
+    }
+
+    fn merge_leftovers(root: &Path) -> Vec<String> {
+        fs::read_dir(root.join("facets"))
+            .expect("facets")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with(".facet-merge-"))
+            .collect()
+    }
+
+    fn doctor(root: &Path, fix: bool) -> String {
+        match super::facet_doctor_all(root, fix, false, false) {
+            Outcome::LocalSuccess { stdout, .. } | Outcome::LocalFailure { stdout, .. } => stdout,
+            _ => panic!("doctor answers"),
+        }
+    }
+
+    #[test]
+    fn a_merges_dropped_files_wait_in_the_trash_and_come_back_over_the_destinations() {
+        let journal = TempJournal::new();
+        let root = journal.path();
+        fs::write(root.join("facets/source/collision.md"), b"source").expect("source copy");
+        fs::write(root.join("facets/destination/collision.md"), b"destination")
+            .expect("destination copy");
+
+        let outcome = facet_merge_in_journal(root, "source", "destination", false);
+        assert!(matches!(outcome, Outcome::LocalSuccess { .. }));
+        assert!(merge_leftovers(root).is_empty());
+        let items = merge_items(root);
+        assert_eq!(items.len(), 1);
+        let untouched = fs::read(root.join("facets/destination/destination.txt")).expect("kept");
+
+        recover_drops(root, &items[0].id);
+        assert_eq!(
+            fs::read(root.join("facets/destination/collision.md")).expect("recovered"),
+            b"source"
+        );
+        assert_eq!(
+            fs::read(root.join("facets/destination/destination.txt")).expect("kept"),
+            untouched
+        );
+        assert!(merge_leftovers(root).is_empty());
+        let mut events: Vec<_> = solstone_core_removals::history(root, 20)
+            .expect("history")
+            .entries
+            .into_iter()
+            .map(|entry| (entry.event, entry.unit))
+            .collect();
+        events.reverse();
+        use solstone_core_removals::{Event, Unit};
+        assert_eq!(
+            events,
+            vec![
+                (Event::Trashed, Unit::FacetFile),
+                (Event::Erased, Unit::FacetFile),
+                (Event::Recovered, Unit::FacetFile),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_merge_with_nothing_in_common_puts_nothing_in_the_trash() {
+        let journal = TempJournal::new();
+        let outcome = facet_merge_in_journal(journal.path(), "source", "destination", false);
+        assert!(matches!(outcome, Outcome::LocalSuccess { .. }));
+        assert!(
+            solstone_core_trash::list(journal.path())
+                .expect("trash")
+                .is_empty()
+        );
+        assert!(merge_leftovers(journal.path()).is_empty());
+    }
+
+    #[test]
+    fn a_leftover_source_goes_to_the_trash_whole_and_comes_back_as_it_was() {
+        let journal = TempJournal::new();
+        let root = journal.path();
+        fs::write(
+            root.join("facets/source/rows.jsonl"),
+            b"{\"id\":\"a\",\"v\":1}\n",
+        )
+        .expect("source rows");
+        fs::write(
+            root.join("facets/destination/rows.jsonl"),
+            b"{\"id\":\"b\",\"v\":2}\n",
+        )
+        .expect("destination rows");
+        assert!(matches!(
+            facet_merge_in_journal(root, "source", "destination", false),
+            Outcome::LocalSuccess { .. }
+        ));
+        let merged = fs::read(root.join("facets/destination/rows.jsonl")).expect("merged");
+        // A merge that stopped before its scratch went leaves the source.
+        let leftover = root.join("facets/.facet-merge-x1.source");
+        fs::create_dir_all(&leftover).expect("leftover");
+        fs::write(leftover.join("rows.jsonl"), b"{\"id\":\"a\",\"v\":1}\n").expect("rows");
+        fs::write(
+            leftover.join("facet.json"),
+            br#"{"id":"11111111-1111-4111-8111-111111111111"}"#,
+        )
+        .expect("declaration");
+        let before = tree_bytes(&leftover);
+
+        let report = doctor(root, false);
+        assert!(!report.contains("safe to delete"), "{report}");
+        assert!(report.contains(".facet-merge-x1.source"), "{report}");
+        doctor(root, true);
+        assert!(merge_leftovers(root).is_empty());
+        let items = merge_items(root);
+        assert_eq!(items.len(), 1);
+
+        recover_drops(root, &items[0].id);
+        assert_eq!(tree_bytes(&leftover), before);
+        assert_eq!(
+            fs::read(root.join("facets/destination/rows.jsonl")).expect("merged"),
+            merged
+        );
+    }
+
+    #[test]
+    fn dropped_files_in_the_trash_and_a_leftover_source_are_two_items() {
+        let journal = TempJournal::new();
+        let root = journal.path();
+        fs::write(root.join("facets/source/collision.md"), b"source").expect("source copy");
+        fs::write(root.join("facets/destination/collision.md"), b"destination")
+            .expect("destination copy");
+        assert!(matches!(
+            facet_merge_in_journal(root, "source", "destination", false),
+            Outcome::LocalSuccess { .. }
+        ));
+        fs::create_dir_all(root.join("facets/.facet-merge-x2.source")).expect("leftover");
+        fs::write(
+            root.join("facets/.facet-merge-x2.source/source.txt"),
+            b"source",
+        )
+        .expect("leftover file");
+        doctor(root, true);
+        assert_eq!(merge_items(root).len(), 2);
+        assert!(merge_leftovers(root).is_empty());
+    }
+
+    #[test]
+    fn a_leftover_copy_no_live_facet_holds_is_never_called_safe_to_delete() {
+        let journal = TempJournal::new();
+        let root = journal.path();
+        // A copy of the live destination, and the only copy of a facet gone
+        // since.
+        let copy = root.join("facets/.facet-merge-x3.dest");
+        fs::create_dir_all(&copy).expect("copy");
+        fs::copy(
+            root.join("facets/destination/facet.json"),
+            copy.join("facet.json"),
+        )
+        .expect("copy declaration");
+        let only = root.join("facets/.facet-merge-x4.dest");
+        fs::create_dir_all(&only).expect("only copy");
+        fs::write(
+            only.join("facet.json"),
+            br#"{"id":"33333333-3333-4333-8333-333333333333","title":"Gone"}"#,
+        )
+        .expect("only declaration");
+        fs::write(only.join("notes.md"), b"only here").expect("only file");
+
+        let report = doctor(root, false);
+        let line = |name: &str| {
+            report
+                .lines()
+                .find(|line| line.contains(name))
+                .unwrap_or_default()
+                .to_owned()
+        };
+        assert!(
+            line(".facet-merge-x3.dest").contains("safe to delete"),
+            "{report}"
+        );
+        assert!(!line(".facet-merge-x4.dest").is_empty(), "{report}");
+        assert!(
+            !line(".facet-merge-x4.dest").contains("safe to delete"),
+            "{report}"
+        );
+
+        doctor(root, true);
+        assert!(copy.is_dir(), "a copy is left for the owner");
+        assert!(!only.exists());
+        let items = merge_items(root);
+        assert_eq!(items.len(), 1);
+        recover_drops(root, &items[0].id);
+        assert_eq!(fs::read(only.join("notes.md")).expect("back"), b"only here");
+    }
 }
 
 #[cfg(all(test, not(target_os = "ios")))]
@@ -3220,6 +3561,24 @@ mod orphan_facet_tests {
     }
 
     #[test]
+    fn a_deleted_entry_holds_no_orphan_back_and_a_merged_one_does() {
+        let journal = TempJournal::new();
+        for name in ["old", "gone"] {
+            let notes = journal.0.join(format!("facets/{name}/news/20260801.md"));
+            fs::create_dir_all(notes.parent().unwrap()).unwrap();
+            fs::write(notes, b"kept").unwrap();
+        }
+        fs::write(
+            journal.0.join("facets/retired.json"),
+            br#"{"names":{"old":{"state":"deleted","id":null},"gone":{"state":"merged","id":null,"successor":"22222222-2222-4222-8222-222222222222"}}}"#,
+        )
+        .unwrap();
+        let (orphans, retired) = super::adoptable_orphan_facets(&journal.0).unwrap();
+        assert_eq!(orphans, vec!["old"]);
+        assert_eq!(retired, vec!["gone"]);
+    }
+
+    #[test]
     fn retired_facet_content_alone_is_not_repaired_into_metadata() {
         let journal = TempJournal::new();
         let retired = journal.0.join("facets/retired/todos/20260801.jsonl");
@@ -3236,15 +3595,16 @@ mod orphan_facet_tests {
     }
 }
 
-/// Orphan folders that may be registered, and those under a retired name,
-/// which never are.
+/// Orphan folders that may be registered, and those under a name merged or
+/// renamed into another facet, which never are. A deleted facet's name
+/// doesn't hold one back.
 fn adoptable_orphan_facets(journal: &Path) -> Result<(Vec<String>, Vec<String>), String> {
     let retired = solstone_core_facets::read_retired_facets(journal)
         .entries_for_write()
         .map_err(|error| error.to_string())?;
     let (retired_orphans, orphans) = orphan_facets(journal)?
         .into_iter()
-        .partition(|slug| retired.contains_key(slug));
+        .partition(|slug| retired.get(slug).is_some_and(|entry| entry.redirects()));
     Ok((orphans, retired_orphans))
 }
 

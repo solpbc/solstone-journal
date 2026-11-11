@@ -26,6 +26,7 @@ solstone-core-thinking-copy = { workspace = true }
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 solstone-core-indexer-query = { workspace = true }
 solstone-core-indexer-store = { workspace = true }
+solstone-core-trash = { workspace = true }
 solstone-core-import-sources = { workspace = true }
 solstone-core-system-health = { workspace = true }
 

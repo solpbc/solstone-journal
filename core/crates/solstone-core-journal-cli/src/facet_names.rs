@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Facet names are permanent: a name that belonged to a deleted or merged-away
-//! facet is recorded in `facets/retired.json` and never given to another
-//! facet. This module holds the journal-side operations on that record: merge
-//! admission, keeping stored search classifications in step with it, and the
-//! owner-run repairs in `journal facet doctor`.
+//! A name that belonged to a facet merged or renamed away is recorded in
+//! `facets/retired.json`, leads to the facet it went into, and is never given
+//! to another facet. A deleted facet waits in the trash and records nothing;
+//! the `deleted` entries earlier builds wrote don't count. This module holds
+//! the journal-side operations on that record: merge admission, keeping stored
+//! search classifications in step with it, and the owner-run repairs in
+//! `journal facet doctor`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -78,10 +80,9 @@ pub(crate) fn admit_facet_merge(
             "'{destination}' has no stable id yet; run 'solstone journal backfill-facet-ids' first"
         ));
     };
-    if retired
-        .get(destination)
-        .is_some_and(|entry| entry.id.as_deref() != Some(destination_id.as_str()))
-    {
+    if retired.get(destination).is_some_and(|entry| {
+        entry.redirects() && entry.id.as_deref() != Some(destination_id.as_str())
+    }) {
         return Err(format!(
             "'{destination}' is recorded as a retired facet name; run 'solstone journal facet doctor' for details"
         ));
@@ -93,7 +94,7 @@ pub(crate) fn admit_facet_merge(
                 "'{source}' is a declared facet, not an orphan folder"
             ));
         }
-        if retired.contains_key(source) {
+        if retired.get(source).is_some_and(RetiredFacet::redirects) {
             return Err(format!("'{source}' is a retired facet name"));
         }
         return Ok(MergeAdmission {
@@ -255,7 +256,8 @@ fn live_facets(journal: &Path) -> Result<BTreeMap<String, Option<String>>, Strin
 }
 
 /// Propose retired entries from the action logs. Only names that are neither
-/// live nor already recorded are proposed.
+/// live nor already recorded are proposed. A delete proposes nothing: a
+/// deleted facet waits in the trash, and its name is free.
 pub(crate) fn scan_history(
     journal: &Path,
     retired: &BTreeMap<String, RetiredFacet>,
@@ -352,11 +354,7 @@ pub(crate) fn scan_history(
                     entry,
                 });
             }
-            Some(None) => scan.proposals.push(HistoryProposal {
-                evidence: format!("{name} was deleted"),
-                name,
-                entry: RetiredFacet::deleted(id, None),
-            }),
+            Some(None) => {}
             None => scan.unrecoverable.push(name),
         }
     }
@@ -378,7 +376,20 @@ pub(crate) fn scan_unresolved_references(
     retired: &BTreeMap<String, RetiredFacet>,
 ) -> Result<BTreeMap<String, (usize, String, String)>, String> {
     let live = live_facets(journal)?;
-    let known = |name: &str| live.contains_key(name) || retired.contains_key(name);
+    // A facet waiting in the trash is still the owner's: its name isn't one
+    // to retire into another facet.
+    let trashed: BTreeSet<String> = solstone_core_trash::held_paths(journal)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|path| {
+            path.strip_prefix("facets/")
+                .filter(|name| !name.contains('/'))
+                .map(str::to_owned)
+        })
+        .collect();
+    let known = |name: &str| {
+        live.contains_key(name) || retired.contains_key(name) || trashed.contains(name)
+    };
     let mut found: BTreeMap<String, (usize, String, String)> = BTreeMap::new();
     let mut note = |name: &str, day: &str| {
         let entry = found
@@ -460,10 +471,34 @@ pub(crate) fn scan_dot_directories(journal: &Path) -> (Vec<String>, Vec<String>)
     (leftovers, hidden)
 }
 
+/// A facet merge's leftover folders: copies a live facet already holds (a
+/// `.dest`, `.stage` or dry-run `.preview` whose declaration carries a live
+/// facet's id), and those that may hold the only copy of something (every
+/// other leftover), which are never to be deleted by hand.
+pub(crate) fn sort_merge_leftovers(
+    journal: &Path,
+    leftovers: Vec<String>,
+) -> Result<(Vec<String>, Vec<String>), String> {
+    let live: BTreeSet<String> = live_facets(journal)?.into_values().flatten().collect();
+    let (copies, kept) = leftovers.into_iter().partition(|name| {
+        let copy_kind = [".dest", ".stage", ".preview"]
+            .iter()
+            .any(|suffix| name.ends_with(suffix));
+        copy_kind
+            && fs::read(journal.join("facets").join(name).join("facet.json"))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .and_then(|value| value.get("id")?.as_str().map(str::to_owned))
+                .is_some_and(|id| live.contains(&id))
+    });
+    Ok((copies, kept))
+}
+
 /// Repair a `facets/retired.json` that exists but does not parse. It is moved
 /// aside, and the record is rebuilt from its last good copy, then the action
-/// logs, then every name the damaged file still shows, so no name that was
-/// reserved becomes free. A file that can't be read at all is left alone.
+/// logs, then every name the damaged file still shows. A name neither traces
+/// is recorded as deleted, which leads nowhere. A file that can't be read at
+/// all is left alone.
 pub(crate) fn repair_malformed_retired_file(journal: &Path) -> Result<Option<String>, String> {
     let RetiredFacets::Malformed(detail) = read_retired_facets(journal) else {
         return Ok(None);
@@ -507,7 +542,7 @@ pub(crate) fn repair_malformed_retired_file(journal: &Path) -> Result<Option<Str
     );
     if !reserved.is_empty() {
         message.push_str(&format!(
-            " These names could not be traced and stay reserved as deleted: {}.",
+            " These names could not be traced and are recorded as deleted: {}.",
             reserved.join(", ")
         ));
     }
@@ -671,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn history_recovers_renames_merges_and_deletes_of_names_that_no_longer_exist() {
+    fn history_recovers_renames_and_merges_of_names_that_no_longer_exist() {
         let journal = Journal::new();
         journal.declare("personal", PERSONAL, false);
         journal.declare("work-life", WORK, false);
@@ -704,8 +739,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(found.contains(&("work", RetiredFacetState::Renamed, Some(WORK.to_owned()))));
         assert!(found.contains(&("side", RetiredFacetState::Merged, Some(WORK.to_owned()))));
-        assert!(found.contains(&("old", RetiredFacetState::Deleted, None)));
-        assert_eq!(found.len(), 3, "{found:?}");
+        // A delete proposes nothing: the facet waits in the trash.
+        assert_eq!(found.len(), 2, "{found:?}");
         assert!(scan.reused.is_empty());
     }
 
@@ -802,6 +837,57 @@ mod tests {
         );
         fs::set_permissions(&record, fs::Permissions::from_mode(0o600)).expect("chmod back");
         assert_eq!(fs::read(&record).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn a_deleted_entry_never_holds_back_a_merge_and_a_merged_one_does() {
+        let journal = Journal::new();
+        journal.declare("personal", PERSONAL, false);
+        journal.declare("work", WORK, false);
+        // An earlier build's deleted entry for another facet of the name, and
+        // one for an orphan folder's.
+        fs::write(
+            journal.path().join("facets/retired.json"),
+            format!(
+                r#"{{"names":{{"work":{{"state":"deleted","id":"{X}"}},"loose":{{"state":"deleted","id":null}},"side":{{"state":"merged","id":null,"successor":"{WORK}"}}}}}}"#
+            ),
+        )
+        .expect("record");
+        admit_facet_merge(journal.path(), "personal", "work", false).expect("admitted");
+        admit_facet_merge(journal.path(), "loose", "work", true).expect("orphan admitted");
+        assert!(admit_facet_merge(journal.path(), "side", "work", true).is_err());
+    }
+
+    #[test]
+    fn a_name_in_the_trash_is_never_offered_for_retiring() {
+        let journal = Journal::new();
+        journal.declare("personal", PERSONAL, false);
+        journal.declare("work", WORK, false);
+        let segment = journal
+            .path()
+            .join("chronicle/20260801/default/090000_300/talents");
+        fs::create_dir_all(&segment).expect("segment");
+        fs::write(
+            segment.join("facets.json"),
+            br#"[{"facet":"work"},{"facet":"elsewhere"}]"#,
+        )
+        .expect("assignment");
+        solstone_core_facets::delete_facet(
+            &solstone_core_removals::Removal::begin(
+                journal.path(),
+                solstone_core_removals::Action::FacetDelete,
+                solstone_core_removals::Surface::Cli,
+            ),
+            "work",
+        )
+        .expect("trashed");
+        let found =
+            super::scan_unresolved_references(journal.path(), &Default::default()).expect("scan");
+        assert_eq!(
+            found.keys().collect::<Vec<_>>(),
+            vec!["elsewhere"],
+            "{found:?}"
+        );
     }
 
     #[test]

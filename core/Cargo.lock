@@ -5567,6 +5567,7 @@ dependencies = [
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-thinking-copy",
+ "solstone-core-trash",
  "windows-sys 0.61.2",
 ]
 
