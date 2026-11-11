@@ -30,7 +30,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when you leave a memory or a quote out of your week, that week's page is now left out of search. the memory itself stays in your journal and in search.
 - `solstone call entities delete`, `solstone call journal facet delete` and `solstone call speakers wipe --commit` now say the day something is erased in your own time zone, and `facet delete` now answers in a sentence instead of raw output.
 - things you delete together, and things you recover or erase together from the trash, now share one line in the removal history for each step.
-- the body page and the activities page now join home, the more page and transcripts: moving between them, and to another day on either, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
+- the body page, the activities page and the map now join home, the more page and transcripts: moving between them, and to another day on any of those three, no longer loads a new page, so it's quicker and the rest of the dashboard stays where it was.
 - on your own endpoint, leaving "leave room for the model to think" unticked now asks your model not to think, so a model that thinks by default usually answers sooner. tick it to let your model think. thanks @dvanduzer for the report (#418).
 - your own name no longer takes one of the 20 places in each facet's list of names that your journal reads as it processes your day, so one more of the facet's own names fits. the facets reference your agents read now explains what a facet's description and that list do, and how to curate them. thanks @dvanduzer for the report (#417).
 
