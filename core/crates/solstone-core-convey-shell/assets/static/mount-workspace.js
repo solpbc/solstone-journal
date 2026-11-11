@@ -409,6 +409,9 @@
         if (typeof options.swap === 'function') await options.swap(place);
         else await place();
         const instance = await mounted;
+        // The owner may have moved on while this view was still mounting.
+        // Publishing it now would announce it over the view they opened.
+        if (superseded()) return;
         window.solRouter?.keepFragment?.(options.appName, html);
         options.onContractMount?.(instance);
       } else {

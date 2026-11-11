@@ -430,15 +430,31 @@ const ENTRY_TABLE = {
       reads: [{ route: '/app/activities/{day}', urls: ['/app/activities/api/day/{day}/view'] }],
       contract: true,
     },
+    // No open-day read. An undated address is the last day with a location,
+    // and the view says so after it has read the index. A week, a month, the
+    // place list and a place are their own pages of this view.
+    map: {
+      fragment: '/app/map/workspace',
+      scripts: [{ src: '/a/map.js' }],
+      styles: [],
+      reads: [
+        { route: '/app/map/week/{day}', urls: ['/app/map/api/week/{day}'] },
+        { route: '/app/map/{day}', urls: ['/app/map/api/day/{day}'] },
+        { route: '/app/map/places', urls: ['/app/map/api/places'] },
+        { route: '/app/map/', urls: ['/app/map/api/index'] },
+      ],
+      contract: true,
+    },
   },
 };
 
 const FRAGMENTS = {
   '/app/home/workspace': '<div class="home"><h2>your day</h2><div id="home-root"></div></div><script src="/h/home.js"></script>',
   '/app/transcripts/workspace': '<link rel="stylesheet" href="/t/date-nav.css"><div class="tr"><h2 data-day-heading>day</h2><div id="tr-root"></div></div><script src="/t/transcripts.js"></script>',
-  '/app/more/workspace': '<div class="more"><div id="more-root"></div><a href="/app/transcripts/">transcripts</a><a href="/app/home/">home</a><a href="/app/body/">body</a><a href="/app/activities/">activities</a><a href="/app/settings/">settings</a></div><script src="/m/more.js"></script>',
+  '/app/more/workspace': '<div class="more"><div id="more-root"></div><a href="/app/transcripts/">transcripts</a><a href="/app/home/">home</a><a href="/app/body/">body</a><a href="/app/activities/">activities</a><a href="/app/map/">map</a><a href="/app/settings/">settings</a></div><script src="/m/more.js"></script>',
   '/app/body/workspace': '<link rel="stylesheet" href="/static/date-nav.css"><div class="body-shell"><h1 class="body-title">body</h1><div id="body-root"></div><a class="body-day-cell" href="/app/body/20260102">day</a></div><script src="/b/body.js"></script>',
   '/app/activities/workspace': '<div class="activities"><h1>activities</h1><div id="activities-root"></div><a href="/app/activities/20260103">day</a></div><script src="/a/activities.js"></script>',
+  '/app/map/workspace': '<div class="map"><h1>map</h1><div id="map-root"></div><a href="/app/map/20261003">day</a><a href="/app/map/week/20261005">week</a><a href="/app/map/month/202610">month</a><a href="/app/map/places">places</a><a href="/app/map/place/0123456789ab">place</a></div><script src="/a/map.js"></script>',
   '/app/entities/workspace': '<div><h2>entities</h2></div>',
   '/app/settings/workspace': '<div><h2>settings</h2></div>',
 };
@@ -589,6 +605,78 @@ const VIEW_CODE = {
         };
       }
     });`,
+  '/a/map.js': `
+    window.SolViews.register('map', {
+      async mount(ctx) {
+        const views = window.__views.map;
+        views.mounts += 1;
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const digits = (value, n) => new RegExp('^[0-9]{' + n + '}$').test(value || '');
+        const monthNumber = parts[3] ? Number(parts[3].slice(4, 6)) : 0;
+        const page = (parts[2] === 'week' && digits(parts[3], 8))
+          || (parts[2] === 'month' && digits(parts[3], 6) && monthNumber >= 1 && monthNumber <= 12)
+          || (parts[2] === 'places' && parts.length === 3)
+          || (parts[2] === 'place' && parts.length === 4);
+        if (page) {
+          views.pages.push(window.location.pathname);
+          const root = document.getElementById('map-root');
+          if (root) root.textContent = window.location.pathname;
+          ctx.ready('content');
+          return {
+            update(params) {
+              views.updates.push(params.day);
+              const asked = params.day;
+              ctx.read('/app/map/api/day/' + asked).then((answer) => {
+                views.draws.push(answer.day);
+                const shown = document.getElementById('map-root');
+                if (shown) shown.textContent = answer.day;
+                ctx.ready('content');
+              }, () => ctx.ready('error'));
+            },
+            dispose() { views.disposes += 1; }
+          };
+        }
+        let day = ctx.route.day;
+        if (!day) {
+          // The index answers after the owner may already have left. A day
+          // written then would replace the page they opened.
+          const index = await new Promise((resolve) => {
+            let settled = false;
+            const done = (value) => { if (!settled) { settled = true; resolve(value); } };
+            if (ctx.signal.aborted) { done(null); return; }
+            ctx.signal.addEventListener('abort', () => done(null), { once: true });
+            ctx.read('/app/map/api/index').then(done, () => done(null));
+          });
+          const here = window.location.pathname;
+          const end = index && index.coverage && index.coverage.end;
+          if (!end || ctx.signal.aborted || (here !== '/app/map' && here !== '/app/map/')) {
+            return { dispose() { views.disposes += 1; } };
+          }
+          ctx.history.replace('/app/map/' + end + window.location.search + window.location.hash);
+          ctx.route = window.SolViews.routeOf(window.location);
+          day = ctx.route.day;
+        }
+        const read = () => {
+          const asked = day;
+          ctx.read('/app/map/api/day/' + asked).then((answer) => {
+            if (asked !== day) return;
+            views.draws.push(answer.day);
+            const root = document.getElementById('map-root');
+            if (root) root.textContent = answer.day;
+            ctx.ready('content');
+          }, () => { if (asked === day) ctx.ready('error'); });
+        };
+        read();
+        return {
+          update(params) {
+            views.updates.push(params.day);
+            day = params.day;
+            read();
+          },
+          dispose() { views.disposes += 1; }
+        };
+      }
+    });`,
 };
 
 function headScript() {
@@ -666,8 +754,8 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
   document.querySelectorAll = (selector) => document.root.querySelectorAll(selector);
   document.body.innerHTML =
     '<nav id="app-rail"><a href="/app/home/" data-app-name="home">home</a><a href="/app/transcripts/" data-app-name="transcripts">transcripts</a>' +
-    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a>' +
-    '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
+    '<a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/entities/" data-app-name="entities">entities</a><a href="/app/sources/" data-app-name="sources">sources</a><a href="/app/settings/" data-app-name="settings">settings</a>' +
+    '<div id="status-instrument"></div></nav><nav id="app-dock"><a href="/app/body/" data-app-name="body">body</a><a href="/app/activities/" data-app-name="activities">activities</a><a href="/app/map/" data-app-name="map">map</a><a href="/app/more/" data-app-name="more">more</a><a href="/app/home/" data-app-name="home">home</a></nav>' +
     '<div id="view-announcer" role="status" aria-live="polite"></div>' +
     '<main id="main-content" tabindex="-1"><div class="surface-state surface-state--loading" role="status" aria-busy="true"></div></main>';
   if (transitions) {
@@ -730,11 +818,12 @@ function makePage({ pathname = '/app/home/', transitions = false } = {}) {
       more: { mounts: 0, disposes: 0 },
       body: { mounts: 0, disposes: 0, updates: [], draws: [] },
       activities: { mounts: 0, disposes: 0, updates: [], draws: [], pops: 0 },
+      map: { mounts: 0, disposes: 0, updates: [], draws: [], pages: [] },
     },
     __scriptErrors: [],
     __consoleErrors: [],
     solShellData: {
-      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'entities', 'sources', 'settings'].map((name) => ({
+      apps: ['home', 'transcripts', 'more', 'body', 'activities', 'map', 'entities', 'sources', 'settings'].map((name) => ({
         name, label: name, workspace_url: `/app/${name}/workspace`,
       })),
     },
@@ -809,6 +898,17 @@ function answerActivities(page) {
   for (const day of ['20260102', '20260103']) {
     page.server.answers.set(`/app/activities/api/day/${day}/view`, page.server.json({ day }));
   }
+}
+
+function answerMap(page, end = '20261005') {
+  page.server.answers.set('/app/map/api/index', page.server.json({
+    coverage: { start: '20261001', end },
+  }));
+  for (const day of ['20261003', '20261005', end]) {
+    page.server.answers.set(`/app/map/api/day/${day}`, page.server.json({ day }));
+  }
+  page.server.answers.set('/app/map/api/week/20261005', page.server.json({ day: '20261005' }));
+  page.server.answers.set('/app/map/api/places', page.server.json({ places: [] }));
 }
 
 // What the page holds outside a view's own markup.
@@ -1409,6 +1509,209 @@ asyncCase('router: a dock link with an activity open adds one entry, and back re
   assert.strictEqual(page.location.hash, '#work/standup');
   assert.ok(page.view('activities'));
   assert.strictEqual(page.window.__activitySelected(), 'standup', 'back lands on the open activity');
+});
+
+asyncCase('router: map stays in the page with home, transcripts, more, body and activities, and a day change is an update', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerDays(page);
+  answerBody(page);
+  answerActivities(page);
+  answerMap(page);
+  page.server.answers.set('/app/transcripts/api/open-day', page.server.json({ day: '20260102' }));
+  await page.boot('home');
+  const rail = page.document.getElementById('app-rail');
+  page.window.scrollY = 180;
+
+  page.click('/app/map/');
+  await page.clock.advance(400);
+  assert.ok(page.view('map'));
+  assert.strictEqual(page.location.pathname, '/app/map/20261005', 'an undated address becomes the index day');
+  assert.strictEqual(page.document.getElementById('app-rail'), rail, 'the rail stays');
+  assert.strictEqual(page.window.scrollY, 0, 'a new view starts at the top');
+  assert.strictEqual(page.document.activeElement, page.main().querySelector('h1'), 'focus is on the heading the map ships');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'map');
+  assert.strictEqual(page.window.__views.map.mounts, 1);
+  assert.deepStrictEqual(page.window.__views.map.draws, ['20261005']);
+  assert.deepStrictEqual(page.record.assigned, []);
+  assert.strictEqual(page.server.of('/app/map/workspace').length, 1, 'the fragment is fetched once');
+
+  page.click('/app/map/20261003');
+  await page.clock.advance(400);
+  const views = page.window.__views.map;
+  assert.strictEqual(views.mounts, 1, 'a day change is not a remount');
+  assert.deepStrictEqual(views.updates, ['20261003']);
+  assert.deepStrictEqual(views.draws, ['20261005', '20261003']);
+  assert.strictEqual(page.location.pathname, '/app/map/20261003');
+  assert.strictEqual(page.server.of('/app/map/workspace').length, 1, 'a day change does not fetch the fragment');
+
+  const step = page.link('/app/home/');
+  step.focus();
+  page.window.solRouter.navigate('/app/map/20261005');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 1);
+  assert.deepStrictEqual(views.updates, ['20261003', '20261005']);
+  assert.strictEqual(page.document.activeElement, step, 'a day step does not move focus');
+  assert.strictEqual(page.document.getElementById('view-announcer').textContent, 'map');
+
+  page.click('/app/map/');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 2, 'the undated address mounts again');
+  assert.ok(page.view('map'));
+  assert.strictEqual(page.location.pathname, '/app/map/20261005');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  for (const href of ['/app/transcripts/', '/app/more/', '/app/home/', '/app/body/', '/app/activities/']) {
+    page.click(href);
+    await page.clock.advance(400);
+    assert.ok(!page.view('map'), href + ' opens in the page');
+    assert.deepStrictEqual(page.record.assigned, []);
+    page.click('/app/map/');
+    await page.clock.advance(400);
+    assert.ok(page.view('map'), 'the map opens from ' + href + ' in the page');
+    assert.strictEqual(page.location.pathname, '/app/map/20261005');
+    assert.deepStrictEqual(page.record.assigned, []);
+  }
+
+  page.click('/app/more/');
+  await page.clock.advance(400);
+  assert.ok(page.view('more'));
+  page.main().querySelector('a[href="/app/map/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('map'), 'more\'s card opens the map in the page');
+
+  page.document.getElementById('app-dock').querySelector('a[href="/app/home/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  page.document.getElementById('app-dock').querySelector('a[href="/app/map/"]').click();
+  await page.clock.advance(400);
+  assert.ok(page.view('map'), 'the dock opens the map in the page');
+  assert.strictEqual(page.server.of('/app/map/workspace').length, 1, 'later visits keep the fragment');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.click('/app/settings/');
+  assert.ok(!page.view('settings'));
+  assert.deepStrictEqual(page.record.assigned, ['/app/settings/'], 'settings is still a full load');
+  assert.strictEqual(page.window.solRouter.navigate('/app/entities/'), false, 'entities is still a full load');
+});
+
+asyncCase('router: back and forward restore the map and where the page was', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerMap(page);
+  await page.boot('home');
+  page.window.scrollY = 220;
+  page.click('/app/map/');
+  await page.clock.advance(400);
+  assert.ok(page.view('map'));
+  assert.strictEqual(page.location.pathname, '/app/map/20261005');
+  assert.strictEqual(page.window.scrollY, 0);
+  page.window.scrollY = 90;
+  page.click('/app/map/20261003');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/map/20261003');
+  page.window.scrollY = 40;
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/map/20261005');
+  assert.ok(page.view('map'));
+  assert.strictEqual(page.window.scrollY, 90, 'the day is where it was left');
+  await page.history.back();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.strictEqual(page.window.scrollY, 220, 'home is where it was left');
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.ok(page.view('map'));
+  assert.strictEqual(page.location.pathname, '/app/map/20261005');
+  assert.strictEqual(page.window.scrollY, 90);
+  await page.history.forward();
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/map/20261003');
+  assert.strictEqual(page.window.scrollY, 40);
+  assert.deepStrictEqual(page.record.assigned, []);
+});
+
+asyncCase('router: an undated map arrival is the index day, and the map\'s other pages stay in the page', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerMap(page, '20261008');
+  await page.boot('home');
+  const before = page.history.length;
+  page.click('/app/map/');
+  await page.clock.advance(400);
+  assert.strictEqual(page.location.pathname, '/app/map/20261008', 'the day is the one the index names');
+  assert.strictEqual(page.history.length, before + 1, 'finding the day replaces the address');
+  assert.strictEqual(page.window.solRouter.held().mountedPath, '/app/map/20261008');
+  const views = page.window.__views.map;
+  assert.strictEqual(views.mounts, 1);
+  assert.deepStrictEqual(views.draws, ['20261008']);
+  assert.strictEqual(page.server.of('/app/map/workspace').length, 1);
+
+  page.click('/app/map/week/20261005');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 2, 'a week is another page of the map');
+  assert.deepStrictEqual(views.updates, []);
+  assert.strictEqual(page.location.pathname, '/app/map/week/20261005');
+  assert.strictEqual(page.main().querySelector('#map-root').textContent, '/app/map/week/20261005');
+  assert.strictEqual(page.server.of('/app/map/workspace').length, 1, 'the fragment stays');
+  assert.deepStrictEqual(page.record.assigned, []);
+
+  page.click('/app/map/20261003');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 2, 'a day from a week is an update');
+  assert.deepStrictEqual(views.updates, ['20261003']);
+  assert.strictEqual(page.location.pathname, '/app/map/20261003');
+  assert.strictEqual(page.main().querySelector('#map-root').textContent, '20261003');
+
+  page.click('/app/map/month/202610');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 3);
+  assert.strictEqual(page.location.pathname, '/app/map/month/202610');
+
+  page.click('/app/map/places');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 4);
+  assert.strictEqual(page.location.pathname, '/app/map/places');
+
+  page.click('/app/map/place/0123456789ab');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 5);
+  assert.strictEqual(page.location.pathname, '/app/map/place/0123456789ab');
+
+  page.click('/app/map/');
+  await page.clock.advance(400);
+  assert.strictEqual(views.mounts, 6, 'the undated address mounts again');
+  assert.strictEqual(page.location.pathname, '/app/map/20261008');
+  assert.deepStrictEqual(page.record.assigned, []);
+});
+
+asyncCase('router: leaving while the map is still finding its day does not write over the page opened', async () => {
+  const page = makePage();
+  page.answerAll();
+  answerMap(page);
+  let release = null;
+  page.server.answers.set('/app/map/api/index', (call) => {
+    release = () => page.server.json({ coverage: { start: '20261001', end: '20261005' } })(call);
+  });
+  await page.boot('home');
+  const published = [];
+  page.document.addEventListener('workspace:mounted', (event) => {
+    published.push(event.detail && event.detail.appName);
+  });
+  page.click('/app/map/');
+  // The swap waits out the index, then the view is mounted and still waiting on it.
+  await page.clock.advance(400);
+  assert.ok(release, 'the index read started');
+  assert.strictEqual(page.location.pathname, '/app/map/');
+  assert.strictEqual(page.window.__views.map.mounts, 1);
+  page.click('/app/home/');
+  release();
+  await page.clock.advance(400);
+  assert.ok(page.view('home'));
+  assert.strictEqual(page.location.pathname, '/app/home/', 'the index day is not written over home');
+  assert.deepStrictEqual(page.record.assigned, []);
+  assert.deepStrictEqual(published, ['home'], 'a map the owner already left is not announced');
 });
 
 asyncCase('router: back and forward between pilot entries restore view and scroll', async () => {
